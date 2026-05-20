@@ -1,0 +1,42 @@
+{
+  "name": "reiwa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start:api": "node dist/api/main.js",
+    "start:bot": "node dist/bot/main.js",
+    "start:worker": "node dist/worker/main.js",
+    "dev:api": "tsx src/api/main.ts",
+    "dev:bot": "tsx src/bot/main.ts",
+    "dev:worker": "tsx src/worker/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "build:watch": "tsc -p tsconfig.json --watch",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "test:pbt": "node --import tsx --test test/**/*.property.test.ts"
+  },
+  "dependencies": {
+    "cookie-parser": "1.4.7",
+    "cors": "2.8.6",
+    "dayjs": "1.11.20",
+    "express": "5.2.1",
+    "express-rate-limit": "8.5.2",
+    "grammy": "1.42.0",
+    "helmet": "8.1.0",
+    "ioredis": "5.10.1",
+    "undici": "8.2.0",
+    "uuid": "14.0.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "1.4.10",
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "25.7.0",
+    "@types/uuid": "11.0.0",
+    "fast-check": "4.8.0",
+    "tsx": "4.22.0",
+    "typescript": "6.0.3"
+  }
+}

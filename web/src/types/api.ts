@@ -1,0 +1,241 @@
+// ─── Session ─────────────────────────────────────────────────────────────────
+export interface ReiwaSession {
+  telegramId: string;
+  userId: number;
+  name: string;
+  username?: string;
+  role: string;
+}
+
+// ─── Plans ───────────────────────────────────────────────────────────────────
+export interface PlanPrice {
+  id: number;
+  currency: string;
+  price: number;
+}
+
+export interface PlanDuration {
+  id: number;
+  days: number;
+  prices: PlanPrice[];
+}
+
+export interface Plan {
+  id: number;
+  name: string;
+  description: string | null;
+  tag: string | null;
+  type: "TRAFFIC" | "DEVICES" | "BOTH" | "UNLIMITED";
+  availability: string;
+  trafficLimit: number | null; // GB
+  deviceLimit: number | null;
+  trafficLimitStrategy: string;
+  isActive: boolean;
+  isArchived: boolean;
+  orderIndex: number;
+  durations: PlanDuration[];
+}
+
+// ─── Subscription ────────────────────────────────────────────────────────────
+export type SubscriptionStatus =
+  | "ACTIVE"
+  | "DISABLED"
+  | "LIMITED"
+  | "EXPIRED"
+  | "DELETED";
+
+export interface Subscription {
+  id: string;
+  userTelegramId?: string;
+  userRemnaId: string | null;
+  status: SubscriptionStatus;
+  isTrial: boolean;
+  trafficLimit: number | null; // GB
+  deviceLimit: number | null;
+  expireAt?: string; // Legacy alias
+  expiresAt: string | null; // ISO date (canonical)
+  url: string | null;
+  configUrl?: string | null;
+  plan: { id: string | null; name: string | null; type: string | null } | null;
+  createdAt: string;
+  startedAt?: string | null;
+  updatedAt?: string;
+}
+
+// ─── Action policy ───────────────────────────────────────────────────────────
+export interface ActionPolicy {
+  canBuy: boolean;
+  canRenew: boolean;
+  canUpgrade: boolean;
+  canTrial: boolean;
+  requiresNewSubscription?: boolean;
+}
+
+// ─── Quote ───────────────────────────────────────────────────────────────────
+export interface SubscriptionQuote {
+  planId: number;
+  planName: string;
+  durationDays: number;
+  currency: string;
+  basePrice: number;
+  discountPercent: number;
+  finalPrice: number;
+  gatewayType: string;
+}
+
+// ─── Checkout ────────────────────────────────────────────────────────────────
+export interface CheckoutResult {
+  paymentId: string;
+  paymentUrl: string;
+  gatewayType: string;
+  currency: string;
+  amount: number;
+}
+
+// ─── Payment status ──────────────────────────────────────────────────────────
+export interface PaymentStatus {
+  paymentId: string;
+  status: "PENDING" | "COMPLETED" | "CANCELED" | "REFUNDED" | "FAILED";
+  amount: number;
+  currency: string;
+  gatewayType: string;
+  createdAt: string;
+}
+
+// ─── Transaction ─────────────────────────────────────────────────────────────
+export interface Transaction {
+  id: number;
+  paymentId: string;
+  status: "PENDING" | "COMPLETED" | "CANCELED" | "REFUNDED" | "FAILED";
+  gatewayType: string;
+  currency: string;
+  pricing: { finalPrice: number; currency: string };
+  plan: { id: number; name: string } | null;
+  createdAt: string;
+}
+
+export interface TransactionsResponse {
+  transactions: Transaction[];
+  total: number;
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+export interface UserNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface NotificationsResponse {
+  notifications: UserNotification[];
+  total: number;
+}
+
+// ─── Referrals ───────────────────────────────────────────────────────────────
+export interface ReferralSummary {
+  totalReferrals: number;
+  qualifiedReferrals: number;
+}
+
+export interface ReferralInvite {
+  token: string;
+  expiresAt?: string;
+}
+
+// ─── Platform policy ─────────────────────────────────────────────────────
+export interface PlatformPolicy {
+  accessMode: string;
+  rulesRequired: boolean;
+  channelRequired: boolean;
+  rulesLink: string;
+  channelLink: string;
+  defaultCurrency: string;
+}
+
+// ─── Devices (HWID) ───────────────────────────────────────────────────────
+export interface HwidDevice {
+  id: string;
+  hwid: string;
+  platform: string | null;
+  osVersion: string | null;
+  deviceModel: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+
+export interface DevicesResponse {
+  devices: HwidDevice[];
+}
+
+// ─── All subscriptions ───────────────────────────────────────────────────
+export interface AllSubscriptionsResponse {
+  subscriptions: Subscription[];
+}
+
+// ─── Promo activations ───────────────────────────────────────────────────
+export interface PromoActivation {
+  id: string;
+  rewardType: string;
+  rewardValue: number | null;
+  createdAt: string;
+  promocode: {
+    code: string;
+    rewardType: string;
+  } | null;
+}
+
+export interface PromoActivationsResponse {
+  activations: PromoActivation[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+// ─── Referral Rewards ────────────────────────────────────────────────────
+export interface ReferralReward {
+  id: string;
+  type: string;
+  value: number;
+  isIssued: boolean;
+  createdAt: string;
+}
+
+export interface ReferralRewardsResponse {
+  rewards: ReferralReward[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+// ─── Public config ─────────────────────────────────────────────────────────
+export interface PublicConfig {
+  buttons: Array<{
+    id: string;
+    emoji: string;
+    label: string;
+    visible: boolean;
+    order: number;
+    style: string;
+    onePerRow: boolean;
+  }>;
+  visual: {
+    welcomeMessage: string;
+    botDescription: string;
+    supportUsername: string;
+    channelUsername: string;
+    subscriptionInfoFormat: "full" | "compact" | "minimal";
+  };
+  features: {
+    referralsEnabled: boolean;
+    promoCodesEnabled: boolean;
+    trialEnabled: boolean;
+    miniAppEnabled: boolean;
+    activityFeedEnabled: boolean;
+    partnersEnabled: boolean;
+  };
+  botEmojis: Record<string, { unicode: string; tgEmojiId: string }>;
+}
