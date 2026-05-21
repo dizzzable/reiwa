@@ -1,0 +1,75 @@
+# ════════════════════════════════════════════════════════════════════════════
+#  reiwa — Docker Compose
+#
+#  reiwa is a stateless edge / BFF (Backend for Frontend) for the Rezeis
+#  user-facing surface (Telegram Mini App + Web). It owns no relational
+#  state: every business read and write is proxied to rezeis-admin over
+#  HTTP inside the shared `remnawave-network`.
+#
+#  The only stateful dependency reiwa has is reiwa-redis, used for
+#  ephemeral edge concerns:
+#    • web/TMA session cookies
+#    • per-IP rate-limit counters
+#    • brute-force / banned-IP tracking
+#    • short-lived linking & verification challenges (TTL 10–30 min)
+#    • Telegram bot FSM (grammy)
+#    • install-banner UX preferences
+# ════════════════════════════════════════════════════════════════════════════
+
+services:
+  reiwa-redis:
+    image: valkey/valkey:9-alpine
+    container_name: reiwa-redis
+    hostname: reiwa-redis
+    restart: unless-stopped
+    command: ["--requirepass", "${REDIS_PASSWORD}", "--bind", "0.0.0.0"]
+    volumes:
+      - reiwa-redis-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 3
+    networks:
+      - remnawave-network
+
+  reiwa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reiwa
+    container_name: reiwa
+    hostname: reiwa
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${REIWA_PORT:-5000}:${REIWA_PORT:-5000}"
+    depends_on:
+      reiwa-redis:
+        condition: service_healthy
+    networks:
+      - remnawave-network
+
+  reiwa-bot:
+    image: reiwa
+    container_name: reiwa-bot
+    hostname: reiwa-bot
+    restart: unless-stopped
+    command: ["node", "dist/bot/main.js"]
+    env_file:
+      - .env
+    depends_on:
+      reiwa-redis:
+        condition: service_healthy
+    networks:
+      - remnawave-network
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    external: true
+
+volumes:
+  reiwa-redis-data:
+    name: reiwa-redis-data

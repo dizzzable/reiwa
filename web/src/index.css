@@ -1,0 +1,209 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   Branding tokens
+   These CSS custom properties are written by `<BrandingProvider>` at runtime
+   from the operator's branding settings (rezeis-admin → reiwa /api/v1/branding).
+   The defaults below match `DEFAULT_BRANDING` on the backend so SSR / first
+   paint never flickers before the network response lands.
+   ────────────────────────────────────────────────────────────────────────────── */
+:root {
+  --brand-name: "Rezeis";
+  --brand-primary: #22c55e;
+  --brand-primary-fg: #0a0a0a;
+  --brand-bg-primary: #0a0a0a;
+  --brand-bg-secondary: #171717;
+  --brand-card-gradient: linear-gradient(135deg, #064e3b 0%, #22c55e 100%);
+  --brand-card-pattern: none;
+  --brand-font: 'Geist Variable', system-ui, sans-serif;
+}
+
+/* ─── Custom design tokens (radii / glows / surfaces) ──────────────────────── */
+@theme {
+  --color-brand-glow: color-mix(in oklab, var(--brand-primary) 40%, transparent);
+  --color-surface: rgba(24, 24, 27, 0.70);
+  --color-surface-high: rgba(39, 39, 42, 0.80);
+  --color-border-soft: rgba(255, 255, 255, 0.06);
+  --color-border-strong: rgba(255, 255, 255, 0.12);
+  --radius-pill: 9999px;
+  --radius-card: 1.5rem;
+  --radius-item: 1rem;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   shadcn theme tokens (Nova preset, dark-only)
+   We omit the light-mode root and force the `.dark` palette by default —
+   reiwa is a VPN UI shown in dark theme regardless of OS preference.
+   ────────────────────────────────────────────────────────────────────────────── */
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--brand-font);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: var(--brand-bg-primary);
+  --foreground: oklch(0.985 0 0);
+  --card: var(--brand-bg-secondary);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: var(--brand-bg-secondary);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-fg);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: var(--brand-primary-fg);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   Base reset
+   ────────────────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--brand-bg-primary);
+  color: oklch(0.985 0 0);
+  font-family: var(--brand-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Scrollable areas ─────────────────────────────────────────────────────── */
+.scroll-area {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-area::-webkit-scrollbar { display: none; }
+
+/* ─── Glass card ───────────────────────────────────────────────────────────── */
+.glass-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* ─── Brand card (subscription) ────────────────────────────────────────────── */
+.brand-card {
+  background-image: var(--brand-card-gradient);
+  background-color: var(--brand-primary);
+  border-radius: var(--radius-card);
+  position: relative;
+  overflow: hidden;
+}
+.brand-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--brand-card-pattern);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ─── Safe area helpers ────────────────────────────────────────────────────── */
+.safe-top    { padding-top:    env(safe-area-inset-top, 0px); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* ─── Custom animations ────────────────────────────────────────────────────── */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 24px var(--color-brand-glow); }
+  50%      { box-shadow: 0 0 48px var(--color-brand-glow), 0 0 80px var(--color-brand-glow); }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+.animate-fade-up    { animation: fade-up 0.4s ease-out forwards; }
+.animate-spin-slow  { animation: spin-slow 8s linear infinite; }
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+}

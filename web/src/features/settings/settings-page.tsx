@@ -1,0 +1,304 @@
+/**
+ * SettingsPage
+ * ────────────
+ * Main settings hub — Telegram-style layout:
+ *   1. Profile header (avatar + username + status).
+ *   2. Menu items (each navigates to a sub-page or opens a sheet).
+ *   3. Logout button at the bottom.
+ *
+ * Menu items:
+ *   - 🔒 Конфиденциальность → /settings/privacy
+ *   - 🔔 Уведомления → /settings/notifications
+ *   - 📋 Транзакции → /settings/transactions
+ *   - 🌐 Язык → inline sheet
+ *   - 💬 Поддержка → /support
+ *   - ❓ Помощь (FAQ) → /settings/faq
+ *   - 🚪 Выйти
+ */
+
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { motion } from "motion/react";
+import { useTranslation } from "react-i18next";
+import {
+  ChevronRight,
+  CircleHelp,
+  CreditCard,
+  Globe,
+  LogOut,
+  MessageSquare,
+  Bell,
+  Shield,
+  CheckCircle2,
+  Tag,
+} from "lucide-react";
+
+import { useSession } from "@/hooks/use-session";
+import { signOut, updateLanguage } from "@/lib/api-client";
+import { setLocale } from "@/i18n/i18n";
+import { useBranding } from "@/lib/branding-provider";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { toast } from "sonner";
+
+export default function SettingsPage() {
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { session } = useSession();
+  const { branding } = useBranding();
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [showLangSheet, setShowLangSheet] = useState(false);
+
+  const signOutMutation = useMutation({
+    mutationFn: signOut,
+    onSuccess: () => {
+      queryClient.clear();
+      navigate("/bootstrap", { replace: true });
+    },
+    onError: () => {
+      queryClient.clear();
+      navigate("/bootstrap", { replace: true });
+    },
+  });
+
+  function changeLang(lang: "en" | "ru") {
+    setLocale(lang);
+    updateLanguage(lang.toUpperCase()).catch(() => {});
+    toast.success(t("settings.languageUpdated"));
+    setShowLangSheet(false);
+  }
+
+  if (!session) return null;
+
+  const initials = session.name
+    ? session.name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : "??";
+
+  const statusText = t("settings.statusActive");
+
+  return (
+    <div className="min-h-full pb-6">
+      {/* ── Profile Header ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col items-center px-5 pt-8 pb-6"
+      >
+        {/* Avatar */}
+        <div
+          className="flex h-20 w-20 items-center justify-center rounded-full text-2xl font-bold text-white shadow-lg"
+          style={{
+            background: `linear-gradient(135deg, ${branding.primary} 0%, #8b5cf6 100%)`,
+            boxShadow: `0 0 32px color-mix(in oklab, ${branding.primary} 40%, transparent)`,
+          }}
+        >
+          {initials}
+        </div>
+        {/* Username */}
+        <p className="mt-3 text-lg font-semibold text-white">
+          {session.name || session.username || "User"}
+        </p>
+        {session.username && (
+          <p className="text-sm text-muted-foreground">@{session.username}</p>
+        )}
+        {/* Status */}
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <div className="h-2 w-2 rounded-full bg-emerald-400" />
+          <span className="text-xs text-zinc-400">{statusText}</span>
+        </div>
+      </motion.div>
+
+      {/* ── Menu Items ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.06 }}
+        className="mx-5 space-y-1.5"
+      >
+        <MenuItem
+          icon={<Shield className="h-5 w-5" />}
+          iconBg="bg-emerald-500/10 text-emerald-400"
+          label={t("settings.privacy")}
+          sublabel={t("settings.privacySub")}
+          onClick={() => navigate("/settings/privacy")}
+        />
+        <MenuItem
+          icon={<Bell className="h-5 w-5" />}
+          iconBg="bg-blue-500/10 text-blue-400"
+          label={t("settings.notifications")}
+          sublabel={t("settings.notificationsSub")}
+          onClick={() => navigate("/settings/notifications")}
+        />
+        <MenuItem
+          icon={<CreditCard className="h-5 w-5" />}
+          iconBg="bg-amber-500/10 text-amber-400"
+          label={t("settings.transactions")}
+          sublabel={t("settings.transactionsSub")}
+          onClick={() => navigate("/settings/transactions")}
+        />
+        <MenuItem
+          icon={<Tag className="h-5 w-5" />}
+          iconBg="bg-violet-500/10 text-violet-400"
+          label={t("settings.promocodes")}
+          sublabel={t("settings.promocodesSub")}
+          onClick={() => navigate("/settings/promocodes")}
+        />
+        <MenuItem
+          icon={<Globe className="h-5 w-5" />}
+          iconBg="bg-violet-500/10 text-violet-400"
+          label={t("settings.language")}
+          sublabel={i18n.language === "ru" ? t("common.languageRu") : t("common.languageEn")}
+          onClick={() => setShowLangSheet(true)}
+        />
+        <MenuItem
+          icon={<MessageSquare className="h-5 w-5" />}
+          iconBg="bg-rose-500/10 text-rose-400"
+          label={t("settings.support")}
+          sublabel={t("settings.supportSub")}
+          onClick={() => navigate("/support")}
+        />
+        <MenuItem
+          icon={<CircleHelp className="h-5 w-5" />}
+          iconBg="bg-zinc-500/10 text-zinc-400"
+          label={t("settings.faq")}
+          sublabel={t("settings.faqSub")}
+          onClick={() => navigate("/settings/faq")}
+        />
+      </motion.div>
+
+      {/* ── Logout ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.12 }}
+        className="mx-5 mt-6"
+      >
+        <button
+          onClick={() => setShowLogoutDialog(true)}
+          className="flex w-full items-center gap-3 rounded-2xl border border-red-500/10 bg-red-500/5 p-4 text-red-400 transition-all hover:bg-red-500/10 active:scale-[0.98]"
+        >
+          <LogOut className="h-5 w-5" />
+          <span className="text-sm font-medium">{t("settings.signOut")}</span>
+        </button>
+      </motion.div>
+
+      {/* ── Language Sheet ── */}
+      <Sheet open={showLangSheet} onOpenChange={setShowLangSheet}>
+        <SheetContent side="bottom" className="max-h-[50vh]">
+          <SheetHeader>
+            <SheetTitle>{t("settings.changeLanguage")}</SheetTitle>
+          </SheetHeader>
+          <div className="space-y-2 py-4">
+            <LangOption
+              flag="🇷🇺"
+              label={t("common.languageRu")}
+              active={i18n.language === "ru"}
+              onClick={() => changeLang("ru")}
+            />
+            <LangOption
+              flag="🇬🇧"
+              label={t("common.languageEn")}
+              active={i18n.language === "en"}
+              onClick={() => changeLang("en")}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Logout Dialog ── */}
+      <Dialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{t("settings.signOut")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{t("settings.signOutConfirm")}</p>
+          <DialogFooter className="flex gap-2 pt-4">
+            <Button
+              variant="ghost"
+              className="flex-1"
+              onClick={() => setShowLogoutDialog(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              disabled={signOutMutation.isPending}
+              onClick={() => signOutMutation.mutate()}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              {t("settings.signOut")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── MenuItem ────────────────────────────────────────────────────────────────
+
+function MenuItem({
+  icon,
+  iconBg,
+  label,
+  sublabel,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  iconBg: string;
+  label: string;
+  sublabel?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-4 transition-all hover:bg-white/4 active:scale-[0.98]"
+    >
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+        {icon}
+      </div>
+      <div className="flex-1 text-left min-w-0">
+        <p className="text-sm font-medium text-white">{label}</p>
+        {sublabel && <p className="text-xs text-zinc-500 truncate">{sublabel}</p>}
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" />
+    </button>
+  );
+}
+
+// ── LangOption ──────────────────────────────────────────────────────────────
+
+function LangOption({
+  flag,
+  label,
+  active,
+  onClick,
+}: {
+  flag: string;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center gap-3 rounded-xl border p-3.5 transition-all active:scale-[0.98] ${
+        active ? "border-[var(--brand-primary)]/50 bg-[var(--brand-primary)]/5" : "border-white/6 hover:border-white/12"
+      }`}
+    >
+      <span className="text-xl">{flag}</span>
+      <span className="flex-1 text-left text-sm font-medium">{label}</span>
+      {active && <CheckCircle2 className="h-4 w-4" style={{ color: "var(--brand-primary)" }} />}
+    </button>
+  );
+}
