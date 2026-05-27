@@ -15,6 +15,7 @@
 
 import { Router } from "express";
 import { createHash } from "node:crypto";
+import type { Logger } from "pino";
 
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
@@ -30,9 +31,23 @@ const STALE_WHILE_REVALIDATE_MS = 5 * 60_000;
 
 export function createBrandingRouter(deps: {
   adminClient: AdminClient | null;
+  logger?: Logger;
 }) {
-  const { adminClient } = deps;
+  const { adminClient, logger } = deps;
   const router = Router();
+
+  // Background-refresh closure has no `req` in scope, so `getRequestLogger`
+  // is not available there. Use the root logger when supplied (production)
+  // and fall back to console for tests / supervised scripts.
+  const bgLog = logger?.child({ component: "branding-cache" });
+  const logBgFailure = (err: unknown): void => {
+    if (bgLog) {
+      bgLog.warn({ err }, "Background refresh failed; serving stale payload");
+    } else {
+      // eslint-disable-next-line no-console
+      console.error("[branding] background refresh failed:", (err as Error).message);
+    }
+  };
 
   let cached: CachedPayload | null = null;
   let inflight: Promise<CachedPayload> | null = null;
@@ -82,7 +97,7 @@ export function createBrandingRouter(deps: {
           })
           .catch((err) => {
             inflight = null;
-            console.error("[branding] background refresh failed:", (err as Error).message);
+            logBgFailure(err);
             // Return current stale value on failure.
             return cached as CachedPayload;
           });
