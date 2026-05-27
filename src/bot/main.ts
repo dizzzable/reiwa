@@ -29,6 +29,7 @@ import {
   buildMainKeyboard as buildMainKeyboardWidget,
   isTelegramSafeButtonUrl,
 } from './widgets/main-keyboard.js';
+import { registerLangPage } from './pages/index.js';
 import {
   detectLocaleFromTelegram,
   getUserLang,
@@ -404,32 +405,18 @@ async function startBot(): Promise<void> {
     }
   });
 
-  // ── /lang ──────────────────────────────────────────────────────────────────
+  // ── /lang and language callback (extracted to bot/pages/lang.ts) ──────────
 
-  bot.command('lang', async (ctx) => {
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const kb = new InlineKeyboard()
-      .text(t('lang.ru', lang), 'lang:ru')
-      .text(t('lang.en', lang), 'lang:en');
-    await ctx.reply(t('lang.choose', lang), { reply_markup: kb });
-  });
-
-  // ── Callback queries ───────────────────────────────────────────────────────
-
-  // Language selection
-  bot.callbackQuery(/^lang:(.+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const newLang = ctx.match![1];
-    const userId = ctx.from?.id ?? 0;
-    setUserLang(userId, newLang);
-
-    // Persist language to backend
-    if (adminClient) {
-      adminClient.updateUserLanguage(String(userId), newLang).catch(() => {});
-    }
-
-    const langName = newLang === 'ru' ? 'Русский' : 'English';
-    await ctx.reply(t('lang.changed', newLang, { lang: langName }));
+  registerLangPage(bot, {
+    adminClient,
+    translator,
+    userLocale: {
+      getSync: (id) => getUserLang(id),
+      setSync: (id, lang) => setUserLang(id, lang),
+      hasSync: (id) => userLangCacheHas(id),
+    },
+    getConfig: () => getBotConfig(adminClient),
+    urls: { publicWebUrl: reiwaUrlButtonUrl, miniAppUrl: reiwaWebAppUrl },
   });
 
   // Back to menu
