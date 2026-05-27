@@ -19,7 +19,7 @@ export function createActivityRouter(deps: {
     "/activity/transactions",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.getTransactions(req.telegramId!);
+      const result = await adminClient?.activity.getTransactions(req.telegramId!);
       res.json(result ?? { transactions: [] });
     },
   );
@@ -29,7 +29,7 @@ export function createActivityRouter(deps: {
     "/activity/notifications",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.getNotifications(req.telegramId!);
+      const result = await adminClient?.activity.getNotifications(req.telegramId!);
       res.json(result ?? { notifications: [] });
     },
   );
@@ -40,7 +40,7 @@ export function createActivityRouter(deps: {
     "/activity/notifications/unread-count",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.getUnreadCount(req.telegramId!);
+      const result = await adminClient?.activity.getUnreadCount(req.telegramId!);
       res.json(result ?? { count: 0 });
     },
   );
@@ -51,8 +51,8 @@ export function createActivityRouter(deps: {
     "/activity/notifications/read-all",
     requireSession,
     async (req: AuthRequest, res) => {
-      await adminClient
-        ?.markAllNotificationsRead(req.telegramId!)
+      await adminClient?.activity
+        .markAllRead(req.telegramId!)
         .catch(() => {});
       res.json({ ok: true });
     },
@@ -63,8 +63,8 @@ export function createActivityRouter(deps: {
     "/activity/notifications/:notificationId/read",
     requireSession,
     async (req: AuthRequest, res) => {
-      await adminClient
-        ?.markNotificationRead(
+      await adminClient?.activity
+        .markRead(
           req.telegramId!,
           String(req.params["notificationId"]),
         )

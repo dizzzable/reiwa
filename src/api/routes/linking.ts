@@ -49,12 +49,12 @@ export function createLinkingRouter(deps: {
       const userId = req.webSession.userId;
 
       // Generate linking code via Rezeis_Admin
-      const result = await adminClient.linkTelegramGenerate(userId);
+      const result = await adminClient.linking.telegram.generate(userId);
 
       // Get bot username from config or admin
       let botUsername: string | null = null;
       try {
-        const botConfig = (await adminClient.getBotConfig()) as Record<string, unknown>;
+        const botConfig = (await adminClient.branding.getBotConfig()) as Record<string, unknown>;
         botUsername =
           (botConfig?.["telegramBotUsername"] as string) ??
           (botConfig?.["botUsername"] as string) ??
@@ -119,7 +119,7 @@ export function createLinkingRouter(deps: {
       const { email } = parsed.data;
 
       // Proxy to Rezeis_Admin
-      const result = await adminClient.linkEmailInitiate(userId, email);
+      const result = await adminClient.linking.email.initiate(userId, email);
 
       res.json({
         success: result.success,
@@ -173,7 +173,7 @@ export function createLinkingRouter(deps: {
       const { code } = parsed.data;
 
       // Proxy to Rezeis_Admin
-      const result = await adminClient.linkEmailVerify(userId, code);
+      const result = await adminClient.linking.email.verify(userId, code);
 
       res.json({
         success: result.success,

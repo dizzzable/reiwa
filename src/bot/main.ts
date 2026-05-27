@@ -72,7 +72,7 @@ async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig>
   // gets picked up. In the regular bootstrap path `startBot()` already
   // calls this through a primed cache.
   botConfigCache = new BotConfigCache({
-    fetcher: () => adminClient.getBotConfig(),
+    fetcher: () => adminClient.branding.getBotConfig(),
     hydrator: translator,
     fallback: DEFAULT_BOT_CONFIG,
   });

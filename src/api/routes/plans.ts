@@ -14,7 +14,7 @@ export function createPlansRouter(deps: {
   // GET /api/v1/plans
   router.get("/plans", async (_req, res) => {
     try {
-      const plans = await adminClient?.getPublicPlans();
+      const plans = await adminClient?.catalog.getPublicPlans();
       res.json(plans ?? []);
     } catch (e: unknown) {
       res.status(500).json({ message: (e as Error).message });
@@ -24,7 +24,7 @@ export function createPlansRouter(deps: {
   // GET /api/v1/gateways
   router.get("/gateways", async (_req, res) => {
     try {
-      const gateways = await adminClient?.getEnabledGateways();
+      const gateways = await adminClient?.payments.getEnabledGateways();
       res.json(gateways ?? []);
     } catch (e: unknown) {
       res.status(500).json({ message: (e as Error).message });

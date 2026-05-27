@@ -105,7 +105,7 @@ export function createAuthRouter(deps: {
       }
 
       // Proxy to Rezeis_Admin
-      const result = await adminClient.webAuthRegister(username, passwordHash);
+      const result = await adminClient.webAuth.register(username, passwordHash);
 
       // Create web session
       await req.createWebSession(result.userId);
@@ -173,7 +173,7 @@ export function createAuthRouter(deps: {
         };
 
         try {
-          result = await adminClient.webAuthLogin(username, passwordHash);
+          result = await adminClient.webAuth.login(username, passwordHash);
         } catch {
           // Authentication failure — generic error (no username/password distinction)
           // Deny authentication even if the error message fails to display
@@ -267,7 +267,7 @@ export function createAuthRouter(deps: {
         }
 
         // Proxy to Rezeis_Admin
-        const result = await adminClient.webAuthRecover(username);
+        const result = await adminClient.webAuth.recover(username);
 
         res.json({
           method: result.method,
@@ -291,7 +291,7 @@ export function createAuthRouter(deps: {
       let isRegistrationEnabled = false;
       if (adminClient) {
         try {
-          const toggleResult = await adminClient.getRegistrationToggle();
+          const toggleResult = await adminClient.system.getRegistrationToggle();
           isRegistrationEnabled = toggleResult.enabled;
         } catch {
           // If we can't fetch toggle state, default to disabled
@@ -359,7 +359,7 @@ export function createAuthRouter(deps: {
 
       // Proxy to Rezeis_Admin
       const userId = req.webSession.userId;
-      const result = await adminClient.webAuthChangePassword(
+      const result = await adminClient.webAuth.changePassword(
         userId,
         currentPasswordHash,
         newPasswordHash,
@@ -404,7 +404,7 @@ export function createAuthRouter(deps: {
         res.status(503).json({ message: "Service not configured" });
         return;
       }
-      const user = (await adminClient.bootstrapUser({
+      const user = (await adminClient.user.bootstrap({
         telegramId: String(tgUser.id),
         username: tgUser.username,
         name: `${tgUser.first_name}${tgUser.last_name ? " " + tgUser.last_name : ""}`,

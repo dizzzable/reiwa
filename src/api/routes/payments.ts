@@ -66,13 +66,12 @@ export function createPaymentsRouter(deps: {
           override: failOverride ?? successOverride,
         });
 
-        const checkout = await adminClient?.createCheckout(
+        const checkout = await adminClient?.payments.createCheckout(
           req.telegramId!,
           Number(planId),
           Number(durationDays),
           String(gatewayType),
-          successUrl,
-          failUrl,
+          { successUrl, failUrl },
         );
         res.json(checkout ?? {});
       } catch (e: unknown) {
@@ -86,7 +85,7 @@ export function createPaymentsRouter(deps: {
   router.post("/payments/webhooks/:gatewayType", async (req, res) => {
     try {
       const { gatewayType } = req.params as Record<string, string>;
-      const result = await adminClient?.forwardWebhook(gatewayType, req.body);
+      const result = await adminClient?.payments.forwardWebhook(gatewayType, req.body);
       res.json(result ?? { received: true });
     } catch (e: unknown) {
       res.status(500).json({ message: (e as Error).message });
@@ -99,7 +98,7 @@ export function createPaymentsRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const status = await adminClient?.getPaymentStatus(
+        const status = await adminClient?.payments.getStatus(
           String(req.params["paymentId"]),
         );
         res.json(status ?? {});

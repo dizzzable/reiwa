@@ -16,7 +16,7 @@ export function createDevicesRouter(deps: {
   // GET /api/v1/devices — list HWID devices
   router.get('/', requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.getUserDevices(req.telegramId!);
+      const result = await adminClient?.devices.list(req.telegramId!);
       res.json(result ?? { devices: [] });
     } catch {
       res.json({ devices: [] });
@@ -27,7 +27,7 @@ export function createDevicesRouter(deps: {
   router.delete('/:hwid', requireSession, async (req: AuthRequest, res) => {
     try {
       const hwid = String(req.params['hwid']);
-      const result = await adminClient?.deleteUserDevice(req.telegramId!, hwid);
+      const result = await adminClient?.devices.delete(req.telegramId!, hwid);
       res.json(result ?? { ok: true });
     } catch (e: unknown) {
       res.status(400).json({ message: (e as Error).message });

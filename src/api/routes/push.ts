@@ -62,7 +62,7 @@ export function createPushRouter(deps: {
       const { subscription } = parsed.data;
 
       // Proxy to Rezeis_Admin
-      const result = await adminClient.pushSubscribe(userId, subscription);
+      const result = await adminClient.push.subscribe(userId, subscription);
 
       res.json({ success: result.success });
     } catch (e: unknown) {
@@ -115,7 +115,7 @@ export function createPushRouter(deps: {
       // Proxy unsubscribe to Rezeis_Admin — permanently remove subscription.
       // If removal fails, retain existing data and allow reuse if still valid.
       try {
-        const result = await adminClient.pushUnsubscribe(userId, endpoint);
+        const result = await adminClient.push.unsubscribe(userId, endpoint);
         res.json({ success: result.success });
       } catch (unsubErr: unknown) {
         const unsubErrMsg = (unsubErr as Error).message ?? "";

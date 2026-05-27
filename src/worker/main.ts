@@ -60,7 +60,7 @@ async function runExpiryAlerts(): Promise<void> {
   try {
     // Call the internal expiry-alerts endpoint (returns users with expiring subs).
     // Falls back gracefully if the endpoint doesn't exist yet (404 / network error).
-    const alerts = (await adminClient
+    const alerts = (await adminClient.system
       .getExpiryAlerts()
       .catch(() => null)) as Array<{
       telegramId: string;

@@ -40,8 +40,8 @@ export const registerLangPage: PageRegistrar = (bot, deps) => {
     // bot's auto-detect middleware will retry on the next turn if
     // this call fails.
     if (adminClient !== null) {
-      adminClient
-        .updateUserLanguage(String(userId), newLang)
+      adminClient.user
+        .updateLanguage(String(userId), newLang)
         .catch(() => {
           /* swallow */
         });

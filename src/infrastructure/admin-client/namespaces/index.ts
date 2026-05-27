@@ -30,6 +30,8 @@ export type { WebPushSubscriptionPayload } from './push.js';
 export { ReferralsNamespace } from './referrals.js';
 export type { ExchangePointsInput } from './referrals.js';
 export { SubscriptionNamespace } from './subscription.js';
+export { SupportNamespace } from './support.js';
+export type { CreateTicketInput } from './support.js';
 export { SystemNamespace } from './system.js';
 export { TrialNamespace } from './trial.js';
 export { UserNamespace } from './user.js';

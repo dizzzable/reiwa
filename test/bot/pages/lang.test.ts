@@ -21,7 +21,7 @@ function withAdminSpy(): {
 } {
   const calls: string[] = [];
   const failNext = { value: false };
-  const updateUserLanguage = vi.fn(async (telegramId: string, lang: string) => {
+  const updateLanguage = vi.fn(async (telegramId: string, lang: string) => {
     if (failNext.value) {
       failNext.value = false;
       throw new Error('boom');
@@ -29,7 +29,7 @@ function withAdminSpy(): {
     calls.push(`${telegramId}:${lang}`);
   });
   return {
-    adminClient: { updateUserLanguage } as unknown as PageDeps['adminClient'],
+    adminClient: { user: { updateLanguage } } as unknown as PageDeps['adminClient'],
     calls,
     failNext,
   };

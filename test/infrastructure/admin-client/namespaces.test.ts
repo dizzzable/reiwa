@@ -15,7 +15,7 @@ import { AdminClient } from '../../../src/infrastructure/admin-client/index.js';
 describe('AdminClient namespace facade', () => {
   const buildClient = () => new AdminClient('http://upstream.local', 'token-fake');
 
-  it('exposes all 15 namespaces', () => {
+  it('exposes all 17 namespaces', () => {
     const client = buildClient();
     expect(client.system).toBeDefined();
     expect(client.catalog).toBeDefined();
@@ -33,6 +33,7 @@ describe('AdminClient namespace facade', () => {
     expect(client.linking).toBeDefined();
     expect(client.push).toBeDefined();
     expect(client.events).toBeDefined();
+    expect(client.support).toBeDefined();
   });
 
   it('exposes the LinkingNamespace nested telegram + email surfaces', () => {
@@ -43,28 +44,8 @@ describe('AdminClient namespace facade', () => {
     expect(typeof client.linking.email.verify).toBe('function');
   });
 
-  it('preserves the legacy 62-method surface', () => {
+  it('exposes the openStream escape hatch for the SSE proxy', () => {
     const client = buildClient();
-    // Spot-check one method per namespace.
-    expect(typeof client.test).toBe('function');
-    expect(typeof client.bootstrapUser).toBe('function');
-    expect(typeof client.getUserSubscription).toBe('function');
-    expect(typeof client.activateTrial).toBe('function');
-    expect(typeof client.createCheckout).toBe('function');
-    expect(typeof client.getUserDevices).toBe('function');
-    expect(typeof client.getTransactions).toBe('function');
-    expect(typeof client.activatePromocode).toBe('function');
-    expect(typeof client.getReferralSummary).toBe('function');
-    expect(typeof client.getPartnerStatus).toBe('function');
-    expect(typeof client.getBranding).toBe('function');
-    expect(typeof client.webAuthLogin).toBe('function');
-    expect(typeof client.linkTelegramConsume).toBe('function');
-    expect(typeof client.pushSubscribe).toBe('function');
-  });
-
-  it('exposes the request/openStream escape hatches for EventReporter and the SSE proxy', () => {
-    const client = buildClient();
-    expect(typeof client.request).toBe('function');
     expect(typeof client.openStream).toBe('function');
   });
 

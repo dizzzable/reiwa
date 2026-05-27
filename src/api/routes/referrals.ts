@@ -19,7 +19,7 @@ export function createReferralsRouter(deps: {
     "/referrals/summary",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.getReferralSummary(req.telegramId!);
+      const result = await adminClient?.referrals.getSummary(req.telegramId!);
       res.json(result ?? {});
     },
   );
@@ -30,7 +30,7 @@ export function createReferralsRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const invite = await adminClient?.createReferralInvite(req.telegramId!);
+        const invite = await adminClient?.referrals.createInvite(req.telegramId!);
         res.json(invite ?? {});
       } catch (e: unknown) {
         res.status(500).json({ message: (e as Error).message });
@@ -43,7 +43,7 @@ export function createReferralsRouter(deps: {
     "/referrals/invites",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.getReferralInvites(req.telegramId!);
+      const result = await adminClient?.referrals.getInviteCapacity(req.telegramId!);
       res.json(result ?? []);
     },
   );
@@ -54,7 +54,7 @@ export function createReferralsRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.revokeReferralInvite(
+        const result = await adminClient?.referrals.revokeInvite(
           req.telegramId!,
           String(req.params["inviteId"]),
         );
@@ -70,7 +70,7 @@ export function createReferralsRouter(deps: {
     "/referrals/rewards",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.getReferralRewards(req.telegramId!);
+      const result = await adminClient?.referrals.getRewards(req.telegramId!);
       res.json(result ?? { rewards: [] });
     },
   );
@@ -86,7 +86,7 @@ export function createReferralsRouter(deps: {
           res.status(400).json({ message: "points is required" });
           return;
         }
-        const result = await adminClient?.exchangePointsForGiftPromocode(
+        const result = await adminClient?.referrals.exchangePointsForGiftPromocode(
           req.telegramId!,
           { points: Number(points) },
         );

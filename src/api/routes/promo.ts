@@ -28,7 +28,7 @@ export function createPromoRouter(deps: {
           res.status(400).json({ message: "code is required" });
           return;
         }
-        const result = await adminClient?.activatePromocode(
+        const result = await adminClient?.promocodes.activate(
           req.telegramId!,
           String(code),
         );
@@ -45,7 +45,7 @@ export function createPromoRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       const { page = "1", limit = "20" } = req.query as Record<string, string>;
-      const result = await adminClient?.getPromoActivations(
+      const result = await adminClient?.promocodes.getActivations(
         req.telegramId!,
         Number(page),
         Number(limit),
@@ -67,7 +67,7 @@ export function createPromoRouter(deps: {
       // The upstream contract is `?userId=<cuid>&code=<...>`; we forward the
       // resolved user id from the session middleware.
       const userId = (req as AuthRequest & { userId?: string }).userId ?? req.telegramId!;
-      const result = await adminClient?.getEligibleSubscriptions(userId, code);
+      const result = await adminClient?.promocodes.getEligibleSubscriptions(userId, code);
       res.json(result ?? []);
     },
   );

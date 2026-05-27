@@ -17,7 +17,7 @@ export function createProfileRouter(deps: {
   // GET /api/v1/session
   router.get("/session", requireSession, async (req: AuthRequest, res) => {
     try {
-      const session = await adminClient?.getUserSession(req.telegramId!);
+      const session = await adminClient?.user.getSession(req.telegramId!);
       res.json(session ?? req.session);
     } catch {
       res.json(req.session);
@@ -30,7 +30,7 @@ export function createProfileRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.acceptRules(req.telegramId!);
+        const result = await adminClient?.user.acceptRules(req.telegramId!);
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
         res.status(500).json({ message: (e as Error).message });
@@ -41,7 +41,7 @@ export function createProfileRouter(deps: {
   // GET /api/v1/platform-policy
   router.get("/platform-policy", async (_req, res) => {
     try {
-      const policy = await adminClient?.getPlatformPolicy();
+      const policy = await adminClient?.system.getPlatformPolicy();
       res.json(policy ?? {});
     } catch {
       res.json({});
@@ -51,7 +51,7 @@ export function createProfileRouter(deps: {
   // GET /api/v1/me — full profile (same data as /session)
   router.get("/me", requireSession, async (req: AuthRequest, res) => {
     try {
-      const session = await adminClient?.getUserSession(req.telegramId!);
+      const session = await adminClient?.user.getSession(req.telegramId!);
       res.json(session ?? req.session);
     } catch {
       res.json(req.session);
@@ -69,7 +69,7 @@ export function createProfileRouter(deps: {
           res.status(400).json({ message: "newPasswordHash is required" });
           return;
         }
-        const result = await adminClient?.changeWebAccountPassword(
+        const result = await adminClient?.user.changeWebAccountPassword(
           req.telegramId!,
           String(newPasswordHash),
         );
@@ -91,7 +91,7 @@ export function createProfileRouter(deps: {
           res.status(400).json({ message: "email is required" });
           return;
         }
-        await adminClient?.issueEmailVerificationChallenge(
+        await adminClient?.user.issueEmailVerificationChallenge(
           req.telegramId!,
           String(email),
         );
@@ -113,7 +113,7 @@ export function createProfileRouter(deps: {
           res.status(400).json({ message: "code is required" });
           return;
         }
-        const result = await adminClient?.completeEmailVerification(
+        const result = await adminClient?.user.completeEmailVerification(
           req.telegramId!,
           String(code),
         );
@@ -130,7 +130,7 @@ export function createProfileRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.snoozeWebAccountLinkPrompt(
+        const result = await adminClient?.user.snoozeWebAccountLinkPrompt(
           req.telegramId!,
         );
         res.json(result ?? { ok: true });
@@ -143,7 +143,7 @@ export function createProfileRouter(deps: {
   // GET /api/v1/config — public bot/app config
   router.get("/config", async (_req, res) => {
     try {
-      const botConfig = await adminClient?.getPublicConfig();
+      const botConfig = await adminClient?.branding.getPublicConfig();
       res.json(botConfig ?? {});
     } catch {
       res.json({});
@@ -161,7 +161,7 @@ export function createProfileRouter(deps: {
           res.status(400).json({ message: "language is required" });
           return;
         }
-        const result = await adminClient?.updateUserLanguage(
+        const result = await adminClient?.user.updateLanguage(
           req.telegramId!,
           String(language),
         );

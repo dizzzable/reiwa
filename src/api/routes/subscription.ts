@@ -17,7 +17,7 @@ export function createSubscriptionRouter(deps: {
   // GET /api/v1/subscription
   router.get("/subscription", requireSession, async (req: AuthRequest, res) => {
     try {
-      const sub = await adminClient?.getUserSubscription(req.telegramId!);
+      const sub = await adminClient?.subscription.getActive(req.telegramId!);
       res.json(sub ?? null);
     } catch {
       res.json(null);
@@ -31,7 +31,7 @@ export function createSubscriptionRouter(deps: {
     async (req: AuthRequest, res) => {
       try {
         const { planId } = (req.body ?? {}) as Record<string, unknown>;
-        const policy = await adminClient?.getActionPolicy(
+        const policy = await adminClient?.subscription.getActionPolicy(
           req.telegramId!,
           planId !== undefined ? Number(planId) : undefined,
         );
@@ -48,7 +48,7 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.getAllUserSubscriptions(
+        const result = await adminClient?.subscription.getAll(
           req.telegramId!,
         );
         res.json(result ?? { subscriptions: [] });
@@ -64,7 +64,7 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.activateTrial(req.telegramId!);
+        const result = await adminClient?.trial.activate(req.telegramId!);
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
         res.status(400).json({ message: (e as Error).message });
@@ -86,7 +86,7 @@ export function createSubscriptionRouter(deps: {
           });
           return;
         }
-        const quote = await adminClient?.getQuote(
+        const quote = await adminClient?.subscription.getQuote(
           req.telegramId!,
           Number(planId),
           Number(durationDays),

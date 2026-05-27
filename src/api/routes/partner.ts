@@ -16,7 +16,7 @@ export function createPartnerRouter(deps: {
   // GET /api/v1/partner/info
   router.get("/partner/info", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.getPartnerInfo(req.telegramId!);
+      const result = await adminClient?.partner.getInfo(req.telegramId!);
       res.json(result ?? null);
     } catch {
       res.json(null);
@@ -29,7 +29,7 @@ export function createPartnerRouter(deps: {
   // for the vast majority of users without partner activation.
   router.get("/partner/status", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.getPartnerStatus(req.telegramId!);
+      const result = await adminClient?.partner.getStatus(req.telegramId!);
       res.json(result ?? { isActive: false });
     } catch {
       res.json({ isActive: false });
@@ -39,7 +39,7 @@ export function createPartnerRouter(deps: {
   // GET /api/v1/partner/earnings
   router.get("/partner/earnings", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.getPartnerEarnings(req.telegramId!);
+      const result = await adminClient?.partner.getEarnings(req.telegramId!);
       res.json(result ?? { earnings: [] });
     } catch {
       res.json({ earnings: [] });
@@ -49,7 +49,7 @@ export function createPartnerRouter(deps: {
   // GET /api/v1/partner/withdrawals
   router.get("/partner/withdrawals", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.getPartnerWithdrawals(req.telegramId!);
+      const result = await adminClient?.partner.getWithdrawals(req.telegramId!);
       res.json(result ?? { withdrawals: [] });
     } catch {
       res.json({ withdrawals: [] });
@@ -64,7 +64,7 @@ export function createPartnerRouter(deps: {
         res.status(400).json({ message: "amount, method and requisites are required" });
         return;
       }
-      const result = await adminClient?.createWithdrawal(req.telegramId!, {
+      const result = await adminClient?.partner.createWithdrawal(req.telegramId!, {
         amount: Number(amount),
         method: String(method),
         requisites: String(requisites),
@@ -78,7 +78,7 @@ export function createPartnerRouter(deps: {
   // GET /api/v1/subscription/trial/eligibility
   router.get("/subscription/trial/eligibility", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.getTrialEligibility(req.telegramId!);
+      const result = await adminClient?.trial.getEligibility(req.telegramId!);
       res.json(result ?? { eligible: false, reason: "UNKNOWN" });
     } catch {
       res.json({ eligible: false, reason: "ERROR" });
@@ -88,7 +88,7 @@ export function createPartnerRouter(deps: {
   // POST /api/v1/subscription/trial
   router.post("/subscription/trial", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.activateTrial(req.telegramId!);
+      const result = await adminClient?.trial.activate(req.telegramId!);
       res.json(result ?? {});
     } catch (e: unknown) {
       res.status(400).json({ message: (e as Error).message });

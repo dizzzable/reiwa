@@ -76,7 +76,7 @@ export function createBrandingRouter(deps: {
       const etag = computeEtag(body);
       return { body, etag, fetchedAt: Date.now() };
     }
-    const body = await adminClient.getReiwaPublicConfig();
+    const body = await adminClient.branding.getReiwaPublicConfig();
     const etag = computeEtag(body);
     return { body, etag, fetchedAt: Date.now() };
   }
