@@ -105,6 +105,8 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'lang.changed': '✅ Language changed to {{lang}}',
   'lang.ru': '🇷🇺 Russian',
   'lang.en': '🇬🇧 English',
+  'lang.name.ru': 'Russian',
+  'lang.name.en': 'English',
 
   // ── Activity ────────────────────────────────────────────────────────────────
   'activity.header': '📊 Recent transactions:',

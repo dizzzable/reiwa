@@ -72,7 +72,7 @@ describe('registerLangPage', () => {
     expect(ctx.answerCallbackQuery).toHaveBeenCalled();
     expect(userLocale.getSync(99)).toBe('en');
     expect(spy.calls).toEqual(['99:en']);
-    expect(ctx.reply).toHaveBeenCalledWith('en:lang.changed(lang=English)');
+    expect(ctx.reply).toHaveBeenCalledWith('en:lang.changed(lang=en:lang.name.en)');
   });
 
   it('coerces an unsupported locale tag to the RU default', async () => {

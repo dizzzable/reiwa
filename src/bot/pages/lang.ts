@@ -47,7 +47,7 @@ export const registerLangPage: PageRegistrar = (bot, deps) => {
         });
     }
 
-    const langName = newLang === 'ru' ? 'Русский' : 'English';
+    const langName = translator.t(`lang.name.${newLang}`, newLang);
     await ctx.reply(translator.t('lang.changed', newLang, { lang: langName }));
   });
 };
