@@ -21,7 +21,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 
-import { REQUEST_ID_HEADER } from '../../infrastructure/logger/index.js';
+import {
+  REQUEST_ID_HEADER,
+  runWithRequestContext,
+} from '../../infrastructure/logger/index.js';
 
 export function requestIdMiddleware() {
   return function requestIdMw(req: Request, res: Response, next: NextFunction): void {
@@ -33,6 +36,9 @@ export function requestIdMiddleware() {
     (req as Request & { id: string }).id = id;
     res.locals['requestId'] = id;
     res.setHeader(REQUEST_ID_HEADER, id);
-    next();
+    // Run the rest of the middleware chain inside the request context
+    // so AdminClient.transport, downstream awaits, and any spawned
+    // setImmediate/setTimeout callbacks inherit the same id.
+    runWithRequestContext({ requestId: id }, () => next());
   };
 }

@@ -25,6 +25,11 @@
 import { createHash, createHmac } from 'node:crypto';
 import { Pool } from 'undici';
 
+import {
+  REQUEST_ID_HEADER,
+  getCurrentRequestId,
+} from '../logger/index.js';
+
 const DEFAULT_POOL_CONNECTIONS = 50;
 const DEFAULT_HEADERS_TIMEOUT_MS = 10_000;
 const DEFAULT_BODY_TIMEOUT_MS = 30_000;
@@ -74,6 +79,7 @@ export class AdminTransport {
     const fullPath = `${this.basePath}${path}`;
     const upper = method.toUpperCase() as HttpMethod;
     const signingHeaders = this.buildSigningHeaders(upper, path, body);
+    const traceHeaders = this.buildTraceHeaders();
 
     const response = await this.pool.request({
       method: upper,
@@ -81,6 +87,7 @@ export class AdminTransport {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
+        ...traceHeaders,
         ...signingHeaders,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -112,6 +119,7 @@ export class AdminTransport {
   ): Promise<{ status: number; body: NodeJS.ReadableStream } | null> {
     const fullPath = `${this.basePath}${path}`;
     const signingHeaders = this.buildSigningHeaders('GET', path);
+    const traceHeaders = this.buildTraceHeaders();
     const response = await this.pool.request({
       method: 'GET',
       path: fullPath,
@@ -119,6 +127,7 @@ export class AdminTransport {
         Accept: 'text/event-stream',
         'Cache-Control': 'no-cache',
         Authorization: `Bearer ${this.apiKey}`,
+        ...traceHeaders,
         ...signingHeaders,
         ...extraHeaders,
       },
@@ -147,5 +156,18 @@ export class AdminTransport {
       'x-request-timestamp': timestamp,
       'x-request-signature': signature,
     };
+  }
+
+  /**
+   * Forward the active request-id from AsyncLocalStorage onto the
+   * upstream call so admin-side logs join the same trace. When called
+   * outside a request scope (worker tick, bot dispatcher cold start)
+   * the id is omitted; admin's own request-id middleware then
+   * synthesises a fresh one rather than trusting a placeholder.
+   */
+  private buildTraceHeaders(): Record<string, string> {
+    const id = getCurrentRequestId();
+    if (!id) return {};
+    return { [REQUEST_ID_HEADER]: id };
   }
 }

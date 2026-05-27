@@ -6,6 +6,12 @@
  * header name used across the bot ↔ api ↔ admin chain.
  */
 export { createLogger, type CreateLoggerOptions, type LogLevel, type Logger } from './logger.js';
+export {
+  getCurrentRequestId,
+  getRequestContext,
+  runWithRequestContext,
+  type RequestContext,
+} from './request-context.js';
 
 /**
  * Canonical request-id header. Inbound requests with this header
