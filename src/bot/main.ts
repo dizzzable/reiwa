@@ -31,9 +31,12 @@ import {
 } from './widgets/main-keyboard.js';
 import {
   registerHelpCallbackPage,
+  registerHelpCommandPage,
   registerInvitePage,
   registerLangPage,
+  registerPlansPage,
   registerRulesPage,
+  registerSubscriptionPage,
 } from './pages/index.js';
 import {
   detectLocaleFromTelegram,
@@ -253,71 +256,14 @@ async function startBot(): Promise<void> {
   });
 
   // ── /help ──────────────────────────────────────────────────────────────────
-
-  bot.command('help', async (ctx) => {
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-    const { features } = botCfg;
-
-    const lines = [
-      t('help.title', lang),
-      t('help.start', lang),
-      t('help.subscription', lang),
-      t('help.plans', lang),
-    ];
-    if (features.promoCodesEnabled) lines.push(t('help.promo', lang));
-    if (features.referralsEnabled) lines.push(t('help.referral', lang));
-    lines.push(t('help.profile', lang));
-    lines.push(t('help.lang', lang));
-    lines.push(t('help.help', lang));
-
-    await ctx.reply(lines.join('\n'));
-  });
+  // Extracted to bot/pages/help.ts (registered above).
 
   // ── /subscription ──────────────────────────────────────────────────────────
-
-  bot.command('subscription', async (ctx) => {
-    const telegramId = String(ctx.from?.id);
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    try {
-      const sub = adminClient
-        ? ((await adminClient.getUserSubscription(telegramId).catch(() => null)) as any)
-        : null;
-
-      if (!sub) {
-        await ctx.reply(t('subscription.no_active', lang));
-        return;
-      }
-
-      const message = buildSubscriptionCard({ subscription: sub, botEmojis: botCfg.botEmojis });
-      await replyWithEntities(ctx, message);
-    } catch {
-      await ctx.reply(t('subscription.error', lang));
-    }
-  });
+  // Extracted to bot/pages/subscription.ts (registered above; same module
+  // also handles the `subscription` callback).
 
   // ── /plans ─────────────────────────────────────────────────────────────────
-
-  bot.command('plans', async (ctx) => {
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    try {
-      const plans = adminClient ? ((await adminClient.getPublicPlans().catch(() => [])) as any[]) : [];
-
-      if (!plans.length) {
-        await ctx.reply(t('plans.empty', lang));
-        return;
-      }
-
-      const message = buildPlansMessage({ plans, botEmojis: botCfg.botEmojis });
-      await replyWithEntities(ctx, message);
-    } catch {
-      await ctx.reply(t('plans.error', lang));
-    }
-  });
+  // Extracted to bot/pages/plans.ts (registered above).
 
   // ── /promo ─────────────────────────────────────────────────────────────────
 
@@ -428,6 +374,9 @@ async function startBot(): Promise<void> {
   registerInvitePage(bot, pageDeps);
   registerRulesPage(bot, pageDeps);
   registerHelpCallbackPage(bot, pageDeps);
+  registerHelpCommandPage(bot, pageDeps);
+  registerPlansPage(bot, pageDeps);
+  registerSubscriptionPage(bot, pageDeps);
 
   // Back to menu
   bot.callbackQuery('back_to_menu', async (ctx) => {
@@ -474,25 +423,7 @@ async function startBot(): Promise<void> {
     await ctx.reply(t('channel.verified', lang), { reply_markup: keyboard });
   });
 
-  // Subscription
-  bot.callbackQuery('subscription', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const telegramId = String(ctx.from?.id);
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    const sub = adminClient
-      ? ((await adminClient.getUserSubscription(telegramId).catch(() => null)) as any)
-      : null;
-
-    if (!sub) {
-      await ctx.reply(t('subscription.no_active', lang));
-      return;
-    }
-
-    const message = buildSubscriptionCard({ subscription: sub, botEmojis: botCfg.botEmojis });
-    await replyWithEntities(ctx, message);
-  });
+  // Subscription callback — extracted to bot/pages/subscription.ts.
 
   // Buy
   bot.callbackQuery('buy', async (ctx) => {

@@ -7,9 +7,13 @@
  * `bot/main.ts` walks the `pages` array and calls each registrar.
  */
 export { registerHelpCallbackPage } from './help-callback.js';
+export { registerHelpCommandPage } from './help.js';
 export { registerInvitePage } from './invite.js';
 export { registerLangPage } from './lang.js';
+export { registerPlansPage } from './plans.js';
 export { registerRulesPage } from './rules.js';
+export { registerSubscriptionPage } from './subscription.js';
+export { replyWithEntities } from './reply.js';
 export type {
   BotContext,
   BotSession,
