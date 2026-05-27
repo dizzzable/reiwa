@@ -1,17 +1,32 @@
 /**
- * Minimal structured logger contract used by use-cases and adapters.
+ * Application-side logger port.
  *
- * The concrete implementation is `pino` (see `infrastructure/logger`),
- * but use-cases never import pino directly so they remain testable
- * without the logger transport. `bindings` lets callers attach
- * request-id / user-id / use-case-name to nested loggers without
- * polluting the message body.
+ * Use cases and domain-level services depend on this narrow surface;
+ * the concrete implementation (`pino` Logger from
+ * `infrastructure/logger`) implements the same shape so it can be
+ * passed in directly with no adapter.
+ *
+ * Methods take an optional context object and a message string in the
+ * pino convention. Context is attached as structured fields, never
+ * stringified into the message.
  */
 export interface LoggerPort {
-  trace(payload: Record<string, unknown> | string, msg?: string): void;
-  debug(payload: Record<string, unknown> | string, msg?: string): void;
-  info(payload: Record<string, unknown> | string, msg?: string): void;
-  warn(payload: Record<string, unknown> | string, msg?: string): void;
-  error(payload: Record<string, unknown> | string, msg?: string): void;
-  child(bindings: Record<string, unknown>): LoggerPort;
+  fatal(ctx: object, message: string): void;
+  fatal(message: string): void;
+  error(ctx: object, message: string): void;
+  error(message: string): void;
+  warn(ctx: object, message: string): void;
+  warn(message: string): void;
+  info(ctx: object, message: string): void;
+  info(message: string): void;
+  debug(ctx: object, message: string): void;
+  debug(message: string): void;
+  trace(ctx: object, message: string): void;
+  trace(message: string): void;
+  /**
+   * Spawn a child logger with extra context bound. Child logs inherit
+   * the parent's level and are correlated by the parent's bindings —
+   * use this for per-request / per-job loggers.
+   */
+  child(bindings: object): LoggerPort;
 }

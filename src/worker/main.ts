@@ -1,8 +1,14 @@
 import { loadConfig, resolveRezeisAdminUrl } from "../config.js";
 import { AdminClient } from "../lib/admin-client.js";
+import { createLogger } from "../infrastructure/logger/index.js";
 
 const config = loadConfig();
 const rezeisAdminUrl = resolveRezeisAdminUrl(config);
+
+const logger = createLogger({
+  service: "worker",
+  pretty: config.NODE_ENV !== "production",
+});
 
 const adminClient =
   rezeisAdminUrl && config.REZEIS_TOKEN
@@ -35,7 +41,11 @@ async function sendTelegramMessage(
     );
     const data = (await res.json()) as { ok: boolean };
     return data.ok;
-  } catch {
+  } catch (err: unknown) {
+    logger.warn(
+      { err, chatId },
+      "Failed to deliver Telegram message",
+    );
     return false;
   }
 }
@@ -44,6 +54,8 @@ async function sendTelegramMessage(
 
 async function runExpiryAlerts(): Promise<void> {
   if (!adminClient) return;
+
+  const jobLog = logger.child({ job: "expiry-alerts" });
 
   try {
     // Call the internal expiry-alerts endpoint (returns users with expiring subs).
@@ -59,7 +71,7 @@ async function runExpiryAlerts(): Promise<void> {
 
     if (!alerts || !alerts.length) return;
 
-    console.log(`[worker] Sending ${alerts.length} expiry alert(s)`);
+    jobLog.info({ count: alerts.length }, "Sending expiry alerts");
 
     for (const alert of alerts) {
       const { telegramId, daysLeft, planName } = alert;
@@ -79,22 +91,20 @@ async function runExpiryAlerts(): Promise<void> {
       await new Promise((r) => setTimeout(r, 50));
     }
   } catch (err: unknown) {
-    console.error("[worker] Expiry alerts error:", (err as Error).message);
+    jobLog.error({ err }, "Expiry alerts run failed");
   }
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function runWorker(): Promise<void> {
-  console.log("[reiwa-worker] Starting...");
+  logger.info("reiwa-worker starting");
 
   if (!adminClient) {
-    console.warn(
-      "[reiwa-worker] Admin client not configured — worker in degraded mode",
-    );
+    logger.warn("Admin client not configured — worker in degraded mode");
   }
   if (!BOT_TOKEN) {
-    console.warn("[reiwa-worker] BOT_TOKEN not set — Telegram pushes disabled");
+    logger.warn("BOT_TOKEN not set — Telegram pushes disabled");
   }
 
   // Run immediately on startup, then on schedule
@@ -103,17 +113,20 @@ async function runWorker(): Promise<void> {
   // Run expiry alerts every hour
   setInterval(runExpiryAlerts, 60 * 60 * 1_000);
 
-  console.log("[reiwa-worker] Running. Expiry alerts: every 1h");
+  logger.info({ schedule: "1h" }, "reiwa-worker running expiry alerts");
 
-  // Keep process alive and handle graceful shutdown
-  process.on("SIGTERM", () => {
-    console.log("[reiwa-worker] Shutting down (SIGTERM)");
+  const shutdown = (signal: string): void => {
+    logger.info({ signal }, "reiwa-worker shutting down");
+    if (adminClient) {
+      void adminClient.close().catch(() => undefined);
+    }
     process.exit(0);
-  });
-  process.on("SIGINT", () => {
-    console.log("[reiwa-worker] Shutting down (SIGINT)");
-    process.exit(0);
-  });
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-runWorker().catch(console.error);
+runWorker().catch((err: unknown) => {
+  logger.fatal({ err }, "reiwa-worker failed to start");
+  process.exit(1);
+});
