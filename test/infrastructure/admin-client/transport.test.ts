@@ -251,3 +251,87 @@ describe('AdminTransport — request-id propagation (Wave 4B)', () => {
     expect(h.captured[0].headers['x-request-id']).toBe('trace-abc-123');
   });
 });
+
+describe('AdminTransport — openStream', () => {
+  let h: Harness;
+  let transport: AdminTransport;
+
+  beforeEach(async () => {
+    h = await startTestServer();
+    transport = new AdminTransport({ baseUrl: h.baseUrl, apiKey: 'k' });
+  });
+
+  afterEach(async () => {
+    await transport.close();
+    await h.close();
+  });
+
+  it('returns the streaming body on a 2xx upstream', async () => {
+    h.respond = (_req, res) => {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.write('event: ping\ndata: 1\n\n');
+      // Keep the connection open briefly, then close from the server side.
+      setTimeout(() => res.end(), 30);
+    };
+    const result = await transport.openStream('/api/internal/user/abc/stream');
+    expect(result).not.toBeNull();
+    expect(result?.status).toBe(200);
+    // Drain the body so the test fixture closes cleanly.
+    const chunks: Buffer[] = [];
+    for await (const chunk of result!.body as AsyncIterable<Buffer>) {
+      chunks.push(Buffer.from(chunk));
+    }
+    expect(Buffer.concat(chunks).toString()).toContain('event: ping');
+  });
+
+  it('returns null on a 4xx upstream (and drains the body so the socket is freed)', async () => {
+    h.respond = (_req, res) => {
+      res.statusCode = 401;
+      res.end('not authorised');
+    };
+    const result = await transport.openStream('/api/internal/user/x/stream');
+    expect(result).toBeNull();
+  });
+
+  it('returns null on a 5xx upstream', async () => {
+    h.respond = (_req, res) => {
+      res.statusCode = 503;
+      res.end('upstream down');
+    };
+    const result = await transport.openStream('/api/internal/user/x/stream');
+    expect(result).toBeNull();
+  });
+
+  it('forwards x-request-id from the active request scope', async () => {
+    h.respond = (_req, res) => {
+      res.statusCode = 200;
+      res.end();
+    };
+    await runWithRequestContext({ requestId: 'sse-trace-1' }, async () => {
+      await transport.openStream('/api/internal/user/x/stream');
+    });
+    expect(h.captured[0].headers['x-request-id']).toBe('sse-trace-1');
+  });
+
+  it('merges extraHeaders without dropping signing or trace headers', async () => {
+    const t = new AdminTransport({
+      baseUrl: h.baseUrl,
+      apiKey: 'k',
+      sharedSecret: 'shared',
+    });
+    h.respond = (_req, res) => {
+      res.statusCode = 200;
+      res.end();
+    };
+    await runWithRequestContext({ requestId: 'mixed-1' }, async () => {
+      await t.openStream('/x', { 'x-custom': 'extra-value' });
+    });
+    const headers = h.captured[0].headers;
+    expect(headers['x-custom']).toBe('extra-value');
+    expect(headers['x-request-signature']).toBeDefined();
+    expect(headers['x-request-id']).toBe('mixed-1');
+    expect(headers['accept']).toBe('text/event-stream');
+    await t.close();
+  });
+});
