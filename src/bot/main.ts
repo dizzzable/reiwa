@@ -18,7 +18,6 @@ import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../con
 import { AdminClient } from '../lib/admin-client.js';
 import type { BotConfig } from '../infrastructure/bot-config/types.js';
 import { BotConfigCache, DEFAULT_BOT_CONFIG } from '../infrastructure/bot-config/cache.js';
-import { translator } from '../infrastructure/i18n/index.js';
 import { isTelegramSafeButtonUrl } from './widgets/main-keyboard.js';
 import {
   registerActivityPage,
@@ -38,11 +37,9 @@ import {
 } from './pages/index.js';
 import {
   detectLocaleFromTelegram,
-  getUserLang,
-  setTranslations,
-  setUserLang,
-  userLangCacheHas,
-} from './i18n.js';
+  translator,
+  userLocaleCache,
+} from '../infrastructure/i18n/index.js';
 
 const config = loadConfig();
 const reiwaPublicUrl = resolveReiwaPublicUrl(config);
@@ -74,7 +71,7 @@ async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig>
   // calls this through a primed cache.
   botConfigCache = new BotConfigCache({
     fetcher: () => adminClient.getBotConfig(),
-    hydrator: { setOverrides: (m) => setTranslations(m as Record<string, unknown>) },
+    hydrator: translator,
     fallback: DEFAULT_BOT_CONFIG,
   });
   return botConfigCache.get();
@@ -123,9 +120,9 @@ async function startBot(): Promise<void> {
   //     always wins over the device language.
   bot.use(async (ctx, next) => {
     const tgUser = ctx.from;
-    if (tgUser !== undefined && !userLangCacheHas(tgUser.id)) {
+    if (tgUser !== undefined && !userLocaleCache.hasSync(tgUser.id)) {
       const detected = detectLocaleFromTelegram(tgUser.language_code);
-      setUserLang(tgUser.id, detected);
+      userLocaleCache.setSync(tgUser.id, detected);
       if (adminClient !== null) {
         adminClient
           .updateUserLanguage(String(tgUser.id), detected.toUpperCase())
@@ -162,9 +159,9 @@ async function startBot(): Promise<void> {
     adminClient,
     translator,
     userLocale: {
-      getSync: (id: number) => getUserLang(id),
-      setSync: (id: number, lang: string) => setUserLang(id, lang),
-      hasSync: (id: number) => userLangCacheHas(id),
+      getSync: (id: number) => userLocaleCache.getSync(id),
+      setSync: (id: number, lang: string) => userLocaleCache.setSync(id, lang),
+      hasSync: (id: number) => userLocaleCache.hasSync(id),
     },
     getConfig: () => getBotConfig(adminClient),
     urls: { publicWebUrl: reiwaUrlButtonUrl, miniAppUrl: reiwaWebAppUrl },
