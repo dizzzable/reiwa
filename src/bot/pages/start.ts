@@ -59,11 +59,15 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       } catch (err: unknown) {
         // Bootstrap failures are non-fatal — render the welcome reply
         // anyway so the user is not stuck with an unresponsive bot.
-        // eslint-disable-next-line no-console
-        console.error(
-          '[bot/start] bootstrap error:',
-          err instanceof Error ? err.message : String(err),
-        );
+        if (deps.logger !== undefined) {
+          deps.logger.warn({ err, telegramId: tgUser.id }, 'bot/start bootstrap error');
+        } else {
+          // eslint-disable-next-line no-console
+          console.error(
+            '[bot/start] bootstrap error:',
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
     }
 
@@ -140,11 +144,18 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       try {
         await ctx.replyWithPhoto(botCfg.visual.bannerUrl);
       } catch (err: unknown) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          '[bot/start] banner send failed:',
-          err instanceof Error ? err.message : String(err),
-        );
+        if (deps.logger !== undefined) {
+          deps.logger.warn(
+            { err, bannerUrl: botCfg.visual.bannerUrl },
+            'bot/start banner send failed',
+          );
+        } else {
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[bot/start] banner send failed:',
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
     }
 

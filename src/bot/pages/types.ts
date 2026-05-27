@@ -15,6 +15,8 @@
  *   - `userLocale`  — sync helper bag for the per-user locale cache
  *   - `getConfig`   — bound BotConfigCache.get
  *   - `urls`        — pre-computed Telegram-safe URLs
+ *   - `logger`      — LoggerPort for structured records (best-effort:
+ *                     pages that don't need it ignore the field)
  *
  * Pages do NOT receive the raw `BotConfigCache`; they ask through the
  * `getConfig` callback so swapping the cache for a richer source
@@ -23,6 +25,7 @@
 import type { Bot, Context, SessionFlavor } from 'grammy';
 
 import type { AdminClient } from '../../infrastructure/admin-client/index.js';
+import type { LoggerPort } from '../../application/ports/logger.port.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
 import type { BotConfig } from '../../infrastructure/bot-config/types.js';
 
@@ -51,6 +54,13 @@ export interface PageDeps {
   readonly userLocale: UserLocaleSyncCache;
   readonly getConfig: () => Promise<BotConfig>;
   readonly urls: BotUrls;
+  /**
+   * Optional structured logger. When omitted (tests, supervised
+   * scripts) pages that need to log fall back to console.* — the
+   * legacy contract. Production main.ts always supplies a child
+   * logger bound to `service: 'bot'`.
+   */
+  readonly logger?: LoggerPort;
 }
 
 export type PageRegistrar = (bot: Bot<BotContext>, deps: PageDeps) => void;

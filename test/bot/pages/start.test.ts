@@ -200,4 +200,49 @@ describe('registerStartPage', () => {
     // Welcome reply still happens.
     expect(ctx.reply).toHaveBeenCalled();
   });
+
+  it('routes bootstrap + banner failures through deps.logger when supplied', async () => {
+    const adminClient = buildAdmin({
+      bootstrap: () => {
+        throw new Error('bootstrap-down');
+      },
+    });
+    const warn = vi.fn();
+    const logger = {
+      fatal: vi.fn(),
+      error: vi.fn(),
+      warn,
+      info: vi.fn(),
+      debug: vi.fn(),
+      trace: vi.fn(),
+      child: vi.fn(),
+    };
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        visual: {
+          ...DEFAULT_BOT_CONFIG.visual,
+          bannerUrl: 'https://cdn.example/banner.png',
+        },
+      },
+    });
+    const depsWithLogger: PageDeps = {
+      ...deps,
+      logger: logger as unknown as PageDeps['logger'],
+    };
+    registerStartPage(
+      bot as unknown as Parameters<typeof registerStartPage>[0],
+      depsWithLogger,
+    );
+    const ctx = buildStartCtx();
+    ctx.replyWithPhoto = vi.fn().mockRejectedValue(new Error('image broken'));
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    // Two warnings: bootstrap + banner.
+    expect(warn.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const messages = warn.mock.calls.map((c) => c[1] as string);
+    expect(messages).toContain('bot/start bootstrap error');
+    expect(messages).toContain('bot/start banner send failed');
+  });
 });

@@ -40,6 +40,7 @@ import {
   translator,
   userLocaleCache,
 } from '../infrastructure/i18n/index.js';
+import { createLogger } from '../infrastructure/logger/index.js';
 
 const config = loadConfig();
 const reiwaPublicUrl = resolveReiwaPublicUrl(config);
@@ -86,6 +87,13 @@ async function startBot(): Promise<void> {
     return;
   }
 
+  // Root logger for this process. Pages receive a child bound to the
+  // page tag so log lines are easy to filter downstream.
+  const logger = createLogger({
+    service: 'bot',
+    pretty: config.NODE_ENV !== 'production',
+  });
+
   const rezeisAdminUrl = resolveRezeisAdminUrl(config);
   const adminClient =
     rezeisAdminUrl && config.REZEIS_TOKEN
@@ -98,11 +106,12 @@ async function startBot(): Promise<void> {
 
   // Pre-warm the config cache
   const botConfig = await getBotConfig(adminClient);
-  console.log(
-    '[reiwa-bot] Bot config loaded. Emoji keys:',
-    Object.keys(botConfig.botEmojis ?? {}).length,
-    '| Buttons:',
-    botConfig.buttons.filter((b) => b.visible).length,
+  logger.info(
+    {
+      emojiKeys: Object.keys(botConfig.botEmojis ?? {}).length,
+      visibleButtons: botConfig.buttons.filter((b) => b.visible).length,
+    },
+    'Bot config loaded',
   );
 
   const bot = new Bot<BotContext>(config.BOT_TOKEN);
@@ -165,6 +174,7 @@ async function startBot(): Promise<void> {
     },
     getConfig: () => getBotConfig(adminClient),
     urls: { publicWebUrl: reiwaUrlButtonUrl, miniAppUrl: reiwaWebAppUrl },
+    logger,
   };
   registerLangPage(bot, pageDeps);
   registerInvitePage(bot, pageDeps);
@@ -188,7 +198,7 @@ async function startBot(): Promise<void> {
   // ── Error handler ──────────────────────────────────────────────────────────
 
   bot.catch((err) => {
-    console.error('[bot error]', err.message, err.error);
+    logger.error({ err: err.error, ctx: { update: err.message } }, 'Bot handler error');
   });
 
   // ── Config refresh timer ───────────────────────────────────────────────────
@@ -200,15 +210,22 @@ async function startBot(): Promise<void> {
   const CONFIG_REFRESH_MS = 5 * 60 * 1000;
   setInterval(() => {
     getBotConfig(adminClient).catch((err: unknown) => {
-      console.error('[bot] background bot-config refresh failed:', err);
+      logger.warn({ err }, 'Background bot-config refresh failed');
     });
   }, CONFIG_REFRESH_MS);
 
   // ── Start ──────────────────────────────────────────────────────────────────
 
   bot.start({
-    onStart: (info) => console.log(`[reiwa-bot] Started as @${info.username}`),
+    onStart: (info) => logger.info({ username: info.username }, 'reiwa-bot started'),
   });
 }
 
-startBot().catch(console.error);
+startBot().catch((err: unknown) => {
+  // No logger yet (the failure happened during bootstrap before
+  // createLogger ran); fall back to console.error so the operator sees
+  // *something* instead of a silent crash.
+  // eslint-disable-next-line no-console
+  console.error('[reiwa-bot] startup failed:', err);
+  process.exit(1);
+});
