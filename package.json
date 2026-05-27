@@ -13,10 +13,14 @@
     "build": "tsc -p tsconfig.json",
     "build:watch": "tsc -p tsconfig.json --watch",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "node --import tsx --test test/**/*.test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:pbt": "node --import tsx --test test/**/*.property.test.ts"
   },
   "dependencies": {
+    "@grammyjs/conversations": "2.1.1",
+    "@grammyjs/menu": "1.3.1",
+    "@grammyjs/storage-redis": "2.5.1",
     "cookie-parser": "1.4.7",
     "cors": "2.8.6",
     "dayjs": "1.11.20",
@@ -25,6 +29,8 @@
     "grammy": "1.42.0",
     "helmet": "8.1.0",
     "ioredis": "5.10.1",
+    "pino": "10.3.1",
+    "pino-http": "11.0.0",
     "undici": "8.2.0",
     "uuid": "14.0.0",
     "zod": "4.4.3"
@@ -37,6 +43,7 @@
     "@types/uuid": "11.0.0",
     "fast-check": "4.8.0",
     "tsx": "4.22.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "4.1.7"
   }
 }

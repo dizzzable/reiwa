@@ -1,0 +1,140 @@
+/**
+ * Built-in English translation pack.
+ *
+ * Sparse keys fall back to `RU_PACK` (the source-of-truth baseline) at
+ * lookup time. Operator overrides ingested via `LocalePackHydrator` win
+ * over both built-in packs.
+ */
+export const EN_PACK: Readonly<Record<string, string>> = {
+  // ── General ─────────────────────────────────────────────────────────────────
+  back_to_menu: '◀️ Back to menu',
+  back: '◀️ Back',
+  cancel: 'Cancel',
+  error_generic: 'Error',
+  unknown_error: 'Unknown error',
+
+  // ── Menu ────────────────────────────────────────────────────────────────────
+  'menu.choose_action': 'Choose an action:',
+  'menu.btn_subscription': '📦 My subscriptions',
+  'menu.btn_buy': '💳 Buy subscription',
+  'menu.btn_promo': '🎁 Promo code',
+  'menu.btn_referrals': '👥 Referrals',
+  'menu.btn_activity': '📊 Activity',
+  'menu.btn_profile': '👤 Profile',
+  'menu.btn_devices': '📱 Devices',
+  'menu.btn_vpn': '🌐 Connect to VPN',
+  'menu.btn_support': '🆘 Support',
+  'menu.btn_miniapp': '📱 Open app',
+  'menu.btn_lang': '🌐 Language',
+
+  // ── Pre-registration funnel ─────────────────────────────────────────────────
+  'start.open_app': '📱 Open app',
+  'start.need_register': 'To use the service, open the app and create an account.',
+
+  // ── Invite / Rules / Help ───────────────────────────────────────────────────
+  'invite.share': 'Share this link with your friends:\n{{link}}',
+  'rules.intro': 'Service rules:',
+  'rules.open_button': '📜 Open rules',
+  'rules.unavailable': 'Rules have not been configured by the operator yet.',
+  'help.contact_support': 'Contact support: @{{username}}',
+
+  // ── Commands ────────────────────────────────────────────────────────────────
+  'help.title': '🔍 Available commands:\n',
+  'help.start': '/start — Main menu',
+  'help.subscription': '/subscription — Current subscription',
+  'help.plans': '/plans — Available plans',
+  'help.promo': '/promo — Activate promo code',
+  'help.referral': '/referral — Referral link',
+  'help.profile': '/profile — Profile',
+  'help.lang': '/lang — Change language',
+  'help.help': '/help — This help',
+
+  // ── Subscription ────────────────────────────────────────────────────────────
+  'subscription.no_active': '📦 You have no active subscription.\n\nUse /plans to view available plans.',
+  'subscription.error': 'Failed to get subscription data. Try again later.',
+  'subscription.header': 'Subscription',
+  'subscription.status': 'Status: {{status}}',
+  'subscription.plan': '📋 Plan: {{name}}',
+  'subscription.trial': 'Trial period',
+  'subscription.expires': '📅 Expires: {{date}}',
+  'subscription.traffic': 'Traffic: {{value}}',
+  'subscription.devices': 'Devices: {{value}}',
+  'subscription.traffic_unlimited': 'Unlimited',
+  'subscription.devices_unlimited': 'Unlimited',
+
+  // ── Plans ───────────────────────────────────────────────────────────────────
+  'plans.header': 'Available plans',
+  'plans.empty': 'No plans available.',
+  'plans.error': 'Failed to load plans. Try again later.',
+  'plans.traffic': 'Traffic: {{value}}',
+  'plans.devices': 'Devices: {{value}}',
+  'plans.duration_price': '{{days}} days — {{price}} {{currency}}',
+  'plans.open_app': 'Choose a plan in the app:',
+  'plans.open_app_button': '📱 Open plans',
+  'plans.use_command': 'Use /plans to view plans.',
+
+  // ── Promo ───────────────────────────────────────────────────────────────────
+  'promo.disabled': 'Promo codes are temporarily unavailable.',
+  'promo.enter': '🎁 Enter promo code:',
+  'promo.activated': '✅ Promo code activated!',
+  'promo.failed': '❌ Failed to activate promo code "{{code}}".',
+  'promo.error': '❌ Error: {{message}}',
+
+  // ── Referral ────────────────────────────────────────────────────────────────
+  'referral.disabled': 'Referral program is unavailable.',
+  'referral.header': 'Referral Program',
+  'referral.invited': 'Invited: {{count}}',
+  'referral.qualified': 'Qualified: {{count}}',
+  'referral.link_label': '🔗 Your referral link:',
+  'referral.link_unavailable': 'Link temporarily unavailable',
+  'referral.error': 'Failed to load referral data.',
+
+  // ── Profile ─────────────────────────────────────────────────────────────────
+  'profile.header': 'Profile',
+  'profile.name': '👤 Name: {{name}}',
+  'profile.username': '📎 Username: @{{username}}',
+  'profile.language': '🌐 Language: {{lang}}',
+  'profile.points': '⭐ Points: {{points}}',
+  'profile.discount': '💰 Discount: {{discount}}%',
+  'profile.referral_code': '🔗 Referral code: {{code}}',
+  'profile.has_subscription': '📦 Subscription: active',
+  'profile.no_subscription': '📦 Subscription: none',
+
+  // ── Language ────────────────────────────────────────────────────────────────
+  'lang.choose': '🌐 Choose language:',
+  'lang.changed': '✅ Language changed to {{lang}}',
+  'lang.ru': '🇷🇺 Russian',
+  'lang.en': '🇬🇧 English',
+
+  // ── Activity ────────────────────────────────────────────────────────────────
+  'activity.header': '📊 Recent transactions:',
+  'activity.empty': '📊 No transactions yet.',
+  'activity.error': 'Failed to load activity.',
+
+  // ── Devices ─────────────────────────────────────────────────────────────────
+  'devices.header': '📱 Devices',
+  'devices.empty': '📱 Devices\n\nNo linked devices yet. Connect to VPN — the device will appear here.',
+  'devices.error': 'Failed to load devices.',
+
+  // ── VPN ─────────────────────────────────────────────────────────────────────
+  'vpn.no_subscription': 'VPN link is unavailable. Get a subscription.',
+  'vpn.connect_title': 'Connect to VPN',
+  'vpn.connect_hint': 'Click the button below — the connection page will open.',
+  'vpn.btn_open_page': '📲 Open connection page',
+
+  // ── Support ─────────────────────────────────────────────────────────────────
+  'support.not_configured': 'Support section is not configured.',
+  'support.title': '🆘 Support',
+
+  // ── Days pluralization ──────────────────────────────────────────────────────
+  'day.one': 'day',
+  'day.few': 'days',
+  'day.many': 'days',
+
+  // ── Channel subscription ────────────────────────────────────────────────────
+  'subscribe.channel_button': '📢 Subscribe to channel',
+  'subscribe.check_button': '✅ I subscribed',
+  'subscribe.default_message': 'To use the bot, subscribe to our channel:',
+  'subscribe.not_subscribed': '❌ You haven\'t subscribed to the channel yet',
+  'subscribe.confirmed': '✅ Subscription confirmed!',
+};

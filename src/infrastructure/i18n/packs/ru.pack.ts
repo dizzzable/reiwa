@@ -1,0 +1,142 @@
+/**
+ * Hard-coded Russian baseline pack.
+ *
+ * RU is the source-of-truth locale: every translation key is guaranteed
+ * to resolve in Russian even with no admin-managed overrides loaded.
+ * Other locales (see `en.pack.ts`) are derived translations and may be
+ * sparse — `t()` falls back here when a key is missing in the requested
+ * pack.
+ */
+export const RU_PACK: Readonly<Record<string, string>> = {
+  // ── General ─────────────────────────────────────────────────────────────────
+  back_to_menu: '◀️ В меню',
+  back: '◀️ Назад',
+  cancel: 'Отмена',
+  error_generic: 'Ошибка',
+  unknown_error: 'Неизвестная ошибка',
+
+  // ── Menu ────────────────────────────────────────────────────────────────────
+  'menu.choose_action': 'Выберите действие:',
+  'menu.btn_subscription': '📦 Мои подписки',
+  'menu.btn_buy': '💳 Купить подписку',
+  'menu.btn_promo': '🎁 Промокод',
+  'menu.btn_referrals': '👥 Рефералы',
+  'menu.btn_activity': '📊 Активность',
+  'menu.btn_profile': '👤 Профиль',
+  'menu.btn_devices': '📱 Устройства',
+  'menu.btn_vpn': '🌐 Подключиться к VPN',
+  'menu.btn_support': '🆘 Поддержка',
+  'menu.btn_miniapp': '📱 Открыть приложение',
+  'menu.btn_lang': '🌐 Язык',
+
+  // ── Pre-registration funnel ─────────────────────────────────────────────────
+  'start.open_app': '📱 Открыть приложение',
+  'start.need_register': 'Для использования сервиса откройте приложение и создайте аккаунт.',
+
+  // ── Invite / Rules / Help ───────────────────────────────────────────────────
+  'invite.share': 'Поделитесь ссылкой с друзьями:\n{{link}}',
+  'rules.intro': 'Ознакомьтесь с правилами сервиса:',
+  'rules.open_button': '📜 Открыть правила',
+  'rules.unavailable': 'Правила пока не настроены оператором.',
+  'help.contact_support': 'Связаться с поддержкой: @{{username}}',
+
+  // ── Commands ────────────────────────────────────────────────────────────────
+  'help.title': '🔍 Доступные команды:\n',
+  'help.start': '/start — Главное меню',
+  'help.subscription': '/subscription — Текущая подписка',
+  'help.plans': '/plans — Доступные тарифы',
+  'help.promo': '/promo — Активировать промокод',
+  'help.referral': '/referral — Реферальная ссылка',
+  'help.profile': '/profile — Профиль',
+  'help.lang': '/lang — Сменить язык',
+  'help.help': '/help — Эта справка',
+
+  // ── Subscription ────────────────────────────────────────────────────────────
+  'subscription.no_active': '📦 У вас нет активной подписки.\n\nИспользуйте /plans для просмотра тарифов.',
+  'subscription.error': 'Не удалось получить данные подписки. Попробуйте позже.',
+  'subscription.header': 'Подписка',
+  'subscription.status': 'Статус: {{status}}',
+  'subscription.plan': '📋 Тариф: {{name}}',
+  'subscription.trial': 'Пробный период',
+  'subscription.expires': '📅 Истекает: {{date}}',
+  'subscription.traffic': 'Трафик: {{value}}',
+  'subscription.devices': 'Устройства: {{value}}',
+  'subscription.traffic_unlimited': 'Безлимит',
+  'subscription.devices_unlimited': 'Безлимит',
+
+  // ── Plans ───────────────────────────────────────────────────────────────────
+  'plans.header': 'Доступные тарифы',
+  'plans.empty': 'Нет доступных тарифов.',
+  'plans.error': 'Не удалось загрузить тарифы. Попробуйте позже.',
+  'plans.traffic': 'Трафик: {{value}}',
+  'plans.devices': 'Устройств: {{value}}',
+  'plans.duration_price': '{{days}} дн. — {{price}} {{currency}}',
+  'plans.open_app': 'Выберите тариф в приложении:',
+  'plans.open_app_button': '📱 Открыть тарифы',
+  'plans.use_command': 'Используйте /plans для просмотра тарифов.',
+
+  // ── Promo ───────────────────────────────────────────────────────────────────
+  'promo.disabled': 'Промокоды временно недоступны.',
+  'promo.enter': '🎁 Введите промокод:',
+  'promo.activated': '✅ Промокод активирован!',
+  'promo.failed': '❌ Не удалось активировать промокод «{{code}}».',
+  'promo.error': '❌ Ошибка: {{message}}',
+
+  // ── Referral ────────────────────────────────────────────────────────────────
+  'referral.disabled': 'Реферальная программа недоступна.',
+  'referral.header': 'Реферальная программа',
+  'referral.invited': 'Приглашено: {{count}}',
+  'referral.qualified': 'Квалифицировано: {{count}}',
+  'referral.link_label': '🔗 Ваша реферальная ссылка:',
+  'referral.link_unavailable': 'Ссылка временно недоступна',
+  'referral.error': 'Не удалось загрузить реферальные данные.',
+
+  // ── Profile ─────────────────────────────────────────────────────────────────
+  'profile.header': 'Профиль',
+  'profile.name': '👤 Имя: {{name}}',
+  'profile.username': '📎 Username: @{{username}}',
+  'profile.language': '🌐 Язык: {{lang}}',
+  'profile.points': '⭐ Баллы: {{points}}',
+  'profile.discount': '💰 Скидка: {{discount}}%',
+  'profile.referral_code': '🔗 Реферальный код: {{code}}',
+  'profile.has_subscription': '📦 Подписка: активна',
+  'profile.no_subscription': '📦 Подписка: нет',
+
+  // ── Language ────────────────────────────────────────────────────────────────
+  'lang.choose': '🌐 Выберите язык:',
+  'lang.changed': '✅ Язык изменён на {{lang}}',
+  'lang.ru': '🇷🇺 Русский',
+  'lang.en': '🇬🇧 English',
+
+  // ── Activity ────────────────────────────────────────────────────────────────
+  'activity.header': '📊 Последние транзакции:',
+  'activity.empty': '📊 Транзакций пока нет.',
+  'activity.error': 'Ошибка загрузки активности.',
+
+  // ── Devices ─────────────────────────────────────────────────────────────────
+  'devices.header': '📱 Устройства',
+  'devices.empty': '📱 Устройства\n\nПривязанных устройств пока нет. Подключитесь к VPN — устройство появится здесь.',
+  'devices.error': 'Не удалось загрузить устройства.',
+
+  // ── VPN ─────────────────────────────────────────────────────────────────────
+  'vpn.no_subscription': 'Ссылка на VPN недоступна. Оформите подписку.',
+  'vpn.connect_title': 'Подключиться к VPN',
+  'vpn.connect_hint': 'Нажмите кнопку ниже — откроется страница подключения.',
+  'vpn.btn_open_page': '📲 Открыть страницу подключения',
+
+  // ── Support ─────────────────────────────────────────────────────────────────
+  'support.not_configured': 'Раздел поддержки не настроен.',
+  'support.title': '🆘 Поддержка',
+
+  // ── Days pluralization ──────────────────────────────────────────────────────
+  'day.one': 'день',
+  'day.few': 'дня',
+  'day.many': 'дней',
+
+  // ── Channel subscription ────────────────────────────────────────────────────
+  'subscribe.channel_button': '📢 Подписаться на канал',
+  'subscribe.check_button': '✅ Я подписался',
+  'subscribe.default_message': 'Для использования бота подпишитесь на наш канал:',
+  'subscribe.not_subscribed': '❌ Вы ещё не подписались на канал',
+  'subscribe.confirmed': '✅ Подписка подтверждена!',
+};
