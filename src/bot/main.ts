@@ -127,27 +127,8 @@ async function startBot(): Promise<void> {
     }),
   );
 
-  // ── /start (extracted to bot/pages/start.ts; registered above) ────────────
-
-  // ── /help ──────────────────────────────────────────────────────────────────
-  // Extracted to bot/pages/help.ts (registered above).
-
-  // ── /subscription ──────────────────────────────────────────────────────────
-  // Extracted to bot/pages/subscription.ts (registered above; same module
-  // also handles the `subscription` callback).
-
-  // ── /plans ─────────────────────────────────────────────────────────────────
-  // Extracted to bot/pages/plans.ts (registered above).
-
-  // ── /promo ─────────────────────────────────────────────────────────────────
-
-  // ── /promo (extracted to bot/pages/promo.ts) ──────────────────────────────
-  // ── /referral (extracted to bot/pages/referral.ts) ─────────────────────────
-  // ── /profile (extracted to bot/pages/profile.ts) ───────────────────────────
-
-  // ── /lang and language callback (extracted to bot/pages/lang.ts) ──────────
-  // ── invite/rules/help callbacks (extracted to bot/pages/) ────────────────
-
+  // All command + callback handlers live in bot/pages/. Composition
+  // root just walks the registrar list.
   const pageDeps = {
     adminClient,
     translator,
@@ -174,10 +155,6 @@ async function startBot(): Promise<void> {
   registerBuyPage(bot, pageDeps);
   registerMenuPage(bot, pageDeps);
   registerStartPage(bot, pageDeps);
-
-  // ── back_to_menu / check_channel callbacks (extracted to pages/menu.ts) ───
-  // ── buy / promo / referrals / profile / activity callbacks (extracted) ────
-  // ── message:text promo-code entry (extracted to pages/promo.ts) ───────────
 
   // ── Error handler ──────────────────────────────────────────────────────────
 
