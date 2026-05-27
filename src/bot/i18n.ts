@@ -28,6 +28,17 @@ export const RU: Record<string, string> = {
   'menu.btn_miniapp': '📱 Открыть приложение',
   'menu.btn_lang': '🌐 Язык',
 
+  // ── Pre-registration funnel ─────────────────────────────────────────────────
+  'start.open_app': '📱 Открыть приложение',
+  'start.need_register': 'Для использования сервиса откройте приложение и создайте аккаунт.',
+
+  // ── Invite / Rules / Help ───────────────────────────────────────────────────
+  'invite.share': 'Поделитесь ссылкой с друзьями:\n{{link}}',
+  'rules.intro': 'Ознакомьтесь с правилами сервиса:',
+  'rules.open_button': '📜 Открыть правила',
+  'rules.unavailable': 'Правила пока не настроены оператором.',
+  'help.contact_support': 'Связаться с поддержкой: @{{username}}',
+
   // ── Commands ────────────────────────────────────────────────────────────────
   'help.title': '🔍 Доступные команды:\n',
   'help.start': '/start — Главное меню',
@@ -151,6 +162,17 @@ const EN: Record<string, string> = {
   'menu.btn_miniapp': '📱 Open app',
   'menu.btn_lang': '🌐 Language',
 
+  // ── Pre-registration funnel ─────────────────────────────────────────────────
+  'start.open_app': '📱 Open app',
+  'start.need_register': 'To use the service, open the app and create an account.',
+
+  // ── Invite / Rules / Help ───────────────────────────────────────────────────
+  'invite.share': 'Share this link with your friends:\n{{link}}',
+  'rules.intro': 'Service rules:',
+  'rules.open_button': '📜 Open rules',
+  'rules.unavailable': 'Rules have not been configured by the operator yet.',
+  'help.contact_support': 'Contact support: @{{username}}',
+
   // ── Commands ────────────────────────────────────────────────────────────────
   'help.title': '🔍 Available commands:\n',
   'help.start': '/start — Main menu',
@@ -256,56 +278,109 @@ const BUILTIN_PACKS: Record<string, Record<string, string>> = { en: EN };
 let _externalPacks: Record<string, Record<string, string>> = {};
 
 /**
- * Load translations from backend (rezeis-admin publicConfig.translations).
- * Flattens nested objects into dot-separated keys.
+ * Hydrate the in-memory translation packs from rezeis-admin's
+ * `/api/internal/bot-config` response.
+ *
+ * Two input shapes are accepted (operators can mix both inside the same
+ * `BotText` table):
+ *   1. **Per-locale namespaced keys** — `key = '<lang>.<i18n key>'`
+ *      e.g. `en.menu.choose_action`. Stripped of the `<lang>.` prefix
+ *      and indexed under that locale's pack. Default for new deploys.
+ *   2. **Per-key suffix** — `key = '<i18n key>.<lang>'` (legacy STEALTHNET
+ *      layout) e.g. `menu.choose_action.en`. Same outcome, different
+ *      visual grouping in the admin UI.
+ *
+ * Anything not matching the above is treated as a Russian baseline
+ * override — operators editing copy in the admin without touching code.
+ *
+ * `button.<id>.<lang>` survives unchanged so `resolveButtonLabel` can
+ * find it directly. RU is hard-coded — we still index ru-prefixed keys
+ * so admin overrides still work (e.g. `ru.menu.choose_action`).
  */
-export function setTranslations(translations: Record<string, Record<string, unknown>> | undefined | null): void {
+export function setTranslations(translations: Record<string, unknown> | undefined | null): void {
   if (!translations) {
     _externalPacks = {};
     return;
   }
   const packs: Record<string, Record<string, string>> = {};
-  for (const [lang, pack] of Object.entries(translations)) {
-    if (lang === 'ru') continue; // RU is hardcoded
-    const flat: Record<string, string> = {};
-    flattenObj(pack, '', flat);
-    packs[lang] = flat;
+  const ensure = (lang: string): Record<string, string> => {
+    let pack = packs[lang];
+    if (!pack) {
+      pack = {};
+      packs[lang] = pack;
+    }
+    return pack;
+  };
+
+  for (const [rawKey, rawValue] of Object.entries(translations)) {
+    if (typeof rawValue !== 'string') continue;
+    // Shape (1): "<lang>.<i18n key>"
+    const head = rawKey.split('.', 1)[0];
+    if (head.length === 2 && /^[a-z]{2}$/.test(head)) {
+      const subKey = rawKey.slice(head.length + 1);
+      ensure(head)[subKey] = rawValue;
+      // Also index `button.<id>.<lang>` directly to support resolveButtonLabel
+      // when admin uses the per-locale-namespace shape.
+      if (subKey.startsWith('button.')) {
+        ensure(head)[rawKey] = rawValue;
+      }
+      continue;
+    }
+    // Shape (2): "<i18n key>.<lang>" — only the trailing 2-letter chunk
+    // is treated as the locale tag.
+    const lastDot = rawKey.lastIndexOf('.');
+    if (lastDot > 0) {
+      const tail = rawKey.slice(lastDot + 1);
+      if (tail.length === 2 && /^[a-z]{2}$/.test(tail)) {
+        const subKey = rawKey.slice(0, lastDot);
+        ensure(tail)[subKey] = rawValue;
+        // Mirror to `button.<id>.<lang>` so `resolveButtonLabel` finds it
+        // regardless of which shape the admin used.
+        if (subKey.startsWith('button.')) {
+          ensure(tail)[`${subKey}.${tail}`] = rawValue;
+        }
+        continue;
+      }
+    }
+    // Otherwise treat as a global RU override.
+    ensure('ru')[rawKey] = rawValue;
   }
   _externalPacks = packs;
 }
 
-function flattenObj(obj: Record<string, unknown>, prefix: string, out: Record<string, string>): void {
-  for (const [k, v] of Object.entries(obj)) {
-    const key = prefix ? `${prefix}.${k}` : k;
-    if (typeof v === 'string') out[key] = v;
-    else if (typeof v === 'object' && v !== null) flattenObj(v as Record<string, unknown>, key, out);
-  }
-}
-
 /**
  * Translate a key with optional variable interpolation.
- * Lookup order: external pack → builtin pack → RU fallback → key itself.
+ *
+ * Lookup order:
+ *   1. External pack for the requested locale (admin overrides). Tries
+ *      both bare key (`menu.choose_action`) and the `bot.`-prefixed
+ *      legacy form for back-compat.
+ *   2. Builtin pack for the requested locale (e.g. `EN`).
+ *   3. External RU pack (admin override of the hard-coded baseline).
+ *   4. Hard-coded RU baseline.
+ *   5. The raw key itself, so missing translations are visible at runtime.
  */
 export function t(key: string, lang = 'ru', vars?: Record<string, string | number>): string {
+  const lower = lang.toLowerCase();
   let val: string | undefined;
 
-  if (lang !== 'ru') {
-    // Try external translations first (from admin panel)
-    const extPack = _externalPacks[lang];
+  if (lower !== 'ru') {
+    const extPack = _externalPacks[lower];
     if (extPack) {
-      val = extPack[`bot.${key}`] ?? extPack[key];
+      val = extPack[key] ?? extPack[`bot.${key}`];
     }
-    // Then try builtin pack
     if (!val) {
-      const builtIn = BUILTIN_PACKS[lang];
+      const builtIn = BUILTIN_PACKS[lower];
       if (builtIn) val = builtIn[key];
     }
   }
 
-  // Fallback to Russian
+  if (!val) {
+    const ruExt = _externalPacks['ru'];
+    if (ruExt) val = ruExt[key] ?? ruExt[`bot.${key}`];
+  }
   if (!val) val = RU[key] ?? key;
 
-  // Variable interpolation
   if (vars) {
     for (const [vk, vv] of Object.entries(vars)) {
       val = val.split(`{{${vk}}}`).join(String(vv));
@@ -339,4 +414,78 @@ export function setUserLang(userId: number, lang: string): void {
 
 export function getUserLang(userId: number): string {
   return userLangCache.get(userId) ?? 'ru';
+}
+
+/**
+ * Returns whether we have an explicit per-user locale override stored
+ * for this Telegram user. Used by the auto-detect middleware to decide
+ * if it should adopt the device language or trust an existing choice.
+ */
+export function userLangCacheHas(userId: number): boolean {
+  return userLangCache.has(userId);
+}
+
+/**
+ * List of locales the bot has translations for. Anything outside this
+ * set falls back to `ru` — the hard-coded baseline.
+ */
+const SUPPORTED_LOCALES: ReadonlySet<string> = new Set(['ru', 'en']);
+
+/**
+ * Maps a Telegram-supplied `language_code` (BCP-47-ish: `en`, `en-GB`,
+ * `ru`, `pt-BR`, ...) onto the closest supported locale.
+ *
+ * Telegram clients deliver the *system* language of the device, so this
+ * is the authoritative auto-detect signal: if a user's phone is set to
+ * English, Telegram sends `en` and we render English on the very first
+ * message, no `/lang` round-trip required.
+ */
+export function detectLocaleFromTelegram(rawLanguageCode: string | undefined | null): string {
+  if (!rawLanguageCode) return 'ru';
+  const lower = rawLanguageCode.toLowerCase();
+  // Strip region tag (`en-GB` → `en`) and re-check against the supported set.
+  const head = lower.split(/[-_]/, 1)[0];
+  if (SUPPORTED_LOCALES.has(head)) return head;
+  // Russian-script clones (`be`, `uk`) get Russian — the hard-coded
+  // baseline is closer to them than English. Easy to extend later if a
+  // dedicated pack ships.
+  if (head === 'be' || head === 'uk' || head === 'kk') return 'ru';
+  return 'ru';
+}
+
+/**
+ * Resolve a localised label for a `BotButton`.
+ *
+ * Lookup order:
+ *   1. `button.<id>.<lang>` in the operator-managed translation map
+ *      — lets admin localise specific buttons without touching code.
+ *   2. The raw `BotButton.label` from Prisma (admin's primary editor).
+ *      This is the fallback when the operator did not translate the
+ *      label for the requested locale.
+ *
+ * `translations` is the same map returned by `/api/internal/bot-config`
+ * (the `translations` field). We accept it as a parameter so callers
+ * can pass the live cached config without coupling i18n to the bot's
+ * config layer.
+ */
+export function resolveButtonLabel(
+  buttonId: string,
+  fallbackLabel: string,
+  translations: Readonly<Record<string, string>>,
+  lang: string,
+): string {
+  const lower = lang.toLowerCase();
+  const fullKey = `button.${buttonId}.${lower}`;
+  // 1. Live `translations` map passed by the caller — this is the
+  //    `bot-config.translations` object straight from admin.
+  const direct = translations[fullKey];
+  if (typeof direct === 'string' && direct.trim().length > 0) return direct;
+  // 2. The external pack hydrated by `setTranslations` — indexed by
+  //    `button.<id>.<lang>` after locale-prefix stripping.
+  const pack = _externalPacks[lower];
+  if (pack !== undefined) {
+    const fromPack = pack[fullKey] ?? pack[`button.${buttonId}`];
+    if (typeof fromPack === 'string' && fromPack.trim().length > 0) return fromPack;
+  }
+  return fallbackLabel;
 }

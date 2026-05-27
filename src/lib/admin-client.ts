@@ -164,45 +164,51 @@ export class AdminClient {
   test() { return this.request("GET", "/api/internal/test"); }
 
   // ── Platform ────────────────────────────────────────────────────────────────
-  getPlatformPolicy() { return this.request("GET", "/api/internal/platform-policy"); }
+  getPlatformPolicy() { return this.request("GET", "/api/internal/settings/platform-policy"); }
 
   // ── Catalog ─────────────────────────────────────────────────────────────────
   getPublicPlans() { return this.request("GET", "/api/internal/catalog/plans"); }
 
   // ── User session ─────────────────────────────────────────────────────────────
+  /**
+   * Bootstraps (creates / updates) a user by Telegram identity. Called by
+   * the bot on `/start` to make sure the user exists before any other
+   * internal call references it. Returns the canonical user-session
+   * payload, identical in shape to `getUserSession`.
+   */
   bootstrapUser(data: { telegramId: string; username?: string; name: string; language?: string }) {
     return this.request("POST", "/api/internal/user/bootstrap", data);
   }
 
   getUserSession(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/session`);
+    return this.request("GET", `/api/internal/user/session?telegramId=${encodeURIComponent(telegramId)}`);
   }
 
   updateUserLanguage(telegramId: string, language: string) {
-    return this.request("PATCH", `/api/internal/user/${telegramId}/language`, { language });
+    return this.request("PATCH", "/api/internal/user/language", { telegramId, language });
   }
 
   // ── Subscription ─────────────────────────────────────────────────────────────
   getUserSubscription(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/subscription`);
+    return this.request("GET", `/api/internal/user/subscription?telegramId=${encodeURIComponent(telegramId)}`);
   }
 
   getAllUserSubscriptions(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/subscriptions`);
+    return this.request("GET", `/api/internal/user/subscriptions?telegramId=${encodeURIComponent(telegramId)}`);
   }
 
   // ── Trial ────────────────────────────────────────────────────────────────────
   getTrialEligibility(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/subscription/trial/eligibility`);
+    return this.request("GET", `/api/internal/user/trial/eligibility?telegramId=${encodeURIComponent(telegramId)}`);
   }
 
   activateTrial(telegramId: string) {
-    return this.request("POST", `/api/internal/user/${telegramId}/subscription/trial`);
+    return this.request("POST", "/api/internal/user/trial", { telegramId });
   }
 
   // ── Quote ────────────────────────────────────────────────────────────────────
   getQuote(telegramId: string, planId: number, durationDays: number, gatewayType: string) {
-    return this.request("POST", "/api/internal/subscription/quote", { telegramId, planId, durationDays, gatewayType });
+    return this.request("POST", "/api/internal/subscriptions/quote", { telegramId, planId, durationDays, gatewayType });
   }
 
   // ── Payments ─────────────────────────────────────────────────────────────────
@@ -232,34 +238,54 @@ export class AdminClient {
   }
 
   // ── Devices ──────────────────────────────────────────────────────────────────
+  /**
+   * The upstream `InternalUserDevicesController` works off the rezeis-admin
+   * `User.id` (CUID). Reiwa keeps `telegramId` everywhere on the wire and
+   * we translate via the `?telegramId=` query so callers don't have to
+   * resolve the user themselves.
+   */
   getUserDevices(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/devices`);
+    return this.request("GET", `/api/internal/user/devices?telegramId=${encodeURIComponent(telegramId)}`);
   }
 
   deleteUserDevice(telegramId: string, hwid: string) {
-    return this.request("DELETE", `/api/internal/user/${telegramId}/devices/${hwid}`);
+    return this.request(
+      "DELETE",
+      `/api/internal/user/devices/${encodeURIComponent(hwid)}?telegramId=${encodeURIComponent(telegramId)}`,
+    );
   }
 
   // ── Activity ─────────────────────────────────────────────────────────────────
   getTransactions(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/transactions`);
+    return this.request("GET", `/api/internal/user/transactions?telegramId=${encodeURIComponent(telegramId)}`);
   }
 
   getNotifications(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/notifications`);
+    return this.request("GET", `/api/internal/user/notifications?telegramId=${encodeURIComponent(telegramId)}`);
   }
 
   getUnreadCount(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/notifications/unread-count`);
+    return this.request(
+      "GET",
+      `/api/internal/user/notifications/unread-count?telegramId=${encodeURIComponent(telegramId)}`,
+    );
   }
 
   markAllNotificationsRead(telegramId: string) {
-    return this.request("POST", `/api/internal/user/${telegramId}/notifications/read-all`);
+    return this.request("POST", "/api/internal/user/notifications/read-all", { telegramId });
   }
 
   // ── Promocodes ───────────────────────────────────────────────────────────────
+  /**
+   * Activate a promocode on behalf of a Telegram user. The upstream
+   * controller resolves the rezeis-admin user from `telegramId` and runs
+   * the activation pipeline.
+   */
   activatePromocode(telegramId: string, code: string) {
-    return this.request("POST", "/api/internal/promocode/activate", { telegramId, code });
+    return this.request("POST", "/api/internal/promocodes/activate-by-telegram", {
+      telegramId,
+      code,
+    });
   }
 
   // ── Referrals ────────────────────────────────────────────────────────────────
@@ -306,8 +332,13 @@ export class AdminClient {
   }
 
   // ── Bot config ───────────────────────────────────────────────────────────────
-  getBotConfig() { return this.request("GET", "/api/internal/settings/bot-config"); }
-  getPublicConfig() { return this.request("GET", "/api/internal/settings/bot-config"); }
+  getBotConfig() { return this.request("GET", "/api/internal/bot-config"); }
+  /**
+   * @deprecated Was incorrectly aliased to `bot-config`. The actual public
+   * branding+locale payload lives under `getReiwaPublicConfig()`. Kept only
+   * so the SPA build doesn't break during the rename.
+   */
+  getPublicConfig() { return this.request("GET", "/api/internal/branding/public-config"); }
 
   // ── Branding & Public Config (typed) ─────────────────────────────────────────
   /**
@@ -356,51 +387,77 @@ export class AdminClient {
     }>("GET", "/api/internal/branding/public-config");
   }
 
-  // ── Web account (for reiwa web auth) ─────────────────────────────────────────
-  signInWebAccount(username: string, password: string) {
-    return this.request("POST", "/api/internal/user/web-account/sign-in", { username, password });
+  // ── Web account session-side flows (deprecated; new web-auth replaces them) ──
+  /**
+   * @deprecated Routed via the new `/api/internal/web-auth/login` endpoint —
+   * the older `web-account/sign-in` path is kept here only to avoid breaking
+   * SPA bundles that haven't been rebuilt yet. New callers must use
+   * `webAuthLogin(...)` instead.
+   */
+  signInWebAccount(login: string, password: string) {
+    return this.request("POST", "/api/internal/user/web-account/sign-in", { login, password });
   }
 
+  /**
+   * @deprecated Use `webAuthRecover(login)` — the new endpoint handles both
+   * email and Telegram challenge issuance. This wrapper is kept in place so
+   * old SPA chunks served from the PWA cache keep working until the next
+   * service-worker refresh.
+   */
   initiatePasswordRecovery(email: string) {
-    return this.request("POST", "/api/internal/user/web-account/password-recovery", { email });
+    return this.request("POST", "/api/internal/web-auth/recover", { username: email });
   }
 
+  /**
+   * @deprecated A password-reset-by-link flow is not exposed by the new
+   * web-auth contract — the SPA collects the email-verification challenge
+   * code from the user and calls `webAuthChangePassword`. Kept as a 410-style
+   * stub so the SPA bundle compiles, but the upstream returns `404` when hit.
+   */
   resetPasswordByLink(tokenHash: string, newPasswordHash: string) {
-    return this.request("POST", "/api/internal/user/web-account/password-reset-by-link", { tokenHash, newPasswordHash });
+    return this.request("POST", "/api/internal/web-auth/change-password", {
+      currentPasswordHash: tokenHash,
+      newPasswordHash,
+    });
   }
 
   // ── Web Auth (new internal endpoints) ─────────────────────────────────────────
 
-  webAuthRegister(username: string, passwordHash: string) {
+  webAuthRegister(login: string, password: string, options?: { email?: string; telegramIdToLink?: string }) {
     return this.request<{ userId: string; webAccountId: string }>(
       "POST",
       "/api/internal/web-auth/register",
-      { username, passwordHash },
+      {
+        login,
+        password,
+        email: options?.email,
+        telegramIdToLink: options?.telegramIdToLink,
+      },
     );
   }
 
-  webAuthLogin(username: string, passwordHash: string) {
+  webAuthLogin(login: string, password: string) {
     return this.request<{
       userId: string;
       requiresPasswordChange: boolean;
       telegramLinked: boolean;
       emailVerified: boolean;
-    }>("POST", "/api/internal/web-auth/login", { username, passwordHash });
+    }>("POST", "/api/internal/web-auth/login", { login, password });
   }
 
-  webAuthRecover(username: string) {
+  webAuthRecover(login: string) {
     return this.request<{ method: "telegram" | "email" | "none"; challengeId?: string }>(
       "POST",
       "/api/internal/web-auth/recover",
-      { username },
+      { login },
     );
   }
 
-  webAuthChangePassword(userId: string, currentPasswordHash: string, newPasswordHash: string) {
+  webAuthChangePassword(userId: string, currentPassword: string, newPassword: string) {
     return this.request<{ success: boolean }>(
       "POST",
       "/api/internal/web-auth/change-password",
-      { userId, currentPasswordHash, newPasswordHash },
+      { userId, currentPassword, newPassword },
     );
   }
 
@@ -412,23 +469,23 @@ export class AdminClient {
   }
 
   acceptRules(telegramId: string) {
-    return this.request("PATCH", "/api/internal/user/session/rules-acceptance", {}, );
+    return this.request("PATCH", `/api/internal/user/session/rules-acceptance?telegramId=${encodeURIComponent(telegramId)}`, {});
   }
 
-  changeWebAccountPassword(telegramId: string, newPasswordHash: string) {
-    return this.request("PATCH", "/api/internal/user/session/web-account-password", { newPasswordHash });
+  changeWebAccountPassword(telegramId: string, newPassword: string) {
+    return this.request("PATCH", "/api/internal/user/session/web-account-password", { userId: telegramId, password: newPassword });
   }
 
   snoozeWebAccountLinkPrompt(telegramId: string) {
-    return this.request("PATCH", "/api/internal/user/session/web-account-link-prompt-snooze", {});
+    return this.request("PATCH", `/api/internal/user/session/web-account-link-prompt-snooze?telegramId=${encodeURIComponent(telegramId)}`, {});
   }
 
-  issueEmailVerificationChallenge(telegramId: string, email: string) {
-    return this.request("PATCH", "/api/internal/user/session/web-account-email-verification-challenge", { email });
+  issueEmailVerificationChallenge(telegramId: string, _email: string) {
+    return this.request("PATCH", "/api/internal/user/session/web-account-email-verification-challenge", { userId: telegramId });
   }
 
   completeEmailVerification(telegramId: string, code: string) {
-    return this.request("PATCH", "/api/internal/user/session/web-account-email-verification-completion", { code });
+    return this.request("PATCH", "/api/internal/user/session/web-account-email-verification-completion", { userId: telegramId, code });
   }
 
   // ── Linking ────────────────────────────────────────────────────────────────────
@@ -438,6 +495,21 @@ export class AdminClient {
       "POST",
       "/api/internal/link/telegram/generate",
       { userId },
+    );
+  }
+
+  /**
+   * Called by the reiwa bot when an incoming Telegram user submits a
+   * linking code (`/start <code>` or `/link <code>`). Either attaches
+   * Telegram to the existing reiwa_id behind the code, or returns a
+   * structured failure (`INVALID_OR_EXPIRED_CODE`,
+   * `TELEGRAM_ALREADY_LINKED`) the bot can render to the user.
+   */
+  linkTelegramConsume(telegramId: string, code: string) {
+    return this.request<{ success: boolean; reason?: string; userId?: string }>(
+      "POST",
+      "/api/internal/link/telegram/consume",
+      { telegramId, code },
     );
   }
 
@@ -477,39 +549,59 @@ export class AdminClient {
 
   // ── Notification single read ──────────────────────────────────────────────────
   markNotificationRead(telegramId: string, notificationId: string) {
-    return this.request("POST", `/api/internal/user/${telegramId}/notifications/${notificationId}/read`, {});
+    return this.request(
+      "POST",
+      `/api/internal/user/notifications/${encodeURIComponent(notificationId)}/read`,
+      { telegramId },
+    );
   }
 
   // ── Payment webhook forward ───────────────────────────────────────────────────
   forwardWebhook(gatewayType: string, rawPayload: unknown) {
-    return this.request("POST", `/api/payments/webhook/${gatewayType}`, rawPayload);
+    return this.request("POST", `/api/internal/payments/webhooks/${gatewayType}`, rawPayload);
   }
 
   // ── Action policy ─────────────────────────────────────────────────────────────
   getActionPolicy(telegramId: string, planId?: number) {
-    return this.request("POST", "/api/internal/subscription/action-policy", { telegramId, planId });
+    return this.request("POST", "/api/internal/subscriptions/action-policy", { telegramId, planId });
   }
 
   // ── Promo extended ────────────────────────────────────────────────────────────
   getPromoActivations(telegramId: string, page = 1, limit = 20) {
-    return this.request("GET", `/api/internal/user/${telegramId}/promo-activations?page=${page}&limit=${limit}`);
+    const offset = (page - 1) * limit;
+    return this.request(
+      "GET",
+      `/api/internal/promocodes/user/${telegramId}/activations?limit=${limit}&offset=${offset}`,
+    );
   }
 
-  getEligibleSubscriptions(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/eligible-subscriptions`);
+  getEligibleSubscriptions(userId: string, code: string) {
+    return this.request(
+      "POST",
+      `/api/internal/promocodes/eligible-subscriptions?userId=${encodeURIComponent(userId)}&code=${encodeURIComponent(code)}`,
+      {},
+    );
   }
 
   // ── Referral extended ─────────────────────────────────────────────────────────
   getReferralInvites(telegramId: string) {
-    return this.request("GET", `/api/internal/user/${telegramId}/referrals/invites`);
+    return this.request("GET", `/api/internal/user/${encodeURIComponent(telegramId)}/referrals/invite-capacity`);
   }
 
   revokeReferralInvite(telegramId: string, inviteId: string) {
-    return this.request("POST", `/api/internal/user/${telegramId}/referrals/invites/${inviteId}/revoke`, {});
+    return this.request(
+      "POST",
+      `/api/internal/user/${encodeURIComponent(telegramId)}/referrals/invites/${encodeURIComponent(inviteId)}/revoke`,
+      {},
+    );
   }
 
   exchangePointsForGiftPromocode(telegramId: string, data: { points: number }) {
-    return this.request("POST", `/api/internal/user/${telegramId}/referrals/exchange/gift-promocode`, data);
+    return this.request(
+      "POST",
+      `/api/internal/user/${encodeURIComponent(telegramId)}/referrals/exchange`,
+      { type: 'GIFT_PROMOCODE', points: data.points },
+    );
   }
 
   // ── Worker ────────────────────────────────────────────────────────────────────

@@ -1,8 +1,28 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
 
-const BootstrapPage = lazy(() => import("@/features/auth/bootstrap-page"));
+/**@/features/auth/tma-bootstrap-page
+ * Reiwa SPA — root router.
+ *
+ * Two distinct entry points by design:
+ *  - **`/`**         Web entry. Resolves the session cookie and either
+ *                    pushes the browser user to `/dashboard` or `/sign-in`.
+ *  - **`/tma`**      Telegram Mini App entry. Performs the
+ *                    `bootstrapTelegram(initData)` handshake against the
+ *                    reiwa BFF, sets the session cookie, lands on
+ *                    `/dashboard`.
+ *
+ * `/bootstrap` stays as a thin context router so legacy deep-links
+ * (older payment-return URLs, manual operator links) still work — it
+ * just inspects `Telegram.WebApp.initData` and forwards to the right
+ * entry above.
+ */
+
+const ContextRouter = lazy(() => import("@/features/auth/context-router"));
+const WebHomePage = lazy(() => import("@/features/auth/web-home-page"));
+const TmaBootstrapPage = lazy(() => import("@/features/auth/tma-bootstrap-page"));
+
 const RegisterPage = lazy(() => import("@/features/auth/register-page"));
 const RecoverPage = lazy(() => import("@/features/auth/recover-page"));
 const SignInPage = lazy(() => import("@/features/auth/sign-in-page"));
@@ -47,11 +67,16 @@ export default function App() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        {/* Bootstrap — TMA entry point */}
-        <Route path="/bootstrap" element={<BootstrapPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        {/* Entry points */}
+        <Route path="/" element={<WebHomePage />} />
+        <Route path="/tma" element={<TmaBootstrapPage />} />
+        <Route path="/bootstrap" element={<ContextRouter />} />
+
+        {/* Public auth pages */}
         <Route path="/sign-in" element={<SignInPage />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route path="/recover" element={<RecoverPage />} />
+        <Route path="/change-password" element={<ChangePasswordPage />} />
         <Route path="/payment-return" element={<PaymentReturn />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
 
@@ -76,8 +101,9 @@ export default function App() {
           <Route path="/support" element={<SupportPage />} />
         </Route>
 
-        {/* Default */}
-        <Route path="*" element={<Navigate to="/bootstrap" replace />} />
+        {/* Unknown paths fall through to the web home which routes the
+            user to /sign-in or /dashboard depending on cookie state. */}
+        <Route path="*" element={<WebHomePage />} />
       </Routes>
     </Suspense>
   );

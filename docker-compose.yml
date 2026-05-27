@@ -65,6 +65,21 @@ services:
     networks:
       - remnawave-network
 
+  reiwa-web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: reiwa-web
+    container_name: reiwa-web
+    hostname: reiwa-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - reiwa
+    networks:
+      - remnawave-network
+
 networks:
   remnawave-network:
     name: remnawave-network

@@ -21,12 +21,13 @@
  *    payment status for the authenticated user upon arrival.
  *
  * If no destination can be built for the given context (e.g. neither
- * `BOT_USERNAME` nor `REIWA_PUBLIC_WEB_URL` is configured), the function
+ * `BOT_USERNAME` nor `REIWA_DOMAIN` is configured), the function
  * returns `null`, signalling to callers that the upstream service should
  * fall back to its own default (the generic `${REZEIS_DOMAIN}/payments/result`).
  */
 
 import type { ReiwaConfig } from "../config.js";
+import { resolveReiwaPublicUrl } from "../config.js";
 import type { RequestContext } from "../api/middleware/context-detection.js";
 
 /** Stable token forwarded to `/start` so the bot can route the user back. */
@@ -65,10 +66,9 @@ function buildTelegramReturnUrl(config: ReiwaConfig): string | null {
 }
 
 function buildWebReturnUrl(config: ReiwaConfig): string | null {
-  const baseUrl = config.REIWA_PUBLIC_WEB_URL;
+  const baseUrl = resolveReiwaPublicUrl(config);
   if (!baseUrl) {
     return null;
   }
-  const normalized = baseUrl.replace(/\/+$/, "");
-  return `${normalized}/payment-return`;
+  return `${baseUrl}/payment-return`;
 }

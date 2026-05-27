@@ -22,7 +22,7 @@ export function createPaymentsRouter(deps: {
   //    we ask the gateway to redirect the user back to Telegram via a deep link
   //    derived from `BOT_USERNAME` / `BOT_MINI_APP_NAME`.
   //  - When the request originates from a regular browser (`req.context === "web"`)
-  //    we redirect to `${REIWA_PUBLIC_WEB_URL}/payment-return`.
+  //    we redirect to `${REIWA_DOMAIN}/payment-return`.
   //  - The client may still supply explicit `successUrl` / `failUrl` overrides
   //    (e.g. for return-to-specific-flow) which always win when present.
   router.post(

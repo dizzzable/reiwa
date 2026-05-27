@@ -34,8 +34,9 @@ async function start(): Promise<void> {
   if (webSessionStore) await webSessionStore.connect();
 
   const server = createServer(app);
-  server.listen(config.PORT, "0.0.0.0", () => {
-    console.log(`[reiwa-api] Listening on port ${config.PORT}`);
+  const port = config.PORT ?? config.REIWA_PORT;
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`[reiwa-api] Listening on port ${port}`);
     console.log(
       `[reiwa-api] HMAC signing: ${config.REZEIS_INTERNAL_SHARED_SECRET ? "enabled" : "disabled"}`,
     );

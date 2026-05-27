@@ -1,0 +1,78 @@
+# ════════════════════════════════════════════════════════════════════════════
+#  reiwa — Development override
+#
+#  Usage:
+#    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#    docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f reiwa-bot
+#
+#  Or just one service:
+#    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d reiwa-redis reiwa-bot
+#
+#  How it works:
+#    • Source from the host is bind-mounted into /app, so saving a file on
+#      Windows immediately triggers `tsx watch` (api/bot) or vite HMR (web)
+#      inside the container.
+#    • node_modules is kept as an *anonymous volume* so the alpine-linked
+#      modules in the image are not shadowed by a Windows host folder.
+#    • `tty + stdin_open` keep watchers alive cleanly.
+#
+#  Endpoints (dev):
+#    • API:    http://127.0.0.1:5000/api/v1/health
+#    • Web:    http://127.0.0.1:5173/      (vite HMR, /api proxied to reiwa:5000)
+#    • Redis:  internal only (reiwa-redis:6379)
+# ════════════════════════════════════════════════════════════════════════════
+
+services:
+  reiwa:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: reiwa-dev
+    command: ["npx", "tsx", "watch", "src/api/main.ts"]
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    tty: true
+    stdin_open: true
+
+  reiwa-bot:
+    image: reiwa-dev
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["npx", "tsx", "watch", "src/bot/main.ts"]
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    tty: true
+    stdin_open: true
+
+  reiwa-web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    image: reiwa-web-dev
+    container_name: reiwa-web
+    hostname: reiwa-web
+    restart: unless-stopped
+    # Override the production nginx mapping (80) with the vite dev port.
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      - NODE_ENV=development
+      # Inside the docker network the express api is reachable as `reiwa:5000`.
+      # vite.config.ts reads VITE_API_PROXY_TARGET to know where to proxy /api.
+      - VITE_API_PROXY_TARGET=http://reiwa:5000
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    depends_on:
+      - reiwa
+    networks:
+      - remnawave-network
+    tty: true
+    stdin_open: true

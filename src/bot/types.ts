@@ -13,6 +13,12 @@ export interface BotVisualConfig {
   supportUsername: string
   channelUsername: string
   subscriptionInfoFormat: 'full' | 'compact' | 'minimal'
+  /**
+   * URL of the banner image sent before the welcome message on `/start`.
+   * `null` means "skip the banner". Operators set this through the
+   * admin bot editor (`bot-config` → texts → `bot.banner_url`).
+   */
+  bannerUrl?: string | null
 }
 
 export interface BotFeatures {
@@ -40,6 +46,15 @@ export interface BotConfig {
   features: BotFeatures
   botEmojis: BotEmojiMap
   menuTextCustomEmojiIds: MenuTextEmojiIds
+  /**
+   * Flat translation map keyed by `<i18n key>` or `button.<id>.<lang>`.
+   * Populated from rezeis-admin's `BotText` table by the
+   * `/api/internal/bot-config` endpoint. Used by `i18n.t(...)` (after
+   * `setTranslations(...)`) and by the keyboard builder for per-button
+   * label localisation. Optional because reiwa boots in degraded mode
+   * with the hard-coded RU baseline when admin is unreachable.
+   */
+  translations?: Record<string, string>
 }
 
 // ── Telegram entity types ─────────────────────────────────────────────────────

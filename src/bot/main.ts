@@ -14,7 +14,7 @@
  */
 
 import { Bot, Context, session, SessionFlavor, InlineKeyboard } from 'grammy';
-import { loadConfig, resolveRezeisAdminUrl } from '../config.js';
+import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../config.js';
 import { AdminClient } from '../lib/admin-client.js';
 import type { BotConfig, BotMenuButton, TgCustomEmojiEntity } from './types.js';
 import {
@@ -23,9 +23,36 @@ import {
   buildPlansMessage,
   buildReferralMessage,
 } from './message-builder.js';
-import { t, getUserLang, setUserLang, setTranslations } from './i18n.js';
+import {
+  detectLocaleFromTelegram,
+  getUserLang,
+  resolveButtonLabel,
+  setTranslations,
+  setUserLang,
+  t,
+  userLangCacheHas,
+} from './i18n.js';
 
 const config = loadConfig();
+const reiwaPublicUrl = resolveReiwaPublicUrl(config);
+
+/**
+ * Telegram refuses inline-keyboard URLs that point at `localhost`/127.0.0.1
+ * AND `web_app` URLs that aren't HTTPS. Both checks funnel through the
+ * same safety gate so dev (where `REIWA_DOMAIN=localhost:5173` resolves
+ * to `http://localhost:5173`) doesn't crash the entire `/start` reply
+ * with `400 Bad Request`. In production the operator types a real
+ * domain and this becomes identical to `reiwaPublicUrl`.
+ */
+function isTelegramSafeButtonUrl(url: string | null): boolean {
+  if (url === null) return false;
+  if (!url.startsWith('https://')) return false;
+  const lower = url.toLowerCase();
+  if (lower.includes('://localhost') || lower.includes('://127.0.0.1')) return false;
+  return true;
+}
+const reiwaWebAppUrl = isTelegramSafeButtonUrl(reiwaPublicUrl) ? reiwaPublicUrl : null;
+const reiwaUrlButtonUrl = isTelegramSafeButtonUrl(reiwaPublicUrl) ? reiwaPublicUrl : null;
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
@@ -46,14 +73,10 @@ let configCache: ConfigCache | null = null;
 
 const DEFAULT_BOT_CONFIG: BotConfig = {
   buttons: [
-    { id: 'subscription', emoji: '📦', label: 'Мои подписки', visible: true, order: 0, style: 'primary', onePerRow: false },
-    { id: 'buy', emoji: '💳', label: 'Купить подписку', visible: true, order: 1, style: 'success', onePerRow: false },
-    { id: 'promo', emoji: '🎁', label: 'Промокод', visible: true, order: 2, style: 'default', onePerRow: false },
-    { id: 'referrals', emoji: '👥', label: 'Рефералы', visible: true, order: 3, style: 'default', onePerRow: false },
-    { id: 'profile', emoji: '👤', label: 'Профиль', visible: true, order: 4, style: 'default', onePerRow: false },
-    { id: 'activity', emoji: '📊', label: 'Активность', visible: true, order: 5, style: 'default', onePerRow: false },
-    { id: 'vpn', emoji: '🌐', label: 'Подключиться к VPN', visible: true, order: 6, style: 'danger', onePerRow: true },
-    { id: 'miniapp', emoji: '📱', label: 'Открыть приложение', visible: true, order: 7, style: 'default', onePerRow: true },
+    { id: 'cabinet', emoji: '', label: 'Мой кабинет', visible: true, order: 0, style: 'primary', onePerRow: true },
+    { id: 'invite', emoji: '', label: 'Пригласить', visible: true, order: 1, style: 'default', onePerRow: true },
+    { id: 'rules', emoji: '', label: 'Правила', visible: true, order: 2, style: 'default', onePerRow: false },
+    { id: 'help', emoji: '', label: 'Помощь', visible: true, order: 3, style: 'default', onePerRow: false },
   ],
   visual: {
     welcomeMessage: 'Привет, {{firstName}}! 👋\n\nДобро пожаловать в Rezeis VPN.',
@@ -61,6 +84,7 @@ const DEFAULT_BOT_CONFIG: BotConfig = {
     supportUsername: '',
     channelUsername: '',
     subscriptionInfoFormat: 'full',
+    bannerUrl: null,
   },
   features: {
     referralsEnabled: true,
@@ -100,12 +124,62 @@ function stripLeadingEmoji(text: string): string {
   return text.replace(LEADING_EMOJI_RE, '');
 }
 
+// ── Button kind dispatch ────────────────────────────────────────────────────
+//
+// The admin panel only manages visual properties. The *kind* of each
+// well-known buttonId (URL link / Mini App / callback) is hardcoded
+// here so admin operators can't accidentally turn "Мой кабинет" into a
+// callback that doesn't exist or vice-versa.
+//
+//   kind: 'url'      — opens an external URL in Telegram's in-app
+//                      browser. Used for "Мой кабинет" — pushes the
+//                      user out of the bot into a real browser session
+//                      for credential setup. Built from `reiwaUrlButtonUrl`
+//                      (https + non-localhost gate).
+//   kind: 'webapp'   — opens the Mini App. Telegram requires HTTPS;
+//                      we drop the button when not configured.
+//   kind: 'callback' — emits `callback_data === buttonId`; routed by
+//                      reiwa's `bot.callbackQuery(id, ...)` handlers.
+//
+// Unknown ids default to `callback`.
+
+type ButtonKind = 'url' | 'webapp' | 'callback';
+
+interface ButtonBinding {
+  readonly kind: ButtonKind;
+  readonly path?: string;
+}
+
+const BUTTON_KIND_MAP: Readonly<Record<string, ButtonBinding>> = {
+  // Default reiwa keyboard
+  cabinet: { kind: 'url', path: '/' },
+  invite: { kind: 'callback' },
+  rules: { kind: 'callback' },
+  help: { kind: 'callback' },
+  // Legacy buttons that older deployments may still have configured
+  subscription: { kind: 'callback' },
+  buy: { kind: 'callback' },
+  promo: { kind: 'callback' },
+  referrals: { kind: 'callback' },
+  profile: { kind: 'callback' },
+  activity: { kind: 'callback' },
+  vpn: { kind: 'webapp', path: '/subscribe' },
+  miniapp: { kind: 'webapp', path: '/' },
+  support: { kind: 'callback' },
+};
+
+function resolveBinding(buttonId: string): ButtonBinding {
+  return BUTTON_KIND_MAP[buttonId] ?? { kind: 'callback' };
+}
+
 // ── Keyboard builder (STEALTHNET-style with premium emoji support) ─────────────
 
 function buildMainKeyboard(
   buttons: BotMenuButton[],
-  miniAppUrl?: string | null,
-  lang = 'ru',
+  miniAppUrl: string | null | undefined,
+  lang: string,
+  publicWebUrl: string | null | undefined,
+  translations: Readonly<Record<string, string>>,
 ): InlineKeyboard {
   const visible = [...buttons]
     .filter((b) => b.visible)
@@ -113,50 +187,41 @@ function buildMainKeyboard(
 
   const kb = new InlineKeyboard();
   let rowItems = 0;
+  const closeRowIfNeeded = (force: boolean): void => {
+    if (force && rowItems > 0) {
+      kb.row();
+      rowItems = 0;
+    }
+  };
 
   for (const btn of visible) {
-    const label = `${btn.emoji} ${btn.label}`;
+    const localisedLabel = resolveButtonLabel(btn.id, btn.label, translations, lang);
+    const label = btn.emoji ? `${btn.emoji} ${localisedLabel}` : localisedLabel;
+    const binding = resolveBinding(btn.id);
+    const path = binding.path ?? '';
 
-    if (btn.id === 'miniapp') {
+    let placed = false;
+    if (binding.kind === 'webapp') {
       if (!miniAppUrl) continue;
-      if (btn.onePerRow || rowItems > 0) {
-        if (rowItems > 0) kb.row();
-        rowItems = 0;
-      }
-      kb.webApp(label, miniAppUrl);
-      kb.row();
-      rowItems = 0;
-      continue;
-    }
-
-    if (btn.id === 'vpn') {
-      // VPN button opens subscription page as webApp
-      if (!miniAppUrl) continue;
-      if (btn.onePerRow || rowItems > 0) {
-        if (rowItems > 0) kb.row();
-        rowItems = 0;
-      }
-      kb.webApp(label, `${miniAppUrl}/subscribe`);
-      kb.row();
-      rowItems = 0;
-      continue;
-    }
-
-    if (btn.id === 'support') {
-      // Skip — handled via support username link
-      continue;
-    }
-
-    if (btn.onePerRow) {
-      if (rowItems > 0) {
-        kb.row();
-        rowItems = 0;
-      }
+      closeRowIfNeeded(btn.onePerRow);
+      kb.webApp(label, `${miniAppUrl}${path}`);
+      placed = true;
+    } else if (binding.kind === 'url') {
+      if (!publicWebUrl) continue;
+      closeRowIfNeeded(btn.onePerRow);
+      kb.url(label, `${publicWebUrl}${path}`);
+      placed = true;
+    } else {
+      closeRowIfNeeded(btn.onePerRow);
       kb.text(label, btn.id);
+      placed = true;
+    }
+
+    if (!placed) continue;
+    if (btn.onePerRow) {
       kb.row();
       rowItems = 0;
     } else {
-      kb.text(label, btn.id);
       rowItems++;
       if (rowItems === 2) {
         kb.row();
@@ -212,6 +277,32 @@ async function startBot(): Promise<void> {
 
   const bot = new Bot<BotContext>(config.BOT_TOKEN);
   bot.use(session({ initial: (): BotSession => ({}) }));
+
+  // ── Locale auto-detect middleware ──────────────────────────────────────────
+  //
+  // Telegram clients ship the *system* `language_code` of the device on
+  // every update. We use it as the auto-detect signal:
+  //   - First contact (cache miss): adopt the detected locale, push it
+  //     to admin so subsequent sessions across reiwa-bot / reiwa-api /
+  //     web stay in sync.
+  //   - Returning user with cached locale: trust the cache. The `/lang`
+  //     command is the only override path — explicit user choice
+  //     always wins over the device language.
+  bot.use(async (ctx, next) => {
+    const tgUser = ctx.from;
+    if (tgUser !== undefined && !userLangCacheHas(tgUser.id)) {
+      const detected = detectLocaleFromTelegram(tgUser.language_code);
+      setUserLang(tgUser.id, detected);
+      if (adminClient !== null) {
+        adminClient
+          .updateUserLanguage(String(tgUser.id), detected.toUpperCase())
+          .catch(() => {
+            /* fire-and-forget — admin learns the locale on next bootstrap */
+          });
+      }
+    }
+    await next();
+  });
 
   // ── /start ─────────────────────────────────────────────────────────────────
 
@@ -288,9 +379,23 @@ async function startBot(): Promise<void> {
     });
 
     const miniAppUrl =
-      features.miniAppEnabled && config.REIWA_PUBLIC_WEB_URL ? config.REIWA_PUBLIC_WEB_URL : null;
+      features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
 
-    const keyboard = buildMainKeyboard(botCfg.buttons, miniAppUrl, getUserLang(tgUser.id));
+    const keyboard = buildMainKeyboard(
+      botCfg.buttons,
+      miniAppUrl,
+      getUserLang(tgUser.id),
+      reiwaUrlButtonUrl,
+      botCfg.translations ?? {},
+    );
+    if (visual.bannerUrl && visual.bannerUrl.length > 0) {
+      // Best-effort banner — broken URL must not sink the welcome reply.
+      try {
+        await ctx.replyWithPhoto(visual.bannerUrl);
+      } catch (err: unknown) {
+        console.warn('[bot/start] banner send failed:', (err as Error).message);
+      }
+    }
     await replyWithEntities(ctx, message, { reply_markup: keyboard });
   });
 
@@ -488,10 +593,75 @@ async function startBot(): Promise<void> {
 
     const botCfg = await getBotConfig(adminClient);
     const miniAppUrl =
-      botCfg.features.miniAppEnabled && config.REIWA_PUBLIC_WEB_URL ? config.REIWA_PUBLIC_WEB_URL : null;
-    const keyboard = buildMainKeyboard(botCfg.buttons, miniAppUrl, getUserLang(tgUser.id));
+      botCfg.features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
+    const keyboard = buildMainKeyboard(
+      botCfg.buttons,
+      miniAppUrl,
+      getUserLang(tgUser.id),
+      reiwaUrlButtonUrl,
+      botCfg.translations ?? {},
+    );
 
     await ctx.reply(t('menu.choose_action', getUserLang(tgUser.id)), { reply_markup: keyboard });
+  });
+
+  // ── Standard keyboard callbacks (invite / rules / help) ───────────────────
+
+  bot.callbackQuery('invite', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const telegramId = String(ctx.from?.id);
+    const lang = getUserLang(ctx.from?.id ?? 0);
+    const botCfg = await getBotConfig(adminClient);
+
+    if (!botCfg.features.referralsEnabled) {
+      await ctx.reply(t('referral.disabled', lang));
+      return;
+    }
+
+    try {
+      const invite = adminClient
+        ? ((await adminClient.createReferralInvite(telegramId).catch(() => null)) as
+            | { token?: string }
+            | null)
+        : null;
+      const inviteLink =
+        invite?.token && reiwaPublicUrl
+          ? `${reiwaPublicUrl}/ref/${invite.token}`
+          : t('referral.link_unavailable', lang);
+      await ctx.reply(t('invite.share', lang, { link: inviteLink }));
+    } catch {
+      await ctx.reply(t('referral.error', lang));
+    }
+  });
+
+  bot.callbackQuery('rules', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const lang = getUserLang(ctx.from?.id ?? 0);
+    const policy = adminClient
+      ? ((await adminClient.getPlatformPolicy().catch(() => null)) as {
+          rulesLink?: string | null;
+        } | null)
+      : null;
+    const link = policy?.rulesLink ?? '';
+    if (link.length > 0) {
+      const kb = new InlineKeyboard().url(t('rules.open_button', lang), link);
+      await ctx.reply(t('rules.intro', lang), { reply_markup: kb });
+    } else {
+      await ctx.reply(t('rules.unavailable', lang));
+    }
+  });
+
+  bot.callbackQuery('help', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const lang = getUserLang(ctx.from?.id ?? 0);
+    const botCfg = await getBotConfig(adminClient);
+    const supportUsername = botCfg.visual.supportUsername.replace(/^@/, '');
+    const lines = [t('help.title', lang), t('help.start', lang), t('help.help', lang)];
+    if (supportUsername.length > 0) {
+      lines.push('');
+      lines.push(t('help.contact_support', lang, { username: supportUsername }));
+    }
+    await ctx.reply(lines.join('\n'));
   });
 
   // Channel subscription check
@@ -517,8 +687,14 @@ async function startBot(): Promise<void> {
 
     // Channel check passed — show main menu
     const botCfg = await getBotConfig(adminClient);
-    const miniAppUrl = botCfg.features.miniAppEnabled && config.REIWA_PUBLIC_WEB_URL ? config.REIWA_PUBLIC_WEB_URL : null;
-    const keyboard = buildMainKeyboard(botCfg.buttons, miniAppUrl, lang);
+    const miniAppUrl = botCfg.features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
+    const keyboard = buildMainKeyboard(
+      botCfg.buttons,
+      miniAppUrl,
+      lang,
+      reiwaUrlButtonUrl,
+      botCfg.translations ?? {},
+    );
     await ctx.reply(t('channel.verified', lang), { reply_markup: keyboard });
   });
 

@@ -1,0 +1,32 @@
+# ── Build artefacts and deps (recreated inside the image) ──────────────────
+node_modules
+dist
+*.tsbuildinfo
+
+# ── VCS / editor noise ─────────────────────────────────────────────────────
+.git
+.github
+.gitignore
+.idea
+.vscode
+.kiro
+
+# ── Local env / docker / dev configs (never bake into the image) ──────────
+.env
+.env.*
+!.env.example
+docker-compose.yml
+docker-compose.*.yml
+
+# ── OS noise ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Tests / docs not needed at runtime ─────────────────────────────────────
+test
+README.md
+Reiwa-logo.svg
+
+# ── Web sub-app (built and shipped separately) ────────────────────────────
+web/node_modules
+web/dist

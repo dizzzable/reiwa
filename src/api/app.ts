@@ -7,6 +7,7 @@ import type { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore, createWebSessionMiddleware } from "../redis/session.js";
 import type { SessionConfig } from "../redis/session.js";
 import type { ReiwaConfig } from "../config.js";
+import { resolveReiwaPublicUrl } from "../config.js";
 import { apiLimiter } from "./middleware/rate-limit.js";
 import { createCsrfProtection } from "./middleware/csrf-protection.js";
 import { createContextDetectionMiddleware } from "./middleware/context-detection.js";
@@ -33,6 +34,7 @@ export function createApp(deps: {
   config: ReiwaConfig;
 }) {
   const { config } = deps;
+  const reiwaPublicUrl = resolveReiwaPublicUrl(config);
   const app = express();
 
   // ── Security ──────────────────────────────────────────────────────────────
@@ -47,7 +49,7 @@ export function createApp(deps: {
   // ── CORS ──────────────────────────────────────────────────────────────────
   app.use(
     cors({
-      origin: config.REIWA_CORS_ORIGIN ?? config.REIWA_PUBLIC_WEB_URL ?? true,
+      origin: config.REIWA_CORS_ORIGIN ?? reiwaPublicUrl ?? true,
       credentials: true,
     }),
   );
@@ -73,7 +75,7 @@ export function createApp(deps: {
   app.use(
     "/api",
     createCsrfProtection({
-      allowedOrigin: config.REIWA_CORS_ORIGIN ?? config.REIWA_PUBLIC_WEB_URL ?? null,
+      allowedOrigin: config.REIWA_CORS_ORIGIN ?? reiwaPublicUrl ?? null,
     }),
   );
 

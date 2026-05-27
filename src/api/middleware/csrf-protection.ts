@@ -40,7 +40,7 @@ function extractOrigin(url: string): string | null {
  * Creates a CSRF protection middleware.
  *
  * @param options - Configuration with the allowed origin derived from
- *   REIWA_PUBLIC_WEB_URL or REIWA_CORS_ORIGIN.
+ *   REIWA_DOMAIN or REIWA_CORS_ORIGIN.
  */
 export function createCsrfProtection(options: CsrfOptions) {
   const allowedOrigin = options.allowedOrigin

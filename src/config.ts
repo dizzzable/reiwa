@@ -36,7 +36,14 @@ const optionalString = z
 
 const schema = z.object({
   NODE_ENV: z.string().default("development"),
-  PORT: z.coerce.number().int().positive().default(8100),
+  /**
+   * HTTP port for the reiwa-api process. Sourced from `REIWA_PORT` (canonical
+   * name in `.env.example`) with a `PORT` fallback for plain Node convention
+   * and a default of 5000 to match the docker-compose mapping
+   * `127.0.0.1:${REIWA_PORT:-5000}:${REIWA_PORT:-5000}`.
+   */
+  REIWA_PORT: z.coerce.number().int().positive().default(5000),
+  PORT: z.coerce.number().int().positive().optional(),
   REDIS_URL: z.string().trim().min(1).optional(),
 
   // ── Connection to rezeis-admin (canonical names from .env.example) ──────
@@ -79,6 +86,25 @@ const schema = z.object({
       "BOT_USERNAME must be a valid Telegram username (5–32 chars, letters/digits/underscores, must start with a letter)",
     )
     .optional(),
+  /**
+   * Canonical public URL of the reiwa web/Mini App.
+   *
+   * Used to build:
+   *  - `webApp` keyboard buttons in the Telegram bot,
+   *  - referral / invite links shared to users,
+   *  - `successUrl` / `failUrl` returned to payment providers,
+   *  - the `Access-Control-Allow-Origin` and CSRF allow-list for the API.
+   *
+   * In local dev set this to `http://localhost:5173` (vite dev) or
+   * `http://localhost:8080` (nginx prod build). In production set it to
+   * your real `https://…` domain. The protocol is required.
+   */
+  REIWA_DOMAIN: optionalUrl,
+  /**
+   * @deprecated Use `REIWA_DOMAIN` instead. Kept as a fallback so existing
+   * deployments don't break during the rename. When both are set,
+   * `REIWA_DOMAIN` wins.
+   */
   REIWA_PUBLIC_WEB_URL: optionalUrl,
   REIWA_COOKIE_SECRET: z.string().trim().min(1).optional(),
   REIWA_COOKIE_SECURE: z
@@ -125,4 +151,37 @@ export function resolveRezeisAdminUrl(config: ReiwaConfig): string | null {
     return `http://${host}:${config.REZEIS_PORT}`;
   }
   return `https://${host}`;
+}
+
+/**
+ * Returns the canonical public URL of the reiwa web/Mini App.
+ *
+ * Resolution rules (mirror `resolveRezeisAdminUrl`):
+ *   1. `REIWA_DOMAIN` (canonical name in `.env.example`) is read first;
+ *      `REIWA_PUBLIC_WEB_URL` is the deprecated alias kept for back-compat.
+ *   2. The value can be either a bare host (`reiwa.example.com`) or a full
+ *      URL (`https://reiwa.example.com`, `http://localhost:5173`). When the
+ *      protocol is missing we infer it:
+ *        - bare host with a dot → assumed public domain → `https://...`
+ *        - bare host without dot or `localhost`/`localhost:PORT` → local
+ *          dev → `http://...`
+ *      This keeps `.env` ergonomic in production: the operator just types
+ *      the domain — TLS at the standard 443 is the only deployment we
+ *      ship with.
+ *   3. Trailing slashes are stripped so callers can safely concatenate
+ *      paths like `${url}/plans` or `${url}/ref/${token}`.
+ *   4. Returns `null` when nothing is configured — caller decides on a
+ *      fallback (e.g. omit a webApp button rather than crash).
+ */
+export function resolveReiwaPublicUrl(config: ReiwaConfig): string | null {
+  const raw = (config.REIWA_DOMAIN ?? config.REIWA_PUBLIC_WEB_URL)?.trim();
+  if (!raw) return null;
+  const noTrailing = raw.replace(/\/+$/, '');
+  if (/^https?:\/\//i.test(noTrailing)) {
+    return noTrailing;
+  }
+  // Bare host. `localhost` / `localhost:PORT` / docker service names
+  // (no dot) → http; everything with a dot → https.
+  const isLocal = /^localhost(:\d+)?$/i.test(noTrailing) || !noTrailing.includes('.');
+  return isLocal ? `http://${noTrailing}` : `https://${noTrailing}`;
 }

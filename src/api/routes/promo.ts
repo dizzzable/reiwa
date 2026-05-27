@@ -54,14 +54,20 @@ export function createPromoRouter(deps: {
     },
   );
 
-  // GET /api/v1/promocode/eligible-subscriptions
+  // GET /api/v1/promocode/eligible-subscriptions?code=...
   router.get(
     "/promocode/eligible-subscriptions",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.getEligibleSubscriptions(
-        req.telegramId!,
-      );
+      const code = String((req.query as { code?: string }).code ?? "").trim();
+      if (!code) {
+        res.status(400).json({ message: "code is required" });
+        return;
+      }
+      // The upstream contract is `?userId=<cuid>&code=<...>`; we forward the
+      // resolved user id from the session middleware.
+      const userId = (req as AuthRequest & { userId?: string }).userId ?? req.telegramId!;
+      const result = await adminClient?.getEligibleSubscriptions(userId, code);
       res.json(result ?? []);
     },
   );
