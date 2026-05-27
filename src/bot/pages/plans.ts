@@ -4,21 +4,12 @@
  * Lists the operator-managed plan catalog as a single rendered
  * message. Empty catalog → `plans.empty`; admin failure → `plans.error`.
  */
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
 import { buildPlansMessage } from '../../infrastructure/bot-message/message-builder.js';
 import type { Plan } from '../../infrastructure/bot-config/types.js';
 
 import { replyWithEntities } from './reply.js';
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
-}
 
 export const registerPlansPage: PageRegistrar = (bot, deps) => {
   bot.command('plans', async (ctx) => {

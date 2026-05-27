@@ -11,19 +11,10 @@
  * 502s on getChatMember and we don't want a transient outage to lock
  * legitimate users out of the bot.
  */
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
 import { buildMainKeyboard } from '../widgets/main-keyboard.js';
 
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
-}
 
 interface ChannelPolicyShape {
   readonly channelRequired?: boolean;

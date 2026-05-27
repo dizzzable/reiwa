@@ -5,21 +5,11 @@
  * link. Returns a "referrals disabled" message when the operator has
  * turned the feature off in the bot config.
  */
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
-
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
 
 interface ReferralInviteShape {
   readonly token?: string;
-}
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
 }
 
 export const registerInvitePage: PageRegistrar = (bot, deps) => {

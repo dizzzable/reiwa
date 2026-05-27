@@ -11,23 +11,13 @@
  * Wave 8 will rewire this onto a typed conversation. Until then the
  * `session.step` string slot keeps the legacy contract intact.
  */
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
-
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
 
 interface PromocodeResultShape {
   readonly activated?: boolean;
   readonly success?: boolean;
   readonly message?: string;
-}
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
 }
 
 async function startPromoFlow(

@@ -6,14 +6,10 @@
  * pre-built builder. The `invite` callback in `invite.ts` is a
  * narrower variant — it only sends the share link, not the stats card.
  */
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
 import { buildReferralMessage } from '../../infrastructure/bot-message/message-builder.js';
 
 import { replyWithEntities } from './reply.js';
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
 
 interface ReferralSummaryShape {
@@ -24,11 +20,6 @@ interface ReferralSummaryShape {
 
 interface ReferralInviteShape {
   readonly token?: string;
-}
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
 }
 
 async function renderReferral(

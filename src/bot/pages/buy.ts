@@ -5,18 +5,8 @@
  */
 import { InlineKeyboard } from 'grammy';
 
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
-
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
-}
 
 export const registerBuyPage: PageRegistrar = (bot, deps) => {
   bot.callbackQuery('buy', async (ctx) => {

@@ -8,21 +8,11 @@
  */
 import { InlineKeyboard } from 'grammy';
 
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
-
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
 
 interface PlatformPolicyMaybeRulesLink {
   readonly rulesLink?: string | null;
-}
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
 }
 
 export const registerRulesPage: PageRegistrar = (bot, deps) => {

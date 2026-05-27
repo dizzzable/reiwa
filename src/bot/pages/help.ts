@@ -6,18 +6,8 @@
  * promo/referral commands when the operator has the corresponding
  * features enabled.
  */
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
-
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
-}
 
 export const registerHelpCommandPage: PageRegistrar = (bot, deps) => {
   bot.command('help', async (ctx) => {

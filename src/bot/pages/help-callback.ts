@@ -6,18 +6,8 @@
  * support username on the bot config, the "Contact support: @username"
  * line.
  */
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
-
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
-}
 
 export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
   const { translator, userLocale, getConfig } = deps;

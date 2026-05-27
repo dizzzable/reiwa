@@ -7,12 +7,7 @@
  */
 import { InlineKeyboard } from 'grammy';
 
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
-
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
 
 interface UserSessionShape {
@@ -23,11 +18,6 @@ interface UserSessionShape {
   readonly personalDiscount?: number;
   readonly referralCode?: string;
   readonly hasSubscription?: boolean;
-}
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
 }
 
 async function renderProfile(

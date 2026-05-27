@@ -3,12 +3,7 @@
  * plain bullet list. Empty list ⇒ `activity.empty`; admin failure ⇒
  * `activity.error`.
  */
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
-
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
 
 interface TransactionShape {
@@ -23,11 +18,6 @@ interface TransactionShape {
 interface TransactionsResultShape {
   readonly transactions?: TransactionShape[];
   readonly items?: TransactionShape[];
-}
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
 }
 
 function renderLine(tx: TransactionShape): string {

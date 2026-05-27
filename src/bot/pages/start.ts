@@ -18,16 +18,12 @@
  */
 import { InlineKeyboard } from 'grammy';
 
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../../core/enums/locale.enum.js';
 import { buildWelcomeMessage } from '../../infrastructure/bot-message/message-builder.js';
 import { buildMainKeyboard } from '../widgets/main-keyboard.js';
 import type { Subscription } from '../../infrastructure/bot-config/types.js';
 
 import { replyWithEntities } from './reply.js';
+import { coerceLocale } from './coerce-locale.js';
 import type { PageRegistrar } from './types.js';
 
 interface BootstrapSessionShape {
@@ -38,11 +34,6 @@ interface ChannelPolicyShape {
   readonly channelRequired?: boolean;
   readonly channelLink?: string;
   readonly channelId?: string | number;
-}
-
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
 }
 
 export const registerStartPage: PageRegistrar = (bot, deps) => {
