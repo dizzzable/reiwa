@@ -30,11 +30,17 @@ import {
   isTelegramSafeButtonUrl,
 } from './widgets/main-keyboard.js';
 import {
+  registerActivityPage,
+  registerBuyPage,
   registerHelpCallbackPage,
   registerHelpCommandPage,
   registerInvitePage,
   registerLangPage,
+  registerMenuPage,
   registerPlansPage,
+  registerProfilePage,
+  registerPromoPage,
+  registerReferralPage,
   registerRulesPage,
   registerSubscriptionPage,
 } from './pages/index.js';
@@ -267,94 +273,9 @@ async function startBot(): Promise<void> {
 
   // ── /promo ─────────────────────────────────────────────────────────────────
 
-  bot.command('promo', async (ctx) => {
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    if (!botCfg.features.promoCodesEnabled) {
-      await ctx.reply(t('promo.disabled', lang));
-      return;
-    }
-    ctx.session.step = 'awaiting_promo_code';
-    await ctx.reply(t('promo.enter', lang));
-  });
-
-  // ── /referral ──────────────────────────────────────────────────────────────
-
-  bot.command('referral', async (ctx) => {
-    const telegramId = String(ctx.from?.id);
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    if (!botCfg.features.referralsEnabled) {
-      await ctx.reply(t('referral.disabled', lang));
-      return;
-    }
-
-    try {
-      const [summary, invite] = await Promise.all([
-        adminClient?.getReferralSummary(telegramId).catch(() => null) as any,
-        adminClient?.createReferralInvite(telegramId).catch(() => null) as any,
-      ]);
-
-      const inviteLink =
-        invite?.token && config.REIWA_PUBLIC_WEB_URL
-          ? `${config.REIWA_PUBLIC_WEB_URL}/ref/${invite.token}`
-          : t('referral.link_unavailable', lang);
-
-      const message = buildReferralMessage({
-        totalReferrals: summary?.totalReferrals ?? summary?.referralsCount ?? 0,
-        qualifiedReferrals: summary?.qualifiedReferrals ?? summary?.referralsCount ?? 0,
-        inviteLink,
-        botEmojis: botCfg.botEmojis,
-      });
-
-      await replyWithEntities(ctx, message);
-    } catch {
-      await ctx.reply(t('referral.error', lang));
-    }
-  });
-
-  // ── /profile ───────────────────────────────────────────────────────────────
-
-  bot.command('profile', async (ctx) => {
-    const telegramId = String(ctx.from?.id);
-    const lang = getUserLang(ctx.from?.id ?? 0);
-
-    try {
-      const session = adminClient
-        ? ((await adminClient.getUserSession(telegramId).catch(() => null)) as any)
-        : null;
-
-      if (!session) {
-        await ctx.reply(t('error_generic', lang));
-        return;
-      }
-
-      const lines = [
-        `👤 ${t('profile.header', lang)}\n`,
-        t('profile.name', lang, { name: session.name ?? '—' }),
-      ];
-      if (session.username) lines.push(t('profile.username', lang, { username: session.username }));
-      lines.push(t('profile.language', lang, { lang: (session.language ?? 'RU').toUpperCase() }));
-      lines.push(t('profile.points', lang, { points: session.points ?? 0 }));
-      if (session.personalDiscount > 0) {
-        lines.push(t('profile.discount', lang, { discount: session.personalDiscount }));
-      }
-      lines.push(t('profile.referral_code', lang, { code: session.referralCode ?? '—' }));
-      lines.push(session.hasSubscription ? t('profile.has_subscription', lang) : t('profile.no_subscription', lang));
-
-      const kb = new InlineKeyboard()
-        .text(t('lang.ru', lang), 'lang:ru')
-        .text(t('lang.en', lang), 'lang:en')
-        .row()
-        .text(t('back_to_menu', lang), 'back_to_menu');
-
-      await ctx.reply(lines.join('\n'), { reply_markup: kb });
-    } catch {
-      await ctx.reply(t('error_generic', lang));
-    }
-  });
+  // ── /promo (extracted to bot/pages/promo.ts) ──────────────────────────────
+  // ── /referral (extracted to bot/pages/referral.ts) ─────────────────────────
+  // ── /profile (extracted to bot/pages/profile.ts) ───────────────────────────
 
   // ── /lang and language callback (extracted to bot/pages/lang.ts) ──────────
   // ── invite/rules/help callbacks (extracted to bot/pages/) ────────────────
@@ -377,224 +298,16 @@ async function startBot(): Promise<void> {
   registerHelpCommandPage(bot, pageDeps);
   registerPlansPage(bot, pageDeps);
   registerSubscriptionPage(bot, pageDeps);
+  registerPromoPage(bot, pageDeps);
+  registerProfilePage(bot, pageDeps);
+  registerReferralPage(bot, pageDeps);
+  registerActivityPage(bot, pageDeps);
+  registerBuyPage(bot, pageDeps);
+  registerMenuPage(bot, pageDeps);
 
-  // Back to menu
-  bot.callbackQuery('back_to_menu', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const tgUser = ctx.from;
-    if (!tgUser) return;
-
-    const botCfg = await getBotConfig(adminClient);
-    const miniAppUrl =
-      botCfg.features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
-    const keyboard = buildMainKeyboardWidget({ buttons: botCfg.buttons, miniAppUrl, publicWebUrl: reiwaUrlButtonUrl, lang: coerceLocale(getUserLang(tgUser.id)), translator });
-
-    await ctx.reply(t('menu.choose_action', getUserLang(tgUser.id)), { reply_markup: keyboard });
-  });
-
-  // ── Standard keyboard callbacks (invite / rules / help) ───────────────────
-  // Extracted to bot/pages/{invite,rules,help-callback}.ts above.
-
-  // Channel subscription check
-  bot.callbackQuery('check_channel', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const tgUser = ctx.from;
-    if (!tgUser) return;
-    const lang = getUserLang(tgUser.id);
-
-    try {
-      const policy = adminClient ? await adminClient.getPlatformPolicy() as any : null;
-      if (policy?.channelRequired && policy?.channelLink) {
-        const channelId = policy.channelId ?? policy.channelLink;
-        const member = await ctx.api.getChatMember(channelId, tgUser.id);
-        if (member.status === 'left' || member.status === 'kicked') {
-          await ctx.reply(t('channel.not_subscribed', lang));
-          return;
-        }
-      }
-    } catch {
-      // Can't verify — let them through
-    }
-
-    // Channel check passed — show main menu
-    const botCfg = await getBotConfig(adminClient);
-    const miniAppUrl = botCfg.features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
-    const keyboard = buildMainKeyboardWidget({ buttons: botCfg.buttons, miniAppUrl, publicWebUrl: reiwaUrlButtonUrl, lang: coerceLocale(lang), translator });
-    await ctx.reply(t('channel.verified', lang), { reply_markup: keyboard });
-  });
-
-  // Subscription callback — extracted to bot/pages/subscription.ts.
-
-  // Buy
-  bot.callbackQuery('buy', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    const miniAppUrl =
-      botCfg.features.miniAppEnabled && config.REIWA_PUBLIC_WEB_URL
-        ? config.REIWA_PUBLIC_WEB_URL + '/plans'
-        : null;
-
-    if (miniAppUrl) {
-      await ctx.reply(t('plans.open_app', lang), {
-        reply_markup: new InlineKeyboard().webApp(t('plans.open_app_button', lang), miniAppUrl),
-      });
-    } else {
-      await ctx.reply(t('plans.use_command', lang));
-    }
-  });
-
-  // Promo
-  bot.callbackQuery('promo', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    if (!botCfg.features.promoCodesEnabled) {
-      await ctx.reply(t('promo.disabled', lang));
-      return;
-    }
-    ctx.session.step = 'awaiting_promo_code';
-    await ctx.reply(t('promo.enter', lang));
-  });
-
-  // Referrals
-  bot.callbackQuery('referrals', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const telegramId = String(ctx.from?.id);
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    if (!botCfg.features.referralsEnabled) {
-      await ctx.reply(t('referral.disabled', lang));
-      return;
-    }
-
-    try {
-      const summary = adminClient
-        ? ((await adminClient.getReferralSummary(telegramId).catch(() => null)) as any)
-        : null;
-      const invite = adminClient
-        ? ((await adminClient.createReferralInvite(telegramId).catch(() => null)) as any)
-        : null;
-
-      const inviteLink =
-        invite?.token && config.REIWA_PUBLIC_WEB_URL
-          ? `${config.REIWA_PUBLIC_WEB_URL}/ref/${invite.token}`
-          : t('referral.link_unavailable', lang);
-
-      const message = buildReferralMessage({
-        totalReferrals: summary?.totalReferrals ?? summary?.referralsCount ?? 0,
-        qualifiedReferrals: summary?.qualifiedReferrals ?? summary?.referralsCount ?? 0,
-        inviteLink,
-        botEmojis: botCfg.botEmojis,
-      });
-
-      await replyWithEntities(ctx, message);
-    } catch {
-      await ctx.reply(t('referral.error', lang));
-    }
-  });
-
-  // Profile
-  bot.callbackQuery('profile', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const telegramId = String(ctx.from?.id);
-    const lang = getUserLang(ctx.from?.id ?? 0);
-
-    try {
-      const session = adminClient
-        ? ((await adminClient.getUserSession(telegramId).catch(() => null)) as any)
-        : null;
-
-      if (!session) {
-        await ctx.reply(t('error_generic', lang));
-        return;
-      }
-
-      const lines = [
-        `👤 ${t('profile.header', lang)}\n`,
-        t('profile.name', lang, { name: session.name ?? '—' }),
-      ];
-      if (session.username) lines.push(t('profile.username', lang, { username: session.username }));
-      lines.push(t('profile.language', lang, { lang: (session.language ?? 'RU').toUpperCase() }));
-      lines.push(t('profile.points', lang, { points: session.points ?? 0 }));
-      if (session.personalDiscount > 0) {
-        lines.push(t('profile.discount', lang, { discount: session.personalDiscount }));
-      }
-      lines.push(t('profile.referral_code', lang, { code: session.referralCode ?? '—' }));
-      lines.push(session.hasSubscription ? t('profile.has_subscription', lang) : t('profile.no_subscription', lang));
-
-      const kb = new InlineKeyboard()
-        .text(t('lang.ru', lang), 'lang:ru')
-        .text(t('lang.en', lang), 'lang:en')
-        .row()
-        .text(t('back_to_menu', lang), 'back_to_menu');
-
-      await ctx.reply(lines.join('\n'), { reply_markup: kb });
-    } catch {
-      await ctx.reply(t('error_generic', lang));
-    }
-  });
-
-  // Activity
-  bot.callbackQuery('activity', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const telegramId = String(ctx.from?.id);
-    const lang = getUserLang(ctx.from?.id ?? 0);
-
-    try {
-      const result = adminClient
-        ? ((await adminClient.getTransactions(telegramId).catch(() => null)) as any)
-        : null;
-
-      const txs = (result?.transactions ?? result?.items ?? []) as Array<Record<string, unknown>>;
-
-      if (!txs.length) {
-        await ctx.reply(t('activity.empty', lang));
-        return;
-      }
-
-      const lines = txs.map((tx) => {
-        const pricing = (tx['pricing'] as Record<string, unknown>) ?? {};
-        const amount = pricing['finalPrice'] ?? tx['amount'] ?? '—';
-        const currency = pricing['currency'] ?? tx['currency'] ?? '';
-        const status = String(tx['status'] ?? '');
-        const gw = String(tx['gatewayType'] ?? tx['gateway'] ?? '');
-        return `• ${gw} — ${amount} ${currency} — ${status}`;
-      });
-
-      await ctx.reply(`${t('activity.header', lang)}\n\n${lines.join('\n')}`);
-    } catch {
-      await ctx.reply(t('activity.error', lang));
-    }
-  });
-
-  // ── Text handler (promo code entry) ──────────────────────────────────────
-
-  bot.on('message:text', async (ctx) => {
-    if (ctx.session.step === 'awaiting_promo_code') {
-      ctx.session.step = undefined;
-      const code = ctx.message.text.trim();
-      const telegramId = String(ctx.from?.id);
-      const lang = getUserLang(ctx.from?.id ?? 0);
-
-      try {
-        const result = adminClient
-          ? ((await adminClient.activatePromocode(telegramId, code)) as any)
-          : null;
-
-        if (result?.activated || result?.success) {
-          await ctx.reply(`${t('promo.activated', lang)}\n\n${result.message ?? ''}`);
-        } else {
-          await ctx.reply(t('promo.failed', lang, { code }));
-        }
-      } catch (e: unknown) {
-        await ctx.reply(t('promo.error', lang, { message: (e as Error).message }));
-      }
-    }
-  });
+  // ── back_to_menu / check_channel callbacks (extracted to pages/menu.ts) ───
+  // ── buy / promo / referrals / profile / activity callbacks (extracted) ────
+  // ── message:text promo-code entry (extracted to pages/promo.ts) ───────────
 
   // ── Error handler ──────────────────────────────────────────────────────────
 
