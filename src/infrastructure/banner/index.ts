@@ -1,16 +1,18 @@
 /**
- * Banner store stub (Wave 1B → Wave 6).
+ * Banner store (Wave 1B → Wave 6).
  *
- * Wave 6 will land the real implementation: a `BannerStore` class that
- * walks the 5-step lookup chain documented on `BannerStorePort` (DB
- * `bot.banner.<name>[.<lang>]` overrides, then filesystem
- * `assets/banners/<lang>/<name>.{ext}`, then locale `default`, then
- * the global `default`). The constructor will take an injected
- * `BotTextRepository` and an `assetsRoot` path.
+ * Wave 6 lands the real implementation: a `BannerStore` class that
+ * walks the documented 5-step lookup chain (DB
+ * `bot.banner.<name>[.<lang>]` overrides via the supplied
+ * `getOverride` callback, then filesystem
+ * `assets/banners/<lang>/<name>.<ext>`, then locale `default`, then
+ * the global `default`). Constructor takes the `assetsRoot` path and
+ * a callback into the bot-config translations cache; the store stays
+ * decoupled from the AdminClient and from any DB driver.
  *
- * For now this module exports a no-op implementation that always
- * resolves to `null` — the call site (Wave 3 bot pages) skips banners
- * gracefully when the resource is missing, so wiring this up early
- * does not regress UX.
+ * `NoopBannerStore` is kept exported as a test seam — use it when
+ * callers want to exercise downstream code without a real assets
+ * folder on disk.
  */
+export { BannerStore, type BannerStoreOptions, type GetOverride } from './banner-store.js';
 export { NoopBannerStore } from './noop-banner-store.js';
