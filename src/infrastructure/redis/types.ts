@@ -3,7 +3,7 @@
  */
 
 import type { WebSession } from "./session.js";
-import type { RequestContext } from "../api/middleware/context-detection.js";
+import type { RequestContext } from "../../api/middleware/context-detection.js";
 
 declare global {
   namespace Express {

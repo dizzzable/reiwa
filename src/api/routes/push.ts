@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import type { AdminClient } from "../../lib/admin-client.js";
-import type { WebSessionStore } from "../../redis/session.js";
+import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@
 
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import type { Redis } from "ioredis";
-import { bruteForceKey, bannedIpKey, TTL } from "../../redis/keys.js";
+import { bruteForceKey, bannedIpKey, TTL } from "../../infrastructure/redis/keys.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

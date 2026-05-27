@@ -7,7 +7,7 @@ import {
   rateRecoverKey,
   bannedIpKey,
   TTL,
-} from "../../redis/keys.js";
+} from "../../infrastructure/redis/keys.js";
 
 // ── Generic in-memory rate limiter (express-rate-limit) ─────────────────────
 

@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
-import type { WebSessionStore } from "../../redis/session.js";
+import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
 import { validateTelegramInitData } from "../../lib/telegram-auth.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";

@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { loadConfig, resolveRezeisAdminUrl } from "../config.js";
 import { AdminClient } from "../lib/admin-client.js";
 import { SessionStore } from "../lib/session-store.js";
-import { WebSessionStore } from "../redis/session.js";
+import { WebSessionStore } from "../infrastructure/redis/session.js";
 import { createApp } from "./app.js";
 
 const config = loadConfig();
