@@ -6,14 +6,16 @@
  *      BCP-47-ish code (`en`, `en-GB`, `pt-BR`) to a `SupportedLocale`,
  *      with a Russian-script fallback for kindred locales (be/uk/kk).
  *   2. Per-user locale cache — small in-memory map (keyed by Telegram
- *      `from.id`) that survives the bot process. Wave 8 will swap this
- *      for a Redis-backed store; the API is intentionally identical so
- *      callers do not need to change.
+ *      `from.id`) that survives the bot process. Wave 8B added a
+ *      Redis-backed sibling (`RedisUserLocaleCache`) that satisfies the
+ *      same `UserLocaleCachePort`; pick one via DI.
  *
- * The cache is process-local and resets on bot restart. That is fine for
- * a UX where the auto-detect middleware re-applies the device locale on
- * the very next message — the cache only matters within a single grammy
- * conversation turn anyway.
+ * The in-memory cache is process-local and resets on bot restart. That
+ * is fine for a UX where the auto-detect middleware re-applies the
+ * device locale on the very next message — the cache only matters
+ * within a single grammy conversation turn. Production deploys with
+ * multiple bot replicas should swap in `RedisUserLocaleCache` so the
+ * choice survives a horizontal scale-out.
  */
 import {
   DEFAULT_LOCALE,
@@ -21,6 +23,7 @@ import {
   type SupportedLocale,
   isSupportedLocale,
 } from '../../../core/enums/locale.enum.js';
+import type { UserLocaleCachePort } from '../../../application/ports/user-locale-cache.port.js';
 
 const SUPPORTED_LOCALE_SET: ReadonlySet<string> = new Set(SUPPORTED_LOCALES);
 
@@ -47,14 +50,14 @@ export function detectLocaleFromTelegram(rawLanguageCode: string | undefined | n
 }
 
 /**
- * Per-user locale cache. Backed by an in-memory `Map` for now; will be
- * swapped for a Redis-backed implementation in Wave 8 without changing
- * the surface API.
+ * In-memory `UserLocaleCachePort`. The synchronous helpers (`getSync`,
+ * `setSync`, `hasSync`) are exposed for hot-path callers that already
+ * have a `from.id` in scope and don't want the await ceremony.
  */
-export class UserLocaleCache {
+export class UserLocaleCache implements UserLocaleCachePort {
   private readonly cache = new Map<number, SupportedLocale>();
 
-  set(userId: number, lang: string | SupportedLocale): void {
+  setSync(userId: number, lang: string | SupportedLocale): void {
     const lower = typeof lang === 'string' ? lang.toLowerCase() : lang;
     if (isSupportedLocale(lower)) {
       this.cache.set(userId, lower);
@@ -65,12 +68,24 @@ export class UserLocaleCache {
     this.cache.set(userId, DEFAULT_LOCALE);
   }
 
-  get(userId: number): SupportedLocale {
+  getSync(userId: number): SupportedLocale {
     return this.cache.get(userId) ?? DEFAULT_LOCALE;
   }
 
-  has(userId: number): boolean {
+  hasSync(userId: number): boolean {
     return this.cache.has(userId);
+  }
+
+  async get(userId: number): Promise<SupportedLocale> {
+    return this.getSync(userId);
+  }
+
+  async set(userId: number, lang: string | SupportedLocale): Promise<void> {
+    this.setSync(userId, lang);
+  }
+
+  async has(userId: number): Promise<boolean> {
+    return this.hasSync(userId);
   }
 
   /** Test seam — clears the cache between unit tests. */
@@ -79,5 +94,5 @@ export class UserLocaleCache {
   }
 }
 
-/** Process-wide singleton — Wave 8 will replace the constructor here. */
+/** Process-wide singleton — Wave 3 will replace the constructor here. */
 export const userLocaleCache = new UserLocaleCache();

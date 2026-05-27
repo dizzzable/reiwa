@@ -53,35 +53,45 @@ describe('UserLocaleCache', () => {
     cache = new UserLocaleCache();
   });
 
-  it('returns the RU default for an unknown user id', () => {
-    expect(cache.get(12345)).toBe('ru');
-    expect(cache.has(12345)).toBe(false);
+  // ── Sync surface (legacy bot/i18n.ts shim) ────────────────────────────────
+  it('getSync returns the RU default for an unknown user id', () => {
+    expect(cache.getSync(12345)).toBe('ru');
+    expect(cache.hasSync(12345)).toBe(false);
   });
 
-  it('persists writes for subsequent reads', () => {
-    cache.set(42, 'en');
-    expect(cache.get(42)).toBe('en');
-    expect(cache.has(42)).toBe(true);
+  it('setSync persists writes for subsequent reads', () => {
+    cache.setSync(42, 'en');
+    expect(cache.getSync(42)).toBe('en');
+    expect(cache.hasSync(42)).toBe(true);
   });
 
-  it('lowercases the supplied locale before storing', () => {
-    cache.set(7, 'EN');
-    expect(cache.get(7)).toBe('en');
+  it('setSync lowercases the supplied locale before storing', () => {
+    cache.setSync(7, 'EN');
+    expect(cache.getSync(7)).toBe('en');
   });
 
-  it('coerces unknown locales to the RU default rather than storing them verbatim', () => {
-    cache.set(1, 'fr');
-    expect(cache.get(1)).toBe('ru');
+  it('setSync coerces unknown locales to the RU default rather than storing them verbatim', () => {
+    cache.setSync(1, 'fr');
+    expect(cache.getSync(1)).toBe('ru');
     // Still considered "set" — we recorded our decision; subsequent calls
     // should not retry detection on this user.
-    expect(cache.has(1)).toBe(true);
+    expect(cache.hasSync(1)).toBe(true);
   });
 
   it('reset() wipes all entries', () => {
-    cache.set(1, 'en');
-    cache.set(2, 'ru');
+    cache.setSync(1, 'en');
+    cache.setSync(2, 'ru');
     cache.reset();
-    expect(cache.has(1)).toBe(false);
-    expect(cache.has(2)).toBe(false);
+    expect(cache.hasSync(1)).toBe(false);
+    expect(cache.hasSync(2)).toBe(false);
+  });
+
+  // ── Async UserLocaleCachePort surface (Wave 8B) ───────────────────────────
+  it('async get/set/has mirror the sync surface', async () => {
+    await cache.set(99, 'en');
+    expect(await cache.get(99)).toBe('en');
+    expect(await cache.has(99)).toBe(true);
+    expect(await cache.has(100)).toBe(false);
+    expect(await cache.get(100)).toBe('ru');
   });
 });

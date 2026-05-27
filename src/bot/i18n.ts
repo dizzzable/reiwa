@@ -57,15 +57,15 @@ export function formatDays(n: number, lang: string = DEFAULT_LOCALE): string {
 }
 
 export function setUserLang(userId: number, lang: string): void {
-  userLocaleCache.set(userId, lang);
+  userLocaleCache.setSync(userId, lang);
 }
 
 export function getUserLang(userId: number): string {
-  return userLocaleCache.get(userId);
+  return userLocaleCache.getSync(userId);
 }
 
 export function userLangCacheHas(userId: number): boolean {
-  return userLocaleCache.has(userId);
+  return userLocaleCache.hasSync(userId);
 }
 
 export function detectLocaleFromTelegram(rawLanguageCode: string | undefined | null): string {
