@@ -1,11 +1,6 @@
 /**
  * /lang page specs.
  *
- * Test approach: register the page against a fake bot that records
- * which handlers it received, then invoke each handler with a fake
- * grammy `Context` to assert the user-visible side effects (replies,
- * locale-cache writes, admin client calls).
- *
  * Pinned behaviours:
  *   - `/lang` opens the locale picker keyboard
  *   - `lang:<locale>` callback persists the locale in the cache
@@ -13,115 +8,34 @@
  *   - unsupported locale tags coerce to the RU default
  *   - the confirmation message renders in the newly chosen locale
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { registerLangPage } from '../../../src/bot/pages/lang.js';
-import type {
-  BotContext,
-  PageDeps,
-  UserLocaleSyncCache,
-} from '../../../src/bot/pages/types.js';
-import type { TranslatorPort } from '../../../src/application/ports/translator.port.js';
+import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
+import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
 
-interface FakeBot {
-  commandHandlers: Map<string, (ctx: BotContext) => Promise<void>>;
-  callbackHandlers: Array<{
-    matcher: string | RegExp;
-    handler: (ctx: BotContext) => Promise<void>;
-  }>;
-  command(name: string, handler: (ctx: BotContext) => Promise<void>): void;
-  callbackQuery(
-    matcher: string | RegExp,
-    handler: (ctx: BotContext) => Promise<void>,
-  ): void;
-}
-
-function buildFakeBot(): FakeBot {
-  const commandHandlers = new Map<string, (ctx: BotContext) => Promise<void>>();
-  const callbackHandlers: FakeBot['callbackHandlers'] = [];
-  return {
-    commandHandlers,
-    callbackHandlers,
-    command(name, handler) {
-      commandHandlers.set(name, handler);
-    },
-    callbackQuery(matcher, handler) {
-      callbackHandlers.push({ matcher, handler });
-    },
-  };
-}
-
-interface FakeContext {
-  from?: { id: number };
-  match?: RegExpMatchArray | null;
-  reply: ReturnType<typeof vi.fn>;
-  answerCallbackQuery: ReturnType<typeof vi.fn>;
-}
-
-function buildFakeCtx(over: Partial<FakeContext> = {}): FakeContext {
-  return {
-    from: over.from ?? { id: 42 },
-    match: over.match,
-    reply: vi.fn().mockResolvedValue(undefined),
-    answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function buildDeps(): {
-  deps: PageDeps;
-  userLocale: UserLocaleSyncCache & {
-    store: Map<number, string>;
-  };
-  translator: TranslatorPort;
-  adminCalls: string[];
+function withAdminSpy(): {
+  adminClient: PageDeps['adminClient'];
+  calls: string[];
+  failNext: { value: boolean };
 } {
-  const store = new Map<number, string>();
-  const userLocale = {
-    store,
-    getSync: (id: number) => store.get(id) ?? 'ru',
-    setSync: (id: number, lang: string) => {
-      store.set(id, lang);
-    },
-    hasSync: (id: number) => store.has(id),
-  };
-  const translator: TranslatorPort = {
-    t: (key, lang, vars) => {
-      if (key === 'lang.choose') return `[${lang}] choose`;
-      if (key === 'lang.ru') return `[${lang}] ru-label`;
-      if (key === 'lang.en') return `[${lang}] en-label`;
-      if (key === 'lang.changed') return `[${lang}] changed:${vars?.lang ?? ''}`;
-      return key;
-    },
-    resolveButtonLabel: (_id, fallback) => fallback,
-  };
-  const adminCalls: string[] = [];
-  const adminClient = {
-    updateUserLanguage: vi.fn(async (telegramId: string, lang: string) => {
-      adminCalls.push(`${telegramId}:${lang}`);
-    }),
-  } as unknown as PageDeps['adminClient'];
-
+  const calls: string[] = [];
+  const failNext = { value: false };
+  const updateUserLanguage = vi.fn(async (telegramId: string, lang: string) => {
+    if (failNext.value) {
+      failNext.value = false;
+      throw new Error('boom');
+    }
+    calls.push(`${telegramId}:${lang}`);
+  });
   return {
-    deps: {
-      adminClient,
-      translator,
-      userLocale,
-      getConfig: async () => {
-        throw new Error('unused');
-      },
-      urls: { publicWebUrl: null, miniAppUrl: null },
-    },
-    userLocale,
-    translator,
-    adminCalls,
+    adminClient: { updateUserLanguage } as unknown as PageDeps['adminClient'],
+    calls,
+    failNext,
   };
 }
 
 describe('registerLangPage', () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('registers the /lang command and the lang:* callback', () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();
@@ -131,34 +45,24 @@ describe('registerLangPage', () => {
     expect(bot.callbackHandlers[0].matcher).toBeInstanceOf(RegExp);
   });
 
-  it('/lang replies with the locale picker built from translator labels', async () => {
+  it('/lang renders the picker in the user persisted locale', async () => {
     const bot = buildFakeBot();
-    const { deps } = buildDeps();
+    const { deps } = buildDeps({ initialUserId: 7, initialLocale: 'en' });
     registerLangPage(bot as unknown as Parameters<typeof registerLangPage>[0], deps);
-    const handler = bot.commandHandlers.get('lang');
-    expect(handler).toBeDefined();
-    const ctx = buildFakeCtx();
-    await handler!(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledTimes(1);
-    expect(ctx.reply.mock.calls[0][0]).toBe('[ru] choose');
-  });
-
-  it('/lang renders in the user\'s persisted locale (en)', async () => {
-    const bot = buildFakeBot();
-    const { deps, userLocale } = buildDeps();
-    userLocale.setSync(42, 'en');
-    registerLangPage(bot as unknown as Parameters<typeof registerLangPage>[0], deps);
-    const ctx = buildFakeCtx();
+    const ctx = buildFakeCtx({ from: { id: 7 } });
     await bot.commandHandlers.get('lang')!(ctx as unknown as BotContext);
-    expect(ctx.reply.mock.calls[0][0]).toBe('[en] choose');
+    const reply = ctx.reply.mock.calls[0][0] as string;
+    expect(reply).toBe('en:lang.choose');
   });
 
   it('lang:* callback updates the cache, calls admin, confirms in new locale', async () => {
+    const spy = withAdminSpy();
     const bot = buildFakeBot();
-    const { deps, userLocale, adminCalls } = buildDeps();
+    const { deps, userLocale } = buildDeps({
+      adminOverrides: spy.adminClient as unknown as Record<string, unknown>,
+    });
     registerLangPage(bot as unknown as Parameters<typeof registerLangPage>[0], deps);
     const handler = bot.callbackHandlers[0].handler;
-    // grammy hands match as RegExpMatchArray with capture group [1].
     const ctx = buildFakeCtx({
       from: { id: 99 },
       match: ['lang:en', 'en'] as unknown as RegExpMatchArray,
@@ -167,8 +71,8 @@ describe('registerLangPage', () => {
 
     expect(ctx.answerCallbackQuery).toHaveBeenCalled();
     expect(userLocale.getSync(99)).toBe('en');
-    expect(adminCalls).toEqual(['99:en']);
-    expect(ctx.reply).toHaveBeenCalledWith('[en] changed:English');
+    expect(spy.calls).toEqual(['99:en']);
+    expect(ctx.reply).toHaveBeenCalledWith('en:lang.changed(lang=English)');
   });
 
   it('coerces an unsupported locale tag to the RU default', async () => {
@@ -185,12 +89,12 @@ describe('registerLangPage', () => {
   });
 
   it('swallows admin updateUserLanguage failures (fire-and-forget)', async () => {
+    const spy = withAdminSpy();
+    spy.failNext.value = true;
     const bot = buildFakeBot();
-    const { deps } = buildDeps();
-    (deps.adminClient as unknown as { updateUserLanguage: ReturnType<typeof vi.fn> }).updateUserLanguage =
-      vi.fn(async () => {
-        throw new Error('boom');
-      });
+    const { deps } = buildDeps({
+      adminOverrides: spy.adminClient as unknown as Record<string, unknown>,
+    });
     registerLangPage(bot as unknown as Parameters<typeof registerLangPage>[0], deps);
     const handler = bot.callbackHandlers[0].handler;
     const ctx = buildFakeCtx({
@@ -203,10 +107,7 @@ describe('registerLangPage', () => {
   it('skips the admin call when adminClient is null', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();
-    registerLangPage(bot as unknown as Parameters<typeof registerLangPage>[0], {
-      ...deps,
-      adminClient: null,
-    });
+    registerLangPage(bot as unknown as Parameters<typeof registerLangPage>[0], deps);
     const handler = bot.callbackHandlers[0].handler;
     const ctx = buildFakeCtx({
       from: { id: 1 },

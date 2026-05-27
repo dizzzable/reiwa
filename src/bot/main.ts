@@ -29,7 +29,12 @@ import {
   buildMainKeyboard as buildMainKeyboardWidget,
   isTelegramSafeButtonUrl,
 } from './widgets/main-keyboard.js';
-import { registerLangPage } from './pages/index.js';
+import {
+  registerHelpCallbackPage,
+  registerInvitePage,
+  registerLangPage,
+  registerRulesPage,
+} from './pages/index.js';
 import {
   detectLocaleFromTelegram,
   getUserLang,
@@ -406,18 +411,23 @@ async function startBot(): Promise<void> {
   });
 
   // ── /lang and language callback (extracted to bot/pages/lang.ts) ──────────
+  // ── invite/rules/help callbacks (extracted to bot/pages/) ────────────────
 
-  registerLangPage(bot, {
+  const pageDeps = {
     adminClient,
     translator,
     userLocale: {
-      getSync: (id) => getUserLang(id),
-      setSync: (id, lang) => setUserLang(id, lang),
-      hasSync: (id) => userLangCacheHas(id),
+      getSync: (id: number) => getUserLang(id),
+      setSync: (id: number, lang: string) => setUserLang(id, lang),
+      hasSync: (id: number) => userLangCacheHas(id),
     },
     getConfig: () => getBotConfig(adminClient),
     urls: { publicWebUrl: reiwaUrlButtonUrl, miniAppUrl: reiwaWebAppUrl },
-  });
+  };
+  registerLangPage(bot, pageDeps);
+  registerInvitePage(bot, pageDeps);
+  registerRulesPage(bot, pageDeps);
+  registerHelpCallbackPage(bot, pageDeps);
 
   // Back to menu
   bot.callbackQuery('back_to_menu', async (ctx) => {
@@ -434,63 +444,7 @@ async function startBot(): Promise<void> {
   });
 
   // ── Standard keyboard callbacks (invite / rules / help) ───────────────────
-
-  bot.callbackQuery('invite', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const telegramId = String(ctx.from?.id);
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-
-    if (!botCfg.features.referralsEnabled) {
-      await ctx.reply(t('referral.disabled', lang));
-      return;
-    }
-
-    try {
-      const invite = adminClient
-        ? ((await adminClient.createReferralInvite(telegramId).catch(() => null)) as
-            | { token?: string }
-            | null)
-        : null;
-      const inviteLink =
-        invite?.token && reiwaPublicUrl
-          ? `${reiwaPublicUrl}/ref/${invite.token}`
-          : t('referral.link_unavailable', lang);
-      await ctx.reply(t('invite.share', lang, { link: inviteLink }));
-    } catch {
-      await ctx.reply(t('referral.error', lang));
-    }
-  });
-
-  bot.callbackQuery('rules', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const policy = adminClient
-      ? ((await adminClient.getPlatformPolicy().catch(() => null)) as {
-          rulesLink?: string | null;
-        } | null)
-      : null;
-    const link = policy?.rulesLink ?? '';
-    if (link.length > 0) {
-      const kb = new InlineKeyboard().url(t('rules.open_button', lang), link);
-      await ctx.reply(t('rules.intro', lang), { reply_markup: kb });
-    } else {
-      await ctx.reply(t('rules.unavailable', lang));
-    }
-  });
-
-  bot.callbackQuery('help', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const lang = getUserLang(ctx.from?.id ?? 0);
-    const botCfg = await getBotConfig(adminClient);
-    const supportUsername = botCfg.visual.supportUsername.replace(/^@/, '');
-    const lines = [t('help.title', lang), t('help.start', lang), t('help.help', lang)];
-    if (supportUsername.length > 0) {
-      lines.push('');
-      lines.push(t('help.contact_support', lang, { username: supportUsername }));
-    }
-    await ctx.reply(lines.join('\n'));
-  });
+  // Extracted to bot/pages/{invite,rules,help-callback}.ts above.
 
   // Channel subscription check
   bot.callbackQuery('check_channel', async (ctx) => {
