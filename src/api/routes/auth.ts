@@ -8,6 +8,7 @@ import { validateTelegramInitData } from "../../lib/telegram-auth.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
 import { createAuthBruteForceDetection } from "../middleware/brute-force-detection.js";
+import { getRequestLogger } from "../middleware/logger-accessor.js";
 import type { AuthRequest } from "../middleware/session.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
@@ -130,7 +131,7 @@ export function createAuthRouter(deps: {
         return;
       }
 
-      console.error("[auth/register]", errMsg);
+      getRequestLogger(req).error({ err: errMsg }, "auth/register failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -205,7 +206,7 @@ export function createAuthRouter(deps: {
           suppressPasswordChangeRedirect: true,
         });
       } catch (e: unknown) {
-        console.error("[auth/login]", (e as Error).message);
+        getRequestLogger(req).error({ err: e }, "auth/login failed");
         // Any unexpected error — deny authentication with generic message
         res.status(401).json({ message: "Invalid username or password" });
       }
@@ -230,7 +231,7 @@ export function createAuthRouter(deps: {
 
       res.json({ success: true });
     } catch (e: unknown) {
-      console.error("[auth/logout]", (e as Error).message);
+      getRequestLogger(req).error({ err: e }, "auth/logout failed");
       // Even on error, clear cookies client-side
       res.clearCookie("reiwa_web_session", { path: "/" });
       res.clearCookie("reiwa_session");
@@ -273,7 +274,7 @@ export function createAuthRouter(deps: {
           message: getRecoveryMessage(result.method),
         });
       } catch (e: unknown) {
-        console.error("[auth/recover]", (e as Error).message);
+        getRequestLogger(req).error({ err: e }, "auth/recover failed");
         // Anti-enumeration: return a generic response even on error
         res.json({
           method: "none" as const,
@@ -322,7 +323,7 @@ export function createAuthRouter(deps: {
         context,
       });
     } catch (e: unknown) {
-      console.error("[auth/status]", (e as Error).message);
+      getRequestLogger(req).error({ err: e }, "auth/status failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -376,7 +377,7 @@ export function createAuthRouter(deps: {
         return;
       }
 
-      console.error("[auth/change-password]", errMsg);
+      getRequestLogger(req).error({ err: errMsg }, "auth/change-password failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -425,7 +426,7 @@ export function createAuthRouter(deps: {
       });
       res.json({ ok: true, user });
     } catch (e: unknown) {
-      console.error("[auth/telegram/bootstrap]", (e as Error).message);
+      getRequestLogger(req).error({ err: e }, "auth/telegram/bootstrap failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });

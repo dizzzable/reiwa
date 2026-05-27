@@ -17,6 +17,7 @@ import { Router } from "express";
 import { createHash } from "node:crypto";
 
 import type { AdminClient } from "../../lib/admin-client.js";
+import { getRequestLogger } from "../middleware/logger-accessor.js";
 
 interface CachedPayload {
   readonly body: unknown;
@@ -117,7 +118,7 @@ export function createBrandingRouter(deps: {
       res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
       res.json(payload.body);
     } catch (e: unknown) {
-      console.error("[GET /public-config]", (e as Error).message);
+      getRequestLogger(req).error({ err: e }, "GET /public-config failed");
       res.status(503).json({ message: "Configuration unavailable" });
     }
   });
@@ -137,7 +138,7 @@ export function createBrandingRouter(deps: {
       res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
       res.json(body);
     } catch (e: unknown) {
-      console.error("[GET /branding]", (e as Error).message);
+      getRequestLogger(req).error({ err: e }, "GET /branding failed");
       res.status(503).json({ message: "Branding unavailable" });
     }
   });

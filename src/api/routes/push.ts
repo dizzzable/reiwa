@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
+import { getRequestLogger } from "../middleware/logger-accessor.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ export function createPushRouter(deps: {
         return;
       }
 
-      console.error("[push/subscribe]", errMsg);
+      getRequestLogger(req).error({ err: errMsg }, "push/subscribe failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -127,14 +128,14 @@ export function createPushRouter(deps: {
 
         // If removal fails, retain existing data and allow reuse if still valid
         // Return a 502 to indicate the upstream failed but data is preserved
-        console.error("[push/unsubscribe] Removal failed, retaining subscription:", unsubErrMsg);
+        getRequestLogger(req).error({ err: unsubErrMsg }, "push/unsubscribe - Removal failed, retaining subscription:");
         res.status(502).json({
           message: "Failed to remove subscription. Existing subscription data retained.",
           retained: true,
         });
       }
     } catch (e: unknown) {
-      console.error("[push/unsubscribe]", (e as Error).message);
+      getRequestLogger(req).error({ err: e }, "push/unsubscribe failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });

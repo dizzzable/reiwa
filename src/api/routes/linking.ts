@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
+import { getRequestLogger } from "../middleware/logger-accessor.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ export function createLinkingRouter(deps: {
         return;
       }
 
-      console.error("[link/telegram/initiate]", errMsg);
+      getRequestLogger(req).error({ err: errMsg }, "link/telegram/initiate failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -136,7 +137,7 @@ export function createLinkingRouter(deps: {
         return;
       }
 
-      console.error("[link/email/initiate]", errMsg);
+      getRequestLogger(req).error({ err: errMsg }, "link/email/initiate failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -198,7 +199,7 @@ export function createLinkingRouter(deps: {
         return;
       }
 
-      console.error("[link/email/verify]", errMsg);
+      getRequestLogger(req).error({ err: errMsg }, "link/email/verify failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });
