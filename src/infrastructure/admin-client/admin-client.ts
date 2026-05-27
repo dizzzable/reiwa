@@ -40,6 +40,7 @@ import {
   BrandingNamespace,
   CatalogNamespace,
   DevicesNamespace,
+  EventsNamespace,
   LinkingNamespace,
   PartnerNamespace,
   PaymentsNamespace,
@@ -73,6 +74,7 @@ export class AdminClient {
   readonly webAuth: WebAuthNamespace;
   readonly linking: LinkingNamespace;
   readonly push: PushNamespace;
+  readonly events: EventsNamespace;
 
   constructor(baseUrl: string, apiKey: string, sharedSecret?: string | null) {
     this.transport = new AdminTransport({ baseUrl, apiKey, sharedSecret });
@@ -91,6 +93,7 @@ export class AdminClient {
     this.webAuth = new WebAuthNamespace(this.transport);
     this.linking = new LinkingNamespace(this.transport);
     this.push = new PushNamespace(this.transport);
+    this.events = new EventsNamespace(this.transport);
   }
 
   /**

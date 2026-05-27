@@ -68,20 +68,20 @@ export class EventReporter {
   emit(event: ReiwaEvent): void {
     if (!this.adminClient) return;
 
-    this.adminClient
-      .request("POST", "/api/internal/events", {
+    this.adminClient.events
+      .emit({
         type: event.type,
         category: event.category,
         severity: event.severity,
         message: event.message,
-        metadata: {
-          source: "reiwa",
-          ...(event.metadata ?? {}),
-        },
+        metadata: event.metadata,
       })
-      .catch((err) => {
-        // Silent fail — we don't want event reporting to break the app
-        console.error(`[EventReporter] Failed to send event ${event.type}: ${(err as Error).message}`);
+      .catch((err: unknown) => {
+        // Silent fail — we don't want event reporting to break the app.
+        // eslint-disable-next-line no-console
+        console.error(
+          `[EventReporter] Failed to send event ${event.type}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       });
   }
 

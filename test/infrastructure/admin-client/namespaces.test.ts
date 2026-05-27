@@ -15,7 +15,7 @@ import { AdminClient } from '../../../src/infrastructure/admin-client/index.js';
 describe('AdminClient namespace facade', () => {
   const buildClient = () => new AdminClient('http://upstream.local', 'token-fake');
 
-  it('exposes all 14 namespaces', () => {
+  it('exposes all 15 namespaces', () => {
     const client = buildClient();
     expect(client.system).toBeDefined();
     expect(client.catalog).toBeDefined();
@@ -32,6 +32,7 @@ describe('AdminClient namespace facade', () => {
     expect(client.webAuth).toBeDefined();
     expect(client.linking).toBeDefined();
     expect(client.push).toBeDefined();
+    expect(client.events).toBeDefined();
   });
 
   it('exposes the LinkingNamespace nested telegram + email surfaces', () => {
