@@ -16,41 +16,44 @@
 import { Bot, Context, session, SessionFlavor, InlineKeyboard } from 'grammy';
 import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../config.js';
 import { AdminClient } from '../lib/admin-client.js';
-import type { BotConfig, BotMenuButton, TgCustomEmojiEntity } from '../infrastructure/bot-config/types.js';
+import type { BotConfig, TgCustomEmojiEntity } from '../infrastructure/bot-config/types.js';
+import { BotConfigCache, DEFAULT_BOT_CONFIG } from '../infrastructure/bot-config/cache.js';
+import { translator } from '../infrastructure/i18n/index.js';
 import {
   buildWelcomeMessage,
   buildSubscriptionCard,
   buildPlansMessage,
   buildReferralMessage,
-} from './message-builder.js';
+} from '../infrastructure/bot-message/message-builder.js';
+import {
+  buildMainKeyboard as buildMainKeyboardWidget,
+  isTelegramSafeButtonUrl,
+} from './widgets/main-keyboard.js';
 import {
   detectLocaleFromTelegram,
   getUserLang,
-  resolveButtonLabel,
   setTranslations,
   setUserLang,
   t,
   userLangCacheHas,
 } from './i18n.js';
+import {
+  DEFAULT_LOCALE,
+  type SupportedLocale,
+  isSupportedLocale,
+} from '../core/enums/locale.enum.js';
+
+// `getUserLang` returns a free-form string (legacy bot-shim contract).
+// The new keyboard widget takes a `SupportedLocale` so we coerce here
+// rather than widening the widget signature.
+function coerceLocale(lang: string): SupportedLocale {
+  const lower = lang.toLowerCase();
+  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
+}
 
 const config = loadConfig();
 const reiwaPublicUrl = resolveReiwaPublicUrl(config);
 
-/**
- * Telegram refuses inline-keyboard URLs that point at `localhost`/127.0.0.1
- * AND `web_app` URLs that aren't HTTPS. Both checks funnel through the
- * same safety gate so dev (where `REIWA_DOMAIN=localhost:5173` resolves
- * to `http://localhost:5173`) doesn't crash the entire `/start` reply
- * with `400 Bad Request`. In production the operator types a real
- * domain and this becomes identical to `reiwaPublicUrl`.
- */
-function isTelegramSafeButtonUrl(url: string | null): boolean {
-  if (url === null) return false;
-  if (!url.startsWith('https://')) return false;
-  const lower = url.toLowerCase();
-  if (lower.includes('://localhost') || lower.includes('://127.0.0.1')) return false;
-  return true;
-}
 const reiwaWebAppUrl = isTelegramSafeButtonUrl(reiwaPublicUrl) ? reiwaPublicUrl : null;
 const reiwaUrlButtonUrl = isTelegramSafeButtonUrl(reiwaPublicUrl) ? reiwaPublicUrl : null;
 
@@ -62,176 +65,26 @@ interface BotSession {
 type BotContext = Context & SessionFlavor<BotSession>;
 
 // ── Bot config cache ──────────────────────────────────────────────────────────
+//
+// Wave 3 extracted the cache into `infrastructure/bot-config/cache.ts`.
+// `botConfigCache` is constructed inside `startBot()` once we know
+// whether an `AdminClient` is available; until then `getBotConfig()`
+// closes over the singleton.
 
-interface ConfigCache {
-  data: BotConfig;
-  fetchedAt: number;
-}
-
-const CONFIG_TTL_MS = 5 * 60 * 1000; // 5 minutes
-let configCache: ConfigCache | null = null;
-
-const DEFAULT_BOT_CONFIG: BotConfig = {
-  buttons: [
-    { id: 'cabinet', emoji: '', label: 'Мой кабинет', visible: true, order: 0, style: 'primary', onePerRow: true },
-    { id: 'invite', emoji: '', label: 'Пригласить', visible: true, order: 1, style: 'default', onePerRow: true },
-    { id: 'rules', emoji: '', label: 'Правила', visible: true, order: 2, style: 'default', onePerRow: false },
-    { id: 'help', emoji: '', label: 'Помощь', visible: true, order: 3, style: 'default', onePerRow: false },
-  ],
-  visual: {
-    welcomeMessage: 'Привет, {{firstName}}! 👋\n\nДобро пожаловать в Rezeis VPN.',
-    botDescription: 'Быстрый и надёжный VPN',
-    supportUsername: '',
-    channelUsername: '',
-    subscriptionInfoFormat: 'full',
-    bannerUrl: null,
-  },
-  features: {
-    referralsEnabled: true,
-    promoCodesEnabled: true,
-    trialEnabled: false,
-    miniAppEnabled: true,
-    activityFeedEnabled: true,
-    partnersEnabled: false,
-  },
-  botEmojis: {},
-  menuTextCustomEmojiIds: {},
-};
+let botConfigCache: BotConfigCache | null = null;
 
 async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig> {
-  if (configCache && Date.now() - configCache.fetchedAt < CONFIG_TTL_MS) {
-    return configCache.data;
-  }
+  if (botConfigCache !== null) return botConfigCache.get();
   if (!adminClient) return DEFAULT_BOT_CONFIG;
-  try {
-    const data = (await adminClient.getBotConfig()) as BotConfig;
-    configCache = { data, fetchedAt: Date.now() };
-    // Load translations if available
-    if ((data as any).translations) {
-      setTranslations((data as any).translations);
-    }
-    return data;
-  } catch (err: unknown) {
-    console.warn('[bot] Failed to fetch bot config, using defaults:', (err as Error).message);
-    return configCache?.data ?? DEFAULT_BOT_CONFIG;
-  }
-}
-
-// ── Leading emoji strip (for icon_custom_emoji_id buttons) ────────────────────
-
-const LEADING_EMOJI_RE = /^(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s*/u;
-function stripLeadingEmoji(text: string): string {
-  return text.replace(LEADING_EMOJI_RE, '');
-}
-
-// ── Button kind dispatch ────────────────────────────────────────────────────
-//
-// The admin panel only manages visual properties. The *kind* of each
-// well-known buttonId (URL link / Mini App / callback) is hardcoded
-// here so admin operators can't accidentally turn "Мой кабинет" into a
-// callback that doesn't exist or vice-versa.
-//
-//   kind: 'url'      — opens an external URL in Telegram's in-app
-//                      browser. Used for "Мой кабинет" — pushes the
-//                      user out of the bot into a real browser session
-//                      for credential setup. Built from `reiwaUrlButtonUrl`
-//                      (https + non-localhost gate).
-//   kind: 'webapp'   — opens the Mini App. Telegram requires HTTPS;
-//                      we drop the button when not configured.
-//   kind: 'callback' — emits `callback_data === buttonId`; routed by
-//                      reiwa's `bot.callbackQuery(id, ...)` handlers.
-//
-// Unknown ids default to `callback`.
-
-type ButtonKind = 'url' | 'webapp' | 'callback';
-
-interface ButtonBinding {
-  readonly kind: ButtonKind;
-  readonly path?: string;
-}
-
-const BUTTON_KIND_MAP: Readonly<Record<string, ButtonBinding>> = {
-  // Default reiwa keyboard
-  cabinet: { kind: 'url', path: '/' },
-  invite: { kind: 'callback' },
-  rules: { kind: 'callback' },
-  help: { kind: 'callback' },
-  // Legacy buttons that older deployments may still have configured
-  subscription: { kind: 'callback' },
-  buy: { kind: 'callback' },
-  promo: { kind: 'callback' },
-  referrals: { kind: 'callback' },
-  profile: { kind: 'callback' },
-  activity: { kind: 'callback' },
-  vpn: { kind: 'webapp', path: '/subscribe' },
-  miniapp: { kind: 'webapp', path: '/' },
-  support: { kind: 'callback' },
-};
-
-function resolveBinding(buttonId: string): ButtonBinding {
-  return BUTTON_KIND_MAP[buttonId] ?? { kind: 'callback' };
-}
-
-// ── Keyboard builder (STEALTHNET-style with premium emoji support) ─────────────
-
-function buildMainKeyboard(
-  buttons: BotMenuButton[],
-  miniAppUrl: string | null | undefined,
-  lang: string,
-  publicWebUrl: string | null | undefined,
-  translations: Readonly<Record<string, string>>,
-): InlineKeyboard {
-  const visible = [...buttons]
-    .filter((b) => b.visible)
-    .sort((a, b) => a.order - b.order);
-
-  const kb = new InlineKeyboard();
-  let rowItems = 0;
-  const closeRowIfNeeded = (force: boolean): void => {
-    if (force && rowItems > 0) {
-      kb.row();
-      rowItems = 0;
-    }
-  };
-
-  for (const btn of visible) {
-    const localisedLabel = resolveButtonLabel(btn.id, btn.label, translations, lang);
-    const label = btn.emoji ? `${btn.emoji} ${localisedLabel}` : localisedLabel;
-    const binding = resolveBinding(btn.id);
-    const path = binding.path ?? '';
-
-    let placed = false;
-    if (binding.kind === 'webapp') {
-      if (!miniAppUrl) continue;
-      closeRowIfNeeded(btn.onePerRow);
-      kb.webApp(label, `${miniAppUrl}${path}`);
-      placed = true;
-    } else if (binding.kind === 'url') {
-      if (!publicWebUrl) continue;
-      closeRowIfNeeded(btn.onePerRow);
-      kb.url(label, `${publicWebUrl}${path}`);
-      placed = true;
-    } else {
-      closeRowIfNeeded(btn.onePerRow);
-      kb.text(label, btn.id);
-      placed = true;
-    }
-
-    if (!placed) continue;
-    if (btn.onePerRow) {
-      kb.row();
-      rowItems = 0;
-    } else {
-      rowItems++;
-      if (rowItems === 2) {
-        kb.row();
-        rowItems = 0;
-      }
-    }
-  }
-
-  if (rowItems > 0) kb.row();
-  return kb;
+  // Lazy construction so an AdminClient set later (tests, hot-reload)
+  // gets picked up. In the regular bootstrap path `startBot()` already
+  // calls this through a primed cache.
+  botConfigCache = new BotConfigCache({
+    fetcher: () => adminClient.getBotConfig(),
+    hydrator: { setOverrides: (m) => setTranslations(m as Record<string, unknown>) },
+    fallback: DEFAULT_BOT_CONFIG,
+  });
+  return botConfigCache.get();
 }
 
 // ── Helper: send reply with entities ─────────────────────────────────────────
@@ -381,13 +234,7 @@ async function startBot(): Promise<void> {
     const miniAppUrl =
       features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
 
-    const keyboard = buildMainKeyboard(
-      botCfg.buttons,
-      miniAppUrl,
-      getUserLang(tgUser.id),
-      reiwaUrlButtonUrl,
-      botCfg.translations ?? {},
-    );
+    const keyboard = buildMainKeyboardWidget({ buttons: botCfg.buttons, miniAppUrl, publicWebUrl: reiwaUrlButtonUrl, lang: coerceLocale(getUserLang(tgUser.id)), translator });
     if (visual.bannerUrl && visual.bannerUrl.length > 0) {
       // Best-effort banner — broken URL must not sink the welcome reply.
       try {
@@ -594,13 +441,7 @@ async function startBot(): Promise<void> {
     const botCfg = await getBotConfig(adminClient);
     const miniAppUrl =
       botCfg.features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
-    const keyboard = buildMainKeyboard(
-      botCfg.buttons,
-      miniAppUrl,
-      getUserLang(tgUser.id),
-      reiwaUrlButtonUrl,
-      botCfg.translations ?? {},
-    );
+    const keyboard = buildMainKeyboardWidget({ buttons: botCfg.buttons, miniAppUrl, publicWebUrl: reiwaUrlButtonUrl, lang: coerceLocale(getUserLang(tgUser.id)), translator });
 
     await ctx.reply(t('menu.choose_action', getUserLang(tgUser.id)), { reply_markup: keyboard });
   });
@@ -688,13 +529,7 @@ async function startBot(): Promise<void> {
     // Channel check passed — show main menu
     const botCfg = await getBotConfig(adminClient);
     const miniAppUrl = botCfg.features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
-    const keyboard = buildMainKeyboard(
-      botCfg.buttons,
-      miniAppUrl,
-      lang,
-      reiwaUrlButtonUrl,
-      botCfg.translations ?? {},
-    );
+    const keyboard = buildMainKeyboardWidget({ buttons: botCfg.buttons, miniAppUrl, publicWebUrl: reiwaUrlButtonUrl, lang: coerceLocale(lang), translator });
     await ctx.reply(t('channel.verified', lang), { reply_markup: keyboard });
   });
 
@@ -896,10 +731,17 @@ async function startBot(): Promise<void> {
   });
 
   // ── Config refresh timer ───────────────────────────────────────────────────
+  //
+  // The cache auto-refreshes on next `get()` after `ttlMs`, but a
+  // periodic warm-fetch keeps the cache hot so the next user request
+  // doesn't pay the upstream round-trip.
 
+  const CONFIG_REFRESH_MS = 5 * 60 * 1000;
   setInterval(() => {
-    getBotConfig(adminClient).catch(console.error);
-  }, CONFIG_TTL_MS);
+    getBotConfig(adminClient).catch((err: unknown) => {
+      console.error('[bot] background bot-config refresh failed:', err);
+    });
+  }, CONFIG_REFRESH_MS);
 
   // ── Start ──────────────────────────────────────────────────────────────────
 

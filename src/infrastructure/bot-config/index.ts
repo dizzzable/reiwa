@@ -31,3 +31,5 @@ export {
   resolveUnicode,
   utf16Length,
 } from './emoji-utils.js';
+export { BotConfigCache, DEFAULT_BOT_CONFIG } from './cache.js';
+export type { BotConfigCacheOptions } from './cache.js';
