@@ -1,6 +1,8 @@
 import rateLimit from "express-rate-limit";
 import type { Request, Response, NextFunction } from "express";
 import type { Redis } from "ioredis";
+
+import { getRequestLogger } from "./logger-accessor.js";
 import {
   rateLoginKey,
   rateRegisterKey,
@@ -222,7 +224,11 @@ export function createRedisRateLimiter(
     } catch (error) {
       // Redis operation failed — cannot determine rate limit status
       // Return 503 since we can't verify whether limits have been exceeded
-      console.error("[rate-limit] Redis error:", (error as Error).message);
+      const reqLogger = getRequestLogger(req);
+      reqLogger.error(
+        { err: error, component: "rate-limit", endpoint },
+        "Redis error during rate-limit check",
+      );
       res.status(503).json({
         message: "Service temporarily unavailable",
       });

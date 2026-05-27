@@ -97,7 +97,7 @@ export function createApp(deps: CreateAppDeps) {
       cookieSecure: config.REIWA_COOKIE_SECURE || config.NODE_ENV === "production",
       isProduction: config.NODE_ENV === "production",
     };
-    app.use(createWebSessionMiddleware(deps.webSessionStore, sessionConfig));
+    app.use(createWebSessionMiddleware(deps.webSessionStore, sessionConfig, logger));
   }
 
   // ── Global rate limit ─────────────────────────────────────────────────────

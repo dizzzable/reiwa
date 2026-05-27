@@ -11,6 +11,9 @@
 import type { RequestHandler, Request, Response, NextFunction } from "express";
 import { Redis } from "ioredis";
 import { v4 as uuidv4 } from "uuid";
+
+import type { LoggerPort } from "../../application/ports/logger.port.js";
+
 import { sessionKey, TTL } from "./keys.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -37,19 +40,43 @@ const SECURITY_FLAG_RETRY_DELAY_MS = 500;
 
 // ── Session Store (Redis-backed) ────────────────────────────────────────────
 
+export interface WebSessionStoreOptions {
+  /**
+   * Optional structured logger. When omitted (legacy callers, tests),
+   * Redis errors fall back to `console.error` so the operator still
+   * sees the failure on stderr.
+   */
+  readonly logger?: LoggerPort;
+}
+
 export class WebSessionStore {
   private redis: Redis;
+  private logger: LoggerPort | undefined;
 
-  constructor(redisUrl: string) {
+  constructor(redisUrl: string, options: WebSessionStoreOptions = {}) {
     this.redis = new Redis(redisUrl, { lazyConnect: true });
+    this.logger = options.logger;
     this.redis.on("error", (err: Error) => {
-      console.error("[WebSessionStore] Redis error:", err.message);
+      if (this.logger) {
+        this.logger.warn({ err, component: "WebSessionStore" }, "Redis error");
+      } else {
+        // eslint-disable-next-line no-console
+        console.error("[WebSessionStore] Redis error:", err.message);
+      }
     });
   }
 
   async connect(): Promise<void> {
     await this.redis.connect().catch((err: Error) => {
-      console.error("[WebSessionStore] Redis connection failed:", err.message);
+      if (this.logger) {
+        this.logger.error(
+          { err, component: "WebSessionStore" },
+          "Redis connection failed",
+        );
+      } else {
+        // eslint-disable-next-line no-console
+        console.error("[WebSessionStore] Redis connection failed:", err.message);
+      }
     });
   }
 
@@ -138,6 +165,7 @@ function buildCookieOptions(secure: boolean): CookieOptions {
  */
 async function resolveSecureCookieOptions(
   config: SessionConfig,
+  logger?: LoggerPort,
 ): Promise<CookieOptions> {
   const options = buildCookieOptions(config.cookieSecure);
 
@@ -166,10 +194,18 @@ async function resolveSecureCookieOptions(
   // Grace period exhausted in production without secure flag
   // Still allow operation but log warning — the cookie will be set without secure
   // flag. The session middleware will handle blocking protected routes if auth fails.
-  console.warn(
-    "[WebSession] Production: secure cookie flag not available after grace period. " +
-      "Authentication will proceed but security is degraded.",
-  );
+  if (logger) {
+    logger.warn(
+      { component: "WebSession" },
+      "Production: secure cookie flag not available after grace period. Authentication will proceed but security is degraded.",
+    );
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[WebSession] Production: secure cookie flag not available after grace period. " +
+        "Authentication will proceed but security is degraded.",
+    );
+  }
   return options;
 }
 
@@ -185,6 +221,7 @@ async function resolveSecureCookieOptions(
 export function createWebSessionMiddleware(
   store: WebSessionStore,
   config: SessionConfig,
+  logger?: LoggerPort,
 ): RequestHandler {
   const cookieName = config.cookieName ?? DEFAULT_COOKIE_NAME;
   let cookieOptionsPromise: Promise<CookieOptions> | null = null;
@@ -192,7 +229,7 @@ export function createWebSessionMiddleware(
   // Lazily resolve cookie options (handles production grace period)
   function getCookieOptions(): Promise<CookieOptions> {
     if (!cookieOptionsPromise) {
-      cookieOptionsPromise = resolveSecureCookieOptions(config);
+      cookieOptionsPromise = resolveSecureCookieOptions(config, logger);
     }
     return cookieOptionsPromise;
   }

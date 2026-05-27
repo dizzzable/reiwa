@@ -1,6 +1,8 @@
 import { Redis } from "ioredis";
 import { v4 as uuidv4 } from "uuid";
 
+import type { LoggerPort } from "../application/ports/logger.port.js";
+
 export interface ReiwaSession {
   telegramId: string;
   userId: number;
@@ -10,24 +12,49 @@ export interface ReiwaSession {
   createdAt: number;
 }
 
+export interface SessionStoreOptions {
+  /**
+   * Optional structured logger. When omitted (legacy callers, tests),
+   * Redis errors fall back to `console.error` so the operator still
+   * sees the failure on stderr.
+   */
+  readonly logger?: LoggerPort;
+}
+
 export class SessionStore {
   private redis: Redis;
   private prefix = "reiwa:session:";
   private ttl = 7 * 24 * 60 * 60; // 7 days in seconds
+  private logger: LoggerPort | undefined;
 
-  constructor(redisUrl: string) {
+  constructor(redisUrl: string, options: SessionStoreOptions = {}) {
     this.redis = new Redis(redisUrl, { lazyConnect: true });
+    this.logger = options.logger;
     this.redis.on("error", (err: Error) => {
-      console.error("[SessionStore] Redis error:", err.message);
+      if (this.logger) {
+        this.logger.warn({ err, component: "SessionStore" }, "Redis error");
+      } else {
+        // eslint-disable-next-line no-console
+        console.error("[SessionStore] Redis error:", err.message);
+      }
     });
   }
 
   async connect(): Promise<void> {
     await this.redis.connect().catch((err: Error) => {
-      console.error("[SessionStore] Redis connection failed:", err.message);
-      console.error(
-        "[SessionStore] Sessions will not work until Redis is available",
-      );
+      if (this.logger) {
+        this.logger.error(
+          { err, component: "SessionStore" },
+          "Redis connection failed; sessions will not work until Redis is available",
+        );
+      } else {
+        // eslint-disable-next-line no-console
+        console.error("[SessionStore] Redis connection failed:", err.message);
+        // eslint-disable-next-line no-console
+        console.error(
+          "[SessionStore] Sessions will not work until Redis is available",
+        );
+      }
     });
   }
 

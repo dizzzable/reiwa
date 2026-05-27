@@ -20,6 +20,8 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import type { Redis } from "ioredis";
 import { bruteForceKey, bannedIpKey, TTL } from "../../infrastructure/redis/keys.js";
 
+import { getRequestLogger } from "./logger-accessor.js";
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 interface BruteForceRecord {
@@ -49,15 +51,23 @@ const COORDINATED_ATTACK_THRESHOLD = 3;
 // ── Incident Logger ─────────────────────────────────────────────────────────
 
 /**
- * Flags the incident for admin review. Returns true if flagging succeeded.
- * In a production system this could write to a database, send an alert, etc.
- * For now, it logs to stderr at WARN level (structured for log aggregation).
+ * Flags the incident for admin review via the per-request structured
+ * logger when available, falling back to console.warn otherwise.
+ * Returns true if flagging succeeded.
+ *
+ * In a production system this could also write to a database, send an
+ * alert, etc. — the structured log line is the minimum so SIEM / log
+ * aggregators can pick it up.
  */
-function flagIncidentForAdminReview(incident: CoordinatedAttackIncident): boolean {
+function flagIncidentForAdminReview(
+  req: Request,
+  incident: CoordinatedAttackIncident,
+): boolean {
   try {
-    console.warn(
-      "[SECURITY] Coordinated brute-force attack detected:",
-      JSON.stringify(incident),
+    const reqLogger = getRequestLogger(req);
+    reqLogger.warn(
+      { component: "SECURITY", incident },
+      "Coordinated brute-force attack detected",
     );
     return true;
   } catch {
@@ -153,7 +163,7 @@ export function createBruteForceDetection(
         };
 
         // Flag incident first — if this fails, do NOT ban IPs
-        const flagged = flagIncidentForAdminReview(incident);
+        const flagged = flagIncidentForAdminReview(req, incident);
         if (!flagged) {
           // Incident flagging failed — do not ban IPs, allow request through
           next();
@@ -186,7 +196,10 @@ export function createBruteForceDetection(
       }
     } catch (err) {
       // If tracking fails, allow the request through (fail-open)
-      console.error("[BruteForceDetection] Error tracking attempt:", err);
+      getRequestLogger(req).warn(
+        { err, component: "BruteForceDetection" },
+        "Error tracking attempt",
+      );
     }
 
     next();

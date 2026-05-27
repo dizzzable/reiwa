@@ -28,11 +28,11 @@ const adminClient =
     : null;
 
 const sessionStore = config.REDIS_URL
-  ? new SessionStore(config.REDIS_URL)
+  ? new SessionStore(config.REDIS_URL, { logger })
   : null;
 
 const webSessionStore = config.REDIS_URL
-  ? new WebSessionStore(config.REDIS_URL)
+  ? new WebSessionStore(config.REDIS_URL, { logger })
   : null;
 
 const app = createApp({ adminClient, sessionStore, webSessionStore, config, logger });
