@@ -16,7 +16,7 @@
 import { Bot, Context, session, SessionFlavor, InlineKeyboard } from 'grammy';
 import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../config.js';
 import { AdminClient } from '../lib/admin-client.js';
-import type { BotConfig, BotMenuButton, TgCustomEmojiEntity } from './types.js';
+import type { BotConfig, BotMenuButton, TgCustomEmojiEntity } from '../infrastructure/bot-config/types.js';
 import {
   buildWelcomeMessage,
   buildSubscriptionCard,

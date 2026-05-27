@@ -1,0 +1,196 @@
+/**
+ * Bot emoji helper specs.
+ *
+ * UTF-16 length and entity offset arithmetic is fiddly — every regression
+ * here misaligns Telegram custom-emoji rendering on production users.
+ * These specs pin the documented invariants:
+ *
+ *   - astral plane code points (most emoji) count as 2 UTF-16 units
+ *   - `lineWithEmoji` emits a custom_emoji entity at offset 0 with the
+ *     UTF-16 length of the leading emoji (1 or 2 units)
+ *   - `joinLines` shifts every entity offset forward by the cumulative
+ *     UTF-16 length of preceding lines plus their `\n` separators
+ *   - `resolvePlaceholders` resolves `{{KEY}}` against the emoji map
+ *     and emits entities at the correct UTF-16 offset, even when
+ *     multiple placeholders appear on the same line
+ *   - missing keys fall back through unicode → DEFAULT_UNICODE → "•"
+ */
+import { describe, expect, it } from 'vitest';
+
+import {
+  DEFAULT_UNICODE,
+  firstCharLengthUtf16,
+  joinLines,
+  lineWithEmoji,
+  resolvePlaceholders,
+  resolveUnicode,
+  utf16Length,
+} from '../../../src/infrastructure/bot-config/emoji-utils.js';
+
+describe('firstCharLengthUtf16', () => {
+  it('returns 0 for an empty string', () => {
+    expect(firstCharLengthUtf16('')).toBe(0);
+  });
+
+  it('returns 1 for an ASCII char', () => {
+    expect(firstCharLengthUtf16('A')).toBe(1);
+  });
+
+  it('returns 1 for a BMP non-ASCII char', () => {
+    expect(firstCharLengthUtf16('é')).toBe(1);
+  });
+
+  it('returns 2 for an astral-plane emoji (📦, U+1F4E6)', () => {
+    expect(firstCharLengthUtf16('📦')).toBe(2);
+  });
+});
+
+describe('utf16Length', () => {
+  it('counts ASCII characters as 1 unit each', () => {
+    expect(utf16Length('hello')).toBe(5);
+  });
+
+  it('counts emoji as 2 units each', () => {
+    expect(utf16Length('📦📦')).toBe(4);
+  });
+
+  it('mixes ASCII and emoji correctly', () => {
+    expect(utf16Length('a📦b')).toBe(4);
+  });
+});
+
+describe('resolveUnicode', () => {
+  it('prefers the bot-config override unicode value', () => {
+    expect(resolveUnicode('PACKAGE', { PACKAGE: { unicode: '🎁' } })).toBe('🎁');
+  });
+
+  it('falls back to DEFAULT_UNICODE when override is missing', () => {
+    expect(resolveUnicode('PACKAGE')).toBe(DEFAULT_UNICODE['PACKAGE']);
+  });
+
+  it('falls back to DEFAULT_UNICODE when override unicode is empty', () => {
+    expect(resolveUnicode('PACKAGE', { PACKAGE: { unicode: '' } })).toBe(
+      DEFAULT_UNICODE['PACKAGE'],
+    );
+  });
+
+  it('returns "•" for an unknown key with no override', () => {
+    expect(resolveUnicode('NOT_A_KEY')).toBe('•');
+  });
+});
+
+describe('lineWithEmoji', () => {
+  it('emits no entity when only a unicode fallback is configured', () => {
+    const out = lineWithEmoji('PACKAGE', 'Subs');
+    expect(out.text).toBe(`${DEFAULT_UNICODE['PACKAGE']} Subs`);
+    expect(out.entities).toEqual([]);
+  });
+
+  it('emits a custom_emoji entity at offset 0 when tgEmojiId is configured', () => {
+    const out = lineWithEmoji('PACKAGE', 'Subs', {
+      PACKAGE: { unicode: '📦', tgEmojiId: '5234567890123456789' },
+    });
+    expect(out.text).toBe('📦 Subs');
+    expect(out.entities).toHaveLength(1);
+    expect(out.entities[0]).toMatchObject({
+      type: 'custom_emoji',
+      offset: 0,
+      length: 2, // UTF-16 length of 📦
+      custom_emoji_id: '5234567890123456789',
+    });
+  });
+
+  it('skips the leading space when text already starts with a newline', () => {
+    const out = lineWithEmoji('PACKAGE', '\nSubs');
+    expect(out.text).toBe(`${DEFAULT_UNICODE['PACKAGE']}\nSubs`);
+  });
+
+  it('treats whitespace-only tgEmojiId as missing', () => {
+    const out = lineWithEmoji('PACKAGE', 'Subs', {
+      PACKAGE: { unicode: '📦', tgEmojiId: '   ' },
+    });
+    expect(out.entities).toEqual([]);
+  });
+});
+
+describe('resolvePlaceholders', () => {
+  it('replaces {{KEY}} with the resolved unicode and emits an entity at the right offset', () => {
+    const out = resolvePlaceholders('Welcome {{CARD}} to Rezeis', {
+      CARD: { unicode: '💳', tgEmojiId: '5111' },
+    });
+    expect(out.text).toBe('Welcome 💳 to Rezeis');
+    expect(out.entities).toHaveLength(1);
+    // 'Welcome ' is 8 UTF-16 units.
+    expect(out.entities[0]).toMatchObject({
+      offset: 8,
+      length: 2,
+      custom_emoji_id: '5111',
+    });
+  });
+
+  it('shifts entity offsets by baseOffset', () => {
+    const out = resolvePlaceholders('{{CARD}}', { CARD: { unicode: '💳', tgEmojiId: '5111' } }, 100);
+    expect(out.entities[0]?.offset).toBe(100);
+  });
+
+  it('walks multiple placeholders and accumulates correct UTF-16 offsets', () => {
+    const out = resolvePlaceholders('{{PACKAGE}} subs {{CARD}} pay', {
+      PACKAGE: { unicode: '📦', tgEmojiId: '5001' },
+      CARD: { unicode: '💳', tgEmojiId: '5002' },
+    });
+    expect(out.text).toBe('📦 subs 💳 pay');
+    expect(out.entities).toHaveLength(2);
+    expect(out.entities[0]?.offset).toBe(0);
+    // '📦' (2) + ' subs ' (6) = 8
+    expect(out.entities[1]?.offset).toBe(8);
+  });
+
+  it('leaves the template unchanged when nothing matches', () => {
+    const out = resolvePlaceholders('No placeholders here');
+    expect(out.text).toBe('No placeholders here');
+    expect(out.entities).toEqual([]);
+  });
+});
+
+describe('joinLines', () => {
+  it('concatenates lines with newlines', () => {
+    const out = joinLines([
+      { text: 'First', entities: [] },
+      { text: 'Second', entities: [] },
+    ]);
+    expect(out.text).toBe('First\nSecond');
+  });
+
+  it('shifts entity offsets by the cumulative UTF-16 length of preceding lines + 1 per newline', () => {
+    const out = joinLines([
+      {
+        text: '📦 line one',
+        entities: [{ type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: 'a' }],
+      },
+      {
+        text: '💳 line two',
+        entities: [{ type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: 'b' }],
+      },
+    ]);
+    expect(out.text).toBe('📦 line one\n💳 line two');
+    expect(out.entities).toHaveLength(2);
+    expect(out.entities[0]).toMatchObject({ offset: 0, custom_emoji_id: 'a' });
+    // '📦 line one' is 2 + 9 = 11 UTF-16 units; + 1 for '\n' = 12.
+    expect(out.entities[1]).toMatchObject({ offset: 12, custom_emoji_id: 'b' });
+  });
+
+  it('preserves entity order and other fields when merging', () => {
+    const out = joinLines([
+      {
+        text: 'one',
+        entities: [{ type: 'custom_emoji', offset: 0, length: 1, custom_emoji_id: 'x' }],
+      },
+    ]);
+    expect(out.entities[0]).toEqual({
+      type: 'custom_emoji',
+      offset: 0,
+      length: 1,
+      custom_emoji_id: 'x',
+    });
+  });
+});
