@@ -41,6 +41,7 @@ import {
   userLocaleCache,
 } from '../infrastructure/i18n/index.js';
 import { createLogger } from '../infrastructure/logger/index.js';
+import { createLocaleDetectMiddleware } from './middleware/locale-detect.js';
 
 const config = loadConfig();
 const reiwaPublicUrl = resolveReiwaPublicUrl(config);
@@ -118,30 +119,13 @@ async function startBot(): Promise<void> {
   bot.use(session({ initial: (): BotSession => ({}) }));
 
   // ── Locale auto-detect middleware ──────────────────────────────────────────
-  //
-  // Telegram clients ship the *system* `language_code` of the device on
-  // every update. We use it as the auto-detect signal:
-  //   - First contact (cache miss): adopt the detected locale, push it
-  //     to admin so subsequent sessions across reiwa-bot / reiwa-api /
-  //     web stay in sync.
-  //   - Returning user with cached locale: trust the cache. The `/lang`
-  //     command is the only override path — explicit user choice
-  //     always wins over the device language.
-  bot.use(async (ctx, next) => {
-    const tgUser = ctx.from;
-    if (tgUser !== undefined && !userLocaleCache.hasSync(tgUser.id)) {
-      const detected = detectLocaleFromTelegram(tgUser.language_code);
-      userLocaleCache.setSync(tgUser.id, detected);
-      if (adminClient !== null) {
-        adminClient
-          .updateUserLanguage(String(tgUser.id), detected.toUpperCase())
-          .catch(() => {
-            /* fire-and-forget — admin learns the locale on next bootstrap */
-          });
-      }
-    }
-    await next();
-  });
+  bot.use(
+    createLocaleDetectMiddleware({
+      cache: userLocaleCache,
+      detect: detectLocaleFromTelegram,
+      adminClient,
+    }),
+  );
 
   // ── /start (extracted to bot/pages/start.ts; registered above) ────────────
 
