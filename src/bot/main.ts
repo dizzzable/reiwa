@@ -13,22 +13,13 @@
  * All data comes from rezeis-admin via internal API.
  */
 
-import { Bot, Context, session, SessionFlavor, InlineKeyboard } from 'grammy';
+import { Bot, Context, session, SessionFlavor } from 'grammy';
 import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../config.js';
 import { AdminClient } from '../lib/admin-client.js';
-import type { BotConfig, TgCustomEmojiEntity } from '../infrastructure/bot-config/types.js';
+import type { BotConfig } from '../infrastructure/bot-config/types.js';
 import { BotConfigCache, DEFAULT_BOT_CONFIG } from '../infrastructure/bot-config/cache.js';
 import { translator } from '../infrastructure/i18n/index.js';
-import {
-  buildWelcomeMessage,
-  buildSubscriptionCard,
-  buildPlansMessage,
-  buildReferralMessage,
-} from '../infrastructure/bot-message/message-builder.js';
-import {
-  buildMainKeyboard as buildMainKeyboardWidget,
-  isTelegramSafeButtonUrl,
-} from './widgets/main-keyboard.js';
+import { isTelegramSafeButtonUrl } from './widgets/main-keyboard.js';
 import {
   registerActivityPage,
   registerBuyPage,
@@ -42,6 +33,7 @@ import {
   registerPromoPage,
   registerReferralPage,
   registerRulesPage,
+  registerStartPage,
   registerSubscriptionPage,
 } from './pages/index.js';
 import {
@@ -49,22 +41,8 @@ import {
   getUserLang,
   setTranslations,
   setUserLang,
-  t,
   userLangCacheHas,
 } from './i18n.js';
-import {
-  DEFAULT_LOCALE,
-  type SupportedLocale,
-  isSupportedLocale,
-} from '../core/enums/locale.enum.js';
-
-// `getUserLang` returns a free-form string (legacy bot-shim contract).
-// The new keyboard widget takes a `SupportedLocale` so we coerce here
-// rather than widening the widget signature.
-function coerceLocale(lang: string): SupportedLocale {
-  const lower = lang.toLowerCase();
-  return isSupportedLocale(lower) ? lower : DEFAULT_LOCALE;
-}
 
 const config = loadConfig();
 const reiwaPublicUrl = resolveReiwaPublicUrl(config);
@@ -100,19 +78,6 @@ async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig>
     fallback: DEFAULT_BOT_CONFIG,
   });
   return botConfigCache.get();
-}
-
-// ── Helper: send reply with entities ─────────────────────────────────────────
-
-async function replyWithEntities(
-  ctx: BotContext,
-  message: { text: string; entities: TgCustomEmojiEntity[] },
-  extra?: Record<string, unknown>,
-): Promise<void> {
-  await ctx.reply(message.text, {
-    entities: message.entities.length > 0 ? message.entities : undefined,
-    ...extra,
-  });
 }
 
 // ── Bot startup ───────────────────────────────────────────────────────────────
@@ -172,94 +137,7 @@ async function startBot(): Promise<void> {
     await next();
   });
 
-  // ── /start ─────────────────────────────────────────────────────────────────
-
-  bot.command('start', async (ctx) => {
-    const tgUser = ctx.from;
-    if (!tgUser) return;
-    const lang = getUserLang(tgUser.id);
-
-    // Bootstrap user in admin backend
-    if (adminClient) {
-      try {
-        const session = (await adminClient.bootstrapUser({
-          telegramId: String(tgUser.id),
-          username: tgUser.username,
-          name: `${tgUser.first_name}${tgUser.last_name ? ' ' + tgUser.last_name : ''}`,
-          language: tgUser.language_code?.toUpperCase() ?? 'RU',
-        })) as any;
-        // Sync language from backend
-        if (session?.language) {
-          setUserLang(tgUser.id, session.language.toLowerCase());
-        }
-      } catch (e: unknown) {
-        console.error('[bot/start] bootstrap error:', (e as Error).message);
-      }
-    }
-
-    // Check channel subscription requirement
-    const botCfg = await getBotConfig(adminClient);
-    if (botCfg.visual.channelUsername && adminClient) {
-      try {
-        const policy = await adminClient.getPlatformPolicy() as any;
-        if (policy?.channelRequired && policy?.channelLink) {
-          const channelId = policy.channelId ?? policy.channelLink;
-          try {
-            const member = await ctx.api.getChatMember(channelId, tgUser.id);
-            if (member.status === 'left' || member.status === 'kicked') {
-              const channelUrl = policy.channelLink.startsWith('@')
-                ? `https://t.me/${policy.channelLink.slice(1)}`
-                : policy.channelLink;
-              await ctx.reply(
-                t('channel.required', lang),
-                {
-                  reply_markup: new InlineKeyboard()
-                    .url(t('channel.join_button', lang), channelUrl)
-                    .row()
-                    .text(t('channel.check_button', lang), 'check_channel'),
-                },
-              );
-              return;
-            }
-          } catch {
-            // Can't check membership — proceed anyway
-          }
-        }
-      } catch {
-        // Platform policy unavailable — proceed
-      }
-    }
-
-    const { botEmojis, visual, features } = botCfg;
-
-    // Fetch subscription
-    let subscription = null;
-    if (adminClient) {
-      subscription = (await adminClient.getUserSubscription(String(tgUser.id)).catch(() => null)) as any;
-    }
-
-    const message = buildWelcomeMessage({
-      firstName: tgUser.first_name,
-      subscription,
-      welcomeTemplate: visual.welcomeMessage,
-      format: visual.subscriptionInfoFormat,
-      botEmojis,
-    });
-
-    const miniAppUrl =
-      features.miniAppEnabled && reiwaWebAppUrl ? reiwaWebAppUrl : null;
-
-    const keyboard = buildMainKeyboardWidget({ buttons: botCfg.buttons, miniAppUrl, publicWebUrl: reiwaUrlButtonUrl, lang: coerceLocale(getUserLang(tgUser.id)), translator });
-    if (visual.bannerUrl && visual.bannerUrl.length > 0) {
-      // Best-effort banner — broken URL must not sink the welcome reply.
-      try {
-        await ctx.replyWithPhoto(visual.bannerUrl);
-      } catch (err: unknown) {
-        console.warn('[bot/start] banner send failed:', (err as Error).message);
-      }
-    }
-    await replyWithEntities(ctx, message, { reply_markup: keyboard });
-  });
+  // ── /start (extracted to bot/pages/start.ts; registered above) ────────────
 
   // ── /help ──────────────────────────────────────────────────────────────────
   // Extracted to bot/pages/help.ts (registered above).
@@ -304,6 +182,7 @@ async function startBot(): Promise<void> {
   registerActivityPage(bot, pageDeps);
   registerBuyPage(bot, pageDeps);
   registerMenuPage(bot, pageDeps);
+  registerStartPage(bot, pageDeps);
 
   // ── back_to_menu / check_channel callbacks (extracted to pages/menu.ts) ───
   // ── buy / promo / referrals / profile / activity callbacks (extracted) ────

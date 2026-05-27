@@ -18,6 +18,7 @@ export { registerProfilePage } from './profile.js';
 export { registerPromoPage } from './promo.js';
 export { registerReferralPage } from './referral.js';
 export { registerRulesPage } from './rules.js';
+export { registerStartPage } from './start.js';
 export { registerSubscriptionPage } from './subscription.js';
 export { replyWithEntities } from './reply.js';
 export type {
