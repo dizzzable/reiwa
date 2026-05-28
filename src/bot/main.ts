@@ -173,7 +173,11 @@ async function startBot(): Promise<void> {
       hasSync: (id: number) => userLocaleCache.hasSync(id),
     },
     getConfig: () => getBotConfig(adminClient),
-    urls: { publicWebUrl: reiwaUrlButtonUrl, miniAppUrl: reiwaWebAppUrl },
+    urls: {
+      publicWebUrl: reiwaUrlButtonUrl,
+      miniAppUrl: reiwaWebAppUrl,
+      rezeisAdminUrl,
+    },
     bannerStore,
     envSupportUsername: config.BOT_SUPPORT_USERNAME ?? undefined,
     logger,

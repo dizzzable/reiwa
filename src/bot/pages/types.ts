@@ -47,6 +47,14 @@ export interface BotUrls {
   readonly publicWebUrl: string | null;
   /** Mini App URL — same as publicWebUrl when configured, else `null`. */
   readonly miniAppUrl: string | null;
+  /**
+   * Internal admin host base URL (`http://rezeis:8000` in docker, or
+   * `https://admin.example.com` in production). Used by the banner
+   * resolver to fetch operator-uploaded banner files from
+   * `/uploads/bot-banners/...` and re-emit them as Telegram photo
+   * uploads.
+   */
+  readonly rezeisAdminUrl: string | null;
 }
 
 export interface PageDeps {

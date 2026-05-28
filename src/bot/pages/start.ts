@@ -27,6 +27,7 @@ import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
+import { resolveBannerSource } from './banner-resolver.js';
 import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 interface BootstrapSessionShape {
@@ -173,20 +174,37 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       typeof botCfg.visual.bannerUrl === 'string' &&
       botCfg.visual.bannerUrl.length > 0
     ) {
-      try {
-        await ctx.replyWithPhoto(botCfg.visual.bannerUrl, {
-          caption: view.text,
-          caption_entities:
-            view.entities.length > 0 ? [...view.entities] : undefined,
-          reply_markup: view.keyboard,
-        });
-        return;
-      } catch (err: unknown) {
-        deps.logger?.warn(
-          { err, bannerUrl: botCfg.visual.bannerUrl },
-          'bot/start banner send failed',
-        );
-        // Fall through — emit a plain reply so the user still gets the menu.
+      // Resolve operator-managed banner reference to a sendable
+      // photo source. Internal `/uploads/...` URLs are downloaded
+      // by reiwa-bot and uploaded to Telegram as multipart, so they
+      // don't need to be publicly reachable. Public URLs / file_ids
+      // are forwarded verbatim.
+      const photoSource = await resolveBannerSource(botCfg.visual.bannerUrl, {
+        rezeisAdminUrl: deps.urls.rezeisAdminUrl,
+        logger: deps.logger
+          ? {
+              warn: (obj, msg) => {
+                deps.logger?.warn(obj as Record<string, unknown>, msg);
+              },
+            }
+          : undefined,
+      });
+      if (photoSource !== null) {
+        try {
+          await ctx.replyWithPhoto(photoSource, {
+            caption: view.text,
+            caption_entities:
+              view.entities.length > 0 ? [...view.entities] : undefined,
+            reply_markup: view.keyboard,
+          });
+          return;
+        } catch (err: unknown) {
+          deps.logger?.warn(
+            { err, bannerUrl: botCfg.visual.bannerUrl },
+            'bot/start banner send failed',
+          );
+          // Fall through — emit a plain reply so the user still gets the menu.
+        }
       }
     } else if (deps.bannerStore !== undefined) {
       try {
