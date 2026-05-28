@@ -8,6 +8,7 @@
  */
 export { registerActivityPage } from './activity.js';
 export { registerBuyPage } from './buy.js';
+export { registerDynamicScreenPage } from './dynamic-screen.js';
 export { registerHelpCallbackPage } from './help-callback.js';
 export { registerHelpCommandPage } from './help.js';
 export { registerInvitePage } from './invite.js';

@@ -140,6 +140,9 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'support.not_configured': 'Support is not configured yet.',
   'support.title': '🆘 Support\n\nTap the button below — we reply in DMs:',
 
+  // ── Dynamic screens ─────────────────────────────────────────────────────────
+  'screen.not_found': '⚠️ This screen was deleted or not yet published. Go back to the menu and try again.',
+
   // ── Days pluralization ──────────────────────────────────────────────────────
   'day.one': 'day',
   'day.few': 'days',

@@ -31,17 +31,42 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
+import {
+  buildScreenKeyboard,
+  findScreenByName,
+  pickScreenText,
+} from './screen-renderer.js';
 import type { PageRegistrar } from './types.js';
 
 const NUMERIC_HANDLE = /^-?\d+$/;
+const SCREEN_OVERRIDE_NAME = 'help';
 
 export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
-  const { translator, userLocale, getConfig, envSupportUsername } = deps;
+  const { translator, userLocale, getConfig, envSupportUsername, urls } = deps;
 
   bot.callbackQuery('help', async (ctx) => {
     await ctx.answerCallbackQuery();
     const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
     const botCfg = await getConfig();
+
+    // Operator override: if a screen named "help" exists in the
+    // published flow, render it instead of the built-in fallback.
+    const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
+    if (overrideScreen !== null) {
+      const text = pickScreenText(overrideScreen, lang);
+      const keyboard = buildScreenKeyboard(
+        overrideScreen,
+        lang,
+        urls.publicWebUrl,
+        urls.miniAppUrl,
+      );
+      if (overrideScreen.buttons.length === 0) {
+        keyboard.text(translator.t('back_to_menu', lang), 'menu:main');
+      }
+      await editOrReply(ctx, { text, replyMarkup: keyboard });
+      return;
+    }
+
     const adminHandle = botCfg.visual.supportUsername.replace(/^@+/, '').trim();
     const handle = adminHandle.length > 0 ? adminHandle : (envSupportUsername ?? '').trim();
 

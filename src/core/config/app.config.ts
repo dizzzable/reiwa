@@ -87,6 +87,16 @@ const schema = z.object({
    */
   BOT_SECRET_TOKEN: optionalString,
   /**
+   * TCP port for the bot's built-in cache-invalidate HTTP listener.
+   * Bound to `0.0.0.0` inside the docker network so rezeis-admin can
+   * push a synchronous cache-bust when an operator saves bot config.
+   * Not published outside the container; protected by the same shared
+   * secret as outgoing admin calls (REZEIS_INTERNAL_SHARED_SECRET).
+   * When unset, defaults to 5100. The listener is silently skipped
+   * entirely when REZEIS_INTERNAL_SHARED_SECRET is unset.
+   */
+  BOT_INVALIDATE_PORT: z.coerce.number().int().min(1024).max(65535).optional(),
+  /**
    * Telegram bot username (with or without a leading `@`) used to build
    * deep links back to the bot/Mini App when redirecting customers from
    * a payment provider. Accepts either `RezeisBot` or `@RezeisBot`; the

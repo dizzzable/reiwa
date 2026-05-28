@@ -16,6 +16,11 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
+import {
+  buildScreenKeyboard,
+  findScreenByName,
+  pickScreenText,
+} from './screen-renderer.js';
 import type { PageRegistrar } from './types.js';
 
 interface PlatformPolicyMaybeRulesLink {
@@ -23,6 +28,7 @@ interface PlatformPolicyMaybeRulesLink {
 }
 
 const NUMERIC_HANDLE = /^-?\d+$/;
+const SCREEN_OVERRIDE_NAME = 'rules';
 
 export const registerRulesPage: PageRegistrar = (bot, deps) => {
   const {
@@ -31,12 +37,32 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
     userLocale,
     getConfig,
     envSupportUsername,
+    urls,
   } = deps;
 
   bot.callbackQuery('rules', async (ctx) => {
     await ctx.answerCallbackQuery();
     const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
     const backLabel = translator.t('back_to_menu', lang);
+    const botCfg = await getConfig();
+
+    // Operator override: a screen named "rules" replaces the built-in
+    // platform-policy fetch.
+    const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
+    if (overrideScreen !== null) {
+      const text = pickScreenText(overrideScreen, lang);
+      const keyboard = buildScreenKeyboard(
+        overrideScreen,
+        lang,
+        urls.publicWebUrl,
+        urls.miniAppUrl,
+      );
+      if (overrideScreen.buttons.length === 0) {
+        keyboard.text(backLabel, 'menu:main');
+      }
+      await editOrReply(ctx, { text, replyMarkup: keyboard });
+      return;
+    }
 
     const policy = adminClient
       ? ((await adminClient.system.getPlatformPolicy().catch(() => null)) as
@@ -59,7 +85,6 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
 
     // No rules link configured — fall back to "Contact support" so the
     // screen still has a useful CTA instead of a dead end.
-    const botCfg = await getConfig();
     const adminHandle = botCfg.visual.supportUsername.replace(/^@+/, '').trim();
     const handle =
       adminHandle.length > 0 ? adminHandle : (envSupportUsername ?? '').trim();

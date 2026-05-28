@@ -106,6 +106,28 @@ export class BotConfigCache {
   reset(): void {
     this.entry = null;
   }
+
+  /**
+   * Operator-driven cache bust. Same wire as `reset()` but with an
+   * explicit log line so an operator inspecting bot logs can correlate
+   * the invalidate event with their save action in the admin SPA.
+   *
+   * Returns the fresh config (so the caller can ack with the latest
+   * payload) or `null` when the upstream refresh fails — the cache
+   * keeps serving stale data in that case rather than going dark.
+   */
+  async forceInvalidate(reason: string): Promise<BotConfig | null> {
+    this.logger?.info(
+      { reason, hadCachedEntry: this.entry !== null },
+      'BotConfigCache: forced invalidate',
+    );
+    this.entry = null;
+    try {
+      return await this.get();
+    } catch {
+      return null;
+    }
+  }
 }
 
 /**

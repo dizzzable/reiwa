@@ -22,7 +22,14 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
+import {
+  buildScreenKeyboard,
+  findScreenByName,
+  pickScreenText,
+} from './screen-renderer.js';
 import type { PageRegistrar } from './types.js';
+
+const SCREEN_OVERRIDE_NAME = 'invite';
 
 interface ReferralInviteShape {
   readonly invite?: { readonly token?: string };
@@ -38,6 +45,25 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
     const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
     const backLabel = translator.t('back_to_menu', lang);
     const botCfg = await getConfig();
+
+    // Operator override: a screen named "invite" replaces the built-in
+    // referral-link generator. Useful for marketing landing copy that
+    // doesn't need a server-side token.
+    const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
+    if (overrideScreen !== null) {
+      const text = pickScreenText(overrideScreen, lang);
+      const keyboard = buildScreenKeyboard(
+        overrideScreen,
+        lang,
+        urls.publicWebUrl,
+        urls.miniAppUrl,
+      );
+      if (overrideScreen.buttons.length === 0) {
+        keyboard.text(backLabel, 'menu:main');
+      }
+      await editOrReply(ctx, { text, replyMarkup: keyboard });
+      return;
+    }
 
     if (!botCfg.features.referralsEnabled) {
       const kb = new InlineKeyboard().text(backLabel, 'menu:main');

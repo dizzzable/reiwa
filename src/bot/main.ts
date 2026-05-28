@@ -14,6 +14,7 @@
  */
 
 import { Bot, Context, session, SessionFlavor } from 'grammy';
+import * as http from 'node:http';
 import { resolve as resolvePath } from 'node:path';
 
 import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../config.js';
@@ -26,6 +27,7 @@ import { isTelegramSafeButtonUrl } from './widgets/main-keyboard.js';
 import {
   registerActivityPage,
   registerBuyPage,
+  registerDynamicScreenPage,
   registerHelpCallbackPage,
   registerHelpCommandPage,
   registerInvitePage,
@@ -190,6 +192,11 @@ async function startBot(): Promise<void> {
   registerBuyPage(bot, pageDeps);
   registerMenuPage(bot, pageDeps);
   registerStartPage(bot, pageDeps);
+  // Dynamic screens last — its `screen:*` regex catches anything not
+  // already grabbed by an earlier `bot.callbackQuery(<id>, ...)` so
+  // operator-defined screens can shadow built-in callbacks just by
+  // matching the same id.
+  registerDynamicScreenPage(bot, pageDeps);
 
   // ── Error handler ──────────────────────────────────────────────────────────
 
@@ -236,6 +243,25 @@ async function startBot(): Promise<void> {
   // retry attempts keep it false so we don't lose any updates that
   // arrived after the previous crash.
   void runPollingLoop(bot, logger);
+
+  // ── Cache invalidate HTTP listener ──────────────────────────────────────
+  //
+  // Tiny built-in HTTP server (Node native, no Express) bound to the
+  // docker network so rezeis-admin can punch a synchronous cache-bust
+  // when an operator saves the bot config. Without this the bot would
+  // wait up to 5 minutes (the BotConfigCache TTL) before picking up
+  // the change.
+  //
+  // Auth: the same shared secret reiwa uses to sign outbound calls to
+  // admin (`REZEIS_INTERNAL_SHARED_SECRET`) is used here as a bearer
+  // token. No HMAC because the request body is empty and the path is
+  // tightly scoped.
+  startInvalidateServer({
+    cache: botConfigCache,
+    secret: config.REZEIS_INTERNAL_SHARED_SECRET ?? null,
+    port: config.BOT_INVALIDATE_PORT ?? 5100,
+    logger,
+  });
 }
 
 async function runPollingLoop(
@@ -358,6 +384,87 @@ async function registerSlashCommands(
     { commandCount: BOT_COMMANDS.length, scopes: SUPPORTED_LOCALES.length + 1 },
     'Bot slash-commands registered',
   );
+}
+
+/**
+ * Tiny HTTP server for synchronous cache-bust from rezeis-admin.
+ *
+ * Endpoint:
+ *   POST /invalidate
+ *     - header `X-Auth-Token: <REZEIS_INTERNAL_SHARED_SECRET>`
+ *     - 204 on success, 401 on missing/wrong token, 503 if the cache
+ *       hasn't been initialised yet (cold start race window)
+ *
+ * The server is bound to `0.0.0.0` inside the docker network. There
+ * is no HTTPS termination here — that's the docker network boundary
+ * and the operator's responsibility (only services on
+ * `remnawave-network` can reach it). External traffic NEVER hits
+ * this port because docker-compose doesn't publish it.
+ *
+ * If `REZEIS_INTERNAL_SHARED_SECRET` is unset (dev / smoke tests) we
+ * skip the listener entirely — no auth means no endpoint, period.
+ */
+function startInvalidateServer(opts: {
+  cache: BotConfigCache | null;
+  secret: string | null;
+  port: number;
+  logger: ReturnType<typeof createLogger>;
+}): void {
+  const { cache, secret, port, logger } = opts;
+  if (secret === null || secret.length === 0) {
+    logger.info(
+      'Cache-invalidate endpoint disabled (REZEIS_INTERNAL_SHARED_SECRET unset)',
+    );
+    return;
+  }
+
+  const server = http.createServer(async (req, res) => {
+    if (req.method !== 'POST' || req.url !== '/invalidate') {
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
+    const token = req.headers['x-auth-token'];
+    if (typeof token !== 'string' || token !== secret) {
+      logger.warn(
+        { remoteAddress: req.socket.remoteAddress },
+        'Cache-invalidate: rejected (missing or wrong X-Auth-Token)',
+      );
+      res.statusCode = 401;
+      res.end();
+      return;
+    }
+    if (cache === null) {
+      // Cold-start race: bot started, listener up, but cache not yet
+      // primed because the first AdminClient call is still in flight.
+      // Tell the caller to retry rather than silently swallowing.
+      logger.warn('Cache-invalidate: bot config cache not initialised yet');
+      res.statusCode = 503;
+      res.setHeader('Retry-After', '2');
+      res.end();
+      return;
+    }
+    try {
+      const fresh = await cache.forceInvalidate('admin-pushed');
+      res.statusCode = 204;
+      res.end();
+      logger.info(
+        { hadRefresh: fresh !== null },
+        'Cache-invalidate: succeeded',
+      );
+    } catch (err: unknown) {
+      logger.error({ err }, 'Cache-invalidate: forceInvalidate threw');
+      res.statusCode = 500;
+      res.end();
+    }
+  });
+
+  server.listen(port, '0.0.0.0', () => {
+    logger.info({ port }, 'Cache-invalidate HTTP listener up');
+  });
+  server.on('error', (err) => {
+    logger.error({ err, port }, 'Cache-invalidate HTTP server error');
+  });
 }
 
 startBot().catch((err: unknown) => {

@@ -63,6 +63,62 @@ export interface BotConfig {
    * with the hard-coded RU baseline when admin is unreachable.
    */
   translations?: Record<string, string>
+  /**
+   * Operator-managed dynamic screens projected from the BotFlow graph
+   * (rezeis-admin). When a published flow exists, the screens listed
+   * here override reiwa's built-in sub-menus (help / rules / invite),
+   * letting operators rewrite copy + buttons + structure end-to-end
+   * from the admin Bot Studio. Empty array → built-in fallback in
+   * effect (the ship-default UX every reiwa instance comes with).
+   */
+  screens?: BotScreen[]
+  /**
+   * Identifier of the published flow that produced `screens`. Used as
+   * a cache-key suffix so reiwa knows when to invalidate per-screen
+   * caches. Empty string when no flow is published.
+   */
+  screensVersion?: string
+}
+
+/**
+ * Operator-managed bot screen rendered as a Telegram message with an
+ * optional inline keyboard. When the user presses a reply-keyboard
+ * button or an inline button whose `targetShortId` points at this
+ * screen, reiwa renders the screen via `editMessageContent`.
+ */
+export interface BotScreen {
+  id: string
+  shortId: string
+  name: string
+  textRu: string
+  textEn: string
+  parseMode: 'html' | 'markdown' | 'plain'
+  mediaType: 'photo' | 'video' | 'document' | 'animation' | null
+  mediaFileId: string | null
+  mediaUrl: string | null
+  isRoot: boolean
+  buttons: readonly BotScreenButton[]
+}
+
+/**
+ * A button rendered inside a dynamic screen. `action: 'navigate'`
+ * targets another screen by `targetShortId`; the other action types
+ * map onto Telegram's native button kinds (URL, Mini App, callback)
+ * or reiwa's built-in navigation primitives (back, start_over).
+ */
+export interface BotScreenButton {
+  id: string
+  labelRu: string
+  labelEn: string
+  row: number
+  col: number
+  action: 'navigate' | 'url' | 'webapp' | 'callback' | 'back' | 'start_over'
+  targetShortId: string | null
+  url: string | null
+  webAppUrl: string | null
+  callbackAction: string | null
+  style: 'default' | 'primary' | 'success' | 'danger'
+  iconCustomEmojiId: string | null
 }
 
 // ── Telegram entity types ─────────────────────────────────────────────────────
