@@ -188,3 +188,96 @@ self.addEventListener('message', (event) => {
     self.skipWaiting()
   }
 })
+
+// ─── Web Push: Notification Display ───────────────────────────────────────────
+//
+// Browsers (and iOS 16.4+ PWAs) deliver pushes to the SW even when the
+// app is closed. We render the OS-level notification through
+// `showNotification()` and route the click through `notificationclick`
+// to open / focus the SPA at the desired URL.
+//
+// Payload shape — JSON sent by `WebPushService.sendToUser`:
+//   { title: string, body: string, url?: string }
+//
+// When the payload doesn't parse (push service tickle without data,
+// or malformed body) we render a fallback so the user knows something
+// happened — Chrome shows a "This site has been updated in the
+// background" if we don't, which looks broken.
+
+interface WebPushPayload {
+  readonly title?: string
+  readonly body?: string
+  readonly url?: string
+}
+
+self.addEventListener('push', (event) => {
+  const data: WebPushPayload = (() => {
+    try {
+      return event.data?.json() ?? {}
+    } catch {
+      return {}
+    }
+  })()
+
+  const title = typeof data.title === 'string' && data.title.length > 0
+    ? data.title
+    : 'Reiwa'
+  const body = typeof data.body === 'string' && data.body.length > 0
+    ? data.body
+    : ''
+  const url = typeof data.url === 'string' && data.url.length > 0
+    ? data.url
+    : '/dashboard'
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: '/icons/icon-192x192.png',
+      badge: '/icons/icon-192x192.png',
+      data: { url },
+      // Tag so successive pushes for the same notification type
+      // collapse into one banner instead of stacking.
+      tag: 'reiwa-notification',
+      // `renotify` makes the device buzz/sound even when an existing
+      // notification with the same tag is replaced. The DOM lib types
+      // omit this Chrome-supported field; cast to silence the
+      // structural check without losing the runtime behaviour on
+      // Chromium / Edge / Android.
+      ...({ renotify: true } as Record<string, unknown>),
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const data = (event.notification.data ?? {}) as { url?: string }
+  const targetUrl = typeof data.url === 'string' && data.url.length > 0
+    ? data.url
+    : '/dashboard'
+  event.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      })
+      // Prefer focusing an existing tab so we don't blow up the user's
+      // window count on every notification.
+      for (const client of all) {
+        try {
+          const clientUrl = new URL(client.url)
+          const targetParsed = new URL(targetUrl, self.location.origin)
+          if (clientUrl.origin === targetParsed.origin) {
+            await client.focus()
+            // Send the destination so the SPA's router can navigate
+            // without a full reload.
+            client.postMessage({ type: 'NAVIGATE', url: targetUrl })
+            return
+          }
+        } catch {
+          // If URL parsing fails, fall through to opening a new window.
+        }
+      }
+      await self.clients.openWindow(targetUrl)
+    })(),
+  )
+})

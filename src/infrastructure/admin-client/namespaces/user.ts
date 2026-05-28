@@ -79,4 +79,19 @@ export class UserNamespace {
       { userId: telegramId, code },
     );
   }
+
+  /**
+   * Idempotently set `User.isBotBlocked = true` for the given Telegram
+   * id. Called by reiwa-bot when Telegram returns 403 on a `/notify`
+   * delivery — the user has either blocked the bot or removed it from
+   * the chat. Persisting the flag stops admin from continuing to push
+   * notifications and excludes the user from broadcast targeting.
+   */
+  markBotBlocked(telegramId: string): Promise<{ ok: true }> {
+    return this.transport.request<{ ok: true }>(
+      'POST',
+      '/api/internal/user/bot-blocked',
+      { telegramId },
+    );
+  }
 }

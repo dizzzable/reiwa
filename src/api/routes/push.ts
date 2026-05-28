@@ -8,13 +8,12 @@ import { getRequestLogger } from "../middleware/logger-accessor.js";
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
 
 const pushSubscribeSchema = z.object({
-  subscription: z.object({
-    endpoint: z.string().url("Endpoint must be a valid URL"),
-    keys: z.object({
-      p256dh: z.string().min(1, "p256dh key is required"),
-      auth: z.string().min(1, "auth key is required"),
-    }),
+  endpoint: z.string().url("Endpoint must be a valid URL"),
+  keys: z.object({
+    p256dh: z.string().min(1, "p256dh key is required"),
+    auth: z.string().min(1, "auth key is required"),
   }),
+  userAgent: z.string().max(512).optional(),
 });
 
 const pushUnsubscribeSchema = z.object({
@@ -31,6 +30,26 @@ export function createPushRouter(deps: {
   const { adminClient } = deps;
   const router = Router();
 
+  // ── GET /api/v1/push/public-key ────────────────────────────────────────────
+  //
+  // Returns the operator-configured VAPID public key. The SPA calls
+  // this once before invoking `pushManager.subscribe(...)`. Empty
+  // string means push is disabled — the SPA should hide its opt-in
+  // UI rather than try to subscribe with no key.
+  router.get("/push/public-key", async (req: Request, res: Response) => {
+    try {
+      if (!adminClient) {
+        res.json({ publicKey: "" });
+        return;
+      }
+      const result = await adminClient.push.getPublicKey();
+      res.json(result);
+    } catch (e: unknown) {
+      getRequestLogger(req).error({ err: e }, "push/public-key failed");
+      res.json({ publicKey: "" });
+    }
+  });
+
   // ── POST /api/v1/push/subscribe ─────────────────────────────────────────────
   router.post("/push/subscribe", async (req: Request, res: Response) => {
     try {
@@ -40,17 +59,43 @@ export function createPushRouter(deps: {
         return;
       }
 
-      // Validate request body with Zod
-      const parsed = pushSubscribeSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          message: "Validation failed",
-          errors: parsed.error.issues.map((i) => ({
-            field: i.path.join("."),
-            message: i.message,
-          })),
-        });
-        return;
+      // Validate request body with Zod. Accept either the wrapped
+      // `{ subscription: { endpoint, keys } }` shape (legacy SPA
+      // bundles still in service-worker cache) OR the flat
+      // `{ endpoint, keys, userAgent }` shape (new SPA).
+      const flat = pushSubscribeSchema.safeParse(req.body);
+      let endpoint: string;
+      let p256dh: string;
+      let auth: string;
+      let userAgent: string | undefined;
+      if (flat.success) {
+        endpoint = flat.data.endpoint;
+        p256dh = flat.data.keys.p256dh;
+        auth = flat.data.keys.auth;
+        userAgent = flat.data.userAgent;
+      } else {
+        const wrapped = z.object({
+          subscription: z.object({
+            endpoint: z.string().url(),
+            keys: z.object({
+              p256dh: z.string().min(1),
+              auth: z.string().min(1),
+            }),
+          }),
+        }).safeParse(req.body);
+        if (!wrapped.success) {
+          res.status(400).json({
+            message: "Validation failed",
+            errors: flat.error.issues.map((i) => ({
+              field: i.path.join("."),
+              message: i.message,
+            })),
+          });
+          return;
+        }
+        endpoint = wrapped.data.subscription.endpoint;
+        p256dh = wrapped.data.subscription.keys.p256dh;
+        auth = wrapped.data.subscription.keys.auth;
       }
 
       if (!adminClient) {
@@ -59,17 +104,18 @@ export function createPushRouter(deps: {
       }
 
       const userId = req.webSession.userId;
-      const { subscription } = parsed.data;
-
-      // Proxy to Rezeis_Admin
-      const result = await adminClient.push.subscribe(userId, subscription);
+      const result = await adminClient.push.subscribe(
+        userId,
+        { endpoint, keys: { p256dh, auth } },
+        userAgent,
+      );
 
       res.json({ success: result.success });
     } catch (e: unknown) {
       const errMsg = (e as Error).message ?? "";
 
       if (errMsg.includes("409") || errMsg.toLowerCase().includes("limit")) {
-        res.status(409).json({ message: "Maximum push subscriptions reached (5 per account)" });
+        res.status(409).json({ message: "Maximum push subscriptions reached" });
         return;
       }
       if (errMsg.includes("503") || errMsg.includes("unavailable")) {
@@ -82,16 +128,17 @@ export function createPushRouter(deps: {
     }
   });
 
-  // ── DELETE /api/v1/push/unsubscribe ─────────────────────────────────────────
-  router.delete("/push/unsubscribe", async (req: Request, res: Response) => {
+  // ── POST /api/v1/push/unsubscribe ──────────────────────────────────────────
+  //
+  // POST instead of DELETE because some proxies strip the body from
+  // DELETE requests, and we need the endpoint in the body to identify
+  // which subscription to remove.
+  router.post("/push/unsubscribe", async (req: Request, res: Response) => {
     try {
-      // Require authentication
       if (!req.webSession || !req.webSessionId) {
         res.status(401).json({ message: "Unauthorized" });
         return;
       }
-
-      // Validate request body with Zod
       const parsed = pushUnsubscribeSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({
@@ -103,34 +150,28 @@ export function createPushRouter(deps: {
         });
         return;
       }
-
       if (!adminClient) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
         return;
       }
-
       const userId = req.webSession.userId;
       const { endpoint } = parsed.data;
-
-      // Proxy unsubscribe to Rezeis_Admin — permanently remove subscription.
-      // If removal fails, retain existing data and allow reuse if still valid.
       try {
         const result = await adminClient.push.unsubscribe(userId, endpoint);
         res.json({ success: result.success });
       } catch (unsubErr: unknown) {
         const unsubErrMsg = (unsubErr as Error).message ?? "";
-
-        // If the subscription was not found (already removed), treat as success
         if (unsubErrMsg.includes("404")) {
+          // Already removed — idempotent success.
           res.json({ success: true });
           return;
         }
-
-        // If removal fails, retain existing data and allow reuse if still valid
-        // Return a 502 to indicate the upstream failed but data is preserved
-        getRequestLogger(req).error({ err: unsubErrMsg }, "push/unsubscribe - Removal failed, retaining subscription:");
+        getRequestLogger(req).error(
+          { err: unsubErrMsg },
+          "push/unsubscribe upstream failed",
+        );
         res.status(502).json({
-          message: "Failed to remove subscription. Existing subscription data retained.",
+          message: "Failed to remove subscription",
           retained: true,
         });
       }

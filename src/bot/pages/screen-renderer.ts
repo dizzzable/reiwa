@@ -38,6 +38,45 @@ export function pickScreenText(screen: BotScreen, lang: SupportedLocale): string
   return screen.textRu;
 }
 
+/**
+ * Substitute `{{placeholders}}` in the screen's text with runtime
+ * values supplied by the caller. Used by built-in handlers (invite,
+ * rules, help) so an operator can edit the copy in Bot Studio while
+ * the bot still injects per-user tokens like the referral link or
+ * support handle.
+ *
+ * Supported placeholders are documented in
+ * `botFlow.fields.textRuPlaceholderHint` on the SPA side. Anything
+ * else passes through unchanged so operator-driven custom screens
+ * with their own placeholder syntax aren't accidentally mangled.
+ */
+export function applyScreenTemplate(
+  screen: BotScreen,
+  lang: SupportedLocale,
+  vars: Readonly<Record<string, string>>,
+): string {
+  let text = pickScreenText(screen, lang);
+  for (const [key, value] of Object.entries(vars)) {
+    const placeholder = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
+    text = text.replace(placeholder, value);
+  }
+  return text;
+}
+
+/**
+ * Append a `[◀️ В меню]` row to an inline keyboard. The page
+ * convention is that every sub-screen has a back button on its
+ * trailing row — operators don't have to wire it for every screen
+ * they design, and the universal screen renderer adds it
+ * automatically when the operator hasn't already.
+ */
+export function appendBackToMenuRow(
+  kb: InlineKeyboard,
+  backLabel: string,
+): InlineKeyboard {
+  return kb.row().text(backLabel, 'menu:main');
+}
+
 export function pickButtonLabel(
   button: BotScreenButton,
   lang: SupportedLocale,

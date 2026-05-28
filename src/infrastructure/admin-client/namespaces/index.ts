@@ -38,6 +38,8 @@ export { UserNamespace } from './user.js';
 export type { BootstrapUserInput } from './user.js';
 export { WebAuthNamespace } from './web-auth.js';
 export type {
+  WebAuthBotSigninConsumeResult,
+  WebAuthBotSigninIssueResult,
   WebAuthLoginResult,
   WebAuthRecoverResult,
   WebAuthRegisterOptions,

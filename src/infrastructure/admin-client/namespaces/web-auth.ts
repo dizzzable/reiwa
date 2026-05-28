@@ -29,6 +29,15 @@ export interface WebAuthRecoverResult {
   readonly challengeId?: string;
 }
 
+export interface WebAuthBotSigninIssueResult {
+  readonly token: string | null;
+  readonly expiresAt: string | null;
+}
+
+export interface WebAuthBotSigninConsumeResult {
+  readonly userId: string | null;
+}
+
 export class WebAuthNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
@@ -74,6 +83,34 @@ export class WebAuthNamespace {
       'POST',
       '/api/internal/web-auth/change-password',
       { userId, currentPassword, newPassword },
+    );
+  }
+
+  /**
+   * Issue a one-time magic-link token for the given Telegram user.
+   * The plaintext token comes back in the response and must be
+   * embedded into the cabinet URL the bot serves to the user. When
+   * the user can't be resolved, the response is `{ token: null,
+   * expiresAt: null }` — caller falls back to a tokenless URL.
+   */
+  issueBotSigninToken(telegramId: string): Promise<WebAuthBotSigninIssueResult> {
+    return this.transport.request<WebAuthBotSigninIssueResult>(
+      'POST',
+      '/api/internal/web-auth/bot-signin/issue',
+      { telegramId },
+    );
+  }
+
+  /**
+   * Consume a magic-link token. Single-use — second call returns
+   * `{ userId: null }`. Reiwa's BFF takes the resolved `userId` and
+   * mints a real WebSession cookie.
+   */
+  consumeBotSigninToken(token: string): Promise<WebAuthBotSigninConsumeResult> {
+    return this.transport.request<WebAuthBotSigninConsumeResult>(
+      'POST',
+      '/api/internal/web-auth/bot-signin/consume',
+      { token },
     );
   }
 }

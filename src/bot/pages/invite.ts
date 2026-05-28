@@ -23,9 +23,9 @@ import { InlineKeyboard } from 'grammy';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
 import {
-  buildScreenKeyboard,
+  applyScreenTemplate,
+  appendBackToMenuRow,
   findScreenByName,
-  pickScreenText,
 } from './screen-renderer.js';
 import type { PageRegistrar } from './types.js';
 
@@ -45,25 +45,6 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
     const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
     const backLabel = translator.t('back_to_menu', lang);
     const botCfg = await getConfig();
-
-    // Operator override: a screen named "invite" replaces the built-in
-    // referral-link generator. Useful for marketing landing copy that
-    // doesn't need a server-side token.
-    const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
-    if (overrideScreen !== null) {
-      const text = pickScreenText(overrideScreen, lang);
-      const keyboard = buildScreenKeyboard(
-        overrideScreen,
-        lang,
-        urls.publicWebUrl,
-        urls.miniAppUrl,
-      );
-      if (overrideScreen.buttons.length === 0) {
-        keyboard.text(backLabel, 'menu:main');
-      }
-      await editOrReply(ctx, { text, replyMarkup: keyboard });
-      return;
-    }
 
     if (!botCfg.features.referralsEnabled) {
       const kb = new InlineKeyboard().text(backLabel, 'menu:main');
@@ -120,19 +101,25 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
       return;
     }
 
+    // Resolve the screen text — operator override wins, otherwise we
+    // fall back to the i18n template. Either way the runtime-only
+    // system buttons (Share + Copy) get appended below; that's the
+    // contract Bot Studio promises operators ("you edit text, the
+    // bot keeps working").
+    const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
+    const text = overrideScreen
+      ? applyScreenTemplate(overrideScreen, lang, { link: inviteLink })
+      : translator.t('invite.share', lang, { link: inviteLink });
+
     const sharePrompt = translator.t('invite.share_prompt', lang);
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(sharePrompt)}`;
 
     const kb = new InlineKeyboard()
       .url(translator.t('invite.share_button', lang), shareUrl)
       .row()
-      .copyText(translator.t('invite.copy_button', lang), inviteLink)
-      .row()
-      .text(backLabel, 'menu:main');
+      .copyText(translator.t('invite.copy_button', lang), inviteLink);
+    appendBackToMenuRow(kb, backLabel);
 
-    await editOrReply(ctx, {
-      text: translator.t('invite.share', lang, { link: inviteLink }),
-      replyMarkup: kb,
-    });
+    await editOrReply(ctx, { text, replyMarkup: kb });
   });
 };

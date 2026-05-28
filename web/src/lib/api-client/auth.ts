@@ -61,6 +61,26 @@ export const login = (data: LoginRequest) =>
 export const signOut = () =>
   apiClient.post("/auth/sign-out").then((r) => r.data);
 
+// ── Bot magic-link sign-in ───────────────────────────────────────────────────
+//
+// Reiwa-bot embeds a one-time `?signin=<token>` query parameter into
+// the Cabinet URL it shows in Telegram. The SPA root page detects the
+// param, calls this endpoint to exchange the token for a real
+// WebSession cookie, then strips the param from the URL and routes
+// the user to /dashboard.
+//
+// Token format: 64 hex chars (32 random bytes). Errors come back as
+// 401 — caller falls through to /sign-in (with optional error hint).
+export interface BotSigninResponse {
+  readonly success: boolean;
+  readonly redirectUrl?: string;
+  readonly message?: string;
+}
+export const botSignin = (token: string) =>
+  apiClient
+    .post<BotSigninResponse>("/auth/bot-signin", { token })
+    .then((r) => r.data);
+
 // ── Status / register / recover ──────────────────────────────────────────────
 export const getAuthStatus = () =>
   apiClient.get<AuthStatusResponse>("/auth/status").then((r) => r.data);

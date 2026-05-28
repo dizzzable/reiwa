@@ -19,6 +19,7 @@ export { apiClient } from "./transport.js";
 // Auth
 export {
   bootstrapTelegram,
+  botSignin,
   changePasswordAuth,
   getAuthStatus,
   login,
@@ -26,6 +27,7 @@ export {
   registerUser,
   signOut,
   type AuthStatusResponse,
+  type BotSigninResponse,
   type LoginRequest,
   type LoginResponse,
   type RecoverResponse,
@@ -125,3 +127,13 @@ export {
   type SupportTicket,
   type SupportTicketMessage,
 } from "./support.js";
+
+// Web push
+export {
+  getPushPublicKey,
+  pushSubscribe,
+  pushUnsubscribe,
+  type PushPublicKeyResponse,
+  type PushSubscribePayload,
+  type PushUnsubscribePayload,
+} from "./push.js";

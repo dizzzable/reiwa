@@ -81,6 +81,57 @@ export function createAuthRouter(deps: {
   // Create brute-force detection middleware
   const bruteForceDetection = createAuthBruteForceDetection(getRedis);
 
+  // ── GET /api/v1/auth/bot-signin ─────────────────────────────────────────────
+  //
+  // Magic-link entry point: reiwa-bot embeds `?signin=<token>` into the
+  // Cabinet URL it shows in Telegram. The SPA's WebHomePage redirects
+  // the browser here on first paint when it sees the query param.
+  // Single-use; the token is consumed atomically on the admin side so
+  // a refreshed page can't replay the auth.
+  //
+  // Auth: the token itself. We rate-limit against `loginRateLimiter`
+  // because invalid tokens are just as much a brute-force surface as
+  // failed passwords — without rate limiting an attacker could try
+  // millions of token guesses against the consume endpoint.
+  //
+  // Returns:
+  //   - 200 + `{ success: true, redirectUrl: "/dashboard" }` on success
+  //     (cookie is set as a side-effect; SPA does the actual nav).
+  //   - 401 + `{ success: false, message: "..." }` on bad / expired token.
+  router.post("/auth/bot-signin", loginRateLimiter, async (req: Request, res: Response) => {
+    try {
+      const token = typeof req.body?.token === "string" ? req.body.token : null;
+      if (token === null || token.length !== 64 || !/^[a-f0-9]+$/i.test(token)) {
+        res.status(401).json({ success: false, message: "Invalid or expired link" });
+        return;
+      }
+      if (!adminClient) {
+        res.status(503).json({ success: false, message: "Service unavailable" });
+        return;
+      }
+      const result = await adminClient.webAuth.consumeBotSigninToken(token);
+      if (result.userId === null) {
+        // Token was unknown / expired / already consumed.
+        res.status(401).json({ success: false, message: "Invalid or expired link" });
+        return;
+      }
+      try {
+        await req.createWebSession(result.userId);
+      } catch (err) {
+        getRequestLogger(req).error({ err }, "auth/bot-signin createWebSession failed");
+        res.status(500).json({ success: false, message: "Failed to create session" });
+        return;
+      }
+      res.json({
+        success: true,
+        redirectUrl: "/dashboard",
+      });
+    } catch (e: unknown) {
+      getRequestLogger(req).error({ err: e }, "auth/bot-signin failed");
+      res.status(500).json({ success: false, message: "Internal server error" });
+    }
+  });
+
   // ── POST /api/v1/auth/register ──────────────────────────────────────────────
   router.post("/auth/register", registerRateLimiter, async (req: Request, res: Response) => {
     try {

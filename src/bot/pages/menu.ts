@@ -10,16 +10,62 @@
  * check failures fall through (let the user in) — Telegram occasionally
  * 502s on getChatMember and we don't want a transient outage to lock
  * legitimate users out of the bot.
+ *
+ * Both flows mint a fresh bot-signin token so the Cabinet URL button
+ * keeps the magic-link UX consistent across `/start` and warm
+ * navigation. Without it, a user who hits `back_to_menu` after their
+ * 5-min token expired would silently fall through to /sign-in.
  */
-import { buildMainKeyboard } from '../widgets/main-keyboard.js';
+import type { AdminClient } from '../../lib/admin-client.js';
+import { buildMainKeyboard, resolveSupportDeepLink } from '../widgets/main-keyboard.js';
 
 import { coerceLocale } from './coerce-locale.js';
-import type { PageRegistrar } from './types.js';
+import type { PageDeps, PageRegistrar } from './types.js';
 
 interface ChannelPolicyShape {
   readonly channelRequired?: boolean;
   readonly channelLink?: string;
   readonly channelId?: string | number;
+}
+
+/**
+ * Resolve the same support URL the start page uses for the Help button.
+ * Centralised here so menu callbacks render an identical keyboard to
+ * the welcome screen — no UX drift between cold path (`/start`) and
+ * warm paths (`back_to_menu` / `check_channel`).
+ */
+function resolveSupportUrlForMenu(
+  deps: PageDeps,
+  supportUsername: string,
+  lang: ReturnType<typeof coerceLocale>,
+): string | null {
+  const adminHandle = supportUsername.replace(/^@+/, '').trim();
+  const handle =
+    adminHandle.length > 0 ? adminHandle : (deps.envSupportUsername ?? '').trim();
+  return resolveSupportDeepLink(handle, deps.translator.t('help.contact_prefill', lang));
+}
+
+/**
+ * Best-effort fetch a fresh bot-signin token. Mirrors `start.ts` —
+ * fall back to a tokenless URL on any error so the keyboard always
+ * renders.
+ */
+async function issueSigninToken(
+  adminClient: AdminClient | null,
+  telegramId: number | undefined,
+  logger: PageDeps['logger'],
+): Promise<string | null> {
+  if (adminClient === null || telegramId === undefined) return null;
+  try {
+    const issued = await adminClient.webAuth.issueBotSigninToken(String(telegramId));
+    return issued.token;
+  } catch (err: unknown) {
+    logger?.warn(
+      { err, telegramId },
+      'bot/menu: bot-signin token issuance failed; falling back to tokenless URL',
+    );
+    return null;
+  }
 }
 
 export const registerMenuPage: PageRegistrar = (bot, deps) => {
@@ -34,12 +80,15 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       botCfg.features.miniAppEnabled && deps.urls.miniAppUrl !== null
         ? deps.urls.miniAppUrl
         : null;
+    const signinToken = await issueSigninToken(deps.adminClient, tgUser.id, deps.logger);
     const keyboard = buildMainKeyboard({
       buttons: botCfg.buttons,
       miniAppUrl,
       publicWebUrl: deps.urls.publicWebUrl,
       lang,
       translator: deps.translator,
+      supportUrl: resolveSupportUrlForMenu(deps, botCfg.visual.supportUsername, lang),
+      signinToken,
     });
     await ctx.reply(deps.translator.t('menu.choose_action', lang), {
       reply_markup: keyboard,
@@ -75,12 +124,15 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       botCfg.features.miniAppEnabled && deps.urls.miniAppUrl !== null
         ? deps.urls.miniAppUrl
         : null;
+    const signinToken = await issueSigninToken(deps.adminClient, tgUser.id, deps.logger);
     const keyboard = buildMainKeyboard({
       buttons: botCfg.buttons,
       miniAppUrl,
       publicWebUrl: deps.urls.publicWebUrl,
       lang,
       translator: deps.translator,
+      supportUrl: resolveSupportUrlForMenu(deps, botCfg.visual.supportUsername, lang),
+      signinToken,
     });
     await ctx.reply(deps.translator.t('channel.verified', lang), {
       reply_markup: keyboard,

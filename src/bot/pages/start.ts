@@ -22,7 +22,7 @@
 import { InlineKeyboard } from 'grammy';
 
 import { buildWelcomeMessage } from '../../infrastructure/bot-message/message-builder.js';
-import { buildMainKeyboard } from '../widgets/main-keyboard.js';
+import { buildMainKeyboard, resolveSupportDeepLink } from '../widgets/main-keyboard.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
 import { coerceLocale } from './coerce-locale.js';
@@ -78,12 +78,43 @@ async function buildWelcomeView(
     botCfg.features.miniAppEnabled && deps.urls.miniAppUrl !== null
       ? deps.urls.miniAppUrl
       : null;
+  // Resolve the support deep-link from the same fallback chain the
+  // help-callback page used to follow: admin-managed
+  // `BotConfig.visual.supportUsername` first, env
+  // `BOT_SUPPORT_USERNAME` second. Numeric / empty handles return
+  // null so the support button degrades to a callback (legacy
+  // sub-screen flow) rather than producing a broken URL.
+  const adminHandle = botCfg.visual.supportUsername.replace(/^@+/, '').trim();
+  const supportHandle =
+    adminHandle.length > 0 ? adminHandle : (deps.envSupportUsername ?? '').trim();
+  const supportPrefill = deps.translator.t('help.contact_prefill', lang);
+  const supportUrl = resolveSupportDeepLink(supportHandle, supportPrefill);
+
+  // Issue a one-time magic-link token for URL-kind buttons (Cabinet)
+  // so the user lands in the SPA pre-authenticated. Best-effort: if
+  // admin is unreachable or returns null, the URL stays clean and
+  // the SPA punts the user to /sign-in.
+  let signinToken: string | null = null;
+  if (deps.adminClient !== null && tgUser !== undefined) {
+    try {
+      const issued = await deps.adminClient.webAuth.issueBotSigninToken(String(tgUser.id));
+      signinToken = issued.token;
+    } catch (err: unknown) {
+      deps.logger?.warn(
+        { err, telegramId: tgUser.id },
+        'bot/start: bot-signin token issuance failed; falling back to tokenless URL',
+      );
+    }
+  }
+
   const keyboard = buildMainKeyboard({
     buttons: botCfg.buttons,
     miniAppUrl,
     publicWebUrl: deps.urls.publicWebUrl,
     lang,
     translator: deps.translator,
+    supportUrl,
+    signinToken,
   });
 
   return { text: message.text, entities: message.entities, keyboard };

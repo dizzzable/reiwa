@@ -171,6 +171,22 @@ export interface MainKeyboardOptions {
    * still picks up the press and surfaces a useful sub-screen.
    */
   readonly supportUrl?: string | null;
+  /**
+   * One-time bot-signin token for URL-kind buttons. When set, the
+   * URL gets a `?signin=<token>` query parameter so the SPA's
+   * `WebHomePage` recognises the magic-link flow and authenticates
+   * the user without sending them through `/sign-in`.
+   *
+   * `null` / `undefined` is the legacy path: the URL is opened raw,
+   * SPA falls through to `/sign-in` if no cookie exists. This is the
+   * fallback when the bot couldn't resolve the user (no admin client,
+   * blocked user, network error issuing the token).
+   *
+   * Only `url` kind buttons get the token — `webapp` buttons go
+   * through `Telegram.WebApp.initData` for auth, no token required;
+   * `support_url` and `callback` don't take URLs at all.
+   */
+  readonly signinToken?: string | null;
 }
 
 const NUMERIC_HANDLE = /^-?\d+$/;
@@ -195,12 +211,35 @@ export function resolveSupportDeepLink(
 }
 
 /**
+ * Append `?signin=<token>` to a URL in a way that's robust to URLs
+ * that already carry query parameters (operator-configured
+ * `actionTarget` e.g. `https://example.com/?utm_source=tg`).
+ *
+ * Returns the input unchanged when token is null/empty so the
+ * tokenless fallback path is identical.
+ */
+export function attachSigninTokenToUrl(url: string, token: string | null | undefined): string {
+  if (token === null || token === undefined || token.length === 0) return url;
+  // Bail out cleanly on URLs we can't parse (unlikely but cheap to
+  // protect against). The downstream Telegram check
+  // `isTelegramSafeButtonUrl` will catch malformed URLs anyway.
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set('signin', token);
+    return parsed.toString();
+  } catch {
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}signin=${encodeURIComponent(token)}`;
+  }
+}
+
+/**
  * STEALTHNET-style keyboard builder. Walks visible buttons in order,
  * places each on its own row when `onePerRow=true` or pairs them when
  * `onePerRow=false` (max 2 per row).
  */
 export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard {
-  const { buttons, miniAppUrl, publicWebUrl, lang, translator, supportUrl } = options;
+  const { buttons, miniAppUrl, publicWebUrl, lang, translator, supportUrl, signinToken } = options;
   const visible = [...buttons]
     .filter((b) => b.visible)
     .sort((a, b) => a.order - b.order);
@@ -257,10 +296,15 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
         ? binding.target
         : null;
       const fallbackUrl = publicWebUrl ? `${publicWebUrl}${binding.target ?? ''}` : null;
-      const finalUrl = operatorUrl !== null && /^https?:\/\//i.test(operatorUrl)
+      const baseUrl = operatorUrl !== null && /^https?:\/\//i.test(operatorUrl)
         ? operatorUrl
         : fallbackUrl;
-      if (!finalUrl) continue;
+      if (!baseUrl) continue;
+      // Magic-link: stamp `?signin=<token>` so the SPA can complete
+      // the auth handshake without bouncing the user through /sign-in.
+      // Only applied to URL-kind buttons because they're the only
+      // ones whose target is the cabinet domain we control.
+      const finalUrl = attachSigninTokenToUrl(baseUrl, signinToken);
       closeRowIfNeeded(btn.onePerRow);
       kb.url({ text: label, ...buttonExtras }, finalUrl);
       placed = true;
