@@ -38,6 +38,14 @@ export interface BotMenuButton {
   order: number
   style: 'primary' | 'success' | 'danger' | 'default'
   onePerRow: boolean
+  /**
+   * Optional Telegram custom-emoji id (premium emoji) used as the inline
+   * keyboard button icon via `icon_custom_emoji_id` (Bot API 9.4+).
+   * Telegram only renders the icon when the bot owner has Telegram
+   * Premium; otherwise the field is silently ignored. `null` / `undefined`
+   * means "no icon configured".
+   */
+  iconCustomEmojiId?: string | null
 }
 
 export interface BotConfig {

@@ -25,6 +25,7 @@
 import type { Bot, Context, SessionFlavor } from 'grammy';
 
 import type { AdminClient } from '../../infrastructure/admin-client/index.js';
+import type { BannerStorePort } from '../../application/ports/banner-store.port.js';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
 import type { BotConfig } from '../../infrastructure/bot-config/types.js';
@@ -54,6 +55,19 @@ export interface PageDeps {
   readonly userLocale: UserLocaleSyncCache;
   readonly getConfig: () => Promise<BotConfig>;
   readonly urls: BotUrls;
+  /**
+   * Resolves the per-page banner asset (filesystem or operator URL).
+   * `null` when the bot is booted in degraded mode without an assets
+   * tree (tests, smoke scripts).
+   */
+  readonly bannerStore?: BannerStorePort;
+  /**
+   * Operator support handle from the env (`BOT_SUPPORT_USERNAME`). Pages
+   * use this as a fallback when the admin-managed
+   * `BotConfig.visual.supportUsername` is unset, so a fresh deploy still
+   * gives users a way to reach support.
+   */
+  readonly envSupportUsername?: string;
   /**
    * Optional structured logger. When omitted (tests, supervised
    * scripts) pages that need to log fall back to console.* — the

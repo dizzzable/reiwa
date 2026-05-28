@@ -32,11 +32,23 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'start.need_register': 'To use the service, open the app and create an account.',
 
   // ── Invite / Rules / Help ───────────────────────────────────────────────────
-  'invite.share': 'Share this link with your friends:\n{{link}}',
-  'rules.intro': 'Service rules:',
+  'invite.share': '🔗 Referral program\n\nShare this link with your friends — for every one who subscribes, you earn a bonus.\n\nYour link:\n{{link}}',
+  'invite.share_button': '📤 Share on Telegram',
+  'invite.copy_button': '📋 Copy link',
+  'invite.share_prompt': 'Hey! Try Rezeis VPN — fast and reliable.',
+  'rules.intro': '📜 Service rules\n\nTap the button below to open the full text:',
   'rules.open_button': '📜 Open rules',
-  'rules.unavailable': 'Rules have not been configured by the operator yet.',
+  'rules.unavailable': '📜 Service rules are still being prepared. If you have a question — message support.',
   'help.contact_support': 'Contact support: @{{username}}',
+  'help.contact_button': '🆘 Message support',
+  'help.contact_prefill': 'Hi! I need help.',
+
+  // ── Slash-command bubble (Telegram setMyCommands) ───────────────────────────
+  'commands.start.description': 'Main menu',
+  'commands.help.description': 'Help & support',
+  'commands.lang.description': 'Change language',
+  'commands.rules.description': 'Service rules',
+  'commands.paysupport.description': 'Payment help',
 
   // ── Commands ────────────────────────────────────────────────────────────────
   'help.title': '🔍 Available commands:\n',
@@ -125,8 +137,8 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'vpn.btn_open_page': '📲 Open connection page',
 
   // ── Support ─────────────────────────────────────────────────────────────────
-  'support.not_configured': 'Support section is not configured.',
-  'support.title': '🆘 Support',
+  'support.not_configured': 'Support is not configured yet.',
+  'support.title': '🆘 Support\n\nTap the button below — we reply in DMs:',
 
   // ── Days pluralization ──────────────────────────────────────────────────────
   'day.one': 'day',

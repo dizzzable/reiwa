@@ -34,11 +34,23 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'start.need_register': 'Для использования сервиса откройте приложение и создайте аккаунт.',
 
   // ── Invite / Rules / Help ───────────────────────────────────────────────────
-  'invite.share': 'Поделитесь ссылкой с друзьями:\n{{link}}',
-  'rules.intro': 'Ознакомьтесь с правилами сервиса:',
+  'invite.share': '🔗 Реферальная программа\n\nПоделитесь ссылкой с друзьями — за каждого, кто оформит подписку, вы получите бонус.\n\nВаша ссылка:\n{{link}}',
+  'invite.share_button': '📤 Поделиться в Telegram',
+  'invite.copy_button': '📋 Скопировать ссылку',
+  'invite.share_prompt': 'Привет! Попробуй Rezeis VPN — быстрый и надёжный.',
+  'rules.intro': '📜 Правила сервиса\n\nНажмите кнопку ниже чтобы открыть полный текст:',
   'rules.open_button': '📜 Открыть правила',
-  'rules.unavailable': 'Правила пока не настроены оператором.',
+  'rules.unavailable': '📜 Правила сервиса пока готовятся. Если у вас есть вопрос — напишите в поддержку.',
   'help.contact_support': 'Связаться с поддержкой: @{{username}}',
+  'help.contact_button': '🆘 Написать в поддержку',
+  'help.contact_prefill': 'Здравствуйте! Мне нужна помощь.',
+
+  // ── Slash-command bubble (Telegram setMyCommands) ───────────────────────────
+  'commands.start.description': 'Главное меню',
+  'commands.help.description': 'Справка и поддержка',
+  'commands.lang.description': 'Сменить язык',
+  'commands.rules.description': 'Правила сервиса',
+  'commands.paysupport.description': 'Помощь с оплатой',
 
   // ── Commands ────────────────────────────────────────────────────────────────
   'help.title': '🔍 Доступные команды:\n',
@@ -127,8 +139,8 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'vpn.btn_open_page': '📲 Открыть страницу подключения',
 
   // ── Support ─────────────────────────────────────────────────────────────────
-  'support.not_configured': 'Раздел поддержки не настроен.',
-  'support.title': '🆘 Поддержка',
+  'support.not_configured': 'Раздел поддержки пока не настроен.',
+  'support.title': '🆘 Поддержка\n\nНажмите кнопку ниже — мы ответим в личных сообщениях:',
 
   // ── Days pluralization ──────────────────────────────────────────────────────
   'day.one': 'день',

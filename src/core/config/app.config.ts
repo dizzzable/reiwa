@@ -58,6 +58,35 @@ const schema = z.object({
 
   BOT_TOKEN: z.string().trim().min(1).optional(),
   /**
+   * Telegram support handle — usually `@SupportBot` or a numeric chat
+   * id. Used by the bot's `help` callback and `/help` command to render
+   * a "Contact support" button or link when the operator-managed
+   * `BotConfig.visual.supportUsername` is empty. The leading `@` is
+   * stripped on read so callers always see a bare handle.
+   *
+   * Operators are expected to set this via the admin Bot-Texts UI
+   * eventually; this env-level fallback exists so a fresh deploy without
+   * any admin overrides still gives users a way to reach support.
+   */
+  BOT_SUPPORT_USERNAME: z
+    .string()
+    .trim()
+    .transform((value) => value.replace(/^@+/, ''))
+    .optional()
+    .transform((value) => (value && value.length > 0 ? value : null)),
+  /**
+   * Telegram dev/operator id used as the recipient of internal alerts
+   * (errors, suspicious-activity pings). Numeric. Optional — when unset
+   * dev pings fall through to the bot logger.
+   */
+  BOT_DEV_ID: z.coerce.number().int().positive().optional(),
+  /**
+   * Webhook secret token. Telegram returns this string on every webhook
+   * delivery so the receiver can authenticate the call. Only used when
+   * BOT_SETUP_WEBHOOK is true.
+   */
+  BOT_SECRET_TOKEN: optionalString,
+  /**
    * Telegram bot username (with or without a leading `@`) used to build
    * deep links back to the bot/Mini App when redirecting customers from
    * a payment provider. Accepts either `RezeisBot` or `@RezeisBot`; the

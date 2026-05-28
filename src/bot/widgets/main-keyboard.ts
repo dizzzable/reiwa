@@ -50,6 +50,27 @@ export function isTelegramSafeButtonUrl(url: string | null | undefined): boolean
   return true;
 }
 
+/**
+ * Maps the admin-side BotButton style enum onto the Telegram
+ * `style` field for KeyboardButton / InlineKeyboardButton (Bot API 9.4+).
+ * `DEFAULT` is admin's "no override" marker — return `undefined` so
+ * grammy omits the field and Telegram applies its app-specific default.
+ */
+function mapButtonStyle(
+  style: BotMenuButton['style'],
+): 'danger' | 'success' | 'primary' | undefined {
+  switch (style) {
+    case 'primary':
+      return 'primary';
+    case 'success':
+      return 'success';
+    case 'danger':
+      return 'danger';
+    default:
+      return undefined;
+  }
+}
+
 export const BUTTON_KIND_MAP: Readonly<Record<string, ButtonBinding>> = {
   // Default reiwa keyboard
   cabinet: { kind: 'url', path: '/' },
@@ -106,20 +127,38 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
     const binding = resolveBinding(btn.id);
     const path = binding.path ?? '';
 
+    // Bot API 9.4 (February 2026) lets bots whose owner has a Telegram
+    // Premium subscription render `icon_custom_emoji_id` and `style`
+    // (danger/success/primary) on inline-keyboard buttons. We forward
+    // both fields to grammy through its object-form `kb.text({...}, data)`
+    // API; clients that still see the bot from a non-Premium owner just
+    // get the label without the icon and the default style. The
+    // `style` enum values from the admin BotConfig already match
+    // Telegram's contract verbatim, except DEFAULT (admin-only marker
+    // for "no override") which we map to undefined.
+    const styleValue = mapButtonStyle(btn.style);
+    const iconValue =
+      btn.iconCustomEmojiId !== null && btn.iconCustomEmojiId !== undefined && btn.iconCustomEmojiId.length > 0
+        ? btn.iconCustomEmojiId
+        : undefined;
+    const buttonExtras: { icon_custom_emoji_id?: string; style?: 'danger' | 'success' | 'primary' } = {};
+    if (iconValue !== undefined) buttonExtras.icon_custom_emoji_id = iconValue;
+    if (styleValue !== undefined) buttonExtras.style = styleValue;
+
     let placed = false;
     if (binding.kind === 'webapp') {
       if (!miniAppUrl) continue;
       closeRowIfNeeded(btn.onePerRow);
-      kb.webApp(label, `${miniAppUrl}${path}`);
+      kb.webApp({ text: label, ...buttonExtras }, `${miniAppUrl}${path}`);
       placed = true;
     } else if (binding.kind === 'url') {
       if (!publicWebUrl) continue;
       closeRowIfNeeded(btn.onePerRow);
-      kb.url(label, `${publicWebUrl}${path}`);
+      kb.url({ text: label, ...buttonExtras }, `${publicWebUrl}${path}`);
       placed = true;
     } else {
       closeRowIfNeeded(btn.onePerRow);
-      kb.text(label, btn.id);
+      kb.text({ text: label, ...buttonExtras }, btn.id);
       placed = true;
     }
 

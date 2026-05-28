@@ -48,8 +48,14 @@ export const registerPromoPage: PageRegistrar = (bot, deps) => {
     await startPromoFlow(ctx, deps);
   });
 
-  bot.on('message:text', async (ctx) => {
-    if (ctx.session.step !== 'awaiting_promo_code') return;
+  bot.on('message:text', async (ctx, next) => {
+    if (ctx.session.step !== 'awaiting_promo_code') {
+      // Not in promo-flow context — yield to the rest of the
+      // middleware stack so command handlers (`/start`, `/help`, etc.)
+      // and other text matchers still see the message. Without this
+      // call, ALL non-promo text messages would be silently swallowed.
+      return next();
+    }
     ctx.session.step = undefined;
     const code = ctx.message.text.trim();
     const telegramId = String(ctx.from?.id ?? '');
