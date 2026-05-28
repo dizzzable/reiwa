@@ -5,15 +5,21 @@
  * config plus the resolved per-button URL/Mini-App routes. Pure logic,
  * no network or grammy lifecycle coupling — easy to unit-test.
  *
- * Three button kinds:
- *   - `url`      — opens an external HTTPS URL in Telegram's in-app
- *                  browser. Built from `publicWebUrl + binding.path`.
- *                  Drops the button silently when no safe URL exists
- *                  (dev where `publicWebUrl` is `null`).
- *   - `webapp`   — opens the Mini App. Telegram requires HTTPS; we
- *                  drop the button when `miniAppUrl` is `null`.
- *   - `callback` — emits `callback_data === buttonId`; routed by
- *                  reiwa's `bot.callbackQuery(id, ...)` handlers.
+ * Four button kinds:
+ *   - `url`         — opens an external HTTPS URL in Telegram's in-app
+ *                     browser. Built from `publicWebUrl + binding.path`.
+ *                     Drops the button silently when no safe URL exists
+ *                     (dev where `publicWebUrl` is `null`).
+ *   - `webapp`      — opens the Mini App. Telegram requires HTTPS; we
+ *                     drop the button when `miniAppUrl` is `null`.
+ *   - `support_url` — opens a `t.me/<handle>?text=<prefill>` deep-link
+ *                     directly. No intermediate sub-screen — one tap
+ *                     and the user is in the support DM with a
+ *                     pre-filled greeting (snoups-style UX). Falls
+ *                     back to the `callback` kind silently when the
+ *                     handle is numeric or unset.
+ *   - `callback`    — emits `callback_data === buttonId`; routed by
+ *                     reiwa's `bot.callbackQuery(id, ...)` handlers.
  *
  * The admin panel only manages visual properties (label, style,
  * visibility, ordering, single-row flag). The `kind` per well-known
@@ -27,7 +33,7 @@ import type { BotMenuButton } from '../../infrastructure/bot-config/types.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 
-export type ButtonKind = 'url' | 'webapp' | 'callback';
+export type ButtonKind = 'url' | 'webapp' | 'callback' | 'support_url';
 
 export interface ButtonBinding {
   readonly kind: ButtonKind;
@@ -76,7 +82,7 @@ export const BUTTON_KIND_MAP: Readonly<Record<string, ButtonBinding>> = {
   cabinet: { kind: 'url', path: '/' },
   invite: { kind: 'callback' },
   rules: { kind: 'callback' },
-  help: { kind: 'callback' },
+  help: { kind: 'support_url' },
   // Legacy buttons that older deployments may still have configured
   subscription: { kind: 'callback' },
   buy: { kind: 'callback' },
@@ -86,11 +92,68 @@ export const BUTTON_KIND_MAP: Readonly<Record<string, ButtonBinding>> = {
   activity: { kind: 'callback' },
   vpn: { kind: 'webapp', path: '/subscribe' },
   miniapp: { kind: 'webapp', path: '/' },
-  support: { kind: 'callback' },
+  support: { kind: 'support_url' },
 };
 
 export function resolveBinding(buttonId: string): ButtonBinding {
   return BUTTON_KIND_MAP[buttonId] ?? { kind: 'callback' };
+}
+
+/**
+ * Operator-driven routing override.
+ *
+ * Reply-keyboard buttons can now declare their action+target in admin
+ * (BotButton.actionType / BotButton.actionTarget). When set, that
+ * routing wins over the built-in BUTTON_KIND_MAP — operators get full
+ * control without us hardcoding every possible id.
+ *
+ * The fallback chain is:
+ *   1. BotMenuButton.actionType (operator override) — primary path
+ *      for any button, reserved or not.
+ *   2. BUTTON_KIND_MAP[buttonId] — built-in routing for the legacy
+ *      reserved ids. Lets cabinet / vpn / etc. keep working without
+ *      any admin change.
+ *   3. `{ kind: 'callback' }` — last-resort default; reiwa's
+ *      universal screen handler (`screen:<shortId>`) resolves it
+ *      when the button id matches a screen, otherwise the press
+ *      no-ops.
+ *
+ * Returns the resolved binding plus an explicit `target` field that
+ * carries the operator-configured URL / WebApp URL / screen shortId
+ * verbatim (or `null` for callback / support_url).
+ */
+export interface ResolvedBinding {
+  readonly kind: ButtonKind;
+  /**
+   * For operator-defined `url` / `webapp` → absolute URL.
+   * For `screen`                          → BotFlowScreen.shortId.
+   * For built-in BUTTON_KIND_MAP path     → the optional `path` suffix.
+   * For `callback` / `support_url`        → null (resolved at render).
+   */
+  readonly target: string | null;
+}
+
+export function resolveButtonBinding(button: BotMenuButton): ResolvedBinding {
+  const operatorAction = button.actionType;
+  const operatorTarget = button.actionTarget ?? null;
+  if (operatorAction !== undefined) {
+    if (operatorAction === 'callback') {
+      return { kind: 'callback', target: null };
+    }
+    if (operatorAction === 'support_url') {
+      return { kind: 'support_url', target: null };
+    }
+    if (operatorAction === 'url' || operatorAction === 'webapp') {
+      return { kind: operatorAction, target: operatorTarget };
+    }
+    if (operatorAction === 'screen') {
+      return { kind: 'callback', target: operatorTarget };
+    }
+  }
+  // Fall back to the built-in map for legacy ids that haven't been
+  // re-tagged in admin yet.
+  const builtin = resolveBinding(button.id);
+  return { kind: builtin.kind, target: builtin.path ?? null };
 }
 
 export interface MainKeyboardOptions {
@@ -99,6 +162,36 @@ export interface MainKeyboardOptions {
   readonly publicWebUrl: string | null | undefined;
   readonly lang: SupportedLocale;
   readonly translator: TranslatorPort;
+  /**
+   * Resolved support deep-link target — `t.me/<handle>?text=<prefill>`.
+   * `null` when the operator hasn't set a real `@username`
+   * (numeric chat id or empty). Buttons whose binding kind is
+   * `support_url` fall back to a `callback` rendering when this is
+   * `null`, so the bot's `bot.callbackQuery('help', ...)` handler
+   * still picks up the press and surfaces a useful sub-screen.
+   */
+  readonly supportUrl?: string | null;
+}
+
+const NUMERIC_HANDLE = /^-?\d+$/;
+
+/**
+ * Build the `t.me/<handle>?text=<prefill>` URL the support button
+ * opens. Returns `null` when the handle is numeric (chat id, no
+ * public username) or empty — Telegram's deep-link contract requires
+ * a string handle, so numeric ids are unusable here. Both reply-
+ * keyboard builders and the legacy callback handler share this
+ * helper to stay in lockstep.
+ */
+export function resolveSupportDeepLink(
+  handle: string | null | undefined,
+  prefill: string | null | undefined,
+): string | null {
+  const cleaned = (handle ?? '').replace(/^@+/, '').trim();
+  if (cleaned.length === 0 || NUMERIC_HANDLE.test(cleaned)) return null;
+  const text = (prefill ?? '').trim();
+  const query = text.length > 0 ? `?text=${encodeURIComponent(text)}` : '';
+  return `https://t.me/${encodeURIComponent(cleaned)}${query}`;
 }
 
 /**
@@ -107,7 +200,7 @@ export interface MainKeyboardOptions {
  * `onePerRow=false` (max 2 per row).
  */
 export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard {
-  const { buttons, miniAppUrl, publicWebUrl, lang, translator } = options;
+  const { buttons, miniAppUrl, publicWebUrl, lang, translator, supportUrl } = options;
   const visible = [...buttons]
     .filter((b) => b.visible)
     .sort((a, b) => a.order - b.order);
@@ -124,8 +217,7 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
   for (const btn of visible) {
     const localisedLabel = translator.resolveButtonLabel(btn.id, btn.label, lang);
     const label = btn.emoji ? `${btn.emoji} ${localisedLabel}` : localisedLabel;
-    const binding = resolveBinding(btn.id);
-    const path = binding.path ?? '';
+    const binding = resolveButtonBinding(btn);
 
     // Bot API 9.4 (February 2026) lets bots whose owner has a Telegram
     // Premium subscription render `icon_custom_emoji_id` and `style`
@@ -147,18 +239,57 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
 
     let placed = false;
     if (binding.kind === 'webapp') {
-      if (!miniAppUrl) continue;
+      // Operator-supplied absolute URL takes priority; legacy built-in
+      // miniapp routing falls back to `${miniAppUrl}${path}`.
+      const operatorUrl = binding.target !== null && binding.target.length > 0
+        ? binding.target
+        : null;
+      const fallbackUrl = miniAppUrl ? `${miniAppUrl}${binding.target ?? ''}` : null;
+      const finalUrl = operatorUrl !== null && /^https?:\/\//i.test(operatorUrl)
+        ? operatorUrl
+        : fallbackUrl;
+      if (!finalUrl) continue;
       closeRowIfNeeded(btn.onePerRow);
-      kb.webApp({ text: label, ...buttonExtras }, `${miniAppUrl}${path}`);
+      kb.webApp({ text: label, ...buttonExtras }, finalUrl);
       placed = true;
     } else if (binding.kind === 'url') {
-      if (!publicWebUrl) continue;
+      const operatorUrl = binding.target !== null && binding.target.length > 0
+        ? binding.target
+        : null;
+      const fallbackUrl = publicWebUrl ? `${publicWebUrl}${binding.target ?? ''}` : null;
+      const finalUrl = operatorUrl !== null && /^https?:\/\//i.test(operatorUrl)
+        ? operatorUrl
+        : fallbackUrl;
+      if (!finalUrl) continue;
       closeRowIfNeeded(btn.onePerRow);
-      kb.url({ text: label, ...buttonExtras }, `${publicWebUrl}${path}`);
+      kb.url({ text: label, ...buttonExtras }, finalUrl);
       placed = true;
+    } else if (binding.kind === 'support_url') {
+      // Direct deep-link to support chat — one tap, no intermediate
+      // sub-screen. Falls back to a callback when the operator hasn't
+      // set a real @username (resolveSupportDeepLink returns null for
+      // numeric / empty handles); the legacy `help` callback handler
+      // then surfaces a "Связаться: <id>" copy with the support
+      // username inline.
+      if (supportUrl !== null && supportUrl !== undefined) {
+        closeRowIfNeeded(btn.onePerRow);
+        kb.url({ text: label, ...buttonExtras }, supportUrl);
+        placed = true;
+      } else {
+        closeRowIfNeeded(btn.onePerRow);
+        kb.text({ text: label, ...buttonExtras }, btn.id);
+        placed = true;
+      }
     } else {
+      // Callback. If the operator picked SCREEN action, the binding
+      // target is the screen shortId — emit `screen:<shortId>` so the
+      // universal dynamic-screen handler resolves it.
+      const callbackData =
+        binding.target !== null && binding.target.length > 0
+          ? `screen:${binding.target}`
+          : btn.id;
       closeRowIfNeeded(btn.onePerRow);
-      kb.text({ text: label, ...buttonExtras }, btn.id);
+      kb.text({ text: label, ...buttonExtras }, callbackData);
       placed = true;
     }
 

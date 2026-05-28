@@ -46,6 +46,20 @@ export interface BotMenuButton {
    * means "no icon configured".
    */
   iconCustomEmojiId?: string | null
+  /**
+   * Operator-configured routing for the button. When unset / unknown,
+   * reiwa falls back to its built-in `BUTTON_KIND_MAP` (keeps legacy
+   * reserved ids working: cabinet/invite/rules/help). Lowercase string
+   * so we don't have to import a Prisma enum into reiwa.
+   */
+  actionType?: 'callback' | 'url' | 'webapp' | 'screen' | 'support_url'
+  /**
+   * Action payload — interpretation depends on `actionType`:
+   *   - `url` / `webapp` → absolute URL (Telegram-safe required)
+   *   - `screen`         → BotFlowScreen.shortId
+   *   - `callback` / `support_url` → unused
+   */
+  actionTarget?: string | null
 }
 
 export interface BotConfig {
