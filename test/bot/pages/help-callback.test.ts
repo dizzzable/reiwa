@@ -1,5 +1,9 @@
 /**
  * `help` callback page specs.
+ *
+ * STEALTHNET rewrite: the help/support sub-menu renders `support.title`
+ * in place via `editOrReply` (-> `ctx.editMessageText`) with a
+ * contact-support URL button, instead of the old inline command list.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -20,7 +24,7 @@ describe('registerHelpCallbackPage', () => {
     expect(bot.callbackHandlers[0].matcher).toBe('help');
   });
 
-  it('renders help.title + help.start + help.help when no support username is set', async () => {
+  it('renders support.not_configured when no support handle is set', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();
     registerHelpCallbackPage(
@@ -29,14 +33,13 @@ describe('registerHelpCallbackPage', () => {
     );
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    const reply = ctx.reply.mock.calls[0][0] as string;
-    expect(reply).toContain('ru:help.title');
-    expect(reply).toContain('ru:help.start');
-    expect(reply).toContain('ru:help.help');
-    expect(reply).not.toContain('contact_support');
+    const reply = ctx.editMessageText.mock.calls[0][0] as string;
+    // DEFAULT_BOT_CONFIG has no support username and no env fallback set,
+    // so we get the not-configured fallback copy (no support button).
+    expect(reply).toBe('ru:support.not_configured');
   });
 
-  it('appends help.contact_support with the operator support username (without @)', async () => {
+  it('renders support.title + a contact-support URL button for a non-numeric handle', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps({
       config: {
@@ -50,20 +53,30 @@ describe('registerHelpCallbackPage', () => {
     );
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    const reply = ctx.reply.mock.calls[0][0] as string;
-    expect(reply).toContain('ru:help.contact_support(username=rezeis_support)');
+    const [text, opts] = ctx.editMessageText.mock.calls[0];
+    expect(text).toBe('ru:support.title');
+    const kb = (opts as { reply_markup: { inline_keyboard: Array<Array<{ url?: string }>> } })
+      .reply_markup;
+    expect(kb.inline_keyboard[0][0].url).toContain('https://t.me/rezeis_support');
   });
 
   it('renders in the user persisted locale (en)', async () => {
     const bot = buildFakeBot();
-    const { deps } = buildDeps({ initialUserId: 7, initialLocale: 'en' });
+    const { deps } = buildDeps({
+      initialUserId: 7,
+      initialLocale: 'en',
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        visual: { ...DEFAULT_BOT_CONFIG.visual, supportUsername: '@rezeis_support' },
+      },
+    });
     registerHelpCallbackPage(
       bot as unknown as Parameters<typeof registerHelpCallbackPage>[0],
       deps,
     );
     const ctx = buildFakeCtx({ from: { id: 7 } });
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    const reply = ctx.reply.mock.calls[0][0] as string;
-    expect(reply).toContain('en:help.title');
+    const reply = ctx.editMessageText.mock.calls[0][0] as string;
+    expect(reply).toBe('en:support.title');
   });
 });

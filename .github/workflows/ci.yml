@@ -6,7 +6,8 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  backend:
+    name: Backend (typecheck + build + tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -14,6 +15,32 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npm run check
-      - run: npm run build
+      - name: Typecheck
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Unit tests
+        run: npm test
+      - name: Property-based tests
+        run: npm run test:pbt
+
+  web:
+    name: Web (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build

@@ -27,6 +27,14 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Rate limit exceeded" },
+  // The realtime SSE endpoint holds a single long-lived connection per
+  // tab and auto-reconnects via `EventSource`. Counting each reconnect
+  // against the generic 120/min budget lets a flaky network lock the
+  // user out of their own event stream, so it gets excluded here and
+  // relies on the per-session auth + upstream connection limits instead.
+  // `originalUrl` is used because the limiter is mounted at `/api`, which
+  // strips the prefix from `req.path`.
+  skip: (req) => req.originalUrl.startsWith("/api/v1/realtime/stream"),
 });
 
 // ── Redis-based endpoint-specific rate limiters ─────────────────────────────

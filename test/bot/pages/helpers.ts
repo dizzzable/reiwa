@@ -48,6 +48,13 @@ export interface FakeContext {
   match?: RegExpMatchArray | null;
   reply: ReturnType<typeof vi.fn>;
   answerCallbackQuery: ReturnType<typeof vi.fn>;
+  editMessageText: ReturnType<typeof vi.fn>;
+  editMessageCaption: ReturnType<typeof vi.fn>;
+  deleteMessage: ReturnType<typeof vi.fn>;
+  callbackQuery?: { message?: unknown };
+  chat?: { id: number };
+  me?: { username: string };
+  api: { sendMessage: ReturnType<typeof vi.fn> };
 }
 
 export function buildFakeCtx(over: Partial<FakeContext> = {}): FakeContext {
@@ -56,6 +63,16 @@ export function buildFakeCtx(over: Partial<FakeContext> = {}): FakeContext {
     match: over.match,
     reply: vi.fn().mockResolvedValue(undefined),
     answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+    // `editOrReply` (STEALTHNET-style in-place edit) calls these instead
+    // of `reply` for callback-driven screens. Without a `callbackQuery.message`
+    // the helper takes the plain-text branch -> `editMessageText`.
+    editMessageText: vi.fn().mockResolvedValue(undefined),
+    editMessageCaption: vi.fn().mockResolvedValue(undefined),
+    deleteMessage: vi.fn().mockResolvedValue(undefined),
+    callbackQuery: over.callbackQuery,
+    chat: over.chat ?? { id: 99 },
+    me: over.me ?? { username: 'reiwa_test_bot' },
+    api: { sendMessage: vi.fn().mockResolvedValue(undefined) },
   };
 }
 
@@ -115,6 +132,7 @@ export function buildDeps(options: BuildDepsOptions = {}): DepsBundle {
       urls: {
         publicWebUrl: options.publicWebUrl ?? null,
         miniAppUrl: options.miniAppUrl ?? null,
+        rezeisAdminUrl: null,
       },
     },
     userLocale,

@@ -1,5 +1,9 @@
 /**
  * `invite` callback page specs.
+ *
+ * Renders STEALTHNET-style in place via `editOrReply`, so assertions
+ * target `ctx.editMessageText`. createInvite now takes a UserIdentity
+ * `{ telegramId }` (reiwa_id-first contract).
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -17,7 +21,7 @@ describe('registerInvitePage', () => {
     expect(bot.callbackHandlers[0].matcher).toBe('invite');
   });
 
-  it('replies with referral.disabled when feature flag is off', async () => {
+  it('renders referral.disabled when feature flag is off', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps({
       config: {
@@ -28,7 +32,7 @@ describe('registerInvitePage', () => {
     registerInvitePage(bot as unknown as Parameters<typeof registerInvitePage>[0], deps);
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledWith('ru:referral.disabled');
+    expect(ctx.editMessageText).toHaveBeenCalledWith('ru:referral.disabled', expect.anything());
   });
 
   it('builds the invite link from token + publicWebUrl', async () => {
@@ -42,10 +46,11 @@ describe('registerInvitePage', () => {
     registerInvitePage(bot as unknown as Parameters<typeof registerInvitePage>[0], deps);
     const ctx = buildFakeCtx({ from: { id: 5 } });
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledWith(
+    expect(ctx.editMessageText).toHaveBeenCalledWith(
       'ru:invite.share(link=https://reiwa.example/ref/tok-1)',
+      expect.anything(),
     );
-    expect(createInvite).toHaveBeenCalledWith('5');
+    expect(createInvite).toHaveBeenCalledWith({ telegramId: '5' });
   });
 
   it('falls back to referral.link_unavailable when no token is returned', async () => {
@@ -59,20 +64,18 @@ describe('registerInvitePage', () => {
     registerInvitePage(bot as unknown as Parameters<typeof registerInvitePage>[0], deps);
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledWith(
-      'ru:invite.share(link=ru:referral.link_unavailable)',
+    expect(ctx.editMessageText).toHaveBeenCalledWith(
+      'ru:referral.link_unavailable',
+      expect.anything(),
     );
   });
 
-  it('replies with referral.error when admin throws', async () => {
-    const createInvite = vi.fn().mockRejectedValue(new Error('boom'));
-    // The page wraps the createInvite call in `.catch(() => null)`, so we
-    // need a *different* throw site to exercise the outer try/catch:
-    // make `getConfig` succeed but `createInvite` complete (returns null),
-    // then make `translator.t` throw via `Object.defineProperty`. Simpler:
-    // mock `referrals` to throw synchronously from the property accessor.
+  it('renders referral.error when admin throws', async () => {
+    const createInvite = vi.fn();
+    // The page wraps createInvite in `.catch(() => null)`, so to hit the
+    // outer try/catch we throw synchronously from the `referrals` getter.
     const adminClient = ({
-      get referrals() {
+      get referrals(): never {
         throw new Error('explosion');
       },
     } as unknown) as PageDeps['adminClient'];
@@ -81,7 +84,7 @@ describe('registerInvitePage', () => {
     registerInvitePage(bot as unknown as Parameters<typeof registerInvitePage>[0], deps);
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledWith('ru:referral.error');
+    expect(ctx.editMessageText).toHaveBeenCalledWith('ru:referral.error', expect.anything());
     expect(createInvite).not.toHaveBeenCalled();
   });
 });

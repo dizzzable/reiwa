@@ -1,5 +1,11 @@
 /**
  * `/help` command page specs.
+ *
+ * STEALTHNET rewrite: `/help` no longer prints an inline command list
+ * (Telegram surfaces it via setMyCommands). It replies with
+ * `support.title` + a contact-support button, or `support.not_configured`
+ * when no handle is set. This is a command (not a callback), so it uses
+ * `ctx.reply` directly.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -19,7 +25,7 @@ describe('registerHelpCommandPage', () => {
     expect(bot.commandHandlers.has('help')).toBe(true);
   });
 
-  it('renders the static command list with conditional promo + referral lines', async () => {
+  it('replies with support.not_configured when no support handle is set', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();
     registerHelpCommandPage(
@@ -29,24 +35,15 @@ describe('registerHelpCommandPage', () => {
     const ctx = buildFakeCtx();
     await bot.commandHandlers.get('help')!(ctx as unknown as BotContext);
     const reply = ctx.reply.mock.calls[0][0] as string;
-    expect(reply).toContain('ru:help.title');
-    expect(reply).toContain('ru:help.start');
-    expect(reply).toContain('ru:help.subscription');
-    expect(reply).toContain('ru:help.plans');
-    expect(reply).toContain('ru:help.profile');
-    expect(reply).toContain('ru:help.lang');
-    expect(reply).toContain('ru:help.help');
-    // Default config has both flags on.
-    expect(reply).toContain('ru:help.promo');
-    expect(reply).toContain('ru:help.referral');
+    expect(reply).toBe('ru:support.not_configured');
   });
 
-  it('omits help.promo when the operator has promo codes off', async () => {
+  it('replies with support.title + a contact-support URL button for a non-numeric handle', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps({
       config: {
         ...DEFAULT_BOT_CONFIG,
-        features: { ...DEFAULT_BOT_CONFIG.features, promoCodesEnabled: false },
+        visual: { ...DEFAULT_BOT_CONFIG.visual, supportUsername: '@rezeis_support' },
       },
     });
     registerHelpCommandPage(
@@ -55,27 +52,23 @@ describe('registerHelpCommandPage', () => {
     );
     const ctx = buildFakeCtx();
     await bot.commandHandlers.get('help')!(ctx as unknown as BotContext);
-    const reply = ctx.reply.mock.calls[0][0] as string;
-    expect(reply).not.toContain('ru:help.promo');
-    expect(reply).toContain('ru:help.referral');
+    const [text, opts] = ctx.reply.mock.calls[0];
+    expect(text).toBe('ru:support.title');
+    const kb = (opts as { reply_markup: { inline_keyboard: Array<Array<{ url?: string }>> } })
+      .reply_markup;
+    expect(kb.inline_keyboard[0][0].url).toContain('https://t.me/rezeis_support');
   });
 
-  it('omits help.referral when the operator has referrals off', async () => {
+  it('renders in the user persisted locale (en)', async () => {
     const bot = buildFakeBot();
-    const { deps } = buildDeps({
-      config: {
-        ...DEFAULT_BOT_CONFIG,
-        features: { ...DEFAULT_BOT_CONFIG.features, referralsEnabled: false },
-      },
-    });
+    const { deps } = buildDeps({ initialUserId: 7, initialLocale: 'en' });
     registerHelpCommandPage(
       bot as unknown as Parameters<typeof registerHelpCommandPage>[0],
       deps,
     );
-    const ctx = buildFakeCtx();
+    const ctx = buildFakeCtx({ from: { id: 7 } });
     await bot.commandHandlers.get('help')!(ctx as unknown as BotContext);
     const reply = ctx.reply.mock.calls[0][0] as string;
-    expect(reply).not.toContain('ru:help.referral');
-    expect(reply).toContain('ru:help.promo');
+    expect(reply).toBe('en:support.not_configured');
   });
 });

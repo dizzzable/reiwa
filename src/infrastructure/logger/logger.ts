@@ -35,6 +35,19 @@ const REDACT_PATHS: readonly string[] = [
   '*.apiKey',
   '*.api_key',
   '*.secret',
+  // Client-side password hashes are password-equivalent bearer secrets
+  // (web prehashes with SHA-256 and ships the digest as the credential).
+  // Redact every level they can surface at: top-level body fields, one
+  // level deep (`req.body.*`, namespace payloads), and request bodies.
+  'passwordHash',
+  'currentPasswordHash',
+  'newPasswordHash',
+  '*.passwordHash',
+  '*.currentPasswordHash',
+  '*.newPasswordHash',
+  'req.body.passwordHash',
+  'req.body.currentPasswordHash',
+  'req.body.newPasswordHash',
 ];
 
 export function createLogger(options: CreateLoggerOptions): Logger {

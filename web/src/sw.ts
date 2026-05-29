@@ -116,13 +116,45 @@ const staticAssetsRoute = new Route(
 
 registerRoute(staticAssetsRoute)
 
-// ─── API Responses: Stale-While-Revalidate Strategy ───────────────────────────
-// Matches: /api/v1/* (all API endpoints)
-// Enforced: API responses MUST use stale-while-revalidate, NEVER cache-first
-// This includes critical user data like subscription status
+// ─── API Responses: Stale-While-Revalidate (ALLOW-LIST ONLY) ──────────────────
+// Only operator-managed, non-personal config/catalog endpoints are cached.
+// Caching account-scoped data (subscription, payments, devices, profile,
+// referrals, support, auth/session, realtime) risks serving stale or
+// cross-user data for a VPN/billing app, so those endpoints intentionally
+// fall through to a plain network fetch (no SW caching) — see the negative
+// list in the comment below.
+//
+// Cached (safe, public/config, GET):
+//   /api/v1/branding         — operator branding
+//   /api/v1/public-config    — branding + locales bundle
+//   /api/v1/plans            — public plan catalog
+//   /api/v1/gateways         — enabled payment gateways (catalog, not user)
+//   /api/v1/faq              — operator FAQ content
+//   /api/v1/add-ons/plan/... — add-on catalog for a plan (not user state)
+//
+// NOT cached (account-scoped / sensitive): /auth/*, /profile, /subscription,
+//   /payments/*, /activity, /promo, /referrals, /devices, /partner,
+//   /support, /linking/*, /push/*, /realtime/*.
+const CACHEABLE_API_EXACT = new Set<string>([
+  '/api/v1/branding',
+  '/api/v1/public-config',
+  '/api/v1/plans',
+  '/api/v1/gateways',
+  '/api/v1/faq',
+])
+
+const CACHEABLE_API_PREFIXES: readonly string[] = ['/api/v1/add-ons/plan/']
+
+function isCacheableApiPath(pathname: string): boolean {
+  if (CACHEABLE_API_EXACT.has(pathname)) return true
+  return CACHEABLE_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+}
+
 const apiRoute = new Route(
-  ({ url }) => {
-    return url.pathname.startsWith('/api/v1/')
+  ({ url, request }) => {
+    // Only ever cache idempotent reads; never POST/PUT/PATCH/DELETE.
+    if (request.method !== 'GET') return false
+    return isCacheableApiPath(url.pathname)
   },
   new StaleWhileRevalidate({
     cacheName: API_CACHE,
@@ -130,7 +162,7 @@ const apiRoute = new Route(
       new CacheableResponsePlugin({ statuses: [0, 200] }),
       new ExpirationPlugin({
         maxEntries: 50,
-        maxAgeSeconds: 24 * 60 * 60, // 24 hours — cached data no older than 24h
+        maxAgeSeconds: 24 * 60 * 60, // 24h — config/catalog only, never account data
         purgeOnQuotaError: true, // Evict API cache entries first on quota exceeded
       }),
     ],

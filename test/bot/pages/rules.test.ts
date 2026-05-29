@@ -1,5 +1,9 @@
 /**
  * `rules` callback page specs.
+ *
+ * The rules page renders STEALTHNET-style in place via `editOrReply`,
+ * so assertions target `ctx.editMessageText` (the plain-text branch
+ * taken when there is no `callbackQuery.message` to detect a photo).
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -16,16 +20,16 @@ describe('registerRulesPage', () => {
     expect(bot.callbackHandlers[0].matcher).toBe('rules');
   });
 
-  it('replies with rules.unavailable when no admin client is configured', async () => {
+  it('renders rules.unavailable when no admin client is configured', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();
     registerRulesPage(bot as unknown as Parameters<typeof registerRulesPage>[0], deps);
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledWith('ru:rules.unavailable');
+    expect(ctx.editMessageText).toHaveBeenCalledWith('ru:rules.unavailable', expect.anything());
   });
 
-  it('replies with rules.unavailable when policy.rulesLink is empty', async () => {
+  it('renders rules.unavailable when policy.rulesLink is empty', async () => {
     const adminClient = ({
       system: { getPlatformPolicy: vi.fn().mockResolvedValue({ rulesLink: '' }) },
     } as unknown) as PageDeps['adminClient'];
@@ -34,7 +38,7 @@ describe('registerRulesPage', () => {
     registerRulesPage(bot as unknown as Parameters<typeof registerRulesPage>[0], deps);
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledWith('ru:rules.unavailable');
+    expect(ctx.editMessageText).toHaveBeenCalledWith('ru:rules.unavailable', expect.anything());
   });
 
   it('renders rules.intro with an inline url button when link is set', async () => {
@@ -48,8 +52,8 @@ describe('registerRulesPage', () => {
     registerRulesPage(bot as unknown as Parameters<typeof registerRulesPage>[0], deps);
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledTimes(1);
-    const [text, opts] = ctx.reply.mock.calls[0];
+    expect(ctx.editMessageText).toHaveBeenCalledTimes(1);
+    const [text, opts] = ctx.editMessageText.mock.calls[0];
     expect(text).toBe('ru:rules.intro');
     const kb = (opts as { reply_markup: { inline_keyboard: Array<Array<{ url?: string }>> } })
       .reply_markup;
@@ -65,6 +69,6 @@ describe('registerRulesPage', () => {
     registerRulesPage(bot as unknown as Parameters<typeof registerRulesPage>[0], deps);
     const ctx = buildFakeCtx();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
-    expect(ctx.reply).toHaveBeenCalledWith('ru:rules.unavailable');
+    expect(ctx.editMessageText).toHaveBeenCalledWith('ru:rules.unavailable', expect.anything());
   });
 });

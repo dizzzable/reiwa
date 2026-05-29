@@ -196,8 +196,18 @@ describe('registerStartPage', () => {
     await expect(
       bot.commandHandlers.get('start')!(ctx as unknown as BotContext),
     ).resolves.toBeUndefined();
-    expect(ctx.replyWithPhoto).toHaveBeenCalledWith('https://cdn.example/banner.png');
-    // Welcome reply still happens.
+    // The banner is sent as a photo carrying the welcome caption +
+    // main keyboard (STEALTHNET single-screen chrome), so the call has
+    // a second options argument. Assert the photo source (1st arg) and
+    // that the caption/keyboard ride along on the options bag.
+    expect(ctx.replyWithPhoto).toHaveBeenCalledWith(
+      'https://cdn.example/banner.png',
+      expect.objectContaining({
+        caption: expect.any(String),
+        reply_markup: expect.anything(),
+      }),
+    );
+    // Welcome reply still happens (photo failed → plain-text fallback).
     expect(ctx.reply).toHaveBeenCalled();
   });
 
