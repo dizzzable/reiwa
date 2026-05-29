@@ -29,6 +29,7 @@ import { createSupportRouter } from "./routes/support.js";
 import { createLinkingRouter } from "./routes/linking.js";
 import { createPushRouter } from "./routes/push.js";
 import { createRealtimeRouter } from "./routes/realtime.js";
+import { createContentRouter } from "./routes/content.js";
 
 export interface CreateAppDeps {
   adminClient: AdminClient | null;
@@ -135,6 +136,7 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createLinkingRouter(deps));
   app.use("/api/v1", createPushRouter(deps));
   app.use("/api/v1", createRealtimeRouter(deps));
+  app.use("/api/v1", createContentRouter(deps));
 
   // ── Global error handler ──────────────────────────────────────────────────
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {

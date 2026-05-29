@@ -4,11 +4,14 @@
  * for gateways that can't reach rezeis-admin directly.
  */
 import type { AdminTransport } from '../transport.js';
+import type { UserIdentity } from './subscription.js';
 
 export interface CreateCheckoutOptions {
   readonly successUrl?: string | null;
   readonly failUrl?: string | null;
 }
+
+export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
 
 export class PaymentsNamespace {
   constructor(private readonly transport: AdminTransport) {}
@@ -18,25 +21,41 @@ export class PaymentsNamespace {
   }
 
   createCheckout(
-    telegramId: string,
-    planId: number,
+    identity: UserIdentity,
+    purchaseType: PurchaseType,
+    planId: string,
     durationDays: number,
     gatewayType: string,
-    options: CreateCheckoutOptions = {},
+    options: CreateCheckoutOptions & { subscriptionId?: string } = {},
   ): Promise<unknown> {
     const payload: Record<string, unknown> = {
-      telegramId,
+      purchaseType,
       planId,
       durationDays,
       gatewayType,
     };
+    if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+      payload['userId'] = identity.userId;
+    }
+    if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+      payload['telegramId'] = identity.telegramId;
+    }
+    if (options.subscriptionId) payload['subscriptionId'] = options.subscriptionId;
     if (options.successUrl) payload['successUrl'] = options.successUrl;
     if (options.failUrl) payload['failUrl'] = options.failUrl;
     return this.transport.request('POST', '/api/internal/payments/checkout', payload);
   }
 
-  getStatus(paymentId: string): Promise<unknown> {
-    return this.transport.request('GET', `/api/internal/payments/${paymentId}`);
+  getStatus(paymentId: string, identity: UserIdentity = {}): Promise<unknown> {
+    const query: string[] = [];
+    if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+      query.push(`userId=${encodeURIComponent(identity.userId)}`);
+    }
+    if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+      query.push(`telegramId=${encodeURIComponent(identity.telegramId)}`);
+    }
+    const qs = query.length > 0 ? `?${query.join('&')}` : '';
+    return this.transport.request('GET', `/api/internal/payments/${paymentId}${qs}`);
   }
 
   forwardWebhook(gatewayType: string, rawPayload: unknown): Promise<unknown> {

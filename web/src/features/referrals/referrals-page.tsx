@@ -11,12 +11,14 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Star, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
-import { getReferralSummary } from "@/lib/api-client";
+import { getReferralSummary, getInviteCapacity } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StadiumButton } from "@/components/ui/stadium-button";
 
 import { InviteLinkHero } from "./components/invite-link-hero";
 import { StatCard } from "./components/stat-card";
@@ -27,11 +29,18 @@ export default function ReferralsPage() {
   const { t } = useTranslation();
   const { session } = useSession();
   const { branding } = useBranding();
+  const navigate = useNavigate();
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ["referrals", "summary"],
     queryFn: getReferralSummary,
+    staleTime: 30_000,
+  });
+
+  const { data: capacity } = useQuery({
+    queryKey: ["referrals", "invite-capacity"],
+    queryFn: getInviteCapacity,
     staleTime: 30_000,
   });
 
@@ -116,6 +125,21 @@ export default function ReferralsPage() {
             <p className="text-xs text-muted-foreground">
               {t("referrals.qualifiedHint")}
             </p>
+            {capacity && capacity.totalSlots !== null && (
+              <div className="rounded-xl border border-white/6 bg-white/3 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">{t("referrals.inviteSlots")}</p>
+                  <p className="text-sm font-semibold">
+                    {capacity.usedSlots} / {capacity.totalSlots}
+                  </p>
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  {capacity.remainingSlots !== null && capacity.remainingSlots > 0
+                    ? t("referrals.inviteSlotsRemaining", { count: capacity.remainingSlots })
+                    : t("referrals.inviteSlotsFull")}
+                </p>
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>
@@ -133,7 +157,18 @@ export default function ReferralsPage() {
             <p className="text-xs text-muted-foreground">
               {t("referrals.pointsHint")}
             </p>
-            {/* TODO: exchange options + history will be wired here */}
+            <StadiumButton
+              fullWidth
+              size="lg"
+              glow
+              icon={<Star className="h-5 w-5" />}
+              onClick={() => {
+                setActiveSheet(null);
+                navigate("/referrals/exchange");
+              }}
+            >
+              {t("referrals.exchangePoints")}
+            </StadiumButton>
           </div>
         </SheetContent>
       </Sheet>

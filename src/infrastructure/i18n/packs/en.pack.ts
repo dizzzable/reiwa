@@ -31,6 +31,13 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'start.open_app': '📱 Open app',
   'start.need_register': 'To use the service, open the app and create an account.',
 
+  // ── Telegram account linking (code submitted from web cabinet) ──────────────
+  'link.success': '✅ Telegram has been linked to your account.',
+  'link.invalid': '❌ The linking code is invalid or expired. Get a new code in the cabinet.',
+  'link.already_linked': '⚠️ This Telegram is already linked to another account. Sign in to it or contact support.',
+  'link.user_not_found': '❌ Account not found. Get a new code in the cabinet.',
+  'link.error': '❌ Failed to link Telegram. Please try again later.',
+
   // ── Invite / Rules / Help ───────────────────────────────────────────────────
   'invite.share': '🔗 Referral program\n\nShare this link with your friends — for every one who subscribes, you earn a bonus.\n\nYour link:\n{{link}}',
   'invite.share_button': '📤 Share on Telegram',

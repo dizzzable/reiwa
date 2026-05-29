@@ -59,7 +59,7 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
     try {
       const response = adminClient
         ? ((await adminClient.referrals
-            .createInvite(telegramId)
+            .createInvite({ telegramId })
             .catch(() => null)) as ReferralInviteShape | null)
         : null;
       // The admin endpoint wraps the invite under `{ invite: { token } }`

@@ -1,9 +1,11 @@
 import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
+import type { PurchaseType } from "../../infrastructure/admin-client/namespaces/subscription.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
-import { createSessionMiddleware } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity } from "../middleware/user-identity.js";
 
 export function createSubscriptionRouter(deps: {
   adminClient: AdminClient | null;
@@ -11,13 +13,13 @@ export function createSubscriptionRouter(deps: {
   config: ReiwaConfig;
 }) {
   const { adminClient, sessionStore } = deps;
-  const requireSession = createSessionMiddleware(sessionStore);
+  const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const router = Router();
 
   // GET /api/v1/subscription
   router.get("/subscription", requireSession, async (req: AuthRequest, res) => {
     try {
-      const sub = await adminClient?.subscription.getActive(req.telegramId!);
+      const sub = await adminClient?.subscription.getActive(resolveUserIdentity(req));
       res.json(sub ?? null);
     } catch {
       res.json(null);
@@ -30,10 +32,10 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { planId } = (req.body ?? {}) as Record<string, unknown>;
+        const { subscriptionId } = (req.body ?? {}) as Record<string, unknown>;
         const policy = await adminClient?.subscription.getActionPolicy(
-          req.telegramId!,
-          planId !== undefined ? Number(planId) : undefined,
+          resolveUserIdentity(req),
+          subscriptionId !== undefined ? String(subscriptionId) : undefined,
         );
         res.json(policy ?? {});
       } catch (e: unknown) {
@@ -48,9 +50,7 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.subscription.getAll(
-          req.telegramId!,
-        );
+        const result = await adminClient?.subscription.getAll(resolveUserIdentity(req));
         res.json(result ?? { subscriptions: [] });
       } catch {
         res.json({ subscriptions: [] });
@@ -64,7 +64,7 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.trial.activate(req.telegramId!);
+        const result = await adminClient?.trial.activate(resolveUserIdentity(req));
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
         res.status(400).json({ message: (e as Error).message });
@@ -78,8 +78,8 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { planId, durationDays, gatewayType } = (req.body ??
-          {}) as Record<string, unknown>;
+        const { planId, durationDays, gatewayType, purchaseType, subscriptionId } =
+          (req.body ?? {}) as Record<string, unknown>;
         if (!planId || !durationDays || !gatewayType) {
           res.status(400).json({
             message: "planId, durationDays and gatewayType are required",
@@ -87,10 +87,12 @@ export function createSubscriptionRouter(deps: {
           return;
         }
         const quote = await adminClient?.subscription.getQuote(
-          req.telegramId!,
-          Number(planId),
+          resolveUserIdentity(req),
+          (typeof purchaseType === "string" ? purchaseType : "NEW") as PurchaseType,
+          String(planId),
           Number(durationDays),
           String(gatewayType),
+          subscriptionId !== undefined ? String(subscriptionId) : undefined,
         );
         res.json(quote ?? {});
       } catch (e: unknown) {

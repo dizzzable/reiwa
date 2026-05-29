@@ -22,12 +22,16 @@ export const getQuote = (
   planId: number,
   durationDays: number,
   gatewayType: string,
+  purchaseType: "NEW" | "ADDITIONAL" | "RENEW" | "UPGRADE" | "TRIAL" = "NEW",
+  subscriptionId?: number | string,
 ) =>
   apiClient
     .post<SubscriptionQuote>("/subscription/quote", {
       planId,
       durationDays,
       gatewayType,
+      purchaseType,
+      ...(subscriptionId !== undefined ? { subscriptionId } : {}),
     })
     .then((r) => r.data);
 

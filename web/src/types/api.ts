@@ -1,10 +1,24 @@
 // ─── Session ─────────────────────────────────────────────────────────────────
+export interface ReiwaWebAccount {
+  id: string;
+  login: string | null;
+  email: string | null;
+  emailVerifiedAt: string | null;
+  requiresPasswordChange: boolean;
+}
+
 export interface ReiwaSession {
-  telegramId: string;
+  /** Canonical reiwa_id (CUID) — stable across login channels. */
+  id?: string;
+  telegramId: string | null;
   userId: number;
   name: string;
   username?: string;
   role: string;
+  /** Optional recovery email migrated onto the User row. */
+  email?: string | null;
+  /** Web-account sub-object — present once the user owns login credentials. */
+  webAccount?: ReiwaWebAccount | null;
 }
 
 // ─── Plans ───────────────────────────────────────────────────────────────────
@@ -51,6 +65,8 @@ export interface Subscription {
   status: SubscriptionStatus;
   isTrial: boolean;
   trafficLimit: number | null; // GB
+  /** Traffic consumed so far (GB). null when usage data is unavailable. */
+  trafficUsed?: number | null;
   deviceLimit: number | null;
   expireAt?: string; // Legacy alias
   expiresAt: string | null; // ISO date (canonical)

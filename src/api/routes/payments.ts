@@ -1,9 +1,11 @@
 import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
+import type { PurchaseType } from "../../infrastructure/admin-client/namespaces/payments.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
-import { createSessionMiddleware } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl } from "../../lib/payment-return-url.js";
 
 export function createPaymentsRouter(deps: {
@@ -12,7 +14,7 @@ export function createPaymentsRouter(deps: {
   config: ReiwaConfig;
 }) {
   const { adminClient, sessionStore, config } = deps;
-  const requireSession = createSessionMiddleware(sessionStore);
+  const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const router = Router();
 
   // POST /api/v1/payments/checkout
@@ -34,6 +36,8 @@ export function createPaymentsRouter(deps: {
           planId,
           durationDays,
           gatewayType,
+          purchaseType,
+          subscriptionId,
           successUrl: bodySuccessUrl,
           failUrl: bodyFailUrl,
           // Legacy alias kept for backwards-compatibility with older SPA bundles.
@@ -67,11 +71,16 @@ export function createPaymentsRouter(deps: {
         });
 
         const checkout = await adminClient?.payments.createCheckout(
-          req.telegramId!,
-          Number(planId),
+          resolveUserIdentity(req),
+          (typeof purchaseType === "string" ? purchaseType : "NEW") as PurchaseType,
+          String(planId),
           Number(durationDays),
           String(gatewayType),
-          { successUrl, failUrl },
+          {
+            successUrl,
+            failUrl,
+            ...(subscriptionId !== undefined ? { subscriptionId: String(subscriptionId) } : {}),
+          },
         );
         res.json(checkout ?? {});
       } catch (e: unknown) {
@@ -100,6 +109,7 @@ export function createPaymentsRouter(deps: {
       try {
         const status = await adminClient?.payments.getStatus(
           String(req.params["paymentId"]),
+          resolveUserIdentity(req),
         );
         res.json(status ?? {});
       } catch {

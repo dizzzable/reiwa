@@ -62,7 +62,7 @@ async function buildWelcomeView(
   const subscription =
     deps.adminClient !== null && tgUser !== undefined
       ? ((await deps.adminClient.subscription
-          .getActive(String(tgUser.id))
+          .getActive({ telegramId: String(tgUser.id) })
           .catch(() => null)) as Subscription | null)
       : null;
 
@@ -125,6 +125,51 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
   bot.command('start', async (ctx) => {
     const tgUser = ctx.from;
     if (tgUser === undefined) return;
+
+    // Phase 0: account-linking deep-link. `t.me/<bot>?start=link_<code>`
+    // delivers the 6-digit code minted by the web cabinet's "Link
+    // Telegram" flow. Consume it BEFORE bootstrap — bootstrapping first
+    // would mint a fresh User owning this telegramId, which the consume
+    // step then mistakes for a conflicting account
+    // (`TELEGRAM_ALREADY_LINKED`). On success the id is attached to the
+    // existing web-first reiwa_id instead.
+    const startPayload =
+      typeof ctx.match === 'string' ? ctx.match.trim() : '';
+    if (startPayload.startsWith('link_') && deps.adminClient !== null) {
+      const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+      const code = startPayload.slice('link_'.length).trim();
+      try {
+        const result = await deps.adminClient.linking.telegram.consume(
+          String(tgUser.id),
+          code,
+        );
+        let key = 'link.success';
+        if (!result.success) {
+          switch (result.reason) {
+            case 'TELEGRAM_ALREADY_LINKED':
+              key = 'link.already_linked';
+              break;
+            case 'USER_NOT_FOUND':
+              key = 'link.user_not_found';
+              break;
+            case 'INVALID_OR_EXPIRED_CODE':
+            default:
+              key = 'link.invalid';
+              break;
+          }
+        }
+        await ctx.reply(deps.translator.t(key, lang));
+      } catch (err: unknown) {
+        deps.logger?.warn(
+          { err, telegramId: tgUser.id },
+          'bot/start: telegram link consume failed',
+        );
+        await ctx.reply(deps.translator.t('link.error', lang));
+      }
+      // Fall through to the normal welcome flow so the user lands on the
+      // main menu after the link result. Bootstrap below is an upsert by
+      // telegramId — harmless now that the id is attached.
+    }
 
     // Phase 1: bootstrap user. Failures non-fatal.
     if (deps.adminClient !== null) {

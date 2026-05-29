@@ -22,8 +22,18 @@ export interface PointsExchangeOptions {
   }>;
 }
 
+export interface InviteCapacity {
+  totalSlots: number | null;
+  usedSlots: number;
+  remainingSlots: number | null;
+  canCreateInvite: boolean;
+}
+
 export const getReferralSummary = () =>
   apiClient.get<ReferralSummary>("/referrals/summary").then((r) => r.data);
+
+export const getInviteCapacity = () =>
+  apiClient.get<InviteCapacity>("/referrals/invite-capacity").then((r) => r.data);
 
 export const createReferralInvite = () =>
   apiClient.post<ReferralInvite>("/referrals/invites").then((r) => r.data);

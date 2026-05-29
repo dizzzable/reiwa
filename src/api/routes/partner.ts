@@ -2,7 +2,8 @@ import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
-import { createSessionMiddleware, type AuthRequest } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity } from "../middleware/user-identity.js";
 
 export function createPartnerRouter(deps: {
   adminClient: AdminClient | null;
@@ -10,13 +11,13 @@ export function createPartnerRouter(deps: {
   config: ReiwaConfig;
 }) {
   const { adminClient, sessionStore } = deps;
-  const requireSession = createSessionMiddleware(sessionStore);
+  const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const router = Router();
 
   // GET /api/v1/partner/info
   router.get("/partner/info", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.partner.getInfo(req.telegramId!);
+      const result = await adminClient?.partner.getInfo(resolveUserIdentity(req));
       res.json(result ?? null);
     } catch {
       res.json(null);
@@ -29,7 +30,7 @@ export function createPartnerRouter(deps: {
   // for the vast majority of users without partner activation.
   router.get("/partner/status", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.partner.getStatus(req.telegramId!);
+      const result = await adminClient?.partner.getStatus(resolveUserIdentity(req));
       res.json(result ?? { isActive: false });
     } catch {
       res.json({ isActive: false });
@@ -39,7 +40,7 @@ export function createPartnerRouter(deps: {
   // GET /api/v1/partner/earnings
   router.get("/partner/earnings", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.partner.getEarnings(req.telegramId!);
+      const result = await adminClient?.partner.getEarnings(resolveUserIdentity(req));
       res.json(result ?? { earnings: [] });
     } catch {
       res.json({ earnings: [] });
@@ -49,7 +50,7 @@ export function createPartnerRouter(deps: {
   // GET /api/v1/partner/withdrawals
   router.get("/partner/withdrawals", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.partner.getWithdrawals(req.telegramId!);
+      const result = await adminClient?.partner.getWithdrawals(resolveUserIdentity(req));
       res.json(result ?? { withdrawals: [] });
     } catch {
       res.json({ withdrawals: [] });
@@ -64,7 +65,7 @@ export function createPartnerRouter(deps: {
         res.status(400).json({ message: "amount, method and requisites are required" });
         return;
       }
-      const result = await adminClient?.partner.createWithdrawal(req.telegramId!, {
+      const result = await adminClient?.partner.createWithdrawal(resolveUserIdentity(req), {
         amount: Number(amount),
         method: String(method),
         requisites: String(requisites),
@@ -78,7 +79,7 @@ export function createPartnerRouter(deps: {
   // GET /api/v1/subscription/trial/eligibility
   router.get("/subscription/trial/eligibility", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.trial.getEligibility(req.telegramId!);
+      const result = await adminClient?.trial.getEligibility(resolveUserIdentity(req));
       res.json(result ?? { eligible: false, reason: "UNKNOWN" });
     } catch {
       res.json({ eligible: false, reason: "ERROR" });
@@ -88,7 +89,7 @@ export function createPartnerRouter(deps: {
   // POST /api/v1/subscription/trial
   router.post("/subscription/trial", requireSession, async (req: AuthRequest, res) => {
     try {
-      const result = await adminClient?.trial.activate(req.telegramId!);
+      const result = await adminClient?.trial.activate(resolveUserIdentity(req));
       res.json(result ?? {});
     } catch (e: unknown) {
       res.status(400).json({ message: (e as Error).message });

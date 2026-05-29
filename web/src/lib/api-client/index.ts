@@ -81,11 +81,13 @@ export {
 export {
   createReferralInvite,
   exchangePoints,
+  getInviteCapacity,
   getPointsExchangeOptions,
   getReferralInvites,
   getReferralRewards,
   getReferralSummary,
   revokeReferralInvite,
+  type InviteCapacity,
   type PointsExchangeOptions,
 } from "./referrals.js";
 
@@ -137,3 +139,24 @@ export {
   type PushSubscribePayload,
   type PushUnsubscribePayload,
 } from "./push.js";
+
+// Linking (Telegram + Email)
+export {
+  initiateEmailLink,
+  initiateTelegramLink,
+  verifyEmailLink,
+  type EmailLinkInitiateResponse,
+  type EmailLinkVerifyResponse,
+  type TelegramLinkInitiateResponse,
+} from "./linking.js";
+
+// Content (FAQ + add-ons)
+export {
+  getFaq,
+  getPlanAddOns,
+  purchaseAddOn,
+  type AddOn,
+  type AddOnCheckoutResult,
+  type AddOnPrice,
+  type FaqItem,
+} from "./content.js";

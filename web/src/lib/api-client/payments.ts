@@ -31,6 +31,7 @@ export const createCheckout = (
       planId,
       durationDays,
       gatewayType,
+      purchaseType: "NEW",
       deviceType,
     })
     .then((r) => r.data);
@@ -39,7 +40,7 @@ export const createRenewCheckout = (
   planId: number,
   durationDays: number,
   gatewayType: string,
-  subscriptionId: number,
+  subscriptionId: number | string,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -47,7 +48,7 @@ export const createRenewCheckout = (
       durationDays,
       gatewayType,
       purchaseType: "RENEW",
-      renewSubscriptionId: subscriptionId,
+      subscriptionId,
     })
     .then((r) => r.data);
 
@@ -55,7 +56,7 @@ export const createUpgradeCheckout = (
   planId: number,
   durationDays: number,
   gatewayType: string,
-  subscriptionId: number,
+  subscriptionId: number | string,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -63,7 +64,7 @@ export const createUpgradeCheckout = (
       durationDays,
       gatewayType,
       purchaseType: "UPGRADE",
-      renewSubscriptionId: subscriptionId,
+      subscriptionId,
     })
     .then((r) => r.data);
 

@@ -33,6 +33,13 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'start.open_app': '📱 Открыть приложение',
   'start.need_register': 'Для использования сервиса откройте приложение и создайте аккаунт.',
 
+  // ── Telegram account linking (code submitted from web cabinet) ──────────────
+  'link.success': '✅ Telegram успешно привязан к вашему аккаунту.',
+  'link.invalid': '❌ Код привязки неверный или истёк. Получите новый код в кабинете.',
+  'link.already_linked': '⚠️ Этот Telegram уже привязан к другому аккаунту. Войдите в него или обратитесь в поддержку.',
+  'link.user_not_found': '❌ Аккаунт не найден. Получите новый код в кабинете.',
+  'link.error': '❌ Не удалось привязать Telegram. Попробуйте позже.',
+
   // ── Invite / Rules / Help ───────────────────────────────────────────────────
   'invite.share': '🔗 Реферальная программа\n\nПоделитесь ссылкой с друзьями — за каждого, кто оформит подписку, вы получите бонус.\n\nВаша ссылка:\n{{link}}',
   'invite.share_button': '📤 Поделиться в Telegram',

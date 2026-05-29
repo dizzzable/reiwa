@@ -38,10 +38,10 @@ export function SubscriptionCard({ subscription, firstDevice }: SubscriptionCard
       : t("card.pendingStatus");
 
   // Traffic progress (0–1). When unlimited, show full bar.
-  const trafficUsedGb = 0; // TODO: wire from backend when available
+  const trafficUsedGb = sub.trafficUsed ?? null;
   const trafficTotalGb = sub.trafficLimit ?? null;
   const trafficProgress =
-    trafficTotalGb !== null && trafficTotalGb > 0
+    trafficTotalGb !== null && trafficTotalGb > 0 && trafficUsedGb !== null
       ? Math.min(trafficUsedGb / trafficTotalGb, 1)
       : null;
 
@@ -87,11 +87,16 @@ export function SubscriptionCard({ subscription, firstDevice }: SubscriptionCard
       <div className="space-y-2">
         {/* Traffic bar */}
         {trafficProgress !== null ? (
-          <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
-            <div
-              className="h-full rounded-full bg-white/70 transition-all duration-500"
-              style={{ width: `${trafficProgress * 100}%` }}
-            />
+          <div className="space-y-1">
+            <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
+              <div
+                className="h-full rounded-full bg-white/70 transition-all duration-500"
+                style={{ width: `${trafficProgress * 100}%` }}
+              />
+            </div>
+            <p className="text-[10px] uppercase tracking-wider opacity-60">
+              {t("card.trafficUsed")}: {trafficUsedGb} / {trafficTotalGb} GB
+            </p>
           </div>
         ) : trafficTotalGb === null ? (
           <p className="text-[10px] uppercase tracking-wider opacity-60">

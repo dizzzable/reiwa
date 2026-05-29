@@ -14,30 +14,15 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiClient } from "@/lib/api-client";
-
-interface FaqItem {
-  id: string;
-  question: string;
-  answer: string;
-}
-
-async function fetchFaq(): Promise<FaqItem[]> {
-  try {
-    const { data } = await apiClient.get<{ items: FaqItem[] }>("/faq");
-    return data.items ?? [];
-  } catch {
-    return [];
-  }
-}
+import { getFaq, type FaqItem } from "@/lib/api-client";
 
 export default function FaqPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
   const { data: items, isLoading } = useQuery({
-    queryKey: ["faq"],
-    queryFn: fetchFaq,
+    queryKey: ["faq", i18n.language],
+    queryFn: () => getFaq(i18n.language),
     staleTime: 5 * 60_000,
   });
 

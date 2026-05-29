@@ -1,9 +1,11 @@
 import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
+import type { PointsExchangeType } from "../../infrastructure/admin-client/namespaces/referrals.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
-import { createSessionMiddleware } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity } from "../middleware/user-identity.js";
 
 export function createReferralsRouter(deps: {
   adminClient: AdminClient | null;
@@ -11,7 +13,7 @@ export function createReferralsRouter(deps: {
   config: ReiwaConfig;
 }) {
   const { adminClient, sessionStore } = deps;
-  const requireSession = createSessionMiddleware(sessionStore);
+  const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const router = Router();
 
   // GET /api/v1/referrals/summary
@@ -19,7 +21,7 @@ export function createReferralsRouter(deps: {
     "/referrals/summary",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.referrals.getSummary(req.telegramId!);
+      const result = await adminClient?.referrals.getSummary(resolveUserIdentity(req));
       res.json(result ?? {});
     },
   );
@@ -30,7 +32,7 @@ export function createReferralsRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const invite = await adminClient?.referrals.createInvite(req.telegramId!);
+        const invite = await adminClient?.referrals.createInvite(resolveUserIdentity(req));
         res.json(invite ?? {});
       } catch (e: unknown) {
         res.status(500).json({ message: (e as Error).message });
@@ -38,13 +40,13 @@ export function createReferralsRouter(deps: {
     },
   );
 
-  // GET /api/v1/referrals/invites — list all invites
+  // GET /api/v1/referrals/invite-capacity — slots used/remaining
   router.get(
-    "/referrals/invites",
+    "/referrals/invite-capacity",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.referrals.getInviteCapacity(req.telegramId!);
-      res.json(result ?? []);
+      const result = await adminClient?.referrals.getInviteCapacity(resolveUserIdentity(req));
+      res.json(result ?? { totalSlots: null, usedSlots: 0, remainingSlots: null, canCreateInvite: true });
     },
   );
 
@@ -55,7 +57,7 @@ export function createReferralsRouter(deps: {
     async (req: AuthRequest, res) => {
       try {
         const result = await adminClient?.referrals.revokeInvite(
-          req.telegramId!,
+          resolveUserIdentity(req),
           String(req.params["inviteId"]),
         );
         res.json(result ?? { ok: true });
@@ -70,26 +72,50 @@ export function createReferralsRouter(deps: {
     "/referrals/rewards",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.referrals.getRewards(req.telegramId!);
+      const result = await adminClient?.referrals.getRewards(resolveUserIdentity(req));
       res.json(result ?? { rewards: [] });
     },
   );
 
-  // POST /api/v1/referrals/exchange/gift-promocode — exchange points
-  router.post(
-    "/referrals/exchange/gift-promocode",
+  // GET /api/v1/referrals/exchange/options — available exchange types + balance
+  router.get(
+    "/referrals/exchange/options",
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { points } = (req.body ?? {}) as Record<string, unknown>;
-        if (!points) {
-          res.status(400).json({ message: "points is required" });
+        const result = await adminClient?.referrals.getExchangeOptions(resolveUserIdentity(req));
+        res.json(result ?? { exchangeEnabled: false, pointsBalance: 0, types: [] });
+      } catch {
+        res.json({ exchangeEnabled: false, pointsBalance: 0, types: [] });
+      }
+    },
+  );
+
+  // POST /api/v1/referrals/exchange — execute a points exchange
+  router.post(
+    "/referrals/exchange",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const { type, points, subscriptionId } = (req.body ?? {}) as Record<
+          string,
+          unknown
+        >;
+        if (typeof type !== "string" || type.length === 0) {
+          res.status(400).json({ message: "type is required" });
           return;
         }
-        const result = await adminClient?.referrals.exchangePointsForGiftPromocode(
-          req.telegramId!,
-          { points: Number(points) },
-        );
+        if (points === undefined || points === null || Number(points) <= 0) {
+          res.status(400).json({ message: "points must be a positive number" });
+          return;
+        }
+        const result = await adminClient?.referrals.exchangePoints(resolveUserIdentity(req), {
+          type: type as PointsExchangeType,
+          points: Number(points),
+          ...(typeof subscriptionId === "string" && subscriptionId.length > 0
+            ? { subscriptionId }
+            : {}),
+        });
         res.json(result ?? {});
       } catch (e: unknown) {
         res.status(400).json({ message: (e as Error).message });

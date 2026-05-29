@@ -37,6 +37,23 @@ export function DevicesList({ devices, isLoading }: DevicesListProps) {
     onError: () => toast.error(t("devices.error")),
   });
 
+  // "Disconnect all" — revokes every HWID via the per-device endpoint.
+  // There is no single subscription-URL reset on the backend, so we
+  // fan out the existing delete call. Each device must then reconnect.
+  const revokeAllMutation = useMutation({
+    mutationFn: async () => {
+      for (const device of devices) {
+        await deleteUserDevice(device.hwid);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["devices"] });
+      toast.success(t("devices.allRevoked"));
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+    },
+    onError: () => toast.error(t("devices.error")),
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -54,7 +71,22 @@ export function DevicesList({ devices, isLoading }: DevicesListProps) {
         <h3 className="text-sm font-semibold text-zinc-300">
           {t("devices.title")}
         </h3>
-        {/* TODO: Phase 3+ — regenerate link button with confirm dialog */}
+        {devices.length > 0 && (
+          <button
+            onClick={() => {
+              if (confirm(t("devices.revokeAllConfirm"))) {
+                revokeAllMutation.mutate();
+              }
+            }}
+            disabled={revokeAllMutation.isPending}
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-3 w-3 ${revokeAllMutation.isPending ? "animate-spin" : ""}`}
+            />
+            {t("devices.revokeAll")}
+          </button>
+        )}
       </div>
 
       {devices.length === 0 ? (

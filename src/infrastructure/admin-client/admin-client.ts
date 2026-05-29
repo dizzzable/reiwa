@@ -19,10 +19,12 @@
  */
 import {
   ActivityNamespace,
+  AddOnsNamespace,
   BrandingNamespace,
   CatalogNamespace,
   DevicesNamespace,
   EventsNamespace,
+  FaqNamespace,
   LinkingNamespace,
   PartnerNamespace,
   PaymentsNamespace,
@@ -41,7 +43,7 @@ import { AdminTransport } from './transport.js';
 export class AdminClient {
   private readonly transport: AdminTransport;
 
-  // 16 namespaces composed onto the facade.
+  // 18 namespaces composed onto the facade.
   readonly system: SystemNamespace;
   readonly catalog: CatalogNamespace;
   readonly user: UserNamespace;
@@ -59,6 +61,8 @@ export class AdminClient {
   readonly push: PushNamespace;
   readonly events: EventsNamespace;
   readonly support: SupportNamespace;
+  readonly faq: FaqNamespace;
+  readonly addOns: AddOnsNamespace;
 
   constructor(baseUrl: string, apiKey: string, sharedSecret?: string | null) {
     this.transport = new AdminTransport({ baseUrl, apiKey, sharedSecret });
@@ -79,6 +83,8 @@ export class AdminClient {
     this.push = new PushNamespace(this.transport);
     this.events = new EventsNamespace(this.transport);
     this.support = new SupportNamespace(this.transport);
+    this.faq = new FaqNamespace(this.transport);
+    this.addOns = new AddOnsNamespace(this.transport);
   }
 
   /**

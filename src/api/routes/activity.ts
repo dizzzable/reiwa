@@ -2,8 +2,9 @@ import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
-import { createSessionMiddleware } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity } from "../middleware/user-identity.js";
 
 export function createActivityRouter(deps: {
   adminClient: AdminClient | null;
@@ -11,7 +12,7 @@ export function createActivityRouter(deps: {
   config: ReiwaConfig;
 }) {
   const { adminClient, sessionStore } = deps;
-  const requireSession = createSessionMiddleware(sessionStore);
+  const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const router = Router();
 
   // GET /api/v1/activity/transactions
@@ -19,7 +20,7 @@ export function createActivityRouter(deps: {
     "/activity/transactions",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.activity.getTransactions(req.telegramId!);
+      const result = await adminClient?.activity.getTransactions(resolveUserIdentity(req));
       res.json(result ?? { transactions: [] });
     },
   );
@@ -29,7 +30,7 @@ export function createActivityRouter(deps: {
     "/activity/notifications",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.activity.getNotifications(req.telegramId!);
+      const result = await adminClient?.activity.getNotifications(resolveUserIdentity(req));
       res.json(result ?? { notifications: [] });
     },
   );
@@ -40,7 +41,7 @@ export function createActivityRouter(deps: {
     "/activity/notifications/unread-count",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.activity.getUnreadCount(req.telegramId!);
+      const result = await adminClient?.activity.getUnreadCount(resolveUserIdentity(req));
       res.json(result ?? { count: 0 });
     },
   );
@@ -52,7 +53,7 @@ export function createActivityRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       await adminClient?.activity
-        .markAllRead(req.telegramId!)
+        .markAllRead(resolveUserIdentity(req))
         .catch(() => {});
       res.json({ ok: true });
     },
@@ -65,7 +66,7 @@ export function createActivityRouter(deps: {
     async (req: AuthRequest, res) => {
       await adminClient?.activity
         .markRead(
-          req.telegramId!,
+          resolveUserIdentity(req),
           String(req.params["notificationId"]),
         )
         .catch(() => {});

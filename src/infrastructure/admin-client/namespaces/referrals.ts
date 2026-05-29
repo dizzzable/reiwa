@@ -1,62 +1,110 @@
 /**
  * Referrals namespace — invite link generation, summary stats, reward
  * ledger, invite-capacity probe, invite revocation and the
- * points-for-gift-promo exchange.
+ * points-exchange flow.
  *
- * The upstream paths are templated on `telegramId` rather than query
- * string (legacy convention; mirrored here as-is).
+ * The upstream paths are templated on a user reference (`:userRef`)
+ * which the controller resolves polymorphically — it accepts either a
+ * reiwa_id (CUID, web / web-first users) or a telegramId. Callers pass a
+ * `UserIdentity` and we forward the best available reference.
  */
 import type { AdminTransport } from '../transport.js';
+import type { UserIdentity } from './subscription.js';
+
+/**
+ * Points-exchange reward kinds, mirrored from rezeis
+ * `ReferralPointsExchangeService.PointsExchangeType`. Keep in sync.
+ */
+export type PointsExchangeType =
+  | 'SUBSCRIPTION_DAYS'
+  | 'GIFT_SUBSCRIPTION'
+  | 'DISCOUNT'
+  | 'TRAFFIC';
 
 export interface ExchangePointsInput {
+  readonly type: PointsExchangeType;
   readonly points: number;
+  readonly subscriptionId?: string;
+}
+
+function reference(identity: UserIdentity): string {
+  if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+    return identity.userId;
+  }
+  if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+    return identity.telegramId;
+  }
+  throw new Error('A userId or telegramId is required');
 }
 
 export class ReferralsNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
-  getSummary(telegramId: string): Promise<unknown> {
+  getSummary(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',
-      `/api/internal/user/${telegramId}/referrals/summary`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/summary`,
     );
   }
 
-  createInvite(telegramId: string): Promise<unknown> {
+  createInvite(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'POST',
-      `/api/internal/user/${telegramId}/referrals/invite`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/invite`,
       {},
     );
   }
 
-  getRewards(telegramId: string): Promise<unknown> {
+  getRewards(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',
-      `/api/internal/user/${telegramId}/referrals/rewards`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/rewards`,
     );
   }
 
-  getInviteCapacity(telegramId: string): Promise<unknown> {
+  getInviteCapacity(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',
-      `/api/internal/user/${encodeURIComponent(telegramId)}/referrals/invite-capacity`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/invite-capacity`,
     );
   }
 
-  revokeInvite(telegramId: string, inviteId: string): Promise<unknown> {
+  revokeInvite(identity: UserIdentity, inviteId: string): Promise<unknown> {
     return this.transport.request(
       'POST',
-      `/api/internal/user/${encodeURIComponent(telegramId)}/referrals/invites/${encodeURIComponent(inviteId)}/revoke`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/invites/${encodeURIComponent(inviteId)}/revoke`,
       {},
     );
   }
 
-  exchangePointsForGiftPromocode(telegramId: string, data: ExchangePointsInput): Promise<unknown> {
+  /**
+   * Available points-exchange options (per-type config + computed
+   * values + the user's balance). Drives the exchange page UI.
+   */
+  getExchangeOptions(identity: UserIdentity): Promise<unknown> {
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/exchange/options`,
+    );
+  }
+
+  /**
+   * Execute a points exchange. `type` selects the reward kind and
+   * `subscriptionId` targets the subscription for SUBSCRIPTION_DAYS /
+   * TRAFFIC rewards (falls back to the user's current subscription
+   * upstream when omitted).
+   */
+  exchangePoints(identity: UserIdentity, data: ExchangePointsInput): Promise<unknown> {
     return this.transport.request(
       'POST',
-      `/api/internal/user/${encodeURIComponent(telegramId)}/referrals/exchange`,
-      { type: 'GIFT_PROMOCODE', points: data.points },
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/exchange`,
+      {
+        type: data.type,
+        points: data.points,
+        ...(data.subscriptionId !== undefined
+          ? { subscriptionId: data.subscriptionId }
+          : {}),
+      },
     );
   }
 }

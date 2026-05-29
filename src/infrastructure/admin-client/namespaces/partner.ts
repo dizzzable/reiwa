@@ -2,8 +2,14 @@
  * Partner namespace — partner-tier info, lightweight active-status probe
  * (used by the bottom-nav to pick Referral vs Partner tab), earnings,
  * withdrawal history and withdrawal creation.
+ *
+ * Identity: path-templated endpoints accept a `UserIdentity` and forward
+ * the best available reference (reiwa_id preferred, telegramId fallback);
+ * the upstream resolves either to the canonical reiwa_id. The
+ * lightweight `getStatus` keeps its query-string shape.
  */
 import type { AdminTransport } from '../transport.js';
+import type { UserIdentity } from './subscription.js';
 
 export interface CreateWithdrawalInput {
   readonly amount: number;
@@ -11,13 +17,33 @@ export interface CreateWithdrawalInput {
   readonly requisites: string;
 }
 
+function reference(identity: UserIdentity): string {
+  if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+    return identity.userId;
+  }
+  if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+    return identity.telegramId;
+  }
+  throw new Error('A userId or telegramId is required');
+}
+
+function identityQuery(identity: UserIdentity): string {
+  if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+    return `userId=${encodeURIComponent(identity.userId)}`;
+  }
+  if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+    return `telegramId=${encodeURIComponent(identity.telegramId)}`;
+  }
+  return '';
+}
+
 export class PartnerNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
-  getInfo(telegramId: string): Promise<unknown> {
+  getInfo(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',
-      `/api/internal/user/${telegramId}/partner/info`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/partner/info`,
     );
   }
 
@@ -26,31 +52,31 @@ export class PartnerNamespace {
    * decide between the Referral and the Partner tab. Avoids heavy joins
    * (earnings/withdrawals) and is safe to call on every dashboard mount.
    */
-  getStatus(telegramId: string): Promise<{ isActive: boolean }> {
+  getStatus(identity: UserIdentity): Promise<{ isActive: boolean }> {
     return this.transport.request<{ isActive: boolean }>(
       'GET',
-      `/api/internal/user/partner-status?telegramId=${encodeURIComponent(telegramId)}`,
+      `/api/internal/user/partner-status?${identityQuery(identity)}`,
     );
   }
 
-  getEarnings(telegramId: string): Promise<unknown> {
+  getEarnings(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',
-      `/api/internal/user/${telegramId}/partner/earnings`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/partner/earnings`,
     );
   }
 
-  getWithdrawals(telegramId: string): Promise<unknown> {
+  getWithdrawals(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',
-      `/api/internal/user/${telegramId}/partner/withdrawals`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/partner/withdrawals`,
     );
   }
 
-  createWithdrawal(telegramId: string, data: CreateWithdrawalInput): Promise<unknown> {
+  createWithdrawal(identity: UserIdentity, data: CreateWithdrawalInput): Promise<unknown> {
     return this.transport.request(
       'POST',
-      `/api/internal/user/${telegramId}/partner/withdraw`,
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/partner/withdraw`,
       data,
     );
   }

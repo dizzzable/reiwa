@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, Check } from "lucide-react";
-import { getQuote, createCheckout, getEnabledGateways } from "@/lib/api-client";
+import { getQuote, createCheckout, getEnabledGateways, activatePromocode } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { usePurchaseStore } from "@/stores/purchase.store";
@@ -166,6 +166,7 @@ function SelectGateway({
 function QuoteView() {
   const { selectedPlan, selectedDuration, selectedGateway, setQuote, goBack } =
     usePurchaseStore();
+  const queryClient = useQueryClient();
 
   const {
     data: quote,
@@ -238,13 +239,19 @@ function QuoteView() {
 
       {/* Promo code input */}
       <PromoInput
-        onPromoApplied={() => {
-          // TODO: re-fetch quote with promo applied
+        onPromoApplied={(code) => {
+          if (code) {
+            // The discount is applied to the user's purchaseDiscount
+            // server-side on activation; refetch the quote so the
+            // updated price is reflected here before checkout.
+            void queryClient.invalidateQueries({ queryKey: ["quote"] });
+          }
         }}
         validatePromo={async (code) => {
-          // Simple validation — just check the code is not empty
-          // The actual discount will be applied server-side during checkout
-          if (code.length < 3) throw new Error("Invalid");
+          // Activate the promo against the user's account. DISCOUNT
+          // promos bump `purchaseDiscount`, which the quote reads on
+          // the next fetch. Throwing surfaces the inline error state.
+          await activatePromocode(code);
         }}
       />
 
