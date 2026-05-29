@@ -1,0 +1,17 @@
+# Traefik dynamic configuration for the reiwa user app (443-only, BYO cert).
+# Replace REPLACE_WITH_YOUR_DOMAIN with the app hostname.
+
+http:
+  routers:
+    reiwa:
+      rule: "Host(`REPLACE_WITH_YOUR_DOMAIN`)"
+      entrypoints:
+        - https
+      tls: {}
+      service: reiwa
+
+  services:
+    reiwa:
+      loadBalancer:
+        servers:
+          - url: "http://reiwa-web:80"

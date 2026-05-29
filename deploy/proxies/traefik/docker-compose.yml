@@ -1,0 +1,28 @@
+# 443-only. No port 80, no ACME. Provide certs in ./certs
+# (fullchain.pem + privkey.key), e.g.
+#   ../gen-self-signed-cert.sh app.example.com certs
+services:
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - remnawave-network
+    ports:
+      - '0.0.0.0:443:443'
+    environment:
+      - TZ=UTC
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/traefik.yml:ro
+      - ./config:/config:ro
+      - ./certs:/certs:ro
+      - ./logs:/var/log/traefik
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    driver: bridge
+    external: true

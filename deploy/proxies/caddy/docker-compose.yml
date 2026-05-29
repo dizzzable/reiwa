@@ -1,0 +1,28 @@
+# 443-only. No port 80. Provide certs in ./certs (fullchain.pem + privkey.key),
+# e.g.  ../gen-self-signed-cert.sh app.example.com certs
+services:
+  caddy:
+    image: caddy:2.9
+    container_name: caddy
+    hostname: caddy
+    restart: always
+    ports:
+      - '0.0.0.0:443:443'
+    networks:
+      - remnawave-network
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./certs:/etc/caddy/certs:ro
+      - caddy-ssl-data:/data
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    driver: bridge
+    external: true
+
+volumes:
+  caddy-ssl-data:
+    driver: local
+    external: false
+    name: caddy-ssl-data

@@ -1,0 +1,17 @@
+# Traefik dynamic TLS — bring-your-own certificate.
+# Provide certs/fullchain.pem + certs/privkey.key next to the compose file:
+#   ../gen-self-signed-cert.sh app.example.com certs
+#
+# `default` makes this cert the fallback for any SNI, so a connection with
+# a non-matching hostname still gets a valid-format TLS response served with
+# this cert rather than leaking that a specific vhost exists.
+
+tls:
+  certificates:
+    - certFile: /certs/fullchain.pem
+      keyFile: /certs/privkey.key
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/fullchain.pem
+        keyFile: /certs/privkey.key

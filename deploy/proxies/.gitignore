@@ -1,0 +1,9 @@
+# Never commit TLS material or proxy runtime state.
+**/privkey.key
+**/fullchain.pem
+**/*.pem
+**/*.key
+**/certs/
+**/letsencrypt/
+**/logs/
+**/acme.json

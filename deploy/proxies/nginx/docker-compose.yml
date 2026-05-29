@@ -1,0 +1,23 @@
+# 443-only. No port 80. Provide your own cert next to this file
+# (fullchain.pem + privkey.key), e.g.
+#   ../gen-self-signed-cert.sh app.example.com .
+services:
+  reiwa-nginx:
+    image: nginx:1.28
+    container_name: reiwa-nginx
+    hostname: reiwa-nginx
+    restart: always
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
+      - ./privkey.key:/etc/nginx/ssl/privkey.key:ro
+    ports:
+      - '0.0.0.0:443:443'
+    networks:
+      - remnawave-network
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    driver: bridge
+    external: true

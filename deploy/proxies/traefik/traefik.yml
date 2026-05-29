@@ -1,0 +1,26 @@
+# Traefik static configuration (443-only, bring-your-own cert).
+# No ACME, no :80 entrypoint. TLS certs are loaded from the dynamic
+# file provider (see config/tls.yml).
+
+api:
+  dashboard: true
+  debug: true
+
+entryPoints:
+  https:
+    address: ":443"
+
+serversTransport:
+  insecureSkipVerify: true
+
+providers:
+  file:
+    directory: /config
+    watch: true
+
+log:
+  level: "INFO"
+  filePath: "/var/log/traefik/traefik.log"
+
+accessLog:
+  filePath: "/var/log/traefik/access.log"

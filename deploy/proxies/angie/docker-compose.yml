@@ -1,0 +1,23 @@
+# 443-only. No port 80, no built-in ACME. Provide certs next to this file
+# (fullchain.pem + privkey.key), e.g.
+#   ../gen-self-signed-cert.sh app.example.com .
+services:
+  reiwa-angie:
+    image: docker.angie.software/angie:1.9.0
+    container_name: reiwa-angie
+    hostname: reiwa-angie
+    restart: always
+    ports:
+      - '0.0.0.0:443:443'
+    networks:
+      - remnawave-network
+    volumes:
+      - ./angie.conf:/etc/angie/http.d/default.conf:ro
+      - ./fullchain.pem:/etc/angie/ssl/fullchain.pem:ro
+      - ./privkey.key:/etc/angie/ssl/privkey.key:ro
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    driver: bridge
+    external: true

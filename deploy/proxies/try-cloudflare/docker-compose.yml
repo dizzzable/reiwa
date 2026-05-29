@@ -1,0 +1,24 @@
+# reiwa user app — Cloudflare Quick Tunnel (DEV / TESTING ONLY).
+#
+# DANGER: TryCloudflare (Quick Tunnels) is a trial feature with a 200
+# in-flight connection cap and an ephemeral random hostname. Never use it
+# in production — use Cloudflare Tunnel proper, or caddy/nginx/angie/traefik.
+#
+# Outbound tunnel: binds no inbound port. After `docker compose up -d`,
+# watch the logs for the generated https://*.trycloudflare.com URL.
+
+services:
+  reiwa-try-cloudflare:
+    container_name: reiwa-try-cloudflare
+    hostname: reiwa-try-cloudflare
+    image: cloudflare/cloudflared:latest
+    networks:
+      - remnawave-network
+    restart: always
+    command: tunnel --no-autoupdate --url http://reiwa-web:80 reiwa-cf
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    driver: bridge
+    external: true

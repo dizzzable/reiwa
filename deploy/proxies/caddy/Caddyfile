@@ -1,0 +1,28 @@
+# reiwa user app — Caddy reverse proxy (443-only, bring-your-own cert)
+#
+# Replace REPLACE_WITH_YOUR_DOMAIN with the app hostname (e.g.
+# app.example.com).
+#
+# No ACME, no port 80. TLS is served from a certificate you provide in
+# ./certs (self-signed via ../gen-self-signed-cert.sh, a Cloudflare Origin
+# cert, or one you issued yourself). reiwa-web (nginx serving the SPA)
+# listens on :80 inside remnawave-network and proxies /api/* to reiwa:5000.
+{
+	# We don't bind :80 — disable the automatic HTTP->HTTPS redirect vhost.
+	auto_https disable_redirects
+}
+
+https://REPLACE_WITH_YOUR_DOMAIN {
+	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.key
+	reverse_proxy * http://reiwa-web:80 {
+		# Keep the realtime SSE stream (/api/v1/realtime/stream) flowing.
+		flush_interval -1
+	}
+}
+
+# Stealth default: TLS connections without the right SNI get a self-signed
+# handshake + empty 204, so the app hostname isn't discoverable by IP scan.
+:443 {
+	tls internal
+	respond 204
+}
