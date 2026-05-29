@@ -30,13 +30,18 @@ export interface SessionConfig {
   cookieSecret: string;
   cookieSecure: boolean;
   isProduction: boolean;
+  /**
+   * Explicit opt-in to issue non-`Secure` session cookies in production.
+   * When false (default), production refuses to start without
+   * `cookieSecure` so a misconfigured TLS terminator can't silently
+   * downgrade session security. Sourced from `REIWA_ALLOW_INSECURE_COOKIES`.
+   */
+  allowInsecureCookies?: boolean;
   /** Cookie name for the web auth session */
   cookieName?: string;
 }
 
 const DEFAULT_COOKIE_NAME = "reiwa_web_session";
-const SECURITY_FLAG_RETRY_ATTEMPTS = 3;
-const SECURITY_FLAG_RETRY_DELAY_MS = 500;
 
 // ── Session Store (Redis-backed) ────────────────────────────────────────────
 
@@ -136,10 +141,6 @@ export class WebSessionStore {
 
 // ── Cookie Security Flag Helpers ────────────────────────────────────────────
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 interface CookieOptions {
   httpOnly: boolean;
   sameSite: "lax" | "strict" | "none";
@@ -159,54 +160,52 @@ function buildCookieOptions(secure: boolean): CookieOptions {
 }
 
 /**
- * Attempts to set security flags on the session cookie.
- * In production, retries with a grace period before failing.
- * In non-production, allows authentication without secure flag.
+ * Resolve the session-cookie options once at middleware construction.
+ *
+ * Decision matrix:
+ *   - Non-production: honour `cookieSecure` as-is (usually false for
+ *     plain-HTTP local dev). No hard failure.
+ *   - Production + `cookieSecure=true`: issue `Secure` cookies. ✅
+ *   - Production + `cookieSecure=false` + `allowInsecureCookies=true`:
+ *     issue non-`Secure` cookies but log a loud warning. Escape hatch
+ *     for trusted internal networks / out-of-band TLS.
+ *   - Production + `cookieSecure=false` + `allowInsecureCookies=false`
+ *     (default): **fail closed** — throw at startup. Previously this
+ *     path "retried" a static boolean (dead code) and then silently
+ *     degraded to insecure cookies, which is exactly the footgun we now
+ *     refuse to ship.
  */
-async function resolveSecureCookieOptions(
+function resolveSecureCookieOptions(
   config: SessionConfig,
   logger?: LoggerPort,
-): Promise<CookieOptions> {
-  const options = buildCookieOptions(config.cookieSecure);
-
+): CookieOptions {
   if (!config.isProduction) {
-    // Non-production: allow authentication without security flags
-    return options;
+    return buildCookieOptions(config.cookieSecure);
   }
 
-  // Production: if secure flag is configured, use it directly
   if (config.cookieSecure) {
-    return options;
+    return buildCookieOptions(true);
   }
 
-  // Production without secure flag: retry with grace period
-  for (let attempt = 1; attempt <= SECURITY_FLAG_RETRY_ATTEMPTS; attempt++) {
-    // Check if the environment now supports secure cookies
-    // (e.g., TLS termination proxy detected)
-    if (config.cookieSecure) {
-      return buildCookieOptions(true);
+  if (config.allowInsecureCookies) {
+    const msg =
+      "Production: REIWA_COOKIE_SECURE is false and REIWA_ALLOW_INSECURE_COOKIES=true. " +
+      "Session cookies will be issued WITHOUT the Secure flag — only safe behind out-of-band TLS or on a trusted internal network.";
+    if (logger) {
+      logger.warn({ component: "WebSession" }, msg);
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn(`[WebSession] ${msg}`);
     }
-    if (attempt < SECURITY_FLAG_RETRY_ATTEMPTS) {
-      await sleep(SECURITY_FLAG_RETRY_DELAY_MS);
-    }
+    return buildCookieOptions(false);
   }
 
-  // Grace period exhausted in production without secure flag
-  // Still allow operation but log warning — the cookie will be set without secure
-  // flag. The session middleware will handle blocking protected routes if auth fails.
-  if (logger) {
-    logger.warn(
-      { component: "WebSession" },
-      "Production: secure cookie flag not available after grace period. Authentication will proceed but security is degraded.",
-    );
-  } else {
-    // eslint-disable-next-line no-console
-    console.warn(
-      "[WebSession] Production: secure cookie flag not available after grace period. " +
-        "Authentication will proceed but security is degraded.",
-    );
-  }
-  return options;
+  // Fail closed: refuse to boot rather than silently downgrade.
+  throw new Error(
+    "Refusing to start in production without secure session cookies. " +
+      "Set REIWA_COOKIE_SECURE=true (recommended, requires TLS in front of reiwa) " +
+      "or explicitly opt in with REIWA_ALLOW_INSECURE_COOKIES=true for trusted internal deployments.",
+  );
 }
 
 // ── Session Middleware Factory ───────────────────────────────────────────────
@@ -224,19 +223,13 @@ export function createWebSessionMiddleware(
   logger?: LoggerPort,
 ): RequestHandler {
   const cookieName = config.cookieName ?? DEFAULT_COOKIE_NAME;
-  let cookieOptionsPromise: Promise<CookieOptions> | null = null;
-
-  // Lazily resolve cookie options (handles production grace period)
-  function getCookieOptions(): Promise<CookieOptions> {
-    if (!cookieOptionsPromise) {
-      cookieOptionsPromise = resolveSecureCookieOptions(config, logger);
-    }
-    return cookieOptionsPromise;
-  }
+  // Resolve cookie options eagerly at construction. In production this
+  // throws (fail-closed) when secure cookies are neither available nor
+  // explicitly waived, so a misconfigured deploy crashes at startup
+  // instead of silently issuing insecure session cookies.
+  const cookieOptions = resolveSecureCookieOptions(config, logger);
 
   return async (req: Request, res: Response, next: NextFunction) => {
-    const options = await getCookieOptions();
-
     // Read session ID from cookie
     const sessionId = req.cookies?.[cookieName] as string | undefined;
 
@@ -264,8 +257,7 @@ export function createWebSessionMiddleware(
     req.createWebSession = async (userId: string): Promise<string> => {
       const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
       const newSessionId = await store.create({ userId }, ip);
-      const opts = await getCookieOptions();
-      res.cookie(cookieName, newSessionId, opts);
+      res.cookie(cookieName, newSessionId, cookieOptions);
       return newSessionId;
     };
 

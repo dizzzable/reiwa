@@ -129,6 +129,19 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  /**
+   * Escape hatch for production deployments that intentionally terminate
+   * without TLS in front of reiwa (e.g. a trusted internal-only network
+   * or a sidecar that adds TLS out-of-band). When `false` (default) and
+   * `REIWA_COOKIE_SECURE` is also unset, the web-session middleware
+   * refuses to start in production rather than silently issuing
+   * non-`Secure` session cookies. Set to `true` only when you have
+   * verified the transport is otherwise protected.
+   */
+  REIWA_ALLOW_INSECURE_COOKIES: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   REIWA_CORS_ORIGIN: z.string().trim().optional(),
 });
 

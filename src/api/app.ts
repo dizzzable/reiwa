@@ -97,6 +97,7 @@ export function createApp(deps: CreateAppDeps) {
       cookieSecret: config.REIWA_COOKIE_SECRET ?? "dev-secret",
       cookieSecure: config.REIWA_COOKIE_SECURE || config.NODE_ENV === "production",
       isProduction: config.NODE_ENV === "production",
+      allowInsecureCookies: config.REIWA_ALLOW_INSECURE_COOKIES,
     };
     app.use(createWebSessionMiddleware(deps.webSessionStore, sessionConfig, logger));
   }
