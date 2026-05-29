@@ -36,7 +36,18 @@ const schema = z.object({
    */
   REIWA_PORT: z.coerce.number().int().positive().default(5000),
   PORT: z.coerce.number().int().positive().optional(),
+  /**
+   * Full Redis connection string. Optional — when unset it is derived
+   * from the discrete `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` /
+   * `REDIS_NAME` vars below (the names used in `.env.example` and the
+   * compose/.env file). Set `REDIS_URL` explicitly to override.
+   */
   REDIS_URL: z.string().trim().min(1).optional(),
+  REDIS_HOST: z.string().trim().min(1).optional(),
+  REDIS_PORT: z.coerce.number().int().positive().default(6379),
+  REDIS_PASSWORD: optionalString,
+  /** Redis logical DB index (numeric). Defaults to 0. */
+  REDIS_NAME: z.coerce.number().int().min(0).default(0),
 
   // ── Connection to rezeis-admin ────────────────────────────────────────
   REZEIS_HOST: z.string().trim().min(1).optional(),
@@ -155,5 +166,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ReiwaConfig {
       .join(', ');
     throw new Error(`Invalid Reiwa environment configuration: ${names}`);
   }
-  return parsed.data;
+
+  const cfg = parsed.data;
+
+  // Derive REDIS_URL from the discrete REDIS_* parts when an explicit URL
+  // wasn't supplied. The deploy `.env` ships REDIS_HOST/PORT/PASSWORD/NAME
+  // (not a single URL), and the whole edge layer — sessions + rate limiter +
+  // brute-force tracking — keys off `REDIS_URL`. Without this the API boots
+  // with no Redis and every credentialed route (register/login/recover) 503s.
+  if (!cfg.REDIS_URL && cfg.REDIS_HOST) {
+    const auth = cfg.REDIS_PASSWORD
+      ? `:${encodeURIComponent(cfg.REDIS_PASSWORD)}@`
+      : '';
+    return {
+      ...cfg,
+      REDIS_URL: `redis://${auth}${cfg.REDIS_HOST}:${cfg.REDIS_PORT}/${cfg.REDIS_NAME}`,
+    };
+  }
+
+  return cfg;
 }

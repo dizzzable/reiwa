@@ -44,13 +44,60 @@ apiClient.interceptors.request.use((config) => {
 });
 
 // ── Response interceptor — handle session expiry ──────────────────────────────
+//
+// A 401 means "not authenticated". For most protected endpoints that's a
+// real session expiry and we want to bounce the user to sign-in. But a few
+// 401s are *expected* and the calling code already handles them:
+//
+//   - `GET /session`        — the unauthenticated session probe. `useSession`
+//                             / WebHomePage catch this and route to /sign-in
+//                             themselves. Hard-redirecting here races their
+//                             catch and (because /bootstrap re-probes /session)
+//                             creates a full-page reload loop that hammers the
+//                             rate limiter into 429s.
+//   - `/auth/*`             — login / register / recover / status. Their 401s
+//                             are credential feedback for the form, not a
+//                             session expiry.
+//
+// We also never redirect when the user is already sitting on a public / auth
+// page, and we guard against firing more than once.
+const PUBLIC_PATHS = [
+  "/",
+  "/sign-in",
+  "/login",
+  "/register",
+  "/recover",
+  "/bootstrap",
+  "/tma",
+  "/payment-return",
+];
+
+const BENIGN_401_PATHS = ["/session", "/auth/"];
+
+let redirectingToSignIn = false;
+
+function isBenign401(url: string | undefined): boolean {
+  if (!url) return false;
+  return BENIGN_401_PATHS.some((p) => url === p || url.startsWith(p));
+}
+
+function onPublicPage(): boolean {
+  if (typeof window === "undefined") return false;
+  const path = window.location.pathname;
+  return PUBLIC_PATHS.some((p) => (p === "/" ? path === "/" : path.startsWith(p)));
+}
+
 apiClient.interceptors.response.use(
   (res) => res,
   (error) => {
     if (error.response?.status === 401) {
-      // Clear any local state and redirect to bootstrap. The reiwa
-      // bootstrap page detects context (TMA vs web) and routes onward.
-      window.location.replace("/bootstrap");
+      const reqUrl = error.config?.url as string | undefined;
+      // Let the caller handle expected probe/auth 401s, and don't bounce
+      // a user who's already on a public page (prevents the reload loop).
+      if (!isBenign401(reqUrl) && !onPublicPage() && !redirectingToSignIn) {
+        redirectingToSignIn = true;
+        window.location.replace("/sign-in");
+      }
     }
     return Promise.reject(error);
   },
