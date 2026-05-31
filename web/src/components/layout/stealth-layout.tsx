@@ -15,14 +15,17 @@
 import { Navigate, Outlet } from "react-router-dom";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
+import { SideNav } from "@/components/layout/side-nav";
 import { PageTransition } from "@/components/layout/page-transition";
 import { NetworkBg } from "@/components/ui/network-bg";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
 
 export default function StealthLayout() {
   const { session, isLoading } = useSession();
+  const isDesktop = useIsDesktop();
 
   // Subscribe to per-user realtime events while the session is open.
   // The hook is a no-op until `isAuthenticated` becomes true, and tears
@@ -42,6 +45,28 @@ export default function StealthLayout() {
 
   if (!session) {
     return <Navigate to="/bootstrap" replace />;
+  }
+
+  if (isDesktop) {
+    // Desktop shell: persistent left sidebar + a wider, centred content
+    // column. Same routes/pages as mobile — only the chrome differs.
+    return (
+      <OnboardingTourProvider>
+        <div className="relative flex h-dvh w-full overflow-hidden bg-(--brand-bg-primary) text-foreground">
+          <NetworkBg />
+          <div className="relative z-20 shrink-0" data-tour="bottom-nav">
+            <SideNav />
+          </div>
+          <main className="scroll-area relative z-10 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[46rem] px-2">
+              <PageTransition>
+                <Outlet />
+              </PageTransition>
+            </div>
+          </main>
+        </div>
+      </OnboardingTourProvider>
+    );
   }
 
   return (

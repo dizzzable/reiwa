@@ -28,62 +28,14 @@
  */
 
 import { motion } from "motion/react";
-import { Bolt, Handshake, UserPlus, WalletCards } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
-import { useTranslation } from "react-i18next";
-import { useMemo, type ComponentType, type SVGProps } from "react";
 
 import { cn } from "@/lib/utils";
-import { usePartnerStatus } from "@/hooks/use-partner-status";
-
-interface NavTab {
-  readonly to: string;
-  readonly icon: ComponentType<SVGProps<SVGSVGElement>>;
-  readonly label: string;
-  readonly testId: string;
-  /** When the route prefix matches we treat this tab as active. */
-  readonly matchPrefix: readonly string[];
-}
+import { isTabActive, useNavTabs } from "@/components/layout/use-nav-tabs";
 
 export function BottomNav() {
-  const { t } = useTranslation();
   const location = useLocation();
-  const { status: partner } = usePartnerStatus();
-
-  const tabs = useMemo<readonly NavTab[]>(() => {
-    const referralTab: NavTab = partner.isActive
-      ? {
-          to: "/partner",
-          icon: Handshake,
-          label: t("bottomNav.partner"),
-          testId: "tab-partner",
-          matchPrefix: ["/partner"],
-        }
-      : {
-          to: "/referrals",
-          icon: UserPlus,
-          label: t("bottomNav.referral"),
-          testId: "tab-referral",
-          matchPrefix: ["/referrals"],
-        };
-    return [
-      {
-        to: "/dashboard",
-        icon: WalletCards,
-        label: t("bottomNav.subscriptions"),
-        testId: "tab-subscriptions",
-        matchPrefix: ["/dashboard", "/subscription", "/plans", "/purchase"],
-      },
-      referralTab,
-      {
-        to: "/settings",
-        icon: Bolt,
-        label: t("bottomNav.settings"),
-        testId: "tab-settings",
-        matchPrefix: ["/settings", "/activity", "/promo", "/support"],
-      },
-    ] as const;
-  }, [partner.isActive, t]);
+  const tabs = useNavTabs();
 
   return (
     <nav
@@ -95,11 +47,7 @@ export function BottomNav() {
       <div className="mx-3 mb-3 rounded-full border border-white/6 bg-zinc-900/85 px-1 py-1 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
         <ul className="relative grid grid-cols-3 gap-1">
           {tabs.map((tab) => {
-            const isActive = tab.matchPrefix.some(
-              (prefix) =>
-                location.pathname === prefix ||
-                location.pathname.startsWith(`${prefix}/`),
-            );
+            const isActive = isTabActive(tab, location.pathname);
             const Icon = tab.icon;
             return (
               <li key={tab.to} className="relative">
