@@ -26,11 +26,17 @@ import type { Subscription } from "@/types/api";
 
 interface SubscriptionCardProps {
   subscription: Subscription;
+  /**
+   * Position of this card in the user's subscription list (creation order).
+   * Used to pick the matching per-position background slot from branding;
+   * falls back to the global card effect when no slot is configured.
+   */
+  index?: number;
   /** First device name to show on the card face. */
   firstDevice?: string | null;
 }
 
-export function SubscriptionCard({ subscription, firstDevice }: SubscriptionCardProps) {
+export function SubscriptionCard({ subscription, index, firstDevice }: SubscriptionCardProps) {
   const { t } = useTranslation();
   const { branding } = useBranding();
   const sub = subscription;
@@ -64,19 +70,23 @@ export function SubscriptionCard({ subscription, firstDevice }: SubscriptionCard
     return `hsl(${hue} 85% 55%)`;
   }, [trafficProgress]);
 
-  // Resolve the card background effect. A per-subscription override wins over
-  // the global branding choice, letting multi-sub users get distinct cards.
-  // `aurora` (the default) is auto-tinted to the brand colour when the
-  // operator hasn't pinned explicit colorStops, preserving the stock look.
-  const effect = sub.cardEffect ?? branding.cardEffect;
+  // Resolve the card background effect by POSITION. The operator assigns a
+  // background to each card slot (slot N → Nth subscription) globally in the
+  // WEB Reiwa configurator; cards beyond the configured slots fall back to the
+  // global branding choice. `aurora` (the default) is auto-tinted to the brand
+  // colour when no explicit colorStops are pinned, preserving the stock look.
+  const slot =
+    index !== undefined ? branding.cardEffectsByIndex?.[index] : undefined;
+  const effect = slot?.cardEffect ?? branding.cardEffect;
+  const slotProps = slot?.cardEffectProps;
   const effectProps = useMemo<Record<string, unknown>>(() => {
-    const base = sub.cardEffectProps ?? branding.cardEffectProps ?? {};
+    const base = slotProps ?? branding.cardEffectProps ?? {};
     if (effect === "aurora" && base["colorStops"] === undefined) {
       return { colorStops: auroraStops, amplitude: 1.1, blend: 0.55, speed: 0.8, ...base };
     }
     return base;
-  }, [effect, sub.cardEffectProps, branding.cardEffectProps, auroraStops]);
-  const effectOpacity = sub.cardEffectOpacity ?? branding.cardEffectOpacity ?? 1;
+  }, [effect, slotProps, branding.cardEffectProps, auroraStops]);
+  const effectOpacity = slot?.cardEffectOpacity ?? branding.cardEffectOpacity ?? 1;
 
   return (
     <div
@@ -139,9 +149,8 @@ export function SubscriptionCard({ subscription, firstDevice }: SubscriptionCard
       </div>
 
       {/* Animation picker removed — per-card animation is configured by the
-          operator in the admin panel (user-detail subscription card), not by
-          the end user. The per-sub override still flows in via `sub.cardEffect`
-          above. */}
+          operator globally in the WEB Reiwa configurator as per-position card
+          background slots (slot N → Nth subscription), not by the end user. */}
 
       {/* Center: profile name (like card number) */}
       <div className="relative flex min-w-0 flex-1 items-center">

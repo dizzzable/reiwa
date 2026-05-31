@@ -47,6 +47,16 @@ export type CardEffect =
 /** Icon colouring strategy for cabinet menu icons (mirrors backend). */
 export type IconColorMode = "default" | "theme" | "custom";
 
+/**
+ * One per-position card-background slot. Mirrors backend `CardEffectSlot`.
+ * Slot N applies to the Nth subscription card (by creation order).
+ */
+export interface CardEffectSlot {
+  cardEffect: CardEffect;
+  cardEffectProps: Record<string, unknown>;
+  cardEffectOpacity: number;
+}
+
 export interface Branding {
   brandName: string;
   logoUrl: string | null;
@@ -66,6 +76,12 @@ export interface Branding {
   cardEffectProps: Record<string, unknown>;
   /** Effect layer opacity (0.05–1). */
   cardEffectOpacity: number;
+  /**
+   * Per-position card backgrounds. Slot N styles the Nth subscription card
+   * (ordered by subscription creation date) for ALL users. Subscriptions
+   * beyond the configured slots fall back to the global `cardEffect`.
+   */
+  cardEffectsByIndex: CardEffectSlot[];
   bgEffect: BgEffect;
   /** How cabinet menu icons are coloured: default / theme / custom. */
   iconColorMode: IconColorMode;
@@ -105,6 +121,7 @@ export const DEFAULT_BRANDING: Branding = {
   cardEffect: "aurora",
   cardEffectProps: {},
   cardEffectOpacity: 1,
+  cardEffectsByIndex: [],
   bgEffect: "NONE",
   iconColorMode: "default",
   iconColors: {},

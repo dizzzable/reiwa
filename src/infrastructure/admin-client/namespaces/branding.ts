@@ -19,6 +19,11 @@ export interface BrandingPayload {
   readonly cardEffect: string;
   readonly cardEffectProps: Record<string, unknown>;
   readonly cardEffectOpacity: number;
+  readonly cardEffectsByIndex: ReadonlyArray<{
+    readonly cardEffect: string;
+    readonly cardEffectProps: Record<string, unknown>;
+    readonly cardEffectOpacity: number;
+  }>;
   readonly bgEffect: 'NONE' | 'MESH' | 'PARTICLES' | 'NOISE' | 'AURORA';
   readonly borderRadius: string;
   readonly fontFamily: string;

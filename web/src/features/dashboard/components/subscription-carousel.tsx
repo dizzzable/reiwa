@@ -61,13 +61,13 @@ export function SubscriptionCarousel({ subscriptions }: SubscriptionCarouselProp
         onScroll={handleScroll}
         className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth scroll-area"
       >
-        {subscriptions.map((sub) => (
+        {subscriptions.map((sub, i) => (
           <div
             key={sub.id}
             className="w-full shrink-0 snap-center"
             style={{ paddingLeft: "1.25rem", paddingRight: "1.25rem", boxSizing: "border-box" }}
           >
-            <SubscriptionCard subscription={sub} />
+            <SubscriptionCard subscription={sub} index={i} />
           </div>
         ))}
       </div>
