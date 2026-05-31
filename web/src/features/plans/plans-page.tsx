@@ -7,7 +7,8 @@ import type { Plan } from '@/types/api'
 import { usePurchaseStore } from '@/stores/purchase.store'
 import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
-import { resolvePlanIcon } from './plan-icons'
+import { CustomIconView } from '@/components/ui/custom-icon-view'
+import { customIconId, resolvePlanIcon } from './plan-icons'
 
 /**
  * Lowest price for a plan, expressed in the preferred display currency
@@ -39,7 +40,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 export default function PlansPage() {
   const navigate = useNavigate()
   const { selectPlan } = usePurchaseStore()
-  const { defaultCurrency } = useBranding()
+  const { defaultCurrency, customIcons } = useBranding()
 
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ['plans'],
@@ -84,6 +85,8 @@ export default function PlansPage() {
         ) : (
           activePlans.map((plan, i) => {
             const price = getLowestPrice(plan, defaultCurrency)
+            const customId = customIconId(plan.icon)
+            const custom = customId ? customIcons.find((c) => c.id === customId) : undefined
             const Icon = resolvePlanIcon(plan.icon, plan.type)
 
             return (
@@ -102,7 +105,11 @@ export default function PlansPage() {
               >
                 {/* Icon */}
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-(--brand-primary)/10 text-(--brand-primary)">
-                  <Icon className="h-6 w-6" />
+                  {custom ? (
+                    <CustomIconView url={custom.url} color={custom.color} className="h-6 w-6" />
+                  ) : (
+                    <Icon className="h-6 w-6" />
+                  )}
                 </div>
 
                 {/* Info */}

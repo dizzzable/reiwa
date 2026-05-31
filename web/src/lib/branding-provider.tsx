@@ -32,6 +32,7 @@ import {
   DEFAULT_BRANDING,
   DEFAULT_PUBLIC_CONFIG,
   type Branding,
+  type CustomIcon,
   type PublicConfig,
 } from "@/types/branding";
 
@@ -40,6 +41,7 @@ interface BrandingContextValue {
   readonly locales: readonly string[];
   readonly defaultLocale: string;
   readonly defaultCurrency: string;
+  readonly customIcons: CustomIcon[];
   readonly isLoading: boolean;
 }
 
@@ -48,6 +50,7 @@ const BrandingContext = createContext<BrandingContextValue>({
   locales: DEFAULT_PUBLIC_CONFIG.locales,
   defaultLocale: DEFAULT_PUBLIC_CONFIG.defaultLocale,
   defaultCurrency: DEFAULT_PUBLIC_CONFIG.defaultCurrency,
+  customIcons: DEFAULT_PUBLIC_CONFIG.customIcons,
   isLoading: true,
 });
 
@@ -95,9 +98,10 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       locales: config.locales,
       defaultLocale: config.defaultLocale,
       defaultCurrency: config.defaultCurrency,
+      customIcons: config.customIcons ?? [],
       isLoading,
     }),
-    [config.branding, config.locales, config.defaultLocale, config.defaultCurrency, isLoading],
+    [config.branding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, isLoading],
   );
 
   return (

@@ -38,6 +38,13 @@ export interface PublicConfigPayload {
    * priority only — gateways/prices in this currency are shown first.
    */
   readonly defaultCurrency: string;
+  /** Operator's custom icon library (reusable glyphs the cabinet can render). */
+  readonly customIcons: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly url: string;
+    readonly color: string | null;
+  }>;
 }
 
 export class BrandingNamespace {

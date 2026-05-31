@@ -68,6 +68,17 @@ const TYPE_FALLBACK: Record<string, LucideIcon> = {
   BOTH: Shield,
 };
 
+/** Prefix marking a `plan.icon` value as a reference to a custom uploaded icon. */
+export const CUSTOM_ICON_PREFIX = "custom:";
+
+/** Extracts the custom-icon id from a `plan.icon` value, or null when not custom. */
+export function customIconId(icon: string | null | undefined): string | null {
+  if (typeof icon === "string" && icon.startsWith(CUSTOM_ICON_PREFIX)) {
+    return icon.slice(CUSTOM_ICON_PREFIX.length);
+  }
+  return null;
+}
+
 /**
  * Resolves the icon component for a plan: explicit `icon` key wins, otherwise
  * a type-derived default, otherwise a generic shield.

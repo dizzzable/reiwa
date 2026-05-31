@@ -101,6 +101,18 @@ export interface PublicConfig {
    * conversion is performed.
    */
   defaultCurrency: string;
+  /** Operator's custom icon library (reusable glyphs the cabinet can render). */
+  customIcons: CustomIcon[];
+}
+
+/** One operator-uploaded custom icon. Mirrors the backend `CustomIconInterface`. */
+export interface CustomIcon {
+  id: string;
+  name: string;
+  /** Public URL relative to the admin host (`/uploads/icons/<file>`). */
+  url: string;
+  /** Optional hex tint applied via a CSS mask; `null` keeps the icon's own colours. */
+  color: string | null;
 }
 
 /**
@@ -134,4 +146,5 @@ export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
   locales: ["ru", "en"] as const,
   defaultLocale: "ru",
   defaultCurrency: "USD",
+  customIcons: [],
 };

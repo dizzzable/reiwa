@@ -11,7 +11,7 @@ import type { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore, createWebSessionMiddleware } from "../infrastructure/redis/session.js";
 import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
-import { resolveReiwaPublicUrl } from "../config.js";
+import { resolveReiwaPublicUrl, resolveRezeisAdminUrl } from "../config.js";
 import { REIWA_VERSION } from "../core/version.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
 import { apiLimiter } from "./middleware/rate-limit.js";
@@ -185,6 +185,36 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createPushRouter(deps));
   app.use("/api/v1", createRealtimeRouter(deps));
   app.use("/api/v1", createContentRouter(deps));
+
+  // ── Admin uploads proxy (icons) ───────────────────────────────────────────
+  // Custom icons live on the admin host under `/uploads/icons/<file>`. The
+  // reiwa SPA is a different origin, so it can't load that path directly — we
+  // proxy it through reiwa-api (which reaches admin over the internal network)
+  // so the browser uses a same-origin relative URL. Read-only, public assets;
+  // the filename pattern is constrained to avoid traversal/SSRF.
+  const adminBaseUrl = resolveRezeisAdminUrl(deps.config);
+  app.get("/uploads/icons/:file", async (req: Request, res: Response) => {
+    const file = String(req.params["file"] ?? "");
+    if (!adminBaseUrl || !/^[A-Za-z0-9._-]+$/.test(file) || file.includes("..")) {
+      res.status(404).end();
+      return;
+    }
+    try {
+      const upstream = await fetch(`${adminBaseUrl}/uploads/icons/${file}`);
+      if (!upstream.ok || !upstream.body) {
+        res.status(upstream.status === 404 ? 404 : 502).end();
+        return;
+      }
+      const contentType = upstream.headers.get("content-type");
+      if (contentType) res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      res.end(buffer);
+    } catch (err: unknown) {
+      if (logger) logger.debug({ err, file }, "icon proxy failed");
+      res.status(502).end();
+    }
+  });
 
   // ── Static SPA (single-image mode) ────────────────────────────────────────
   // When `REIWA_WEB_DIST` points at a built SPA (the unified Docker image
