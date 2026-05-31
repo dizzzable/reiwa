@@ -23,6 +23,7 @@ export interface AddOn {
   name: string;
   description: string | null;
   type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES";
+  icon: string | null;
   value: number;
   isActive: boolean;
   orderIndex: number;

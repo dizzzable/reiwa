@@ -27,6 +27,9 @@ import {
 import type { Subscription } from "@/types/api";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useBranding } from "@/lib/branding-provider";
+import { customIconId, resolveBuiltInIcon } from "@/features/plans/plan-icons";
+import { CustomIconView } from "@/components/ui/custom-icon-view";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -44,6 +47,7 @@ interface AddOnsSheetProps {
 
 export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetProps) {
   const { t } = useTranslation();
+  const { customIcons } = useBranding();
   const planId = subscription.plan?.id ?? null;
   const isUnlimitedTraffic = subscription.trafficLimit === null;
 
@@ -114,6 +118,12 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
                 <p className="text-sm text-muted-foreground">{t("addons.description")}</p>
                 {visibleAddOns.map((addOn) => {
                   const price = addOn.prices[0];
+                  // Icon priority: custom uploaded → built-in glyph key →
+                  // type-derived default (Gauge for traffic, Smartphone for devices).
+                  const customId = customIconId(addOn.icon);
+                  const custom = customId ? customIcons.find((c) => c.id === customId) : undefined;
+                  const BuiltIn = resolveBuiltInIcon(addOn.icon);
+                  const TypeFallback = addOn.type === "EXTRA_TRAFFIC" ? Gauge : Smartphone;
                   return (
                     <button
                       key={addOn.id}
@@ -121,10 +131,12 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
                       className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/3 p-4 text-left transition-colors hover:bg-white/6 active:scale-[0.98]"
                     >
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 text-(--brand-primary)">
-                        {addOn.type === "EXTRA_TRAFFIC" ? (
-                          <Gauge className="h-5 w-5" />
+                        {custom ? (
+                          <CustomIconView url={custom.url} color={custom.color} className="h-5 w-5" />
+                        ) : BuiltIn ? (
+                          <BuiltIn className="h-5 w-5" />
                         ) : (
-                          <Smartphone className="h-5 w-5" />
+                          <TypeFallback className="h-5 w-5" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">

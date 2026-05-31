@@ -17,6 +17,7 @@ export interface AddOn {
   readonly name: string;
   readonly description: string | null;
   readonly type: 'EXTRA_TRAFFIC' | 'EXTRA_DEVICES';
+  readonly icon: string | null;
   readonly value: number;
   readonly isActive: boolean;
   readonly orderIndex: number;

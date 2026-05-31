@@ -80,6 +80,18 @@ export function customIconId(icon: string | null | undefined): string | null {
 }
 
 /**
+ * Maps a built-in lucide icon key to its component, or null when the value is
+ * not a known built-in key (e.g. a `custom:<id>` ref or null). Reusable across
+ * plans and add-ons.
+ */
+export function resolveBuiltInIcon(icon: string | null | undefined): LucideIcon | null {
+  if (icon && icon in ICON_MAP) {
+    return ICON_MAP[icon as PlanIconKey];
+  }
+  return null;
+}
+
+/**
  * Resolves the icon component for a plan: explicit `icon` key wins, otherwise
  * a type-derived default, otherwise a generic shield.
  */
