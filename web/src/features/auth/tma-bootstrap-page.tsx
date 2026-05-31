@@ -63,7 +63,7 @@ export default function BootstrapPage() {
   }, [isReady, initData, navigate, queryClient, telegram])
 
   return (
-    <div className="relative flex h-screen flex-col items-center justify-center bg-[#020202] overflow-hidden">
+    <div className="relative flex h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden">
       <NetworkBg intensity="medium" />
 
       <div className="relative z-10 flex flex-col items-center gap-8 px-8 text-center">
@@ -124,7 +124,7 @@ export default function BootstrapPage() {
             <p className="text-sm text-emerald-400">✓ Вход выполнен</p>
           ) : (
             <div className="flex items-center gap-3 text-sm text-zinc-500">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-rose-500 border-t-transparent" />
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
               {phase === 'detecting' ? 'Инициализация…' : 'Вход в систему…'}
             </div>
           )}

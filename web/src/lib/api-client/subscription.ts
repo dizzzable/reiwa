@@ -13,13 +13,13 @@ import type {
 export const getSubscription = () =>
   apiClient.get<Subscription | null>("/subscription").then((r) => r.data);
 
-export const getActionPolicy = (planId?: number) =>
+export const getActionPolicy = (planId?: string | number) =>
   apiClient
     .post<ActionPolicy>("/subscription/action-policy", { planId })
     .then((r) => r.data);
 
 export const getQuote = (
-  planId: number,
+  planId: string | number,
   durationDays: number,
   gatewayType: string,
   purchaseType: "NEW" | "ADDITIONAL" | "RENEW" | "UPGRADE" | "TRIAL" = "NEW",

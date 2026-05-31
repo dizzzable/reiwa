@@ -21,13 +21,15 @@ function withAdminSpy(): {
 } {
   const calls: string[] = [];
   const failNext = { value: false };
-  const updateLanguage = vi.fn(async (telegramId: string, lang: string) => {
-    if (failNext.value) {
-      failNext.value = false;
-      throw new Error('boom');
-    }
-    calls.push(`${telegramId}:${lang}`);
-  });
+  const updateLanguage = vi.fn(
+    async (identity: { telegramId?: string; userId?: string }, lang: string) => {
+      if (failNext.value) {
+        failNext.value = false;
+        throw new Error('boom');
+      }
+      calls.push(`${identity.telegramId ?? identity.userId ?? ''}:${lang}`);
+    },
+  );
   return {
     adminClient: { user: { updateLanguage } } as unknown as PageDeps['adminClient'],
     calls,

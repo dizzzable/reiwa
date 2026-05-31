@@ -25,12 +25,20 @@ createRoot(root).render(
             <App />
             <Toaster
               position="top-center"
+              offset={16}
               toastOptions={{
+                // Glass surface matching the cabinet's dialogs/sheets
+                // (near-black translucent, heavy blur, hairline border,
+                // rounded corners) so toasts read as one design system.
                 style: {
-                  background: 'rgba(39,39,42,0.95)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  color: '#fff',
-                  backdropFilter: 'blur(12px)',
+                  background: 'rgba(9,9,11,0.92)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  color: '#fafafa',
+                  backdropFilter: 'blur(40px)',
+                  WebkitBackdropFilter: 'blur(40px)',
+                  borderRadius: '16px',
+                  boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+                  fontSize: '13px',
                 },
               }}
             />

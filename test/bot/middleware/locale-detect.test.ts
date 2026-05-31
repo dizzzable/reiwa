@@ -58,7 +58,7 @@ describe('createLocaleDetectMiddleware', () => {
 
     expect(detect).toHaveBeenCalledWith('en-GB');
     expect(cache.store.get(42)).toBe('en');
-    expect(updateLanguage).toHaveBeenCalledWith('42', 'EN');
+    expect(updateLanguage).toHaveBeenCalledWith({ telegramId: '42' }, 'EN');
     expect(next).toHaveBeenCalledTimes(1);
   });
 

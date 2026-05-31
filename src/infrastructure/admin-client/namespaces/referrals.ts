@@ -69,6 +69,18 @@ export class ReferralsNamespace {
     );
   }
 
+  /**
+   * Paginated list of users this user has invited (newest first). Each
+   * entry has a display label, qualified flag and invite timestamp.
+   */
+  getInvitedUsers(identity: UserIdentity, page = 1, limit = 20): Promise<unknown> {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/invited?${params.toString()}`,
+    );
+  }
+
   revokeInvite(identity: UserIdentity, inviteId: string): Promise<unknown> {
     return this.transport.request(
       'POST',

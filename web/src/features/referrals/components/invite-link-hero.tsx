@@ -21,9 +21,9 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import QRCode from "qrcode";
 
-import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useBranding } from "@/lib/branding-provider";
+import { cn } from "@/lib/utils";
 
 interface InviteLinkHeroProps {
   /** Telegram deep link: https://t.me/Bot?start=CODE */
@@ -122,21 +122,22 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
       <div className="mx-5 space-y-3">
         {/* Link display — shows the context-appropriate link */}
         <div className="rounded-2xl border border-white/6 bg-white/3 px-4 py-3">
-          <p className="truncate font-mono text-xs text-zinc-400">{primaryLink}</p>
-          {/* Show the other link as secondary hint */}
-          <p className="mt-1 truncate text-[10px] text-zinc-600">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+            {t("referrals.yourLink")}
+          </p>
+          <p className="mt-1 break-all font-mono text-xs leading-relaxed text-zinc-300">
+            {primaryLink}
+          </p>
+          {/* Show the other link as a secondary hint */}
+          <p className="mt-1.5 break-all text-[10px] leading-relaxed text-zinc-600">
             {isTma ? `🌐 ${webLink}` : `📱 ${telegramLink}`}
           </p>
         </div>
 
-        {/* Action buttons */}
+        {/* Action buttons — icon-over-label tiles, matching the dashboard
+            subscription actions so the page reads as one design system. */}
         <div className="grid grid-cols-3 gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleCopy}
-          >
+          <ActionTile onClick={handleCopy} label={t("common.copy")} active={copied}>
             <AnimatePresence mode="wait" initial={false}>
               {copied ? (
                 <motion.span
@@ -146,7 +147,7 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
                   exit={{ scale: 0 }}
                   transition={{ duration: 0.15 }}
                 >
-                  <Check className="h-4 w-4 text-emerald-400" />
+                  <Check className="h-5 w-5 text-(--brand-primary)" />
                 </motion.span>
               ) : (
                 <motion.span
@@ -156,32 +157,19 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
                   exit={{ scale: 0 }}
                   transition={{ duration: 0.15 }}
                 >
-                  <Copy className="h-4 w-4" />
+                  <Copy className="h-5 w-5" />
                 </motion.span>
               )}
             </AnimatePresence>
-            <span className="text-xs">{t("common.copy")}</span>
-          </Button>
+          </ActionTile>
 
-          <Button
-            variant="secondary"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleShare}
-          >
-            <Share2 className="h-4 w-4" />
-            <span className="text-xs">{t("referrals.share")}</span>
-          </Button>
+          <ActionTile onClick={handleShare} label={t("referrals.share")}>
+            <Share2 className="h-5 w-5" />
+          </ActionTile>
 
-          <Button
-            variant="secondary"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleQr}
-          >
-            <QrCode className="h-4 w-4" />
-            <span className="text-xs">QR</span>
-          </Button>
+          <ActionTile onClick={handleQr} label="QR">
+            <QrCode className="h-5 w-5" />
+          </ActionTile>
         </div>
       </div>
 
@@ -189,23 +177,58 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
         <DialogContent className="max-w-xs">
           <DialogHeader>
-            <DialogTitle className="text-center">QR-код</DialogTitle>
+            <DialogTitle className="text-center">{t("referrals.qrTitle")}</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col items-center gap-4 py-4">
+          <div className="flex flex-col items-center gap-4 py-2">
             {qrDataUrl && (
-              <img
-                src={qrDataUrl}
-                alt="QR Code"
-                className="h-56 w-56 rounded-xl"
-                style={{ imageRendering: "pixelated" }}
-              />
+              <div className="rounded-2xl border border-white/6 bg-white/3 p-4">
+                <img
+                  src={qrDataUrl}
+                  alt="QR Code"
+                  className="h-52 w-52"
+                  style={{ imageRendering: "pixelated" }}
+                />
+              </div>
             )}
-            <p className="text-center text-xs text-muted-foreground max-w-[200px] truncate">
+            <p className="max-w-[220px] break-all text-center text-[11px] leading-relaxed text-zinc-500">
               {webLink}
             </p>
           </div>
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * ActionTile — icon-over-label button matching the dashboard's
+ * SubscriptionActions tiles (rounded-2xl glass, brand-tinted icon).
+ */
+function ActionTile({
+  children,
+  label,
+  active,
+  onClick,
+}: {
+  children: React.ReactNode;
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-3 transition-all duration-150 active:scale-95",
+        active
+          ? "border-(--brand-primary)/30 bg-(--brand-primary)/10"
+          : "border-white/6 bg-white/3 hover:bg-white/6",
+      )}
+    >
+      <span className="text-(--brand-primary)">{children}</span>
+      <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-zinc-300">
+        {label}
+      </span>
+    </button>
   );
 }

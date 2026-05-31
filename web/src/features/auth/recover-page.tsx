@@ -113,7 +113,7 @@ export default function RecoverPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#020202] overflow-hidden px-5">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden px-5">
       <NetworkBg intensity="medium" />
 
       <motion.div
@@ -152,7 +152,7 @@ export default function RecoverPage() {
                 placeholder={t('auth.recover.usernamePlaceholder')}
                 autoComplete="username"
                 autoFocus
-                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-rose-500/50 focus:bg-white/[0.06]"
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-(--brand-primary)/50 focus:bg-white/[0.06]"
               />
             </div>
 

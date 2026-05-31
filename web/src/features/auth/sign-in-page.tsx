@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
+import { ReiwaLogo } from '@/components/ui/reiwa-logo'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { login } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
@@ -108,7 +109,7 @@ export default function SignInPage() {
   const isFormDisabled = isSubmitting || rateLimitSeconds > 0
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#020202] overflow-hidden px-4">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-(--brand-bg-primary) px-4">
       <NetworkBg intensity="medium" />
 
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8">
@@ -119,13 +120,10 @@ export default function SignInPage() {
           transition={{ type: 'spring', damping: 20, stiffness: 200 }}
         >
           <div
-            className="flex h-20 w-20 items-center justify-center rounded-full"
-            style={{
-              background: 'radial-gradient(circle, rgba(244,63,94,0.3) 0%, transparent 70%)',
-              boxShadow: '0 0 60px rgba(244,63,94,0.4)',
-            }}
+            className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 backdrop-blur-xl"
+            style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
           >
-            <span className="text-4xl">🔐</span>
+            <ReiwaLogo className="h-11 w-11 text-(--brand-primary)" title="Reiwa" />
           </div>
         </motion.div>
 
@@ -167,7 +165,7 @@ export default function SignInPage() {
               onChange={(e) => setUsername(e.target.value)}
               disabled={isFormDisabled}
               placeholder={t('auth.usernamePlaceholder')}
-              className="h-11 w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/30 disabled:opacity-50"
+              className="h-11 w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-(--brand-primary)/50 focus:ring-1 focus:ring-(--brand-primary)/30 disabled:opacity-50"
             />
           </div>
 
@@ -184,7 +182,7 @@ export default function SignInPage() {
               onChange={(e) => setPassword(e.target.value)}
               disabled={isFormDisabled}
               placeholder={t('auth.passwordPlaceholder')}
-              className="h-11 w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/30 disabled:opacity-50"
+              className="h-11 w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-(--brand-primary)/50 focus:ring-1 focus:ring-(--brand-primary)/30 disabled:opacity-50"
             />
           </div>
 
@@ -224,7 +222,7 @@ export default function SignInPage() {
         >
           <Link
             to="/recover"
-            className="text-zinc-500 transition-colors hover:text-rose-400"
+            className="text-zinc-500 transition-colors hover:text-(--brand-primary)"
           >
             {t('auth.forgotPassword')}
           </Link>
@@ -232,7 +230,7 @@ export default function SignInPage() {
             {t('auth.noAccount')}{' '}
             <Link
               to="/register"
-              className="text-rose-400 transition-colors hover:text-rose-300"
+              className="text-(--brand-primary) transition-colors hover:brightness-110"
             >
               {t('auth.register')}
             </Link>

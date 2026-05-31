@@ -35,7 +35,7 @@ export default function SubscriptionPage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-rose-500 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
       </div>
     )
   }
@@ -86,7 +86,7 @@ export default function SubscriptionPage() {
                 <p className="text-xs text-zinc-500 uppercase tracking-wide">Истекает</p>
                 <p className="mt-1 font-semibold text-white">{formatDate(sub.expireAt)}</p>
                 {daysLeft !== null && (
-                  <p className={`text-xs mt-0.5 ${daysLeft <= 3 ? 'text-rose-400' : 'text-zinc-400'}`}>
+                  <p className={`text-xs mt-0.5 ${daysLeft <= 3 ? 'text-(--brand-primary)' : 'text-zinc-400'}`}>
                     {daysLeft === 0 ? 'Сегодня' : `${daysLeft} дн.`}
                   </p>
                 )}

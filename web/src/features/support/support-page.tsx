@@ -22,7 +22,7 @@ function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[];
         <h1 className="text-lg font-semibold">Поддержка</h1>
         <button
           onClick={onCreate}
-          className="flex items-center gap-1.5 rounded-full bg-rose-500 px-4 py-2 text-sm font-medium text-white active:scale-95 transition-transform"
+          className="flex items-center gap-1.5 rounded-full bg-(--brand-primary) px-4 py-2 text-sm font-medium text-(--brand-primary-fg) active:scale-95 transition-transform"
         >
           <Plus className="h-4 w-4" />
           Новый тикет
@@ -97,7 +97,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
+        <Loader2 className="h-8 w-8 animate-spin text-(--brand-primary)" />
       </div>
     )
   }
@@ -132,7 +132,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
             >
               <div className={cn(
                 'max-w-[80%] rounded-2xl px-4 py-2.5',
-                isUser ? 'bg-rose-500/90 text-white rounded-br-sm' : 'bg-zinc-800 text-zinc-200 rounded-bl-sm'
+                isUser ? 'bg-(--brand-primary)/90 text-white rounded-br-sm' : 'bg-zinc-800 text-zinc-200 rounded-bl-sm'
               )}>
                 <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                 <p className={cn('text-[10px] mt-1', isUser ? 'text-white/50' : 'text-zinc-500')}>
@@ -152,7 +152,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Сообщение..."
-              className="flex-1 rounded-full bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-rose-500/50"
+              className="flex-1 rounded-full bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-(--brand-primary)/50"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && text.trim()) {
                   e.preventDefault()
@@ -163,7 +163,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
             <button
               onClick={() => text.trim() && replyMutation.mutate(text.trim())}
               disabled={!text.trim() || replyMutation.isPending}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-500 text-white disabled:opacity-50 active:scale-95 transition-transform"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-(--brand-primary) text-(--brand-primary-fg) disabled:opacity-50 active:scale-95 transition-transform"
             >
               {replyMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
             </button>
@@ -203,7 +203,7 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="О чём пойдёт речь?"
-            className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-rose-500/50"
+            className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-(--brand-primary)/50"
             maxLength={200}
           />
         </div>
@@ -214,13 +214,13 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Опишите проблему..."
             rows={5}
-            className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-rose-500/50 resize-none"
+            className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-(--brand-primary)/50 resize-none"
           />
         </div>
         <button
           onClick={() => mutation.mutate()}
           disabled={!subject.trim() || !message.trim() || mutation.isPending}
-          className="w-full rounded-full bg-rose-500 py-3.5 text-sm font-semibold text-white disabled:opacity-50 active:scale-[0.98] transition-transform"
+          className="w-full rounded-full bg-(--brand-primary) py-3.5 text-sm font-semibold text-(--brand-primary-fg) disabled:opacity-50 active:scale-[0.98] transition-transform"
         >
           {mutation.isPending ? 'Отправка...' : 'Отправить'}
         </button>
@@ -242,7 +242,7 @@ export default function SupportPage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
+        <Loader2 className="h-8 w-8 animate-spin text-(--brand-primary)" />
       </div>
     )
   }

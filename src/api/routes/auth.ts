@@ -132,6 +132,34 @@ export function createAuthRouter(deps: {
     }
   });
 
+  // ── POST /api/v1/auth/check-username ────────────────────────────────────────
+  // Non-mutating availability probe used by the register form for live
+  // feedback. Deliberately NOT behind the register rate limiter (that
+  // limiter exists to throttle real account creation, 3/h). This is a
+  // read-only lookup, so it only carries the generic /api limiter.
+  router.post("/auth/check-username", async (req: Request, res: Response) => {
+    try {
+      const username =
+        typeof req.body?.username === "string" ? req.body.username : "";
+      // Mirror the SPA's format rules; bail cheaply on obviously bad input.
+      if (username.length < 3 || username.length > 32 || !/^[a-zA-Z0-9_-]+$/.test(username)) {
+        res.json({ available: false });
+        return;
+      }
+      if (!adminClient) {
+        // Can't verify — don't block the user, let submit be the source of truth.
+        res.json({ available: true });
+        return;
+      }
+      const result = await adminClient.webAuth.checkLogin(username);
+      res.json({ available: result.available });
+    } catch (e: unknown) {
+      getRequestLogger(req).warn({ err: e }, "auth/check-username failed");
+      // Non-fatal: assume available and let the real submit decide.
+      res.json({ available: true });
+    }
+  });
+
   // ── POST /api/v1/auth/register ──────────────────────────────────────────────
   router.post("/auth/register", registerRateLimiter, async (req: Request, res: Response) => {
     try {

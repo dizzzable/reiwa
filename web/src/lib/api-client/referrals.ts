@@ -29,11 +29,30 @@ export interface InviteCapacity {
   canCreateInvite: boolean;
 }
 
+export interface InvitedUser {
+  id: string;
+  label: string;
+  qualified: boolean;
+  invitedAt: string;
+}
+
+export interface InvitedUsersResponse {
+  items: InvitedUser[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export const getReferralSummary = () =>
   apiClient.get<ReferralSummary>("/referrals/summary").then((r) => r.data);
 
 export const getInviteCapacity = () =>
   apiClient.get<InviteCapacity>("/referrals/invite-capacity").then((r) => r.data);
+
+export const getInvitedUsers = (page = 1, limit = 20) =>
+  apiClient
+    .get<InvitedUsersResponse>("/referrals/invited", { params: { page, limit } })
+    .then((r) => r.data);
 
 export const createReferralInvite = () =>
   apiClient.post<ReferralInvite>("/referrals/invites").then((r) => r.data);

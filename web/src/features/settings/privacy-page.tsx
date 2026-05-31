@@ -28,7 +28,7 @@ import { useSession, SESSION_QUERY_KEY } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function PrivacyPage() {
   const { t } = useTranslation();
@@ -83,39 +83,39 @@ export default function PrivacyPage() {
         />
       </div>
 
-      {/* Change Password Sheet */}
-      <Sheet open={activeSheet === "password"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{t("privacy.changePassword")}</SheetTitle>
-          </SheetHeader>
+      {/* Change Password Dialog */}
+      <Dialog open={activeSheet === "password"} onOpenChange={(open) => !open && setActiveSheet(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("privacy.changePassword")}</DialogTitle>
+          </DialogHeader>
           <ChangePasswordForm onSuccess={() => setActiveSheet(null)} />
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
-      {/* Link Telegram Sheet */}
-      <Sheet open={activeSheet === "telegram"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{t("privacy.linkTelegram")}</SheetTitle>
-          </SheetHeader>
+      {/* Link Telegram Dialog */}
+      <Dialog open={activeSheet === "telegram"} onOpenChange={(open) => !open && setActiveSheet(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("privacy.linkTelegram")}</DialogTitle>
+          </DialogHeader>
           <LinkTelegramForm linked={telegramLinked} />
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
-      {/* Link Email Sheet */}
-      <Sheet open={activeSheet === "email"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{t("privacy.linkEmail")}</SheetTitle>
-          </SheetHeader>
+      {/* Link Email Dialog */}
+      <Dialog open={activeSheet === "email"} onOpenChange={(open) => !open && setActiveSheet(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("privacy.linkEmail")}</DialogTitle>
+          </DialogHeader>
           <LinkEmailForm
             verified={emailVerified}
             currentEmail={session?.webAccount?.email ?? null}
             onSuccess={() => setActiveSheet(null)}
           />
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

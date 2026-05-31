@@ -66,6 +66,18 @@ export class WebAuthNamespace {
     );
   }
 
+  /**
+   * Non-mutating availability probe for a login. Does NOT create an
+   * account or consume the registration rate limit.
+   */
+  checkLogin(login: string): Promise<{ available: boolean }> {
+    return this.transport.request<{ available: boolean }>(
+      'POST',
+      '/api/internal/web-auth/check-login',
+      { login },
+    );
+  }
+
   recover(login: string): Promise<WebAuthRecoverResult> {
     return this.transport.request<WebAuthRecoverResult>(
       'POST',

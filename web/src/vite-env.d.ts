@@ -36,6 +36,7 @@ declare global {
         expand: () => void;
         close: () => void;
         openLink: (url: string, options?: { try_instant_view?: boolean }) => void;
+        openTelegramLink?: (url: string) => void;
         showAlert: (message: string) => void;
         showConfirm: (message: string, cb: (ok: boolean) => void) => void;
         HapticFeedback?: {

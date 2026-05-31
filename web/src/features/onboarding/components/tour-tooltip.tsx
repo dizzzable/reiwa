@@ -46,7 +46,7 @@ export function TourTooltip({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: position === "below" ? -8 : 8 }}
       transition={{ duration: 0.2 }}
-      className="fixed left-4 right-4 z-9999 mx-auto max-w-sm rounded-2xl border border-white/10 bg-zinc-900/95 p-5 shadow-2xl backdrop-blur-xl"
+      className="fixed left-4 right-4 z-[9999] mx-auto max-w-sm rounded-2xl border border-white/10 bg-zinc-900/95 p-5 shadow-2xl backdrop-blur-xl"
       style={{
         [position === "below" ? "top" : "bottom"]: "auto",
         ...(position === "below"

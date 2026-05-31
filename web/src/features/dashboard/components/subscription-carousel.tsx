@@ -1,20 +1,20 @@
 /**
  * SubscriptionCarousel
  * ────────────────────
- * Horizontal swipeable carousel of subscription cards. Uses Framer Motion
- * drag with physics-based spring for natural feel on touch devices.
+ * Horizontal, swipeable carousel of subscription cards built on native CSS
+ * scroll-snap. Each slide is exactly the width of the carousel viewport, so
+ * one card is always shown edge-to-edge with the page gutter — it never
+ * overflows or clips regardless of device width (the previous fixed-320px
+ * implementation bled off-screen on narrow phones).
  *
  * Features:
- *   - Swipe left/right to switch between subscriptions.
- *   - Pagination dots below the card.
- *   - Edge arrows (< >) for desktop / accessibility.
- *   - Snaps to the nearest card on release.
+ *   - Native touch swipe with mandatory snap (no JS drag math).
+ *   - Pagination dots reflect the active slide (derived from scroll position).
+ *   - Edge arrows for desktop / accessibility.
  */
 
-import { motion, useMotionValue, useTransform, animate } from "motion/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Subscription } from "@/types/api";
 import { SubscriptionCard } from "./subscription-card";
@@ -24,71 +24,52 @@ interface SubscriptionCarouselProps {
 }
 
 export function SubscriptionCarousel({ subscriptions }: SubscriptionCarouselProps) {
-  const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const x = useMotionValue(0);
-
+  const trackRef = useRef<HTMLDivElement>(null);
   const count = subscriptions.length;
-  const cardWidth = 320; // px — matches the max-w of the card
-  const gap = 16;
 
-  const goTo = useCallback(
-    (index: number) => {
-      const clamped = Math.max(0, Math.min(index, count - 1));
-      setActiveIndex(clamped);
-      animate(x, -(clamped * (cardWidth + gap)), {
-        type: "spring",
-        stiffness: 300,
-        damping: 30,
-      });
-    },
-    [count, x],
-  );
+  // Derive the active slide from the scroll position. Each slide fills the
+  // track width, so the index is round(scrollLeft / trackWidth).
+  const handleScroll = useCallback(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const width = el.clientWidth || 1;
+    const index = Math.round(el.scrollLeft / width);
+    setActiveIndex((prev) => (prev === index ? prev : index));
+  }, []);
 
-  const handleDragEnd = useCallback(
-    (_: unknown, info: { offset: { x: number }; velocity: { x: number } }) => {
-      const threshold = cardWidth / 4;
-      const velocityThreshold = 200;
-      let newIndex = activeIndex;
+  const goTo = useCallback((index: number) => {
+    const el = trackRef.current;
+    if (!el) return;
+    const clamped = Math.max(0, Math.min(index, el.children.length - 1));
+    el.scrollTo({ left: clamped * el.clientWidth, behavior: "smooth" });
+  }, []);
 
-      if (info.offset.x < -threshold || info.velocity.x < -velocityThreshold) {
-        newIndex = activeIndex + 1;
-      } else if (info.offset.x > threshold || info.velocity.x > velocityThreshold) {
-        newIndex = activeIndex - 1;
-      }
-      goTo(newIndex);
-    },
-    [activeIndex, goTo],
-  );
+  // Keep the active index sane if the subscription count shrinks.
+  useEffect(() => {
+    if (activeIndex > count - 1) setActiveIndex(Math.max(0, count - 1));
+  }, [count, activeIndex]);
 
   if (count === 0) return null;
 
   return (
-    <div className="relative px-5">
-      {/* Carousel track */}
-      <div ref={containerRef} className="overflow-hidden">
-        <motion.div
-          className="flex cursor-grab active:cursor-grabbing"
-          style={{ x, gap: `${gap}px` }}
-          drag={count > 1 ? "x" : false}
-          dragConstraints={{
-            left: -((count - 1) * (cardWidth + gap)),
-            right: 0,
-          }}
-          dragElastic={0.1}
-          onDragEnd={handleDragEnd}
-        >
-          {subscriptions.map((sub) => (
-            <div
-              key={sub.id}
-              className="shrink-0"
-              style={{ width: `${cardWidth}px` }}
-            >
-              <SubscriptionCard subscription={sub} />
-            </div>
-          ))}
-        </motion.div>
+    <div className="relative">
+      {/* Snap scroller — full-width slides; gutter lives on each slide so the
+          card never touches the screen edge and snapping stays centered. */}
+      <div
+        ref={trackRef}
+        onScroll={handleScroll}
+        className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth scroll-area"
+      >
+        {subscriptions.map((sub) => (
+          <div
+            key={sub.id}
+            className="w-full shrink-0 snap-center"
+            style={{ paddingLeft: "1.25rem", paddingRight: "1.25rem", boxSizing: "border-box" }}
+          >
+            <SubscriptionCard subscription={sub} />
+          </div>
+        ))}
       </div>
 
       {/* Edge arrows (only when multiple cards) */}
@@ -97,7 +78,7 @@ export function SubscriptionCarousel({ subscriptions }: SubscriptionCarouselProp
           {activeIndex > 0 && (
             <button
               onClick={() => goTo(activeIndex - 1)}
-              className="absolute left-1 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/80 backdrop-blur-sm hover:bg-black/70 transition-colors"
+              className="absolute left-2 top-1/2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/70 sm:flex"
               aria-label="Previous subscription"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -106,7 +87,7 @@ export function SubscriptionCarousel({ subscriptions }: SubscriptionCarouselProp
           {activeIndex < count - 1 && (
             <button
               onClick={() => goTo(activeIndex + 1)}
-              className="absolute right-1 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/80 backdrop-blur-sm hover:bg-black/70 transition-colors"
+              className="absolute right-2 top-1/2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/70 sm:flex"
               aria-label="Next subscription"
             >
               <ChevronRight className="h-4 w-4" />

@@ -43,7 +43,7 @@ export function createLocaleDetectMiddleware(
       deps.cache.setSync(tgUser.id, detected);
       if (deps.adminClient !== null) {
         deps.adminClient.user
-          .updateLanguage(String(tgUser.id), detected.toUpperCase())
+          .updateLanguage({ telegramId: String(tgUser.id) }, detected.toUpperCase())
           .catch(() => {
             /* fire-and-forget — admin learns the locale on next bootstrap */
           });

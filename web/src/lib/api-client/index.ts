@@ -21,6 +21,7 @@ export {
   bootstrapTelegram,
   botSignin,
   changePasswordAuth,
+  checkUsername,
   getAuthStatus,
   login,
   recoverPassword,
@@ -82,12 +83,15 @@ export {
   createReferralInvite,
   exchangePoints,
   getInviteCapacity,
+  getInvitedUsers,
   getPointsExchangeOptions,
   getReferralInvites,
   getReferralRewards,
   getReferralSummary,
   revokeReferralInvite,
   type InviteCapacity,
+  type InvitedUser,
+  type InvitedUsersResponse,
   type PointsExchangeOptions,
 } from "./referrals.js";
 

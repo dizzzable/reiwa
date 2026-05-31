@@ -34,7 +34,7 @@ export interface OpenStreamFn {
 
 export async function proxyStream(
   client: OpenStreamFn,
-  telegramId: string,
+  userRef: string,
   res: Response,
 ): Promise<void> {
   // Pre-set SSE headers on the browser side so the connection upgrades
@@ -46,7 +46,7 @@ export async function proxyStream(
   res.flushHeaders?.();
 
   const upstream = await client.openStream(
-    `/api/internal/user/${encodeURIComponent(telegramId)}/stream`,
+    `/api/internal/user/${encodeURIComponent(userRef)}/stream`,
   );
   if (upstream === null) {
     res.write('event: realtime.unavailable\n');

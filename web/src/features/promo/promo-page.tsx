@@ -76,7 +76,7 @@ export default function PromoPage() {
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="ВВЕДИТЕ КОД"
             maxLength={32}
-            className="w-full rounded-2xl border border-white/[0.08] bg-zinc-800/50 px-5 py-4 text-center text-lg font-mono font-bold uppercase tracking-[0.3em] text-white placeholder:text-zinc-600 focus:border-rose-500/50 focus:outline-none transition-colors"
+            className="w-full rounded-2xl border border-white/[0.08] bg-zinc-800/50 px-5 py-4 text-center text-lg font-mono font-bold uppercase tracking-[0.3em] text-white placeholder:text-zinc-600 focus:border-(--brand-primary)/50 focus:outline-none transition-colors"
             onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) mutation.mutate() }}
           />
 

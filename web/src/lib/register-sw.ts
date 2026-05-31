@@ -33,18 +33,28 @@ export async function registerServiceWorker(): Promise<void> {
   try {
     const { registerSW } = await import('virtual:pwa-register')
 
+    // Reload exactly once when a newly-activated SW takes control, so a
+    // redeploy is reflected without the user manually hard-refreshing.
+    // Guarded by a flag to avoid reload loops.
+    let reloadedForNewSw = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloadedForNewSw) return
+      reloadedForNewSw = true
+      window.location.reload()
+    })
+
     registerSW({
       immediate: true,
-      onRegisteredSW(swUrl, registration) {
-        // Check for updates periodically (every hour)
-        if (registration) {
-          setInterval(
-            () => {
-              registration.update()
-            },
-            60 * 60 * 1000,
-          )
-        }
+      onRegisteredSW(_swUrl, registration) {
+        if (!registration) return
+        // Probe for a new build on first load and then hourly.
+        void registration.update()
+        setInterval(
+          () => {
+            void registration.update()
+          },
+          60 * 60 * 1000,
+        )
       },
       onOfflineReady() {
         console.log('[SW] App ready to work offline')

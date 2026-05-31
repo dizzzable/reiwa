@@ -13,7 +13,7 @@
    paint never flickers before the network response lands.
    ────────────────────────────────────────────────────────────────────────────── */
 :root {
-  --brand-name: "Rezeis";
+  --brand-name: "Reiwa";
   --brand-primary: #22c55e;
   --brand-primary-fg: #0a0a0a;
   --brand-bg-primary: #0a0a0a;
@@ -120,11 +120,20 @@
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Base reset
+   NOTE: Do NOT add a bare `* { padding: 0; margin: 0 }` here. Unlayered CSS
+   beats anything inside `@layer` (which is where Tailwind's utilities live),
+   so a global `padding:0` silently nukes every `p-*`/`px-*` utility app-wide
+   (this caused cards/labels to overflow with zero inner padding). Tailwind v4
+   Preflight already resets margins; box-sizing is set via the layered base.
    ────────────────────────────────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root {
   height: 100%;
+  /* Dynamic viewport height: tracks the visible area as the mobile address
+     bar shows/hides, fixing the iOS/Android `100vh` overflow + jump bug.
+     `100%` above stays as the fallback for browsers without dvh support. */
+  height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
@@ -180,6 +189,42 @@ body {
 /* ─── Safe area helpers ────────────────────────────────────────────────────── */
 .safe-top    { padding-top:    env(safe-area-inset-top, 0px); }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* ─── App shell (mobile-first column, centered on desktop) ─────────────────────
+   The whole product is designed mobile-first. Rather than stretch the mobile UI
+   into a wide desktop layout (which NN/g warns hurts UX — "mobile-first is not
+   mobile-only"), we keep the cabinet in a phone-width column centered on large
+   screens, letting the branded background fill the rest. One codebase, no
+   adaptive forks, no wasted-space "stretched column" on desktop.
+
+   `--app-shell-max` is the column width; tweak in one place. The faint side
+   border + shadow only appear ≥ that width so phones stay edge-to-edge. */
+:root { --app-shell-max: 30rem; } /* 480px */
+
+.app-shell {
+  position: relative;
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--app-shell-max);
+  height: 100dvh;
+}
+
+@media (min-width: 40rem) {
+  .app-shell {
+    border-inline: 1px solid var(--color-border-soft);
+    box-shadow: 0 0 80px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* dvh height helpers (Tailwind v4 has h-dvh, but keep a class for raw CSS) */
+.h-dvh   { height: 100dvh; }
+.min-h-dvh { min-height: 100dvh; }
+
+/* Disable hover affordances on touch / non-hover pointers so tapped buttons
+   don't get "stuck" in their hover state on touchscreens (incl. touch laptops). */
+@media (hover: none) {
+  .hover\:bg-white\/6:hover { background-color: rgba(255, 255, 255, 0.03); }
+}
 
 /* ─── Custom animations ────────────────────────────────────────────────────── */
 @keyframes pulse-glow {

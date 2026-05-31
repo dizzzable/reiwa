@@ -2,8 +2,9 @@ import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
-import { createSessionMiddleware } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity } from "../middleware/user-identity.js";
 
 export function createPromoRouter(deps: {
   adminClient: AdminClient | null;
@@ -11,7 +12,11 @@ export function createPromoRouter(deps: {
   config: ReiwaConfig;
 }) {
   const { adminClient, sessionStore } = deps;
-  const requireSession = createSessionMiddleware(sessionStore);
+  // Identity-agnostic auth: keyed by reiwa_id upstream, so web-first
+  // users (no Telegram) can activate codes and read their history. The
+  // previous `createSessionMiddleware` + `req.telegramId!` path 401'd
+  // every web-auth user and mis-passed a telegramId into the userId slot.
+  const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const router = Router();
 
   // POST /api/v1/promocode/activate
@@ -20,16 +25,13 @@ export function createPromoRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { code, subscriptionId } = (req.body ?? {}) as Record<
-          string,
-          unknown
-        >;
+        const { code } = (req.body ?? {}) as Record<string, unknown>;
         if (!code) {
           res.status(400).json({ message: "code is required" });
           return;
         }
         const result = await adminClient?.promocodes.activate(
-          req.telegramId!,
+          resolveUserIdentity(req),
           String(code),
         );
         res.json(result ?? {});
@@ -46,7 +48,7 @@ export function createPromoRouter(deps: {
     async (req: AuthRequest, res) => {
       const { page = "1", limit = "20" } = req.query as Record<string, string>;
       const result = await adminClient?.promocodes.getActivations(
-        req.telegramId!,
+        resolveUserIdentity(req),
         Number(page),
         Number(limit),
       );
@@ -64,10 +66,10 @@ export function createPromoRouter(deps: {
         res.status(400).json({ message: "code is required" });
         return;
       }
-      // The upstream contract is `?userId=<cuid>&code=<...>`; we forward the
-      // resolved user id from the session middleware.
-      const userId = (req as AuthRequest & { userId?: string }).userId ?? req.telegramId!;
-      const result = await adminClient?.promocodes.getEligibleSubscriptions(userId, code);
+      const result = await adminClient?.promocodes.getEligibleSubscriptions(
+        resolveUserIdentity(req),
+        code,
+      );
       res.json(result ?? []);
     },
   );

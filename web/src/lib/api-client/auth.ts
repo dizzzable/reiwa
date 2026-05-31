@@ -98,6 +98,16 @@ export const registerUser = (
     })
     .then((r) => r.data);
 
+/**
+ * Non-mutating username availability probe. Unlike the old approach
+ * (a real `registerUser` with a dummy hash, which created junk accounts
+ * and burned the 3/h register limit), this hits a read-only endpoint.
+ */
+export const checkUsername = (username: string) =>
+  apiClient
+    .post<{ available: boolean }>("/auth/check-username", { username })
+    .then((r) => r.data);
+
 export const recoverPassword = (username: string) =>
   apiClient
     .post<RecoverResponse>("/auth/recover", { username })

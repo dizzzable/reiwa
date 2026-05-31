@@ -5,8 +5,22 @@ interface NetworkBgProps {
   intensity?: 'low' | 'medium' | 'high'
 }
 
+/**
+ * NetworkBg — ambient branded backdrop behind every screen.
+ *
+ * Colour is driven by the operator's `--brand-primary` token (set at runtime
+ * by BrandingProvider) via `color-mix`, so the glow tracks branding instead of
+ * a hardcoded palette. Three soft radial blobs + a faint dot grid and a couple
+ * of accent lines give depth without competing with foreground content.
+ */
 export const NetworkBg = memo(function NetworkBg({ className = '', intensity = 'medium' }: NetworkBgProps) {
   const opacity = intensity === 'low' ? 0.3 : intensity === 'high' ? 0.7 : 0.5
+
+  const glowStrong = 'color-mix(in oklab, var(--brand-primary) 18%, transparent)'
+  const glowSoft = 'color-mix(in oklab, var(--brand-primary) 10%, transparent)'
+  const glowCool = 'color-mix(in oklab, var(--brand-primary) 7%, transparent)'
+  const dot = 'color-mix(in oklab, var(--brand-primary) 55%, transparent)'
+  const line = 'color-mix(in oklab, var(--brand-primary) 14%, transparent)'
 
   return (
     <div className={`pointer-events-none fixed inset-0 overflow-hidden ${className}`} aria-hidden>
@@ -14,7 +28,7 @@ export const NetworkBg = memo(function NetworkBg({ className = '', intensity = '
       <div
         className="absolute -top-32 -left-32 h-96 w-96 rounded-full"
         style={{
-          background: 'radial-gradient(circle, rgba(244,63,94,0.15) 0%, transparent 70%)',
+          background: `radial-gradient(circle, ${glowStrong} 0%, transparent 70%)`,
           opacity,
           filter: 'blur(40px)',
         }}
@@ -22,7 +36,7 @@ export const NetworkBg = memo(function NetworkBg({ className = '', intensity = '
       <div
         className="absolute top-1/3 -right-24 h-80 w-80 rounded-full"
         style={{
-          background: 'radial-gradient(circle, rgba(244,63,94,0.10) 0%, transparent 70%)',
+          background: `radial-gradient(circle, ${glowSoft} 0%, transparent 70%)`,
           opacity,
           filter: 'blur(60px)',
         }}
@@ -30,7 +44,7 @@ export const NetworkBg = memo(function NetworkBg({ className = '', intensity = '
       <div
         className="absolute bottom-24 left-1/4 h-64 w-64 rounded-full"
         style={{
-          background: 'radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)',
+          background: `radial-gradient(circle, ${glowCool} 0%, transparent 70%)`,
           opacity,
           filter: 'blur(50px)',
         }}
@@ -44,7 +58,7 @@ export const NetworkBg = memo(function NetworkBg({ className = '', intensity = '
       >
         <defs>
           <pattern id="net-grid" x="0" y="0" width="80" height="80" patternUnits="userSpaceOnUse">
-            <circle cx="40" cy="40" r="1" fill="rgba(244,63,94,0.6)" />
+            <circle cx="40" cy="40" r="1" fill={dot} />
           </pattern>
           <filter id="net-blur">
             <feGaussianBlur stdDeviation="0.5" />
@@ -53,10 +67,10 @@ export const NetworkBg = memo(function NetworkBg({ className = '', intensity = '
         <rect width="100%" height="100%" fill="url(#net-grid)" filter="url(#net-blur)" />
 
         {/* Diagonal accent lines */}
-        <line x1="0%" y1="20%" x2="60%" y2="0%" stroke="rgba(244,63,94,0.15)" strokeWidth="0.5" />
-        <line x1="40%" y1="100%" x2="100%" y2="30%" stroke="rgba(244,63,94,0.12)" strokeWidth="0.5" />
-        <line x1="0%" y1="60%" x2="80%" y2="100%" stroke="rgba(139,92,246,0.10)" strokeWidth="0.5" />
-        <line x1="20%" y1="0%" x2="100%" y2="80%" stroke="rgba(244,63,94,0.08)" strokeWidth="0.5" />
+        <line x1="0%" y1="20%" x2="60%" y2="0%" stroke={line} strokeWidth="0.5" />
+        <line x1="40%" y1="100%" x2="100%" y2="30%" stroke={line} strokeWidth="0.5" />
+        <line x1="0%" y1="60%" x2="80%" y2="100%" stroke={line} strokeWidth="0.5" />
+        <line x1="20%" y1="0%" x2="100%" y2="80%" stroke={line} strokeWidth="0.5" />
       </svg>
     </div>
   )

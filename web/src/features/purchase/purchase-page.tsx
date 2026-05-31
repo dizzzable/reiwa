@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, Smartphone, Apple, Monitor, Laptop } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { getQuote, createCheckout, getEnabledGateways, activatePromocode } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { usePurchaseStore } from "@/stores/purchase.store";
+import { useBranding } from "@/lib/branding-provider";
 import { PromoInput } from "./components/promo-input";
-import type { GatewayOption } from "@/stores/purchase.store";
+import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -23,44 +25,85 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 
 function SelectDuration({
   plan,
+  preferredCurrency,
   onSelect,
 }: {
   plan: Plan;
+  preferredCurrency: string;
   onSelect: (d: PlanDuration) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-3">
-      <h2 className="px-5 text-base font-semibold">Выберите срок</h2>
+      <h2 className="px-5 text-base font-semibold">{t("purchase.duration.title")}</h2>
       <div className="px-5 space-y-2">
         {plan.durations.map((dur: PlanDuration) => {
+          const preferred = dur.prices.find((p) => p.currency === preferredCurrency);
           const usdPrice = dur.prices.find((p) => p.currency === "USD");
           const rubPrice = dur.prices.find((p) => p.currency === "RUB");
-          const displayPrice = usdPrice ?? rubPrice ?? dur.prices[0];
+          const displayPrice = preferred ?? usdPrice ?? rubPrice ?? dur.prices[0];
           return (
             <button
               key={dur.id}
               onClick={() => onSelect(dur)}
-              className="w-full glass-card p-4 flex items-center justify-between hover:border-rose-500/30 active:scale-[0.98] transition-all"
+              className="w-full glass-card p-4 flex items-center justify-between hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
             >
               <div className="text-left">
-                <p className="font-medium text-white">{dur.days} дней</p>
+                <p className="font-medium text-white">
+                  {t("purchase.duration.days", { count: dur.days })}
+                </p>
                 <p className="text-xs text-zinc-500">
                   {dur.days >= 365
-                    ? "1 год"
+                    ? t("purchase.duration.year")
                     : dur.days >= 30
-                      ? `${Math.round(dur.days / 30)} мес.`
-                      : `${dur.days} дн.`}
+                      ? t("purchase.duration.months", { count: Math.round(dur.days / 30) })
+                      : t("purchase.duration.days", { count: dur.days })}
                 </p>
               </div>
               {displayPrice && (
-                <p className="text-rose-400 font-semibold">
+                <p className="text-(--brand-primary) font-semibold">
                   {CURRENCY_SYMBOLS[displayPrice.currency] ?? ""}
-                  {displayPrice.price.toFixed(2)}
+                  {Number(displayPrice.price).toFixed(2)}
                 </p>
               )}
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+const DEVICE_OPTIONS: ReadonlyArray<{
+  id: DeviceTypeOption;
+  Icon: typeof Smartphone;
+  labelKey: string;
+}> = [
+  { id: "IPHONE", Icon: Apple, labelKey: "purchase.device.iphone" },
+  { id: "ANDROID", Icon: Smartphone, labelKey: "purchase.device.android" },
+  { id: "WINDOWS", Icon: Monitor, labelKey: "purchase.device.windows" },
+  { id: "MAC", Icon: Laptop, labelKey: "purchase.device.mac" },
+];
+
+function SelectDevice({ onSelect }: { onSelect: (d: DeviceTypeOption) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-3">
+      <h2 className="px-5 text-base font-semibold">{t("purchase.device.title")}</h2>
+      <p className="px-5 -mt-2 text-xs text-zinc-500">{t("purchase.device.subtitle")}</p>
+      <div className="px-5 grid grid-cols-2 gap-3">
+        {DEVICE_OPTIONS.map(({ id, Icon, labelKey }) => (
+          <button
+            key={id}
+            onClick={() => onSelect(id)}
+            className="glass-card flex flex-col items-center gap-3 p-5 hover:border-(--brand-primary)/30 hover:bg-(--brand-primary)/[0.04] active:scale-[0.97] transition-all"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--brand-primary)/10 text-(--brand-primary)">
+              <Icon className="h-6 w-6" />
+            </span>
+            <span className="text-sm font-medium text-white">{t(labelKey)}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -88,15 +131,19 @@ function SelectGateway({
 }: {
   onSelect: (gw: GatewayOption) => void;
 }) {
+  const { t } = useTranslation();
+  const lastNav = usePurchaseStore((s) => s.lastNav);
   const { data: gateways = [], isLoading } = useQuery({
     queryKey: ["gateways"],
     queryFn: getEnabledGateways,
     staleTime: 300_000,
   });
 
-  // Auto-select if only one gateway is available
+  // Auto-select if only one gateway is available — but ONLY when the user
+  // arrived here going forward. Without the guard, pressing "back" from the
+  // quote step re-mounts this and immediately re-advances (a trap).
   useEffect(() => {
-    if (!isLoading && gateways.length === 1) {
+    if (!isLoading && gateways.length === 1 && lastNav === "forward") {
       const gw = gateways[0];
       onSelect({
         id: gw.type,
@@ -105,7 +152,7 @@ function SelectGateway({
         currency: gw.currency,
       });
     }
-  }, [isLoading, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoading, gateways, lastNav]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sort: in TMA context, put Telegram Stars first
   const isTma = !!window.Telegram?.WebApp?.initData;
@@ -131,7 +178,7 @@ function SelectGateway({
 
   return (
     <div className="space-y-3">
-      <h2 className="px-5 text-base font-semibold">Способ оплаты</h2>
+      <h2 className="px-5 text-base font-semibold">{t("purchase.gateway.title")}</h2>
       <div className="px-5 space-y-2">
         {sortedGateways.map((gw) => (
           <button
@@ -144,7 +191,7 @@ function SelectGateway({
                 currency: gw.currency,
               })
             }
-            className="w-full glass-card p-4 flex items-center gap-4 hover:border-rose-500/30 active:scale-[0.98] transition-all"
+            className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
           >
             <span className="text-2xl">{GATEWAY_ICONS[gw.type] ?? "💳"}</span>
             <div className="text-left">
@@ -155,7 +202,7 @@ function SelectGateway({
         ))}
         {gateways.length === 0 && (
           <div className="text-center py-8 text-zinc-500 text-sm">
-            Платёжные методы временно недоступны
+            {t("purchase.gateway.empty")}
           </div>
         )}
       </div>
@@ -164,9 +211,14 @@ function SelectGateway({
 }
 
 function QuoteView() {
-  const { selectedPlan, selectedDuration, selectedGateway, setQuote, goBack } =
+  const { t } = useTranslation();
+  const { selectedPlan, selectedDuration, selectedGateway, selectedDevice, setQuote, goBack } =
     usePurchaseStore();
   const queryClient = useQueryClient();
+
+  const deviceLabel = selectedDevice
+    ? t(`purchase.device.${selectedDevice.toLowerCase()}`)
+    : null;
 
   const {
     data: quote,
@@ -187,19 +239,17 @@ function QuoteView() {
   if (isLoading) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-rose-500 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
       </div>
     );
   }
 
-  if (error || !quote) {
+  if (error || !quote || quote.warning || typeof quote.finalPrice !== "number") {
     return (
       <div className="px-5 space-y-3">
-        <TipCard tone="danger">
-          Не удалось получить стоимость. Попробуйте другой метод оплаты.
-        </TipCard>
+        <TipCard tone="danger">{t("purchase.quote.priceError")}</TipCard>
         <StadiumButton fullWidth variant="secondary" onClick={goBack}>
-          ← Назад
+          {t("purchase.back")}
         </StadiumButton>
       </div>
     );
@@ -207,30 +257,26 @@ function QuoteView() {
 
   return (
     <div className="px-5 space-y-4">
-      <h2 className="text-base font-semibold">Подтвердите оплату</h2>
+      <h2 className="text-base font-semibold">{t("purchase.quote.title")}</h2>
 
-      <div className="glass-card p-5 space-y-3">
-        <div className="flex justify-between text-sm">
-          <span className="text-zinc-400">Тариф</span>
-          <span className="font-medium">{quote.planName}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-zinc-400">Срок</span>
-          <span className="font-medium">{quote.durationDays} дней</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-zinc-400">Метод</span>
-          <span className="font-medium">{selectedGateway?.label}</span>
-        </div>
+      <div className="glass-card divide-y divide-white/[0.06] overflow-hidden">
+        <Row label={t("purchase.quote.plan")} value={quote.planName} />
+        <Row
+          label={t("purchase.quote.duration")}
+          value={t("purchase.duration.days", { count: quote.durationDays })}
+        />
+        {deviceLabel && <Row label={t("purchase.quote.device")} value={deviceLabel} />}
+        <Row label={t("purchase.quote.method")} value={selectedGateway?.label ?? "—"} />
         {quote.discountPercent > 0 && (
-          <div className="flex justify-between text-sm text-emerald-400">
-            <span>Скидка</span>
-            <span>-{quote.discountPercent}%</span>
-          </div>
+          <Row
+            label={t("purchase.quote.discount")}
+            value={`-${quote.discountPercent}%`}
+            accent="text-emerald-400"
+          />
         )}
-        <div className="border-t border-white/[0.06] pt-3 flex justify-between">
-          <span className="font-semibold">Итого</span>
-          <span className="text-lg font-bold text-rose-400">
+        <div className="flex items-center justify-between px-4 py-3.5">
+          <span className="font-semibold">{t("purchase.quote.total")}</span>
+          <span className="text-lg font-bold text-(--brand-primary)">
             {CURRENCY_SYMBOLS[quote.currency] ?? ""}
             {quote.finalPrice.toFixed(2)} {quote.currency}
           </span>
@@ -241,16 +287,10 @@ function QuoteView() {
       <PromoInput
         onPromoApplied={(code) => {
           if (code) {
-            // The discount is applied to the user's purchaseDiscount
-            // server-side on activation; refetch the quote so the
-            // updated price is reflected here before checkout.
             void queryClient.invalidateQueries({ queryKey: ["quote"] });
           }
         }}
         validatePromo={async (code) => {
-          // Activate the promo against the user's account. DISCOUNT
-          // promos bump `purchaseDiscount`, which the quote reads on
-          // the next fetch. Throwing surfaces the inline error state.
           await activatePromocode(code);
         }}
       />
@@ -262,17 +302,35 @@ function QuoteView() {
         glow
         icon={<Check className="h-5 w-5" />}
       >
-        Перейти к оплате
+        {t("purchase.quote.pay")}
       </StadiumButton>
       <StadiumButton fullWidth variant="ghost" onClick={goBack}>
-        Изменить
+        {t("purchase.quote.change")}
       </StadiumButton>
     </div>
   );
 }
 
+function Row({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 text-sm">
+      <span className="text-zinc-400">{label}</span>
+      <span className={cn("font-medium", accent)}>{value}</span>
+    </div>
+  );
+}
+
 function CheckoutStep() {
-  const { selectedPlan, selectedDuration, selectedGateway, setCheckoutResult } =
+  const { t } = useTranslation();
+  const { selectedPlan, selectedDuration, selectedGateway, selectedDevice, setCheckoutResult } =
     usePurchaseStore();
   const navigate = useNavigate();
 
@@ -282,6 +340,7 @@ function CheckoutStep() {
         selectedPlan!.id,
         selectedDuration!.days,
         selectedGateway!.id,
+        selectedDevice ?? undefined,
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.paymentUrl);
@@ -297,30 +356,33 @@ function CheckoutStep() {
         replace: true,
       });
     },
-    onError: () => toast.error("Не удалось создать платёж. Попробуйте позже."),
+    onError: () => toast.error(t("purchase.checkout.error")),
   });
 
   useEffect(() => {
     if (!mutation.isPending && !mutation.isSuccess && !mutation.isError) {
       mutation.mutate();
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-rose-500 border-t-transparent" />
-      <p className="text-sm text-zinc-400">Создаём платёж…</p>
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <p className="text-sm text-zinc-400">{t("purchase.checkout.creating")}</p>
     </div>
   );
 }
 
 export default function PurchasePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
+  const { defaultCurrency } = useBranding();
   const {
     step,
     selectedPlan,
     selectedDuration,
     selectDuration,
+    selectDevice,
     selectGateway,
     goBack,
     reset,
@@ -333,24 +395,31 @@ export default function PurchasePage() {
 
   if (!selectedPlan) return null;
 
+  const steps = ["duration", "device", "gateway", "quote", "checkout"] as const;
+  const activeIndex = steps.indexOf(step as (typeof steps)[number]);
+
   return (
     <div className="pb-8">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-5">
         <button
           onClick={() => {
+            // First real step → exit to the plans list; otherwise step back.
             if (step === "duration") {
               reset();
               navigate("/plans");
-            } else goBack();
+            } else {
+              goBack();
+            }
           }}
+          aria-label={t("purchase.back")}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
           <p className="text-xs text-zinc-500 uppercase tracking-wide">
-            Покупка
+            {t("purchase.label")}
           </p>
           <h1 className="text-lg font-semibold">{selectedPlan.name}</h1>
         </div>
@@ -358,18 +427,14 @@ export default function PurchasePage() {
 
       {/* Progress */}
       <div className="flex items-center gap-2 px-5 mb-6">
-        {(["duration", "gateway", "quote", "checkout"] as const).map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
-            <div
-              className={cn(
-                "h-1.5 rounded-full transition-colors",
-                step === s || (step === "checkout" && i <= 3)
-                  ? "bg-rose-500"
-                  : "bg-zinc-800",
-              )}
-              style={{ width: "48px" }}
-            />
-          </div>
+        {steps.map((s, i) => (
+          <div
+            key={s}
+            className={cn(
+              "h-1.5 flex-1 rounded-full transition-colors",
+              i <= activeIndex ? "bg-(--brand-primary)" : "bg-zinc-800",
+            )}
+          />
         ))}
       </div>
 
@@ -382,11 +447,12 @@ export default function PurchasePage() {
           transition={{ duration: 0.2 }}
         >
           {step === "duration" && (
-            <SelectDuration plan={selectedPlan} onSelect={selectDuration} />
+            <SelectDuration plan={selectedPlan} preferredCurrency={defaultCurrency} onSelect={selectDuration} />
           )}
-          {step === "gateway" && selectedDuration && (
-            <SelectGateway onSelect={selectGateway} />
+          {step === "device" && selectedDuration && (
+            <SelectDevice onSelect={selectDevice} />
           )}
+          {step === "gateway" && <SelectGateway onSelect={selectGateway} />}
           {step === "quote" && <QuoteView />}
           {step === "checkout" && <CheckoutStep />}
         </motion.div>

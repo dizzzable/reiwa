@@ -14,7 +14,7 @@ const toneClasses: Record<TipTone, string> = {
   info:    'border-l-blue-500/60    bg-blue-500/10    text-blue-300',
   success: 'border-l-emerald-500/60 bg-emerald-500/10 text-emerald-300',
   warning: 'border-l-amber-500/60   bg-amber-500/10   text-amber-300',
-  danger:  'border-l-rose-500/60    bg-rose-500/10    text-rose-300',
+  danger:  'border-l-(--brand-primary)/60    bg-(--brand-primary)/10    text-(--brand-primary)',
 }
 
 export function TipCard({ tone = 'info', icon, children, className }: TipCardProps) {

@@ -57,8 +57,8 @@ const OnboardingPage = lazy(() => import("@/features/onboarding/onboarding-page"
 
 function PageLoader() {
   return (
-    <div className="flex h-screen items-center justify-center bg-[#020202]">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-rose-500 border-t-transparent" />
+    <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
     </div>
   );
 }

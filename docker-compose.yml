@@ -78,29 +78,6 @@ services:
     networks:
       - remnawave-network
 
-  reiwa-web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    image: reiwa-web
-    container_name: reiwa-web
-    hostname: reiwa-web
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:80"
-    depends_on:
-      reiwa:
-        condition: service_healthy
-    healthcheck:
-      # nginx:alpine ships wget (busybox). Probe the served SPA shell.
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:80/"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - remnawave-network
-
 networks:
   remnawave-network:
     name: remnawave-network

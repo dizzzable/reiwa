@@ -22,30 +22,43 @@ export interface ReiwaSession {
 }
 
 // ─── Plans ───────────────────────────────────────────────────────────────────
+// Mirrors the rezeis public catalog payload (`/api/v1/plans` →
+// `PlanCatalogPlanInterface`). The catalog already filters to active,
+// non-archived, context-available plans, so there are no `isActive` /
+// `isArchived` flags on the wire.
 export interface PlanPrice {
-  id: number;
+  /** Payment gateway this price is offered through (e.g. "STRIPE"). */
+  gatewayType?: string;
   currency: string;
-  price: number;
+  /** Price before any discount, as a decimal string from the backend. */
+  originalPrice?: string;
+  /** Effective price. Number in legacy shape, decimal string in catalog. */
+  price: number | string;
+  discountPercent?: number;
+  discountSource?: string;
+  supportedPaymentAssets?: string[];
 }
 
 export interface PlanDuration {
-  id: number;
+  id: string | number;
   days: number;
   prices: PlanPrice[];
 }
 
 export interface Plan {
-  id: number;
+  id: string | number;
   name: string;
   description: string | null;
   tag: string | null;
+  /** Optional lucide icon key for the plan card (falls back to type-derived icon). */
+  icon?: string | null;
   type: "TRAFFIC" | "DEVICES" | "BOTH" | "UNLIMITED";
   availability: string;
   trafficLimit: number | null; // GB
   deviceLimit: number | null;
   trafficLimitStrategy: string;
-  isActive: boolean;
-  isArchived: boolean;
+  internalSquads?: string[];
+  externalSquad?: string | null;
   orderIndex: number;
   durations: PlanDuration[];
 }
@@ -62,6 +75,14 @@ export interface Subscription {
   id: string;
   userTelegramId?: string;
   userRemnaId: string | null;
+  /** Human-readable Remnawave profile name (e.g. `rz_login_sub`) shown on the card. */
+  profileName?: string | null;
+  /** Optional per-subscription card-effect override (id) — wins over branding. */
+  cardEffect?: string | null;
+  /** Optional per-subscription effect params override. */
+  cardEffectProps?: Record<string, unknown> | null;
+  /** Optional per-subscription effect opacity override. */
+  cardEffectOpacity?: number | null;
   status: SubscriptionStatus;
   isTrial: boolean;
   trafficLimit: number | null; // GB
@@ -89,7 +110,7 @@ export interface ActionPolicy {
 
 // ─── Quote ───────────────────────────────────────────────────────────────────
 export interface SubscriptionQuote {
-  planId: number;
+  planId: string | number;
   planName: string;
   durationDays: number;
   currency: string;
@@ -97,6 +118,8 @@ export interface SubscriptionQuote {
   discountPercent: number;
   finalPrice: number;
   gatewayType: string;
+  /** Present only when the upstream couldn't price the selection. */
+  warning?: string;
 }
 
 // ─── Checkout ────────────────────────────────────────────────────────────────

@@ -2,8 +2,9 @@ import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
-import { createSessionMiddleware } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity } from "../middleware/user-identity.js";
 
 export function createProfileRouter(deps: {
   adminClient: AdminClient | null;
@@ -11,16 +12,22 @@ export function createProfileRouter(deps: {
   config: ReiwaConfig;
 }) {
   const { adminClient, sessionStore } = deps;
-  const requireSession = createSessionMiddleware(sessionStore);
+  // Identity-agnostic auth: accepts the WebSession (reiwa_id) used by
+  // browser/Mini-App/magic-link logins AND the legacy Telegram session.
+  // The whole profile surface (/session, /me, password, email, language)
+  // is keyed by reiwa_id so web-first users with no Telegram are not
+  // locked out — `getSession` previously required `telegramId` and 401'd
+  // every web-auth user even after a successful login.
+  const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const router = Router();
 
   // GET /api/v1/session
   router.get("/session", requireSession, async (req: AuthRequest, res) => {
     try {
-      const session = await adminClient?.user.getSession(req.telegramId!);
-      res.json(session ?? req.session);
+      const session = await adminClient?.user.getSession(resolveUserIdentity(req));
+      res.json(session ?? req.session ?? null);
     } catch {
-      res.json(req.session);
+      res.json(req.session ?? null);
     }
   });
 
@@ -30,7 +37,7 @@ export function createProfileRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.user.acceptRules(req.telegramId!);
+        const result = await adminClient?.user.acceptRules(resolveUserIdentity(req));
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
         res.status(500).json({ message: (e as Error).message });
@@ -51,10 +58,10 @@ export function createProfileRouter(deps: {
   // GET /api/v1/me — full profile (same data as /session)
   router.get("/me", requireSession, async (req: AuthRequest, res) => {
     try {
-      const session = await adminClient?.user.getSession(req.telegramId!);
-      res.json(session ?? req.session);
+      const session = await adminClient?.user.getSession(resolveUserIdentity(req));
+      res.json(session ?? req.session ?? null);
     } catch {
-      res.json(req.session);
+      res.json(req.session ?? null);
     }
   });
 
@@ -70,7 +77,7 @@ export function createProfileRouter(deps: {
           return;
         }
         const result = await adminClient?.user.changeWebAccountPassword(
-          req.telegramId!,
+          resolveUserIdentity(req),
           String(newPasswordHash),
         );
         res.json(result ?? { ok: true });
@@ -92,7 +99,7 @@ export function createProfileRouter(deps: {
           return;
         }
         await adminClient?.user.issueEmailVerificationChallenge(
-          req.telegramId!,
+          resolveUserIdentity(req),
           String(email),
         );
         res.status(204).end();
@@ -114,7 +121,7 @@ export function createProfileRouter(deps: {
           return;
         }
         const result = await adminClient?.user.completeEmailVerification(
-          req.telegramId!,
+          resolveUserIdentity(req),
           String(code),
         );
         res.json(result ?? { ok: true });
@@ -131,7 +138,7 @@ export function createProfileRouter(deps: {
     async (req: AuthRequest, res) => {
       try {
         const result = await adminClient?.user.snoozeWebAccountLinkPrompt(
-          req.telegramId!,
+          resolveUserIdentity(req),
         );
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
@@ -162,7 +169,7 @@ export function createProfileRouter(deps: {
           return;
         }
         const result = await adminClient?.user.updateLanguage(
-          req.telegramId!,
+          resolveUserIdentity(req),
           String(language),
         );
         res.json(result ?? { ok: true });

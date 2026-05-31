@@ -3,7 +3,8 @@
  * ───────────────────
  * Row of three icon+label action buttons directly below the subscription card.
  * These are actions **on the current subscription**:
- *   - Connect (Link2) — copies the subscription URL to clipboard
+ *   - Connect (Link2) — opens the subscription URL (deep-links into the VPN
+ *     client / subscription page) instead of copying it.
  *   - Upgrade (ArrowUpCircle) — navigates to plans with upgrade intent
  *   - Renew (RotateCcw) — navigates to plans with renew intent
  *
@@ -14,9 +15,9 @@
 import { useState } from "react";
 import { ArrowUpCircle, Link2, Plus, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 
 import type { Subscription } from "@/types/api";
+import { openExternalUrl } from "@/lib/utils";
 import { AddOnsSheet } from "./addons-sheet";
 
 interface SubscriptionActionsProps {
@@ -40,15 +41,14 @@ export function SubscriptionActions({
 
   return (
     <>
-      <div className="mt-5 grid grid-cols-4 gap-3 px-5">
+      <div className="mt-5 grid grid-cols-4 gap-2 px-5">
         <ActionButton
           icon={<Link2 className="h-5 w-5" />}
           label={t("card.actions.connect")}
           disabled={!hasUrl}
           onClick={() => {
             if (sub?.url) {
-              navigator.clipboard.writeText(sub.url);
-              toast.success(t("common.copied"));
+              openExternalUrl(sub.url);
               window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
             }
             onConnect();
@@ -96,10 +96,10 @@ function ActionButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="flex flex-col items-center gap-1.5 rounded-2xl border border-white/6 bg-white/3 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none hover:bg-white/6"
+      className="flex flex-col items-center gap-1.5 rounded-2xl border border-white/6 bg-white/3 px-1 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none hover:bg-white/6"
     >
       <span className="text-(--brand-primary)">{icon}</span>
-      <span className="text-[11px] font-medium text-zinc-300">{label}</span>
+      <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-zinc-300">{label}</span>
     </button>
   );
 }

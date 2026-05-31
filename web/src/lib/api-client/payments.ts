@@ -21,7 +21,7 @@ export const getEnabledGateways = () =>
   apiClient.get<GatewayOption[]>("/gateways").then((r) => r.data);
 
 export const createCheckout = (
-  planId: number,
+  planId: string | number,
   durationDays: number,
   gatewayType: string,
   deviceType?: string,
@@ -37,7 +37,7 @@ export const createCheckout = (
     .then((r) => r.data);
 
 export const createRenewCheckout = (
-  planId: number,
+  planId: string | number,
   durationDays: number,
   gatewayType: string,
   subscriptionId: number | string,
@@ -53,7 +53,7 @@ export const createRenewCheckout = (
     .then((r) => r.data);
 
 export const createUpgradeCheckout = (
-  planId: number,
+  planId: string | number,
   durationDays: number,
   gatewayType: string,
   subscriptionId: number | string,

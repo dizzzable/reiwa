@@ -4,6 +4,7 @@ import type { Plan, PlanDuration, SubscriptionQuote } from "@/types/api";
 type PurchaseStep =
   | "plans"
   | "duration"
+  | "device"
   | "gateway"
   | "quote"
   | "checkout"
@@ -16,13 +17,20 @@ export type GatewayOption = {
   currency: string;
 };
 
+/** Device the user intends to use the subscription on. */
+export type DeviceTypeOption = "ANDROID" | "IPHONE" | "WINDOWS" | "MAC";
+
 // Gateways are now fetched dynamically via GET /api/v1/gateways
 export const GATEWAY_OPTIONS: GatewayOption[] = [];
 
 interface PurchaseState {
   step: PurchaseStep;
+  /** Direction of the last navigation — lets steps avoid auto-advancing
+   *  when the user navigated BACK into them (fixes the single-gateway loop). */
+  lastNav: "forward" | "back";
   selectedPlan: Plan | null;
   selectedDuration: PlanDuration | null;
+  selectedDevice: DeviceTypeOption | null;
   selectedGateway: GatewayOption | null;
   quote: SubscriptionQuote | null;
   paymentId: string | null;
@@ -31,6 +39,7 @@ interface PurchaseState {
   // Actions
   selectPlan: (plan: Plan) => void;
   selectDuration: (duration: PlanDuration) => void;
+  selectDevice: (device: DeviceTypeOption) => void;
   selectGateway: (gateway: GatewayOption) => void;
   setQuote: (quote: SubscriptionQuote) => void;
   setCheckoutResult: (paymentId: string, paymentUrl: string) => void;
@@ -41,7 +50,8 @@ interface PurchaseState {
 const STEP_BACK: Record<PurchaseStep, PurchaseStep | null> = {
   plans: null,
   duration: "plans",
-  gateway: "duration",
+  device: "duration",
+  gateway: "device",
   quote: "gateway",
   checkout: "quote",
   polling: null,
@@ -49,37 +59,44 @@ const STEP_BACK: Record<PurchaseStep, PurchaseStep | null> = {
 
 export const usePurchaseStore = create<PurchaseState>((set) => ({
   step: "plans",
+  lastNav: "forward",
   selectedPlan: null,
   selectedDuration: null,
+  selectedDevice: null,
   selectedGateway: null,
   quote: null,
   paymentId: null,
   paymentUrl: null,
 
-  selectPlan: (plan) => set({ selectedPlan: plan, step: "duration" }),
+  selectPlan: (plan) => set({ selectedPlan: plan, step: "duration", lastNav: "forward" }),
   selectDuration: (duration) =>
-    set({ selectedDuration: duration, step: "gateway" }),
-  selectGateway: (gateway) => set({ selectedGateway: gateway, step: "quote" }),
-  setQuote: (quote) => set({ quote, step: "checkout" }),
+    set({ selectedDuration: duration, step: "device", lastNav: "forward" }),
+  selectDevice: (device) => set({ selectedDevice: device, step: "gateway", lastNav: "forward" }),
+  selectGateway: (gateway) => set({ selectedGateway: gateway, step: "quote", lastNav: "forward" }),
+  setQuote: (quote) => set({ quote, step: "checkout", lastNav: "forward" }),
   setCheckoutResult: (paymentId, paymentUrl) =>
-    set({ paymentId, paymentUrl, step: "polling" }),
+    set({ paymentId, paymentUrl, step: "polling", lastNav: "forward" }),
 
   goBack: () =>
     set((state) => {
       const prev = STEP_BACK[state.step];
       if (!prev) return state;
-      const reset: Partial<PurchaseState> = { step: prev };
-      if (prev === "plans") reset.selectedDuration = null;
-      if (prev === "duration") reset.selectedGateway = null;
-      if (prev === "gateway") reset.quote = null;
+      const reset: Partial<PurchaseState> = { step: prev, lastNav: "back" };
+      // Clear the selection made AT the step we are leaving, so re-entering a
+      // step (esp. an auto-selecting one) doesn't immediately bounce forward.
+      if (state.step === "device") reset.selectedDevice = null;
+      if (state.step === "gateway") reset.selectedGateway = null;
+      if (state.step === "quote") reset.quote = null;
       return { ...state, ...reset };
     }),
 
   reset: () =>
     set({
       step: "plans",
+      lastNav: "forward",
       selectedPlan: null,
       selectedDuration: null,
+      selectedDevice: null,
       selectedGateway: null,
       quote: null,
       paymentId: null,

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ComponentType, SVGProps } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { ArrowLeft, Coins, Calendar, Zap, Tag, HardDrive, Loader2, Check } from 'lucide-react'
@@ -9,7 +10,7 @@ import { TipCard } from '@/components/ui/tip-card'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
-const TYPE_META: Record<string, { icon: React.ElementType; label: string; unit: string; color: string }> = {
+const TYPE_META: Record<string, { icon: ComponentType<SVGProps<SVGSVGElement>>; label: string; unit: string; color: string }> = {
   SUBSCRIPTION_DAYS: { icon: Calendar, label: 'Дни подписки', unit: 'дней', color: 'text-emerald-400' },
   GIFT_SUBSCRIPTION: { icon: Zap, label: 'Подарочная подписка', unit: 'промокод', color: 'text-violet-400' },
   DISCOUNT: { icon: Tag, label: 'Скидка', unit: '%', color: 'text-amber-400' },
@@ -42,7 +43,7 @@ export default function PointsExchangePage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
+        <Loader2 className="h-8 w-8 animate-spin text-(--brand-primary)" />
       </div>
     )
   }
@@ -99,7 +100,7 @@ export default function PointsExchangePage() {
           <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">Выберите тип обмена</p>
           {options.types.filter((t) => t.enabled).map((type) => {
             const meta = TYPE_META[type.type] ?? { icon: Coins, label: type.type, unit: '', color: 'text-zinc-400' }
-            const Icon = meta.icon
+            const Icon: ComponentType<SVGProps<SVGSVGElement>> = meta.icon
             return (
               <button
                 key={type.type}
@@ -129,7 +130,7 @@ export default function PointsExchangePage() {
             <div className="flex items-center gap-3">
               {(() => {
                 const meta = TYPE_META[selectedType] ?? { icon: Coins, label: selectedType, color: 'text-zinc-400' }
-                const Icon = meta.icon
+                const Icon: ComponentType<SVGProps<SVGSVGElement>> = meta.icon
                 return (
                   <>
                     <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800', meta.color)}>
@@ -149,7 +150,7 @@ export default function PointsExchangePage() {
                 onChange={(e) => setPoints(e.target.value)}
                 min={selectedOption?.minPoints ?? 1}
                 max={selectedOption?.maxPoints === -1 ? options.pointsBalance : Math.min(selectedOption?.maxPoints ?? 999, options.pointsBalance)}
-                className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-lg font-bold text-white text-center outline-none focus:ring-1 focus:ring-rose-500/50"
+                className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-lg font-bold text-white text-center outline-none focus:ring-1 focus:ring-(--brand-primary)/50"
               />
               <div className="flex justify-between text-[10px] text-zinc-600">
                 <span>Мин: {selectedOption?.minPoints}</span>
@@ -160,7 +161,7 @@ export default function PointsExchangePage() {
             {/* Preview */}
             <div className="rounded-xl bg-zinc-800/50 p-4 text-center">
               <p className="text-xs text-zinc-500 mb-1">Вы получите</p>
-              <p className="text-2xl font-bold text-rose-400">
+              <p className="text-2xl font-bold text-(--brand-primary)">
                 {computedValue} {TYPE_META[selectedType]?.unit ?? ''}
               </p>
             </div>

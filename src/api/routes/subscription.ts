@@ -7,6 +7,55 @@ import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 
+/**
+ * Flatten the rezeis nested quote shape
+ * (`{ selectedPlan, selectedDuration, price: { price, currency, ... } }`,
+ * prices as decimal strings) into the flat contract the SPA's
+ * `SubscriptionQuote` type expects (`{ planName, durationDays, currency,
+ * basePrice, finalPrice, discountPercent, ... }`). Without this the SPA
+ * reads `quote.finalPrice` as `undefined` and crashes on `.toFixed`.
+ *
+ * Returns a `{ warning }`-only object when the upstream couldn't price the
+ * selection (no matching gateway currency, plan not available, etc.) so the
+ * SPA shows its "couldn't get price" state instead of blowing up.
+ */
+function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
+  if (raw === null || typeof raw !== "object") {
+    return { warning: "QUOTE_UNAVAILABLE" };
+  }
+  const q = raw as {
+    selectedPlan?: { id?: string; name?: string } | null;
+    selectedDuration?: { id?: string; days?: number } | null;
+    price?: {
+      gatewayType?: string;
+      currency?: string;
+      originalPrice?: string;
+      price?: string;
+      discountPercent?: number;
+    } | null;
+    warnings?: ReadonlyArray<{ code?: string; message?: string }>;
+  };
+  if (!q.price || !q.selectedPlan) {
+    // No priceable selection — surface the first warning code for the SPA.
+    const warning = q.warnings?.[0]?.code ?? "QUOTE_UNAVAILABLE";
+    return { warning, warnings: q.warnings ?? [] };
+  }
+  const finalPrice = Number.parseFloat(q.price.price ?? "0");
+  const basePrice = Number.parseFloat(
+    q.price.originalPrice ?? q.price.price ?? "0",
+  );
+  return {
+    planId: q.selectedPlan.id ?? null,
+    planName: q.selectedPlan.name ?? "",
+    durationDays: q.selectedDuration?.days ?? requestedDurationDays,
+    currency: q.price.currency ?? "",
+    basePrice,
+    finalPrice,
+    discountPercent: q.price.discountPercent ?? 0,
+    gatewayType: q.price.gatewayType ?? "",
+  };
+}
+
 export function createSubscriptionRouter(deps: {
   adminClient: AdminClient | null;
   sessionStore: SessionStore | null;
@@ -94,7 +143,7 @@ export function createSubscriptionRouter(deps: {
           String(gatewayType),
           subscriptionId !== undefined ? String(subscriptionId) : undefined,
         );
-        res.json(quote ?? {});
+        res.json(flattenQuote(quote, Number(durationDays)));
       } catch (e: unknown) {
         res.status(500).json({ message: (e as Error).message });
       }

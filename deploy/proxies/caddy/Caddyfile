@@ -5,8 +5,9 @@
 #
 # No ACME, no port 80. TLS is served from a certificate you provide in
 # ./certs (self-signed via ../gen-self-signed-cert.sh, a Cloudflare Origin
-# cert, or one you issued yourself). reiwa-web (nginx serving the SPA)
-# listens on :80 inside remnawave-network and proxies /api/* to reiwa:5000.
+# cert, or one you issued yourself). The reiwa container serves BOTH the
+# SPA and the /api/* BFF on :5000 (single image), so the proxy forwards
+# everything to reiwa:5000.
 {
 	# We don't bind :80 — disable the automatic HTTP->HTTPS redirect vhost.
 	auto_https disable_redirects
@@ -14,7 +15,7 @@
 
 https://REPLACE_WITH_YOUR_DOMAIN {
 	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.key
-	reverse_proxy * http://reiwa-web:80 {
+	reverse_proxy * http://reiwa:5000 {
 		# Keep the realtime SSE stream (/api/v1/realtime/stream) flowing.
 		flush_interval -1
 	}

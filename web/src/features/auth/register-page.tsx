@@ -6,7 +6,7 @@ import { UserPlus, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
-import { getAuthStatus, registerUser, login } from '@/lib/api-client'
+import { getAuthStatus, registerUser, checkUsername, login } from '@/lib/api-client'
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -124,19 +124,17 @@ export default function RegisterPage() {
 
     setCheckingUsername(true)
     try {
-      const response = await registerUser(name, '0'.repeat(64), true)
-      // If we get here without error, username is available (dry-run mode)
-      // But this endpoint doesn't support dry-run, so we use a different approach
-      // We'll check via the register endpoint and handle the 409 response
-      setUsernameUnavailable(false)
-    } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status?: number; data?: { code?: string } } }
-        if (axiosErr.response?.status === 409 || axiosErr.response?.data?.code === 'USERNAME_TAKEN') {
-          setUsernameUnavailable(true)
-          unavailableUsernamesRef.current.add(name)
-        }
+      const response = await checkUsername(name)
+      if (response.available) {
+        setUsernameUnavailable(false)
+      } else {
+        setUsernameUnavailable(true)
+        unavailableUsernamesRef.current.add(name)
       }
+    } catch {
+      // Probe failed — don't block the user; the real submit is the
+      // source of truth and will surface a 409 if the name is taken.
+      setUsernameUnavailable(false)
     } finally {
       setCheckingUsername(false)
     }
@@ -259,14 +257,14 @@ export default function RegisterPage() {
   // Loading state
   if (loadingStatus) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#020202]">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-rose-500 border-t-transparent" />
+      <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
       </div>
     )
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#020202] overflow-hidden px-4">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden px-4">
       <NetworkBg intensity="low" />
 
       <div className="relative z-10 w-full max-w-sm">
@@ -283,7 +281,7 @@ export default function RegisterPage() {
               boxShadow: '0 0 40px rgba(244,63,94,0.3)',
             }}
           >
-            <UserPlus className="h-8 w-8 text-rose-400" />
+            <UserPlus className="h-8 w-8 text-(--brand-primary)" />
           </div>
           <h1 className="text-2xl font-bold text-white">{t('register.title')}</h1>
           <p className="mt-1 text-sm text-zinc-500">{t('register.subtitle')}</p>
@@ -315,7 +313,7 @@ export default function RegisterPage() {
                 className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
                   usernameError || usernameUnavailable
                     ? 'border-red-500/50 focus:border-red-500'
-                    : 'border-zinc-800 focus:border-rose-500/50'
+                    : 'border-zinc-800 focus:border-(--brand-primary)/50'
                 }`}
                 aria-invalid={!!(usernameError || usernameUnavailable)}
                 aria-describedby="username-error"
@@ -352,7 +350,7 @@ export default function RegisterPage() {
                   className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 pr-12 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
                     passwordError
                       ? 'border-red-500/50 focus:border-red-500'
-                      : 'border-zinc-800 focus:border-rose-500/50'
+                      : 'border-zinc-800 focus:border-(--brand-primary)/50'
                   }`}
                   aria-invalid={!!passwordError}
                   aria-describedby="password-error"
@@ -392,7 +390,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={submitting || !!usernameError || !!passwordError || usernameUnavailable || !username || !password}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-rose-500 py-3.5 text-sm font-semibold text-white transition-all hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-(--brand-primary) py-3.5 text-sm font-semibold text-(--brand-primary-fg) transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
             >
               {submitting ? (
                 <>
@@ -424,7 +422,7 @@ export default function RegisterPage() {
         >
           <p className="text-sm text-zinc-500">
             {t('register.hasAccount')}{' '}
-            <Link to="/login" className="text-rose-400 hover:text-rose-300 transition-colors">
+            <Link to="/login" className="text-(--brand-primary) hover:text-(--brand-primary) transition-colors">
               {t('register.signIn')}
             </Link>
           </p>

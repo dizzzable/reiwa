@@ -73,9 +73,16 @@ export default function SettingsPage() {
 
   if (!session) return null;
 
-  const initials = session.name
-    ? session.name
-        .split(" ")
+  // Display label precedence: real name → Telegram @username → web login →
+  // generic. Web-first users have no name/username, so without the login
+  // fallback the header showed "User" / "??".
+  const displayName =
+    session.name || session.username || session.webAccount?.login || "User";
+
+  const initials = displayName && displayName !== "User"
+    ? displayName
+        .split(/[\s@._-]+/)
+        .filter(Boolean)
         .map((n) => n[0])
         .join("")
         .toUpperCase()
@@ -84,13 +91,23 @@ export default function SettingsPage() {
 
   const statusText = t("settings.statusActive");
 
+  // Resolve a menu icon's colour from the branding strategy:
+  //   default → the icon's own accent (Tailwind class kept by the caller),
+  //   theme   → brand primary, custom → per-icon colour (fallback: primary).
+  const iconMode = branding.iconColorMode ?? "default";
+  function iconTint(key: string): string | undefined {
+    if (iconMode === "theme") return branding.primary;
+    if (iconMode === "custom") return branding.iconColors?.[key] ?? branding.primary;
+    return undefined; // default → keep the icon's own accent class
+  }
+
   return (
     <div className="min-h-full pb-6">
       {/* ── Profile Header ── */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col items-center px-5 pt-8 pb-6"
+        className="flex flex-col items-center px-5 pt-[calc(3rem+env(safe-area-inset-top))] pb-6"
       >
         {/* Avatar */}
         <div
@@ -104,10 +121,13 @@ export default function SettingsPage() {
         </div>
         {/* Username */}
         <p className="mt-3 text-lg font-semibold text-white">
-          {session.name || session.username || "User"}
+          {displayName}
         </p>
         {session.username && (
           <p className="text-sm text-muted-foreground">@{session.username}</p>
+        )}
+        {!session.username && session.webAccount?.login && (
+          <p className="text-sm text-muted-foreground">{session.webAccount.login}</p>
         )}
         {/* Status */}
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -126,6 +146,7 @@ export default function SettingsPage() {
         <MenuItem
           icon={<Shield className="h-5 w-5" />}
           iconBg="bg-emerald-500/10 text-emerald-400"
+          tint={iconTint("privacy")}
           label={t("settings.privacy")}
           sublabel={t("settings.privacySub")}
           onClick={() => navigate("/settings/privacy")}
@@ -133,6 +154,7 @@ export default function SettingsPage() {
         <MenuItem
           icon={<Bell className="h-5 w-5" />}
           iconBg="bg-blue-500/10 text-blue-400"
+          tint={iconTint("notifications")}
           label={t("settings.notifications")}
           sublabel={t("settings.notificationsSub")}
           onClick={() => navigate("/settings/notifications")}
@@ -140,6 +162,7 @@ export default function SettingsPage() {
         <MenuItem
           icon={<CreditCard className="h-5 w-5" />}
           iconBg="bg-amber-500/10 text-amber-400"
+          tint={iconTint("transactions")}
           label={t("settings.transactions")}
           sublabel={t("settings.transactionsSub")}
           onClick={() => navigate("/settings/transactions")}
@@ -147,6 +170,7 @@ export default function SettingsPage() {
         <MenuItem
           icon={<Tag className="h-5 w-5" />}
           iconBg="bg-violet-500/10 text-violet-400"
+          tint={iconTint("promocodes")}
           label={t("settings.promocodes")}
           sublabel={t("settings.promocodesSub")}
           onClick={() => navigate("/settings/promocodes")}
@@ -154,13 +178,15 @@ export default function SettingsPage() {
         <MenuItem
           icon={<Globe className="h-5 w-5" />}
           iconBg="bg-violet-500/10 text-violet-400"
+          tint={iconTint("language")}
           label={t("settings.language")}
           sublabel={i18n.language === "ru" ? t("common.languageRu") : t("common.languageEn")}
           onClick={() => setShowLangSheet(true)}
         />
         <MenuItem
           icon={<MessageSquare className="h-5 w-5" />}
-          iconBg="bg-rose-500/10 text-rose-400"
+          iconBg="bg-(--brand-primary)/10 text-(--brand-primary)"
+          tint={iconTint("support")}
           label={t("settings.support")}
           sublabel={t("settings.supportSub")}
           onClick={() => navigate("/support")}
@@ -168,6 +194,7 @@ export default function SettingsPage() {
         <MenuItem
           icon={<CircleHelp className="h-5 w-5" />}
           iconBg="bg-zinc-500/10 text-zinc-400"
+          tint={iconTint("faq")}
           label={t("settings.faq")}
           sublabel={t("settings.faqSub")}
           onClick={() => navigate("/settings/faq")}
@@ -249,22 +276,39 @@ export default function SettingsPage() {
 function MenuItem({
   icon,
   iconBg,
+  tint,
   label,
   sublabel,
   onClick,
 }: {
   icon: React.ReactNode;
   iconBg: string;
+  /** When set (theme/custom modes), tints the icon + its background inline. */
+  tint?: string;
   label: string;
   sublabel?: string;
   onClick: () => void;
 }) {
+  // When a tint is provided we drop the per-icon accent class and paint the
+  // glyph + a soft matching background from the single tint colour.
+  const tinted = tint
+    ? {
+        className: "",
+        style: {
+          color: tint,
+          backgroundColor: `color-mix(in oklab, ${tint} 12%, transparent)`,
+        } as React.CSSProperties,
+      }
+    : { className: iconBg, style: undefined };
   return (
     <button
       onClick={onClick}
       className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-4 transition-all hover:bg-white/4 active:scale-[0.98]"
     >
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+      <div
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tinted.className}`}
+        style={tinted.style}
+      >
         {icon}
       </div>
       <div className="flex-1 text-left min-w-0">
@@ -293,7 +337,7 @@ function LangOption({
     <button
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-xl border p-3.5 transition-all active:scale-[0.98] ${
-        active ? "border-[var(--brand-primary)]/50 bg-[var(--brand-primary)]/5" : "border-white/6 hover:border-white/12"
+        active ? "border-(--brand-primary)/50 bg-(--brand-primary)/5" : "border-white/6 hover:border-white/12"
       }`}
     >
       <span className="text-xl">{flag}</span>

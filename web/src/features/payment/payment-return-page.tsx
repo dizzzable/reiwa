@@ -103,7 +103,7 @@ export default function PaymentReturnPage() {
   }, [state, navigate]);
 
   return (
-    <div className="relative flex h-screen flex-col items-center justify-center overflow-hidden bg-(--brand-bg-primary) px-8 text-center">
+    <div className="relative flex h-dvh flex-col items-center justify-center overflow-hidden bg-(--brand-bg-primary) px-8 text-center">
       {/* Ambient background glow */}
       <div
         className="pointer-events-none absolute inset-0"

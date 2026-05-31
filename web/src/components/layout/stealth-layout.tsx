@@ -31,7 +31,7 @@ export default function StealthLayout() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-(--brand-bg-primary)">
+      <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
         <div
           className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
           style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
@@ -46,19 +46,23 @@ export default function StealthLayout() {
 
   return (
     <OnboardingTourProvider>
-      <div className="relative flex h-full flex-col overflow-hidden bg-(--brand-bg-primary) text-foreground">
+      {/* Full-viewport branded backdrop; the cabinet itself lives in a
+          phone-width column centered on desktop (see .app-shell). */}
+      <div className="relative flex h-dvh w-full justify-center overflow-hidden bg-(--brand-bg-primary) text-foreground">
         <NetworkBg />
 
-        {/* Scrollable main content with page-transition wrapper */}
-        <main className="relative z-10 flex-1 overflow-y-auto scroll-area">
-          <PageTransition>
-            <Outlet />
-          </PageTransition>
-        </main>
+        <div className="app-shell z-10 flex flex-col overflow-hidden">
+          {/* Scrollable main content with page-transition wrapper */}
+          <main className="scroll-area relative z-10 flex-1 overflow-y-auto">
+            <PageTransition>
+              <Outlet />
+            </PageTransition>
+          </main>
 
-        {/* Bottom navigation (floating pill) */}
-        <div className="relative z-20 shrink-0" data-tour="bottom-nav">
-          <BottomNav />
+          {/* Bottom navigation (floating pill) */}
+          <div className="relative z-20 shrink-0" data-tour="bottom-nav">
+            <BottomNav />
+          </div>
         </div>
       </div>
     </OnboardingTourProvider>

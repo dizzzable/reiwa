@@ -197,7 +197,7 @@ function BrowserPushSection() {
           </div>
         )}
         {isPermissionDenied && (
-          <p className="rounded-xl bg-rose-500/10 border border-rose-500/20 px-3 py-2 text-xs text-rose-200">
+          <p className="rounded-xl bg-(--brand-primary)/10 border border-(--brand-primary)/20 px-3 py-2 text-xs text-(--brand-primary)">
             {t("notifications.pushPermissionDenied")}
           </p>
         )}

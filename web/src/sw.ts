@@ -1,15 +1,19 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
-import { registerRoute, Route } from 'workbox-routing'
-import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies'
+import { registerRoute, Route, setCatchHandler } from 'workbox-routing'
+import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 import { CacheableResponsePlugin } from 'workbox-cacheable-response'
 
 declare let self: ServiceWorkerGlobalScope
 
 // ─── Cache Names ───────────────────────────────────────────────────────────────
-const STATIC_CACHE = 'static-assets-v1'
-const API_CACHE = 'api-responses-v1'
+// Bump the version suffix whenever the caching strategy changes so the
+// `activate` cleanup purges the previous generation's caches. v2 fixes the
+// stale-app bug where navigations were served CacheFirst (see below).
+const STATIC_CACHE = 'static-assets-v2'
+const API_CACHE = 'api-responses-v2'
+const NAV_CACHE = 'navigations-v2'
 
 // ─── Strategy Configuration ────────────────────────────────────────────────────
 // These define the ONLY valid strategy-to-route mappings.
@@ -60,7 +64,7 @@ self.addEventListener('activate', (event) => {
 
       // Delete any caches that don't match current version identifiers
       const cacheNames = await caches.keys()
-      const validCaches = [STATIC_CACHE, API_CACHE]
+      const validCaches = [STATIC_CACHE, API_CACHE, NAV_CACHE]
       await Promise.all(
         cacheNames
           .filter(
@@ -77,18 +81,51 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+// ─── Install: activate the new SW immediately ────────────────────────────────
+// Without skipWaiting the updated worker stays in "waiting" until every tab
+// is closed, so users keep running the previous build for days. autoUpdate
+// registration + skipWaiting here means a redeploy is picked up on the next
+// load. Combined with NetworkFirst navigations (below) the fresh index.html
+// always references the fresh hashed bundles.
+self.addEventListener('install', () => {
+  void self.skipWaiting()
+})
+
 // ─── Precaching (Application Shell) ───────────────────────────────────────────
 // Workbox injects the precache manifest here at build time.
 // This caches HTML, CSS, JS bundles — the application shell.
 precacheAndRoute(self.__WB_MANIFEST)
 
+// ─── Navigations (HTML): Network-First ────────────────────────────────────────
+// CRITICAL: HTML navigations MUST be network-first, never cache-first. An SPA's
+// index.html references hash-named JS/CSS bundles; if the HTML is served from a
+// long-lived cache the app keeps loading STALE bundles forever after a redeploy
+// (the "fix deployed but user still sees the old UI" bug). Network-first fetches
+// the fresh shell when online and falls back to the cached copy only offline.
+const navigationRoute = new Route(
+  ({ request }) => request.mode === 'navigate',
+  new NetworkFirst({
+    cacheName: NAV_CACHE,
+    networkTimeoutSeconds: 5,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 24 * 60 * 60 }),
+    ],
+  }),
+)
+
+registerRoute(navigationRoute)
+
 // ─── Static Assets: Cache-First Strategy ──────────────────────────────────────
-// Matches: /, /assets/*, and common static file extensions
-// Enforced: static assets MUST use cache-first, NEVER stale-while-revalidate
+// Matches hashed build assets (JS, CSS, fonts, images). These are immutable —
+// Vite fingerprints the filename — so cache-first is safe and fast. Documents
+// are intentionally EXCLUDED here (handled by the network-first route above).
 const staticAssetsRoute = new Route(
   ({ request, url }) => {
-    // Match navigation requests (HTML pages)
-    if (request.destination === 'document') return true
+    // Never let document/navigation requests fall into cache-first.
+    if (request.mode === 'navigate' || request.destination === 'document') {
+      return false
+    }
     // Match assets directory
     if (url.pathname.startsWith('/assets/')) return true
     // Match static file types (JS, CSS, images, fonts)
@@ -172,45 +209,28 @@ const apiRoute = new Route(
 registerRoute(apiRoute)
 
 // ─── Offline Fallback ─────────────────────────────────────────────────────────
-// When offline and a navigation request fails (no cache hit), serve the app shell.
-// For API requests, the stale-while-revalidate strategy will serve last cached responses.
-self.addEventListener('fetch', (event) => {
-  // Only handle navigation requests that aren't handled by other routes
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      (async () => {
-        try {
-          // Try network first for navigation (precache handles this normally)
-          const preloadResponse = await event.preloadResponse
-          if (preloadResponse) return preloadResponse
-
-          return await fetch(event.request)
-        } catch {
-          // Offline: serve the cached app shell (index.html from precache)
-          const cache = await caches.open('workbox-precache-v2-' + self.location.origin + '/')
-          const cachedResponse = await cache.match(
-            new Request('/index.html'),
-          )
-          if (cachedResponse) return cachedResponse
-
-          // Fallback: try matching from static cache
-          const staticCache = await caches.open(STATIC_CACHE)
-          const staticResponse = await staticCache.match(event.request)
-          if (staticResponse) return staticResponse
-
-          // Last resort: return a basic offline response
-          return new Response(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Offline</title></head>' +
-              '<body><h1>Offline</h1><p>The app is not available offline. Please check your connection.</p></body></html>',
-            {
-              headers: { 'Content-Type': 'text/html' },
-              status: 503,
-            },
-          )
-        }
-      })(),
+// Navigations are handled by the NetworkFirst `navigationRoute` above, which
+// serves the cached shell when the network is unavailable. `setCatchHandler`
+// is the single Workbox-blessed place to provide a last-resort response when a
+// route's strategy throws (offline + empty cache) — using a second raw `fetch`
+// listener would race the route and is unnecessary.
+setCatchHandler(async ({ request }) => {
+  if (request.mode === 'navigate') {
+    const navCache = await caches.open(NAV_CACHE)
+    const navHit = await navCache.match(request)
+    if (navHit) return navHit
+    const precache = await caches.open(
+      'workbox-precache-v2-' + self.location.origin + '/',
+    )
+    const shell = await precache.match(new Request('/index.html'))
+    if (shell) return shell
+    return new Response(
+      '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Offline</title></head>' +
+        '<body><h1>Offline</h1><p>The app is not available offline. Please check your connection.</p></body></html>',
+      { headers: { 'Content-Type': 'text/html' }, status: 503 },
     )
   }
+  return Response.error()
 })
 
 // ─── Skip Waiting ─────────────────────────────────────────────────────────────

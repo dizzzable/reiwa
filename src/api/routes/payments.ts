@@ -38,6 +38,7 @@ export function createPaymentsRouter(deps: {
           gatewayType,
           purchaseType,
           subscriptionId,
+          deviceType,
           successUrl: bodySuccessUrl,
           failUrl: bodyFailUrl,
           // Legacy alias kept for backwards-compatibility with older SPA bundles.
@@ -79,6 +80,7 @@ export function createPaymentsRouter(deps: {
           {
             successUrl,
             failUrl,
+            ...(typeof deviceType === "string" ? { deviceType } : {}),
             ...(subscriptionId !== undefined ? { subscriptionId: String(subscriptionId) } : {}),
           },
         );

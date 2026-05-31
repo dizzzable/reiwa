@@ -9,6 +9,7 @@ import type { UserIdentity } from './subscription.js';
 export interface CreateCheckoutOptions {
   readonly successUrl?: string | null;
   readonly failUrl?: string | null;
+  readonly deviceType?: string | null;
 }
 
 export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
@@ -16,8 +17,11 @@ export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
 export class PaymentsNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
-  getEnabledGateways(): Promise<unknown> {
-    return this.transport.request('GET', '/api/internal/payments/gateways');
+  getEnabledGateways(channel: 'WEB' | 'TMA' | 'BOT' = 'WEB'): Promise<unknown> {
+    return this.transport.request(
+      'GET',
+      `/api/internal/payments/gateways?channel=${encodeURIComponent(channel)}`,
+    );
   }
 
   createCheckout(
@@ -43,6 +47,7 @@ export class PaymentsNamespace {
     if (options.subscriptionId) payload['subscriptionId'] = options.subscriptionId;
     if (options.successUrl) payload['successUrl'] = options.successUrl;
     if (options.failUrl) payload['failUrl'] = options.failUrl;
+    if (options.deviceType) payload['deviceType'] = options.deviceType;
     return this.transport.request('POST', '/api/internal/payments/checkout', payload);
   }
 

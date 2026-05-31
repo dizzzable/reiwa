@@ -126,7 +126,7 @@ export function DevicesList({ devices, isLoading }: DevicesListProps) {
                   }
                 }}
                 disabled={revokeMutation.isPending}
-                className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full text-zinc-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full text-zinc-600 hover:text-(--brand-primary) hover:bg-(--brand-primary)/10 transition-colors"
                 aria-label={t("devices.revoke")}
               >
                 <Trash2 className="h-3.5 w-3.5" />

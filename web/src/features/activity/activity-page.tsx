@@ -65,7 +65,7 @@ export default function ActivityPage() {
             onClick={() => setTab(t)}
             className={cn(
               'flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all',
-              tab === t ? 'bg-rose-500 text-white' : 'bg-zinc-800/80 text-zinc-400 hover:text-white',
+              tab === t ? 'bg-(--brand-primary) text-(--brand-primary-fg)' : 'bg-zinc-800/80 text-zinc-400 hover:text-white',
             )}
           >
             {t === 'notifications' ? <Bell className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
@@ -110,13 +110,13 @@ export default function ActivityPage() {
                   onClick={() => { if (!n.isRead) markOneMutation.mutate(n.id) }}
                   className={cn(
                     'glass-card p-4 cursor-pointer transition-all',
-                    !n.isRead && 'border-rose-500/20 bg-rose-500/[0.03]',
+                    !n.isRead && 'border-(--brand-primary)/20 bg-(--brand-primary)/[0.03]',
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        {!n.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" />}
+                        {!n.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />}
                         <p className="text-sm font-medium text-white truncate">{n.title}</p>
                       </div>
                       <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{n.body}</p>

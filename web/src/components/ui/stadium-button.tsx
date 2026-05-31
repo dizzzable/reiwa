@@ -14,12 +14,21 @@ interface StadiumButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   glow?: boolean
 }
 
+/**
+ * Pill ("stadium") CTA. The primary variant is driven by the operator's
+ * `--brand-primary` / `--brand-primary-fg` tokens (set by BrandingProvider)
+ * rather than a hardcoded palette, so CTAs match the active branding.
+ */
 const variantClasses: Record<ButtonVariant, string> = {
-  primary:   'bg-rose-500 text-white hover:bg-rose-600 active:bg-rose-700 shadow-[0_0_20px_rgba(244,63,94,0.4)] hover:shadow-[0_0_32px_rgba(244,63,94,0.6)]',
-  secondary: 'bg-zinc-800/80 text-white border border-white/10 hover:bg-zinc-700/80 hover:border-white/20',
-  ghost:     'bg-transparent text-zinc-300 hover:bg-white/6 hover:text-white',
-  danger:    'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 hover:text-red-300',
-  outline:   'bg-transparent text-rose-400 border border-rose-500/50 hover:bg-rose-500/10 hover:border-rose-500/80',
+  primary:
+    'bg-(--brand-primary) text-(--brand-primary-fg) hover:brightness-110 active:brightness-95 shadow-[0_0_24px_var(--color-brand-glow)] hover:shadow-[0_0_36px_var(--color-brand-glow)]',
+  secondary:
+    'bg-zinc-800/80 text-white border border-white/10 hover:bg-zinc-700/80 hover:border-white/20',
+  ghost: 'bg-transparent text-zinc-300 hover:bg-white/6 hover:text-white',
+  danger:
+    'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 hover:text-red-300',
+  outline:
+    'bg-transparent text-(--brand-primary) border border-(--brand-primary)/50 hover:bg-(--brand-primary)/10 hover:border-(--brand-primary)/80',
 }
 
 const sizeClasses: Record<ButtonSize, string> = {

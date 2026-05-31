@@ -41,7 +41,7 @@ export const registerLangPage: PageRegistrar = (bot, deps) => {
     // this call fails.
     if (adminClient !== null) {
       adminClient.user
-        .updateLanguage(String(userId), newLang)
+        .updateLanguage({ telegramId: String(userId) }, newLang)
         .catch(() => {
           /* swallow */
         });

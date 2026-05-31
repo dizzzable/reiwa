@@ -16,6 +16,42 @@ export interface BootstrapUserInput {
   readonly language?: string;
 }
 
+/**
+ * Caller identity for user-scoped reads/writes. Exactly one of
+ * `userId` (reiwa_id CUID — works for web-first users with no Telegram)
+ * or `telegramId` is used; `userId` wins when both are present. rezeis'
+ * internal endpoints accept either.
+ */
+export interface UserIdentity {
+  readonly userId?: string;
+  readonly telegramId?: string;
+}
+
+/**
+ * Build the `?userId=…` / `?telegramId=…` query string for the rezeis
+ * internal user endpoints from a polymorphic identity. Prefers reiwa_id.
+ */
+function identityQuery(identity: UserIdentity): string {
+  if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+    return `userId=${encodeURIComponent(identity.userId)}`;
+  }
+  if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+    return `telegramId=${encodeURIComponent(identity.telegramId)}`;
+  }
+  throw new Error('UserNamespace: a userId or telegramId is required');
+}
+
+/** Body identity fields for PATCH/POST endpoints (rezeis accepts either). */
+function identityBody(identity: UserIdentity): Record<string, string> {
+  if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+    return { userId: identity.userId };
+  }
+  if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+    return { telegramId: identity.telegramId };
+  }
+  throw new Error('UserNamespace: a userId or telegramId is required');
+}
+
 export class UserNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
@@ -23,37 +59,40 @@ export class UserNamespace {
     return this.transport.request('POST', '/api/internal/user/bootstrap', data);
   }
 
-  getSession(telegramId: string): Promise<unknown> {
+  getSession(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',
-      `/api/internal/user/session?telegramId=${encodeURIComponent(telegramId)}`,
+      `/api/internal/user/session?${identityQuery(identity)}`,
     );
   }
 
-  updateLanguage(telegramId: string, language: string): Promise<unknown> {
-    return this.transport.request('PATCH', '/api/internal/user/language', { telegramId, language });
+  updateLanguage(identity: UserIdentity, language: string): Promise<unknown> {
+    return this.transport.request('PATCH', '/api/internal/user/language', {
+      ...identityBody(identity),
+      language,
+    });
   }
 
-  acceptRules(telegramId: string): Promise<unknown> {
+  acceptRules(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'PATCH',
-      `/api/internal/user/session/rules-acceptance?telegramId=${encodeURIComponent(telegramId)}`,
+      `/api/internal/user/session/rules-acceptance?${identityQuery(identity)}`,
       {},
     );
   }
 
-  changeWebAccountPassword(telegramId: string, newPassword: string): Promise<unknown> {
+  changeWebAccountPassword(identity: UserIdentity, newPassword: string): Promise<unknown> {
     return this.transport.request(
       'PATCH',
       '/api/internal/user/session/web-account-password',
-      { userId: telegramId, password: newPassword },
+      { ...identityBody(identity), password: newPassword },
     );
   }
 
-  snoozeWebAccountLinkPrompt(telegramId: string): Promise<unknown> {
+  snoozeWebAccountLinkPrompt(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'PATCH',
-      `/api/internal/user/session/web-account-link-prompt-snooze?telegramId=${encodeURIComponent(telegramId)}`,
+      `/api/internal/user/session/web-account-link-prompt-snooze?${identityQuery(identity)}`,
       {},
     );
   }
@@ -64,19 +103,19 @@ export class UserNamespace {
    * Kept in the signature so call sites that already pass an email
    * value don't need to be touched in Wave 2.
    */
-  issueEmailVerificationChallenge(telegramId: string, _email: string): Promise<unknown> {
+  issueEmailVerificationChallenge(identity: UserIdentity, _email: string): Promise<unknown> {
     return this.transport.request(
       'PATCH',
       '/api/internal/user/session/web-account-email-verification-challenge',
-      { userId: telegramId },
+      { ...identityBody(identity) },
     );
   }
 
-  completeEmailVerification(telegramId: string, code: string): Promise<unknown> {
+  completeEmailVerification(identity: UserIdentity, code: string): Promise<unknown> {
     return this.transport.request(
       'PATCH',
       '/api/internal/user/session/web-account-email-verification-completion',
-      { userId: telegramId, code },
+      { ...identityBody(identity), code },
     );
   }
 

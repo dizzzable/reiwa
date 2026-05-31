@@ -31,6 +31,15 @@ interface Rect {
 
 const FALLBACK_RECT: Rect = { x: 0, y: 0, width: 0, height: 0 };
 
+function rectsEqual(a: Rect, b: Rect): boolean {
+  return (
+    Math.abs(a.x - b.x) < 0.5 &&
+    Math.abs(a.y - b.y) < 0.5 &&
+    Math.abs(a.width - b.width) < 0.5 &&
+    Math.abs(a.height - b.height) < 0.5
+  );
+}
+
 export function SpotlightOverlay({
   targetSelector,
   padding = 8,
@@ -38,23 +47,39 @@ export function SpotlightOverlay({
 }: SpotlightOverlayProps) {
   const [rect, setRect] = useState<Rect>(FALLBACK_RECT);
 
+  // Continuously track the target's position via a requestAnimationFrame
+  // loop. Measuring only once (on step change) left the highlight stale when
+  // the dashboard reflowed after mount — subscription data loads async, the
+  // web-font swaps, and the safe-area header settles, all of which shift the
+  // target down a few dozen pixels *after* the first measurement. The loop is
+  // cheap (a getBoundingClientRect + a guarded setState) and guarantees the
+  // ring always sits exactly on the live element, including during scroll.
   useEffect(() => {
     if (!targetSelector) {
       setRect(FALLBACK_RECT);
       return;
     }
-    const el = document.querySelector(targetSelector);
-    if (!el) {
-      setRect(FALLBACK_RECT);
-      return;
-    }
-    const domRect = el.getBoundingClientRect();
-    setRect({
-      x: domRect.x - padding,
-      y: domRect.y - padding,
-      width: domRect.width + padding * 2,
-      height: domRect.height + padding * 2,
-    });
+
+    let frame = 0;
+    const measure = () => {
+      const el = document.querySelector(targetSelector);
+      if (el) {
+        const domRect = el.getBoundingClientRect();
+        const next: Rect = {
+          x: domRect.x - padding,
+          y: domRect.y - padding,
+          width: domRect.width + padding * 2,
+          height: domRect.height + padding * 2,
+        };
+        setRect((prev) => (rectsEqual(prev, next) ? prev : next));
+      } else {
+        setRect((prev) => (rectsEqual(prev, FALLBACK_RECT) ? prev : FALLBACK_RECT));
+      }
+      frame = requestAnimationFrame(measure);
+    };
+    frame = requestAnimationFrame(measure);
+
+    return () => cancelAnimationFrame(frame);
   }, [targetSelector, padding]);
 
   const hasTarget = rect.width > 0 && rect.height > 0;
@@ -62,7 +87,7 @@ export function SpotlightOverlay({
 
   return (
     <motion.div
-      className="fixed inset-0 z-9998"
+      className="fixed inset-0 z-[9998]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

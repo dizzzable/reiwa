@@ -1,4 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
+import path from "node:path";
+import fs from "node:fs";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
@@ -51,7 +53,43 @@ export function createApp(deps: CreateAppDeps) {
   const app = express();
 
   // ── Security ──────────────────────────────────────────────────────────────
-  app.use(helmet());
+  // In single-image mode the API also serves the SPA, so the Helmet CSP now
+  // governs the front-end too. The default policy is SPA-compatible
+  // (`script-src 'self'` for hashed bundles, `style-src ... 'unsafe-inline'`
+  // for React inline styles, same-origin `connect-src`). We only relax
+  // `frame-ancestors` so the Telegram Mini App can embed the cabinet in its
+  // webview (the old nginx used `X-Frame-Options: ALLOWALL` for this).
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          "frame-ancestors": [
+            "'self'",
+            "https://web.telegram.org",
+            "https://*.telegram.org",
+            "https://*.t.me",
+          ],
+          // The SPA loads the Telegram Mini App SDK from telegram.org, so
+          // it must be allowed as a script source (default is 'self' only).
+          "script-src": ["'self'", "https://telegram.org"],
+          "script-src-elem": ["'self'", "https://telegram.org"],
+          // The service worker fetches the Telegram SDK via the Fetch API,
+          // which is governed by connect-src (not script-src). Allow the
+          // same-origin API (SSE/XHR) plus telegram.org so the SW can pull
+          // the SDK without a CSP violation.
+          "connect-src": ["'self'", "https://telegram.org"],
+          // The SDK is also pulled into the document; allow telegram.org as
+          // a generic default-src source for any sub-resource it triggers.
+          "img-src": ["'self'", "data:", "https://telegram.org"],
+        },
+      },
+      // Telegram embeds the Mini App in an iframe; the legacy
+      // `X-Frame-Options` header is superseded by the `frame-ancestors`
+      // CSP directive above (X-Frame-Options can't express an allow-list).
+      frameguard: false,
+    }),
+  );
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
 
@@ -95,7 +133,15 @@ export function createApp(deps: CreateAppDeps) {
     const sessionConfig: SessionConfig = {
       redisUrl: config.REDIS_URL ?? "",
       cookieSecret: config.REIWA_COOKIE_SECRET ?? "dev-secret",
-      cookieSecure: config.REIWA_COOKIE_SECURE || config.NODE_ENV === "production",
+      // Secure cookies are forced on in production (cookies only travel
+      // over TLS behind the reverse proxy). The explicit
+      // `REIWA_ALLOW_INSECURE_COOKIES=true` escape hatch turns that off
+      // for trusted/no-TLS deployments and local HTTP testing of the
+      // unified image — otherwise the browser silently drops the `Secure`
+      // session cookie on http:// and the user can never stay logged in.
+      cookieSecure:
+        config.REIWA_COOKIE_SECURE ||
+        (config.NODE_ENV === "production" && !config.REIWA_ALLOW_INSECURE_COOKIES),
       isProduction: config.NODE_ENV === "production",
       allowInsecureCookies: config.REIWA_ALLOW_INSECURE_COOKIES,
     };
@@ -138,6 +184,46 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createPushRouter(deps));
   app.use("/api/v1", createRealtimeRouter(deps));
   app.use("/api/v1", createContentRouter(deps));
+
+  // ── Static SPA (single-image mode) ────────────────────────────────────────
+  // When `REIWA_WEB_DIST` points at a built SPA (the unified Docker image
+  // copies `web/dist` here), the API also serves the front-end: hashed
+  // assets with long-lived caching, everything else falling back to
+  // index.html for client-side routing. This collapses the old
+  // reiwa + reiwa-web (nginx) split into one container/image. When the
+  // env is unset (dev, where Vite serves the SPA on :5173) the block is
+  // skipped and the API stays API-only.
+  const webDist = process.env["REIWA_WEB_DIST"];
+  if (webDist !== undefined && webDist.length > 0 && fs.existsSync(webDist)) {
+    const indexHtml = path.join(webDist, "index.html");
+    // Hashed assets are immutable — cache hard. index.html is revalidated.
+    app.use(
+      express.static(webDist, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith("index.html")) {
+            res.setHeader("Cache-Control", "no-cache");
+          } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          }
+        },
+      }),
+    );
+    // SPA fallback for non-API GETs — hand any unmatched route to the
+    // client router. API 404s are left to the routers above.
+    app.get(/^(?!\/api\/).*/, (req: Request, res: Response, next: NextFunction) => {
+      if (req.method !== "GET") {
+        next();
+        return;
+      }
+      res.sendFile(indexHtml, (err) => {
+        if (err) next(err);
+      });
+    });
+    if (logger) {
+      logger.info({ webDist }, "serving SPA from API (single-image mode)");
+    }
+  }
 
   // ── Global error handler ──────────────────────────────────────────────────
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {

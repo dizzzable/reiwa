@@ -15,7 +15,7 @@ services:
     networks:
       - remnawave-network
     restart: always
-    command: tunnel --no-autoupdate --url http://reiwa-web:80 reiwa-cf
+    command: tunnel --no-autoupdate --url http://reiwa:5000 reiwa-cf
 
 networks:
   remnawave-network:

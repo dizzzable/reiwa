@@ -17,6 +17,9 @@ import { ShoppingCart, TicketPercent } from "lucide-react";
 
 import { getAllSubscriptions, getUserDevices } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
+import { useBranding } from "@/lib/branding-provider";
+import { openExternalUrl } from "@/lib/utils";
+import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
 import { SubscriptionActions } from "./components/subscription-actions";
 import { DevicesList } from "./components/devices-list";
@@ -26,6 +29,7 @@ export default function DashboardPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { session } = useSession();
+  const { branding } = useBranding();
 
   // Fetch all subscriptions for the carousel
   const { data: allSubsData, isLoading: subsLoading } = useQuery({
@@ -48,12 +52,32 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-full pb-6">
-      {/* Header — welcome + quick-action icons top-right */}
-      <div className="flex items-center justify-between px-5 pt-6 pb-4">
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">
-          {t("dashboard.welcome", { name: session?.name ?? session?.username ?? "" })}
-        </p>
-        <div className="flex items-center gap-2">
+      {/* Header — brand + welcome on the left, quick-action icons on the right */}
+      <div className="flex items-center justify-between px-5 pt-[calc(2.5rem+env(safe-area-inset-top))] pb-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {branding.logoUrl ? (
+            <img
+              src={branding.logoUrl}
+              alt={branding.brandName}
+              className="h-8 w-8 shrink-0 rounded-lg object-contain"
+            />
+          ) : (
+            <ReiwaLogo className="h-8 w-8 shrink-0 text-(--brand-primary)" title={branding.brandName} />
+          )}
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-semibold text-white">{branding.brandName}</p>
+            <p className="truncate text-[11px] tracking-wide text-muted-foreground">
+              {t("dashboard.welcome", {
+                name:
+                  session?.name ||
+                  session?.username ||
+                  session?.webAccount?.login ||
+                  "",
+              })}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={() => navigate("/plans")}
             className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6 transition-colors"
@@ -92,7 +116,7 @@ export default function DashboardPage() {
               onConnect={() => {
                 const url = subscriptions[0]?.url;
                 if (url) {
-                  navigator.clipboard.writeText(url);
+                  openExternalUrl(url);
                   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
                 }
               }}

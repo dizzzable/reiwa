@@ -2,19 +2,22 @@ import { Router } from "express";
 
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
-import { createSessionMiddleware } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity } from "../middleware/user-identity.js";
 
 import { proxyStream } from "./realtime-proxy.js";
 
 /**
  * SSE proxy from the user PWA / Mini App to the rezeis-admin
- * `/api/internal/user/:telegramId/stream` endpoint.
+ * `/api/internal/user/:userRef/stream` endpoint.
  *
  * Auth model
- *   - reiwa session middleware authenticates the browser and resolves
- *     `req.telegramId`. The user can never request a stream for someone
- *     else's Telegram id — the param comes from server-side session.
+ *   - The flexible session middleware authenticates the browser via
+ *     either the WebSession (reiwa_id — web-first users with no Telegram)
+ *     or the legacy Telegram session, then `resolveUserIdentity` yields
+ *     the canonical id. The user can never request a stream for someone
+ *     else — the reference comes from the server-side session.
  *   - reiwa then opens a streaming GET against rezeis-admin using the
  *     internal API key + (optional) HMAC signature already configured
  *     for the rest of the AdminClient.
@@ -36,12 +39,13 @@ export function createRealtimeRouter(deps: {
   sessionStore: SessionStore | null;
 }) {
   const { adminClient, sessionStore } = deps;
-  const requireSession = createSessionMiddleware(sessionStore);
+  const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const router = Router();
 
   router.get("/realtime/stream", requireSession, async (req: AuthRequest, res) => {
-    const telegramId = req.telegramId;
-    if (!telegramId) {
+    const identity = resolveUserIdentity(req);
+    const userRef = identity.userId ?? identity.telegramId;
+    if (!userRef) {
       res.status(401).json({ message: "Unauthorized" });
       return;
     }
@@ -49,7 +53,7 @@ export function createRealtimeRouter(deps: {
       res.status(503).json({ message: "Realtime backend unavailable" });
       return;
     }
-    await proxyStream(adminClient, telegramId, res);
+    await proxyStream(adminClient, userRef, res);
   });
 
   return router;

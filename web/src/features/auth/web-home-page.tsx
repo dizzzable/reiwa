@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 
 import { NetworkBg } from '@/components/ui/network-bg'
+import { ReiwaLogo } from '@/components/ui/reiwa-logo'
 import { botSignin, getSession } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 
@@ -90,7 +91,7 @@ export default function WebHomePage() {
   }, [navigate, queryClient])
 
   return (
-    <div className="relative flex h-screen flex-col items-center justify-center bg-[#020202] overflow-hidden">
+    <div className="relative flex h-dvh flex-col items-center justify-center overflow-hidden bg-(--brand-bg-primary)">
       <NetworkBg intensity="medium" />
 
       <div className="relative z-10 flex flex-col items-center gap-8 px-8 text-center">
@@ -100,13 +101,10 @@ export default function WebHomePage() {
           transition={{ type: 'spring', damping: 20, stiffness: 200 }}
         >
           <div
-            className="flex h-24 w-24 items-center justify-center rounded-full"
-            style={{
-              background: 'radial-gradient(circle, rgba(244,63,94,0.3) 0%, transparent 70%)',
-              boxShadow: '0 0 60px rgba(244,63,94,0.4)',
-            }}
+            className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-white/5 ring-1 ring-white/10 backdrop-blur-xl"
+            style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
           >
-            <span className="text-5xl">🔐</span>
+            <ReiwaLogo className="h-14 w-14 text-(--brand-primary)" title="Reiwa" />
           </div>
         </motion.div>
 
@@ -116,9 +114,9 @@ export default function WebHomePage() {
           transition={{ delay: 0.2 }}
         >
           <h1 className="text-3xl font-bold tracking-[0.15em] text-white uppercase">
-            Rezeis
+            Reiwa
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 tracking-widest uppercase">
+          <p className="mt-1 text-sm tracking-widest text-zinc-500 uppercase">
             VPN Service
           </p>
         </motion.div>
@@ -129,7 +127,10 @@ export default function WebHomePage() {
           transition={{ delay: 0.4 }}
           className="flex items-center gap-3 text-sm text-zinc-500"
         >
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-rose-500 border-t-transparent" />
+          <span
+            className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
+            style={{ borderColor: 'var(--brand-primary)', borderTopColor: 'transparent' }}
+          />
           {statusKey === 'signin' ? 'Входим через Telegram…' : 'Подключение…'}
         </motion.div>
       </div>

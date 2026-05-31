@@ -1,29 +1,35 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'motion/react'
-import { ArrowLeft, Zap, Shield, Infinity } from 'lucide-react'
+import { ArrowLeft, Shield } from 'lucide-react'
 import { getPlans } from '@/lib/api-client'
 import type { Plan } from '@/types/api'
 import { usePurchaseStore } from '@/stores/purchase.store'
+import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
+import { resolvePlanIcon } from './plan-icons'
 
-function getLowestPrice(plan: Plan): { amount: number; currency: string; days: number } | null {
+/**
+ * Lowest price for a plan, expressed in the preferred display currency
+ * when the plan has a price in it. Falls back to USD → RUB → whatever is
+ * configured. Pure display selection — no conversion.
+ */
+function getLowestPrice(
+  plan: Plan,
+  preferredCurrency: string,
+): { amount: number; currency: string; days: number } | null {
   if (!plan.durations.length) return null
-  const allPrices = plan.durations.flatMap(d => d.prices.map(p => ({ ...p, days: d.days })))
+  const allPrices = plan.durations.flatMap(d =>
+    d.prices.map(p => ({ ...p, amount: Number(p.price), days: d.days })),
+  )
   if (!allPrices.length) return null
+  const preferred = allPrices.filter(p => p.currency === preferredCurrency)
   const usd = allPrices.filter(p => p.currency === 'USD')
   const rub = allPrices.filter(p => p.currency === 'RUB')
-  const list = usd.length ? usd : rub.length ? rub : allPrices
+  const list = preferred.length ? preferred : usd.length ? usd : rub.length ? rub : allPrices
   const minDays = Math.min(...plan.durations.map(d => d.days))
-  const minPrice = list.reduce((min, p) => p.price < min.price ? p : min, list[0])
-  return { amount: minPrice.price, currency: minPrice.currency, days: minDays }
-}
-
-const TYPE_ICONS: Record<string, React.FC<{ className?: string }>> = {
-  TRAFFIC: ({ className }) => <Zap className={className} />,
-  DEVICES: ({ className }) => <Shield className={className} />,
-  UNLIMITED: ({ className }) => <Infinity className={className} />,
-  BOTH: ({ className }) => <Shield className={className} />,
+  const minPrice = list.reduce((min, p) => (p.amount < min.amount ? p : min), list[0])
+  return { amount: minPrice.amount, currency: minPrice.currency, days: minDays }
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -33,6 +39,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 export default function PlansPage() {
   const navigate = useNavigate()
   const { selectPlan } = usePurchaseStore()
+  const { defaultCurrency } = useBranding()
 
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ['plans'],
@@ -40,7 +47,12 @@ export default function PlansPage() {
     staleTime: 300_000,
   })
 
-  const activePlans = plans.filter(p => p.isActive && !p.isArchived)
+  // The public catalog endpoint (`/api/v1/plans` → rezeis
+  // `getCatalogPlans`) already returns ONLY active, non-archived,
+  // context-available plans. The payload intentionally omits
+  // `isActive`/`isArchived`, so filtering on them here hid every plan
+  // (both were `undefined`). Trust the backend's filtering.
+  const activePlans = plans
 
   function handleSelect(plan: Plan) {
     selectPlan(plan)
@@ -71,8 +83,8 @@ export default function PlansPage() {
           </div>
         ) : (
           activePlans.map((plan, i) => {
-            const price = getLowestPrice(plan)
-            const Icon = TYPE_ICONS[plan.type] ?? Shield
+            const price = getLowestPrice(plan, defaultCurrency)
+            const Icon = resolvePlanIcon(plan.icon, plan.type)
 
             return (
               <motion.button
@@ -83,13 +95,13 @@ export default function PlansPage() {
                 onClick={() => handleSelect(plan)}
                 className={cn(
                   'w-full text-left glass-card p-4',
-                  'hover:border-rose-500/30 hover:bg-rose-500/[0.04]',
+                  'hover:border-(--brand-primary)/30 hover:bg-(--brand-primary)/[0.04]',
                   'active:scale-[0.98] transition-all duration-150',
                   'flex items-center gap-4',
                 )}
               >
                 {/* Icon */}
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-500">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-(--brand-primary)/10 text-(--brand-primary)">
                   <Icon className="h-6 w-6" />
                 </div>
 
@@ -108,7 +120,7 @@ export default function PlansPage() {
                 {/* Price */}
                 {price && (
                   <div className="shrink-0 text-right">
-                    <p className="text-sm font-bold text-rose-400">
+                    <p className="text-sm font-bold text-(--brand-primary)">
                       от {CURRENCY_SYMBOLS[price.currency] ?? ''}{price.amount.toFixed(2)}
                     </p>
                     <p className="text-xs text-zinc-500">/{price.days} дн.</p>

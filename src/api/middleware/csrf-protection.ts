@@ -62,10 +62,31 @@ export function createCsrfProtection(options: CsrfOptions) {
     const origin = req.headers.origin as string | undefined;
     const referer = req.headers.referer as string | undefined;
 
+    // Same-origin requests are not CSRF by definition. In single-image
+    // mode the SPA is served from the same origin as the API, so the
+    // browser's Origin equals the host this request arrived at. We
+    // reconstruct that "self origin" from the (proxy-forwarded) Host +
+    // scheme so it matches whatever public hostname/port the user opened
+    // — 127.0.0.1:5000 in local dev, or the real domain behind the
+    // reverse proxy in prod — without depending on REIWA_DOMAIN being set
+    // to exactly that value.
+    const forwardedProto =
+      (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim() ??
+      req.protocol;
+    const hostHeader = req.headers.host as string | undefined;
+    const selfOrigin =
+      hostHeader && hostHeader.length > 0 ? `${forwardedProto}://${hostHeader}` : null;
+
+    const isAllowed = (candidate: string | null): boolean => {
+      if (candidate === null) return false;
+      if (allowedOrigin !== null && candidate === allowedOrigin) return true;
+      if (selfOrigin !== null && candidate === selfOrigin) return true;
+      return false;
+    };
+
     // If Origin header is present, validate it
     if (origin) {
-      const requestOrigin = extractOrigin(origin);
-      if (allowedOrigin && requestOrigin === allowedOrigin) {
+      if (isAllowed(extractOrigin(origin))) {
         next();
         return;
       }
@@ -76,8 +97,7 @@ export function createCsrfProtection(options: CsrfOptions) {
 
     // Fall back to Referer header if Origin is absent
     if (referer) {
-      const refererOrigin = extractOrigin(referer);
-      if (allowedOrigin && refererOrigin === allowedOrigin) {
+      if (isAllowed(extractOrigin(referer))) {
         next();
         return;
       }

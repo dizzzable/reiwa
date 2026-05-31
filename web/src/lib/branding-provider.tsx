@@ -39,6 +39,7 @@ interface BrandingContextValue {
   readonly branding: Branding;
   readonly locales: readonly string[];
   readonly defaultLocale: string;
+  readonly defaultCurrency: string;
   readonly isLoading: boolean;
 }
 
@@ -46,6 +47,7 @@ const BrandingContext = createContext<BrandingContextValue>({
   branding: DEFAULT_BRANDING,
   locales: DEFAULT_PUBLIC_CONFIG.locales,
   defaultLocale: DEFAULT_PUBLIC_CONFIG.defaultLocale,
+  defaultCurrency: DEFAULT_PUBLIC_CONFIG.defaultCurrency,
   isLoading: true,
 });
 
@@ -92,9 +94,10 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       branding: config.branding,
       locales: config.locales,
       defaultLocale: config.defaultLocale,
+      defaultCurrency: config.defaultCurrency,
       isLoading,
     }),
-    [config.branding, config.locales, config.defaultLocale, isLoading],
+    [config.branding, config.locales, config.defaultLocale, config.defaultCurrency, isLoading],
   );
 
   return (

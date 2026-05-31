@@ -41,18 +41,17 @@ Cloudflare Origin cert, or one you issued out-of-band. Just name the files
 
 ```
                  :443 (TLS, your cert)
-  Internet ───▶  reverse proxy ───▶  reiwa-web:80 ──▶ /        SPA (static)
-                 (this folder)                       └▶ /api/* reiwa:5000 (BFF)
+  Internet ───▶  reverse proxy ───▶  reiwa:5000 ──▶ /        SPA (static)
+                 (this folder)                     └▶ /api/* BFF
                                      on remnawave-network
 ```
 
-- `reiwa-web` (nginx serving the built SPA) and `reiwa` (the Express BFF)
-  are published only on loopback in `docker-compose.yml`. The edge proxy
-  is the single public surface.
-- `reiwa-web` already proxies `/api/*` to `reiwa:5000` internally, so the
-  edge proxy only forwards everything to `reiwa-web:80`.
+- The single `reiwa` container serves BOTH the SPA and the `/api/*` BFF on
+  `:5000` (unified image — no separate nginx/web container). It is published
+  only on loopback in `docker-compose.yml`; the edge proxy is the single
+  public surface.
 - All proxy stacks join the **external** `remnawave-network`, resolving
-  `reiwa-web` by its compose service name.
+  `reiwa` by its compose service name.
 
 > The reiwa app is the **user** surface. The rezeis admin **panel** has
 > its own proxy stacks under `rezeis/deploy/proxies/` (upstream
@@ -62,11 +61,11 @@ Cloudflare Origin cert, or one you issued out-of-band. Just name the files
 
 ## Telegram Mini App note
 
-The Mini App must be embeddable in Telegram's webview, so these proxies
-**do not** send a restrictive `frame-ancestors` / `X-Frame-Options: DENY`.
-Framing stays permissive (handled by the inner `reiwa-web` nginx). The
-Mini App also requires a **publicly trusted** TLS cert — self-signed works
-for plain browser testing but Telegram will reject it, so use a real /
+The Mini App must be embeddable in Telegram's webview, so the reiwa API sets
+a relaxed CSP `frame-ancestors` (Telegram origins) instead of a blanket
+`X-Frame-Options: DENY`. The Mini App also requires a **publicly trusted**
+TLS cert — self-signed works for plain browser testing but Telegram will
+reject it, so use a real /
 Cloudflare Origin cert for Mini App use.
 
 ## Prerequisites

@@ -50,6 +50,22 @@ export function createReferralsRouter(deps: {
     },
   );
 
+  // GET /api/v1/referrals/invited — paginated list of invited users
+  router.get(
+    "/referrals/invited",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      const page = Number(req.query["page"]) || 1;
+      const limit = Number(req.query["limit"]) || 20;
+      const result = await adminClient?.referrals.getInvitedUsers(
+        resolveUserIdentity(req),
+        page,
+        limit,
+      );
+      res.json(result ?? { items: [], total: 0, page, limit });
+    },
+  );
+
   // POST /api/v1/referrals/invites/:inviteId/revoke
   router.post(
     "/referrals/invites/:inviteId/revoke",

@@ -14,6 +14,11 @@ export interface BrandingPayload {
   readonly bgSecondary: string;
   readonly cardGradient: string;
   readonly cardPattern: string | null;
+  readonly cardLogo: string;
+  readonly cardLogoUrl: string | null;
+  readonly cardEffect: string;
+  readonly cardEffectProps: Record<string, unknown>;
+  readonly cardEffectOpacity: number;
   readonly bgEffect: 'NONE' | 'MESH' | 'PARTICLES' | 'NOISE' | 'AURORA';
   readonly borderRadius: string;
   readonly fontFamily: string;
@@ -23,6 +28,11 @@ export interface PublicConfigPayload {
   readonly branding: BrandingPayload;
   readonly locales: readonly string[];
   readonly defaultLocale: string;
+  /**
+   * Operator default currency (Settings → "Валюта по умолчанию"). Display
+   * priority only — gateways/prices in this currency are shown first.
+   */
+  readonly defaultCurrency: string;
 }
 
 export class BrandingNamespace {

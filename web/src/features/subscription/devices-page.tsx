@@ -109,7 +109,7 @@ export default function DevicesPage() {
                     }
                   }}
                   disabled={revokeMutation.isPending}
-                  className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full text-zinc-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full text-zinc-600 hover:text-(--brand-primary) hover:bg-(--brand-primary)/10 transition-colors"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

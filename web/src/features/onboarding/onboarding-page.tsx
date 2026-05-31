@@ -9,8 +9,8 @@ const STEPS = [
     icon: Shield,
     title: 'Добро пожаловать в Rezeis VPN',
     description: 'Быстрый и надёжный VPN для вашей безопасности в интернете.',
-    color: 'text-rose-400',
-    bg: 'bg-rose-500/10',
+    color: 'text-(--brand-primary)',
+    bg: 'bg-(--brand-primary)/10',
   },
   {
     icon: Zap,
@@ -56,7 +56,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-screen bg-[#020202] text-white">
+    <div className="flex flex-col h-full min-h-dvh bg-(--brand-bg-primary) text-white">
       {/* Skip button */}
       <div className="flex justify-end px-5 pt-6">
         <button onClick={skip} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
@@ -95,7 +95,7 @@ export default function OnboardingPage() {
             <div
               key={i}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === step ? 'w-6 bg-rose-500' : 'w-1.5 bg-zinc-700'
+                i === step ? 'w-6 bg-(--brand-primary)' : 'w-1.5 bg-zinc-700'
               }`}
             />
           ))}
@@ -104,7 +104,7 @@ export default function OnboardingPage() {
         {/* Button */}
         <button
           onClick={next}
-          className="w-full flex items-center justify-center gap-2 rounded-full bg-rose-500 py-4 text-sm font-semibold text-white active:scale-[0.98] transition-transform"
+          className="w-full flex items-center justify-center gap-2 rounded-full bg-(--brand-primary) py-4 text-sm font-semibold text-(--brand-primary-fg) active:scale-[0.98] transition-transform"
         >
           {isLast ? (
             <>

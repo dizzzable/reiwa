@@ -14,4 +14,4 @@ http:
     reiwa:
       loadBalancer:
         servers:
-          - url: "http://reiwa-web:80"
+          - url: "http://reiwa:5000"

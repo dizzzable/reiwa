@@ -51,7 +51,7 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#020202] overflow-hidden px-4">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden px-4">
       <NetworkBg intensity="medium" />
 
       <motion.div
@@ -95,7 +95,7 @@ export default function ChangePasswordPage() {
               autoComplete="current-password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/30"
+              className="w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-(--brand-primary)/50 focus:ring-1 focus:ring-(--brand-primary)/30"
               placeholder={t('changePassword.currentPasswordPlaceholder')}
               disabled={isSubmitting}
             />
@@ -115,7 +115,7 @@ export default function ChangePasswordPage() {
               autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/30"
+              className="w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-(--brand-primary)/50 focus:ring-1 focus:ring-(--brand-primary)/30"
               placeholder={t('changePassword.newPasswordPlaceholder')}
               disabled={isSubmitting}
             />
