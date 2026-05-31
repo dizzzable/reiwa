@@ -47,6 +47,22 @@ export function createPartnerRouter(deps: {
     }
   });
 
+  // GET /api/v1/partner/referrals?page&limit — paginated referred-users list
+  router.get("/partner/referrals", requireSession, async (req: AuthRequest, res) => {
+    try {
+      const page = Number(req.query["page"]) || 1;
+      const limit = Number(req.query["limit"]) || 6;
+      const result = await adminClient?.partner.getReferrals(
+        resolveUserIdentity(req),
+        page,
+        limit,
+      );
+      res.json(result ?? { items: [], total: 0, page, limit });
+    } catch {
+      res.json({ items: [], total: 0, page: 1, limit: 6 });
+    }
+  });
+
   // GET /api/v1/partner/withdrawals
   router.get("/partner/withdrawals", requireSession, async (req: AuthRequest, res) => {
     try {

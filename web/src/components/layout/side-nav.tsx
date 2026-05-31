@@ -12,9 +12,7 @@
  */
 
 import { motion } from "motion/react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useTranslation } from "react-i18next";
-import { ShoppingCart, TicketPercent } from "lucide-react";
+import { NavLink, useLocation } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
@@ -22,9 +20,7 @@ import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { isTabActive, useNavTabs } from "@/components/layout/use-nav-tabs";
 
 export function SideNav() {
-  const { t } = useTranslation();
   const location = useLocation();
-  const navigate = useNavigate();
   const { branding } = useBranding();
   const tabs = useNavTabs();
 
@@ -80,24 +76,6 @@ export function SideNav() {
           );
         })}
       </ul>
-
-      {/* Quick actions */}
-      <div className="mt-auto flex flex-col gap-1 border-t border-white/6 pt-3">
-        <button
-          onClick={() => navigate("/plans")}
-          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
-        >
-          <ShoppingCart className="h-5 w-5 shrink-0" strokeWidth={1.75} />
-          <span className="truncate">{t("card.actions.buy")}</span>
-        </button>
-        <button
-          onClick={() => navigate("/promo")}
-          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
-        >
-          <TicketPercent className="h-5 w-5 shrink-0" strokeWidth={1.75} />
-          <span className="truncate">{t("card.actions.promo")}</span>
-        </button>
-      </div>
     </nav>
   );
 }

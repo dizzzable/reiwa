@@ -28,6 +28,7 @@ import {
   unsubscribeFromPush,
   type PushSupportStatus,
 } from "@/lib/push";
+import { getPushPublicKey } from "@/lib/api-client";
 
 export default function NotificationsPage() {
   const { t } = useTranslation();
@@ -99,10 +100,23 @@ function BrowserPushSection() {
   const [support, setSupport] = useState<PushSupportStatus | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // `null` = probe in flight, `true`/`false` = operator has push configured.
+  const [pushConfigured, setPushConfigured] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // Is browser web-push configured by the operator at all? Empty VAPID
+      // public key means push is disabled server-side — there's no point
+      // showing a toggle that can only fail.
+      try {
+        const { publicKey } = await getPushPublicKey();
+        if (cancelled) return;
+        setPushConfigured(publicKey.trim().length > 0);
+      } catch {
+        if (cancelled) return;
+        setPushConfigured(false);
+      }
       const cap = detectPushSupport();
       if (cancelled) return;
       setSupport(cap);
@@ -117,11 +131,11 @@ function BrowserPushSection() {
     };
   }, []);
 
-  // Hide the card entirely when the browser fundamentally can't do
-  // push. No useful action surface — the user's only path is to
-  // upgrade their browser.
+  // Hide the card entirely when push is disabled server-side (no VAPID key)
+  // or the browser fundamentally can't do push. No useful action surface.
+  if (pushConfigured === false) return null;
   if (support === "unsupported-browser") return null;
-  if (support === null) {
+  if (support === null || pushConfigured === null) {
     // Capability probe in flight — render a subtle skeleton so the
     // page layout doesn't shift when the card materialises.
     return (

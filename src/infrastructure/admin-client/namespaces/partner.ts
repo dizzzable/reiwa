@@ -66,6 +66,18 @@ export class PartnerNamespace {
     );
   }
 
+  /**
+   * Paginated list of users referred under this partner (newest first).
+   * Mirrors the referral program's invited-users list shape.
+   */
+  getReferrals(identity: UserIdentity, page = 1, limit = 6): Promise<unknown> {
+    const ref = encodeURIComponent(reference(identity));
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/${ref}/partner/referrals?page=${page}&limit=${limit}`,
+    );
+  }
+
   getWithdrawals(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',

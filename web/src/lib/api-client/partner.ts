@@ -8,8 +8,27 @@ export interface PartnerStatus {
   isActive: boolean;
 }
 
+export interface PartnerReferralUser {
+  id: string;
+  label: string;
+  level: number;
+  invitedAt: string;
+}
+
+export interface PartnerReferralsResponse {
+  items: PartnerReferralUser[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export const getPartnerInfo = () =>
   apiClient.get("/partner/info").then((r) => r.data);
+
+export const getPartnerReferrals = (page = 1, limit = 6) =>
+  apiClient
+    .get<PartnerReferralsResponse>("/partner/referrals", { params: { page, limit } })
+    .then((r) => r.data);
 
 /**
  * Lightweight partner-status flag used by the bottom-nav to swap the

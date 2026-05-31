@@ -195,6 +195,8 @@ export const ru = {
     step3: 'Выводите заработанные средства удобным способом',
     withdraw: 'Вывести средства',
     recentEarnings: 'Последние начисления',
+    referralsList: 'Приглашённые',
+    referralsEmpty: 'Пока никого не приглашено',
   },
   settings: {
     title: 'Настройки',

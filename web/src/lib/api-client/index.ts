@@ -103,9 +103,12 @@ export {
   createWithdrawal,
   getPartnerEarnings,
   getPartnerInfo,
+  getPartnerReferrals,
   getPartnerStatus,
   getPartnerWithdrawals,
   type PartnerStatus,
+  type PartnerReferralUser,
+  type PartnerReferralsResponse,
 } from "./partner.js";
 
 // Profile

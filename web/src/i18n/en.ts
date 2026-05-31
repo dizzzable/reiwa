@@ -197,6 +197,8 @@ export const en: RuDict = {
     step3: 'Withdraw your earnings via your preferred method',
     withdraw: 'Withdraw funds',
     recentEarnings: 'Recent earnings',
+    referralsList: 'Referred users',
+    referralsEmpty: 'No one referred yet',
   },
   settings: {
     title: 'Settings',
