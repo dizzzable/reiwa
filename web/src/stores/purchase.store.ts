@@ -42,7 +42,7 @@ interface PurchaseState {
   selectDevice: (device: DeviceTypeOption) => void;
   selectGateway: (gateway: GatewayOption) => void;
   setQuote: (quote: SubscriptionQuote) => void;
-  setCheckoutResult: (paymentId: string, paymentUrl: string) => void;
+  setCheckoutResult: (paymentId: string, paymentUrl: string | null) => void;
   goBack: () => void;
   reset: () => void;
 }

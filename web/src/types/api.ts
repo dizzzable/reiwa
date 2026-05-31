@@ -117,12 +117,15 @@ export interface SubscriptionQuote {
 }
 
 // ─── Checkout ────────────────────────────────────────────────────────────────
+// Mirrors the backend `InternalPaymentCheckoutInterface`. The provider redirect
+// URL is `checkoutUrl` (may be null for non-redirect flows like Telegram Stars).
 export interface CheckoutResult {
   paymentId: string;
-  paymentUrl: string;
+  checkoutUrl: string | null;
   gatewayType: string;
   currency: string;
-  amount: number;
+  amount: string;
+  providerMode?: string;
 }
 
 // ─── Payment status ──────────────────────────────────────────────────────────

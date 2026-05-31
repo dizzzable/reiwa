@@ -343,13 +343,17 @@ function CheckoutStep() {
         selectedDevice ?? undefined,
       ),
     onSuccess: (result) => {
-      setCheckoutResult(result.paymentId, result.paymentUrl);
-      // Open payment URL — in TMA context use openLink, otherwise window.open
+      setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
+      // Open payment URL — in TMA context use openLink, otherwise window.open.
+      // `checkoutUrl` can be null for non-redirect flows (e.g. Telegram Stars);
+      // in that case we skip opening and just poll status on the return page.
       const tg = window.Telegram?.WebApp;
-      if (tg && result.paymentUrl) {
-        tg.openLink(result.paymentUrl);
-      } else {
-        window.open(result.paymentUrl, "_blank");
+      if (result.checkoutUrl) {
+        if (tg) {
+          tg.openLink(result.checkoutUrl);
+        } else {
+          window.open(result.checkoutUrl, "_blank");
+        }
       }
       // Navigate to payment return to poll status
       navigate(`/payment-return?paymentId=${result.paymentId}`, {
