@@ -49,6 +49,10 @@ export default function DashboardPage() {
   const subscriptions = (allSubsData as any)?.subscriptions ?? [];
   const devices = (devicesData as any)?.devices ?? [];
   const hasSubscriptions = subscriptions.length > 0;
+  const firstDeviceName: string | null =
+    devices.length > 0
+      ? (devices[0]?.deviceModel ?? devices[0]?.platform ?? null)
+      : null;
 
   return (
     <div className="min-h-full pb-6">
@@ -106,7 +110,7 @@ export default function DashboardPage() {
         <>
           {/* Subscription card carousel */}
           <div data-tour="subscription-card">
-            <SubscriptionCarousel subscriptions={subscriptions} />
+            <SubscriptionCarousel subscriptions={subscriptions} firstDevice={firstDeviceName} />
           </div>
 
           {/* Action buttons — actions on the current subscription */}

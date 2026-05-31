@@ -21,9 +21,15 @@ import { SubscriptionCard } from "./subscription-card";
 
 interface SubscriptionCarouselProps {
   subscriptions: Subscription[];
+  /**
+   * Name of the first connected device, shown on the current subscription's
+   * card face. The devices query is scoped to the active subscription, so it
+   * is only applied to the first (current) card.
+   */
+  firstDevice?: string | null;
 }
 
-export function SubscriptionCarousel({ subscriptions }: SubscriptionCarouselProps) {
+export function SubscriptionCarousel({ subscriptions, firstDevice }: SubscriptionCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const count = subscriptions.length;
@@ -67,7 +73,11 @@ export function SubscriptionCarousel({ subscriptions }: SubscriptionCarouselProp
             className="w-full shrink-0 snap-center"
             style={{ paddingLeft: "1.25rem", paddingRight: "1.25rem", boxSizing: "border-box" }}
           >
-            <SubscriptionCard subscription={sub} index={i} />
+            <SubscriptionCard
+              subscription={sub}
+              index={i}
+              firstDevice={i === 0 ? firstDevice : null}
+            />
           </div>
         ))}
       </div>
