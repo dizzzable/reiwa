@@ -77,12 +77,6 @@ export interface Subscription {
   userRemnaId: string | null;
   /** Human-readable Remnawave profile name (e.g. `rz_login_sub`) shown on the card. */
   profileName?: string | null;
-  /** Optional per-subscription card-effect override (id) — wins over branding. */
-  cardEffect?: string | null;
-  /** Optional per-subscription effect params override. */
-  cardEffectProps?: Record<string, unknown> | null;
-  /** Optional per-subscription effect opacity override. */
-  cardEffectOpacity?: number | null;
   status: SubscriptionStatus;
   isTrial: boolean;
   trafficLimit: number | null; // GB
