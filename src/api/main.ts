@@ -4,6 +4,7 @@ import { AdminClient } from "../lib/admin-client.js";
 import { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore } from "../infrastructure/redis/session.js";
 import { createLogger } from "../infrastructure/logger/index.js";
+import { REIWA_VERSION } from "../core/version.js";
 import { createApp } from "./app.js";
 
 const config = loadConfig();
@@ -48,12 +49,30 @@ async function start(): Promise<void> {
     logger.info(
       {
         port,
+        version: REIWA_VERSION,
         hmacSigning: Boolean(config.REZEIS_INTERNAL_SHARED_SECRET),
         webSessionStore: Boolean(webSessionStore),
       },
       "reiwa-api listening",
     );
   });
+
+  // Report our running version to the admin panel so its "Updates" widget
+  // can show the live reiwa version next to the latest release. Fire on
+  // boot, then re-announce hourly so an admin restart re-learns it without
+  // requiring a reiwa redeploy. Best-effort: failures are logged at debug.
+  if (adminClient) {
+    const announce = (): void => {
+      adminClient.system
+        .reportReiwaVersion(REIWA_VERSION)
+        .catch((err: unknown) =>
+          logger.debug({ err }, "reiwa version heartbeat failed"),
+        );
+    };
+    announce();
+    const heartbeat = setInterval(announce, 60 * 60 * 1_000);
+    heartbeat.unref();
+  }
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "reiwa-api shutting down");

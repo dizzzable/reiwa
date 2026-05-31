@@ -12,6 +12,7 @@ import { WebSessionStore, createWebSessionMiddleware } from "../infrastructure/r
 import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
 import { resolveReiwaPublicUrl } from "../config.js";
+import { REIWA_VERSION } from "../core/version.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
 import { apiLimiter } from "./middleware/rate-limit.js";
 import { createCsrfProtection } from "./middleware/csrf-protection.js";
@@ -164,7 +165,7 @@ export function createApp(deps: CreateAppDeps) {
 
   // ── Health ────────────────────────────────────────────────────────────────
   app.get("/api/v1/health", (_req, res) => {
-    res.json({ status: "ok", service: "reiwa-api", version: "1.0.0" });
+    res.json({ status: "ok", service: "reiwa-api", version: REIWA_VERSION });
   });
 
   // ── Routers (all mounted at /api/v1; sub-paths live inside each router) ───

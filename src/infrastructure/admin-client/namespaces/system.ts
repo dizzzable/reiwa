@@ -26,4 +26,13 @@ export class SystemNamespace {
   getExpiryAlerts(): Promise<unknown> {
     return this.transport.request('GET', '/api/internal/worker/expiry-alerts');
   }
+
+  /**
+   * Reports reiwa's running version to the admin panel so its "Updates"
+   * widget can show the live reiwa version next to the latest release.
+   * Fire-and-forget on the caller side — failures are non-critical.
+   */
+  reportReiwaVersion(version: string): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/system/reiwa-version', { version });
+  }
 }
