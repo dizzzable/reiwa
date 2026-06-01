@@ -114,7 +114,14 @@ export default function PlansPage() {
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-white truncate">{plan.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-white truncate">{plan.name}</p>
+                    {plan.isTrial && (
+                      <span className="shrink-0 rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-medium text-violet-300">
+                        Пробный
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-zinc-400 mt-0.5">
                     {plan.trafficLimit ? `${plan.trafficLimit} GB` : 'Безлимит'}
                     {plan.deviceLimit ? ` · ${plan.deviceLimit} устройств` : ''}

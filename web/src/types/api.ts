@@ -62,6 +62,10 @@ export interface Plan {
   internalSquads?: string[];
   externalSquad?: string | null;
   orderIndex: number;
+  /** True when this is a trial-availability plan (always creates a trial sub). */
+  isTrial?: boolean;
+  /** For trial plans: whether it is free (claimed) or paid (purchased). */
+  trialFree?: boolean;
   durations: PlanDuration[];
 }
 
