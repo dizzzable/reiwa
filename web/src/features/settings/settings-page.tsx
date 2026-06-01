@@ -26,6 +26,7 @@ import {
   CircleHelp,
   CreditCard,
   Globe,
+  GraduationCap,
   LogOut,
   MessageSquare,
   Bell,
@@ -38,6 +39,7 @@ import { useSession } from "@/hooks/use-session";
 import { signOut, updateLanguage } from "@/lib/api-client";
 import { setLocale } from "@/i18n/i18n";
 import { useBranding } from "@/lib/branding-provider";
+import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -49,6 +51,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const { branding } = useBranding();
+  const { replayTour } = useOnboardingContext();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [showLangSheet, setShowLangSheet] = useState(false);
 
@@ -198,6 +201,18 @@ export default function SettingsPage() {
           label={t("settings.faq")}
           sublabel={t("settings.faqSub")}
           onClick={() => navigate("/settings/faq")}
+        />
+        <MenuItem
+          icon={<GraduationCap className="h-5 w-5" />}
+          iconBg="bg-sky-500/10 text-sky-400"
+          tint={iconTint("tutorial")}
+          label={t("settings.replayTutorial")}
+          sublabel={t("settings.replayTutorialSub")}
+          onClick={() => {
+            navigate("/dashboard");
+            // Let the dashboard mount before spotlighting its elements.
+            setTimeout(() => replayTour(), 400);
+          }}
         />
       </motion.div>
 

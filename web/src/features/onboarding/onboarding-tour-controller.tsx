@@ -22,10 +22,13 @@ import { useOnboardingTour } from "@/hooks/use-onboarding-tour";
 interface OnboardingContextValue {
   /** Programmatically start (or restart) the tour. */
   startTour: () => void;
+  /** Reset the completed flag and immediately replay the tour. */
+  replayTour: () => void;
 }
 
 const OnboardingContext = createContext<OnboardingContextValue>({
   startTour: () => {},
+  replayTour: () => {},
 });
 
 export function useOnboardingContext() {
@@ -44,14 +47,19 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
       const timer = setTimeout(() => tour.start(), 600);
       return () => clearTimeout(timer);
     }
-  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname, tour.shouldAutoStart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const replayTour = () => {
+    tour.resetOnboarding();
+    tour.start();
+  };
 
   const step = tour.currentStep;
   const title = t(`${step.i18nKey}.title` as any) as string;
   const body = t(`${step.i18nKey}.body` as any) as string;
 
   return (
-    <OnboardingContext.Provider value={{ startTour: tour.start }}>
+    <OnboardingContext.Provider value={{ startTour: tour.start, replayTour }}>
       {children}
       <AnimatePresence>
         {tour.isActive && (

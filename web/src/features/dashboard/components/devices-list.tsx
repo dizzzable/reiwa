@@ -2,57 +2,83 @@
  * DevicesList
  * ───────────
  * Compact list of connected devices shown below the subscription card on the
- * dashboard. Each device shows platform icon, name, and last-seen timestamp.
+ * dashboard, scoped to the CURRENTLY SELECTED subscription. Each device shows
+ * platform icon, name, and last-seen timestamp.
  *
- * Revoke and "Regenerate link" actions are available inline. The regenerate
- * action shows a confirmation dialog (all devices will be disconnected).
+ * Header actions (per subscription):
+ *   - Copy link      → copies this subscription's connect URL to the clipboard.
+ *   - Regenerate link → rotates the Remnawave subscription URL and wipes all
+ *                       devices for THIS subscription only (old links die).
+ *
+ * Revoke acts on a single device of this subscription.
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { Apple, Globe, Monitor, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { Apple, Copy, Globe, Monitor, RefreshCw, Smartphone, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { HwidDevice } from "@/types/api";
-import { deleteUserDevice } from "@/lib/api-client";
+import {
+  deleteSubscriptionDevice,
+  regenerateSubscriptionLink,
+} from "@/lib/api-client";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface DevicesListProps {
   devices: HwidDevice[];
   isLoading: boolean;
+  /** The subscription whose devices/link these actions operate on. */
+  subscriptionId: string;
+  /** Current connect URL for this subscription (used by the copy action). */
+  subscriptionUrl?: string | null;
 }
 
-export function DevicesList({ devices, isLoading }: DevicesListProps) {
+export function DevicesList({
+  devices,
+  isLoading,
+  subscriptionId,
+  subscriptionUrl,
+}: DevicesListProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
   const revokeMutation = useMutation({
-    mutationFn: (hwid: string) => deleteUserDevice(hwid),
+    mutationFn: (hwid: string) => deleteSubscriptionDevice(subscriptionId, hwid),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["devices"] });
+      queryClient.invalidateQueries({ queryKey: ["devices", subscriptionId] });
       toast.success(t("devices.revoked"));
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
     },
     onError: () => toast.error(t("devices.error")),
   });
 
-  // "Disconnect all" — revokes every HWID via the per-device endpoint.
-  // There is no single subscription-URL reset on the backend, so we
-  // fan out the existing delete call. Each device must then reconnect.
-  const revokeAllMutation = useMutation({
-    mutationFn: async () => {
-      for (const device of devices) {
-        await deleteUserDevice(device.hwid);
-      }
-    },
+  const regenerateMutation = useMutation({
+    mutationFn: () => regenerateSubscriptionLink(subscriptionId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["devices"] });
-      toast.success(t("devices.allRevoked"));
+      // The link + device list both change — refresh subscriptions and devices.
+      queryClient.invalidateQueries({ queryKey: ["devices", subscriptionId] });
+      queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+      toast.success(t("devices.regenerated"));
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
     },
     onError: () => toast.error(t("devices.error")),
   });
+
+  const handleCopy = async () => {
+    if (!subscriptionUrl) {
+      toast.error(t("devices.error"));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(subscriptionUrl);
+      toast.success(t("devices.copied"));
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+    } catch {
+      toast.error(t("devices.error"));
+    }
+  };
 
   if (isLoading) {
     return (
@@ -67,26 +93,36 @@ export function DevicesList({ devices, isLoading }: DevicesListProps) {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-zinc-300">
           {t("devices.title")}
         </h3>
-        {devices.length > 0 && (
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleCopy}
+            disabled={!subscriptionUrl}
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
+            aria-label={t("devices.copyLink")}
+          >
+            <Copy className="h-3 w-3" />
+            {t("devices.copyLink")}
+          </button>
           <button
             onClick={() => {
-              if (confirm(t("devices.revokeAllConfirm"))) {
-                revokeAllMutation.mutate();
+              if (confirm(t("devices.regenerateConfirm"))) {
+                regenerateMutation.mutate();
               }
             }}
-            disabled={revokeAllMutation.isPending}
+            disabled={regenerateMutation.isPending}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
+            aria-label={t("devices.regenerate")}
           >
             <RefreshCw
-              className={`h-3 w-3 ${revokeAllMutation.isPending ? "animate-spin" : ""}`}
+              className={`h-3 w-3 ${regenerateMutation.isPending ? "animate-spin" : ""}`}
             />
-            {t("devices.revokeAll")}
+            {t("devices.regenerate")}
           </button>
-        )}
+        </div>
       </div>
 
       {devices.length === 0 ? (

@@ -4,14 +4,24 @@
  * State machine for the onboarding tour. Manages:
  *   - Current step index.
  *   - Navigation (next / prev / skip / finish).
- *   - Persistence of "completed" flag in localStorage so the tour only
- *     shows once per device.
+ *   - Persistence of the "completed" flag.
  *
- * The tour is triggered automatically on the first dashboard mount when
- * `hasCompletedOnboarding === false`. It can also be replayed from Settings.
+ * Persistence is server-backed (so the state follows the user across
+ * devices/browsers) with a localStorage mirror for instant first paint
+ * before the session has loaded. The server flag (`session.onboardingCompleted`)
+ * is authoritative; localStorage is only a hint to avoid a flash of the tour
+ * on a device that has already seen it.
+ *
+ * The tour is triggered automatically on the first dashboard mount when the
+ * user has not completed it. It can also be replayed from Settings via
+ * `start()` after `resetOnboarding()`.
  */
 
 import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+
+import { setOnboardingCompleted } from "@/lib/api-client";
+import { SESSION_QUERY_KEY, useSession } from "@/hooks/use-session";
 
 const STORAGE_KEY = "reiwa_onboarding_completed";
 
@@ -57,24 +67,46 @@ export const TOUR_STEPS: readonly OnboardingStep[] = [
   },
 ];
 
+function readLocalCompleted(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeLocalCompleted(value: boolean) {
+  try {
+    if (value) window.localStorage.setItem(STORAGE_KEY, "true");
+    else window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 export function useOnboardingTour() {
   const [isActive, setIsActive] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
+  const { session } = useSession();
+  const queryClient = useQueryClient();
 
-  const hasCompleted = (): boolean => {
-    try {
-      return window.localStorage.getItem(STORAGE_KEY) === "true";
-    } catch {
-      return false;
-    }
-  };
+  // Server flag is authoritative once the session is loaded; fall back to the
+  // localStorage hint while it's still loading so a returning user doesn't see
+  // a flash of the tour.
+  const serverCompleted = session?.onboardingCompleted;
+  const hasCompleted =
+    typeof serverCompleted === "boolean" ? serverCompleted : readLocalCompleted();
 
-  const markCompleted = () => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, "true");
-    } catch {
-      /* storage unavailable */
-    }
+  const persistCompleted = (value: boolean) => {
+    writeLocalCompleted(value);
+    setOnboardingCompleted(value)
+      .then(() => {
+        // Refresh the session so `onboardingCompleted` reflects the new state.
+        queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
+      })
+      .catch(() => {
+        /* best-effort: localStorage hint already updated */
+      });
   };
 
   const start = useCallback(() => {
@@ -83,14 +115,16 @@ export function useOnboardingTour() {
   }, []);
 
   const next = useCallback(() => {
-    if (stepIndex >= TOUR_STEPS.length - 1) {
-      // Finish
-      setIsActive(false);
-      markCompleted();
-    } else {
-      setStepIndex((i) => i + 1);
-    }
-  }, [stepIndex]);
+    setStepIndex((i) => {
+      if (i >= TOUR_STEPS.length - 1) {
+        setIsActive(false);
+        persistCompleted(true);
+        return i;
+      }
+      return i + 1;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const prev = useCallback(() => {
     setStepIndex((i) => Math.max(0, i - 1));
@@ -98,10 +132,17 @@ export function useOnboardingTour() {
 
   const skip = useCallback(() => {
     setIsActive(false);
-    markCompleted();
+    persistCompleted(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const shouldAutoStart = !hasCompleted();
+  /** Clears the completed flag (server + local) so the tour can replay. */
+  const resetOnboarding = useCallback(() => {
+    persistCompleted(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const shouldAutoStart = !hasCompleted;
 
   return {
     isActive,
@@ -112,6 +153,7 @@ export function useOnboardingTour() {
     next,
     prev,
     skip,
+    resetOnboarding,
     shouldAutoStart,
   };
 }

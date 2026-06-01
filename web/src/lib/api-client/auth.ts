@@ -89,12 +89,14 @@ export const registerUser = (
   username: string,
   passwordHash: string,
   checkOnly?: boolean,
+  referralCode?: string,
 ) =>
   apiClient
     .post<RegisterResponse>("/auth/register", {
       username,
       passwordHash,
       ...(checkOnly ? { checkOnly: true } : {}),
+      ...(referralCode ? { referralCode } : {}),
     })
     .then((r) => r.data);
 

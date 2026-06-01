@@ -14,5 +14,12 @@ export const getSession = () =>
 export const acceptRules = () =>
   apiClient.patch("/session/rules-acceptance").then((r) => r.data);
 
+/**
+ * Persists the onboarding-tour state server-side. `completed=true` marks the
+ * tour finished/skipped; `false` resets it (so "replay tutorial" re-triggers).
+ */
+export const setOnboardingCompleted = (completed: boolean) =>
+  apiClient.patch("/session/onboarding", { completed }).then((r) => r.data);
+
 export const getPlatformPolicy = () =>
   apiClient.get<PlatformPolicy>("/platform-policy").then((r) => r.data);

@@ -225,6 +225,8 @@ export const en: RuDict = {
     supportSub: 'Create a ticket, chat with support',
     faq: 'Help',
     faqSub: 'Frequently asked questions',
+    replayTutorial: 'Replay tutorial',
+    replayTutorialSub: 'Take the cabinet intro tour again',
   },
   register: {
     title: 'Register',
@@ -328,6 +330,11 @@ export const en: RuDict = {
     revokeAll: 'Disconnect all',
     revokeAllConfirm:
       'All devices will be disconnected. Every device will need to be set up again. Continue?',
+    copyLink: 'Copy',
+    copied: 'Link copied',
+    regenerate: 'Regenerate',
+    regenerateConfirm:
+      'The link will be regenerated and all devices on this subscription disconnected. Reconnect them with the new link. Continue?',
     regenerated: 'Link regenerated. Reconnect your devices.',
     allRevoked: 'All devices disconnected. Reconnect them.',
     revoked: 'Device revoked',

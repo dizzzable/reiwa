@@ -53,6 +53,19 @@ export default function RegisterPage() {
   const [usernameError, setUsernameError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
 
+  // Referral code captured from the invite link (`/register?ref=<code>`).
+  // Read once on mount so it survives input changes; passed to registration so
+  // the new user is attributed to the inviter.
+  const referralCodeRef = useRef<string | null>(null)
+  if (referralCodeRef.current === null) {
+    try {
+      const ref = new URLSearchParams(window.location.search).get('ref')
+      referralCodeRef.current = ref && ref.trim().length > 0 ? ref.trim().slice(0, 64) : ''
+    } catch {
+      referralCodeRef.current = ''
+    }
+  }
+
   // Username availability state
   const [usernameUnavailable, setUsernameUnavailable] = useState(false)
   const [checkingUsername, setCheckingUsername] = useState(false)
@@ -210,7 +223,12 @@ export default function RegisterPage() {
       const passwordHash = await sha256(password)
 
       // Submit registration
-      const result = await registerUser(username, passwordHash)
+      const result = await registerUser(
+        username,
+        passwordHash,
+        false,
+        referralCodeRef.current || undefined,
+      )
 
       // Registration succeeded — backend confirmed both Web_Account and User creation
       // Now attempt automatic sign-in

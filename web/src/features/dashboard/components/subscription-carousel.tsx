@@ -22,14 +22,20 @@ import { SubscriptionCard } from "./subscription-card";
 interface SubscriptionCarouselProps {
   subscriptions: Subscription[];
   /**
-   * Name of the first connected device, shown on the current subscription's
-   * card face. The devices query is scoped to the active subscription, so it
-   * is only applied to the first (current) card.
+   * Name of the connected device shown on a card face. Keyed by subscription
+   * id so each card shows its own device (the devices query is scoped to the
+   * active subscription).
    */
-  firstDevice?: string | null;
+  firstDeviceById?: Record<string, string | null>;
+  /** Notifies the parent when the visible (active) card changes. */
+  onActiveIndexChange?: (index: number) => void;
 }
 
-export function SubscriptionCarousel({ subscriptions, firstDevice }: SubscriptionCarouselProps) {
+export function SubscriptionCarousel({
+  subscriptions,
+  firstDeviceById,
+  onActiveIndexChange,
+}: SubscriptionCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const count = subscriptions.length;
@@ -41,8 +47,12 @@ export function SubscriptionCarousel({ subscriptions, firstDevice }: Subscriptio
     if (!el) return;
     const width = el.clientWidth || 1;
     const index = Math.round(el.scrollLeft / width);
-    setActiveIndex((prev) => (prev === index ? prev : index));
-  }, []);
+    setActiveIndex((prev) => {
+      if (prev === index) return prev;
+      onActiveIndexChange?.(index);
+      return index;
+    });
+  }, [onActiveIndexChange]);
 
   const goTo = useCallback((index: number) => {
     const el = trackRef.current;
@@ -76,7 +86,7 @@ export function SubscriptionCarousel({ subscriptions, firstDevice }: Subscriptio
             <SubscriptionCard
               subscription={sub}
               index={i}
-              firstDevice={i === 0 ? firstDevice : null}
+              firstDevice={firstDeviceById?.[sub.id] ?? null}
             />
           </div>
         ))}

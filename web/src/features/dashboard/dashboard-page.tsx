@@ -11,11 +11,12 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ShoppingCart, TicketPercent } from "lucide-react";
 
-import { getAllSubscriptions, getUserDevices } from "@/lib/api-client";
+import { getAllSubscriptions, getSubscriptionDevices } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import { openExternalUrl } from "@/lib/utils";
@@ -39,20 +40,33 @@ export default function DashboardPage() {
     refetchInterval: 30_000,
   });
 
-  // Devices
+  const subscriptions = (allSubsData as any)?.subscriptions ?? [];
+  const hasSubscriptions = subscriptions.length > 0;
+
+  // The device list follows the currently selected subscription card.
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeSubscription = subscriptions[activeIndex] ?? subscriptions[0] ?? null;
+  const activeSubscriptionId: string | null = activeSubscription?.id ?? null;
+
+  // Devices — scoped to the active subscription so switching cards swaps the
+  // device list (each subscription has its own Remnawave profile).
   const { data: devicesData, isLoading: devicesLoading } = useQuery({
-    queryKey: ["devices"],
-    queryFn: getUserDevices,
+    queryKey: ["devices", activeSubscriptionId],
+    queryFn: () => getSubscriptionDevices(activeSubscriptionId as string),
+    enabled: activeSubscriptionId !== null,
     staleTime: 30_000,
   });
 
-  const subscriptions = (allSubsData as any)?.subscriptions ?? [];
   const devices = (devicesData as any)?.devices ?? [];
-  const hasSubscriptions = subscriptions.length > 0;
-  const firstDeviceName: string | null =
-    devices.length > 0
-      ? (devices[0]?.deviceModel ?? devices[0]?.platform ?? null)
-      : null;
+  const firstDeviceById: Record<string, string | null> =
+    activeSubscriptionId !== null
+      ? {
+          [activeSubscriptionId]:
+            devices.length > 0
+              ? (devices[0]?.deviceModel ?? devices[0]?.platform ?? null)
+              : null,
+        }
+      : {};
 
   return (
     <div className="min-h-full pb-6">
@@ -110,15 +124,19 @@ export default function DashboardPage() {
         <>
           {/* Subscription card carousel */}
           <div data-tour="subscription-card">
-            <SubscriptionCarousel subscriptions={subscriptions} firstDevice={firstDeviceName} />
+            <SubscriptionCarousel
+              subscriptions={subscriptions}
+              firstDeviceById={firstDeviceById}
+              onActiveIndexChange={setActiveIndex}
+            />
           </div>
 
           {/* Action buttons — actions on the current subscription */}
           <div data-tour="subscription-actions">
             <SubscriptionActions
-              subscription={subscriptions[0]}
+              subscription={activeSubscription ?? subscriptions[0]}
               onConnect={() => {
-                const url = subscriptions[0]?.url;
+                const url = activeSubscription?.url ?? subscriptions[0]?.url;
                 if (url) {
                   openExternalUrl(url);
                   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
@@ -129,10 +147,17 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* Devices */}
-          <div className="mt-6 px-5" data-tour="devices-list">
-            <DevicesList devices={devices} isLoading={devicesLoading} />
-          </div>
+          {/* Devices — scoped to the selected subscription */}
+          {activeSubscriptionId && (
+            <div className="mt-6 px-5" data-tour="devices-list">
+              <DevicesList
+                devices={devices}
+                isLoading={devicesLoading}
+                subscriptionId={activeSubscriptionId}
+                subscriptionUrl={activeSubscription?.url ?? null}
+              />
+            </div>
+          )}
         </>
       ) : (
         <EmptySubscriptionCta onBuy={() => navigate("/plans")} />

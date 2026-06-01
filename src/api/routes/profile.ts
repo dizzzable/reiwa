@@ -45,6 +45,24 @@ export function createProfileRouter(deps: {
     },
   );
 
+  // PATCH /api/v1/session/onboarding — persist tour state. Body `{ completed }`.
+  router.patch(
+    "/session/onboarding",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const completed = (req.body as { completed?: boolean })?.completed !== false;
+        const result = await adminClient?.user.setOnboarding(
+          resolveUserIdentity(req),
+          completed,
+        );
+        res.json(result ?? { ok: true });
+      } catch (e: unknown) {
+        res.status(500).json({ message: (e as Error).message });
+      }
+    },
+  );
+
   // GET /api/v1/platform-policy
   router.get("/platform-policy", async (_req, res) => {
     try {

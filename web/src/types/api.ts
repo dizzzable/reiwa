@@ -19,6 +19,8 @@ export interface ReiwaSession {
   email?: string | null;
   /** Web-account sub-object — present once the user owns login credentials. */
   webAccount?: ReiwaWebAccount | null;
+  /** Server-persisted onboarding-tour state. `false` → the tour auto-starts. */
+  onboardingCompleted?: boolean;
 }
 
 // ─── Plans ───────────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ export {
 } from "./auth.js";
 
 // Session + platform
-export { acceptRules, getPlatformPolicy, getSession } from "./session.js";
+export { acceptRules, getPlatformPolicy, getSession, setOnboardingCompleted } from "./session.js";
 
 // Plans
 export { getPlans } from "./plans.js";
@@ -96,7 +96,13 @@ export {
 } from "./referrals.js";
 
 // Devices
-export { deleteUserDevice, getUserDevices } from "./devices.js";
+export {
+  deleteUserDevice,
+  getUserDevices,
+  getSubscriptionDevices,
+  deleteSubscriptionDevice,
+  regenerateSubscriptionLink,
+} from "./devices.js";
 
 // Partner
 export {

@@ -81,6 +81,14 @@ export class UserNamespace {
     );
   }
 
+  setOnboarding(identity: UserIdentity, completed: boolean): Promise<unknown> {
+    return this.transport.request(
+      'PATCH',
+      `/api/internal/user/session/onboarding?${identityQuery(identity)}`,
+      { completed },
+    );
+  }
+
   changeWebAccountPassword(identity: UserIdentity, newPassword: string): Promise<unknown> {
     return this.transport.request(
       'PATCH',

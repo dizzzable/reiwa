@@ -26,6 +26,8 @@ const registerSchema = z.object({
     .string()
     .length(64, "Password hash must be a 64-character SHA-256 hex string")
     .regex(/^[a-f0-9]+$/i, "Password hash must be a valid hex string"),
+  // Optional referral code from the invite link (`/register?ref=<code>`).
+  referralCode: z.string().min(1).max(64).optional(),
 });
 
 const loginSchema = z.object({
@@ -176,7 +178,7 @@ export function createAuthRouter(deps: {
         return;
       }
 
-      const { username, passwordHash } = parsed.data;
+      const { username, passwordHash, referralCode } = parsed.data;
 
       if (!adminClient) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
@@ -184,7 +186,9 @@ export function createAuthRouter(deps: {
       }
 
       // Proxy to Rezeis_Admin
-      const result = await adminClient.webAuth.register(username, passwordHash);
+      const result = await adminClient.webAuth.register(username, passwordHash, {
+        ...(referralCode ? { referralCode } : {}),
+      });
 
       // Create web session
       await req.createWebSession(result.userId);

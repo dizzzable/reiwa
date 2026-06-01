@@ -10,6 +10,8 @@ import type { AdminTransport } from '../transport.js';
 export interface WebAuthRegisterOptions {
   readonly email?: string;
   readonly telegramIdToLink?: string;
+  /** Referral code from the invite link (`/register?ref=<code>`). */
+  readonly referralCode?: string;
 }
 
 export interface WebAuthRegisterResult {
@@ -54,6 +56,7 @@ export class WebAuthNamespace {
         password,
         email: options?.email,
         telegramIdToLink: options?.telegramIdToLink,
+        referralCode: options?.referralCode,
       },
     );
   }
