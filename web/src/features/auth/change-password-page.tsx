@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { NetworkBg } from '@/components/ui/network-bg'
@@ -7,10 +8,12 @@ import { StadiumButton } from '@/components/ui/stadium-button'
 import { hashPassword } from '@/lib/crypto'
 import { changePasswordAuth } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth.store'
+import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 
 export default function ChangePasswordPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -35,6 +38,10 @@ export default function ChangePasswordPage() {
 
       // Clear the requiresPasswordChange flag
       useAuthStore.getState().clearRequiresPasswordChange()
+
+      // Refetch the session so the protected shell sees the cleared
+      // requiresPasswordChange flag (otherwise StealthLayout bounces back here).
+      await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
 
       // Redirect to dashboard on success
       navigate('/dashboard', { replace: true })

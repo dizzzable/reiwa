@@ -47,6 +47,13 @@ export default function StealthLayout() {
     return <Navigate to="/bootstrap" replace />;
   }
 
+  // Temp-password users (admin-issued reset) must set a new password before
+  // they can use anything. The session carries the flag from the WebAccount;
+  // block every protected route until it's cleared.
+  if (session.webAccount?.requiresPasswordChange) {
+    return <Navigate to="/change-password" replace />;
+  }
+
   if (isDesktop) {
     // Desktop shell: persistent left sidebar + a wider, centred content
     // column. Same routes/pages as mobile — only the chrome differs.
