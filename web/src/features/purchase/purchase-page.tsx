@@ -266,7 +266,11 @@ function QuoteView() {
           value={t("purchase.duration.days", { count: quote.durationDays })}
         />
         {deviceLabel && <Row label={t("purchase.quote.device")} value={deviceLabel} />}
-        <Row label={t("purchase.quote.method")} value={selectedGateway?.label ?? "—"} />
+        <Row
+          label={t("purchase.quote.method")}
+          value={selectedGateway?.label ?? "—"}
+          icon={selectedGateway?.icon}
+        />
         {quote.discountPercent > 0 && (
           <Row
             label={t("purchase.quote.discount")}
@@ -315,15 +319,20 @@ function Row({
   label,
   value,
   accent,
+  icon,
 }: {
   label: string;
   value: string;
   accent?: string;
+  icon?: string;
 }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 text-sm">
       <span className="text-zinc-400">{label}</span>
-      <span className={cn("font-medium", accent)}>{value}</span>
+      <span className={cn("font-medium flex items-center gap-1.5", accent)}>
+        {icon && <span aria-hidden="true">{icon}</span>}
+        {value}
+      </span>
     </div>
   );
 }
