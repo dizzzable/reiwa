@@ -34,9 +34,15 @@ interface SubscriptionCardProps {
   index?: number;
   /** First device name to show on the card face. */
   firstDevice?: string | null;
+  /**
+   * True when this card is the active carousel slide or an immediate
+   * neighbour. Pre-warms the animated background so swiping to it shows the
+   * live effect instantly instead of after a WebGL-init delay.
+   */
+  effectActive?: boolean;
 }
 
-export function SubscriptionCard({ subscription, index, firstDevice }: SubscriptionCardProps) {
+export function SubscriptionCard({ subscription, index, firstDevice, effectActive }: SubscriptionCardProps) {
   const { t } = useTranslation();
   const { branding } = useBranding();
   const sub = subscription;
@@ -111,6 +117,7 @@ export function SubscriptionCard({ subscription, index, firstDevice }: Subscript
           effect={effect}
           props={effectProps}
           opacity={effectOpacity}
+          active={effectActive}
           className="absolute inset-0 -z-20"
         />
       )}

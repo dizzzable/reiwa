@@ -5,6 +5,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { sendSafeError } from "../lib/error-response.js";
 
 export function createProfileRouter(deps: {
   adminClient: AdminClient | null;
@@ -40,7 +41,7 @@ export function createProfileRouter(deps: {
         const result = await adminClient?.user.acceptRules(resolveUserIdentity(req));
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to accept rules", "session/rules-acceptance");
       }
     },
   );
@@ -58,7 +59,7 @@ export function createProfileRouter(deps: {
         );
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to save onboarding state", "session/onboarding");
       }
     },
   );
@@ -100,7 +101,7 @@ export function createProfileRouter(deps: {
         );
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to change password", "me/password");
       }
     },
   );
@@ -122,7 +123,7 @@ export function createProfileRouter(deps: {
         );
         res.status(204).end();
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to send verification code", "me/email/challenge");
       }
     },
   );
@@ -144,7 +145,7 @@ export function createProfileRouter(deps: {
         );
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(401).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 401, "Email verification failed", "me/email/verify");
       }
     },
   );
@@ -160,7 +161,7 @@ export function createProfileRouter(deps: {
         );
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to snooze link prompt", "me/link-prompt-snooze");
       }
     },
   );
@@ -192,7 +193,7 @@ export function createProfileRouter(deps: {
         );
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to update language", "me/language");
       }
     },
   );

@@ -22,9 +22,14 @@
  * `x-request-timestamp` / `x-request-signature` header pair so the
  * upstream guard can verify request integrity.
  */
-import { createHash, createHmac } from 'node:crypto';
 import { Pool } from 'undici';
 
+import { UpstreamError } from '../../core/errors/index.js';
+import {
+  REQUEST_SIGNATURE_HEADER,
+  REQUEST_TIMESTAMP_HEADER,
+  buildInternalSignature,
+} from '../../lib/internal-hmac.js';
 import {
   REQUEST_ID_HEADER,
   getCurrentRequestId,
@@ -95,7 +100,12 @@ export class AdminTransport {
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       const text = await response.body.text().catch(() => 'Unknown error');
-      throw new Error(`AdminClient: ${upper} ${path} → ${response.statusCode}: ${text}`);
+      // Typed failure: callers (route handlers, use-cases) classify on
+      // `status` / `isRetryable` / `isAuthFailure` instead of string-matching
+      // the message. The `Error.message` format is preserved
+      // (`AdminClient: <method> <path> → <status>: <body>`) for back-compat
+      // with logs and any remaining text-based callers.
+      throw new UpstreamError(upper, path, response.statusCode, text);
     }
 
     // 204 No Content / empty response handling — return null cast to T so
@@ -147,14 +157,16 @@ export class AdminTransport {
 
   private buildSigningHeaders(method: HttpMethod, path: string, body?: unknown): Record<string, string> {
     if (!this.sharedSecret) return {};
-    const timestamp = Date.now().toString();
     const bodyStr = body !== undefined ? JSON.stringify(body) : '';
-    const bodyHash = createHash('sha256').update(bodyStr).digest('hex');
-    const message = [method, path, timestamp, bodyHash].join('\n');
-    const signature = createHmac('sha256', this.sharedSecret).update(message).digest('hex');
+    const { timestamp, signature } = buildInternalSignature({
+      secret: this.sharedSecret,
+      method,
+      path,
+      body: bodyStr,
+    });
     return {
-      'x-request-timestamp': timestamp,
-      'x-request-signature': signature,
+      [REQUEST_TIMESTAMP_HEADER]: timestamp,
+      [REQUEST_SIGNATURE_HEADER]: signature,
     };
   }
 

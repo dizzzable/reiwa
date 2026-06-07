@@ -5,6 +5,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { sendSafeError } from "../lib/error-response.js";
 
 export function createPromoRouter(deps: {
   adminClient: AdminClient | null;
@@ -36,7 +37,7 @@ export function createPromoRouter(deps: {
         );
         res.json(result ?? {});
       } catch (e: unknown) {
-        res.status(400).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 400, "Promo code activation failed", "promocode/activate");
       }
     },
   );

@@ -4,6 +4,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
+import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
 
@@ -72,13 +73,13 @@ export function createLinkingRouter(deps: {
         botUsername: botUsername || null,
       });
     } catch (e: unknown) {
-      const errMsg = (e as Error).message ?? "";
+      const { message: errMsg } = describeUpstreamError(e);
 
-      if (errMsg.includes("409") || errMsg.toLowerCase().includes("already linked")) {
+      if (isUpstreamStatus(e, 409) || errMsg.toLowerCase().includes("already linked")) {
         res.status(409).json({ message: "Telegram account is already linked" });
         return;
       }
-      if (errMsg.includes("503") || errMsg.includes("unavailable")) {
+      if (isUpstreamStatus(e, 503) || errMsg.includes("unavailable")) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
         return;
       }
@@ -126,13 +127,13 @@ export function createLinkingRouter(deps: {
         message: result.message,
       });
     } catch (e: unknown) {
-      const errMsg = (e as Error).message ?? "";
+      const { message: errMsg } = describeUpstreamError(e);
 
-      if (errMsg.includes("409") || errMsg.toLowerCase().includes("already linked")) {
+      if (isUpstreamStatus(e, 409) || errMsg.toLowerCase().includes("already linked")) {
         res.status(409).json({ message: "Email is already linked to another account" });
         return;
       }
-      if (errMsg.includes("503") || errMsg.includes("unavailable")) {
+      if (isUpstreamStatus(e, 503) || errMsg.includes("unavailable")) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
         return;
       }
@@ -180,21 +181,21 @@ export function createLinkingRouter(deps: {
         verified: result.verified,
       });
     } catch (e: unknown) {
-      const errMsg = (e as Error).message ?? "";
+      const { message: errMsg } = describeUpstreamError(e);
 
-      if (errMsg.includes("410") || errMsg.toLowerCase().includes("expired")) {
+      if (isUpstreamStatus(e, 410) || errMsg.toLowerCase().includes("expired")) {
         res.status(410).json({ message: "Verification code has expired" });
         return;
       }
-      if (errMsg.includes("429") || errMsg.toLowerCase().includes("too many attempts")) {
+      if (isUpstreamStatus(e, 429) || errMsg.toLowerCase().includes("too many attempts")) {
         res.status(429).json({ message: "Too many incorrect attempts. Code has been invalidated." });
         return;
       }
-      if (errMsg.includes("400") || errMsg.toLowerCase().includes("invalid code")) {
+      if (isUpstreamStatus(e, 400) || errMsg.toLowerCase().includes("invalid code")) {
         res.status(400).json({ message: "Invalid verification code" });
         return;
       }
-      if (errMsg.includes("503") || errMsg.includes("unavailable")) {
+      if (isUpstreamStatus(e, 503) || errMsg.includes("unavailable")) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
         return;
       }

@@ -9,6 +9,7 @@ import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js
 import { createSessionMiddleware } from "../middleware/session.js";
 import { createAuthBruteForceDetection } from "../middleware/brute-force-detection.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
+import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 import type { AuthRequest } from "../middleware/session.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
@@ -190,26 +191,34 @@ export function createAuthRouter(deps: {
         ...(referralCode ? { referralCode } : {}),
       });
 
-      // Create web session
-      await req.createWebSession(result.userId);
+      // Create web session — isolated so a session-store failure after a
+      // successful account creation isn't misclassified as an upstream
+      // registration error (e.g. a spurious 409) by the catch below.
+      try {
+        await req.createWebSession(result.userId);
+      } catch (err) {
+        getRequestLogger(req).error({ err }, "auth/register createWebSession failed");
+        res.status(500).json({ message: "Account created but session setup failed. Please sign in." });
+        return;
+      }
 
       res.json({
         success: true,
         redirectUrl: "/dashboard",
       });
     } catch (e: unknown) {
-      const errMsg = (e as Error).message ?? "";
+      const { message: errMsg } = describeUpstreamError(e);
 
       // Handle specific error responses from Rezeis_Admin
-      if (errMsg.includes("403")) {
+      if (isUpstreamStatus(e, 403)) {
         res.status(403).json({ message: "Registration is currently disabled" });
         return;
       }
-      if (errMsg.includes("409") || errMsg.toLowerCase().includes("username")) {
+      if (isUpstreamStatus(e, 409) || errMsg.toLowerCase().includes("username")) {
         res.status(409).json({ message: "Username is already taken" });
         return;
       }
-      if (errMsg.includes("503") || errMsg.includes("unavailable")) {
+      if (isUpstreamStatus(e, 503) || errMsg.includes("unavailable")) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
         return;
       }
@@ -453,9 +462,9 @@ export function createAuthRouter(deps: {
         redirectUrl: "/dashboard",
       });
     } catch (e: unknown) {
-      const errMsg = (e as Error).message ?? "";
+      const { message: errMsg } = describeUpstreamError(e);
 
-      if (errMsg.includes("401") || errMsg.toLowerCase().includes("password")) {
+      if (isUpstreamStatus(e, 401) || errMsg.toLowerCase().includes("password")) {
         res.status(401).json({ message: "Current password is incorrect" });
         return;
       }

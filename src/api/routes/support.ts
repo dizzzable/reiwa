@@ -7,6 +7,7 @@ import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
+import { isUpstreamStatus } from "../lib/upstream-error.js";
 
 export function createSupportRouter(deps: {
   adminClient: AdminClient | null;
@@ -29,7 +30,7 @@ export function createSupportRouter(deps: {
       res.json(result ?? []);
     } catch (err: unknown) {
       getRequestLogger(req).error({ err }, "GET /support/tickets failed");
-      res.status(500).json({ error: err instanceof Error ? err.message : "internal" });
+      res.status(500).json({ error: "internal" });
     }
   });
 
@@ -40,9 +41,9 @@ export function createSupportRouter(deps: {
       const result = await adminClient?.support.get(resolveUserIdentity(req), ticketId);
       res.json(result);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "internal";
       getRequestLogger(req).warn({ err, ticketId }, "GET /support/tickets/:id failed");
-      res.status(message.includes("404") ? 404 : 500).json({ error: message });
+      const notFound = isUpstreamStatus(err, 404);
+      res.status(notFound ? 404 : 500).json({ error: notFound ? "not_found" : "internal" });
     }
   });
 
@@ -61,7 +62,7 @@ export function createSupportRouter(deps: {
       res.json(result);
     } catch (err: unknown) {
       getRequestLogger(req).error({ err }, "POST /support/tickets failed");
-      res.status(500).json({ error: err instanceof Error ? err.message : "internal" });
+      res.status(500).json({ error: "internal" });
     }
   });
 
@@ -78,7 +79,7 @@ export function createSupportRouter(deps: {
       res.json(result);
     } catch (err: unknown) {
       getRequestLogger(req).error({ err, ticketId }, "POST /support/tickets/:id/reply failed");
-      res.status(500).json({ error: err instanceof Error ? err.message : "internal" });
+      res.status(500).json({ error: "internal" });
     }
   });
 

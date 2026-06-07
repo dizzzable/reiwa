@@ -4,6 +4,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
+import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
 
@@ -112,13 +113,13 @@ export function createPushRouter(deps: {
 
       res.json({ success: result.success });
     } catch (e: unknown) {
-      const errMsg = (e as Error).message ?? "";
+      const { message: errMsg } = describeUpstreamError(e);
 
-      if (errMsg.includes("409") || errMsg.toLowerCase().includes("limit")) {
+      if (isUpstreamStatus(e, 409) || errMsg.toLowerCase().includes("limit")) {
         res.status(409).json({ message: "Maximum push subscriptions reached" });
         return;
       }
-      if (errMsg.includes("503") || errMsg.includes("unavailable")) {
+      if (isUpstreamStatus(e, 503) || errMsg.includes("unavailable")) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
         return;
       }
@@ -160,8 +161,8 @@ export function createPushRouter(deps: {
         const result = await adminClient.push.unsubscribe(userId, endpoint);
         res.json({ success: result.success });
       } catch (unsubErr: unknown) {
-        const unsubErrMsg = (unsubErr as Error).message ?? "";
-        if (unsubErrMsg.includes("404")) {
+        const { message: unsubErrMsg } = describeUpstreamError(unsubErr);
+        if (isUpstreamStatus(unsubErr, 404)) {
           // Already removed — idempotent success.
           res.json({ success: true });
           return;

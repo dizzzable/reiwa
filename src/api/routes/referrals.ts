@@ -6,6 +6,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { sendSafeError } from "../lib/error-response.js";
 
 export function createReferralsRouter(deps: {
   adminClient: AdminClient | null;
@@ -35,7 +36,7 @@ export function createReferralsRouter(deps: {
         const invite = await adminClient?.referrals.createInvite(resolveUserIdentity(req));
         res.json(invite ?? {});
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to create invite", "referrals/invites");
       }
     },
   );
@@ -78,7 +79,7 @@ export function createReferralsRouter(deps: {
         );
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(400).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 400, "Failed to revoke invite", "referrals/revoke");
       }
     },
   );
@@ -134,7 +135,7 @@ export function createReferralsRouter(deps: {
         });
         res.json(result ?? {});
       } catch (e: unknown) {
-        res.status(400).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 400, "Points exchange failed", "referrals/exchange");
       }
     },
   );

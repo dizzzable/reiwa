@@ -26,6 +26,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AdminTransport } from '../../../src/infrastructure/admin-client/transport.js';
+import { UpstreamError } from '../../../src/core/errors/index.js';
 import { runWithRequestContext } from '../../../src/infrastructure/logger/request-context.js';
 
 interface CapturedRequest {
@@ -154,6 +155,27 @@ describe('AdminTransport — request', () => {
     await expect(transport.request<unknown>('GET', '/oops')).rejects.toThrow(
       'AdminClient: GET /oops → 500: internal boom',
     );
+  });
+
+  it('throws a typed UpstreamError carrying status/body for non-2xx', async () => {
+    h.respond = (_req, res) => {
+      res.statusCode = 409;
+      res.end('already exists');
+    };
+    const err = await transport
+      .request<unknown>('POST', '/conflict', { x: 1 })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toBeInstanceOf(UpstreamError);
+    const upstream = err as UpstreamError;
+    expect(upstream.status).toBe(409);
+    expect(upstream.body).toBe('already exists');
+    expect(upstream.method).toBe('POST');
+    expect(upstream.path).toBe('/conflict');
+    // 409 is non-retryable; 5xx/408/429 are retryable.
+    expect(upstream.isRetryable).toBe(false);
   });
 
   it('serialises JSON body and sets Content-Type: application/json', async () => {

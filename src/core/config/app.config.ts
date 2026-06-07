@@ -37,6 +37,12 @@ const schema = z.object({
   REIWA_PORT: z.coerce.number().int().positive().default(5000),
   PORT: z.coerce.number().int().positive().optional(),
   /**
+   * Interface the API binds to. Defaults to `0.0.0.0` (all interfaces),
+   * which is correct inside Docker. Set to `127.0.0.1` to bind loopback
+   * only when running the API directly on a host behind a local proxy.
+   */
+  REIWA_HOST: z.string().trim().min(1).default('0.0.0.0'),
+  /**
    * Full Redis connection string. Optional — when unset it is derived
    * from the discrete `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` /
    * `REDIS_NAME` vars below (the names used in `.env.example` and the
@@ -153,7 +159,40 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  /**
+   * Escape hatch to boot the API without a working Redis connection.
+   * Redis backs web sessions, the rate limiter and brute-force
+   * detection, so without it those protections silently no-op. In
+   * production the API fails closed (refuses to start) when Redis is
+   * unreachable unless this flag is `true`. Non-production always allows
+   * degraded boot for local dev / smoke tests.
+   */
+  REIWA_ALLOW_DEGRADED: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   REIWA_CORS_ORIGIN: z.string().trim().optional(),
+
+  /**
+   * Shared secret used to verify inbound webhooks FROM rezeis-admin
+   * (operator events: bot-config changed, per-user notifications,
+   * broadcasts). Must equal the admin's `WEBHOOK_SECRET_HEADER`
+   * (the same role Remnawave→remnashop calls `REMNAWAVE_WEBHOOK_SECRET`).
+   * Signature scheme: `X-Rezeis-Signature: t=<sec>,v1=<hmac>` over
+   * `<t>.<rawBody>`. When unset, the webhook receiver rejects everything.
+   */
+  REZEIS_WEBHOOK_SECRET: optionalString,
+  /**
+   * Internal address of reiwa-bot's listener, used by reiwa-api to relay
+   * received webhooks (cache-bust / notify) to the bot process. Always a
+   * private same-VPS docker hop — never public. Defaults to the docker
+   * service name; override only for non-standard local topologies.
+   */
+  REIWA_BOT_INTERNAL_URL: z
+    .string()
+    .trim()
+    .min(1)
+    .default('http://reiwa-bot:5100'),
 });
 
 export type ReiwaConfig = z.infer<typeof schema>;

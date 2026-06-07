@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface TelegramUser {
   id: number;
@@ -43,7 +43,17 @@ export function validateTelegramInitData(initData: string, botToken: string): Te
     const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
     const computedHash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-    if (computedHash !== hash) return null;
+    // Constant-time comparison of the two hex digests. `timingSafeEqual`
+    // throws on length mismatch, so guard first (a wrong-length hash is
+    // never valid anyway).
+    const computedBuf = Buffer.from(computedHash, 'hex');
+    const providedBuf = Buffer.from(hash, 'hex');
+    if (
+      computedBuf.length !== providedBuf.length ||
+      !timingSafeEqual(computedBuf, providedBuf)
+    ) {
+      return null;
+    }
 
     // Check auth_date freshness (within 1 hour)
     const authDate = Number(params.get('auth_date') ?? 0);

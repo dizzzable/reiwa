@@ -6,6 +6,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { sendSafeError } from "../lib/error-response.js";
 
 /**
  * Flatten the rezeis nested quote shape
@@ -88,7 +89,7 @@ export function createSubscriptionRouter(deps: {
         );
         res.json(policy ?? {});
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to load action policy", "subscription/action-policy");
       }
     },
   );
@@ -113,10 +114,14 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const result = await adminClient?.trial.activate(resolveUserIdentity(req));
+        if (!adminClient) {
+          res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
+          return;
+        }
+        const result = await adminClient.trial.activate(resolveUserIdentity(req));
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(400).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 400, "Trial activation failed", "subscription/trial");
       }
     },
   );
@@ -145,7 +150,7 @@ export function createSubscriptionRouter(deps: {
         );
         res.json(flattenQuote(quote, Number(durationDays)));
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to price the selection", "subscription/quote");
       }
     },
   );

@@ -38,6 +38,17 @@ interface CardEffectLayerProps {
   readonly props?: Record<string, unknown>;
   readonly opacity?: number;
   readonly className?: string;
+  /**
+   * Carousel pre-warm hint. When `true`, the effect mounts even while the
+   * card is off-screen, so the next/prev slide's WebGL context + shaders are
+   * already initialised before the user swipes to it (the parent passes
+   * `true` for the active card and its immediate neighbours). This can't be
+   * done with `IntersectionObserver` alone: the carousel's `overflow-x-auto`
+   * track clips off-screen slides, so a viewport `rootMargin` never sees them.
+   * Left `undefined` for standalone usage, where the IntersectionObserver
+   * below drives mounting.
+   */
+  readonly active?: boolean;
 }
 
 class EffectErrorBoundary extends Component<{ children: ReactNode; resetKey: string }, { hasError: boolean }> {
@@ -55,12 +66,16 @@ class EffectErrorBoundary extends Component<{ children: ReactNode; resetKey: str
   }
 }
 
-export function CardEffectLayer({ effect, props, opacity = 1, className }: CardEffectLayerProps) {
+export function CardEffectLayer({ effect, props, opacity = 1, className, active }: CardEffectLayerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
 
-  // Only mount the effect while the card is on screen — pauses GPU work for
-  // off-screen carousel slides and scrolled-away cards.
+  // Mount the effect while the card is on screen. In the carousel the parent
+  // also passes `active` for the current card + its immediate neighbours, so
+  // they stay mounted (pre-warmed) even while clipped off-screen by the
+  // horizontal scroll track — the swipe-in then shows the live background
+  // instantly instead of "popping" after WebGL init. Far-away / page-scrolled
+  // cards (active falsy AND off-screen) stay unmounted to pause GPU work.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -71,6 +86,8 @@ export function CardEffectLayer({ effect, props, opacity = 1, className }: CardE
     io.observe(el);
     return () => io.disconnect();
   }, []);
+
+  const shouldMount = visible || active === true;
 
   const isValid = effect !== "NONE" && effect in CARD_EFFECT_COMPONENTS;
   if (!isValid) return null;
@@ -86,7 +103,7 @@ export function CardEffectLayer({ effect, props, opacity = 1, className }: CardE
       className={className}
       style={{ opacity: Math.min(Math.max(opacity, 0.05), 1) }}
     >
-      {visible && (
+      {shouldMount && (
         <EffectErrorBoundary resetKey={id}>
           <Suspense fallback={null}>
             <Effect key={id} {...mergedProps} />

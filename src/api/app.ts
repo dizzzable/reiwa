@@ -33,6 +33,7 @@ import { createLinkingRouter } from "./routes/linking.js";
 import { createPushRouter } from "./routes/push.js";
 import { createRealtimeRouter } from "./routes/realtime.js";
 import { createContentRouter } from "./routes/content.js";
+import { createRezeisWebhookRouter } from "./routes/webhooks.js";
 
 export interface CreateAppDeps {
   adminClient: AdminClient | null;
@@ -118,7 +119,17 @@ export function createApp(deps: CreateAppDeps) {
   }
 
   // ── Parsers ───────────────────────────────────────────────────────────────
-  app.use(express.json({ limit: "1mb" }));
+  // Capture the raw body bytes so the rezeis-admin webhook receiver can verify
+  // the HMAC signature over the exact payload (the signature is computed over
+  // `<timestamp>.<rawBody>`, so a re-serialised body would never match).
+  app.use(
+    express.json({
+      limit: "1mb",
+      verify: (req, _res, buf) => {
+        (req as unknown as { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
   app.use(cookieParser());
 
   // ── CORS ──────────────────────────────────────────────────────────────────
@@ -185,6 +196,9 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createPushRouter(deps));
   app.use("/api/v1", createRealtimeRouter(deps));
   app.use("/api/v1", createContentRouter(deps));
+  // Inbound rezeis-admin webhook receiver (admin → reiwa public domain →
+  // relayed to the bot locally). Signature-authenticated; see webhooks.ts.
+  app.use("/api/v1", createRezeisWebhookRouter({ config }));
 
   // ── Admin uploads proxy (icons) ───────────────────────────────────────────
   // Custom icons live on the admin host under `/uploads/icons/<file>`. The

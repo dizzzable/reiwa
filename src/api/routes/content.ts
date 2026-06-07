@@ -5,6 +5,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl } from "../../lib/payment-return-url.js";
+import { sendSafeError } from "../lib/error-response.js";
 
 /**
  * Content router — operator-managed read-only content the SPA renders:
@@ -84,7 +85,7 @@ export function createContentRouter(deps: {
         });
         res.json(result ?? {});
       } catch (e: unknown) {
-        res.status(400).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 400, "Add-on purchase failed", "add-ons/purchase");
       }
     },
   );

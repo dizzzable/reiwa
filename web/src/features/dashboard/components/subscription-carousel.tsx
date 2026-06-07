@@ -87,6 +87,7 @@ export function SubscriptionCarousel({
               subscription={sub}
               index={i}
               firstDevice={firstDeviceById?.[sub.id] ?? null}
+              effectActive={Math.abs(i - activeIndex) <= 1}
             />
           </div>
         ))}

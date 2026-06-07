@@ -34,7 +34,12 @@ export const apiLimiter = rateLimit({
   // relies on the per-session auth + upstream connection limits instead.
   // `originalUrl` is used because the limiter is mounted at `/api`, which
   // strips the prefix from `req.path`.
-  skip: (req) => req.originalUrl.startsWith("/api/v1/realtime/stream"),
+  // - SSE stream: long-lived, auto-reconnect would burn the budget.
+  // - rezeis webhook receiver: server-to-server delivery (signature-authed,
+  //   not IP/browser traffic); a 429 here would drop operator events.
+  skip: (req) =>
+    req.originalUrl.startsWith("/api/v1/realtime/stream") ||
+    req.originalUrl.startsWith("/api/v1/webhooks/rezeis"),
 });
 
 // ── Redis-based endpoint-specific rate limiters ─────────────────────────────

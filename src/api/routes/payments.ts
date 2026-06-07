@@ -7,6 +7,7 @@ import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl } from "../../lib/payment-return-url.js";
+import { sendSafeError } from "../lib/error-response.js";
 
 export function createPaymentsRouter(deps: {
   adminClient: AdminClient | null;
@@ -71,7 +72,12 @@ export function createPaymentsRouter(deps: {
           override: failOverride ?? successOverride,
         });
 
-        const checkout = await adminClient?.payments.createCheckout(
+        if (!adminClient) {
+          res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
+          return;
+        }
+
+        const checkout = await adminClient.payments.createCheckout(
           resolveUserIdentity(req),
           (typeof purchaseType === "string" ? purchaseType : "NEW") as PurchaseType,
           String(planId),
@@ -86,7 +92,7 @@ export function createPaymentsRouter(deps: {
         );
         res.json(checkout ?? {});
       } catch (e: unknown) {
-        res.status(500).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 500, "Failed to create checkout", "payments/checkout");
       }
     },
   );
@@ -99,7 +105,7 @@ export function createPaymentsRouter(deps: {
       const result = await adminClient?.payments.forwardWebhook(gatewayType, req.body);
       res.json(result ?? { received: true });
     } catch (e: unknown) {
-      res.status(500).json({ message: (e as Error).message });
+      sendSafeError(req, res, e, 500, "Webhook processing failed", "payments/webhooks");
     }
   });
 

@@ -60,13 +60,16 @@ export class PaymentsNamespace {
       query.push(`telegramId=${encodeURIComponent(identity.telegramId)}`);
     }
     const qs = query.length > 0 ? `?${query.join('&')}` : '';
-    return this.transport.request('GET', `/api/internal/payments/${paymentId}${qs}`);
+    return this.transport.request(
+      'GET',
+      `/api/internal/payments/${encodeURIComponent(paymentId)}${qs}`,
+    );
   }
 
   forwardWebhook(gatewayType: string, rawPayload: unknown): Promise<unknown> {
     return this.transport.request(
       'POST',
-      `/api/internal/payments/webhooks/${gatewayType}`,
+      `/api/internal/payments/webhooks/${encodeURIComponent(gatewayType)}`,
       rawPayload,
     );
   }

@@ -274,21 +274,30 @@ Original gap (history): the workflow built only the root `Dockerfile`, while
 
 ### Risks / improvements
 
-#### Error classification by string matching
+#### Error classification by string matching — ✅ RESOLVED (2026-06-07)
 
-Many route handlers classify upstream errors via `err.message.includes("409")`, `includes("503")`, etc.
+`AdminTransport.request()` now throws a typed `UpstreamError` (`method`,
+`path`, `status`, `body`; `isRetryable` / `isAuthFailure` helpers) instead of
+a plain `Error`. The `Error.message` format is preserved
+(`AdminClient: <method> <path> → <status>: <body>`) for logs and back-compat.
 
-Relevant examples:
+Route handlers (`auth`, `linking`, `push`, `support`) now classify failures
+via `isUpstreamStatus(e, <code>)` / `describeUpstreamError(e)` from
+`src/api/lib/upstream-error.ts`, which prefers the typed `status` and only
+falls back to message-text scanning for non-typed errors. `support.ts` also
+stopped forwarding upstream error bodies to the browser (returns generic
+`internal` / `not_found` instead). Covered by new specs in
+`test/infrastructure/admin-client/transport.test.ts` and
+`test/api/lib/upstream-error.test.ts`.
+
+Original (history): handlers classified upstream errors via
+`err.message.includes("409")` etc., which is fragile — any upstream text
+change can alter behavior.
+
+Relevant examples (now refactored):
 
 - `src/api/routes/auth.ts`
 - `src/api/routes/linking.ts`
-
-This is fragile: any upstream text change can alter behavior.
-
-Recommendation:
-
-- Introduce typed `UpstreamError` with `status`, `code`, `safeMessage`.
-- Make `AdminTransport` throw this structured error instead of plain `Error`.
 
 #### `REIWA_COOKIE_SECRET` is accepted but not actually used for signing
 
@@ -329,14 +338,18 @@ Recommendation:
 - Make route auth middleware explicit: `requireWebSession`, `requireTelegramSession`, etc.
 - Avoid silent split-brain between web and legacy session cookies.
 
-#### Redis connect errors are swallowed
+#### Redis connect errors are swallowed — ✅ RESOLVED (2026-06-07)
 
-`SessionStore.connect()` and `WebSessionStore.connect()` catch and log Redis connection errors, then startup continues.
+`SessionStore.connect()` and `WebSessionStore.connect()` no longer swallow
+the connection error — they propagate it. `src/api/main.ts` now decides via
+`connectStore()`: in production a failed Redis connection **fails closed**
+(the process refuses to start) unless `REIWA_ALLOW_DEGRADED=true`;
+non-production always boots in degraded mode with a loud warning. Documented
+in `.env.example` (`REIWA_ALLOW_DEGRADED`).
 
-Recommendation:
-
-- For production API, fail startup if Redis is required for sessions/rate limits.
-- Allow degraded local mode only under explicit `NODE_ENV=development` or `REIWA_ALLOW_DEGRADED=true`.
+Original (history): both `connect()` methods caught and logged Redis
+connection errors, then startup continued — so a production API could boot
+with sessions / rate-limit / brute-force silently disabled.
 
 ## 7. Bot audit
 
@@ -584,7 +597,10 @@ Add dependency scanning after the `qs` fix.
 ### Weaknesses
 
 1. No root `AGENTS.md` guidance for future agents/developers.
-2. README is outdated: says scaffold avoids business endpoints, but code now contains many endpoints and web app.
+2. ✅ RESOLVED (2026-06-07) — README refreshed to the current state
+   (API/bot/worker/web architecture, typed upstream errors, fail-closed
+   Redis/cookies, config contracts, deployment) instead of the stale
+   "scaffold avoids business endpoints" wording.
 3. No dedicated architecture doc for session models and auth flows.
 4. Legacy shims (`src/config.ts`, legacy auth/bootstrap/sign-out routes) need an explicit removal plan.
 5. NodeNext import style is mostly okay because typecheck passes, but there are many files without explicit `.js` imports because they may only contain types/constants or web alias imports. No current breakage.
@@ -638,3 +654,102 @@ Do this first:
 3. Add web build/typecheck and tests to CI.
 
 Until `npm test` is green and CI covers web, every other change is harder to trust.
+
+
+---
+
+## 15. Code-first review pass (2026-06-07)
+
+An independent, source-first review (not driven by the section-5 list) of
+`src/` surfaced and resolved the following. All changes verified green:
+backend `tsc` + 229 unit tests + 18 PBT.
+
+### P0 — Upstream error bodies + internal API paths leaked to the browser — ✅ RESOLVED
+
+`UpstreamError.message` embeds the raw upstream response body and the
+internal `/api/internal/...` path. ~10 route handlers forwarded
+`(e as Error).message` verbatim to the client via
+`res.status(...).json({ message: (e as Error).message })`, leaking provider
+diagnostics and the internal API surface — directly against the project's
+safety rules. (Note: wiring the typed `UpstreamError` into the transport made
+this leak fully consistent across routes, so it had to be closed everywhere.)
+
+Fix: new `src/api/lib/error-response.ts` `sendSafeError(req, res, e, status,
+message, context)` — logs the full detail server-side, returns a generic
+client-safe message, preserves each route's status contract. Applied to
+`payments`, `subscription`, `profile` (7 handlers), `devices` (3),
+`partner` (2), `referrals` (3), `plans` (2), `promo`, `content`. Pinned by
+`test/api/lib/error-response.test.ts` (asserts the body / internal path /
+provider text never reach the response).
+
+### P1 — `.env.example` documented a dead `REZEIS_WEBHOOK_SECRET` — ✅ RESOLVED
+
+The HMAC shared secret the code actually reads is
+`REZEIS_INTERNAL_SHARED_SECRET` (api/bot/worker + internal listener), but
+`.env.example` shipped `REZEIS_WEBHOOK_SECRET=` (read nowhere). An operator
+copying the example would leave HMAC signing + the bot invalidate listener
+silently disabled. `.env.example` now documents `REZEIS_INTERNAL_SHARED_SECRET`
+(with the ≥32-char requirement and the "set the same value on rezeis-admin"
+note).
+
+### P1 — `adminClient`-null returned 200 + empty body on state-changing routes — ✅ RESOLVED (checkout, trial)
+
+`payments/checkout` and `subscription/trial` used `adminClient?.…` then
+`res.json(result ?? {})`, so in degraded mode (no admin client) a payment the
+user could never initiate returned a success-shaped `200 {}`. Both now return
+an explicit `503` when `adminClient` is null.
+
+### P1 — `REIWA_HOST` documented but ignored — ✅ RESOLVED
+
+`api/main.ts` hardcoded `listen(port, "0.0.0.0")`, so the documented
+`REIWA_HOST` was a no-op. Added `REIWA_HOST` to the config schema (default
+`0.0.0.0`) and `main.ts` now honours it. Removed the dead `REIWA_LOCALES` /
+`REIWA_DEFAULT_LOCALE` from `.env.example` (reiwa hardcodes `DEFAULT_LOCALE`;
+SPA locale defaults come from the rezeis-admin bootstrap, not reiwa env).
+
+### P2 — Internal path-segment injection — ✅ RESOLVED
+
+`namespaces/payments.ts` interpolated `paymentId` / `gatewayType` (straight
+from `req.params`) into the upstream path without `encodeURIComponent`, while
+every other namespace encoded its segments. Both are now encoded; a sweep of
+all namespaces confirmed the rest were already safe.
+
+### P2 — `auth/register` session creation not isolated — ✅ RESOLVED
+
+Session creation after a successful `register` ran inside the outer try, so a
+session-store failure was misclassified by the upstream-status catch (possible
+spurious 409). Now isolated in its own try/catch (mirrors `auth/login`),
+returning a clear "account created but session setup failed" 500.
+
+### P2 — Telegram initData HMAC compared with `!==` — ✅ RESOLVED
+
+`validateTelegramInitData` now uses `crypto.timingSafeEqual` (with a length
+guard) instead of a timing-variable string compare on the HMAC digest.
+
+### Still open (tracked, not yet changed)
+
+- **Rate limiter is non-atomic (TOCTOU)** — `rate-limit.ts` does
+  `get` → compute → `incr`; concurrent requests can all pass under the
+  threshold. Should `INCR`-first (atomic) or use a Lua script. The function
+  docstring also still says "fail-open" while the code fails closed (503 on
+  Redis-down) — inconsistent with brute-force detection, which fails open.
+- **Coordinated brute-force threshold = 3 distinct IPs/username/hour** —
+  bans the observed IPs; NAT/CGNAT false-positive availability risk. Consider
+  raising the threshold and excluding shared ranges.
+- **CSRF is effectively advisory** — derives "self origin" from the `Host`
+  header and allows requests with neither Origin nor Referer. Defensible as
+  defense-in-depth behind SameSite=lax, but should be documented as such
+  (the explicit reject branches imply stronger protection than exists).
+- **`parseTelegramInitData`** (no signature verification) coexists with the
+  validated parser — confirm it's only used for non-trust display.
+- Session-model unification (`reiwa_web_session` vs legacy `reiwa_session`),
+  frontend `any` casts and `__REIWA_*__` globals — unchanged.
+
+### Confirmed NOT bugs (verified against source)
+
+- `realtime-proxy.ts` only branches on `upstream === null`, but
+  `transport.openStream` returns `null` for any `statusCode >= 400` (after
+  draining), so 4xx/5xx upstream bodies never reach the SSE pipe.
+- Realtime stream derives `userRef` from server-side identity — no cross-user
+  streaming.
+- Production secure-cookie logic fails closed correctly.

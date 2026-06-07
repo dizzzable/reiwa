@@ -4,6 +4,7 @@ import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { sendSafeError } from "../lib/error-response.js";
 
 export function createPartnerRouter(deps: {
   adminClient: AdminClient | null;
@@ -88,7 +89,7 @@ export function createPartnerRouter(deps: {
       });
       res.json(result ?? {});
     } catch (e: unknown) {
-      res.status(400).json({ message: (e as Error).message });
+      sendSafeError(req, res, e, 400, "Withdrawal request failed", "partner/withdraw");
     }
   });
 
@@ -108,7 +109,7 @@ export function createPartnerRouter(deps: {
       const result = await adminClient?.trial.activate(resolveUserIdentity(req));
       res.json(result ?? {});
     } catch (e: unknown) {
-      res.status(400).json({ message: (e as Error).message });
+      sendSafeError(req, res, e, 400, "Trial activation failed", "partner/trial");
     }
   });
 

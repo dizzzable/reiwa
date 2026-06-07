@@ -71,18 +71,14 @@ export class WebSessionStore {
     });
   }
 
+  /**
+   * Establish the Redis connection. Rejects on failure so the caller can
+   * decide whether to fail-closed (production) or boot in degraded mode
+   * (`REIWA_ALLOW_DEGRADED` / non-production). Transient post-connect
+   * errors are surfaced separately via the `error` event handler above.
+   */
   async connect(): Promise<void> {
-    await this.redis.connect().catch((err: Error) => {
-      if (this.logger) {
-        this.logger.error(
-          { err, component: "WebSessionStore" },
-          "Redis connection failed",
-        );
-      } else {
-        // eslint-disable-next-line no-console
-        console.error("[WebSessionStore] Redis connection failed:", err.message);
-      }
-    });
+    await this.redis.connect();
   }
 
   async disconnect(): Promise<void> {

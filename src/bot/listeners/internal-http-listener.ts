@@ -1,8 +1,18 @@
 /**
- * Internal HTTP listener — single Node-native server bound to the
- * docker network on `BOT_INVALIDATE_PORT` (default 5100). Exposes a
- * narrow set of admin-pushed endpoints; auth is a shared secret
- * header (`X-Auth-Token`) that matches `REZEIS_INTERNAL_SHARED_SECRET`.
+ * Internal HTTP listener — single Node-native server bound to
+ * `BOT_INVALIDATE_PORT` (default 5100). Exposes a narrow set of
+ * admin-pushed endpoints.
+ *
+ * Auth (either is accepted):
+ *   - HMAC signature (preferred): `x-request-timestamp` + `x-request-signature`
+ *     over `METHOD\nPATH\nTIMESTAMP\nsha256(body)` keyed with
+ *     `REZEIS_INTERNAL_SHARED_SECRET` (see `lib/internal-hmac.ts`). The
+ *     secret never travels on the wire and a stale timestamp is rejected —
+ *     this is what makes the hop safe when admin and bot are on different
+ *     VPS reaching each other over the public internet.
+ *   - Legacy shared-secret header `X-Auth-Token` == `REZEIS_INTERNAL_SHARED_SECRET`
+ *     (transitional: safe only on a private docker network or behind TLS;
+ *     kept so same-host deployments keep working until admin signs).
  *
  * Endpoints:
  *
@@ -39,10 +49,10 @@
  *         buttons?: Array<{ text, url?, callbackData? }>,
  *       }
  *
- * Bound to `0.0.0.0` inside the docker network. There is no HTTPS
- * termination — that's the docker network boundary and the operator's
- * responsibility. External traffic NEVER hits this port because
- * docker-compose doesn't publish it.
+ * Bound to `0.0.0.0`. When split across VPS, expose it ONLY through a
+ * TLS reverse proxy (443) with an IP allow-list for the admin host — never
+ * publish the raw port. The HMAC auth above protects the secret even if
+ * TLS terminates at the proxy.
  *
  * If `REZEIS_INTERNAL_SHARED_SECRET` is unset (dev / smoke tests) the
  * listener is skipped entirely — no auth means no endpoint, period.
@@ -54,6 +64,11 @@ import { GrammyError, InlineKeyboard } from 'grammy';
 
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
+import {
+  REQUEST_SIGNATURE_HEADER,
+  REQUEST_TIMESTAMP_HEADER,
+  verifyInternalSignature,
+} from '../../lib/internal-hmac.js';
 
 interface ButtonInput {
   readonly text: string;
@@ -195,11 +210,22 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
       return;
     }
     const url = req.url ?? '';
-    const token = req.headers['x-auth-token'];
-    if (typeof token !== 'string' || token !== secret) {
+
+    // Read the body up front (capped) so the HMAC can be verified over it
+    // before we dispatch. 16 KiB covers the largest endpoint (broadcast).
+    let raw: string;
+    try {
+      raw = await readBody(req, 16 * 1024);
+    } catch {
+      res.statusCode = 413;
+      res.end();
+      return;
+    }
+
+    if (!isAuthorized(req, url, raw, secret)) {
       logger.warn(
         { remoteAddress: req.socket.remoteAddress, path: url },
-        'Internal listener: rejected (missing or wrong X-Auth-Token)',
+        'Internal listener: rejected (bad HMAC signature and X-Auth-Token)',
       );
       res.statusCode = 401;
       res.end();
@@ -212,11 +238,11 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
         return;
       }
       if (url === '/notify') {
-        await handleNotify({ bot, logger, req, res, onUserBlocked });
+        await handleNotify({ bot, logger, raw, res, onUserBlocked });
         return;
       }
       if (url === '/notify-broadcast') {
-        await handleBroadcast({ bot, logger, req, res });
+        await handleBroadcast({ bot, logger, raw, res });
         return;
       }
       res.statusCode = 404;
@@ -234,6 +260,41 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
   server.on('error', (err) => {
     logger.error({ err, port }, 'Internal HTTP server error');
   });
+}
+
+/**
+ * Accept the request when it carries a valid internal HMAC signature OR the
+ * legacy `X-Auth-Token` shared secret. HMAC is preferred (secret never on the
+ * wire, replay-bounded); the token path is transitional for same-host /
+ * behind-TLS deployments until admin signs every call.
+ */
+function isAuthorized(
+  req: http.IncomingMessage,
+  path: string,
+  body: string,
+  secret: string,
+): boolean {
+  const timestamp = headerValue(req.headers[REQUEST_TIMESTAMP_HEADER]);
+  const signature = headerValue(req.headers[REQUEST_SIGNATURE_HEADER]);
+  if (timestamp !== undefined && signature !== undefined) {
+    return verifyInternalSignature({
+      secret,
+      method: 'POST',
+      path,
+      body,
+      timestamp,
+      signature,
+    });
+  }
+  // Legacy fallback: shared secret in the X-Auth-Token header.
+  const token = req.headers['x-auth-token'];
+  return typeof token === 'string' && token === secret;
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value[0];
+  return undefined;
 }
 
 async function handleInvalidate(
@@ -263,19 +324,18 @@ async function handleInvalidate(
 interface NotifyHandlerOptions {
   readonly bot: Bot<Context> | null;
   readonly logger: ReturnType<typeof createLogger>;
-  readonly req: http.IncomingMessage;
+  readonly raw: string;
   readonly res: http.ServerResponse;
   readonly onUserBlocked?: (telegramId: string) => Promise<void> | void;
 }
 
 async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
-  const { bot, logger, req, res, onUserBlocked } = opts;
+  const { bot, logger, raw, res, onUserBlocked } = opts;
   if (bot === null) {
     res.statusCode = 503;
     res.end();
     return;
   }
-  const raw = await readBody(req, 8 * 1024);
   let payload: NotifyPayload;
   try {
     payload = JSON.parse(raw) as NotifyPayload;
@@ -341,18 +401,17 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
 interface BroadcastHandlerOptions {
   readonly bot: Bot<Context> | null;
   readonly logger: ReturnType<typeof createLogger>;
-  readonly req: http.IncomingMessage;
+  readonly raw: string;
   readonly res: http.ServerResponse;
 }
 
 async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
-  const { bot, logger, req, res } = opts;
+  const { bot, logger, raw, res } = opts;
   if (bot === null) {
     res.statusCode = 503;
     res.end();
     return;
   }
-  const raw = await readBody(req, 16 * 1024);
   let payload: BroadcastPayload;
   try {
     payload = JSON.parse(raw) as BroadcastPayload;

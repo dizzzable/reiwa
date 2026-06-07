@@ -115,3 +115,37 @@ Open `https://<your-domain>` — you should see the reiwa sign-in / cabinet.
   All configs disable proxy buffering and raise read timeouts so the
   stream stays open.
 - Do not use `try-cloudflare` in production.
+
+## Inbound webhook from rezeis-admin (split-VPS only)
+
+When `rezeis-admin` runs on a different VPS than reiwa, the panel delivers
+its operator events (bot-config invalidation, per-user notifications,
+broadcasts) to **the same public domain** the cabinet uses, on path
+`POST /api/v1/webhooks/rezeis`. reiwa-api verifies the signed envelope
+(`X-Rezeis-Signature: t=<sec>,v1=<hmac>`, secret = admin's
+`WEBHOOK_SECRET_HEADER` ↔ reiwa's `REZEIS_WEBHOOK_SECRET`) and relays the
+action to reiwa-bot internally. The bot itself is **never** exposed.
+
+The webhook path lives under `/api/*`, so the existing reverse-proxy
+config already forwards it to `reiwa:5000` — **no per-proxy changes are
+required**. A few operational notes regardless of which stack you picked:
+
+- Allow `POST` (every config here already does) and a body of at least
+  16 KiB (well within the default `client_max_body_size` of all four
+  stacks; the largest event is a notification of ≤16 KiB).
+- Do **not** rewrite the request path. The HMAC is signed over the body
+  only, but the receiver matches on the literal path
+  `/api/v1/webhooks/rezeis`.
+- Forward `X-Rezeis-Signature` and `X-Rezeis-Event` unchanged. Caddy's
+  `reverse_proxy`, nginx/angie's `proxy_pass`, and Traefik's services
+  pass arbitrary headers through by default — no special directive needed.
+- Optional hardening: rate-limit `POST /api/v1/webhooks/rezeis` (e.g.
+  10 req/s per source IP) and IP-allowlist the admin VPS at the proxy.
+  reiwa-api itself excludes this path from its global limiter because
+  webhook delivery is server-to-server (signature-authed) and a 429
+  here would drop operator events.
+
+On the admin side, set `REIWA_URL=https://<reiwa-public-domain>` (the
+same domain users open) and `WEBHOOK_SECRET_HEADER=<64-char hex>`. On
+the reiwa side, set `REZEIS_WEBHOOK_SECRET` to the same value. No
+separate bot subdomain or public bot port is needed.

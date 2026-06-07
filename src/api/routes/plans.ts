@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
+import { sendSafeError } from "../lib/error-response.js";
 
 export function createPlansRouter(deps: {
   adminClient: AdminClient | null;
@@ -12,12 +13,12 @@ export function createPlansRouter(deps: {
   const router = Router();
 
   // GET /api/v1/plans
-  router.get("/plans", async (_req, res) => {
+  router.get("/plans", async (req, res) => {
     try {
       const plans = await adminClient?.catalog.getPublicPlans();
       res.json(plans ?? []);
     } catch (e: unknown) {
-      res.status(500).json({ message: (e as Error).message });
+      sendSafeError(req, res, e, 500, "Failed to load plans", "plans");
     }
   });
 
@@ -32,7 +33,7 @@ export function createPlansRouter(deps: {
       const gateways = await adminClient?.payments.getEnabledGateways(channel);
       res.json(gateways ?? []);
     } catch (e: unknown) {
-      res.status(500).json({ message: (e as Error).message });
+      sendSafeError(req, res, e, 500, "Failed to load gateways", "gateways");
     }
   });
 

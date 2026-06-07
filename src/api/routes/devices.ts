@@ -4,6 +4,7 @@ import type { SessionStore } from '../../lib/session-store.js';
 import type { ReiwaConfig } from '../../config.js';
 import { createFlexibleSessionMiddleware, type AuthRequest } from '../middleware/session.js';
 import { resolveUserIdentity } from '../middleware/user-identity.js';
+import { sendSafeError } from '../lib/error-response.js';
 
 export function createDevicesRouter(deps: {
   adminClient: AdminClient | null;
@@ -55,7 +56,7 @@ export function createDevicesRouter(deps: {
         );
         res.json(result ?? { ok: true });
       } catch (e: unknown) {
-        res.status(400).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 400, "Failed to revoke device", "devices/subscription/delete");
       }
     },
   );
@@ -74,7 +75,7 @@ export function createDevicesRouter(deps: {
         );
         res.json(result ?? { regenerated: true });
       } catch (e: unknown) {
-        res.status(400).json({ message: (e as Error).message });
+        sendSafeError(req, res, e, 400, "Failed to regenerate subscription", "devices/subscription/regenerate");
       }
     },
   );
@@ -86,7 +87,7 @@ export function createDevicesRouter(deps: {
       const result = await adminClient?.devices.delete(resolveUserIdentity(req), hwid);
       res.json(result ?? { ok: true });
     } catch (e: unknown) {
-      res.status(400).json({ message: (e as Error).message });
+      sendSafeError(req, res, e, 400, "Failed to delete device", "devices/delete");
     }
   });
 
