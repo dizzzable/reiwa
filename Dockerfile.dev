@@ -10,7 +10,7 @@
 #      docker-compose.dev.yml overrides CMD per service (api / bot / worker).
 # ════════════════════════════════════════════════════════════════════════════
 
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 
 # Install deps first so the layer is cached unless package*.json changes.
