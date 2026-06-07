@@ -34,6 +34,7 @@ import { createPushRouter } from "./routes/push.js";
 import { createRealtimeRouter } from "./routes/realtime.js";
 import { createContentRouter } from "./routes/content.js";
 import { createRezeisWebhookRouter } from "./routes/webhooks.js";
+import { createInternalMetricsRouter } from "./routes/internal-metrics.js";
 
 export interface CreateAppDeps {
   adminClient: AdminClient | null;
@@ -199,6 +200,8 @@ export function createApp(deps: CreateAppDeps) {
   // Inbound rezeis-admin webhook receiver (admin → reiwa public domain →
   // relayed to the bot locally). Signature-authenticated; see webhooks.ts.
   app.use("/api/v1", createRezeisWebhookRouter({ config }));
+  // Internal metrics for the admin dashboard's Reiwa monitoring tab.
+  app.use("/api/v1", createInternalMetricsRouter({ config }));
 
   // ── Admin uploads proxy (icons) ───────────────────────────────────────────
   // Custom icons live on the admin host under `/uploads/icons/<file>`. The
