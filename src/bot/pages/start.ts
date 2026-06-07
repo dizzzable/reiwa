@@ -22,7 +22,7 @@
 import { InlineKeyboard } from 'grammy';
 
 import { buildWelcomeMessage } from '../../infrastructure/bot-message/message-builder.js';
-import { buildMainKeyboard, resolveSupportDeepLink } from '../widgets/main-keyboard.js';
+import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
 import { coerceLocale } from './coerce-locale.js';
@@ -135,6 +135,34 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
     // existing web-first reiwa_id instead.
     const startPayload =
       typeof ctx.match === 'string' ? ctx.match.trim() : '';
+
+    // Phase 0a: post-payment return. The payment provider redirects Mini-App
+    // buyers to `t.me/<bot>?start=payment_return` (see lib/payment-return-url).
+    // Telegram opens this chat; we acknowledge the payment and offer a one-tap
+    // button back into the Mini App, where the payment-return screen is already
+    // polling the final status. Handled before bootstrap/channel-gate — a
+    // returning buyer is an existing user and shouldn't hit either.
+    if (startPayload === 'payment_return') {
+      const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+      const keyboard = new InlineKeyboard();
+      const miniAppUrl = deps.urls.miniAppUrl;
+      const publicWebUrl = deps.urls.publicWebUrl;
+      if (isTelegramSafeButtonUrl(miniAppUrl)) {
+        keyboard.webApp(deps.translator.t('payment_return.open_app', lang), miniAppUrl as string);
+      } else if (isTelegramSafeButtonUrl(publicWebUrl)) {
+        keyboard.url(
+          deps.translator.t('payment_return.open_app', lang),
+          `${publicWebUrl}/payment-return`,
+        );
+      }
+      await ctx.reply(deps.translator.t('payment_return.title', lang), {
+        // Only attach the keyboard when a safe button URL exists; otherwise
+        // send the plain acknowledgement (dev/localhost has no HTTPS target).
+        reply_markup: keyboard.inline_keyboard.length > 0 ? keyboard : undefined,
+      });
+      return;
+    }
+
     if (startPayload.startsWith('link_') && deps.adminClient !== null) {
       const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
       const code = startPayload.slice('link_'.length).trim();

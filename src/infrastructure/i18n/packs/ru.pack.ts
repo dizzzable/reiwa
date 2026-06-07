@@ -40,6 +40,10 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'link.user_not_found': '❌ Аккаунт не найден. Получите новый код в кабинете.',
   'link.error': '❌ Не удалось привязать Telegram. Попробуйте позже.',
 
+  // ── Возврат после оплаты (deep link t.me/<bot>?start=payment_return) ─────────
+  'payment_return.title': '💳 Платёж обрабатывается. Вернитесь в приложение — статус обновится автоматически.',
+  'payment_return.open_app': '📱 Открыть приложение',
+
   // ── Invite / Rules / Help ───────────────────────────────────────────────────
   'invite.share': '🔗 Реферальная программа\n\nПоделитесь ссылкой с друзьями — за каждого, кто оформит подписку, вы получите бонус.\n\nВаша ссылка:\n{{link}}',
   'invite.share_button': '📤 Поделиться в Telegram',

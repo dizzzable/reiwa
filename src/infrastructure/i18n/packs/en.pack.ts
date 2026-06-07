@@ -38,6 +38,10 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'link.user_not_found': '❌ Account not found. Get a new code in the cabinet.',
   'link.error': '❌ Failed to link Telegram. Please try again later.',
 
+  // ── Post-payment return (deep link t.me/<bot>?start=payment_return) ──────────
+  'payment_return.title': '💳 Your payment is being processed. Return to the app — the status will update automatically.',
+  'payment_return.open_app': '📱 Open app',
+
   // ── Invite / Rules / Help ───────────────────────────────────────────────────
   'invite.share': '🔗 Referral program\n\nShare this link with your friends — for every one who subscribes, you earn a bonus.\n\nYour link:\n{{link}}',
   'invite.share_button': '📤 Share on Telegram',
