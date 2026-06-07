@@ -4,7 +4,7 @@ import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
-import { buildPaymentReturnUrl } from "../../lib/payment-return-url.js";
+import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
 
 /**
@@ -59,7 +59,7 @@ export function createContentRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { addOnId, subscriptionId, gatewayType } = (req.body ?? {}) as Record<
+        const { addOnId, subscriptionId, gatewayType, source } = (req.body ?? {}) as Record<
           string,
           unknown
         >;
@@ -69,8 +69,9 @@ export function createContentRouter(deps: {
           });
           return;
         }
+        const context = resolvePurchaseContext(req.context, source);
         const successUrl = buildPaymentReturnUrl({
-          context: req.context ?? "web",
+          context,
           config,
           override: null,
         });
@@ -79,7 +80,7 @@ export function createContentRouter(deps: {
           addOnId: String(addOnId),
           subscriptionId: String(subscriptionId),
           gatewayType: String(gatewayType),
-          channel: req.context === "tma" ? "TELEGRAM" : "WEB",
+          channel: context === "tma" ? "TELEGRAM" : "WEB",
           successUrl,
           failUrl: successUrl,
         });

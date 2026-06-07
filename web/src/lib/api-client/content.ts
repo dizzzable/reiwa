@@ -2,6 +2,7 @@
  * Content namespace — operator-managed FAQ and plan add-ons.
  */
 import { apiClient } from "./transport.js";
+import { getClientSource } from "@/lib/client-source";
 
 export interface FaqItem {
   id: string;
@@ -57,5 +58,8 @@ export const purchaseAddOn = (input: {
   gatewayType: string;
 }) =>
   apiClient
-    .post<AddOnCheckoutResult>("/add-ons/purchase", input)
+    .post<AddOnCheckoutResult>("/add-ons/purchase", {
+      ...input,
+      source: getClientSource(),
+    })
     .then((r) => r.data);
