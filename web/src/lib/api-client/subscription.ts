@@ -56,8 +56,30 @@ export const getRenewalOptions = (input?: {
     })
     .then((r) => r.data);
 
-export const getUpgradeOptions = (subscriptionId: number) =>
-  apiClient.get(`/subscription/${subscriptionId}/upgrade-options`).then((r) => r.data);
+export interface UpgradePlanOption {
+  id: string;
+  name: string;
+  tag: string | null;
+  type: string;
+  trafficLimit: number | null;
+  deviceLimit: number;
+  durations: { id: string; days: number }[];
+}
+
+export interface UpgradeOptions {
+  subscriptionId: string;
+  plans: UpgradePlanOption[];
+  warnings: { code: string; message: string }[];
+}
+
+/** Upgrade target plans (+ durations) for a subscription. */
+export const getUpgradeOptions = (subscriptionId: string, gatewayType?: string) =>
+  apiClient
+    .post<UpgradeOptions>("/subscription/upgrade-options", {
+      subscriptionId,
+      ...(gatewayType ? { gatewayType } : {}),
+    })
+    .then((r) => r.data);
 
 // ── Trial sub-flow ───────────────────────────────────────────────────────────
 export const getTrialEligibility = () =>

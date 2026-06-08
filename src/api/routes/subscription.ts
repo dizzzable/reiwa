@@ -191,5 +191,44 @@ export function createSubscriptionRouter(deps: {
     },
   );
 
+  // POST /api/v1/subscription/upgrade-options
+  //
+  // Returns the upgrade target plans for a subscription (the plans its
+  // current plan can transition to), each carrying its available durations
+  // so the SPA upgrade wizard can let the user pick a target + term. Price
+  // for a chosen target is fetched via the existing /subscription/quote.
+  router.post(
+    "/subscription/upgrade-options",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const { subscriptionId, gatewayType } = (req.body ?? {}) as Record<string, unknown>;
+        if (typeof subscriptionId !== "string" || subscriptionId.length === 0) {
+          res.status(400).json({ message: "subscriptionId is required" });
+          return;
+        }
+        const quote = (await adminClient?.subscription.getUpgradeOptions(
+          resolveUserIdentity(req),
+          subscriptionId,
+          typeof gatewayType === "string" && gatewayType.length > 0 ? gatewayType : undefined,
+        )) as
+          | {
+              availablePlans?: unknown;
+              warnings?: unknown;
+              selectedSubscriptionId?: unknown;
+            }
+          | null
+          | undefined;
+        res.json({
+          subscriptionId,
+          plans: Array.isArray(quote?.availablePlans) ? quote!.availablePlans : [],
+          warnings: Array.isArray(quote?.warnings) ? quote!.warnings : [],
+        });
+      } catch (e: unknown) {
+        sendSafeError(req, res, e, 500, "Failed to load upgrade options", "subscription/upgrade-options");
+      }
+    },
+  );
+
   return router;
 }

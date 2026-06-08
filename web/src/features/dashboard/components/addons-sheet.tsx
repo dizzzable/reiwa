@@ -1,35 +1,40 @@
 /**
- * AddOnsSheet
- * ───────────
- * Bottom sheet for buying extra-traffic / extra-devices top-ups on an
- * existing subscription. Only meaningful when the user has an active
- * subscription, so the entry point (the "Top up" action) is gated by
- * the caller.
+ * AddOnsDialog (exported as AddOnsSheet for call-site compatibility)
+ * ──────────────────────────────────────────────────────────────────
+ * Centered modal for buying extra-traffic / extra-devices top-ups on one of
+ * the user's subscriptions.
  *
  * Flow:
- *   1. List add-ons applicable to the subscription's plan.
- *   2. User picks an add-on → pick a payment gateway.
- *   3. Create checkout → open the provider URL (TMA openLink / window).
+ *   1. Pick the target subscription (skipped when the user has only one).
+ *   2. List add-ons applicable to that subscription's plan.
+ *   3. Pick an add-on → pick a payment gateway → checkout.
  */
 
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Gauge, Smartphone, Loader2 } from "lucide-react";
+import { Gauge, Loader2, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  getPlanAddOns,
+  getAllSubscriptions,
   getEnabledGateways,
+  getPlanAddOns,
   purchaseAddOn,
   type AddOn,
 } from "@/lib/api-client";
 import type { Subscription } from "@/types/api";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranding } from "@/lib/branding-provider";
 import { customIconId, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { CustomIconView } from "@/components/ui/custom-icon-view";
+import { cn } from "@/lib/utils";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -39,17 +44,46 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   XTR: "⭐",
 };
 
+function subscriptionTitle(sub: Subscription): string {
+  return sub.profileName || sub.plan?.name || sub.id;
+}
+
 interface AddOnsSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Subscription the dialog opens on; user may switch to another one. */
   subscription: Subscription;
 }
 
 export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetProps) {
   const { t } = useTranslation();
   const { customIcons } = useBranding();
-  const planId = subscription.plan?.id ?? null;
-  const isUnlimitedTraffic = subscription.trafficLimit === null;
+
+  const [selectedSub, setSelectedSub] = useState<Subscription>(subscription);
+  const [selectedAddOn, setSelectedAddOn] = useState<AddOn | null>(null);
+
+  // Re-anchor on the subscription the caller opened with each time the dialog
+  // is (re)opened, and clear any in-progress add-on selection.
+  useEffect(() => {
+    if (open) {
+      setSelectedSub(subscription);
+      setSelectedAddOn(null);
+    }
+  }, [open, subscription]);
+
+  const { data: subsData } = useQuery({
+    queryKey: ["subscriptions-all"],
+    queryFn: getAllSubscriptions,
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const subscriptions = (subsData?.subscriptions ?? []).filter(
+    (s) => s.status === "ACTIVE" || s.status === "LIMITED",
+  );
+  const showPicker = subscriptions.length > 1 && !selectedAddOn;
+
+  const planId = selectedSub.plan?.id ?? null;
+  const isUnlimitedTraffic = selectedSub.trafficLimit === null;
 
   const { data: addOns, isLoading } = useQuery({
     queryKey: ["add-ons", planId],
@@ -65,13 +99,11 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
     staleTime: 300_000,
   });
 
-  const [selectedAddOn, setSelectedAddOn] = useState<AddOn | null>(null);
-
   const purchaseMutation = useMutation({
     mutationFn: (gatewayType: string) =>
       purchaseAddOn({
         addOnId: selectedAddOn!.id,
-        subscriptionId: subscription.id,
+        subscriptionId: selectedSub.id,
         gatewayType,
       }),
     onSuccess: (result) => {
@@ -86,22 +118,51 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
     onError: () => toast.error(t("addons.purchaseError")),
   });
 
-  // Hide traffic add-ons for unlimited-traffic subscriptions (the
-  // backend would reject them anyway).
   const visibleAddOns = (addOns ?? []).filter(
     (a) => !(isUnlimitedTraffic && a.type === "EXTRA_TRAFFIC"),
   );
 
   return (
-    <Sheet open={open} onOpenChange={(o) => { if (!o) setSelectedAddOn(null); onOpenChange(o); }}>
-      <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) setSelectedAddOn(null);
+        onOpenChange(o);
+      }}
+    >
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
             {selectedAddOn ? t("addons.selectGateway") : t("addons.title")}
-          </SheetTitle>
-        </SheetHeader>
+          </DialogTitle>
+        </DialogHeader>
 
-        <div className="py-4 space-y-3">
+        <div className="space-y-3 py-2">
+          {showPicker && (
+            <div className="space-y-2">
+              <p className="text-xs text-zinc-500">{t("addons.selectSubscription")}</p>
+              <div className="flex flex-wrap gap-2">
+                {subscriptions.map((sub) => (
+                  <button
+                    key={sub.id}
+                    onClick={() => {
+                      setSelectedSub(sub);
+                      setSelectedAddOn(null);
+                    }}
+                    className={cn(
+                      "rounded-xl border px-3 py-1.5 text-xs font-mono transition-colors",
+                      sub.id === selectedSub.id
+                        ? "border-(--brand-primary) bg-(--brand-primary)/10 text-white"
+                        : "border-white/10 text-zinc-400 hover:text-white",
+                    )}
+                  >
+                    {subscriptionTitle(sub)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {!selectedAddOn ? (
             isLoading ? (
               <div className="space-y-2">
@@ -110,7 +171,7 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
                 ))}
               </div>
             ) : visibleAddOns.length === 0 ? (
-              <div className="flex min-h-[180px] items-center justify-center">
+              <div className="flex min-h-[160px] items-center justify-center">
                 <div className="w-full rounded-2xl border border-white/6 bg-white/2 px-6 py-8 text-center">
                   <p className="text-xs text-zinc-500">{t("addons.empty")}</p>
                 </div>
@@ -120,8 +181,6 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
                 <p className="text-sm text-muted-foreground">{t("addons.description")}</p>
                 {visibleAddOns.map((addOn) => {
                   const price = addOn.prices[0];
-                  // Icon priority: custom uploaded → built-in glyph key →
-                  // type-derived default (Gauge for traffic, Smartphone for devices).
                   const customId = customIconId(addOn.icon);
                   const custom = customId ? customIcons.find((c) => c.id === customId) : undefined;
                   const BuiltIn = resolveBuiltInIcon(addOn.icon);
@@ -141,7 +200,7 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
                           <TypeFallback className="h-5 w-5" />
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-white">{addOn.name}</p>
                         <p className="text-xs text-zinc-500">
                           {addOn.type === "EXTRA_TRAFFIC"
@@ -194,7 +253,7 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
             </>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

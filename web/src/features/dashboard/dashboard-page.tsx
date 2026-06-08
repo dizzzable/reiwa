@@ -142,7 +142,7 @@ export default function DashboardPage() {
                   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
                 }
               }}
-              onUpgrade={() => navigate("/plans?upgrade=1")}
+              onUpgrade={() => navigate("/upgrade")}
               onRenew={() => navigate("/renew")}
             />
           </div>
