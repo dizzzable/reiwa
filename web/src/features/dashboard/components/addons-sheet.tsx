@@ -110,8 +110,10 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
                 ))}
               </div>
             ) : visibleAddOns.length === 0 ? (
-              <div className="rounded-2xl border border-white/6 bg-white/2 p-6 text-center">
-                <p className="text-xs text-zinc-500">{t("addons.empty")}</p>
+              <div className="flex min-h-[180px] items-center justify-center">
+                <div className="w-full rounded-2xl border border-white/6 bg-white/2 px-6 py-8 text-center">
+                  <p className="text-xs text-zinc-500">{t("addons.empty")}</p>
+                </div>
               </div>
             ) : (
               <>

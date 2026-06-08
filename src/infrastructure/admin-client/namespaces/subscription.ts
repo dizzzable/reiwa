@@ -84,4 +84,31 @@ export class SubscriptionNamespace {
       ...(subscriptionId !== undefined ? { subscriptionId } : {}),
     });
   }
+
+  /**
+   * Lists the user's renewable subscriptions with per-item renewal pricing.
+   * Used by the renewal wizard to render the selection list (skipped when
+   * exactly one renewable subscription exists). Returns the rezeis-admin
+   * `RenewalOptionsInterface` shape (`items[]`, `currency`, `total`).
+   */
+  getRenewalOptions(
+    identity: UserIdentity,
+    options: {
+      readonly subscriptionIds?: readonly string[];
+      readonly gatewayType?: string;
+      readonly channel?: string;
+    } = {},
+  ): Promise<unknown> {
+    const payload: Record<string, unknown> = { ...identityPayload(identity) };
+    if (options.subscriptionIds && options.subscriptionIds.length > 0) {
+      payload['subscriptionIds'] = options.subscriptionIds;
+    }
+    if (typeof options.gatewayType === 'string' && options.gatewayType.length > 0) {
+      payload['gatewayType'] = options.gatewayType;
+    }
+    if (typeof options.channel === 'string' && options.channel.length > 0) {
+      payload['channel'] = options.channel;
+    }
+    return this.transport.request('POST', '/api/internal/subscriptions/renewal-options', payload);
+  }
 }

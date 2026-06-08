@@ -73,4 +73,39 @@ export class PaymentsNamespace {
       rawPayload,
     );
   }
+
+  /**
+   * Combined multi-subscription renewal: one provider checkout for the
+   * summed total of N renewals. Each subscription renews on its original
+   * (or replacement) plan and originally purchased duration on the
+   * rezeis-admin side. Returns the standard checkout shape
+   * (`paymentId`, `checkoutUrl`, ...).
+   */
+  createRenewalCheckout(
+    identity: UserIdentity,
+    input: {
+      readonly subscriptionIds: readonly string[];
+      readonly gatewayType: string;
+      readonly channel?: string;
+      readonly successUrl?: string | null;
+      readonly failUrl?: string | null;
+    },
+  ): Promise<unknown> {
+    const payload: Record<string, unknown> = {
+      subscriptionIds: input.subscriptionIds,
+      gatewayType: input.gatewayType,
+    };
+    if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+      payload['userId'] = identity.userId;
+    }
+    if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+      payload['telegramId'] = identity.telegramId;
+    }
+    if (typeof input.channel === 'string' && input.channel.length > 0) {
+      payload['channel'] = input.channel;
+    }
+    if (input.successUrl) payload['successUrl'] = input.successUrl;
+    if (input.failUrl) payload['failUrl'] = input.failUrl;
+    return this.transport.request('POST', '/api/internal/payments/renewal-checkout', payload);
+  }
 }

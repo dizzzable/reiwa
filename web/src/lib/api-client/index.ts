@@ -47,6 +47,7 @@ export {
   getActionPolicy,
   getAllSubscriptions,
   getQuote,
+  getRenewalOptions,
   getSubscription,
   getTrialEligibility,
   getUpgradeOptions,
@@ -56,6 +57,7 @@ export {
 export {
   createCheckout,
   createRenewCheckout,
+  createRenewalCheckout,
   createUpgradeCheckout,
   getEnabledGateways,
   getPaymentStatus,
