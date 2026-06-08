@@ -86,6 +86,24 @@ export class SubscriptionNamespace {
   }
 
   /**
+   * Lists the upgrade target plans for a subscription (the plans the source
+   * plan can transition to). Backed by the admin UPGRADE quote with no
+   * selected plan, so `availablePlans` carries the targets + their durations.
+   */
+  getUpgradeOptions(
+    identity: UserIdentity,
+    subscriptionId: string,
+    gatewayType?: string,
+  ): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/subscriptions/quote', {
+      ...identityPayload(identity),
+      purchaseType: 'UPGRADE',
+      subscriptionId,
+      ...(typeof gatewayType === 'string' && gatewayType.length > 0 ? { gatewayType } : {}),
+    });
+  }
+
+  /**
    * Lists the user's renewable subscriptions with per-item renewal pricing.
    * Used by the renewal wizard to render the selection list (skipped when
    * exactly one renewable subscription exists). Returns the rezeis-admin

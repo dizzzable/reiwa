@@ -156,7 +156,7 @@ export default function SubscriptionPage() {
             {policy?.canUpgrade && (
               <StadiumButton
                 fullWidth
-                onClick={() => navigate('/plans')}
+                onClick={() => navigate('/upgrade')}
                 variant="outline"
               >
                 Улучшить план
