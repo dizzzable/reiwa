@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 
 import { NetworkBg } from '@/components/ui/network-bg'
@@ -33,6 +34,7 @@ import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 export default function WebHomePage() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
+  const { t } = useTranslation()
   const calledRef   = useRef(false)
   const [statusKey, setStatusKey] = useState<'connecting' | 'signin'>('connecting')
 
@@ -131,7 +133,7 @@ export default function WebHomePage() {
             className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
             style={{ borderColor: 'var(--brand-primary)', borderTopColor: 'transparent' }}
           />
-          {statusKey === 'signin' ? 'Входим через Telegram…' : 'Подключение…'}
+          {statusKey === 'signin' ? t('bootstrap.connectingViaTelegram') : t('bootstrap.connecting')}
         </motion.div>
       </div>
     </div>

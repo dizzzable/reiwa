@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { ArrowLeft, ShoppingCart, RotateCcw, Copy, ExternalLink, Wifi, WifiOff } from 'lucide-react'
 import { getSubscription, getActionPolicy } from '@/lib/api-client'
@@ -11,6 +12,7 @@ import { toast } from 'sonner'
 
 export default function SubscriptionPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
 
   const { data: sub, isLoading } = useQuery({
     queryKey: ['subscription'],
@@ -29,7 +31,7 @@ export default function SubscriptionPage() {
 
   function copyUrl() {
     if (!sub?.url) return
-    navigator.clipboard.writeText(sub.url).then(() => toast.success('Ссылка скопирована'))
+    navigator.clipboard.writeText(sub.url).then(() => toast.success(t('subscription.linkCopied')))
   }
 
   if (isLoading) {
@@ -47,13 +49,13 @@ export default function SubscriptionPage() {
         <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <h1 className="text-lg font-semibold">Подписка</h1>
+        <h1 className="text-lg font-semibold">{t('subscription.pageTitle')}</h1>
       </div>
 
       {!sub ? (
         <div className="px-5 space-y-4">
           <TipCard tone="info" icon={<WifiOff className="h-4 w-4" />}>
-            У вас нет активной подписки. Купите план для начала работы.
+            {t('subscription.noSubTip')}
           </TipCard>
           <StadiumButton
             fullWidth size="lg"
@@ -61,7 +63,7 @@ export default function SubscriptionPage() {
             icon={<ShoppingCart className="h-5 w-5" />}
             glow
           >
-            Выбрать план
+            {t('subscription.choosePlan')}
           </StadiumButton>
         </div>
       ) : (
@@ -74,8 +76,8 @@ export default function SubscriptionPage() {
           >
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-lg font-semibold">{sub.plan?.name ?? 'Подписка'}</p>
-                {sub.isTrial && <span className="text-xs text-violet-400">Пробный период</span>}
+                <p className="text-lg font-semibold">{sub.plan?.name ?? t('subscription.planFallback')}</p>
+                {sub.isTrial && <span className="text-xs text-violet-400">{t('subscription.trialPeriod')}</span>}
               </div>
               <SubscriptionStatusBadge status={sub.status} />
             </div>
@@ -83,28 +85,28 @@ export default function SubscriptionPage() {
             {/* Stats grid */}
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-zinc-800/50 p-3">
-                <p className="text-xs text-zinc-500 uppercase tracking-wide">Истекает</p>
+                <p className="text-xs text-zinc-500 uppercase tracking-wide">{t('subscription.expires')}</p>
                 <p className="mt-1 font-semibold text-white">{formatDate(sub.expireAt)}</p>
                 {daysLeft !== null && (
                   <p className={`text-xs mt-0.5 ${daysLeft <= 3 ? 'text-(--brand-primary)' : 'text-zinc-400'}`}>
-                    {daysLeft === 0 ? 'Сегодня' : `${daysLeft} дн.`}
+                    {daysLeft === 0 ? t('subscription.today') : t('subscription.daysLeftShort', { count: daysLeft })}
                   </p>
                 )}
               </div>
               <div className="rounded-xl bg-zinc-800/50 p-3">
-                <p className="text-xs text-zinc-500 uppercase tracking-wide">Трафик</p>
+                <p className="text-xs text-zinc-500 uppercase tracking-wide">{t('subscription.traffic')}</p>
                 <p className="mt-1 font-semibold text-white">
-                  {sub.trafficLimit ? `${sub.trafficLimit} GB` : 'Безлимит'}
+                  {sub.trafficLimit ? `${sub.trafficLimit} GB` : t('subscription.unlimited')}
                 </p>
               </div>
               {sub.deviceLimit && (
                 <div className="rounded-xl bg-zinc-800/50 p-3">
-                  <p className="text-xs text-zinc-500 uppercase tracking-wide">Устройств</p>
+                  <p className="text-xs text-zinc-500 uppercase tracking-wide">{t('subscription.devicesLabel')}</p>
                   <p className="mt-1 font-semibold text-white">{sub.deviceLimit}</p>
                 </div>
               )}
               <div className="rounded-xl bg-zinc-800/50 p-3">
-                <p className="text-xs text-zinc-500 uppercase tracking-wide">Тип</p>
+                <p className="text-xs text-zinc-500 uppercase tracking-wide">{t('subscription.typeLabel')}</p>
                 <p className="mt-1 font-semibold text-white">{sub.plan?.type ?? '—'}</p>
               </div>
             </div>
@@ -127,7 +129,7 @@ export default function SubscriptionPage() {
           {/* Expiry warning */}
           {isExpiringSoon && (
             <TipCard tone="warning">
-              Подписка истекает через {daysLeft} {daysLeft === 1 ? 'день' : daysLeft < 5 ? 'дня' : 'дней'}. Продлите сейчас.
+              {t('subscription.expiresInWarning', { count: daysLeft })}
             </TipCard>
           )}
 
@@ -140,7 +142,7 @@ export default function SubscriptionPage() {
                 icon={<RotateCcw className="h-5 w-5" />}
                 glow={isExpiringSoon}
               >
-                Продлить подписку
+                {t('subscription.renewFull')}
               </StadiumButton>
             )}
             {policy?.canBuy && !policy.canRenew && (
@@ -150,7 +152,7 @@ export default function SubscriptionPage() {
                 icon={<ShoppingCart className="h-5 w-5" />}
                 glow
               >
-                Купить новую подписку
+                {t('subscription.buyNew')}
               </StadiumButton>
             )}
             {policy?.canUpgrade && (
@@ -159,7 +161,7 @@ export default function SubscriptionPage() {
                 onClick={() => navigate('/upgrade')}
                 variant="outline"
               >
-                Улучшить план
+                {t('subscription.upgradePlan')}
               </StadiumButton>
             )}
             <StadiumButton
@@ -167,7 +169,7 @@ export default function SubscriptionPage() {
               onClick={() => navigate('/subscription/devices')}
               variant="secondary"
             >
-              📱 Управление устройствами
+              📱 {t('subscription.manageDevices')}
             </StadiumButton>
           </div>
         </div>

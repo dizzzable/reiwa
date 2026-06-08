@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { bootstrapTelegram, getSession } from '@/lib/api-client'
@@ -12,6 +13,7 @@ type BootstrapPhase = 'detecting' | 'authenticating' | 'ready' | 'error'
 export default function BootstrapPage() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
+  const { t } = useTranslation()
   const { initData, isReady, telegram } = useTelegramWebApp()
   const [phase, setPhase]     = useState<BootstrapPhase>('detecting')
   const [errorMsg, setErrorMsg] = useState('')
@@ -40,7 +42,7 @@ export default function BootstrapPage() {
         // 2. Bootstrap with Telegram initData
         if (!initData) {
           // No TMA context — show sign-in alternative or error
-          setErrorMsg('Откройте приложение через Telegram для входа.')
+          setErrorMsg(t('bootstrap.openInTelegram'))
           setPhase('error')
           return
         }
@@ -52,7 +54,7 @@ export default function BootstrapPage() {
         setPhase('ready')
         navigate('/dashboard', { replace: true })
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Ошибка входа'
+        const msg = err instanceof Error ? err.message : t('bootstrap.loginErrorFallback')
         setErrorMsg(msg)
         setPhase('error')
         telegram?.HapticFeedback?.notificationOccurred('error')
@@ -60,7 +62,7 @@ export default function BootstrapPage() {
     }
 
     void run()
-  }, [isReady, initData, navigate, queryClient, telegram])
+  }, [isReady, initData, navigate, queryClient, telegram, t])
 
   return (
     <div className="relative flex h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden">
@@ -107,7 +109,7 @@ export default function BootstrapPage() {
         >
           {phase === 'error' ? (
             <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-6 py-4 text-sm text-red-400">
-              <p className="font-medium">Ошибка входа</p>
+              <p className="font-medium">{t('bootstrap.loginError')}</p>
               <p className="mt-1 text-xs text-red-500/80">{errorMsg}</p>
               <button
                 onClick={() => {
@@ -117,15 +119,15 @@ export default function BootstrapPage() {
                 }}
                 className="mt-3 rounded-full bg-red-500/20 px-4 py-1.5 text-xs text-red-400 hover:bg-red-500/30 transition-colors"
               >
-                Попробовать снова
+                {t('bootstrap.retry')}
               </button>
             </div>
           ) : phase === 'ready' ? (
-            <p className="text-sm text-emerald-400">✓ Вход выполнен</p>
+            <p className="text-sm text-emerald-400">✓ {t('bootstrap.loginSuccess')}</p>
           ) : (
             <div className="flex items-center gap-3 text-sm text-zinc-500">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
-              {phase === 'detecting' ? 'Инициализация…' : 'Вход в систему…'}
+              {phase === 'detecting' ? t('bootstrap.initializing') : t('bootstrap.signingIn')}
             </div>
           )}
         </motion.div>

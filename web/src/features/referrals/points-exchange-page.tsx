@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ComponentType, SVGProps } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { ArrowLeft, Coins, Calendar, Zap, Tag, HardDrive, Loader2, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -10,18 +11,22 @@ import { TipCard } from '@/components/ui/tip-card'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
-const TYPE_META: Record<string, { icon: ComponentType<SVGProps<SVGSVGElement>>; label: string; unit: string; color: string }> = {
-  SUBSCRIPTION_DAYS: { icon: Calendar, label: 'Дни подписки', unit: 'дней', color: 'text-emerald-400' },
-  GIFT_SUBSCRIPTION: { icon: Zap, label: 'Подарочная подписка', unit: 'промокод', color: 'text-violet-400' },
-  DISCOUNT: { icon: Tag, label: 'Скидка', unit: '%', color: 'text-amber-400' },
-  TRAFFIC: { icon: HardDrive, label: 'Трафик', unit: 'GB', color: 'text-blue-400' },
+const TYPE_META: Record<string, { icon: ComponentType<SVGProps<SVGSVGElement>>; color: string }> = {
+  SUBSCRIPTION_DAYS: { icon: Calendar, color: 'text-emerald-400' },
+  GIFT_SUBSCRIPTION: { icon: Zap, color: 'text-violet-400' },
+  DISCOUNT: { icon: Tag, color: 'text-amber-400' },
+  TRAFFIC: { icon: HardDrive, color: 'text-blue-400' },
 }
 
 export default function PointsExchangePage() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [points, setPoints] = useState('')
+
+  const typeLabel = (type: string) => t(`pointsExchange.types.${type}.label`, { defaultValue: type })
+  const typeUnit = (type: string) => t(`pointsExchange.types.${type}.unit`, { defaultValue: '' })
 
   const { data: options, isLoading } = useQuery({
     queryKey: ['points-exchange-options'],
@@ -31,13 +36,13 @@ export default function PointsExchangePage() {
   const mutation = useMutation({
     mutationFn: () => exchangePoints(selectedType!, parseInt(points)),
     onSuccess: (result: any) => {
-      toast.success('Баллы обменяны!')
+      toast.success(t('pointsExchange.success'))
       queryClient.invalidateQueries({ queryKey: ['points-exchange-options'] })
       queryClient.invalidateQueries({ queryKey: ['session'] })
       setSelectedType(null)
       setPoints('')
     },
-    onError: () => toast.error('Не удалось обменять баллы'),
+    onError: () => toast.error(t('pointsExchange.error')),
   })
 
   if (isLoading) {
@@ -55,10 +60,10 @@ export default function PointsExchangePage() {
           <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400">
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h1 className="text-lg font-semibold">Обмен баллов</h1>
+          <h1 className="text-lg font-semibold">{t('pointsExchange.title')}</h1>
         </div>
         <div className="px-5">
-          <TipCard tone="info">Обмен баллов временно недоступен.</TipCard>
+          <TipCard tone="info">{t('pointsExchange.unavailable')}</TipCard>
         </div>
       </div>
     )
@@ -74,7 +79,7 @@ export default function PointsExchangePage() {
         <button onClick={() => selectedType ? setSelectedType(null) : navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400">
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <h1 className="text-lg font-semibold">Обмен баллов</h1>
+        <h1 className="text-lg font-semibold">{t('pointsExchange.title')}</h1>
       </div>
 
       {/* Balance */}
@@ -88,7 +93,7 @@ export default function PointsExchangePage() {
             <Coins className="h-6 w-6 text-amber-400" />
           </div>
           <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wide">Ваши баллы</p>
+            <p className="text-xs text-zinc-500 uppercase tracking-wide">{t('pointsExchange.yourPoints')}</p>
             <p className="text-2xl font-bold text-white">{options.pointsBalance}</p>
           </div>
         </motion.div>
@@ -97,9 +102,9 @@ export default function PointsExchangePage() {
       {!selectedType ? (
         /* Type selection */
         <div className="px-5 space-y-3">
-          <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">Выберите тип обмена</p>
+          <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">{t('pointsExchange.chooseType')}</p>
           {options.types.filter((t) => t.enabled).map((type) => {
-            const meta = TYPE_META[type.type] ?? { icon: Coins, label: type.type, unit: '', color: 'text-zinc-400' }
+            const meta = TYPE_META[type.type] ?? { icon: Coins, color: 'text-zinc-400' }
             const Icon: ComponentType<SVGProps<SVGSVGElement>> = meta.icon
             return (
               <button
@@ -115,10 +120,10 @@ export default function PointsExchangePage() {
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="flex-1 text-left">
-                  <p className="font-medium text-sm">{meta.label}</p>
-                  <p className="text-xs text-zinc-500">{type.pointsCost} баллов = 1 {meta.unit}</p>
+                  <p className="font-medium text-sm">{typeLabel(type.type)}</p>
+                  <p className="text-xs text-zinc-500">{t('pointsExchange.rate', { cost: type.pointsCost, unit: typeUnit(type.type) })}</p>
                 </div>
-                {!type.available && <span className="text-[10px] text-zinc-600">Недоступно</span>}
+                {!type.available && <span className="text-[10px] text-zinc-600">{t('pointsExchange.unavailableShort')}</span>}
               </button>
             )
           })}
@@ -129,21 +134,21 @@ export default function PointsExchangePage() {
           <div className="glass-card p-5 space-y-4">
             <div className="flex items-center gap-3">
               {(() => {
-                const meta = TYPE_META[selectedType] ?? { icon: Coins, label: selectedType, color: 'text-zinc-400' }
+                const meta = TYPE_META[selectedType] ?? { icon: Coins, color: 'text-zinc-400' }
                 const Icon: ComponentType<SVGProps<SVGSVGElement>> = meta.icon
                 return (
                   <>
                     <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800', meta.color)}>
                       <Icon className="h-5 w-5" />
                     </div>
-                    <p className="font-medium">{meta.label}</p>
+                    <p className="font-medium">{typeLabel(selectedType)}</p>
                   </>
                 )
               })()}
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs text-zinc-500">Количество баллов</label>
+              <label className="text-xs text-zinc-500">{t('pointsExchange.pointsAmount')}</label>
               <input
                 type="number"
                 value={points}
@@ -153,16 +158,16 @@ export default function PointsExchangePage() {
                 className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-lg font-bold text-white text-center outline-none focus:ring-1 focus:ring-(--brand-primary)/50"
               />
               <div className="flex justify-between text-[10px] text-zinc-600">
-                <span>Мин: {selectedOption?.minPoints}</span>
-                <span>Макс: {selectedOption?.maxPoints === -1 ? options.pointsBalance : selectedOption?.maxPoints}</span>
+                <span>{t('pointsExchange.min', { value: selectedOption?.minPoints })}</span>
+                <span>{t('pointsExchange.max', { value: selectedOption?.maxPoints === -1 ? options.pointsBalance : selectedOption?.maxPoints })}</span>
               </div>
             </div>
 
             {/* Preview */}
             <div className="rounded-xl bg-zinc-800/50 p-4 text-center">
-              <p className="text-xs text-zinc-500 mb-1">Вы получите</p>
+              <p className="text-xs text-zinc-500 mb-1">{t('pointsExchange.youReceive')}</p>
               <p className="text-2xl font-bold text-(--brand-primary)">
-                {computedValue} {TYPE_META[selectedType]?.unit ?? ''}
+                {computedValue} {selectedType ? typeUnit(selectedType) : ''}
               </p>
             </div>
           </div>
@@ -175,7 +180,7 @@ export default function PointsExchangePage() {
             disabled={numPoints < (selectedOption?.minPoints ?? 1) || numPoints > options.pointsBalance || mutation.isPending}
             icon={mutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
           >
-            {mutation.isPending ? 'Обмен...' : 'Обменять'}
+            {mutation.isPending ? t('pointsExchange.exchanging') : t('pointsExchange.exchange')}
           </StadiumButton>
         </div>
       )}

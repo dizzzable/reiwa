@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { ArrowLeft, Tag, CheckCircle2 } from 'lucide-react'
 import { activatePromocode } from '@/lib/api-client'
@@ -10,6 +11,7 @@ import { toast } from 'sonner'
 
 export default function PromoPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const [code, setCode] = useState('')
   const [success, setSuccess] = useState(false)
   const [resultMsg, setResultMsg] = useState('')
@@ -19,15 +21,15 @@ export default function PromoPage() {
     onSuccess: (data: { success?: boolean; message?: string }) => {
       if (data?.success) {
         setSuccess(true)
-        setResultMsg(data.message ?? 'Промокод успешно активирован!')
+        setResultMsg(data.message ?? t('promo.successDefault'))
         window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
       } else {
-        toast.error(data?.message ?? 'Промокод недействителен')
+        toast.error(data?.message ?? t('promo.invalid'))
         window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error')
       }
     },
     onError: (e: unknown) => {
-      const msg = e instanceof Error ? e.message : 'Ошибка активации'
+      const msg = e instanceof Error ? e.message : t('promo.activationError')
       toast.error(msg)
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error')
     },
@@ -45,11 +47,11 @@ export default function PromoPage() {
           <CheckCircle2 className="h-12 w-12 text-emerald-400" />
         </motion.div>
         <div>
-          <h2 className="text-xl font-semibold text-emerald-400">Готово!</h2>
+          <h2 className="text-xl font-semibold text-emerald-400">{t('promo.done')}</h2>
           <p className="mt-2 text-sm text-zinc-400">{resultMsg}</p>
         </div>
         <StadiumButton onClick={() => navigate('/dashboard', { replace: true })} glow>
-          На главную
+          {t('promo.toHome')}
         </StadiumButton>
       </div>
     )
@@ -61,12 +63,12 @@ export default function PromoPage() {
         <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <h1 className="text-lg font-semibold">Промокод</h1>
+        <h1 className="text-lg font-semibold">{t('promo.title')}</h1>
       </div>
 
       <div className="px-5 space-y-5">
         <TipCard tone="info" icon={<Tag className="h-4 w-4" />}>
-          Введите промокод для получения скидки или дополнительного времени подписки.
+          {t('promo.tip')}
         </TipCard>
 
         <div className="space-y-3">
@@ -74,7 +76,7 @@ export default function PromoPage() {
             type="text"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="ВВЕДИТЕ КОД"
+            placeholder={t('promo.inputPlaceholder')}
             maxLength={32}
             className="w-full rounded-2xl border border-white/[0.08] bg-zinc-800/50 px-5 py-4 text-center text-lg font-mono font-bold uppercase tracking-[0.3em] text-white placeholder:text-zinc-600 focus:border-(--brand-primary)/50 focus:outline-none transition-colors"
             onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) mutation.mutate() }}
@@ -87,7 +89,7 @@ export default function PromoPage() {
             loading={mutation.isPending}
             glow={!!code.trim()}
           >
-            Активировать
+            {t('promo.activate')}
           </StadiumButton>
         </div>
       </div>

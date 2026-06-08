@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { ArrowLeft, Shield } from 'lucide-react'
 import { getPlans } from '@/lib/api-client'
@@ -39,6 +40,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 
 export default function PlansPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const { selectPlan } = usePurchaseStore()
   const { defaultCurrency, customIcons } = useBranding()
 
@@ -67,8 +69,8 @@ export default function PlansPage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
-          <h1 className="text-lg font-semibold">Тарифы</h1>
-          <p className="text-xs text-zinc-500">Выберите подходящий план</p>
+          <h1 className="text-lg font-semibold">{t('plans.title')}</h1>
+          <p className="text-xs text-zinc-500">{t('plans.subtitle')}</p>
         </div>
       </div>
 
@@ -80,7 +82,7 @@ export default function PlansPage() {
         ) : activePlans.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
             <Shield className="h-12 w-12 opacity-30" />
-            <p>Нет доступных тарифов</p>
+            <p>{t('plans.emptyAvailable')}</p>
           </div>
         ) : (
           activePlans.map((plan, i) => {
@@ -118,16 +120,16 @@ export default function PlansPage() {
                     <p className="font-semibold text-white truncate">{plan.name}</p>
                     {plan.isTrial && (
                       <span className="shrink-0 rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-medium text-violet-300">
-                        Пробный
+                        {t('plans.trialBadge')}
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    {plan.trafficLimit ? `${plan.trafficLimit} GB` : 'Безлимит'}
-                    {plan.deviceLimit ? ` · ${plan.deviceLimit} устройств` : ''}
+                    {plan.trafficLimit ? `${plan.trafficLimit} GB` : t('plans.unlimited')}
+                    {plan.deviceLimit ? ` · ${t('plans.devicesSuffix', { count: plan.deviceLimit })}` : ''}
                   </p>
                   <p className="text-xs text-zinc-600 mt-0.5">
-                    {plan.durations.length} {plan.durations.length === 1 ? 'вариант' : 'варианта'} срока
+                    {t('plans.durationOptions', { count: plan.durations.length })}
                   </p>
                 </div>
 
@@ -135,9 +137,9 @@ export default function PlansPage() {
                 {price && (
                   <div className="shrink-0 text-right">
                     <p className="text-sm font-bold text-(--brand-primary)">
-                      от {CURRENCY_SYMBOLS[price.currency] ?? ''}{price.amount.toFixed(2)}
+                      {t('plans.from')} {CURRENCY_SYMBOLS[price.currency] ?? ''}{price.amount.toFixed(2)}
                     </p>
-                    <p className="text-xs text-zinc-500">/{price.days} дн.</p>
+                    <p className="text-xs text-zinc-500">/{price.days} {t('plans.daysShort')}</p>
                   </div>
                 )}
               </motion.button>

@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { ArrowLeft, Smartphone, Trash2, Monitor, Apple, Globe } from 'lucide-react'
 import { toast } from 'sonner'
@@ -24,6 +25,7 @@ function platformIcon(platform: string | null) {
 
 export default function DevicesPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { session } = useSession()
 
@@ -37,10 +39,10 @@ export default function DevicesPage() {
     mutationFn: (hwid: string) => deleteUserDevice(hwid),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] })
-      toast.success('Устройство удалено')
+      toast.success(t('devices.deleted'))
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
     },
-    onError: () => toast.error('Не удалось удалить устройство'),
+    onError: () => toast.error(t('devices.deleteError')),
   })
 
   const devices = (data as any)?.devices ?? []
@@ -54,14 +56,14 @@ export default function DevicesPage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
-          <h1 className="text-lg font-semibold">Устройства</h1>
-          <p className="text-xs text-zinc-500">{deviceCount} подключено</p>
+          <h1 className="text-lg font-semibold">{t('devices.pageTitle')}</h1>
+          <p className="text-xs text-zinc-500">{t('devices.connectedCount', { count: deviceCount })}</p>
         </div>
       </div>
 
       <div className="px-5 space-y-4">
         <TipCard tone="info" icon={<Smartphone className="h-4 w-4" />}>
-          Удалите старое устройство, чтобы освободить слот для нового подключения.
+          {t('devices.tip')}
         </TipCard>
 
         {isLoading ? (
@@ -73,8 +75,8 @@ export default function DevicesPage() {
         ) : !devices.length ? (
           <div className="glass-card p-8 text-center">
             <Smartphone className="h-10 w-10 mx-auto mb-3 text-zinc-600" />
-            <p className="text-sm text-zinc-400">Нет подключённых устройств</p>
-            <p className="text-xs text-zinc-600 mt-1">Подключитесь к VPN — устройство появится здесь</p>
+            <p className="text-sm text-zinc-400">{t('devices.emptyTitle')}</p>
+            <p className="text-xs text-zinc-600 mt-1">{t('devices.emptyHint')}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -91,20 +93,20 @@ export default function DevicesPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white truncate">
-                    {device.deviceName ?? device.platform ?? 'Устройство'}
+                    {device.deviceName ?? device.platform ?? t('devices.deviceFallback')}
                   </p>
                   <p className="text-xs text-zinc-500 truncate">
                     {device.osVersion ?? ''} {device.hwid.slice(0, 12)}…
                   </p>
                   {device.lastSeenAt && (
                     <p className="text-xs text-zinc-600 mt-0.5">
-                      Последний раз: {new Date(device.lastSeenAt).toLocaleDateString('ru-RU')}
+                      {t('devices.lastSeenLabel', { date: new Date(device.lastSeenAt).toLocaleDateString('ru-RU') })}
                     </p>
                   )}
                 </div>
                 <button
                   onClick={() => {
-                    if (confirm('Удалить это устройство?')) {
+                    if (confirm(t('devices.deleteConfirm'))) {
                       revokeMutation.mutate(device.hwid)
                     }
                   }}

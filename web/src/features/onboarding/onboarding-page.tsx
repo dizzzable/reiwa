@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'motion/react'
 import { Shield, Zap, Users, Gift, ArrowRight, Check } from 'lucide-react'
 import { useSession } from '@/hooks/use-session'
@@ -7,29 +8,29 @@ import { useSession } from '@/hooks/use-session'
 const STEPS = [
   {
     icon: Shield,
-    title: 'Добро пожаловать в Rezeis VPN',
-    description: 'Быстрый и надёжный VPN для вашей безопасности в интернете.',
+    titleKey: 'intro.step1.title',
+    descriptionKey: 'intro.step1.description',
     color: 'text-(--brand-primary)',
     bg: 'bg-(--brand-primary)/10',
   },
   {
     icon: Zap,
-    title: 'Мгновенное подключение',
-    description: 'Выберите тариф, оплатите и получите ссылку подключения за секунды.',
+    titleKey: 'intro.step2.title',
+    descriptionKey: 'intro.step2.description',
     color: 'text-amber-400',
     bg: 'bg-amber-500/10',
   },
   {
     icon: Users,
-    title: 'Реферальная программа',
-    description: 'Приглашайте друзей и получайте бонусные дни или баллы за каждого.',
+    titleKey: 'intro.step3.title',
+    descriptionKey: 'intro.step3.description',
     color: 'text-emerald-400',
     bg: 'bg-emerald-500/10',
   },
   {
     icon: Gift,
-    title: 'Промокоды и акции',
-    description: 'Активируйте промокоды для получения скидок и бонусов.',
+    titleKey: 'intro.step4.title',
+    descriptionKey: 'intro.step4.description',
     color: 'text-violet-400',
     bg: 'bg-violet-500/10',
   },
@@ -37,6 +38,7 @@ const STEPS = [
 
 export default function OnboardingPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const { session } = useSession()
   const [step, setStep] = useState(0)
 
@@ -60,7 +62,7 @@ export default function OnboardingPage() {
       {/* Skip button */}
       <div className="flex justify-end px-5 pt-6">
         <button onClick={skip} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
-          Пропустить
+          {t('intro.skip')}
         </button>
       </div>
 
@@ -81,8 +83,8 @@ export default function OnboardingPage() {
             </div>
 
             {/* Text */}
-            <h1 className="text-2xl font-bold mb-3">{current.title}</h1>
-            <p className="text-sm text-zinc-400 max-w-xs leading-relaxed">{current.description}</p>
+            <h1 className="text-2xl font-bold mb-3">{t(current.titleKey)}</h1>
+            <p className="text-sm text-zinc-400 max-w-xs leading-relaxed">{t(current.descriptionKey)}</p>
           </motion.div>
         </AnimatePresence>
       </div>
@@ -109,11 +111,11 @@ export default function OnboardingPage() {
           {isLast ? (
             <>
               <Check className="h-5 w-5" />
-              Начать
+              {t('intro.start')}
             </>
           ) : (
             <>
-              Далее
+              {t('intro.next')}
               <ArrowRight className="h-5 w-5" />
             </>
           )}

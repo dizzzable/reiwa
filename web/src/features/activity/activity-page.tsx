@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { Bell, CreditCard, CheckCheck } from 'lucide-react'
 import { getTransactions, getNotifications, markAllNotificationsRead, markNotificationRead } from '@/lib/api-client'
@@ -7,17 +8,18 @@ import { StadiumButton } from '@/components/ui/stadium-button'
 import { formatDateTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
-const TX_STATUS: Record<string, { label: string; color: string }> = {
-  COMPLETED: { label: 'Оплачено',   color: 'text-emerald-400' },
-  PENDING:   { label: 'Ожидание',   color: 'text-amber-400' },
-  FAILED:    { label: 'Ошибка',     color: 'text-red-400' },
-  CANCELED:  { label: 'Отменено',   color: 'text-zinc-500' },
-  REFUNDED:  { label: 'Возврат',    color: 'text-blue-400' },
+const TX_STATUS: Record<string, { labelKey: string; color: string }> = {
+  COMPLETED: { labelKey: 'activity.txStatus.COMPLETED', color: 'text-emerald-400' },
+  PENDING:   { labelKey: 'activity.txStatus.PENDING',   color: 'text-amber-400' },
+  FAILED:    { labelKey: 'activity.txStatus.FAILED',    color: 'text-red-400' },
+  CANCELED:  { labelKey: 'activity.txStatus.CANCELED',  color: 'text-zinc-500' },
+  REFUNDED:  { labelKey: 'activity.txStatus.REFUNDED',  color: 'text-blue-400' },
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', RUB: '₽', USDT: '$' }
 
 export default function ActivityPage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<'notifications' | 'transactions'>('notifications')
   const queryClient = useQueryClient()
 
@@ -54,22 +56,22 @@ export default function ActivityPage() {
   return (
     <div className="pb-6">
       <div className="px-5 pt-6 pb-4">
-        <h1 className="text-xl font-semibold">Активность</h1>
+        <h1 className="text-xl font-semibold">{t('activity.title')}</h1>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 px-5 mb-4">
-        {(['notifications', 'transactions'] as const).map((t) => (
+        {(['notifications', 'transactions'] as const).map((tabKey) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={tabKey}
+            onClick={() => setTab(tabKey)}
             className={cn(
               'flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all',
-              tab === t ? 'bg-(--brand-primary) text-(--brand-primary-fg)' : 'bg-zinc-800/80 text-zinc-400 hover:text-white',
+              tab === tabKey ? 'bg-(--brand-primary) text-(--brand-primary-fg)' : 'bg-zinc-800/80 text-zinc-400 hover:text-white',
             )}
           >
-            {t === 'notifications' ? <Bell className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
-            {t === 'notifications' ? 'Уведомления' : 'Транзакции'}
+            {tabKey === 'notifications' ? <Bell className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
+            {tabKey === 'notifications' ? t('activity.tabNotifications') : t('activity.tabTransactionsLabel')}
           </button>
         ))}
       </div>
@@ -85,7 +87,7 @@ export default function ActivityPage() {
                 loading={markAllMutation.isPending}
                 icon={<CheckCheck className="h-4 w-4" />}
               >
-                Прочитать все
+                {t('activity.markAllRead')}
               </StadiumButton>
             </div>
           )}
@@ -98,7 +100,7 @@ export default function ActivityPage() {
             ) : !notifData?.notifications.length ? (
               <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
                 <Bell className="h-10 w-10 opacity-30" />
-                <p className="text-sm">Уведомлений пока нет</p>
+                <p className="text-sm">{t('activity.emptyNotifications')}</p>
               </div>
             ) : (
               notifData.notifications.map((n, i) => (
@@ -140,11 +142,11 @@ export default function ActivityPage() {
           ) : !txData?.transactions?.length ? (
             <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
               <CreditCard className="h-10 w-10 opacity-30" />
-              <p className="text-sm">Транзакций пока нет</p>
+              <p className="text-sm">{t('activity.emptyTransactions')}</p>
             </div>
           ) : (
             txData.transactions.map((tx: any, i: number) => {
-              const status = TX_STATUS[tx.status] ?? { label: tx.status, color: 'text-zinc-400' }
+              const status = TX_STATUS[tx.status] ?? { labelKey: '', color: 'text-zinc-400' }
               return (
                 <motion.div
                   key={tx.id}
@@ -162,7 +164,7 @@ export default function ActivityPage() {
                       <p className="text-sm font-semibold">
                         {CURRENCY_SYMBOLS[(tx.pricing as any)?.currency ?? tx.currency] ?? ''}{((tx.pricing as any)?.finalPrice ?? tx.amount ?? 0).toFixed(2)}
                       </p>
-                      <p className={cn('text-xs', status.color)}>{status.label}</p>
+                      <p className={cn('text-xs', status.color)}>{status.labelKey ? t(status.labelKey) : tx.status}</p>
                     </div>
                   </div>
                 </motion.div>
