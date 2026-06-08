@@ -350,6 +350,10 @@ export const en: RuDict = {
   addons: {
     title: 'Add-ons',
     description: 'Top up traffic or devices for your current subscription.',
+    selectSubtitle: 'Choose a subscription to top up',
+    noneActive: 'No active subscriptions available for add-ons.',
+    back: 'Back',
+    creating: 'Creating payment…',
     selectGateway: 'Payment method',
     selectSubscription: 'Subscription',
     empty: 'No add-ons available for this plan.',

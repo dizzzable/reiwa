@@ -12,13 +12,12 @@
  * are global actions not tied to a specific subscription card.
  */
 
-import { useState } from "react";
 import { ArrowUpCircle, Link2, Plus, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 import type { Subscription } from "@/types/api";
 import { openExternalUrl } from "@/lib/utils";
-import { AddOnsSheet } from "./addons-sheet";
 
 interface SubscriptionActionsProps {
   subscription: Subscription | null;
@@ -34,50 +33,44 @@ export function SubscriptionActions({
   onRenew,
 }: SubscriptionActionsProps) {
   const { t } = useTranslation();
-  const [addOnsOpen, setAddOnsOpen] = useState(false);
+  const navigate = useNavigate();
   const sub = subscription;
   const hasUrl = !!sub?.url;
   const isActive = sub?.status === "ACTIVE" || sub?.status === "LIMITED";
 
   return (
-    <>
-      <div className="mt-5 grid grid-cols-4 gap-2 px-5">
-        <ActionButton
-          icon={<Link2 className="h-5 w-5" />}
-          label={t("card.actions.connect")}
-          disabled={!hasUrl}
-          onClick={() => {
-            if (sub?.url) {
-              openExternalUrl(sub.url);
-              window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-            }
-            onConnect();
-          }}
-        />
-        <ActionButton
-          icon={<ArrowUpCircle className="h-5 w-5" />}
-          label={t("card.actions.upgrade")}
-          disabled={!isActive}
-          onClick={onUpgrade}
-        />
-        <ActionButton
-          icon={<RotateCcw className="h-5 w-5" />}
-          label={t("card.actions.renew")}
-          disabled={!isActive}
-          onClick={onRenew}
-        />
-        <ActionButton
-          icon={<Plus className="h-5 w-5" />}
-          label={t("card.actions.topUp")}
-          disabled={!isActive}
-          onClick={() => setAddOnsOpen(true)}
-        />
-      </div>
-
-      {sub && isActive && (
-        <AddOnsSheet open={addOnsOpen} onOpenChange={setAddOnsOpen} subscription={sub} />
-      )}
-    </>
+    <div className="mt-5 grid grid-cols-4 gap-2 px-5">
+      <ActionButton
+        icon={<Link2 className="h-5 w-5" />}
+        label={t("card.actions.connect")}
+        disabled={!hasUrl}
+        onClick={() => {
+          if (sub?.url) {
+            openExternalUrl(sub.url);
+            window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+          }
+          onConnect();
+        }}
+      />
+      <ActionButton
+        icon={<ArrowUpCircle className="h-5 w-5" />}
+        label={t("card.actions.upgrade")}
+        disabled={!isActive}
+        onClick={onUpgrade}
+      />
+      <ActionButton
+        icon={<RotateCcw className="h-5 w-5" />}
+        label={t("card.actions.renew")}
+        disabled={!isActive}
+        onClick={onRenew}
+      />
+      <ActionButton
+        icon={<Plus className="h-5 w-5" />}
+        label={t("card.actions.topUp")}
+        disabled={!isActive}
+        onClick={() => navigate("/addons")}
+      />
+    </div>
   );
 }
 

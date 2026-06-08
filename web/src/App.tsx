@@ -41,6 +41,7 @@ const PlansPage = lazy(() => import("@/features/plans/plans-page"));
 const PurchasePage = lazy(() => import("@/features/purchase/purchase-page"));
 const RenewalPage = lazy(() => import("@/features/renewal/renewal-page"));
 const UpgradePage = lazy(() => import("@/features/upgrade/upgrade-page"));
+const AddOnsPage = lazy(() => import("@/features/addons/addons-page"));
 const PaymentReturn = lazy(
   () => import("@/features/payment/payment-return-page"),
 );
@@ -92,6 +93,7 @@ export default function App() {
           <Route path="/purchase" element={<PurchasePage />} />
           <Route path="/renew" element={<RenewalPage />} />
           <Route path="/upgrade" element={<UpgradePage />} />
+          <Route path="/addons" element={<AddOnsPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/promo" element={<PromoPage />} />
           <Route path="/referrals" element={<ReferralsPage />} />
