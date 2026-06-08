@@ -364,6 +364,7 @@ export const en: RuDict = {
     total: 'Total',
     pay: 'Proceed to payment',
     change: 'Change',
+    home: 'Back to home',
     priceError: 'Could not calculate the price. Try a different payment method.',
     creating: 'Creating payment…',
     checkoutError: 'Failed to create payment. Please try again later.',

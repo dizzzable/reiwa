@@ -282,6 +282,7 @@ function SelectGateway() {
 
 function RenewalReview() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { selectedSubscriptionIds, selectedGateway, setStep } = useRenewalStore();
 
@@ -385,8 +386,8 @@ function RenewalReview() {
       >
         {t("renewal.pay")}
       </StadiumButton>
-      <StadiumButton fullWidth variant="ghost" onClick={() => setStep("gateway")}>
-        {t("renewal.change")}
+      <StadiumButton fullWidth variant="ghost" onClick={() => navigate("/dashboard")}>
+        {t("renewal.home")}
       </StadiumButton>
     </div>
   );
