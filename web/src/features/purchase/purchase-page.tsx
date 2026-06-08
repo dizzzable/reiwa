@@ -13,6 +13,8 @@ import { PromoInput } from "./components/promo-input";
 import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn } from "@/lib/utils";
+import { gatewayLabel } from "@/lib/gateway-display";
+import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { toast } from "sonner";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -147,7 +149,7 @@ function SelectGateway({
       const gw = gateways[0];
       onSelect({
         id: gw.type,
-        label: gw.displayName,
+        label: gatewayLabel(gw.type, gw.displayName),
         icon: GATEWAY_ICONS[gw.type] ?? "💳",
         currency: gw.currency,
       });
@@ -186,16 +188,18 @@ function SelectGateway({
             onClick={() =>
               onSelect({
                 id: gw.type,
-                label: gw.displayName,
+                label: gatewayLabel(gw.type, gw.displayName),
                 icon: GATEWAY_ICONS[gw.type] ?? "💳",
                 currency: gw.currency,
               })
             }
             className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
           >
-            <span className="text-2xl">{GATEWAY_ICONS[gw.type] ?? "💳"}</span>
+            <span className="flex h-7 w-7 items-center justify-center text-2xl">
+              <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
+            </span>
             <div className="text-left">
-              <p className="font-medium text-white">{gw.displayName}</p>
+              <p className="font-medium text-white">{gatewayLabel(gw.type, gw.displayName)}</p>
               <p className="text-xs text-zinc-500">{gw.currency}</p>
             </div>
           </button>
@@ -269,7 +273,15 @@ function QuoteView() {
         <Row
           label={t("purchase.quote.method")}
           value={selectedGateway?.label ?? "—"}
-          icon={selectedGateway?.icon}
+          icon={
+            selectedGateway ? (
+              <GatewayIcon
+                type={selectedGateway.id}
+                currency={selectedGateway.currency}
+                className="h-4 w-4"
+              />
+            ) : undefined
+          }
         />
         {quote.discountPercent > 0 && (
           <Row
@@ -324,7 +336,7 @@ function Row({
   label: string;
   value: string;
   accent?: string;
-  icon?: string;
+  icon?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 text-sm">

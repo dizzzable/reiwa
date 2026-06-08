@@ -19,6 +19,8 @@ import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
 import type { RenewalOptionItem, Subscription } from "@/types/api";
 import { cn } from "@/lib/utils";
+import { gatewayLabel } from "@/lib/gateway-display";
+import { GatewayIcon } from "@/components/ui/gateway-icon";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -217,7 +219,7 @@ function SelectGateway() {
   const choose = (gw: { type: string; displayName: string; currency: string }): void =>
     selectGateway({
       id: gw.type,
-      label: gw.displayName,
+      label: gatewayLabel(gw.type, gw.displayName),
       icon: GATEWAY_ICONS[gw.type] ?? "💳",
       currency: gw.currency,
     } satisfies GatewayOption);
@@ -258,9 +260,9 @@ function SelectGateway() {
             onClick={() => choose(gw)}
             className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
           >
-            <span className="text-2xl">{GATEWAY_ICONS[gw.type] ?? "💳"}</span>
+            <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
             <div className="text-left">
-              <p className="font-medium text-white">{gw.displayName}</p>
+              <p className="font-medium text-white">{gatewayLabel(gw.type, gw.displayName)}</p>
               <p className="text-xs text-zinc-500">{gw.currency}</p>
             </div>
           </button>

@@ -349,6 +349,9 @@ export const en: RuDict = {
     extraTraffic: '+{{value}} GB traffic',
     extraDevices: '+{{value}} device(s)',
     purchaseError: 'Failed to create payment. Please try again later.',
+    free: 'Free',
+    getFree: 'Get for free',
+    freeApplied: 'Add-on activated',
   },
   renewal: {
     title: 'Renewal',

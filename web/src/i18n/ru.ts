@@ -347,6 +347,9 @@ export const ru = {
     extraTraffic: '+{{value}} ГБ трафика',
     extraDevices: '+{{value}} устройств(а)',
     purchaseError: 'Не удалось создать платёж. Попробуйте позже.',
+    free: 'Бесплатно',
+    getFree: 'Получить бесплатно',
+    freeApplied: 'Опция активирована',
   },
   renewal: {
     title: 'Продление',
