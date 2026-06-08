@@ -6,7 +6,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
-import { buildPaymentReturnUrl } from "../../lib/payment-return-url.js";
+import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
 
 export function createPaymentsRouter(deps: {
@@ -93,6 +93,80 @@ export function createPaymentsRouter(deps: {
         res.json(checkout ?? {});
       } catch (e: unknown) {
         sendSafeError(req, res, e, 500, "Failed to create checkout", "payments/checkout");
+      }
+    },
+  );
+
+  // POST /api/v1/payments/renewal-checkout
+  //
+  // Combined multi-subscription renewal: one provider checkout for the
+  // summed total of N renewals. Each id renews on its original (or
+  // replacement) plan and originally purchased duration on rezeis-admin.
+  // Source-aware return URL resolves the same way as /payments/checkout
+  // (TMA deep link vs web origin), with explicit overrides winning.
+  router.post(
+    "/payments/renewal-checkout",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const {
+          subscriptionIds,
+          gatewayType,
+          source,
+          successUrl: bodySuccessUrl,
+          failUrl: bodyFailUrl,
+        } = (req.body ?? {}) as Record<string, unknown>;
+
+        if (
+          !Array.isArray(subscriptionIds) ||
+          subscriptionIds.length === 0 ||
+          !subscriptionIds.every((id) => typeof id === "string" && id.length > 0)
+        ) {
+          res.status(400).json({ message: "subscriptionIds must be a non-empty array of ids" });
+          return;
+        }
+        if (typeof gatewayType !== "string" || gatewayType.length === 0) {
+          res.status(400).json({ message: "gatewayType is required" });
+          return;
+        }
+
+        const successOverride =
+          typeof bodySuccessUrl === "string" ? bodySuccessUrl : null;
+        const failOverride =
+          typeof bodyFailUrl === "string" ? bodyFailUrl : null;
+        const context = resolvePurchaseContext(req.context, source);
+
+        const successUrl = buildPaymentReturnUrl({
+          context,
+          config,
+          override: successOverride,
+        });
+        const failUrl = buildPaymentReturnUrl({
+          context,
+          config,
+          override: failOverride ?? successOverride,
+        });
+
+        if (!adminClient) {
+          res
+            .status(503)
+            .json({ message: "Service unavailable. Please retry after 30 seconds." });
+          return;
+        }
+
+        const result = await adminClient.payments.createRenewalCheckout(
+          resolveUserIdentity(req),
+          {
+            subscriptionIds: subscriptionIds as readonly string[],
+            gatewayType,
+            channel: context === "tma" ? "TMA" : "WEB",
+            successUrl,
+            failUrl,
+          },
+        );
+        res.json(result ?? {});
+      } catch (e: unknown) {
+        sendSafeError(req, res, e, 500, "Failed to create renewal checkout", "payments/renewal-checkout");
       }
     },
   );

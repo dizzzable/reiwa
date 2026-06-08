@@ -57,6 +57,26 @@ export function buildPaymentReturnUrl(input: BuildPaymentReturnUrlInput): string
   return buildWebReturnUrl(input.config);
 }
 
+/**
+ * Resolves the effective purchase context, preferring an explicit client
+ * `source` hint over the server-detected `req.context`. The hint is the
+ * `getClientSource()` value the SPA sends in the checkout body — initData
+ * cannot be sent on every request because it expires after one hour and
+ * would 403 a long-lived Mini App session.
+ *
+ * Precedence: explicit client `source` ("tma" | "web") → detected
+ * `req.context` → `web`. Any other value (or no value) is ignored.
+ */
+export function resolvePurchaseContext(
+  detected: RequestContext | undefined,
+  clientSource: unknown,
+): RequestContext {
+  if (clientSource === "tma" || clientSource === "web") {
+    return clientSource;
+  }
+  return detected ?? "web";
+}
+
 function buildTelegramReturnUrl(config: ReiwaConfig): string | null {
   const botUsername = config.BOT_USERNAME;
   if (!botUsername) {

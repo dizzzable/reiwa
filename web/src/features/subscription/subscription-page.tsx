@@ -136,7 +136,7 @@ export default function SubscriptionPage() {
             {policy?.canRenew && (
               <StadiumButton
                 fullWidth size="lg"
-                onClick={() => navigate('/plans')}
+                onClick={() => navigate('/renew')}
                 icon={<RotateCcw className="h-5 w-5" />}
                 glow={isExpiringSoon}
               >
