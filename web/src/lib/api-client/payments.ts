@@ -8,6 +8,7 @@
  * without a magic-string parameter.
  */
 import { apiClient } from "./transport.js";
+import { getClientSource } from "@/lib/client-source";
 import type { CheckoutResult, PaymentStatus } from "@/types/api";
 
 export interface GatewayOption {
@@ -33,6 +34,7 @@ export const createCheckout = (
       gatewayType,
       purchaseType: "NEW",
       deviceType,
+      source: getClientSource(),
     })
     .then((r) => r.data);
 
@@ -49,6 +51,7 @@ export const createRenewCheckout = (
       gatewayType,
       purchaseType: "RENEW",
       subscriptionId,
+      source: getClientSource(),
     })
     .then((r) => r.data);
 
@@ -65,6 +68,7 @@ export const createUpgradeCheckout = (
       gatewayType,
       purchaseType: "UPGRADE",
       subscriptionId,
+      source: getClientSource(),
     })
     .then((r) => r.data);
 

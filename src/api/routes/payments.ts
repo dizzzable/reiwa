@@ -6,7 +6,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
-import { buildPaymentReturnUrl } from "../../lib/payment-return-url.js";
+import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
 
 export function createPaymentsRouter(deps: {
@@ -40,6 +40,10 @@ export function createPaymentsRouter(deps: {
           purchaseType,
           subscriptionId,
           deviceType,
+          // Explicit origin hint from the SPA ("tma" | "web"). Decides whether
+          // the post-payment redirect returns the user to Telegram or the web
+          // app. See resolvePurchaseContext for why this is sent in the body.
+          source,
           successUrl: bodySuccessUrl,
           failUrl: bodyFailUrl,
           // Legacy alias kept for backwards-compatibility with older SPA bundles.
@@ -61,13 +65,15 @@ export function createPaymentsRouter(deps: {
               : null;
         const failOverride = typeof bodyFailUrl === "string" ? bodyFailUrl : null;
 
+        const context = resolvePurchaseContext(req.context, source);
+
         const successUrl = buildPaymentReturnUrl({
-          context: req.context ?? "web",
+          context,
           config,
           override: successOverride,
         });
         const failUrl = buildPaymentReturnUrl({
-          context: req.context ?? "web",
+          context,
           config,
           override: failOverride ?? successOverride,
         });

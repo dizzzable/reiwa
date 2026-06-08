@@ -57,6 +57,32 @@ export function buildPaymentReturnUrl(input: BuildPaymentReturnUrlInput): string
   return buildWebReturnUrl(input.config);
 }
 
+/**
+ * Resolves the effective purchase context used to build the return URL.
+ *
+ * Why an explicit client hint is needed: the SPA does NOT attach
+ * `x-telegram-init-data` to regular API calls, so the server-derived
+ * `req.context` (set by the context-detection middleware from that header)
+ * always resolves to `"web"` for Mini-App-originated checkouts. Sending the
+ * header on every request is not an option either — `initData` expires after
+ * one hour, after which the middleware would reject it with `403`, breaking
+ * a long-lived Mini App session.
+ *
+ * Instead the Mini App sends an explicit `source` field on the checkout body.
+ * It only influences the redirect destination (never authorization), which is
+ * consistent with the already client-trusted `successUrl` / `failUrl`
+ * overrides. Precedence: explicit client `source` → detected context → `web`.
+ */
+export function resolvePurchaseContext(
+  detected: RequestContext | undefined,
+  clientSource: unknown,
+): RequestContext {
+  if (clientSource === "tma" || clientSource === "web") {
+    return clientSource;
+  }
+  return detected ?? "web";
+}
+
 function buildTelegramReturnUrl(config: ReiwaConfig): string | null {
   const botUsername = config.BOT_USERNAME;
   if (!botUsername) {
