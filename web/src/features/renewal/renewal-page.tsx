@@ -18,9 +18,9 @@ import { PromoInput } from "@/features/purchase/components/promo-input";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
 import type { RenewalOptionItem, Subscription } from "@/types/api";
-import { cn } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
+import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -158,36 +158,19 @@ function SelectSubscriptions() {
             : "";
           const subtitle = [planLabel, durationLabel].filter(Boolean).join(" · ");
           return (
-            <button
+            <SubscriptionSelectCard
               key={sub.id}
-              onClick={() => toggleSubscription(sub.id)}
-              className={cn(
-                "w-full glass-card flex items-center gap-3 p-4 text-left transition-all active:scale-[0.98]",
-                checked
-                  ? "border-(--brand-primary)/50 bg-(--brand-primary)/6"
-                  : "hover:border-(--brand-primary)/30",
-              )}
-            >
-              <span
-                className={cn(
-                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border",
-                  checked
-                    ? "border-(--brand-primary) bg-(--brand-primary) text-black"
-                    : "border-white/20",
-                )}
-              >
-                {checked && <Check className="h-4 w-4" />}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-mono text-sm font-medium text-white">
-                  {subscriptionTitle(sub)}
-                </p>
-                {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
-              </div>
-              <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
-                {formatPrice(option.amount, option.currency)}
-              </span>
-            </button>
+              subscription={sub}
+              selected={checked}
+              onSelect={() => toggleSubscription(sub.id)}
+              control="check"
+              subtitle={subtitle}
+              trailing={
+                <span className="text-sm font-semibold text-(--brand-primary)">
+                  {formatPrice(option.amount, option.currency)}
+                </span>
+              }
+            />
           );
         })}
       </div>

@@ -34,9 +34,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useBranding } from "@/lib/branding-provider";
 import { customIconId, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { CustomIconView } from "@/components/ui/custom-icon-view";
-import { cn } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
+import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -46,9 +46,6 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   XTR: "⭐",
 };
 
-function subscriptionTitle(sub: Subscription): string {
-  return sub.profileName || sub.plan?.name || sub.id;
-}
 
 interface AddOnsSheetProps {
   open: boolean;
@@ -163,23 +160,19 @@ export function AddOnsSheet({ open, onOpenChange, subscription }: AddOnsSheetPro
           {showPicker && (
             <div className="space-y-2">
               <p className="text-xs text-zinc-500">{t("addons.selectSubscription")}</p>
-              <div className="flex flex-wrap gap-2">
+              <div className="space-y-2">
                 {subscriptions.map((sub) => (
-                  <button
+                  <SubscriptionSelectCard
                     key={sub.id}
-                    onClick={() => {
+                    subscription={sub}
+                    selected={sub.id === selectedSub.id}
+                    onSelect={() => {
                       setSelectedSub(sub);
                       setSelectedAddOn(null);
                     }}
-                    className={cn(
-                      "rounded-xl border px-3 py-1.5 text-xs font-mono transition-colors",
-                      sub.id === selectedSub.id
-                        ? "border-(--brand-primary) bg-(--brand-primary)/10 text-white"
-                        : "border-white/10 text-zinc-400 hover:text-white",
-                    )}
-                  >
-                    {subscriptionTitle(sub)}
-                  </button>
+                    control="radio"
+                    subtitle={sub.plan?.name ?? undefined}
+                  />
                 ))}
               </div>
             </div>

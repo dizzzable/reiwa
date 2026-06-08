@@ -338,6 +338,13 @@ export const ru = {
     revoked: 'Устройство отключено',
     error: 'Не удалось выполнить операцию',
   },
+  subscriptionPicker: {
+    traffic: 'Трафик',
+    gb: 'ГБ',
+    unlimited: 'Безлимит',
+    expires: 'Истекает',
+    devices: 'до {{count}} устр.',
+  },
   addons: {
     title: 'Дополнительные опции',
     description: 'Докупите трафик или устройства к текущей подписке.',

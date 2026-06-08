@@ -17,10 +17,9 @@ import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { useUpgradeStore } from "@/stores/upgrade.store";
 import type { GatewayOption } from "@/stores/purchase.store";
-import type { Subscription } from "@/types/api";
-import { cn } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
+import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -40,10 +39,6 @@ const GATEWAY_ICONS: Record<string, string> = {
 };
 
 const CURRENCY_SYMBOLS: Record<string, string> = { RUB: "₽", USD: "$", EUR: "€" };
-
-function subscriptionTitle(sub: Subscription): string {
-  return sub.profileName || sub.plan?.name || sub.id;
-}
 
 export default function UpgradePage() {
   const { t } = useTranslation();
@@ -121,19 +116,14 @@ function SelectSubscription() {
       <p className="px-5 text-sm text-zinc-400">{t("upgrade.selectSubtitle")}</p>
       <div className="px-5 space-y-2">
         {active.map((sub) => (
-          <button
+          <SubscriptionSelectCard
             key={sub.id}
-            onClick={() => selectSubscription(sub.id)}
-            className="w-full glass-card flex items-center gap-3 p-4 text-left transition-all hover:border-(--brand-primary)/30 active:scale-[0.98]"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-mono text-sm font-medium text-white">
-                {subscriptionTitle(sub)}
-              </p>
-              {sub.plan?.name && <p className="truncate text-xs text-zinc-500">{sub.plan.name}</p>}
-            </div>
-            <ArrowUpCircle className="h-5 w-5 shrink-0 text-zinc-500" />
-          </button>
+            subscription={sub}
+            selected={sub.id === selectedSubscriptionId}
+            onSelect={() => selectSubscription(sub.id)}
+            control="radio"
+            subtitle={sub.plan?.name ?? undefined}
+          />
         ))}
       </div>
     </div>

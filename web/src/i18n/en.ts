@@ -340,6 +340,13 @@ export const en: RuDict = {
     revoked: 'Device revoked',
     error: 'Operation failed',
   },
+  subscriptionPicker: {
+    traffic: 'Traffic',
+    gb: 'GB',
+    unlimited: 'Unlimited',
+    expires: 'Expires',
+    devices: 'up to {{count}} devices',
+  },
   addons: {
     title: 'Add-ons',
     description: 'Top up traffic or devices for your current subscription.',
