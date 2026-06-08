@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   activatePromocode,
   createRenewalCheckout,
+  getAllSubscriptions,
   getEnabledGateways,
   getRenewalOptions,
 } from "@/lib/api-client";
@@ -16,7 +17,7 @@ import { TipCard } from "@/components/ui/tip-card";
 import { PromoInput } from "@/features/purchase/components/promo-input";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
-import type { RenewalOptionItem } from "@/types/api";
+import type { RenewalOptionItem, Subscription } from "@/types/api";
 import { cn } from "@/lib/utils";
 
 const GATEWAY_ICONS: Record<string, string> = {
@@ -46,6 +47,11 @@ function formatPrice(amount: string | null, currency: string | null): string {
   if (amount === null || currency === null) return "—";
   const symbol = CURRENCY_SYMBOLS[currency] ?? "";
   return `${symbol}${Number(amount).toFixed(2)} ${currency}`;
+}
+
+/** Subscription identity as shown on the dashboard card (profile first). */
+function subscriptionTitle(sub: Subscription): string {
+  return sub.profileName || sub.plan?.name || sub.id;
 }
 
 export default function RenewalPage() {
@@ -88,19 +94,34 @@ function SelectSubscriptions() {
   const { selectedSubscriptionIds, toggleSubscription, setSelectedSubscriptions, setStep } =
     useRenewalStore();
 
-  const { data, isLoading } = useQuery({
+  const { data: options, isLoading: optionsLoading } = useQuery({
     queryKey: ["renewal-options"],
     queryFn: () => getRenewalOptions(),
     staleTime: 60_000,
   });
+  const { data: subsData, isLoading: subsLoading } = useQuery({
+    queryKey: ["subscriptions-all"],
+    queryFn: getAllSubscriptions,
+    staleTime: 60_000,
+  });
+  const isLoading = optionsLoading || subsLoading;
 
-  const renewable = (data?.items ?? []).filter((i) => i.renewable);
+  // Merge: the user's own subscriptions (card identity) + per-item renewal
+  // price. We renew the subscriptions the user already owns — the plan/tariff
+  // is implicit, so the list shows subscriptions, not plans.
+  const optionById = new Map((options?.items ?? []).map((o) => [o.subscriptionId, o]));
+  const renewable = (subsData?.subscriptions ?? [])
+    .map((sub) => ({ sub, option: optionById.get(sub.id) }))
+    .filter(
+      (row): row is { sub: Subscription; option: RenewalOptionItem } =>
+        row.option !== undefined && row.option.renewable,
+    );
 
   // Skip the selection step entirely when there is exactly one renewable
   // subscription — auto-select it and advance to the gateway step.
   useEffect(() => {
     if (!isLoading && renewable.length === 1 && selectedSubscriptionIds.length === 0) {
-      setSelectedSubscriptions([renewable[0]!.subscriptionId]);
+      setSelectedSubscriptions([renewable[0]!.sub.id]);
       setStep("gateway");
     }
   }, [isLoading, renewable, selectedSubscriptionIds.length, setSelectedSubscriptions, setStep]);
@@ -127,12 +148,17 @@ function SelectSubscriptions() {
     <div className="space-y-3">
       <p className="px-5 text-sm text-zinc-400">{t("renewal.selectSubtitle")}</p>
       <div className="px-5 space-y-2">
-        {renewable.map((item) => {
-          const checked = selectedSubscriptionIds.includes(item.subscriptionId);
+        {renewable.map(({ sub, option }) => {
+          const checked = selectedSubscriptionIds.includes(sub.id);
+          const planLabel = sub.plan?.name ?? option.planName ?? "";
+          const durationLabel = option.durationDays
+            ? t("purchase.duration.days", { count: option.durationDays })
+            : "";
+          const subtitle = [planLabel, durationLabel].filter(Boolean).join(" · ");
           return (
             <button
-              key={item.subscriptionId}
-              onClick={() => toggleSubscription(item.subscriptionId)}
+              key={sub.id}
+              onClick={() => toggleSubscription(sub.id)}
               className={cn(
                 "w-full glass-card flex items-center gap-3 p-4 text-left transition-all active:scale-[0.98]",
                 checked
@@ -151,17 +177,13 @@ function SelectSubscriptions() {
                 {checked && <Check className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
-                  {item.planName ?? t("renewal.unknownPlan")}
+                <p className="truncate font-mono text-sm font-medium text-white">
+                  {subscriptionTitle(sub)}
                 </p>
-                <p className="text-xs text-zinc-500">
-                  {item.durationDays
-                    ? t("purchase.duration.days", { count: item.durationDays })
-                    : ""}
-                </p>
+                {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
               </div>
               <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
-                {formatPrice(item.amount, item.currency)}
+                {formatPrice(option.amount, option.currency)}
               </span>
             </button>
           );
@@ -274,6 +296,12 @@ function RenewalReview() {
       }),
     enabled: selectedSubscriptionIds.length > 0 && !!selectedGateway,
   });
+  const { data: subsData } = useQuery({
+    queryKey: ["subscriptions-all"],
+    queryFn: getAllSubscriptions,
+    staleTime: 60_000,
+  });
+  const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
 
   if (isLoading) {
     return (
@@ -304,26 +332,29 @@ function RenewalReview() {
       <h2 className="text-base font-semibold">{t("renewal.reviewTitle")}</h2>
 
       <div className="glass-card divide-y divide-white/6 overflow-hidden">
-        {items.map((item) => (
-          <div
-            key={item.subscriptionId}
-            className="flex items-center justify-between px-4 py-3 text-sm"
-          >
-            <div className="min-w-0">
-              <p className="truncate font-medium text-white">
-                {item.planName ?? t("renewal.unknownPlan")}
-              </p>
-              {item.durationDays && (
-                <p className="text-xs text-zinc-500">
-                  {t("purchase.duration.days", { count: item.durationDays })}
-                </p>
-              )}
+        {items.map((item) => {
+          const sub = subById.get(item.subscriptionId);
+          const title = sub ? subscriptionTitle(sub) : (item.planName ?? t("renewal.unknownPlan"));
+          const planLabel = sub?.plan?.name ?? item.planName ?? "";
+          const durationLabel = item.durationDays
+            ? t("purchase.duration.days", { count: item.durationDays })
+            : "";
+          const subtitle = [planLabel, durationLabel].filter(Boolean).join(" · ");
+          return (
+            <div
+              key={item.subscriptionId}
+              className="flex items-center justify-between px-4 py-3 text-sm"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-mono font-medium text-white">{title}</p>
+                {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
+              </div>
+              <span className="shrink-0 font-medium">
+                {formatPrice(item.amount, item.currency)}
+              </span>
             </div>
-            <span className="shrink-0 font-medium">
-              {formatPrice(item.amount, item.currency)}
-            </span>
-          </div>
-        ))}
+          );
+        })}
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("renewal.total")}</span>
           <span className="text-lg font-bold text-(--brand-primary)">
