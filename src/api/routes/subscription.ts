@@ -230,5 +230,31 @@ export function createSubscriptionRouter(deps: {
     },
   );
 
+  // DELETE /api/v1/subscription/:id
+  //
+  // Self-service deletion of one of the user's own subscriptions. Forwards the
+  // session-resolved identity to rezeis-admin, which enforces ownership,
+  // revokes the Remnawave profile and soft-deletes the row. Final, no refund.
+  router.delete(
+    "/subscription/:id",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const subscriptionId = req.params.id;
+        if (typeof subscriptionId !== "string" || subscriptionId.length === 0) {
+          res.status(400).json({ message: "subscriptionId is required" });
+          return;
+        }
+        const result = await adminClient?.subscription.deleteSubscription(
+          resolveUserIdentity(req),
+          subscriptionId,
+        );
+        res.json(result ?? { deleted: true });
+      } catch (e: unknown) {
+        sendSafeError(req, res, e, 500, "Failed to delete subscription", "subscription/delete");
+      }
+    },
+  );
+
   return router;
 }

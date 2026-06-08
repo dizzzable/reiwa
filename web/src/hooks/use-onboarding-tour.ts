@@ -46,6 +46,11 @@ export const TOUR_STEPS: readonly OnboardingStep[] = [
     position: "below",
   },
   {
+    targetSelector: '[data-tour="subscription-card"]',
+    i18nKey: "onboarding.stepDelete",
+    position: "below",
+  },
+  {
     targetSelector: '[data-tour="subscription-actions"]',
     i18nKey: "onboarding.step2",
     position: "below",

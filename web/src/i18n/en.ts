@@ -464,6 +464,15 @@ export const en: RuDict = {
     creating: 'Creating payment…',
     checkoutError: 'Failed to create payment. Please try again later.',
   },
+  deleteSubscription: {
+    title: 'Delete subscription?',
+    body: 'Do you really want to delete the subscription "{{name}}"?',
+    warning: 'This is irreversible. Access stops immediately and there is no refund.',
+    yes: 'Yes, delete',
+    no: 'No',
+    success: 'Subscription deleted',
+    error: 'Failed to delete the subscription. Please try again later.',
+  },
   onboarding: {
     skip: 'Skip',
     next: 'Next',
@@ -472,6 +481,10 @@ export const en: RuDict = {
     step1: {
       title: 'Your subscription',
       body: 'This is your active subscription. Profile name, expiry date and traffic — all on one card.',
+    },
+    stepDelete: {
+      title: 'Deleting a subscription',
+      body: 'To delete a subscription, press and hold the card, then confirm. This is irreversible: access is revoked and there is no refund.',
     },
     step2: {
       title: 'Subscription actions',

@@ -40,6 +40,16 @@ export const getAllSubscriptions = () =>
   apiClient.get<AllSubscriptionsResponse>("/subscriptions/all").then((r) => r.data);
 
 /**
+ * Self-service deletion of one of the user's own subscriptions. Final and
+ * non-refundable: the server revokes the Remnawave profile and soft-deletes
+ * the row. The SPA should refresh subscription/device queries on success.
+ */
+export const deleteSubscription = (subscriptionId: string) =>
+  apiClient
+    .delete<{ deleted: true }>(`/subscription/${subscriptionId}`)
+    .then((r) => r.data);
+
+/**
  * Lists the user's renewable subscriptions with per-item renewal pricing.
  * Pass the selected `gatewayType` for an accurate combined total; omit it
  * for an indicative price using the default-resolved gateway. `subscriptionIds`

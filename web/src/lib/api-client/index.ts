@@ -44,6 +44,7 @@ export { getPlans } from "./plans.js";
 // Subscription
 export {
   activateTrial,
+  deleteSubscription,
   getActionPolicy,
   getAllSubscriptions,
   getQuote,

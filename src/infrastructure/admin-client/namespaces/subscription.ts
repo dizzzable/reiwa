@@ -129,4 +129,16 @@ export class SubscriptionNamespace {
     }
     return this.transport.request('POST', '/api/internal/subscriptions/renewal-options', payload);
   }
+
+  /**
+   * Self-service deletion of one of the user's own subscriptions. Forwards the
+   * caller's identity; rezeis-admin enforces ownership, revokes the Remnawave
+   * profile, and soft-deletes (status = DELETED). No refund is issued.
+   */
+  deleteSubscription(identity: UserIdentity, subscriptionId: string): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/subscriptions/delete', {
+      ...identityPayload(identity),
+      subscriptionId,
+    });
+  }
 }

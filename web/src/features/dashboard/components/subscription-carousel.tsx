@@ -17,7 +17,9 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Subscription } from "@/types/api";
+import { useLongPress } from "@/hooks/use-long-press";
 import { SubscriptionCard } from "./subscription-card";
+import { DeleteSubscriptionDialog } from "./delete-subscription-dialog";
 
 interface SubscriptionCarouselProps {
   subscriptions: Subscription[];
@@ -37,6 +39,7 @@ export function SubscriptionCarousel({
   onActiveIndexChange,
 }: SubscriptionCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<Subscription | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const count = subscriptions.length;
 
@@ -78,18 +81,14 @@ export function SubscriptionCarousel({
         className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth scroll-area"
       >
         {subscriptions.map((sub, i) => (
-          <div
+          <CarouselSlide
             key={sub.id}
-            className="w-full shrink-0 snap-center"
-            style={{ paddingLeft: "1.25rem", paddingRight: "1.25rem", boxSizing: "border-box" }}
-          >
-            <SubscriptionCard
-              subscription={sub}
-              index={i}
-              firstDevice={firstDeviceById?.[sub.id] ?? null}
-              effectActive={Math.abs(i - activeIndex) <= 1}
-            />
-          </div>
+            subscription={sub}
+            index={i}
+            firstDevice={firstDeviceById?.[sub.id] ?? null}
+            effectActive={Math.abs(i - activeIndex) <= 1}
+            onLongPress={() => setDeleteTarget(sub)}
+          />
         ))}
       </div>
 
@@ -134,6 +133,54 @@ export function SubscriptionCarousel({
           ))}
         </div>
       )}
+
+      <DeleteSubscriptionDialog
+        subscription={deleteTarget}
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * One carousel slide. Wraps the card with a long-press gesture that opens the
+ * delete confirmation. Long-press is per-slide, so the hook lives here (it
+ * cannot be called inside the parent's map).
+ */
+function CarouselSlide({
+  subscription,
+  index,
+  firstDevice,
+  effectActive,
+  onLongPress,
+}: {
+  subscription: Subscription;
+  index: number;
+  firstDevice: string | null;
+  effectActive: boolean;
+  onLongPress: () => void;
+}) {
+  const longPress = useLongPress(onLongPress);
+  return (
+    <div
+      className="w-full shrink-0 snap-center"
+      style={{
+        paddingLeft: "1.25rem",
+        paddingRight: "1.25rem",
+        boxSizing: "border-box",
+        WebkitTouchCallout: "none",
+      }}
+      {...longPress}
+    >
+      <SubscriptionCard
+        subscription={subscription}
+        index={index}
+        firstDevice={firstDevice}
+        effectActive={effectActive}
+      />
     </div>
   );
 }
