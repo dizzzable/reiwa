@@ -122,6 +122,28 @@ export interface SubscriptionQuote {
   warning?: string;
 }
 
+// ─── Renewal (combined multi-subscription) ───────────────────────────────────
+export interface RenewalOptionItem {
+  subscriptionId: string;
+  planId: string | null;
+  planName: string | null;
+  durationDays: number | null;
+  currency: string | null;
+  amount: string | null;
+  discountPercent: number;
+  renewable: boolean;
+  warnings: { code: string; message: string }[];
+}
+
+export interface RenewalOptions {
+  userId: string;
+  items: RenewalOptionItem[];
+  /** Common currency across priceable items, or null when none/mixed. */
+  currency: string | null;
+  /** Sum of priceable item amounts as a decimal string, or null. */
+  total: string | null;
+}
+
 // ─── Checkout ────────────────────────────────────────────────────────────────
 // Mirrors the backend `InternalPaymentCheckoutInterface`. The provider redirect
 // URL is `checkoutUrl` (may be null for non-redirect flows like Telegram Stars).

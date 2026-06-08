@@ -39,6 +39,7 @@ const PartnerPage = lazy(
 );
 const PlansPage = lazy(() => import("@/features/plans/plans-page"));
 const PurchasePage = lazy(() => import("@/features/purchase/purchase-page"));
+const RenewalPage = lazy(() => import("@/features/renewal/renewal-page"));
 const PaymentReturn = lazy(
   () => import("@/features/payment/payment-return-page"),
 );
@@ -88,6 +89,7 @@ export default function App() {
           <Route path="/partner" element={<PartnerPage />} />
           <Route path="/plans" element={<PlansPage />} />
           <Route path="/purchase" element={<PurchasePage />} />
+          <Route path="/renew" element={<RenewalPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/promo" element={<PromoPage />} />
           <Route path="/referrals" element={<ReferralsPage />} />

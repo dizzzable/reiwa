@@ -143,7 +143,7 @@ export default function DashboardPage() {
                 }
               }}
               onUpgrade={() => navigate("/plans?upgrade=1")}
-              onRenew={() => navigate("/plans?renew=1")}
+              onRenew={() => navigate("/renew")}
             />
           </div>
 

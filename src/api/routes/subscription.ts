@@ -155,5 +155,41 @@ export function createSubscriptionRouter(deps: {
     },
   );
 
+  // POST /api/v1/subscription/renewal-options
+  //
+  // Lists the user's renewable subscriptions with per-item renewal
+  // pricing so the SPA wizard can render the selection step (skipped
+  // when there is exactly one renewable subscription). Forwards the
+  // session-resolved identity, so it works for both web and Mini App.
+  router.post(
+    "/subscription/renewal-options",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const { subscriptionIds, gatewayType } = (req.body ?? {}) as Record<string, unknown>;
+        const context = req.context ?? "web";
+        const channel = context === "tma" ? "TMA" : "WEB";
+        const subscriptionIdsValid =
+          Array.isArray(subscriptionIds) &&
+          subscriptionIds.every((id) => typeof id === "string" && id.length > 0);
+        const result = await adminClient?.subscription.getRenewalOptions(
+          resolveUserIdentity(req),
+          {
+            ...(subscriptionIdsValid
+              ? { subscriptionIds: subscriptionIds as readonly string[] }
+              : {}),
+            ...(typeof gatewayType === "string" && gatewayType.length > 0
+              ? { gatewayType }
+              : {}),
+            channel,
+          },
+        );
+        res.json(result ?? { items: [], currency: null, total: null });
+      } catch (e: unknown) {
+        sendSafeError(req, res, e, 500, "Failed to load renewal options", "subscription/renewal-options");
+      }
+    },
+  );
+
   return router;
 }

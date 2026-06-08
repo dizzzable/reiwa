@@ -8,6 +8,7 @@
  * without a magic-string parameter.
  */
 import { apiClient } from "./transport.js";
+import { getClientSource } from "@/lib/client-source";
 import type { CheckoutResult, PaymentStatus } from "@/types/api";
 
 export interface GatewayOption {
@@ -70,3 +71,20 @@ export const createUpgradeCheckout = (
 
 export const getPaymentStatus = (paymentId: string) =>
   apiClient.get<PaymentStatus>(`/payments/${paymentId}`).then((r) => r.data);
+
+/**
+ * Combined multi-subscription renewal: one provider checkout for the summed
+ * total. Each id renews on its original plan and duration server-side. The
+ * `source` hint preserves the post-payment redirect surface (Mini App vs web).
+ */
+export const createRenewalCheckout = (
+  subscriptionIds: (string | number)[],
+  gatewayType: string,
+) =>
+  apiClient
+    .post<CheckoutResult>("/payments/renewal-checkout", {
+      subscriptionIds,
+      gatewayType,
+      source: getClientSource(),
+    })
+    .then((r) => r.data);

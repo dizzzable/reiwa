@@ -6,6 +6,7 @@ import { apiClient } from "./transport.js";
 import type {
   ActionPolicy,
   AllSubscriptionsResponse,
+  RenewalOptions,
   Subscription,
   SubscriptionQuote,
 } from "@/types/api";
@@ -37,6 +38,23 @@ export const getQuote = (
 
 export const getAllSubscriptions = () =>
   apiClient.get<AllSubscriptionsResponse>("/subscriptions/all").then((r) => r.data);
+
+/**
+ * Lists the user's renewable subscriptions with per-item renewal pricing.
+ * Pass the selected `gatewayType` for an accurate combined total; omit it
+ * for an indicative price using the default-resolved gateway. `subscriptionIds`
+ * narrows pricing to a chosen subset (used on the review step).
+ */
+export const getRenewalOptions = (input?: {
+  subscriptionIds?: (string | number)[];
+  gatewayType?: string;
+}) =>
+  apiClient
+    .post<RenewalOptions>("/subscription/renewal-options", {
+      ...(input?.subscriptionIds ? { subscriptionIds: input.subscriptionIds } : {}),
+      ...(input?.gatewayType ? { gatewayType: input.gatewayType } : {}),
+    })
+    .then((r) => r.data);
 
 export const getUpgradeOptions = (subscriptionId: number) =>
   apiClient.get(`/subscription/${subscriptionId}/upgrade-options`).then((r) => r.data);
