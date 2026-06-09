@@ -83,11 +83,13 @@ export const getPaymentStatus = (paymentId: string) =>
 export const createRenewalCheckout = (
   subscriptionIds: (string | number)[],
   gatewayType: string,
+  durations?: { subscriptionId: string; days: number }[],
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/renewal-checkout", {
       subscriptionIds,
       gatewayType,
       source: getClientSource(),
+      ...(durations && durations.length > 0 ? { durations } : {}),
     })
     .then((r) => r.data);

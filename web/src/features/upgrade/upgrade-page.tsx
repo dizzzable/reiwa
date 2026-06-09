@@ -20,6 +20,7 @@ import type { GatewayOption } from "@/stores/purchase.store";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
+import { StepTransition } from "@/components/ui/step-transition";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -63,12 +64,14 @@ export default function UpgradePage() {
         </div>
       </div>
 
-      {step === "subscriptions" && <SelectSubscription />}
-      {step === "plan" && <SelectPlan />}
-      {step === "duration" && <SelectDuration />}
-      {step === "gateway" && <SelectGateway />}
-      {step === "review" && <UpgradeReview />}
-      {(step === "checkout" || step === "polling") && <CheckoutStep />}
+      <StepTransition stepKey={step}>
+        {step === "subscriptions" && <SelectSubscription />}
+        {step === "plan" && <SelectPlan />}
+        {step === "duration" && <SelectDuration />}
+        {step === "gateway" && <SelectGateway />}
+        {step === "review" && <UpgradeReview />}
+        {(step === "checkout" || step === "polling") && <CheckoutStep />}
+      </StepTransition>
     </div>
   );
 }

@@ -58,11 +58,15 @@ export const deleteSubscription = (subscriptionId: string) =>
 export const getRenewalOptions = (input?: {
   subscriptionIds?: (string | number)[];
   gatewayType?: string;
+  durations?: { subscriptionId: string; days: number }[];
 }) =>
   apiClient
     .post<RenewalOptions>("/subscription/renewal-options", {
       ...(input?.subscriptionIds ? { subscriptionIds: input.subscriptionIds } : {}),
       ...(input?.gatewayType ? { gatewayType: input.gatewayType } : {}),
+      ...(input?.durations && input.durations.length > 0
+        ? { durations: input.durations }
+        : {}),
     })
     .then((r) => r.data);
 

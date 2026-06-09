@@ -166,12 +166,21 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { subscriptionIds, gatewayType } = (req.body ?? {}) as Record<string, unknown>;
+        const { subscriptionIds, gatewayType, durations } = (req.body ?? {}) as Record<string, unknown>;
         const context = req.context ?? "web";
         const channel = context === "tma" ? "TMA" : "WEB";
         const subscriptionIdsValid =
           Array.isArray(subscriptionIds) &&
           subscriptionIds.every((id) => typeof id === "string" && id.length > 0);
+        const durationsValid =
+          Array.isArray(durations) &&
+          durations.every(
+            (d) =>
+              d !== null &&
+              typeof d === "object" &&
+              typeof (d as { subscriptionId?: unknown }).subscriptionId === "string" &&
+              Number.isFinite((d as { days?: unknown }).days),
+          );
         const result = await adminClient?.subscription.getRenewalOptions(
           resolveUserIdentity(req),
           {
@@ -180,6 +189,13 @@ export function createSubscriptionRouter(deps: {
               : {}),
             ...(typeof gatewayType === "string" && gatewayType.length > 0
               ? { gatewayType }
+              : {}),
+            ...(durationsValid
+              ? {
+                  durations: (durations as ReadonlyArray<{ subscriptionId: string; days: number }>).map(
+                    (d) => ({ subscriptionId: String(d.subscriptionId), days: Number(d.days) }),
+                  ),
+                }
               : {}),
             channel,
           },

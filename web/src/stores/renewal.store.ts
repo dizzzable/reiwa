@@ -8,6 +8,8 @@ interface RenewalState {
   step: RenewalStep;
   /** Subscriptions the user chose to renew (≥1 once past the selection step). */
   selectedSubscriptionIds: string[];
+  /** Per-subscription chosen renewal duration (days). Absent → original. */
+  selectedDurations: Record<string, number>;
   selectedGateway: GatewayOption | null;
   paymentId: string | null;
   paymentUrl: string | null;
@@ -15,6 +17,7 @@ interface RenewalState {
   setStep: (step: RenewalStep) => void;
   toggleSubscription: (id: string) => void;
   setSelectedSubscriptions: (ids: string[]) => void;
+  setSelectedDuration: (subscriptionId: string, days: number) => void;
   selectGateway: (gateway: GatewayOption) => void;
   setCheckoutResult: (paymentId: string, paymentUrl: string | null) => void;
   reset: () => void;
@@ -22,10 +25,16 @@ interface RenewalState {
 
 const INITIAL: Pick<
   RenewalState,
-  "step" | "selectedSubscriptionIds" | "selectedGateway" | "paymentId" | "paymentUrl"
+  | "step"
+  | "selectedSubscriptionIds"
+  | "selectedDurations"
+  | "selectedGateway"
+  | "paymentId"
+  | "paymentUrl"
 > = {
   step: "subscriptions",
   selectedSubscriptionIds: [],
+  selectedDurations: {},
   selectedGateway: null,
   paymentId: null,
   paymentUrl: null,
@@ -42,6 +51,10 @@ export const useRenewalStore = create<RenewalState>((set) => ({
         : [...state.selectedSubscriptionIds, id],
     })),
   setSelectedSubscriptions: (ids) => set({ selectedSubscriptionIds: ids }),
+  setSelectedDuration: (subscriptionId, days) =>
+    set((state) => ({
+      selectedDurations: { ...state.selectedDurations, [subscriptionId]: days },
+    })),
   selectGateway: (gateway) => set({ selectedGateway: gateway, step: "review" }),
   setCheckoutResult: (paymentId, paymentUrl) =>
     set({ paymentId, paymentUrl, step: "polling" }),

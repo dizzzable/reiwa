@@ -27,6 +27,7 @@ import { TipCard } from "@/components/ui/tip-card";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
+import { StepTransition } from "@/components/ui/step-transition";
 import { useBranding } from "@/lib/branding-provider";
 import { customIconId, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { CustomIconView } from "@/components/ui/custom-icon-view";
@@ -68,10 +69,12 @@ export default function AddOnsPage() {
         </div>
       </div>
 
-      {step === "subscriptions" && <SelectSubscription />}
-      {step === "addon" && <SelectAddOn />}
-      {step === "gateway" && <SelectGateway />}
-      {step === "checkout" && <CheckoutStep />}
+      <StepTransition stepKey={step}>
+        {step === "subscriptions" && <SelectSubscription />}
+        {step === "addon" && <SelectAddOn />}
+        {step === "gateway" && <SelectGateway />}
+        {step === "checkout" && <CheckoutStep />}
+      </StepTransition>
     </div>
   );
 }

@@ -432,6 +432,7 @@ export const en: RuDict = {
     back: '← Back',
     selectSubtitle: 'Choose subscriptions to renew',
     continue: 'Continue',
+    durationLabel: 'Renewal term',
     noneRenewable: 'No subscriptions are available to renew.',
     unknownPlan: 'Plan',
     reviewTitle: 'Confirm renewal',

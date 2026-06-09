@@ -430,6 +430,7 @@ export const ru = {
     back: '← Назад',
     selectSubtitle: 'Выберите подписки для продления',
     continue: 'Продолжить',
+    durationLabel: 'Срок продления',
     noneRenewable: 'Нет подписок, доступных для продления.',
     unknownPlan: 'Тариф',
     reviewTitle: 'Подтвердите продление',

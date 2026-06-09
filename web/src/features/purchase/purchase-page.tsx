@@ -35,6 +35,17 @@ function SelectDuration({
   onSelect: (d: PlanDuration) => void;
 }) {
   const { t } = useTranslation();
+  const lastNav = usePurchaseStore((s) => s.lastNav);
+
+  // Auto-select + advance when the plan offers exactly one duration — but
+  // ONLY when arriving forward. Without the guard, pressing "back" from the
+  // device step re-mounts this and immediately re-advances (a trap).
+  useEffect(() => {
+    if (plan.durations.length === 1 && lastNav === "forward") {
+      onSelect(plan.durations[0]!);
+    }
+  }, [plan, lastNav]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="space-y-3">
       <h2 className="px-5 text-base font-semibold">{t("purchase.duration.title")}</h2>

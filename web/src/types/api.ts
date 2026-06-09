@@ -128,6 +128,9 @@ export interface RenewalOptionItem {
   planId: string | null;
   planName: string | null;
   durationDays: number | null;
+  /** Durations the target plan offers, so the UI can re-pick the renewal term.
+   *  Empty when the item isn't renewable. */
+  availableDurations: { id: string; days: number }[];
   currency: string | null;
   amount: string | null;
   discountPercent: number;

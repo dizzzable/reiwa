@@ -119,6 +119,7 @@ export function createPaymentsRouter(deps: {
           subscriptionIds,
           gatewayType,
           source,
+          durations,
           successUrl: bodySuccessUrl,
           failUrl: bodyFailUrl,
         } = (req.body ?? {}) as Record<string, unknown>;
@@ -135,6 +136,15 @@ export function createPaymentsRouter(deps: {
           res.status(400).json({ message: "gatewayType is required" });
           return;
         }
+        const durationsValid =
+          Array.isArray(durations) &&
+          durations.every(
+            (d) =>
+              d !== null &&
+              typeof d === "object" &&
+              typeof (d as { subscriptionId?: unknown }).subscriptionId === "string" &&
+              Number.isFinite((d as { days?: unknown }).days),
+          );
 
         const successOverride =
           typeof bodySuccessUrl === "string" ? bodySuccessUrl : null;
@@ -168,6 +178,13 @@ export function createPaymentsRouter(deps: {
             channel: context === "tma" ? "TMA" : "WEB",
             successUrl,
             failUrl,
+            ...(durationsValid
+              ? {
+                  durations: (durations as ReadonlyArray<{ subscriptionId: string; days: number }>).map(
+                    (d) => ({ subscriptionId: String(d.subscriptionId), days: Number(d.days) }),
+                  ),
+                }
+              : {}),
           },
         );
         res.json(result ?? {});

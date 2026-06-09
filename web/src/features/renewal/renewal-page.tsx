@@ -21,6 +21,7 @@ import type { RenewalOptionItem, Subscription } from "@/types/api";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
+import { StepTransition } from "@/components/ui/step-transition";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -82,23 +83,37 @@ export default function RenewalPage() {
         </div>
       </div>
 
-      {step === "subscriptions" && <SelectSubscriptions />}
-      {step === "gateway" && <SelectGateway />}
-      {step === "review" && <RenewalReview />}
-      {step === "checkout" && <CheckoutStep />}
-      {step === "polling" && <CheckoutStep />}
+      <StepTransition stepKey={step}>
+        {step === "subscriptions" && <SelectSubscriptions />}
+        {step === "gateway" && <SelectGateway />}
+        {step === "review" && <RenewalReview />}
+        {step === "checkout" && <CheckoutStep />}
+        {step === "polling" && <CheckoutStep />}
+      </StepTransition>
     </div>
   );
 }
 
 function SelectSubscriptions() {
   const { t } = useTranslation();
-  const { selectedSubscriptionIds, toggleSubscription, setSelectedSubscriptions, setStep } =
-    useRenewalStore();
+  const {
+    selectedSubscriptionIds,
+    selectedDurations,
+    toggleSubscription,
+    setSelectedSubscriptions,
+    setSelectedDuration,
+    setStep,
+  } = useRenewalStore();
+
+  const durationsPayload = Object.entries(selectedDurations).map(([subscriptionId, days]) => ({
+    subscriptionId,
+    days,
+  }));
 
   const { data: options, isLoading: optionsLoading } = useQuery({
-    queryKey: ["renewal-options"],
-    queryFn: () => getRenewalOptions(),
+    queryKey: ["renewal-options", selectedDurations],
+    queryFn: () =>
+      getRenewalOptions(durationsPayload.length > 0 ? { durations: durationsPayload } : undefined),
     staleTime: 60_000,
   });
   const { data: subsData, isLoading: subsLoading } = useQuery({
@@ -153,24 +168,51 @@ function SelectSubscriptions() {
         {renewable.map(({ sub, option }) => {
           const checked = selectedSubscriptionIds.includes(sub.id);
           const planLabel = sub.plan?.name ?? option.planName ?? "";
-          const durationLabel = option.durationDays
-            ? t("purchase.duration.days", { count: option.durationDays })
+          const currentDays = selectedDurations[sub.id] ?? option.durationDays;
+          const durationLabel = currentDays
+            ? t("purchase.duration.days", { count: currentDays })
             : "";
           const subtitle = [planLabel, durationLabel].filter(Boolean).join(" · ");
+          const showDurationPicker = option.availableDurations.length > 1;
           return (
-            <SubscriptionSelectCard
-              key={sub.id}
-              subscription={sub}
-              selected={checked}
-              onSelect={() => toggleSubscription(sub.id)}
-              control="check"
-              subtitle={subtitle}
-              trailing={
-                <span className="text-sm font-semibold text-(--brand-primary)">
-                  {formatPrice(option.amount, option.currency)}
-                </span>
-              }
-            />
+            <div key={sub.id} className="space-y-2">
+              <SubscriptionSelectCard
+                subscription={sub}
+                selected={checked}
+                onSelect={() => toggleSubscription(sub.id)}
+                control="check"
+                subtitle={subtitle}
+                trailing={
+                  <span className="text-sm font-semibold text-(--brand-primary)">
+                    {formatPrice(option.amount, option.currency)}
+                  </span>
+                }
+              />
+              {showDurationPicker && (
+                <div className="px-1">
+                  <p className="mb-1.5 text-xs text-zinc-500">{t("renewal.durationLabel")}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {option.availableDurations.map((d) => {
+                      const active = currentDays === d.days;
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => setSelectedDuration(sub.id, d.days)}
+                          className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all active:scale-95 ${
+                            active
+                              ? "bg-(--brand-primary) text-black"
+                              : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                          }`}
+                        >
+                          {t("purchase.duration.days", { count: d.days })}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -267,18 +309,24 @@ function RenewalReview() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { selectedSubscriptionIds, selectedGateway, setStep } = useRenewalStore();
+  const { selectedSubscriptionIds, selectedDurations, selectedGateway, setStep } =
+    useRenewalStore();
+
+  const durationsPayload = selectedSubscriptionIds
+    .filter((id) => selectedDurations[id] !== undefined)
+    .map((id) => ({ subscriptionId: id, days: selectedDurations[id]! }));
 
   const {
     data,
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["renewal-review", selectedSubscriptionIds, selectedGateway?.id],
+    queryKey: ["renewal-review", selectedSubscriptionIds, selectedGateway?.id, selectedDurations],
     queryFn: () =>
       getRenewalOptions({
         subscriptionIds: selectedSubscriptionIds,
         gatewayType: selectedGateway!.id,
+        ...(durationsPayload.length > 0 ? { durations: durationsPayload } : {}),
       }),
     enabled: selectedSubscriptionIds.length > 0 && !!selectedGateway,
   });
@@ -379,10 +427,20 @@ function RenewalReview() {
 function CheckoutStep() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { selectedSubscriptionIds, selectedGateway, setCheckoutResult } = useRenewalStore();
+  const { selectedSubscriptionIds, selectedDurations, selectedGateway, setCheckoutResult } =
+    useRenewalStore();
+
+  const durationsPayload = selectedSubscriptionIds
+    .filter((id) => selectedDurations[id] !== undefined)
+    .map((id) => ({ subscriptionId: id, days: selectedDurations[id]! }));
 
   const mutation = useMutation({
-    mutationFn: () => createRenewalCheckout(selectedSubscriptionIds, selectedGateway!.id),
+    mutationFn: () =>
+      createRenewalCheckout(
+        selectedSubscriptionIds,
+        selectedGateway!.id,
+        durationsPayload.length > 0 ? durationsPayload : undefined,
+      ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
       const tg = window.Telegram?.WebApp;
