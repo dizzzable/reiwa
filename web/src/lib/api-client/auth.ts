@@ -58,8 +58,11 @@ export const bootstrapTelegram = (initData: string) =>
 export const login = (data: LoginRequest) =>
   apiClient.post<LoginResponse>("/auth/login", data).then((r) => r.data);
 
+// Canonical logout: destroys the web session (and any legacy bot session)
+// and is idempotent — it never 401s on an already-expired/absent session,
+// so the user can always sign out cleanly.
 export const signOut = () =>
-  apiClient.post("/auth/sign-out").then((r) => r.data);
+  apiClient.post("/auth/logout").then((r) => r.data);
 
 // ── Bot magic-link sign-in ───────────────────────────────────────────────────
 //
