@@ -13,6 +13,7 @@
  * Revoke acts on a single device of this subscription.
  */
 
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { Apple, Copy, Globe, Monitor, RefreshCw, Smartphone, Trash2 } from "lucide-react";
@@ -25,6 +26,15 @@ import {
   regenerateSubscriptionLink,
 } from "@/lib/api-client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface DevicesListProps {
   devices: HwidDevice[];
@@ -43,6 +53,10 @@ export function DevicesList({
 }: DevicesListProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  // In-app confirmation dialogs (replace native window.confirm so the
+  // warnings match the cabinet's glass UI instead of the browser chrome).
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [revokeHwid, setRevokeHwid] = useState<string | null>(null);
 
   const revokeMutation = useMutation({
     mutationFn: (hwid: string) => deleteSubscriptionDevice(subscriptionId, hwid),
@@ -52,6 +66,7 @@ export function DevicesList({
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
     },
     onError: () => toast.error(t("devices.error")),
+    onSettled: () => setRevokeHwid(null),
   });
 
   const regenerateMutation = useMutation({
@@ -64,6 +79,7 @@ export function DevicesList({
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
     },
     onError: () => toast.error(t("devices.error")),
+    onSettled: () => setRegenerateOpen(false),
   });
 
   const handleCopy = async () => {
@@ -108,11 +124,7 @@ export function DevicesList({
             {t("devices.copyLink")}
           </button>
           <button
-            onClick={() => {
-              if (confirm(t("devices.regenerateConfirm"))) {
-                regenerateMutation.mutate();
-              }
-            }}
+            onClick={() => setRegenerateOpen(true)}
             disabled={regenerateMutation.isPending}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
             aria-label={t("devices.regenerate")}
@@ -156,11 +168,7 @@ export function DevicesList({
                 )}
               </div>
               <button
-                onClick={() => {
-                  if (confirm(t("devices.revokeConfirm"))) {
-                    revokeMutation.mutate(device.hwid);
-                  }
-                }}
+                onClick={() => setRevokeHwid(device.hwid)}
                 disabled={revokeMutation.isPending}
                 className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full text-zinc-600 hover:text-(--brand-primary) hover:bg-(--brand-primary)/10 transition-colors"
                 aria-label={t("devices.revoke")}
@@ -171,6 +179,71 @@ export function DevicesList({
           ))}
         </div>
       )}
+
+      {/* ── Regenerate-link confirmation ── */}
+      <Dialog open={regenerateOpen} onOpenChange={setRegenerateOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{t("devices.regenerate")}</DialogTitle>
+            <DialogDescription>{t("devices.regenerateConfirm")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 pt-2">
+            <Button
+              variant="ghost"
+              className="flex-1"
+              onClick={() => setRegenerateOpen(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              disabled={regenerateMutation.isPending}
+              onClick={() => regenerateMutation.mutate()}
+            >
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${regenerateMutation.isPending ? "animate-spin" : ""}`}
+              />
+              {t("devices.regenerate")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Revoke-device confirmation ── */}
+      <Dialog
+        open={revokeHwid !== null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeHwid(null);
+        }}
+      >
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{t("devices.revoke")}</DialogTitle>
+            <DialogDescription>{t("devices.revokeConfirm")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 pt-2">
+            <Button
+              variant="ghost"
+              className="flex-1"
+              onClick={() => setRevokeHwid(null)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              disabled={revokeMutation.isPending}
+              onClick={() => {
+                if (revokeHwid !== null) revokeMutation.mutate(revokeHwid);
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {t("devices.revoke")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

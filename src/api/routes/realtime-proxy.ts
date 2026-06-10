@@ -57,7 +57,19 @@ export async function proxyStream(
 
   const stream = upstream.body;
 
+  // SSE keep-alive. Without periodic traffic an idle connection (no events
+  // for a while) can be torn down by the browser/proxy/socket layer, which
+  // surfaces as `net::ERR_INCOMPLETE_CHUNKED_ENCODING` in the console. A
+  // comment frame every 20s keeps the browser↔reiwa leg warm and lets a
+  // failed write reveal a dead client early. `.unref()` so it never keeps
+  // the process alive on shutdown / in tests.
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+
   const cleanup = (): void => {
+    if (heartbeat !== null) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
     try {
       // `stream` is an undici Readable that supports `.destroy()`.
       (stream as NodeJS.ReadableStream & { destroy?: (err?: Error) => void }).destroy?.();
@@ -66,20 +78,34 @@ export async function proxyStream(
     }
   };
 
+  const finish = (): void => {
+    cleanup();
+    if (!res.writableEnded) res.end();
+  };
+
+  heartbeat = setInterval(() => {
+    if (res.writableEnded) {
+      cleanup();
+      return;
+    }
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      finish();
+    }
+  }, 20_000);
+  heartbeat.unref?.();
+
   stream.on('data', (chunk: Buffer) => {
     if (res.writableEnded) return;
     try {
       res.write(chunk);
     } catch {
-      cleanup();
+      finish();
     }
   });
-  stream.on('end', () => {
-    if (!res.writableEnded) res.end();
-  });
-  stream.on('error', () => {
-    if (!res.writableEnded) res.end();
-  });
+  stream.on('end', finish);
+  stream.on('error', finish);
 
   // Browser disconnected — close upstream so we stop pulling bytes.
   // Express's typings don't expose `res.req` cleanly across versions,
