@@ -82,3 +82,29 @@ export function createFlexibleSessionMiddleware(sessionStore: SessionStore | nul
     res.status(401).json({ message: "Unauthorized" });
   };
 }
+
+/**
+ * Optional-auth variant of {@link createFlexibleSessionMiddleware}: hydrates
+ * `req.session` / `req.telegramId` when a session is present but NEVER rejects
+ * the request. Used by probe endpoints (e.g. `GET /session`) so an
+ * unauthenticated caller gets a clean `200 → null` instead of a `401`, which
+ * browsers surface as a noisy console error on the login screen.
+ */
+export function createOptionalSessionMiddleware(sessionStore: SessionStore | null) {
+  return async function resolveOptionalSession(
+    req: AuthRequest,
+    _res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    const legacyId = req.cookies?.reiwa_session as string | undefined;
+    if (legacyId && sessionStore) {
+      const legacy = await sessionStore.get(legacyId);
+      if (legacy) {
+        req.session = legacy;
+        req.telegramId = legacy.telegramId;
+        await sessionStore.refresh(legacyId);
+      }
+    }
+    next();
+  };
+}

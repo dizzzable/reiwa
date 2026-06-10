@@ -2,9 +2,9 @@ import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
-import { createFlexibleSessionMiddleware } from "../middleware/session.js";
+import { createFlexibleSessionMiddleware, createOptionalSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
-import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { resolveUserIdentity, hasUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
 
 export function createProfileRouter(deps: {
@@ -20,10 +20,21 @@ export function createProfileRouter(deps: {
   // locked out — `getSession` previously required `telegramId` and 401'd
   // every web-auth user even after a successful login.
   const requireSession = createFlexibleSessionMiddleware(sessionStore);
+  const optionalSession = createOptionalSessionMiddleware(sessionStore);
   const router = Router();
 
   // GET /api/v1/session
-  router.get("/session", requireSession, async (req: AuthRequest, res) => {
+  //
+  // Session probe used by the SPA on every load (and the login screen). It
+  // resolves the current session when present, but for an unauthenticated
+  // caller it returns `200 → null` instead of `401` — the absence of a
+  // session is an expected state here, not an error, and a 401 would show up
+  // as a red console error on the sign-in page.
+  router.get("/session", optionalSession, async (req: AuthRequest, res) => {
+    if (!hasUserIdentity(req)) {
+      res.json(null);
+      return;
+    }
     try {
       const session = await adminClient?.user.getSession(resolveUserIdentity(req));
       res.json(session ?? req.session ?? null);
