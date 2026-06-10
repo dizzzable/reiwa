@@ -31,6 +31,14 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'start.open_app': '📱 Open app',
   'start.need_register': 'To use the service, open the app and create an account.',
 
+  // ── Mini-profile (greeting summary) ─────────────────────────────────────────
+  'profile.subscription': 'Subscription',
+  'profile.devices': 'Devices: {{count}} available',
+  'profile.devices_unlimited': 'Devices: unlimited',
+  'profile.traffic': 'Traffic',
+  'profile.until': 'Until',
+  'profile.unlimited': 'Unlimited',
+
   // ── Telegram account linking (code submitted from web cabinet) ──────────────
   'link.success': '✅ Telegram has been linked to your account.',
   'link.invalid': '❌ The linking code is invalid or expired. Get a new code in the cabinet.',

@@ -11,6 +11,8 @@ import {
   resolveUnicode,
   utf16Length,
 } from "../bot-config/emoji-utils.js";
+import type { TranslatorPort } from "../../application/ports/translator.port.js";
+import type { SupportedLocale } from "../../core/enums/locale.enum.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +22,15 @@ export interface WelcomeMessageParams {
   welcomeTemplate: string;
   format: "full" | "compact" | "minimal";
   botEmojis?: BotEmojiMap | null;
+}
+
+export interface ProfileSummaryParams {
+  firstName: string;
+  subscriptions: readonly Subscription[];
+  welcomeTemplate: string;
+  botEmojis?: BotEmojiMap | null;
+  translator: TranslatorPort;
+  lang: SupportedLocale;
 }
 
 export interface SubscriptionCardParams {
@@ -76,6 +87,124 @@ function formatTraffic(gb: number | null | undefined): string {
 /** Format device limit */
 function formatDevices(n: number | null | undefined): string {
   return n != null ? String(n) : "Безлимит";
+}
+
+// ── Mini-profile (greeting summary) ───────────────────────────────────────────
+
+const TRAFFIC_BAR_SEGMENTS = 14;
+
+/** Format a GB amount with two decimals, e.g. 0 → "0.00". */
+function formatGb(gb: number): string {
+  return (Number.isFinite(gb) ? gb : 0).toFixed(2);
+}
+
+/**
+ * Build the per-subscription traffic line:
+ *   "📈 Трафик — 🟢 ░░░░░░░░░░░░░░ 0% (0.00 / 10.00 GB)"
+ * The leading 📈 is a (premium-capable) entity; the activity dot (🟢/🟠/🔴)
+ * is plain unicode reflecting how close usage is to the plan limit.
+ */
+function buildTrafficLine(
+  sub: Subscription,
+  botEmojis: BotEmojiMap | null | undefined,
+  translator: TranslatorPort,
+  lang: SupportedLocale,
+): { text: string; entities: TgCustomEmojiEntity[] } {
+  const label = translator.t("profile.traffic", lang);
+  const limit = sub.trafficLimit;
+
+  // Unlimited plan — no meaningful bar, just mark it unlimited.
+  if (limit == null) {
+    const okDot = resolveUnicode("TRAFFIC_OK", botEmojis);
+    return lineWithEmoji(
+      "SUB_TRAFFIC",
+      `${label} — ${okDot} ${translator.t("profile.unlimited", lang)}`,
+      botEmojis,
+    );
+  }
+
+  const used = Math.max(0, sub.trafficUsed ?? 0);
+  const ratio = limit > 0 ? used / limit : 0;
+  const pct = Math.min(100, Math.max(0, ratio * 100));
+  const filled = Math.min(
+    TRAFFIC_BAR_SEGMENTS,
+    Math.max(0, Math.round((pct / 100) * TRAFFIC_BAR_SEGMENTS)),
+  );
+  const bar = "█".repeat(filled) + "░".repeat(TRAFFIC_BAR_SEGMENTS - filled);
+
+  const activityKey =
+    pct >= 100 || sub.status === "LIMITED"
+      ? "TRAFFIC_FULL"
+      : pct >= 80
+        ? "TRAFFIC_WARN"
+        : "TRAFFIC_OK";
+  const dot = resolveUnicode(activityKey, botEmojis);
+
+  const text = `${label} — ${dot} ${bar} ${Math.round(pct)}% (${formatGb(used)} / ${formatGb(limit)} GB)`;
+  return lineWithEmoji("SUB_TRAFFIC", text, botEmojis);
+}
+
+/**
+ * Greeting + a compact per-subscription mini-profile, one block per
+ * subscription the user owns:
+ *
+ *   👤 <profile name>
+ *   📱 Устройств: 1 доступно
+ *   📈 Трафик — 🟢 ░░░░░░░░░░░░░░ 0% (0.00 / 10.00 GB)
+ *   📅 До: 31.12.2026
+ *
+ * The four leading icons render as Telegram Premium custom emoji when the
+ * bot owner has Premium (baked-in ids, operator-overridable), degrading to
+ * unicode otherwise. Falls back to the welcome text alone when the user has
+ * no subscriptions.
+ */
+export function buildProfileSummary(params: ProfileSummaryParams): {
+  text: string;
+  entities: TgCustomEmojiEntity[];
+} {
+  const { firstName, subscriptions, welcomeTemplate, botEmojis, translator, lang } =
+    params;
+
+  const withName = welcomeTemplate.replace(/\{\{firstName\}\}/g, firstName);
+  const welcomePart = resolvePlaceholders(withName, botEmojis, 0);
+
+  const visible = subscriptions.filter((s) => s.status !== "DELETED");
+  if (visible.length === 0) {
+    return welcomePart;
+  }
+
+  const lines: Array<{ text: string; entities: TgCustomEmojiEntity[] }> = [
+    { text: welcomePart.text, entities: welcomePart.entities },
+  ];
+
+  for (const sub of visible) {
+    lines.push({ text: "", entities: [] }); // blank separator before each block
+
+    const profileName =
+      sub.profileName?.trim() ||
+      sub.plan?.name ||
+      translator.t("profile.subscription", lang);
+    lines.push(lineWithEmoji("SUB_PROFILE", profileName, botEmojis));
+
+    const devicesText =
+      sub.deviceLimit != null
+        ? translator.t("profile.devices", lang, { count: sub.deviceLimit })
+        : translator.t("profile.devices_unlimited", lang);
+    lines.push(lineWithEmoji("SUB_DEVICES", devicesText, botEmojis));
+
+    lines.push(buildTrafficLine(sub, botEmojis, translator, lang));
+
+    const until = formatDate(sub.expiresAt ?? sub.expireAt);
+    lines.push(
+      lineWithEmoji(
+        "SUB_EXPIRY",
+        `${translator.t("profile.until", lang)}: ${until}`,
+        botEmojis,
+      ),
+    );
+  }
+
+  return joinLines(lines);
 }
 
 // ── buildWelcomeMessage ───────────────────────────────────────────────────────

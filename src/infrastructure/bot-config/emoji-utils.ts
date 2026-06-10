@@ -24,7 +24,39 @@ export const DEFAULT_UNICODE: Record<string, string> = {
   STATUS_EXPIRED:  '🔴',
   STATUS_DISABLED: '⚫',
   STATUS_LIMITED:  '🟡',
+  // Per-subscription mini-profile (greeting summary)
+  SUB_PROFILE:     '👤',
+  SUB_DEVICES:     '📱',
+  SUB_TRAFFIC:     '📈',
+  SUB_EXPIRY:      '📅',
+  TRAFFIC_OK:      '🟢',
+  TRAFFIC_WARN:    '🟠',
+  TRAFFIC_FULL:    '🔴',
 };
+
+/**
+ * Baked-in Telegram Premium custom-emoji ids for the mini-profile lines.
+ * These render as premium emoji when the bot owner has Telegram Premium and
+ * silently degrade to the unicode fallback otherwise. Operators can still
+ * override them per key through the admin bot-emoji editor (`botEmojis`).
+ */
+export const DEFAULT_PREMIUM_IDS: Record<string, string> = {
+  SUB_PROFILE: '5275979556308674886',
+  SUB_DEVICES: '5278647306525108244',
+  SUB_TRAFFIC: '5278778882848220741',
+  SUB_EXPIRY:  '5206222720416643915',
+};
+
+/**
+ * Resolve the Telegram Premium custom-emoji id for a semantic key:
+ * operator-configured `botEmojis[key].tgEmojiId` wins, then the baked-in
+ * {@link DEFAULT_PREMIUM_IDS} default, else `null` (unicode-only).
+ */
+export function resolvePremiumId(key: string, botEmojis?: BotEmojiMap | null): string | null {
+  const configured = botEmojis?.[key]?.tgEmojiId?.trim();
+  if (configured) return configured;
+  return DEFAULT_PREMIUM_IDS[key] ?? null;
+}
 
 /**
  * Returns the UTF-16 length of the FIRST character in a string.
@@ -72,20 +104,20 @@ export function lineWithEmoji(
   text: string,
   botEmojis?: BotEmojiMap | null,
 ): { text: string; entities: TgCustomEmojiEntity[] } {
-  const entry = botEmojis?.[key];
   const unicode = resolveUnicode(key, botEmojis);
   const separator = text.startsWith('\n') ? '' : ' ';
   const fullText = unicode + separator + text;
   const entities: TgCustomEmojiEntity[] = [];
 
-  if (entry?.tgEmojiId?.trim()) {
+  const premiumId = resolvePremiumId(key, botEmojis);
+  if (premiumId) {
     const length = firstCharLengthUtf16(unicode);
     if (length > 0) {
       entities.push({
         type: 'custom_emoji',
         offset: 0,
         length,
-        custom_emoji_id: entry.tgEmojiId.trim(),
+        custom_emoji_id: premiumId,
       });
     }
   }

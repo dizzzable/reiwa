@@ -21,7 +21,7 @@
  */
 import { InlineKeyboard } from 'grammy';
 
-import { buildWelcomeMessage } from '../../infrastructure/bot-message/message-builder.js';
+import { buildProfileSummary } from '../../infrastructure/bot-message/message-builder.js';
 import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
@@ -59,20 +59,31 @@ async function buildWelcomeView(
   const lang = coerceLocale(deps.userLocale.getSync(tgUser?.id ?? 0));
   const botCfg = await deps.getConfig();
 
-  const subscription =
+  const subscriptions =
     deps.adminClient !== null && tgUser !== undefined
-      ? ((await deps.adminClient.subscription
-          .getActive({ telegramId: String(tgUser.id) })
-          .catch(() => null)) as Subscription | null)
-      : null;
+      ? (((await deps.adminClient.subscription
+          .getAll({ telegramId: String(tgUser.id) })
+          .catch(() => null)) as { subscriptions?: Subscription[] } | null)?.subscriptions ?? [])
+      : [];
 
-  const message = buildWelcomeMessage({
-    firstName,
-    subscription,
-    welcomeTemplate: botCfg.visual.welcomeMessage,
-    format: botCfg.visual.subscriptionInfoFormat,
-    botEmojis: botCfg.botEmojis,
-  });
+  const message =
+    botCfg.visual.subscriptionInfoFormat === 'minimal'
+      ? buildProfileSummary({
+          firstName,
+          subscriptions: [],
+          welcomeTemplate: botCfg.visual.welcomeMessage,
+          botEmojis: botCfg.botEmojis,
+          translator: deps.translator,
+          lang,
+        })
+      : buildProfileSummary({
+          firstName,
+          subscriptions,
+          welcomeTemplate: botCfg.visual.welcomeMessage,
+          botEmojis: botCfg.botEmojis,
+          translator: deps.translator,
+          lang,
+        });
 
   const miniAppUrl =
     botCfg.features.miniAppEnabled && deps.urls.miniAppUrl !== null

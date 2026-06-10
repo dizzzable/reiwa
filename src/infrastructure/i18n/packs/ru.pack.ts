@@ -33,6 +33,14 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'start.open_app': '📱 Открыть приложение',
   'start.need_register': 'Для использования сервиса откройте приложение и создайте аккаунт.',
 
+  // ── Mini-profile (greeting summary) ─────────────────────────────────────────
+  'profile.subscription': 'Подписка',
+  'profile.devices': 'Устройств: {{count}} доступно',
+  'profile.devices_unlimited': 'Устройств: безлимит',
+  'profile.traffic': 'Трафик',
+  'profile.until': 'До',
+  'profile.unlimited': 'Безлимит',
+
   // ── Telegram account linking (code submitted from web cabinet) ──────────────
   'link.success': '✅ Telegram успешно привязан к вашему аккаунту.',
   'link.invalid': '❌ Код привязки неверный или истёк. Получите новый код в кабинете.',

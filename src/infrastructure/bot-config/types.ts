@@ -157,8 +157,15 @@ export interface Subscription {
   status: 'ACTIVE' | 'DISABLED' | 'LIMITED' | 'EXPIRED' | 'DELETED'
   isTrial: boolean
   trafficLimit: number | null
+  /** Traffic consumed so far (GB); null when the panel usage is unavailable. */
+  trafficUsed?: number | null
   deviceLimit: number | null
-  expireAt: string
+  /** Legacy alias for the expiry timestamp. */
+  expireAt?: string
+  /** Canonical expiry timestamp (ISO) from the internal subscription payload. */
+  expiresAt?: string | null
+  /** Human-readable Remnawave profile name shown on the mini-profile. */
+  profileName?: string | null
   url: string
   plan: { id: number; name: string; type: string } | null
 }

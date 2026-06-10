@@ -52,7 +52,12 @@ function buildAdmin(opts: {
   return ({
     user: { bootstrap },
     system: { getPlatformPolicy: vi.fn().mockResolvedValue(opts.policy ?? null) },
-    subscription: { getActive: vi.fn().mockResolvedValue(opts.subscription ?? null) },
+    subscription: {
+      getActive: vi.fn().mockResolvedValue(opts.subscription ?? null),
+      getAll: vi.fn().mockResolvedValue({
+        subscriptions: opts.subscription ? [opts.subscription] : [],
+      }),
+    },
   } as unknown) as PageDeps['adminClient'];
 }
 
