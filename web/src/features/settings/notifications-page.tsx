@@ -185,6 +185,7 @@ function BrowserPushSection() {
           </div>
           <div className="flex-1 space-y-2">
             <p className="text-sm text-zinc-300">{t("notifications.pushDescription")}</p>
+            <p className="text-xs text-(--brand-primary)/90">{t("notifications.pushBroadcastsHint")}</p>
             <div className="flex items-center justify-between">
               <Label className="text-sm text-zinc-200 cursor-pointer">
                 {isSubscribed

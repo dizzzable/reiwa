@@ -591,6 +591,7 @@ export const en: RuDict = {
     hint: 'Notifications are sent via Telegram bot and/or linked email.',
     pushSection: 'Browser notifications',
     pushDescription: 'Get notifications in your browser or on your device, even when the site is closed.',
+    pushBroadcastsHint: 'Important news and service announcements arrive here too — enable it so you never miss them.',
     pushToggleEnable: 'Enable browser notifications',
     pushToggleEnabled: 'Browser notifications are on',
     pushUnsupported: 'Your browser does not support push notifications.',
