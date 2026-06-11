@@ -51,6 +51,8 @@ const ReferralsPage = lazy(() => import("@/features/referrals/referrals-page"));
 const SettingsPage = lazy(() => import("@/features/settings/settings-page"));
 const PrivacyPage = lazy(() => import("@/features/settings/privacy-page"));
 const NotificationsSettingsPage = lazy(() => import("@/features/settings/notifications-page"));
+const NotificationsFeedPage = lazy(() => import("@/features/settings/notifications-feed-page"));
+const NotificationsPrefsPage = lazy(() => import("@/features/settings/notifications-settings-page"));
 const TransactionsPage = lazy(() => import("@/features/settings/transactions-page"));
 const FaqPage = lazy(() => import("@/features/settings/faq-page"));
 const PromocodesSettingsPage = lazy(() => import("@/features/settings/promocodes-page"));
@@ -101,6 +103,8 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/privacy" element={<PrivacyPage />} />
           <Route path="/settings/notifications" element={<NotificationsSettingsPage />} />
+          <Route path="/settings/notifications/feed" element={<NotificationsFeedPage />} />
+          <Route path="/settings/notifications/settings" element={<NotificationsPrefsPage />} />
           <Route path="/settings/transactions" element={<TransactionsPage />} />
           <Route path="/settings/faq" element={<FaqPage />} />
           <Route path="/settings/promocodes" element={<PromocodesSettingsPage />} />

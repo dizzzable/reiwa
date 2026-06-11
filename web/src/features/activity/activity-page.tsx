@@ -162,7 +162,7 @@ export default function ActivityPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold">
-                        {CURRENCY_SYMBOLS[(tx.pricing as any)?.currency ?? tx.currency] ?? ''}{((tx.pricing as any)?.finalPrice ?? tx.amount ?? 0).toFixed(2)}
+                        {CURRENCY_SYMBOLS[(tx.pricing as any)?.currency ?? tx.currency] ?? ''}{Number((tx.pricing as any)?.finalPrice ?? tx.amount ?? 0).toFixed(2)}
                       </p>
                       <p className={cn('text-xs', status.color)}>{status.labelKey ? t(status.labelKey) : tx.status}</p>
                     </div>
