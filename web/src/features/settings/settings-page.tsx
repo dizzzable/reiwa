@@ -30,6 +30,7 @@ import {
   LogOut,
   MessageSquare,
   Bell,
+  BellRing,
   Shield,
   CheckCircle2,
   Tag,
@@ -160,6 +161,14 @@ export default function SettingsPage() {
           tint={iconTint("notifications")}
           label={t("settings.notifications")}
           sublabel={t("settings.notificationsSub")}
+          onClick={() => navigate("/activity")}
+        />
+        <MenuItem
+          icon={<BellRing className="h-5 w-5" />}
+          iconBg="bg-blue-500/10 text-blue-400"
+          tint={iconTint("notifications")}
+          label={t("settings.notificationsSettings")}
+          sublabel={t("settings.notificationsSettingsSub")}
           onClick={() => navigate("/settings/notifications")}
         />
         <MenuItem

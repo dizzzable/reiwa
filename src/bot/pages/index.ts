@@ -24,6 +24,7 @@
  *                   resolves an admin-defined BotFlow screen.
  */
 export { registerDynamicScreenPage } from './dynamic-screen.js';
+export { registerClosePage } from './close.js';
 export { registerHelpCallbackPage } from './help-callback.js';
 export { registerHelpCommandPage } from './help.js';
 export { registerInvitePage } from './invite.js';

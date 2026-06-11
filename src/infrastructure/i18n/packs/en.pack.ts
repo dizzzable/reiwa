@@ -189,4 +189,13 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'channel.check_button': '✅ I subscribed',
   'channel.not_subscribed': '❌ You are not subscribed yet. Subscribe and try again.',
   'channel.verified': '✅ Subscription confirmed!',
+  // ── Bot-started operator notice ───────────────────────────────────────────────
+  'bot_event.started': '☀️ Event: Bot started!',
+  'bot_event.access_mode': 'Access mode',
+  'bot_event.mode.PUBLIC': '🟢 Open for everyone',
+  'bot_event.mode.INVITED': '✉️ Invite only',
+  'bot_event.mode.PURCHASE_BLOCKED': '🛒 Purchases disabled',
+  'bot_event.mode.REG_BLOCKED': '🚫 Registration disabled',
+  'bot_event.mode.RESTRICTED': '🛠 Restricted mode',
+  'bot_event.close': '❌ Close',
 };

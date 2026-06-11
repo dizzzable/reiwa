@@ -26,6 +26,7 @@ import { isTelegramSafeButtonUrl } from './widgets/main-keyboard.js';
 import { startInternalHttpListener } from './listeners/internal-http-listener.js';
 import {
   registerDynamicScreenPage,
+  registerClosePage,
   registerHelpCallbackPage,
   registerHelpCommandPage,
   registerInvitePage,
@@ -34,6 +35,7 @@ import {
   registerRulesPage,
   registerStartPage,
 } from './pages/index.js';
+import { notifyOperatorBotStarted } from './lib/startup-notice.js';
 import {
   detectLocaleFromTelegram,
   translator,
@@ -182,6 +184,7 @@ async function startBot(): Promise<void> {
   registerHelpCommandPage(bot, pageDeps);
   registerMenuPage(bot, pageDeps);
   registerStartPage(bot, pageDeps);
+  registerClosePage(bot, pageDeps);
   // Dynamic screens last — its `screen:*` regex catches anything not
   // already grabbed by an earlier `bot.callbackQuery(<id>, ...)` so
   // operator-defined screens can shadow built-in callbacks just by
@@ -215,6 +218,16 @@ async function startBot(): Promise<void> {
   // language. Failures are non-fatal — the bot still works without
   // command suggestions.
   await registerSlashCommands(bot, logger);
+
+  // Operator startup notice (snoups-style): ping BOT_DEV_ID with the current
+  // access mode + a Close button. Best-effort, never blocks startup.
+  void notifyOperatorBotStarted({
+    bot,
+    devId: config.BOT_DEV_ID,
+    adminClient,
+    translator,
+    logger,
+  });
 
   // Polling lifecycle with self-healing on 409 / network blips.
   //

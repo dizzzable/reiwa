@@ -191,4 +191,13 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'channel.check_button': '✅ Я подписался',
   'channel.not_subscribed': '❌ Вы ещё не подписаны на канал. Подпишитесь и попробуйте снова.',
   'channel.verified': '✅ Подписка подтверждена!',
+  // ── Bot-started operator notice ───────────────────────────────────────────────
+  'bot_event.started': '☀️ Событие: Бот запущен!',
+  'bot_event.access_mode': 'Режим доступа',
+  'bot_event.mode.PUBLIC': '🟢 Разрешён для всех',
+  'bot_event.mode.INVITED': '✉️ Только по приглашению',
+  'bot_event.mode.PURCHASE_BLOCKED': '🛒 Покупки отключены',
+  'bot_event.mode.REG_BLOCKED': '🚫 Регистрация отключена',
+  'bot_event.mode.RESTRICTED': '🛠 Ограниченный режим',
+  'bot_event.close': '❌ Закрыть',
 };
