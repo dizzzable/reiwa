@@ -25,6 +25,8 @@ export interface PlatformPolicyShape {
   readonly channelRequired: boolean;
   readonly channelLink: string | null;
   readonly channelId?: string | number;
+  readonly channelUsername?: string | null;
+  readonly channelRecheck?: boolean;
   readonly defaultCurrency: string;
 }
 

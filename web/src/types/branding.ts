@@ -103,6 +103,11 @@ export interface PublicConfig {
   defaultCurrency: string;
   /** Operator's custom icon library (reusable glyphs the cabinet can render). */
   customIcons: CustomIcon[];
+  /** Platform-branding texts (project name, web page title). */
+  platformBranding?: {
+    projectName: string | null;
+    webTitle: string | null;
+  };
 }
 
 /** One operator-uploaded custom icon. Mirrors the backend `CustomIconInterface`. */
@@ -147,4 +152,5 @@ export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
   defaultLocale: "ru",
   defaultCurrency: "USD",
   customIcons: [],
+  platformBranding: { projectName: null, webTitle: null },
 };

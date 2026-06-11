@@ -19,15 +19,15 @@
 import type { AdminClient } from '../../lib/admin-client.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { buildMainKeyboard, resolveSupportDeepLink } from '../widgets/main-keyboard.js';
+import {
+  isChannelGateActive,
+  resolveChannelChatId,
+  isSubscribedStatus,
+  markChannelPassed,
+} from '../lib/channel-gate.js';
 
 import { coerceLocale } from './coerce-locale.js';
 import type { PageDeps, PageRegistrar } from './types.js';
-
-interface ChannelPolicyShape {
-  readonly channelRequired?: boolean;
-  readonly channelLink?: string;
-  readonly channelId?: string | number;
-}
 
 /**
  * Resolve the same support URL the start page uses for the Help button.
@@ -106,13 +106,14 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       const policy = deps.adminClient
         ? await getPolicyCache(deps.adminClient).get().catch(() => null)
         : null;
-      if (policy?.channelRequired === true && typeof policy.channelLink === 'string' && policy.channelLink.length > 0) {
-        const channelId = policy.channelId ?? policy.channelLink;
-        const member = await ctx.api.getChatMember(channelId, tgUser.id);
-        if (member.status === 'left' || member.status === 'kicked') {
+      if (policy !== null && isChannelGateActive(policy)) {
+        const chatId = resolveChannelChatId(policy);
+        const member = await ctx.api.getChatMember(chatId as string | number, tgUser.id);
+        if (!isSubscribedStatus(member.status)) {
           await ctx.reply(deps.translator.t('channel.not_subscribed', lang));
           return;
         }
+        markChannelPassed(tgUser.id);
       }
     } catch {
       // Can't verify — let them through. Telegram getChatMember occasionally

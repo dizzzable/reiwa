@@ -23,6 +23,14 @@ import { InlineKeyboard } from 'grammy';
 
 import { buildProfileSummary } from '../../infrastructure/bot-message/message-builder.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
+import {
+  isChannelGateActive,
+  resolveChannelChatId,
+  resolveChannelJoinUrl,
+  isSubscribedStatus,
+  hasRecentlyPassedChannel,
+  markChannelPassed,
+} from '../lib/channel-gate.js';
 import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
@@ -33,12 +41,6 @@ import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 interface BootstrapSessionShape {
   readonly language?: string;
-}
-
-interface ChannelPolicyShape {
-  readonly channelRequired?: boolean;
-  readonly channelLink?: string;
-  readonly channelId?: string | number;
 }
 
 /**
@@ -292,35 +294,34 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
     lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
     const botCfg = await deps.getConfig();
 
-    // Phase 2: channel-subscription gate.
-    if (botCfg.visual.channelUsername.length > 0 && deps.adminClient !== null) {
+    // Phase 2: channel-subscription gate. Driven entirely by the platform
+    // policy (channelId / channelUsername / channelLink); honours the
+    // operator's re-check toggle.
+    if (deps.adminClient !== null) {
       try {
         const policy = await getPolicyCache(deps.adminClient).get();
-        if (
-          policy?.channelRequired === true &&
-          typeof policy.channelLink === 'string' &&
-          policy.channelLink.length > 0
-        ) {
-          const channelId = policy.channelId ?? policy.channelLink;
-          try {
-            const member = await ctx.api.getChatMember(channelId, tgUser.id);
-            if (member.status === 'left' || member.status === 'kicked') {
-              const channelUrl = policy.channelLink.startsWith('@')
-                ? `https://t.me/${policy.channelLink.slice(1)}`
-                : policy.channelLink;
-              await ctx.reply(deps.translator.t('channel.required', lang), {
-                reply_markup: new InlineKeyboard()
-                  .url(deps.translator.t('channel.join_button', lang), channelUrl)
-                  .row()
-                  .text(
-                    deps.translator.t('channel.check_button', lang),
-                    'check_channel',
-                  ),
-              });
-              return;
+        if (policy !== null && isChannelGateActive(policy)) {
+          const relaxed = policy.channelRecheck === false;
+          if (!(relaxed && hasRecentlyPassedChannel(tgUser.id))) {
+            const chatId = resolveChannelChatId(policy);
+            try {
+              const member = await ctx.api.getChatMember(chatId as string | number, tgUser.id);
+              if (!isSubscribedStatus(member.status)) {
+                const joinUrl = resolveChannelJoinUrl(policy);
+                const keyboard = new InlineKeyboard();
+                if (joinUrl !== null) {
+                  keyboard.url(deps.translator.t('channel.join_button', lang), joinUrl).row();
+                }
+                keyboard.text(deps.translator.t('channel.check_button', lang), 'check_channel');
+                await ctx.reply(deps.translator.t('channel.required', lang), {
+                  reply_markup: keyboard,
+                });
+                return;
+              }
+              markChannelPassed(tgUser.id);
+            } catch {
+              /* getChatMember failed (bot not admin / Telegram 5xx) — fail open. */
             }
-          } catch {
-            /* getChatMember failed — fall through and let user in. */
           }
         }
       } catch {

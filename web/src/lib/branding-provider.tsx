@@ -76,6 +76,18 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     applyBrandingToDocument(config.branding);
   }, [config.branding]);
 
+  // Set the document (browser tab) title from the operator's webTitle,
+  // falling back to projectName, then the brand name.
+  useEffect(() => {
+    const title =
+      config.platformBranding?.webTitle?.trim() ||
+      config.platformBranding?.projectName?.trim() ||
+      config.branding.brandName?.trim();
+    if (title) {
+      document.title = title;
+    }
+  }, [config.platformBranding?.webTitle, config.platformBranding?.projectName, config.branding.brandName]);
+
   // Synchronise i18n with the operator-configured default locale, but only
   // when the user has not made an explicit choice yet.
   useEffect(() => {

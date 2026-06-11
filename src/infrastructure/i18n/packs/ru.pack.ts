@@ -186,4 +186,9 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'subscribe.default_message': 'Для использования бота подпишитесь на наш канал:',
   'subscribe.not_subscribed': '❌ Вы ещё не подписались на канал',
   'subscribe.confirmed': '✅ Подписка подтверждена!',
+  'channel.required': 'Для доступа к боту подпишитесь на наш канал, затем нажмите «Я подписался».',
+  'channel.join_button': '📢 Перейти в канал',
+  'channel.check_button': '✅ Я подписался',
+  'channel.not_subscribed': '❌ Вы ещё не подписаны на канал. Подпишитесь и попробуйте снова.',
+  'channel.verified': '✅ Подписка подтверждена!',
 };

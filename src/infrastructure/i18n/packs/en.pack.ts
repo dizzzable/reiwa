@@ -184,4 +184,9 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'subscribe.default_message': 'To use the bot, subscribe to our channel:',
   'subscribe.not_subscribed': '❌ You haven\'t subscribed to the channel yet',
   'subscribe.confirmed': '✅ Subscription confirmed!',
+  'channel.required': 'To use the bot, subscribe to our channel, then tap "I subscribed".',
+  'channel.join_button': '📢 Open channel',
+  'channel.check_button': '✅ I subscribed',
+  'channel.not_subscribed': '❌ You are not subscribed yet. Subscribe and try again.',
+  'channel.verified': '✅ Subscription confirmed!',
 };
