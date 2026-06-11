@@ -24,6 +24,10 @@ interface SubscriptionActionsProps {
   onConnect: () => void;
   onUpgrade: () => void;
   onRenew: () => void;
+  /** Upgrade / top-up are new purchases — disable under PURCHASE_BLOCKED / RESTRICTED. */
+  purchasesBlocked?: boolean;
+  /** RESTRICTED freezes the whole money path, including renewal. */
+  restricted?: boolean;
 }
 
 export function SubscriptionActions({
@@ -31,6 +35,8 @@ export function SubscriptionActions({
   onConnect,
   onUpgrade,
   onRenew,
+  purchasesBlocked = false,
+  restricted = false,
 }: SubscriptionActionsProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -55,19 +61,19 @@ export function SubscriptionActions({
       <ActionButton
         icon={<ArrowUpCircle className="h-5 w-5" />}
         label={t("card.actions.upgrade")}
-        disabled={!isActive}
+        disabled={!isActive || purchasesBlocked}
         onClick={onUpgrade}
       />
       <ActionButton
         icon={<RotateCcw className="h-5 w-5" />}
         label={t("card.actions.renew")}
-        disabled={!isActive}
+        disabled={!isActive || restricted}
         onClick={onRenew}
       />
       <ActionButton
         icon={<Plus className="h-5 w-5" />}
         label={t("card.actions.topUp")}
-        disabled={!isActive}
+        disabled={!isActive || purchasesBlocked}
         onClick={() => navigate("/addons")}
       />
     </div>

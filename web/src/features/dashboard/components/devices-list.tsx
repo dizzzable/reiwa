@@ -26,12 +26,11 @@ import {
   regenerateSubscriptionLink,
 } from "@/lib/api-client";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { StadiumButton } from "@/components/ui/stadium-button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -187,26 +186,26 @@ export function DevicesList({
             <DialogTitle>{t("devices.regenerate")}</DialogTitle>
             <DialogDescription>{t("devices.regenerateConfirm")}</DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex gap-2 pt-2">
-            <Button
+          <div className="mt-2 flex flex-col gap-2">
+            <StadiumButton
+              variant="danger"
+              size="lg"
+              fullWidth
+              loading={regenerateMutation.isPending}
+              icon={<RefreshCw className="h-5 w-5" />}
+              onClick={() => regenerateMutation.mutate()}
+            >
+              {t("devices.regenerate")}
+            </StadiumButton>
+            <StadiumButton
               variant="ghost"
-              className="flex-1"
+              size="md"
+              fullWidth
               onClick={() => setRegenerateOpen(false)}
             >
               {t("common.cancel")}
-            </Button>
-            <Button
-              variant="destructive"
-              className="flex-1"
-              disabled={regenerateMutation.isPending}
-              onClick={() => regenerateMutation.mutate()}
-            >
-              <RefreshCw
-                className={`mr-2 h-4 w-4 ${regenerateMutation.isPending ? "animate-spin" : ""}`}
-              />
-              {t("devices.regenerate")}
-            </Button>
-          </DialogFooter>
+            </StadiumButton>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -222,26 +221,28 @@ export function DevicesList({
             <DialogTitle>{t("devices.revoke")}</DialogTitle>
             <DialogDescription>{t("devices.revokeConfirm")}</DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex gap-2 pt-2">
-            <Button
-              variant="ghost"
-              className="flex-1"
-              onClick={() => setRevokeHwid(null)}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              variant="destructive"
-              className="flex-1"
-              disabled={revokeMutation.isPending}
+          <div className="mt-2 flex flex-col gap-2">
+            <StadiumButton
+              variant="danger"
+              size="lg"
+              fullWidth
+              loading={revokeMutation.isPending}
+              icon={<Trash2 className="h-5 w-5" />}
               onClick={() => {
                 if (revokeHwid !== null) revokeMutation.mutate(revokeHwid);
               }}
             >
-              <Trash2 className="mr-2 h-4 w-4" />
               {t("devices.revoke")}
-            </Button>
-          </DialogFooter>
+            </StadiumButton>
+            <StadiumButton
+              variant="ghost"
+              size="md"
+              fullWidth
+              onClick={() => setRevokeHwid(null)}
+            >
+              {t("common.cancel")}
+            </StadiumButton>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -59,6 +59,19 @@ export class UserNamespace {
     return this.transport.request('POST', '/api/internal/user/bootstrap', data);
   }
 
+  /**
+   * Lightweight existence probe: returns `{ exists }` without creating
+   * any DB row. Used by the bot before `bootstrap()` to detect a
+   * brand-new Telegram user under platform `INVITED` / `REG_BLOCKED`
+   * mode (so the bot shows a banner instead of bootstrapping the user).
+   */
+  exists(identity: UserIdentity): Promise<{ exists: boolean }> {
+    return this.transport.request<{ exists: boolean }>(
+      'GET',
+      `/api/internal/user/exists?${identityQuery(identity)}`,
+    );
+  }
+
   getSession(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',

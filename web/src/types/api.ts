@@ -213,8 +213,16 @@ export interface ReferralInvite {
 }
 
 // ─── Platform policy ─────────────────────────────────────────────────────
+/** Canonical platform access mode mirrored from rezeis-admin Prisma enum. */
+export type AccessMode =
+  | 'PUBLIC'
+  | 'INVITED'
+  | 'PURCHASE_BLOCKED'
+  | 'REG_BLOCKED'
+  | 'RESTRICTED';
+
 export interface PlatformPolicy {
-  accessMode: string;
+  accessMode: AccessMode;
   rulesRequired: boolean;
   channelRequired: boolean;
   rulesLink: string;

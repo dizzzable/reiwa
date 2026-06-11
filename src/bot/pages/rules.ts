@@ -21,6 +21,7 @@
  */
 import { InlineKeyboard } from 'grammy';
 
+import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
 import {
@@ -29,10 +30,6 @@ import {
   findScreenByName,
 } from './screen-renderer.js';
 import type { PageRegistrar } from './types.js';
-
-interface PlatformPolicyMaybeRulesLink {
-  readonly rulesLink?: string | null;
-}
 
 const SCREEN_OVERRIDE_NAME = 'rules';
 
@@ -46,9 +43,7 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
     const botCfg = await getConfig();
 
     const policy = adminClient
-      ? ((await adminClient.system.getPlatformPolicy().catch(() => null)) as
-          | PlatformPolicyMaybeRulesLink
-          | null)
+      ? await getPolicyCache(adminClient).get().catch(() => null)
       : null;
     const link = (policy?.rulesLink ?? '').trim();
 

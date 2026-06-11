@@ -180,6 +180,11 @@ export function createApp(deps: CreateAppDeps) {
     res.json({ status: "ok", service: "reiwa-api", version: REIWA_VERSION });
   });
 
+  // Stash adminClient on `app.locals` so the access-mode middleware
+  // (which accepts per-request locals — not deps) can read it without
+  // an extra factory layer per route.
+  app.locals['adminClient'] = deps.adminClient;
+
   // ── Routers (all mounted at /api/v1; sub-paths live inside each router) ───
   app.use("/api/v1", createBrandingRouter({ adminClient: deps.adminClient, logger }));
   app.use("/api/v1", createAuthRouter(deps));

@@ -38,6 +38,17 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'profile.traffic': 'Traffic',
   'profile.until': 'Until',
   'profile.unlimited': 'Unlimited',
+  'common.not_available': 'N/A',
+
+  // ── Platform access mode (kill-switch banners shown by /start) ──────────────
+  'access_mode.restricted':
+    '🛠 Service is temporarily unavailable — maintenance is in progress. Existing VPN connections keep working. Please try again later.',
+  'access_mode.reg_blocked_new':
+    '🚫 Registration is currently disabled. Contact support if you already have an account.',
+  'access_mode.invited_no_code':
+    '✉️ Registration is currently invite-only. Open the bot via an invite link from a friend or partner.',
+  'access_mode.purchase_blocked':
+    '🛒 New purchases are temporarily unavailable. Existing subscriptions can be renewed as usual.',
 
   // ── Telegram account linking (code submitted from web cabinet) ──────────────
   'link.success': '✅ Telegram has been linked to your account.',

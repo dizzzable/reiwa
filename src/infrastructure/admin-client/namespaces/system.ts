@@ -5,6 +5,29 @@
  */
 import type { AdminTransport } from '../transport.js';
 
+/** Canonical platform access mode mirrored from rezeis-admin Prisma enum. */
+export type AccessMode =
+  | 'PUBLIC'
+  | 'INVITED'
+  | 'PURCHASE_BLOCKED'
+  | 'REG_BLOCKED'
+  | 'RESTRICTED';
+
+/**
+ * Wire shape of `GET /api/internal/settings/platform-policy`. Mirrors
+ * rezeis-admin's `InternalPlatformPolicyInterface`. Kept narrow on purpose
+ * — only fields the reiwa edge actually consumes.
+ */
+export interface PlatformPolicyShape {
+  readonly accessMode: AccessMode;
+  readonly rulesRequired: boolean;
+  readonly rulesLink: string | null;
+  readonly channelRequired: boolean;
+  readonly channelLink: string | null;
+  readonly channelId?: string | number;
+  readonly defaultCurrency: string;
+}
+
 export class SystemNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
@@ -12,8 +35,11 @@ export class SystemNamespace {
     return this.transport.request('GET', '/api/internal/test');
   }
 
-  getPlatformPolicy(): Promise<unknown> {
-    return this.transport.request('GET', '/api/internal/settings/platform-policy');
+  getPlatformPolicy(): Promise<PlatformPolicyShape> {
+    return this.transport.request<PlatformPolicyShape>(
+      'GET',
+      '/api/internal/settings/platform-policy',
+    );
   }
 
   getRegistrationToggle(): Promise<{ enabled: boolean }> {

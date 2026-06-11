@@ -16,7 +16,13 @@ import { useNavigate } from "react-router-dom";
 import { getReferralSummary, getInviteCapacity } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StadiumButton } from "@/components/ui/stadium-button";
 
@@ -114,13 +120,14 @@ export default function ReferralsPage() {
         <InvitedUsersList />
       </div>
 
-      {/* Sheets */}
-      <Sheet open={activeSheet === "invited"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <SheetContent side="bottom">
-          <SheetHeader>
-            <SheetTitle>{t("referrals.invited")}</SheetTitle>
-          </SheetHeader>
-          <div className="space-y-4 py-4">
+      {/* Detail dialogs (centered) */}
+      <Dialog open={activeSheet === "invited"} onOpenChange={(open) => !open && setActiveSheet(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("referrals.invited")}</DialogTitle>
+            <DialogDescription>{t("referrals.qualifiedHint")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-white/6 bg-white/3 p-4 text-center">
                 <p className="text-2xl font-bold">{totalInvited}</p>
@@ -131,9 +138,6 @@ export default function ReferralsPage() {
                 <p className="mt-0.5 text-xs text-muted-foreground">{t("referrals.qualified")}</p>
               </div>
             </div>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {t("referrals.qualifiedHint")}
-            </p>
             {capacity && capacity.totalSlots !== null && (
               <div className="rounded-2xl border border-white/6 bg-white/3 p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -150,22 +154,20 @@ export default function ReferralsPage() {
               </div>
             )}
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
-      <Sheet open={activeSheet === "points"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <SheetContent side="bottom">
-          <SheetHeader>
-            <SheetTitle>{t("referrals.points")}</SheetTitle>
-          </SheetHeader>
-          <div className="space-y-4 py-4">
+      <Dialog open={activeSheet === "points"} onOpenChange={(open) => !open && setActiveSheet(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("referrals.points")}</DialogTitle>
+            <DialogDescription>{t("referrals.pointsHint")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
             <div className="rounded-2xl border border-white/6 bg-white/3 p-5 text-center">
               <p className="text-3xl font-bold">{pointsBalance}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">{t("referrals.pointsBalance")}</p>
             </div>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {t("referrals.pointsHint")}
-            </p>
             <StadiumButton
               fullWidth
               size="lg"
@@ -179,15 +181,16 @@ export default function ReferralsPage() {
               {t("referrals.exchangePoints")}
             </StadiumButton>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
-      <Sheet open={activeSheet === "info"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <SheetContent side="bottom">
-          <SheetHeader>
-            <SheetTitle>{t("referrals.howItWorks")}</SheetTitle>
-          </SheetHeader>
-          <div className="space-y-3 py-4">
+      <Dialog open={activeSheet === "info"} onOpenChange={(open) => !open && setActiveSheet(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("referrals.howItWorks")}</DialogTitle>
+            <DialogDescription>{t("referrals.howItWorksSub")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
             {[1, 2, 3, 4].map((step) => (
               <div key={step} className="flex items-start gap-3">
                 <div
@@ -205,8 +208,8 @@ export default function ReferralsPage() {
               </div>
             ))}
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

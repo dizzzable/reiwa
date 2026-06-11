@@ -22,6 +22,8 @@ import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
+import { useAccessMode } from "@/lib/use-access-mode";
+import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -61,11 +63,20 @@ export default function RenewalPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { step, reset } = useRenewalStore();
+  const { restricted } = useAccessMode();
 
   // Always start the wizard fresh on mount.
   useEffect(() => {
     return () => reset();
   }, [reset]);
+
+  // Renewal stays OPEN under PURCHASE_BLOCKED (so users keep their VPN); only
+  // the emergency RESTRICTED freeze blocks it.
+  if (restricted) {
+    return (
+      <AccessModeBlockedScreen modes={["RESTRICTED"]} onBack={() => navigate("/dashboard")} />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-md pb-24 pt-4">

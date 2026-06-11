@@ -40,9 +40,9 @@ import { signOut, updateLanguage } from "@/lib/api-client";
 import { setLocale } from "@/i18n/i18n";
 import { useBranding } from "@/lib/branding-provider";
 import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { StadiumButton } from "@/components/ui/stadium-button";
+import { FlagIcon } from "@/components/ui/flag-icon";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
@@ -53,7 +53,7 @@ export default function SettingsPage() {
   const { branding } = useBranding();
   const { replayTour } = useOnboardingContext();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
-  const [showLangSheet, setShowLangSheet] = useState(false);
+  const [showLangDialog, setShowLangDialog] = useState(false);
 
   const signOutMutation = useMutation({
     mutationFn: signOut,
@@ -71,7 +71,7 @@ export default function SettingsPage() {
     setLocale(lang);
     updateLanguage(lang.toUpperCase()).catch(() => {});
     toast.success(t("settings.languageUpdated"));
-    setShowLangSheet(false);
+    setShowLangDialog(false);
   }
 
   if (!session) return null;
@@ -184,7 +184,7 @@ export default function SettingsPage() {
           tint={iconTint("language")}
           label={t("settings.language")}
           sublabel={i18n.language === "ru" ? t("common.languageRu") : t("common.languageEn")}
-          onClick={() => setShowLangSheet(true)}
+          onClick={() => setShowLangDialog(true)}
         />
         <MenuItem
           icon={<MessageSquare className="h-5 w-5" />}
@@ -232,54 +232,56 @@ export default function SettingsPage() {
         </button>
       </motion.div>
 
-      {/* ── Language Sheet ── */}
-      <Sheet open={showLangSheet} onOpenChange={setShowLangSheet}>
-        <SheetContent side="bottom" className="max-h-[50vh]">
-          <SheetHeader>
-            <SheetTitle>{t("settings.changeLanguage")}</SheetTitle>
-          </SheetHeader>
-          <div className="space-y-2 py-4">
+      {/* ── Language Dialog (centered) ── */}
+      <Dialog open={showLangDialog} onOpenChange={setShowLangDialog}>
+        <DialogContent className="max-w-xs" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{t("settings.changeLanguage")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
             <LangOption
-              flag="🇷🇺"
+              code="RU"
               label={t("common.languageRu")}
               active={i18n.language === "ru"}
               onClick={() => changeLang("ru")}
             />
             <LangOption
-              flag="🇬🇧"
+              code="GB"
               label={t("common.languageEn")}
               active={i18n.language === "en"}
               onClick={() => changeLang("en")}
             />
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Logout Dialog ── */}
       <Dialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
         <DialogContent className="max-w-xs">
           <DialogHeader>
             <DialogTitle>{t("settings.signOut")}</DialogTitle>
+            <DialogDescription>{t("settings.signOutConfirm")}</DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">{t("settings.signOutConfirm")}</p>
-          <DialogFooter className="flex gap-2 pt-4">
-            <Button
+          <div className="mt-2 flex flex-col gap-2">
+            <StadiumButton
+              variant="danger"
+              size="lg"
+              fullWidth
+              loading={signOutMutation.isPending}
+              icon={<LogOut className="h-5 w-5" />}
+              onClick={() => signOutMutation.mutate()}
+            >
+              {t("settings.signOut")}
+            </StadiumButton>
+            <StadiumButton
               variant="ghost"
-              className="flex-1"
+              size="md"
+              fullWidth
               onClick={() => setShowLogoutDialog(false)}
             >
               {t("common.cancel")}
-            </Button>
-            <Button
-              variant="destructive"
-              className="flex-1"
-              disabled={signOutMutation.isPending}
-              onClick={() => signOutMutation.mutate()}
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              {t("settings.signOut")}
-            </Button>
-          </DialogFooter>
+            </StadiumButton>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -338,12 +340,12 @@ function MenuItem({
 // ── LangOption ──────────────────────────────────────────────────────────────
 
 function LangOption({
-  flag,
+  code,
   label,
   active,
   onClick,
 }: {
-  flag: string;
+  code: "RU" | "GB";
   label: string;
   active: boolean;
   onClick: () => void;
@@ -355,7 +357,7 @@ function LangOption({
         active ? "border-(--brand-primary)/50 bg-(--brand-primary)/5" : "border-white/6 hover:border-white/12"
       }`}
     >
-      <span className="text-xl">{flag}</span>
+      <FlagIcon code={code} className="h-5 w-7" />
       <span className="flex-1 text-left text-sm font-medium">{label}</span>
       {active && <CheckCircle2 className="h-4 w-4" style={{ color: "var(--brand-primary)" }} />}
     </button>

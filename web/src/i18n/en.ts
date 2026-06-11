@@ -1,6 +1,35 @@
 import type { RuDict } from './ru';
 
 export const en: RuDict = {
+  accessMode: {
+    banner: {
+      INVITED: {
+        title: 'Invite only',
+        body: 'Registration is currently available by invite link only (from a friend or partner). If you already have an account, just sign in.',
+      },
+      PURCHASE_BLOCKED: {
+        title: 'Purchases temporarily disabled',
+        body: 'New purchases are currently unavailable — this feature is under maintenance. Existing subscriptions can be renewed as usual.',
+      },
+      REG_BLOCKED: {
+        title: 'Registration disabled',
+        body: 'New account registration is temporarily unavailable. You cannot start using the service right now.',
+      },
+      RESTRICTED: {
+        title: 'Service temporarily unavailable',
+        body: 'Maintenance is in progress. Existing VPN connections keep working; purchases, renewals and changes are temporarily unavailable.',
+      },
+    },
+    cta: {
+      disabled: 'Action unavailable',
+    },
+    invite: {
+      codeLabel: 'Invite code',
+      codePlaceholder: 'Paste your invite code',
+      codeRequired: 'Enter an invite code',
+      codeInvalid: 'Invite code is invalid or expired',
+    },
+  },
   common: {
     loading: 'Loading...',
     save: 'Save',

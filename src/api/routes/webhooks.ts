@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 
 import type { ReiwaConfig } from "../../config.js";
+import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
+import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { verifyWebhookSignature } from "../../lib/webhook-signature.js";
 import {
@@ -102,6 +104,13 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
             ...(Array.isArray(meta["buttons"]) ? { buttons: meta["buttons"] } : {}),
           });
+          break;
+        }
+        case "reiwa.platform.policy_invalidated": {
+          // Drop the cached platform policy so the next gated request
+          // refetches the current accessMode immediately.  No relay
+          // to the bot — the bot reads through the same cache.
+          getPolicyCache((req.app.locals['adminClient'] ?? null) as AdminClient | null).invalidate();
           break;
         }
         default:

@@ -2,11 +2,13 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
-import { UserPlus, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { UserPlus, Eye, EyeOff, Loader2, Mail } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { getAuthStatus, registerUser, checkUsername, login } from '@/lib/api-client'
+import { useAccessMode } from '@/lib/use-access-mode'
+import { AccessModeBanner } from '@/components/access-mode-banner'
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,7 @@ export default function RegisterPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { t } = useTranslation()
+  const { registrationBlocked, restricted, inviteOnly } = useAccessMode()
 
   // Form state
   const [username, setUsername] = useState('')
@@ -52,6 +55,12 @@ export default function RegisterPage() {
   // Validation state
   const [usernameError, setUsernameError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
+
+  // INVITED mode: when the user did not arrive via an invite link they must
+  // paste an invite code before the form is revealed.
+  const [manualInviteCode, setManualInviteCode] = useState('')
+  const [inviteAccepted, setInviteAccepted] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
 
   // Referral code captured from the invite link (`/register?ref=<code>`).
   // Read once on mount so it survives input changes; passed to registration so
@@ -223,11 +232,13 @@ export default function RegisterPage() {
       const passwordHash = await sha256(password)
 
       // Submit registration
+      const effectiveReferral =
+        (referralCodeRef.current || manualInviteCode.trim()) || undefined
       const result = await registerUser(
         username,
         passwordHash,
         false,
-        referralCodeRef.current || undefined,
+        effectiveReferral,
       )
 
       // Registration succeeded — backend confirmed both Web_Account and User creation
@@ -272,6 +283,23 @@ export default function RegisterPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // INVITED: a referral link (`?ref=`) satisfies the gate; otherwise the user
+  // must paste a code first. REG_BLOCKED / RESTRICTED block registration
+  // entirely regardless of the legacy global toggle.
+  const hasInviteLink = !!referralCodeRef.current
+  const blockedByMode = registrationBlocked || restricted
+  const needsInviteCode = inviteOnly && !hasInviteLink && !inviteAccepted
+
+  function handleInviteSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!manualInviteCode.trim()) {
+      setInviteError(t('accessMode.invite.codeRequired'))
+      return
+    }
+    setInviteError(null)
+    setInviteAccepted(true)
+  }
+
   // Loading state
   if (loadingStatus) {
     return (
@@ -305,8 +333,56 @@ export default function RegisterPage() {
           <p className="mt-1 text-sm text-zinc-500">{t('register.subtitle')}</p>
         </motion.div>
 
-        {/* Registration form — hidden when toggle is disabled */}
-        {registrationEnabled ? (
+        {/* Mode-aware body: blocked banner / invite gate / registration form */}
+        {blockedByMode ? (
+          <AccessModeBanner modes={['REG_BLOCKED', 'RESTRICTED']} />
+        ) : needsInviteCode ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4"
+          >
+            <AccessModeBanner modes={['INVITED']} />
+            <form onSubmit={handleInviteSubmit} className="space-y-3" noValidate>
+              <div>
+                <label
+                  htmlFor="invite-code"
+                  className="block text-xs font-medium text-zinc-400 mb-1.5"
+                >
+                  {t('accessMode.invite.codeLabel')}
+                </label>
+                <input
+                  id="invite-code"
+                  type="text"
+                  value={manualInviteCode}
+                  onChange={(e) => {
+                    setManualInviteCode(e.target.value)
+                    setInviteError(null)
+                  }}
+                  placeholder={t('accessMode.invite.codePlaceholder')}
+                  className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
+                    inviteError
+                      ? 'border-red-500/50 focus:border-red-500'
+                      : 'border-zinc-800 focus:border-(--brand-primary)/50'
+                  }`}
+                  aria-invalid={!!inviteError}
+                  aria-describedby="invite-error"
+                />
+                <div id="invite-error" className="mt-1 min-h-[1.25rem]" aria-live="polite">
+                  {inviteError && <span className="text-xs text-red-400">{inviteError}</span>}
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={!manualInviteCode.trim()}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-(--brand-primary) py-3.5 text-sm font-semibold text-(--brand-primary-fg) transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+              >
+                <Mail className="h-4 w-4" />
+                {t('common.confirm')}
+              </button>
+            </form>
+          </motion.div>
+        ) : registrationEnabled ? (
           <motion.form
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -315,6 +391,12 @@ export default function RegisterPage() {
             className="space-y-4"
             noValidate
           >
+            {/* INVITED with a satisfied gate — remind which code is in use. */}
+            {inviteOnly && (
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-200/90">
+                {t('accessMode.banner.INVITED.body')}
+              </div>
+            )}
             {/* Username field */}
             <div>
               <label htmlFor="register-username" className="block text-xs font-medium text-zinc-400 mb-1.5">

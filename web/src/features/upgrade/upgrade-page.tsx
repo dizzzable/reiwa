@@ -21,6 +21,8 @@ import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
+import { useAccessMode } from "@/lib/use-access-mode";
+import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -45,8 +47,19 @@ export default function UpgradePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { step, reset } = useUpgradeStore();
+  const { purchasesBlocked } = useAccessMode();
 
   useEffect(() => () => reset(), [reset]);
+
+  // Upgrade is a new purchase — blocked under PURCHASE_BLOCKED / RESTRICTED.
+  if (purchasesBlocked) {
+    return (
+      <AccessModeBlockedScreen
+        modes={["PURCHASE_BLOCKED", "RESTRICTED"]}
+        onBack={() => navigate("/dashboard")}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-md pb-24 pt-4">

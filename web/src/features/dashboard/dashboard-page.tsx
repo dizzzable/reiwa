@@ -19,6 +19,8 @@ import { ShoppingCart, TicketPercent } from "lucide-react";
 import { getAllSubscriptions, getSubscriptionDevices } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
+import { useAccessMode } from "@/lib/use-access-mode";
+import { AccessModeBanner } from "@/components/access-mode-banner";
 import { openExternalUrl } from "@/lib/utils";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
@@ -31,6 +33,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { session } = useSession();
   const { branding } = useBranding();
+  const { purchasesBlocked, restricted } = useAccessMode();
 
   // Fetch all subscriptions for the carousel
   const { data: allSubsData, isLoading: subsLoading } = useQuery({
@@ -98,7 +101,8 @@ export default function DashboardPage() {
         <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={() => navigate("/plans")}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6 transition-colors"
+            disabled={purchasesBlocked}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6 transition-colors disabled:opacity-40 disabled:pointer-events-none"
             aria-label={t("card.actions.buy")}
           >
             <ShoppingCart className="h-4 w-4" />
@@ -111,6 +115,11 @@ export default function DashboardPage() {
             <TicketPercent className="h-4 w-4" />
           </button>
         </div>
+      </div>
+
+      {/* Access-mode notice — surfaces non-PUBLIC modes that affect the cabinet. */}
+      <div className="px-5 pb-2 empty:hidden">
+        <AccessModeBanner modes={["PURCHASE_BLOCKED", "REG_BLOCKED", "INVITED", "RESTRICTED"]} />
       </div>
 
       {subsLoading ? (
@@ -135,6 +144,8 @@ export default function DashboardPage() {
           <div data-tour="subscription-actions">
             <SubscriptionActions
               subscription={activeSubscription ?? subscriptions[0]}
+              purchasesBlocked={purchasesBlocked}
+              restricted={restricted}
               onConnect={() => {
                 const url = activeSubscription?.url ?? subscriptions[0]?.url;
                 if (url) {

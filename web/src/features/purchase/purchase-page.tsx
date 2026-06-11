@@ -9,6 +9,8 @@ import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { usePurchaseStore } from "@/stores/purchase.store";
 import { useBranding } from "@/lib/branding-provider";
+import { useAccessMode } from "@/lib/use-access-mode";
+import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { PromoInput } from "./components/promo-input";
 import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
@@ -413,6 +415,7 @@ export default function PurchasePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { defaultCurrency } = useBranding();
+  const { purchasesBlocked } = useAccessMode();
   const {
     step,
     selectedPlan,
@@ -428,6 +431,17 @@ export default function PurchasePage() {
   useEffect(() => {
     if (!selectedPlan) navigate("/plans", { replace: true });
   }, [selectedPlan, navigate]);
+
+  // Access-mode gate: NEW / UPGRADE / ADDITIONAL purchases are blocked
+  // under PURCHASE_BLOCKED and RESTRICTED.
+  if (purchasesBlocked) {
+    return (
+      <AccessModeBlockedScreen
+        modes={["PURCHASE_BLOCKED", "RESTRICTED"]}
+        onBack={() => navigate("/plans")}
+      />
+    );
+  }
 
   if (!selectedPlan) return null;
 

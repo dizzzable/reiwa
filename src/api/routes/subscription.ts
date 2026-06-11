@@ -3,6 +3,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { PurchaseType } from "../../infrastructure/admin-client/namespaces/subscription.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
+import { requireMode } from "../middleware/access-mode.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
@@ -254,6 +255,7 @@ export function createSubscriptionRouter(deps: {
   router.delete(
     "/subscription/:id",
     requireSession,
+    requireMode('subscription.mutate'),
     async (req: AuthRequest, res) => {
       try {
         const subscriptionId = req.params.id;

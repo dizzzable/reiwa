@@ -22,6 +22,7 @@
 import { InlineKeyboard } from 'grammy';
 
 import { buildProfileSummary } from '../../infrastructure/bot-message/message-builder.js';
+import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
@@ -210,6 +211,52 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       // telegramId — harmless now that the id is attached.
     }
 
+    // Phase 0.9: platform access-mode gate. Runs BEFORE bootstrap so a
+    // brand-new Telegram user under REG_BLOCKED / RESTRICTED never
+    // produces a `User` row in the DB (Property 6).
+    let lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+    if (deps.adminClient !== null) {
+      try {
+        const policy = await getPolicyCache(deps.adminClient).get();
+        if (policy.accessMode === 'RESTRICTED') {
+          await ctx.reply(deps.translator.t('access_mode.restricted', lang));
+          return;
+        }
+        // For INVITED + REG_BLOCKED we additionally need to know whether
+        // the Telegram user is brand-new. The exists() probe is cheap
+        // (one indexed lookup) and tolerant of upstream failures.
+        if (policy.accessMode === 'REG_BLOCKED' || policy.accessMode === 'INVITED') {
+          let isNewUser = false;
+          try {
+            const probe = await deps.adminClient.user.exists({ telegramId: String(tgUser.id) });
+            isNewUser = probe.exists === false;
+          } catch {
+            // exists() failed → assume returning user; the admin
+            // server-side gate inside bootstrap is the backstop.
+          }
+          if (isNewUser) {
+            if (policy.accessMode === 'REG_BLOCKED') {
+              await ctx.reply(deps.translator.t('access_mode.reg_blocked_new', lang));
+              return;
+            }
+            // INVITED: only reject when the user has NO referral payload
+            // on `/start <code>`. Existing referral deep-link path falls
+            // through to bootstrap as today.
+            const hasReferralPayload =
+              startPayload.length > 0 &&
+              !startPayload.startsWith('link_') &&
+              startPayload !== 'payment_return';
+            if (!hasReferralPayload) {
+              await ctx.reply(deps.translator.t('access_mode.invited_no_code', lang));
+              return;
+            }
+          }
+        }
+      } catch {
+        /* Policy unavailable — fail open and continue with bootstrap. */
+      }
+    }
+
     // Phase 1: bootstrap user. Failures non-fatal.
     if (deps.adminClient !== null) {
       try {
@@ -241,15 +288,14 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       }
     }
 
-    const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+    // Re-resolve locale: bootstrap may have updated it from the admin response.
+    lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
     const botCfg = await deps.getConfig();
 
     // Phase 2: channel-subscription gate.
     if (botCfg.visual.channelUsername.length > 0 && deps.adminClient !== null) {
       try {
-        const policy = (await deps.adminClient.system.getPlatformPolicy()) as
-          | ChannelPolicyShape
-          | null;
+        const policy = await getPolicyCache(deps.adminClient).get();
         if (
           policy?.channelRequired === true &&
           typeof policy.channelLink === 'string' &&
@@ -361,6 +407,23 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
   // view *in place* on the existing message instead of sending a new
   // one — STEALTHNET-style chrome.
   bot.callbackQuery('menu:main', async (ctx) => {
+    // Under RESTRICTED, every callback short-circuits to a "service
+    // unavailable" toast — no menu re-render, no Mini App URL.
+    if (deps.adminClient !== null) {
+      try {
+        const policy = await getPolicyCache(deps.adminClient).get();
+        if (policy.accessMode === 'RESTRICTED') {
+          const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+          await ctx.answerCallbackQuery({
+            text: deps.translator.t('access_mode.restricted', lang),
+            show_alert: true,
+          });
+          return;
+        }
+      } catch {
+        /* fail open */
+      }
+    }
     await ctx.answerCallbackQuery();
     const view = await buildWelcomeView(ctx, deps);
     try {

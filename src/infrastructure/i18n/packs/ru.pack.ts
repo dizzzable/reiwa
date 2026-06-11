@@ -40,6 +40,17 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'profile.traffic': 'Трафик',
   'profile.until': 'До',
   'profile.unlimited': 'Безлимит',
+  'common.not_available': 'Н/Д',
+
+  // ── Platform access mode (kill-switch banners shown by /start) ──────────────
+  'access_mode.restricted':
+    '🛠 Сервис временно недоступен — ведутся технические работы. Существующие подключения VPN продолжают работать. Попробуйте позже.',
+  'access_mode.reg_blocked_new':
+    '🚫 Регистрация в сервисе временно отключена. Свяжитесь с поддержкой, если у вас уже есть аккаунт.',
+  'access_mode.invited_no_code':
+    '✉️ Сейчас регистрация только по приглашению. Откройте бота по invite-ссылке от друга или партнёра.',
+  'access_mode.purchase_blocked':
+    '🛒 Покупка временно недоступна. Действующие подписки можно продлевать как обычно.',
 
   // ── Telegram account linking (code submitted from web cabinet) ──────────────
   'link.success': '✅ Telegram успешно привязан к вашему аккаунту.',

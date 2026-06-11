@@ -32,6 +32,8 @@ import { useBranding } from "@/lib/branding-provider";
 import { customIconId, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { CustomIconView } from "@/components/ui/custom-icon-view";
 import { useAddOnStore } from "@/stores/addons.store";
+import { useAccessMode } from "@/lib/use-access-mode";
+import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -50,8 +52,20 @@ export default function AddOnsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { step, reset } = useAddOnStore();
+  const { purchasesBlocked } = useAccessMode();
 
   useEffect(() => () => reset(), [reset]);
+
+  // Add-on purchase is a new money-path flow — blocked under
+  // PURCHASE_BLOCKED / RESTRICTED.
+  if (purchasesBlocked) {
+    return (
+      <AccessModeBlockedScreen
+        modes={["PURCHASE_BLOCKED", "RESTRICTED"]}
+        onBack={() => navigate("/dashboard")}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-md pb-24 pt-4">

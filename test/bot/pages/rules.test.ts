@@ -5,13 +5,18 @@
  * so assertions target `ctx.editMessageText` (the plain-text branch
  * taken when there is no `callbackQuery.message` to detect a photo).
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { registerRulesPage } from '../../../src/bot/pages/rules.js';
+import { setPolicyCache } from '../../../src/infrastructure/admin-client/policy-cache.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
 import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
 
 describe('registerRulesPage', () => {
+  beforeEach(() => {
+    setPolicyCache(null);
+  });
+
   it('registers a single callback handler for the "rules" callback', () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();

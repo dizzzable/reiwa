@@ -17,6 +17,7 @@
  * 5-min token expired would silently fall through to /sign-in.
  */
 import type { AdminClient } from '../../lib/admin-client.js';
+import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { buildMainKeyboard, resolveSupportDeepLink } from '../widgets/main-keyboard.js';
 
 import { coerceLocale } from './coerce-locale.js';
@@ -103,7 +104,7 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
 
     try {
       const policy = deps.adminClient
-        ? ((await deps.adminClient.system.getPlatformPolicy()) as ChannelPolicyShape | null)
+        ? await getPolicyCache(deps.adminClient).get().catch(() => null)
         : null;
       if (policy?.channelRequired === true && typeof policy.channelLink === 'string' && policy.channelLink.length > 0) {
         const channelId = policy.channelId ?? policy.channelLink;

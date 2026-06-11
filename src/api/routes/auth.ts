@@ -5,6 +5,7 @@ import type { SessionStore } from "../../lib/session-store.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
 import { validateTelegramInitData } from "../../lib/telegram-auth.js";
+import { requireMode } from "../middleware/access-mode.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
 import { createAuthBruteForceDetection } from "../middleware/brute-force-detection.js";
@@ -164,7 +165,16 @@ export function createAuthRouter(deps: {
   });
 
   // ── POST /api/v1/auth/register ──────────────────────────────────────────────
-  router.post("/auth/register", registerRateLimiter, async (req: Request, res: Response) => {
+  router.post(
+    "/auth/register",
+    registerRateLimiter,
+    requireMode('register', {
+      hasInvite: (req): boolean => {
+        const code = (req.body as { referralCode?: unknown } | undefined)?.referralCode;
+        return typeof code === 'string' && code.trim().length > 0;
+      },
+    }),
+    async (req: Request, res: Response) => {
     try {
       // Validate request body with Zod
       const parsed = registerSchema.safeParse(req.body);
@@ -232,6 +242,7 @@ export function createAuthRouter(deps: {
   router.post(
     "/auth/login",
     loginRateLimiter,
+    requireMode('login'),
     bruteForceDetection,
     async (req: Request, res: Response) => {
       try {

@@ -11,9 +11,10 @@
  *   - welcome reply renders the welcome message + main keyboard
  *   - banner reply is best-effort (replyWithPhoto errors don't block welcome)
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { registerStartPage } from '../../../src/bot/pages/start.js';
+import { setPolicyCache } from '../../../src/infrastructure/admin-client/policy-cache.js';
 import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
 import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
@@ -26,6 +27,7 @@ interface FakeStartCtx {
     username?: string;
     language_code?: string;
   };
+  match?: string;
   api: { getChatMember: ReturnType<typeof vi.fn> };
   reply: ReturnType<typeof vi.fn>;
   replyWithPhoto: ReturnType<typeof vi.fn>;
@@ -34,6 +36,7 @@ interface FakeStartCtx {
 function buildStartCtx(over: Partial<FakeStartCtx> = {}): FakeStartCtx {
   return {
     from: over.from ?? { id: 1, first_name: 'Anya' },
+    match: over.match,
     api: over.api ?? { getChatMember: vi.fn() },
     reply: vi.fn().mockResolvedValue(undefined),
     replyWithPhoto: vi.fn().mockResolvedValue(undefined),
@@ -44,13 +47,18 @@ function buildAdmin(opts: {
   bootstrap?: { language?: string } | null | (() => never);
   policy?: unknown;
   subscription?: unknown;
+  exists?: boolean | (() => never);
 }): PageDeps['adminClient'] {
   const bootstrap = vi.fn(async () => {
     if (typeof opts.bootstrap === 'function') opts.bootstrap();
     return opts.bootstrap ?? null;
   });
+  const exists = vi.fn(async () => {
+    if (typeof opts.exists === 'function') opts.exists();
+    return { exists: opts.exists ?? true };
+  });
   return ({
-    user: { bootstrap },
+    user: { bootstrap, exists },
     system: { getPlatformPolicy: vi.fn().mockResolvedValue(opts.policy ?? null) },
     subscription: {
       getActive: vi.fn().mockResolvedValue(opts.subscription ?? null),
@@ -62,6 +70,13 @@ function buildAdmin(opts: {
 }
 
 describe('registerStartPage', () => {
+  beforeEach(() => {
+    // PolicyCache is a singleton — reset between tests so each one
+    // sees a fresh empty cache (forcing a refetch from the per-test
+    // adminClient stub).
+    setPolicyCache(null);
+  });
+
   it('registers the /start command', () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();
@@ -259,5 +274,117 @@ describe('registerStartPage', () => {
     const messages = warn.mock.calls.map((c) => c[1] as string);
     expect(messages).toContain('bot/start bootstrap error');
     expect(messages).toContain('bot/start banner send failed');
+  });
+
+  // ── Access-mode matrix (Phase 0.9 gate, runs BEFORE bootstrap) ──────────────
+  describe('access-mode gate', () => {
+    it('RESTRICTED → replies the restricted notice and skips bootstrap', async () => {
+      const adminClient = buildAdmin({ policy: { accessMode: 'RESTRICTED' } });
+      const bot = buildFakeBot();
+      const { deps } = buildDeps({
+        adminOverrides: adminClient as unknown as Record<string, unknown>,
+      });
+      registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+      const ctx = buildStartCtx();
+      await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+      expect(ctx.reply).toHaveBeenCalledTimes(1);
+      expect(ctx.reply.mock.calls[0][0]).toBe('ru:access_mode.restricted');
+      expect(
+        (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('REG_BLOCKED + brand-new user → reg-blocked notice, no bootstrap', async () => {
+      const adminClient = buildAdmin({ policy: { accessMode: 'REG_BLOCKED' }, exists: false });
+      const bot = buildFakeBot();
+      const { deps } = buildDeps({
+        adminOverrides: adminClient as unknown as Record<string, unknown>,
+      });
+      registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+      const ctx = buildStartCtx();
+      await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+      expect(ctx.reply.mock.calls[0][0]).toBe('ru:access_mode.reg_blocked_new');
+      expect(
+        (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('REG_BLOCKED + existing user → falls through to welcome + bootstrap', async () => {
+      const adminClient = buildAdmin({ policy: { accessMode: 'REG_BLOCKED' }, exists: true });
+      const bot = buildFakeBot();
+      const { deps } = buildDeps({
+        adminOverrides: adminClient as unknown as Record<string, unknown>,
+      });
+      registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+      const ctx = buildStartCtx();
+      await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+      expect(ctx.reply.mock.calls.at(-1)?.[0]).not.toBe('ru:access_mode.reg_blocked_new');
+      expect(
+        (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
+      ).toHaveBeenCalled();
+    });
+
+    it('INVITED + new user + no referral payload → invite-required notice', async () => {
+      const adminClient = buildAdmin({ policy: { accessMode: 'INVITED' }, exists: false });
+      const bot = buildFakeBot();
+      const { deps } = buildDeps({
+        adminOverrides: adminClient as unknown as Record<string, unknown>,
+      });
+      registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+      const ctx = buildStartCtx();
+      await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+      expect(ctx.reply.mock.calls[0][0]).toBe('ru:access_mode.invited_no_code');
+      expect(
+        (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('INVITED + new user + referral payload → falls through to bootstrap', async () => {
+      const adminClient = buildAdmin({ policy: { accessMode: 'INVITED' }, exists: false });
+      const bot = buildFakeBot();
+      const { deps } = buildDeps({
+        adminOverrides: adminClient as unknown as Record<string, unknown>,
+      });
+      registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+      const ctx = buildStartCtx({ match: 'REFCODE123' });
+      await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+      expect(ctx.reply.mock.calls.at(-1)?.[0]).not.toBe('ru:access_mode.invited_no_code');
+      expect(
+        (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
+      ).toHaveBeenCalled();
+    });
+
+    it('INVITED + existing user → no gate, welcome + bootstrap', async () => {
+      const adminClient = buildAdmin({ policy: { accessMode: 'INVITED' }, exists: true });
+      const bot = buildFakeBot();
+      const { deps } = buildDeps({
+        adminOverrides: adminClient as unknown as Record<string, unknown>,
+      });
+      registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+      const ctx = buildStartCtx();
+      await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+      expect(ctx.reply.mock.calls.at(-1)?.[0]).not.toBe('ru:access_mode.invited_no_code');
+      expect(
+        (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
+      ).toHaveBeenCalled();
+    });
+
+    it('PURCHASE_BLOCKED → no /start gate (purchases gated elsewhere)', async () => {
+      const adminClient = buildAdmin({ policy: { accessMode: 'PURCHASE_BLOCKED' }, exists: false });
+      const bot = buildFakeBot();
+      const { deps } = buildDeps({
+        adminOverrides: adminClient as unknown as Record<string, unknown>,
+      });
+      registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+      const ctx = buildStartCtx();
+      await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+      const keys = ctx.reply.mock.calls.map((c) => c[0] as string);
+      expect(keys).not.toContain('ru:access_mode.restricted');
+      expect(keys).not.toContain('ru:access_mode.reg_blocked_new');
+      expect(keys).not.toContain('ru:access_mode.invited_no_code');
+      expect(
+        (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
+      ).toHaveBeenCalled();
+    });
   });
 });

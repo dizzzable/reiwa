@@ -3,11 +3,24 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { PurchaseType } from "../../infrastructure/admin-client/namespaces/payments.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
+import { requireMode, type AccessModeGate } from "../middleware/access-mode.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
+
+/**
+ * Maps a request body's `purchaseType` field to the matching access-mode
+ * gate. RENEW is special-cased so PURCHASE_BLOCKED keeps it open while
+ * gating NEW / ADDITIONAL / UPGRADE / TRIAL.
+ */
+function gateForPurchaseType(body: unknown): AccessModeGate {
+  const type = (body as { purchaseType?: unknown } | undefined)?.purchaseType;
+  if (type === 'UPGRADE') return 'purchase.upgrade';
+  if (type === 'RENEW') return 'purchase.renewal';
+  return 'purchase.new';
+}
 
 export function createPaymentsRouter(deps: {
   adminClient: AdminClient | null;
@@ -31,6 +44,7 @@ export function createPaymentsRouter(deps: {
   router.post(
     "/payments/checkout",
     requireSession,
+    requireMode((req) => gateForPurchaseType(req.body)),
     async (req: AuthRequest, res) => {
       try {
         const {
@@ -113,6 +127,7 @@ export function createPaymentsRouter(deps: {
   router.post(
     "/payments/renewal-checkout",
     requireSession,
+    requireMode('purchase.renewal'),
     async (req: AuthRequest, res) => {
       try {
         const {
