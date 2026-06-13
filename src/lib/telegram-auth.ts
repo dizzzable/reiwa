@@ -34,29 +34,30 @@ export function validateTelegramInitData(initData: string, botToken: string): Te
     const hash = params.get('hash');
     if (!hash) return null;
     params.delete('hash');
-    // Telegram (since late 2024) also ships an Ed25519 `signature` field for
-    // third-party validation. It is NOT part of the bot-token HMAC `hash`
-    // computation, so it must be excluded from the data_check_string too —
-    // otherwise validation fails for newer clients that send it (401).
-    params.delete('signature');
-
-    const dataCheckString = Array.from(params.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${k}=${v}`)
-      .join('\n');
 
     const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
-    const computedHash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-
-    // Constant-time comparison of the two hex digests. `timingSafeEqual`
-    // throws on length mismatch, so guard first (a wrong-length hash is
-    // never valid anyway).
-    const computedBuf = Buffer.from(computedHash, 'hex');
     const providedBuf = Buffer.from(hash, 'hex');
-    if (
-      computedBuf.length !== providedBuf.length ||
-      !timingSafeEqual(computedBuf, providedBuf)
-    ) {
+
+    // Recompute the HMAC over a given field set and compare in constant time.
+    const matches = (entries: [string, string][]): boolean => {
+      const dataCheckString = entries
+        .slice()
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`)
+        .join('\n');
+      const computed = createHmac('sha256', secretKey).update(dataCheckString).digest();
+      return computed.length === providedBuf.length && timingSafeEqual(computed, providedBuf);
+    };
+
+    // Telegram (since late 2024) also ships an Ed25519 `signature` field for
+    // third-party validation. Clients/SDKs disagree on whether `signature` is
+    // part of the bot-token HMAC `data_check_string`. Accept EITHER convention:
+    // signature included, or excluded. Both still require the bot token, so
+    // security is unchanged — we only stop rejecting valid users over a field
+    // ordering/inclusion quirk.
+    const allEntries = Array.from(params.entries());
+    const withoutSignature = allEntries.filter(([k]) => k !== 'signature');
+    if (!matches(allEntries) && !matches(withoutSignature)) {
       return null;
     }
 
@@ -75,4 +76,35 @@ export function validateTelegramInitData(initData: string, botToken: string): Te
   } catch {
     return null;
   }
+}
+
+/**
+ * Safe, secret-free diagnostic for a failing initData validation. Returns the
+ * sorted field names that go into the data_check_string and short prefixes of
+ * the computed vs provided HMAC so we can tell apart a token mismatch (both
+ * computed correctly but differ) from an unexpected-field problem. NEVER logs
+ * the bot token or full hashes.
+ */
+export function diagnoseTelegramInitData(
+  initData: string,
+  botToken: string,
+): { keys: string[]; computedPrefix: string; providedPrefix: string; hasSignature: boolean } {
+  const params = new URLSearchParams(initData);
+  const provided = params.get('hash') ?? '';
+  const hasSignature = params.has('signature');
+  params.delete('hash');
+  params.delete('signature');
+  const keys = Array.from(params.keys()).sort((a, b) => a.localeCompare(b));
+  const dataCheckString = Array.from(params.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
+  const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
+  const computed = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+  return {
+    keys,
+    computedPrefix: computed.slice(0, 12),
+    providedPrefix: provided.slice(0, 12),
+    hasSignature,
+  };
 }

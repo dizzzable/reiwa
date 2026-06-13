@@ -4,7 +4,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
-import { parseTelegramInitData, validateTelegramInitData } from "../../lib/telegram-auth.js";
+import { diagnoseTelegramInitData, parseTelegramInitData, validateTelegramInitData } from "../../lib/telegram-auth.js";
 import { requireMode } from "../middleware/access-mode.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
@@ -531,8 +531,17 @@ export function createAuthRouter(deps: {
         const parsed = parseTelegramInitData(initData);
         const ageSeconds =
           parsed !== null ? Math.floor(Date.now() / 1000) - parsed.auth_date : null;
+        const diag = diagnoseTelegramInitData(initData, config.BOT_TOKEN);
         getRequestLogger(req).warn(
-          { initDataLen: initData.length, parsed: parsed !== null, ageSeconds },
+          {
+            initDataLen: initData.length,
+            parsed: parsed !== null,
+            ageSeconds,
+            keys: diag.keys,
+            hasSignature: diag.hasSignature,
+            computedPrefix: diag.computedPrefix,
+            providedPrefix: diag.providedPrefix,
+          },
           "auth/telegram/bootstrap: initData validation failed",
         );
         res.status(401).json({ message: "Invalid Telegram init data" });
