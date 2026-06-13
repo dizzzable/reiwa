@@ -34,10 +34,13 @@ services:
       - remnawave-network
 
   reiwa:
+    # Прод тянет готовый образ из GHCR (CI публикует его на push в main и тег v*).
+    # Обновление на VPS:  `docker compose pull && docker compose up -d`.
+    # `build:` оставлен для локальной пересборки — он тегает ровно этот же image.
     build:
       context: .
       dockerfile: Dockerfile
-    image: reiwa
+    image: ghcr.io/dizzzable/reiwa:latest
     container_name: reiwa
     hostname: reiwa
     restart: unless-stopped
@@ -65,7 +68,8 @@ services:
       - remnawave-network
 
   reiwa-bot:
-    image: reiwa
+    # Тот же unified image, что и reiwa (API + bot + worker + SPA).
+    image: ghcr.io/dizzzable/reiwa:latest
     container_name: reiwa-bot
     hostname: reiwa-bot
     restart: unless-stopped

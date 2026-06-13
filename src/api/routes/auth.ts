@@ -217,7 +217,7 @@ export function createAuthRouter(deps: {
         redirectUrl: "/dashboard",
       });
     } catch (e: unknown) {
-      const { message: errMsg } = describeUpstreamError(e);
+      const { status: upstreamStatus, message: errMsg } = describeUpstreamError(e);
 
       // Handle specific error responses from Rezeis_Admin
       if (isUpstreamStatus(e, 403)) {
@@ -233,7 +233,17 @@ export function createAuthRouter(deps: {
         return;
       }
 
-      getRequestLogger(req).error({ err: errMsg }, "auth/register failed");
+      // A non-classified failure reaching here means rezeis-admin returned
+      // something other than 403/409/503 (e.g. 401 from a mismatched internal
+      // JWT secret, a network error when the admin container is unreachable,
+      // or a 500 from a Prisma error on a DB that hasn't had migrations
+      // applied). Log the upstream status alongside the message so operators
+      // can tell these apart from the reiwa logs alone, instead of seeing an
+      // opaque "Internal server error".
+      getRequestLogger(req).error(
+        { err: errMsg, upstreamStatus },
+        "auth/register failed",
+      );
       res.status(500).json({ message: "Internal server error" });
     }
   });
