@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.5.3-blue" alt="Version" /></a>
+  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.5.4-blue" alt="Version" /></a>
   <a href="https://github.com/dizzzable/reiwa/pkgs/container/reiwa"><img src="https://img.shields.io/badge/ghcr.io-reiwa-2496ED?logo=docker&logoColor=white" alt="GHCR" /></a>
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js" />
@@ -56,10 +56,10 @@ GitHub Container Registry публикует **единый** образ при 
 docker pull ghcr.io/dizzzable/reiwa:latest
 
 # Pin to a specific release
-docker pull ghcr.io/dizzzable/reiwa:v0.9.5.3
+docker pull ghcr.io/dizzzable/reiwa:v0.9.5.4
 ```
 
-Доступные теги: `latest` (актуальный main), `v0.9.5.3` (тег релиза), плюс `sha-<short>` для каждого коммита в `main`. Прод-`docker-compose.yml` использует `latest`.
+Доступные теги: `latest` (актуальный main), `v0.9.5.4` (тег релиза), плюс `sha-<short>` для каждого коммита в `main`. Прод-`docker-compose.yml` использует `latest`.
 
 > Один образ обслуживает всё: API на `REIWA_PORT` (по умолчанию `node dist/api/main.js`) раздаёт собранную SPA из `/app/web`, бот — `dist/bot/main.js`, воркер — `dist/worker/main.js`. Роль выбирается командой запуска контейнера.
 
@@ -83,17 +83,20 @@ curl -fsSL -o .env               https://raw.githubusercontent.com/dizzzable/rei
 #    не создал — нужна для связи reiwa ↔ rezeis по имени `rezeis:8000`):
 docker network create remnawave-network 2>/dev/null || true
 
-# 4. Заполнить .env. Минимум что нужно задать:
-#      REIWA_DOMAIN                       публичный домен кабинета
-#      REZEIS_HOST=rezeis                 имя контейнера админки на одном VPS
-#                                         (или panel.example.com при split)
-#      REZEIS_TOKEN                       API-токен, созданный в админке rezeis
-#      REZEIS_WEBHOOK_SECRET              = WEBHOOK_SECRET_HEADER из rezeis
-#      BOT_TOKEN, BOT_USERNAME            от @BotFather
-#      REDIS_PASSWORD, REIWA_COOKIE_SECRET, REZEIS_INTERNAL_SHARED_SECRET
+# 4. Сгенерировать секреты прямо в .env (создаются на месте):
+sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$(openssl rand -hex 16)|" .env
+sed -i "s|^REIWA_COOKIE_SECRET=.*|REIWA_COOKIE_SECRET=$(openssl rand -hex 24)|" .env
+sed -i "s|^REZEIS_INTERNAL_SHARED_SECRET=.*|REZEIS_INTERNAL_SHARED_SECRET=$(openssl rand -hex 24)|" .env
+
+# 5. Дозаполнить вручную:
+#      REIWA_DOMAIN            публичный домен кабинета (app.example.com)
+#      REZEIS_HOST=rezeis      имя контейнера админки на одном VPS (или panel.example.com при split)
+#      REZEIS_TOKEN            API-токен, созданный в админке rezeis
+#      REZEIS_WEBHOOK_SECRET   = WEBHOOK_SECRET_HEADER из rezeis (если включаете push)
+#      BOT_TOKEN, BOT_USERNAME от @BotFather
 nano .env
 
-# 5. Запуск (reiwa + reiwa-bot)
+# 6. Запуск (reiwa + reiwa-bot)
 docker compose up -d
 ```
 
