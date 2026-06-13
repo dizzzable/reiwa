@@ -43,6 +43,18 @@ export default function WebHomePage() {
     calledRef.current = true
 
     void (async () => {
+      // Step 0 — Telegram Mini App hand-off. When the SPA is opened from
+      // inside Telegram (inline web_app button, BotFather menu button, or any
+      // deep-link to the bare domain), `initData` is present. Such users must
+      // NOT see the login form — route them to /tma which authenticates via
+      // Telegram. This makes the Mini App work regardless of which URL the
+      // button points at, so operators never need to configure `/tma`.
+      const tgInitData = window.Telegram?.WebApp?.initData
+      if (typeof tgInitData === 'string' && tgInitData.length > 0) {
+        navigate('/tma', { replace: true })
+        return
+      }
+
       // Step 1 — magic-link consume (when present).
       const params = new URLSearchParams(window.location.search)
       const signinToken = params.get('signin')
