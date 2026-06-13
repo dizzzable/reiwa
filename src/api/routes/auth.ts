@@ -4,7 +4,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
-import { validateTelegramInitData } from "../../lib/telegram-auth.js";
+import { parseTelegramInitData, validateTelegramInitData } from "../../lib/telegram-auth.js";
 import { requireMode } from "../middleware/access-mode.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
@@ -525,6 +525,16 @@ export function createAuthRouter(deps: {
       }
       const tgUser = validateTelegramInitData(initData, config.BOT_TOKEN);
       if (!tgUser) {
+        // Diagnostic: distinguish a hash mismatch (token/data problem) from a
+        // stale auth_date (clock skew / reused initData). `parse` is unsigned,
+        // it only reads fields so we can log the age.
+        const parsed = parseTelegramInitData(initData);
+        const ageSeconds =
+          parsed !== null ? Math.floor(Date.now() / 1000) - parsed.auth_date : null;
+        getRequestLogger(req).warn(
+          { initDataLen: initData.length, parsed: parsed !== null, ageSeconds },
+          "auth/telegram/bootstrap: initData validation failed",
+        );
         res.status(401).json({ message: "Invalid Telegram init data" });
         return;
       }
@@ -547,11 +557,19 @@ export function createAuthRouter(deps: {
       //    `token === null` means the user is blocked / unresolvable.
       const issued = await adminClient.webAuth.issueBotSigninToken(telegramId);
       if (issued.token === null) {
+        getRequestLogger(req).warn(
+          { telegramId },
+          "auth/telegram/bootstrap: signin token issue returned null (blocked/unresolvable)",
+        );
         res.status(403).json({ message: "Access denied" });
         return;
       }
       const consumed = await adminClient.webAuth.consumeBotSigninToken(issued.token);
       if (consumed.userId === null) {
+        getRequestLogger(req).warn(
+          { telegramId },
+          "auth/telegram/bootstrap: signin token consume returned null",
+        );
         res.status(401).json({ message: "Authentication failed" });
         return;
       }

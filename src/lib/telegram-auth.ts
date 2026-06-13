@@ -60,10 +60,13 @@ export function validateTelegramInitData(initData: string, botToken: string): Te
       return null;
     }
 
-    // Check auth_date freshness (within 1 hour)
+    // Check auth_date freshness. The HMAC already proves authenticity; the
+    // freshness window only limits replay of a leaked initData. 1h was too
+    // strict (desktop clients can reuse a slightly older auth_date and clock
+    // skew on the host produced false 401s) — 24h is the common, safe window.
     const authDate = Number(params.get('auth_date') ?? 0);
     const now = Math.floor(Date.now() / 1000);
-    if (now - authDate > 3600) return null;
+    if (now - authDate > 86400) return null;
 
     const userRaw = params.get('user');
     if (!userRaw) return null;
