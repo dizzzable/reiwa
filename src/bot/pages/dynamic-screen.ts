@@ -17,6 +17,7 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
+import { resolvePlaceholders } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   buildScreenKeyboard,
   findScreenByShortId,
@@ -53,6 +54,10 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
     }
 
     const text = pickScreenText(screen, lang);
+    // `{{KEY}}` placeholders → premium custom-emoji (operator-managed via the
+    // "Эмодзи" editor). Telegram falls back to the unicode glyph for bots
+    // without the capability, so this never breaks delivery.
+    const renderedText = resolvePlaceholders(text, config.botEmojis);
     const keyboard = buildScreenKeyboard(
       screen,
       lang,
@@ -67,7 +72,11 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
     }
 
     try {
-      await editOrReply(ctx, { text, replyMarkup: keyboard });
+      await editOrReply(ctx, {
+        text: renderedText.text,
+        entities: renderedText.entities,
+        replyMarkup: keyboard,
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('message is not modified')) {

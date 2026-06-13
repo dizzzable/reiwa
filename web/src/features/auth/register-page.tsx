@@ -6,7 +6,7 @@ import { UserPlus, Eye, EyeOff, Loader2, Mail } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
-import { getAuthStatus, registerUser, checkUsername, login } from '@/lib/api-client'
+import { registerUser, checkUsername, login } from '@/lib/api-client'
 import { useAccessMode } from '@/lib/use-access-mode'
 import { AccessModeBanner } from '@/components/access-mode-banner'
 
@@ -45,7 +45,7 @@ export default function RegisterPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { t } = useTranslation()
-  const { registrationBlocked, restricted, inviteOnly } = useAccessMode()
+  const { registrationBlocked, restricted, inviteOnly, isLoading: accessModeLoading } = useAccessMode()
 
   // Form state
   const [username, setUsername] = useState('')
@@ -81,9 +81,10 @@ export default function RegisterPage() {
   // Track usernames that were ever reported as unavailable during this session
   const unavailableUsernamesRef = useRef<Set<string>>(new Set())
 
-  // Registration toggle state
-  const [registrationEnabled, setRegistrationEnabled] = useState<boolean | null>(null)
-  const [loadingStatus, setLoadingStatus] = useState(true)
+  // Registration availability is driven by the platform access mode
+  // (`useAccessMode`) — the single source of truth. The server still enforces
+  // the gate on submit via `requireMode('register')`, so the client only needs
+  // the access-mode branches below (blocked banner / invite gate / form).
 
   // Submission state
   const [submitting, setSubmitting] = useState(false)
@@ -93,44 +94,6 @@ export default function RegisterPage() {
   const usernameCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Check registration toggle status ──────────────────────────────────────
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function checkStatus() {
-      try {
-        const status = await getAuthStatus()
-        if (!cancelled) {
-          setRegistrationEnabled(status.isRegistrationEnabled)
-          setLoadingStatus(false)
-        }
-      } catch {
-        if (!cancelled) {
-          setRegistrationEnabled(false)
-          setLoadingStatus(false)
-        }
-      }
-    }
-
-    void checkStatus()
-
-    // Poll for toggle changes every 10 seconds to handle real-time toggle disable
-    const interval = setInterval(async () => {
-      try {
-        const status = await getAuthStatus()
-        if (!cancelled) {
-          setRegistrationEnabled(status.isRegistrationEnabled)
-        }
-      } catch {
-        // Silently ignore polling errors
-      }
-    }, 10_000)
-
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [])
 
   // ── Username availability check ───────────────────────────────────────────
 
@@ -301,7 +264,7 @@ export default function RegisterPage() {
   }
 
   // Loading state
-  if (loadingStatus) {
+  if (accessModeLoading) {
     return (
       <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
@@ -382,7 +345,7 @@ export default function RegisterPage() {
               </button>
             </form>
           </motion.div>
-        ) : registrationEnabled ? (
+        ) : (
           <motion.form
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -502,15 +465,6 @@ export default function RegisterPage() {
               )}
             </button>
           </motion.form>
-        ) : (
-          /* Registration disabled message */
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-6 py-5 text-center"
-          >
-            <p className="text-sm text-zinc-400">{t('register.disabled')}</p>
-          </motion.div>
         )}
 
         {/* Sign-in link — always visible */}

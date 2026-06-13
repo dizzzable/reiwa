@@ -77,14 +77,17 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             res.status(400).json({ message: "missing telegramId/text/eventId" });
             return;
           }
-          await relayToBot("/notify", {
+          const relayed = await relayToBot("/notify", {
             eventId,
             telegramId,
             text,
             ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
             ...(Array.isArray(meta["buttons"]) ? { buttons: meta["buttons"] } : {}),
           });
-          break;
+          // Surface the Telegram message id back to admin so it can persist
+          // it (broadcast edits/deletes need it within the 48h window).
+          res.status(200).json({ messageId: relayed.messageId });
+          return;
         }
         case "reiwa.channel.broadcast": {
           const chatId = str(meta["chatId"]);
@@ -130,8 +133,11 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
    * Relay a verified webhook action to the reiwa-bot internal listener over
    * the private docker hop, signed with the internal HMAC scheme so the bot
    * accepts it the same way it accepts the (now-removed) direct admin push.
+   *
+   * Returns the bot's `messageId` when it replies with one (the `/notify`
+   * endpoint does on success); `null` for 204 acks or bodies without an id.
    */
-  async function relayToBot(path: string, body: unknown): Promise<void> {
+  async function relayToBot(path: string, body: unknown): Promise<{ messageId: number | null }> {
     const bodyStr = JSON.stringify(body);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (relaySecret) {
@@ -152,6 +158,11 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
     if (!resp.ok && resp.status !== 204) {
       throw new Error(`bot relay ${path} -> ${resp.status}`);
     }
+    if (resp.status === 204) return { messageId: null };
+    const json = (await resp.json().catch(() => null)) as { messageId?: unknown } | null;
+    const messageId =
+      json !== null && typeof json.messageId === "number" ? json.messageId : null;
+    return { messageId };
   }
 
   return router;

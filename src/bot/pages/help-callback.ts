@@ -32,6 +32,7 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
+import { resolvePlaceholders } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -73,7 +74,8 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
         supportUrl,
       );
       appendBackToMenuRow(kb, backLabel);
-      await editOrReply(ctx, { text: title, replyMarkup: kb });
+      const rendered = resolvePlaceholders(title, botCfg.botEmojis);
+      await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
       return;
     }
 
@@ -88,6 +90,11 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
           : translator.t('support.not_configured', lang);
 
     const kb = new InlineKeyboard().text(backLabel, 'menu:main');
-    await editOrReply(ctx, { text: fallbackBody, replyMarkup: kb });
+    const renderedFallback = resolvePlaceholders(fallbackBody, botCfg.botEmojis);
+    await editOrReply(ctx, {
+      text: renderedFallback.text,
+      entities: renderedFallback.entities,
+      replyMarkup: kb,
+    });
   });
 };

@@ -368,15 +368,18 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
   const reply_markup = buildKeyboard(payload.buttons);
 
   try {
-    await bot.api.sendMessage(telegramId, text, {
+    const sent = await bot.api.sendMessage(telegramId, text, {
       parse_mode: parseMode,
       reply_markup,
       // Most user-facing notifications shouldn't ping silently — let
       // Telegram apply the user's chat preferences. We don't override
       // disable_notification.
     });
-    res.statusCode = 204;
-    res.end();
+    // Return the Telegram message id so admin can persist it and later
+    // edit/delete the message within Telegram's 48h edit window.
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ messageId: sent.message_id }));
   } catch (err: unknown) {
     if (err instanceof GrammyError && err.error_code === 403) {
       // User has blocked the bot or removed it from chat. Tell admin

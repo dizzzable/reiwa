@@ -35,27 +35,17 @@ export const DEFAULT_UNICODE: Record<string, string> = {
 };
 
 /**
- * Baked-in Telegram Premium custom-emoji ids for the mini-profile lines.
- * These render as premium emoji when the bot owner has Telegram Premium and
- * silently degrade to the unicode fallback otherwise. Operators can still
- * override them per key through the admin bot-emoji editor (`botEmojis`).
- */
-export const DEFAULT_PREMIUM_IDS: Record<string, string> = {
-  SUB_PROFILE: '5275979556308674886',
-  SUB_DEVICES: '5278647306525108244',
-  SUB_TRAFFIC: '5278778882848220741',
-  SUB_EXPIRY:  '5206222720416643915',
-};
-
-/**
- * Resolve the Telegram Premium custom-emoji id for a semantic key:
- * operator-configured `botEmojis[key].tgEmojiId` wins, then the baked-in
- * {@link DEFAULT_PREMIUM_IDS} default, else `null` (unicode-only).
+ * Resolve the Telegram Premium custom-emoji id for a semantic key.
+ *
+ * The id comes solely from the operator-managed `botEmojis[key].tgEmojiId`,
+ * which rezeis-admin ships in the bot-config payload (seeded with sensible
+ * defaults and editable/clearable in the admin "Эмодзи" editor — the single
+ * source of truth). Returns `null` when unset, so the caller renders the
+ * unicode glyph without a custom-emoji entity.
  */
 export function resolvePremiumId(key: string, botEmojis?: BotEmojiMap | null): string | null {
   const configured = botEmojis?.[key]?.tgEmojiId?.trim();
-  if (configured) return configured;
-  return DEFAULT_PREMIUM_IDS[key] ?? null;
+  return configured && configured.length > 0 ? configured : null;
 }
 
 /**

@@ -131,6 +131,25 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'referral.link_unavailable': 'Link temporarily unavailable',
   'referral.error': 'Failed to load referral data.',
 
+  // ── Referral / Partner hub (invite button) ───────────────────────────────────
+  'referral.hub.title': '🔗 Referral program',
+  'referral.hub.description':
+    'Invite friends with your link — for every one who subscribes you earn points. Exchange points in the cabinet.',
+  'referral.hub.stat_invited': '👥 Invited: {{count}}',
+  'referral.hub.stat_qualified': '✅ Subscribed: {{count}}',
+  'referral.hub.stat_pending': '⏳ Pending: {{count}}',
+  'referral.hub.stat_points': '⭐ Points: {{count}}',
+  'referral.hub.link_label': '🔗 Your referral link:',
+  'referral.hub.open_cabinet': '👤 Open in cabinet',
+  'referral.hub.open_exchange': '💱 Exchange points',
+  'partner.hub.title': '🤝 Partner program',
+  'partner.hub.description':
+    'You are a partner. Earn rewards for the users you bring in. Withdrawals are handled in the cabinet.',
+  'partner.hub.stat_balance': '💰 Balance: {{amount}}',
+  'partner.hub.stat_earned': '📈 Total earned: {{amount}}',
+  'partner.hub.stat_referred': '👥 Referrals: {{count}}',
+  'partner.hub.open_cabinet': '🤝 Partner cabinet',
+
   // ── Profile ─────────────────────────────────────────────────────────────────
   'profile.header': 'Profile',
   'profile.name': '👤 Name: {{name}}',
@@ -198,4 +217,13 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'bot_event.mode.REG_BLOCKED': '🚫 Registration disabled',
   'bot_event.mode.RESTRICTED': '🛠 Restricted mode',
   'bot_event.close': '❌ Close',
+  // ── Developer credits card ────────────────────────────────────────────────────
+  'bot_event.credits.intro':
+    'REIWA is powered by the open core by dizzzable. Since the project is completely FREE and open-source, it exists only thanks to your support.',
+  'bot_event.credits.call_to_action':
+    '⭐️ Star it on <a href="https://github.com/dizzzable/reiwa">GitHub</a> and support the developer 🤡',
+  'bot_event.credits.wallets_title': '💸 Crypto wallets for support:',
+  'bot_event.credits.github': '⭐ GitHub',
+  'bot_event.credits.telegram': '👥 Telegram',
+  'bot_event.credits.support': '💰 Support the developer',
 };

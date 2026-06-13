@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { Bell, CreditCard, CheckCheck } from 'lucide-react'
 import { getTransactions, getNotifications, markAllNotificationsRead, markNotificationRead } from '@/lib/api-client'
+import { presentNotification } from '@/lib/notification-presenter'
+import { EmojiText } from '@/components/ui/emoji-text'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { formatDateTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -51,7 +53,8 @@ export default function ActivityPage() {
     },
   })
 
-  const unreadCount = notifData?.notifications.filter(n => !n.isRead).length ?? 0
+  const notifItems = (notifData?.notifications ?? []).map((n) => presentNotification(n, t))
+  const unreadCount = notifItems.filter(n => !n.isRead).length
 
   return (
     <div className="pb-6">
@@ -97,13 +100,13 @@ export default function ActivityPage() {
               Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
               ))
-            ) : !notifData?.notifications.length ? (
+            ) : !notifItems.length ? (
               <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
                 <Bell className="h-10 w-10 opacity-30" />
                 <p className="text-sm">{t('activity.emptyNotifications')}</p>
               </div>
             ) : (
-              notifData.notifications.map((n, i) => (
+              notifItems.map((n, i) => (
                 <motion.div
                   key={n.id}
                   initial={{ opacity: 0, y: 6 }}
@@ -112,7 +115,7 @@ export default function ActivityPage() {
                   onClick={() => { if (!n.isRead) markOneMutation.mutate(n.id) }}
                   className={cn(
                     'glass-card p-4 cursor-pointer transition-all',
-                    !n.isRead && 'border-(--brand-primary)/20 bg-(--brand-primary)/[0.03]',
+                    !n.isRead && 'border-(--brand-primary)/20 bg-(--brand-primary)/3',
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -121,7 +124,9 @@ export default function ActivityPage() {
                         {!n.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />}
                         <p className="text-sm font-medium text-white truncate">{n.title}</p>
                       </div>
-                      <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{n.body}</p>
+                      <p className="mt-1 text-xs text-zinc-400 line-clamp-2">
+                        <EmojiText text={n.body} />
+                      </p>
                     </div>
                     <p className="shrink-0 text-xs text-zinc-600">{formatDateTime(n.createdAt)}</p>
                   </div>

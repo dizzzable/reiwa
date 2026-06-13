@@ -74,6 +74,10 @@ export {
   markNotificationRead,
 } from "./activity.js";
 
+// Custom emoji packs
+export { getCustomEmojiPacks } from "./custom-emoji.js";
+export type { CustomEmojiItem, CustomEmojiPack } from "./custom-emoji.js";
+
 // Promocodes
 export {
   activatePromocode,

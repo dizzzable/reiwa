@@ -24,6 +24,7 @@ import { InlineKeyboard } from 'grammy';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
+import { resolvePlaceholders } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -56,6 +57,9 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
     const text = overrideScreen
       ? applyScreenTemplate(overrideScreen, lang, { rulesLink: link })
       : fallbackText;
+    // `{{KEY}}` → premium custom-emoji (operator-managed); unicode fallback for
+    // bots without the capability is handled by Telegram automatically.
+    const rendered = resolvePlaceholders(text, botCfg.botEmojis);
 
     if (link.length > 0) {
       const kb = new InlineKeyboard().url(
@@ -63,11 +67,11 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
         link,
       );
       appendBackToMenuRow(kb, backLabel);
-      await editOrReply(ctx, { text, replyMarkup: kb });
+      await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
       return;
     }
 
     const kb = new InlineKeyboard().text(backLabel, 'menu:main');
-    await editOrReply(ctx, { text, replyMarkup: kb });
+    await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
   });
 };

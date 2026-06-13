@@ -187,18 +187,31 @@ export interface TransactionsResponse {
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
+// Raw shape as returned by the rezeis edge (`/api/internal/user/notifications`):
+// the server sends the event type + JSON payload + read timestamp, and the
+// human-readable title/body are derived client-side (localized) via
+// `presentNotification`.
 export interface UserNotification {
+  id: string;
+  type: string;
+  payload?: Record<string, unknown> | null;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface NotificationsResponse {
+  notifications: UserNotification[];
+  total?: number;
+}
+
+/** Localized, display-ready notification produced by `presentNotification`. */
+export interface PresentedNotification {
   id: string;
   type: string;
   title: string;
   body: string;
   isRead: boolean;
   createdAt: string;
-}
-
-export interface NotificationsResponse {
-  notifications: UserNotification[];
-  total: number;
 }
 
 // ─── Referrals ───────────────────────────────────────────────────────────────

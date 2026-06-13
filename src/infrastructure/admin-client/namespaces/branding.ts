@@ -78,6 +78,14 @@ export class BrandingNamespace {
   }
 
   /**
+   * Custom emoji packs (operator-uploaded). Used by the cabinet feed to render
+   * `:slug:` tokens as inline images / Lottie animations.
+   */
+  getCustomEmojiPacks(): Promise<unknown> {
+    return this.transport.request('GET', '/api/internal/custom-emoji/packs');
+  }
+
+  /**
    * Returns the full SPA bootstrap payload — branding + locale defaults
    * derived from rezeis-admin's `.env` (`REZEIS_LOCALES` /
    * `REZEIS_DEFAULT_LOCALE`). Reiwa SPA hits this on the very first

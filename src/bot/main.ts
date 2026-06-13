@@ -35,7 +35,7 @@ import {
   registerRulesPage,
   registerStartPage,
 } from './pages/index.js';
-import { notifyOperatorBotStarted } from './lib/startup-notice.js';
+import { notifyOperatorBotStarted, notifyDeveloperCredits } from './lib/startup-notice.js';
 import {
   detectLocaleFromTelegram,
   translator,
@@ -225,6 +225,14 @@ async function startBot(): Promise<void> {
     bot,
     devId: config.BOT_DEV_ID,
     adminClient,
+    translator,
+    logger,
+  });
+
+  // Developer-only credits card (open-core attribution + project links).
+  void notifyDeveloperCredits({
+    bot,
+    devId: config.BOT_DEV_ID,
     translator,
     logger,
   });

@@ -238,6 +238,32 @@ export function createApp(deps: CreateAppDeps) {
     }
   });
 
+  // ── Admin uploads proxy (custom emoji) ────────────────────────────────────
+  // Custom emoji assets (PNG + Lottie JSON) live on the admin host under
+  // `/uploads/emoji/<file>`. Same cross-origin reasoning as the icons proxy.
+  app.get("/uploads/emoji/:file", async (req: Request, res: Response) => {
+    const file = String(req.params["file"] ?? "");
+    if (!adminBaseUrl || !/^[A-Za-z0-9._-]+$/.test(file) || file.includes("..")) {
+      res.status(404).end();
+      return;
+    }
+    try {
+      const upstream = await fetch(`${adminBaseUrl}/uploads/emoji/${file}`);
+      if (!upstream.ok || !upstream.body) {
+        res.status(upstream.status === 404 ? 404 : 502).end();
+        return;
+      }
+      const contentType = upstream.headers.get("content-type");
+      if (contentType) res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      res.end(buffer);
+    } catch (err: unknown) {
+      if (logger) logger.debug({ err, file }, "emoji proxy failed");
+      res.status(502).end();
+    }
+  });
+
   // ── Static SPA (single-image mode) ────────────────────────────────────────
   // When `REIWA_WEB_DIST` points at a built SPA (the unified Docker image
   // copies `web/dist` here), the API also serves the front-end: hashed

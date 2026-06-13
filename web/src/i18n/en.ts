@@ -583,6 +583,11 @@ export const en: RuDict = {
     title: 'Notifications',
     feedTitle: 'Notifications feed',
     feedSub: 'Received notifications',
+    types: {
+      broadcast: 'News',
+      adminMessage: 'Message from the team',
+      generic: 'Notification',
+    },
     settingsTitle: 'Notification settings',
     settingsSub: 'Browser notifications and subscription alerts',
     beforeExpiry: 'Before subscription expires',

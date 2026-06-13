@@ -158,6 +158,24 @@ export function createBrandingRouter(deps: {
     }
   });
 
+  // GET /api/v1/custom-emoji/packs — operator custom emoji packs (cached).
+  // Lets the cabinet feed render `:slug:` tokens as inline images / Lottie.
+  let packsCache: { body: unknown; fetchedAt: number } | null = null;
+  router.get("/custom-emoji/packs", async (req, res) => {
+    try {
+      const now = Date.now();
+      if (packsCache === null || now - packsCache.fetchedAt > CACHE_TTL_MS) {
+        const packs = (await adminClient?.branding.getCustomEmojiPacks()) ?? [];
+        packsCache = { body: packs, fetchedAt: now };
+      }
+      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+      res.json(packsCache.body);
+    } catch (e: unknown) {
+      getRequestLogger(req).error({ err: e }, "GET /custom-emoji/packs failed");
+      res.json([]);
+    }
+  });
+
   return router;
 }
 

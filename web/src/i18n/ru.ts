@@ -581,6 +581,11 @@ export const ru = {
     title: 'Уведомления',
     feedTitle: 'Лента уведомлений',
     feedSub: 'Полученные уведомления',
+    types: {
+      broadcast: 'Новость',
+      adminMessage: 'Сообщение от администрации',
+      generic: 'Уведомление',
+    },
     settingsTitle: 'Настройка уведомлений',
     settingsSub: 'Браузерные уведомления и оповещения о подписке',
     beforeExpiry: 'До окончания подписки',

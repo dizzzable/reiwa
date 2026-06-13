@@ -17,7 +17,9 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from "@/lib/api-client";
+import { presentNotification } from "@/lib/notification-presenter";
 import { StadiumButton } from "@/components/ui/stadium-button";
+import { EmojiText } from "@/components/ui/emoji-text";
 import { cn, formatDateTime } from "@/lib/utils";
 
 export default function NotificationsFeedPage() {
@@ -45,7 +47,8 @@ export default function NotificationsFeedPage() {
     },
   });
 
-  const unreadCount = data?.notifications.filter((n) => !n.isRead).length ?? 0;
+  const items = (data?.notifications ?? []).map((n) => presentNotification(n, t));
+  const unreadCount = items.filter((n) => !n.isRead).length;
 
   return (
     <div className="min-h-full pb-6">
@@ -78,13 +81,13 @@ export default function NotificationsFeedPage() {
           Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
           ))
-        ) : !data?.notifications.length ? (
+        ) : !items.length ? (
           <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
             <Bell className="h-10 w-10 opacity-30" />
             <p className="text-sm">{t("activity.emptyNotifications")}</p>
           </div>
         ) : (
-          data.notifications.map((n, i) => (
+          items.map((n, i) => (
             <motion.div
               key={n.id}
               initial={{ opacity: 0, y: 6 }}
@@ -106,7 +109,9 @@ export default function NotificationsFeedPage() {
                     )}
                     <p className="text-sm font-medium text-white truncate">{n.title}</p>
                   </div>
-                  <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{n.body}</p>
+                  <p className="mt-1 text-xs text-zinc-400 line-clamp-2">
+                    <EmojiText text={n.body} />
+                  </p>
                 </div>
                 <p className="shrink-0 text-xs text-zinc-600">{formatDateTime(n.createdAt)}</p>
               </div>

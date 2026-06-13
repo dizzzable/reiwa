@@ -133,6 +133,25 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'referral.link_unavailable': 'Ссылка временно недоступна',
   'referral.error': 'Не удалось загрузить реферальные данные.',
 
+  // ── Referral / Partner hub (invite button) ───────────────────────────────────
+  'referral.hub.title': '🔗 Реферальная программа',
+  'referral.hub.description':
+    'Приглашайте друзей по своей ссылке — за каждого, кто оформит подписку, вы получаете баллы. Баллы можно обменять в кабинете.',
+  'referral.hub.stat_invited': '👥 Приглашено: {{count}}',
+  'referral.hub.stat_qualified': '✅ Оформили подписку: {{count}}',
+  'referral.hub.stat_pending': '⏳ В ожидании: {{count}}',
+  'referral.hub.stat_points': '⭐ Баллов: {{count}}',
+  'referral.hub.link_label': '🔗 Ваша реферальная ссылка:',
+  'referral.hub.open_cabinet': '👤 Профиль в кабинете',
+  'referral.hub.open_exchange': '💱 Обменять баллы',
+  'partner.hub.title': '🤝 Партнёрская программа',
+  'partner.hub.description':
+    'Вы участник партнёрской программы. Получайте вознаграждение за приглашённых пользователей. Вывод средств — в кабинете.',
+  'partner.hub.stat_balance': '💰 Баланс: {{amount}}',
+  'partner.hub.stat_earned': '📈 Всего заработано: {{amount}}',
+  'partner.hub.stat_referred': '👥 Рефералов: {{count}}',
+  'partner.hub.open_cabinet': '🤝 Партнёрский кабинет',
+
   // ── Profile ─────────────────────────────────────────────────────────────────
   'profile.header': 'Профиль',
   'profile.name': '👤 Имя: {{name}}',
@@ -200,4 +219,13 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'bot_event.mode.REG_BLOCKED': '🚫 Регистрация отключена',
   'bot_event.mode.RESTRICTED': '🛠 Ограниченный режим',
   'bot_event.close': '❌ Закрыть',
+  // ── Developer credits card ────────────────────────────────────────────────────
+  'bot_event.credits.intro':
+    'REIWA использует открытое ядро от dizzzable. Поскольку проект полностью БЕСПЛАТНЫЙ и с открытым исходным кодом, он существует только благодаря вашей поддержке.',
+  'bot_event.credits.call_to_action':
+    '⭐️ Поставьте звёздочку на <a href="https://github.com/dizzzable/reiwa">GitHub</a> и поддержите разработчика — он и так завис на полке для тупых 🤡',
+  'bot_event.credits.wallets_title': '💸 Криптокошельки для поддержки:',
+  'bot_event.credits.github': '⭐ GitHub',
+  'bot_event.credits.telegram': '👥 Telegram',
+  'bot_event.credits.support': '💰 Поддержать разработчика',
 };
