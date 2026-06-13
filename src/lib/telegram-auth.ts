@@ -34,6 +34,11 @@ export function validateTelegramInitData(initData: string, botToken: string): Te
     const hash = params.get('hash');
     if (!hash) return null;
     params.delete('hash');
+    // Telegram (since late 2024) also ships an Ed25519 `signature` field for
+    // third-party validation. It is NOT part of the bot-token HMAC `hash`
+    // computation, so it must be excluded from the data_check_string too —
+    // otherwise validation fails for newer clients that send it (401).
+    params.delete('signature');
 
     const dataCheckString = Array.from(params.entries())
       .sort(([a], [b]) => a.localeCompare(b))
