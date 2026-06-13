@@ -1,0 +1,21 @@
+# ════════════════════════════════════════════════════════════════════════════
+#  docker-compose.build.yml — сборка образа из исходников (НЕ для прода)
+#
+#  Базовый docker-compose.yml ссылается только на готовый образ из GHCR, чтобы
+#  установка на VPS была чистым `docker compose pull` без исходников. Этот
+#  оверлей добавляет `build:` для локальной разработки/тестов реального образа.
+#
+#  reiwa-bot переиспользует образ, собранный сервисом reiwa (один unified image),
+#  поэтому build описан только на reiwa.
+#
+#  Использование (из каталога reiwa):
+#    docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --force-recreate reiwa reiwa-bot
+#
+#  Для «горячей» разработки с bind-mount/HMR используйте docker-compose.dev.yml.
+# ════════════════════════════════════════════════════════════════════════════
+
+services:
+  reiwa:
+    build:
+      context: .
+      dockerfile: Dockerfile

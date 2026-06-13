@@ -99,8 +99,10 @@ rezeis-admin, что важно для продакшена, и какой compo
 ### Один VPS (по умолчанию)
 
 ```bash
-# 1) reverse proxy из deploy/proxies/<caddy|nginx|angie|traefik>/
-# 2) reiwa
+# 0) общая сеть с rezeis (создать, если её ещё нет)
+docker network create remnawave-network 2>/dev/null || true
+# 1) reverse proxy: на одном VPS с rezeis удобнее единый caddy-combined (в репо rezeis)
+# 2) reiwa (готовый образ из GHCR)
 docker compose up -d            # reiwa + reiwa-bot + reiwa-redis
 ```
 
@@ -116,30 +118,31 @@ docker compose up -d            # reiwa + reiwa-bot + reiwa-redis
 ### Обновление образов
 
 ```bash
-git pull                          # получить актуальный compose
+cd /opt/reiwa
 docker compose pull               # стянуть ghcr.io/dizzzable/reiwa:latest
 docker compose up -d              # пересоздать reiwa + reiwa-bot
 ```
 
+Исходники на сервере не нужны. Сборка из исходников локально — через оверлей:
+`docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`.
+
 ---
 
-## 5. Про `docker-compose.dev.yml` (НЕ как override у rezeis)
+## 5. Сборка из исходников: `docker-compose.build.yml` / `docker-compose.dev.yml`
 
-Важное отличие от rezeis: у reiwa dev-файл называется
-`docker-compose.dev.yml`, и Docker Compose **НЕ подхватывает его
-автоматически** — его нужно указывать явно:
+Прод-`docker-compose.yml` ссылается **только на готовый образ** (`image:`),
+без `build:`. Для сборки из исходников есть два оверлея:
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-```
+- **`docker-compose.build.yml`** — собирает прод-образ из исходников (тест
+  реального образа перед пушем):
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --force-recreate reiwa reiwa-bot
+  ```
+- **`docker-compose.dev.yml`** — «горячая» разработка (bind-mount, `tsx watch`,
+  vite HMR, образы `reiwa-dev`):
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+  ```
 
-Это **только для локальной разработки** (bind-mount исходников, `tsx watch`,
-vite HMR, образы `reiwa-dev`). В продакшене его использовать НЕ нужно —
-прод-стек поднимается обычным `docker compose up -d` на базовом
-`docker-compose.yml` (образ из ghcr).
-
-То есть на вопрос «если перенести dev-настройки в `docker-compose.yml`,
-заработает ли обычными командами?» — для reiwa ответ: dev-слой для прода
-не нужен вовсе, прод-стек самодостаточен. Авто-подхват «обычными командами»
-есть только у файла с именем `docker-compose.override.yml` — у reiwa в проде
-такого файла нет, и он не требуется.
+Оба подключаются явно через `-f` и в продакшене НЕ нужны — прод-стек
+самодостаточен (`docker compose up -d` тянет образ из GHCR).

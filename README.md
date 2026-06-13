@@ -67,32 +67,70 @@ docker pull ghcr.io/dizzzable/reiwa:v0.9.5.1
 
 ## 🚀 Quick Start
 
-### Production через Docker Compose
+### Установка на VPS (production, готовый образ)
+
+Образ тянется из GHCR — **исходники на сервере не нужны**, только два файла.
 
 ```bash
-git clone https://github.com/dizzzable/reiwa.git
-cd reiwa
-cp .env.example .env
-# заполнить change_me: REIWA_DOMAIN, REZEIS_HOST/PORT/TOKEN (доступ к rezeis-admin),
-# BOT_TOKEN / BOT_USERNAME, REDIS_* и секреты сессий
+# 1. Каталог установки
+mkdir -p /opt/reiwa && cd /opt/reiwa
+
+# 2. Скачать compose и шаблон окружения
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/dizzzable/reiwa/main/docker-compose.yml
+curl -fsSL -o .env               https://raw.githubusercontent.com/dizzzable/reiwa/main/.env.example
+
+# 3. Общая docker-сеть с rezeis (создать, если Remnawave/rezeis-стек её ещё
+#    не создал — нужна для связи reiwa ↔ rezeis по имени `rezeis:8000`):
+docker network create remnawave-network 2>/dev/null || true
+
+# 4. Заполнить .env. Минимум что нужно задать:
+#      REIWA_DOMAIN                       публичный домен кабинета
+#      REZEIS_HOST=rezeis                 имя контейнера админки на одном VPS
+#                                         (или panel.example.com при split)
+#      REZEIS_TOKEN                       API-токен, созданный в админке rezeis
+#      REZEIS_WEBHOOK_SECRET              = WEBHOOK_SECRET_HEADER из rezeis
+#      BOT_TOKEN, BOT_USERNAME            от @BotFather
+#      REDIS_PASSWORD, REIWA_COOKIE_SECRET, REZEIS_INTERNAL_SHARED_SECRET
+nano .env
+
+# 5. Запуск (reiwa + reiwa-bot)
 docker compose up -d
 ```
 
-Reiwa подключается к Redis (сессии, rate-limit, brute-force) и к `rezeis-admin` по приватной сети. В продакшене сервис **fail-closed**: если Redis недоступен или нельзя гарантировать secure-cookie — запуск останавливается. Ослабить только осознанно через `REIWA_ALLOW_DEGRADED=true` / `REIWA_ALLOW_INSECURE_COOKIES=true`.
+В продакшене сервис **fail-closed**: без Redis или без гарантии secure-cookie
+запуск останавливается. Ослабить только осознанно — `REIWA_ALLOW_DEGRADED=true` /
+`REIWA_ALLOW_INSECURE_COOKIES=true`. Полный разбор переменных и таблицу
+совпадений с rezeis — см. **[docs/environment.md](docs/environment.md)**.
 
-### Локальная разработка
+**Обновление:**
 
 ```bash
-# Backend (edge) — три entrypoint'а в отдельных терминалах
+cd /opt/reiwa && docker compose pull && docker compose up -d
+```
+
+Reverse proxy: на одном VPS с rezeis удобнее единый Caddy — см.
+`caddy-combined` в репозитории rezeis. Отдельные конфиги — в `deploy/proxies/`.
+
+### Локальная разработка / сборка из исходников
+
+Прод-`docker-compose.yml` ссылается только на готовый образ. Чтобы собрать
+из исходников локально — build-оверлей:
+
+```bash
+git clone https://github.com/dizzzable/reiwa.git && cd reiwa
+cp .env.example .env   # заполнить секреты
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --force-recreate reiwa reiwa-bot
+```
+
+«Горячая» разработка (bind-mount + watch/HMR) — `docker-compose.dev.yml`,
+либо без docker:
+
+```bash
 npm install
 npm run dev:api       # Express BFF + раздача SPA
 npm run dev:bot       # grammY Telegram bot
 npm run dev:worker    # фоновые задачи
-
-# Frontend (в отдельном терминале)
-cd web
-npm install
-npm run dev
+cd web && npm install && npm run dev   # фронт (отдельный терминал)
 ```
 
 **Системные требования:** Node.js 24+, Redis/Valkey 8+, доступный экземпляр `rezeis-admin`.

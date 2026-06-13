@@ -34,12 +34,11 @@ services:
       - remnawave-network
 
   reiwa:
-    # Прод тянет готовый образ из GHCR (CI публикует его на push в main и тег v*).
-    # Обновление на VPS:  `docker compose pull && docker compose up -d`.
-    # `build:` оставлен для локальной пересборки — он тегает ровно этот же image.
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Прод тянет ГОТОВЫЙ образ из GHCR (CI публикует на push в main и тег v*).
+    # Установка/обновление на VPS — без исходников:
+    #   docker compose pull && docker compose up -d
+    # Локальная сборка из исходников — через build-оверлей:
+    #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
     image: ghcr.io/dizzzable/reiwa:latest
     container_name: reiwa
     hostname: reiwa
@@ -83,6 +82,12 @@ services:
       - remnawave-network
 
 networks:
+  # Общая сеть с rezeis и (если на этом же VPS) с Remnawave. По ней reiwa
+  # ходит к rezeis по имени `rezeis:8000`. Сеть ВНЕШНЯЯ — должна существовать
+  # до старта, иначе docker ругается «could not be found».
+  #   • Remnawave на этом же VPS → сеть уже создана Remnawave.
+  #   • Иначе создайте один раз:  docker network create remnawave-network
+  #     (нужна для связи reiwa ↔ rezeis даже без Remnawave рядом).
   remnawave-network:
     name: remnawave-network
     external: true
