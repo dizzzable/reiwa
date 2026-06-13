@@ -6,7 +6,6 @@
  * React Query.
  */
 import { apiClient } from "./transport.js";
-import type { ReiwaSession } from "@/types/api";
 
 export interface LoginRequest {
   username: string;
@@ -45,9 +44,12 @@ export const changePasswordAuth = (data: {
   apiClient.post("/auth/change-password", data).then((r) => r.data);
 
 // ── Telegram-init-data bootstrap ─────────────────────────────────────────────
+// Validates initData server-side and mints a WebSession (same model as
+// web login / magic-link). Returns the redirect target; the session cookie
+// is set as a side-effect, so the SPA refetches `/session` afterwards.
 export const bootstrapTelegram = (initData: string) =>
   apiClient
-    .post<{ ok: boolean; user: ReiwaSession }>(
+    .post<{ ok: boolean; redirectUrl?: string }>(
       "/auth/telegram/bootstrap",
       undefined,
       { headers: { Authorization: `tma ${initData}` } },

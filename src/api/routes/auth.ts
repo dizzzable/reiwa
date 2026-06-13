@@ -495,7 +495,22 @@ export function createAuthRouter(deps: {
     }
   });
 
-  // ── Legacy: POST /api/v1/auth/telegram/bootstrap ────────────────────────────
+  // ── POST /api/v1/auth/telegram/bootstrap ────────────────────────────────────
+  //
+  // Telegram Mini App entry. The SPA (`/tma`) sends the signed
+  // `Telegram.WebApp.initData` here; we validate it (HMAC-SHA256 keyed by the
+  // bot token), ensure the User exists in rezeis-admin, then mint a real
+  // **WebSession** — the SAME session model used by web login / register /
+  // magic-link. This is critical: the cabinet guards authenticate against the
+  // WebSession (`reiwa_web_session` cookie / `req.webSession.userId`), so a
+  // Mini App user must get a WebSession, not the legacy `reiwa_session`,
+  // otherwise the dashboard bounces them back to the web login form.
+  //
+  // We reuse the proven bot-signin machinery to turn a telegramId into the
+  // canonical reiwa_id: issue a one-time token → consume it → `userId`. This
+  // also resolves an EXISTING user (e.g. imported from Remnawave with a
+  // subscription), so the Mini App lands on their real subscription instead
+  // of creating a duplicate.
   router.post("/auth/telegram/bootstrap", authLimiter, async (req, res) => {
     try {
       const initData = (req.headers.authorization ?? "").replace(
@@ -513,31 +528,44 @@ export function createAuthRouter(deps: {
         res.status(401).json({ message: "Invalid Telegram init data" });
         return;
       }
-      if (!adminClient || !sessionStore) {
+      if (!adminClient) {
         res.status(503).json({ message: "Service not configured" });
         return;
       }
-      const user = (await adminClient.user.bootstrap({
-        telegramId: String(tgUser.id),
+
+      const telegramId = String(tgUser.id);
+
+      // 1. Ensure the User row exists in rezeis-admin (idempotent).
+      await adminClient.user.bootstrap({
+        telegramId,
         username: tgUser.username,
         name: `${tgUser.first_name}${tgUser.last_name ? " " + tgUser.last_name : ""}`,
         language: tgUser.language_code?.toUpperCase() ?? "EN",
-      })) as Record<string, unknown>;
+      });
 
-      const sessionId = await sessionStore.create({
-        telegramId: String(tgUser.id),
-        userId: (user["id"] as number) ?? 0,
-        name: (user["name"] as string) ?? tgUser.first_name,
-        username: tgUser.username,
-        role: (user["role"] as string) ?? "USER",
-      });
-      res.cookie("reiwa_session", sessionId, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: config.REIWA_COOKIE_SECURE || config.NODE_ENV === "production",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-      res.json({ ok: true, user });
+      // 2. Resolve telegramId → canonical reiwa_id via the magic-link tokens.
+      //    `token === null` means the user is blocked / unresolvable.
+      const issued = await adminClient.webAuth.issueBotSigninToken(telegramId);
+      if (issued.token === null) {
+        res.status(403).json({ message: "Access denied" });
+        return;
+      }
+      const consumed = await adminClient.webAuth.consumeBotSigninToken(issued.token);
+      if (consumed.userId === null) {
+        res.status(401).json({ message: "Authentication failed" });
+        return;
+      }
+
+      // 3. Mint the WebSession (sets the `reiwa_web_session` cookie).
+      try {
+        await req.createWebSession(consumed.userId);
+      } catch (err) {
+        getRequestLogger(req).error({ err }, "auth/telegram/bootstrap createWebSession failed");
+        res.status(500).json({ message: "Session setup failed" });
+        return;
+      }
+
+      res.json({ ok: true, redirectUrl: "/dashboard" });
     } catch (e: unknown) {
       getRequestLogger(req).error({ err: e }, "auth/telegram/bootstrap failed");
       res.status(500).json({ message: "Internal server error" });

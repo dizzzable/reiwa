@@ -48,11 +48,13 @@ export default function BootstrapPage() {
         }
 
         const result = await bootstrapTelegram(initData)
-        queryClient.setQueryData(SESSION_QUERY_KEY, result.user)
+        // The WebSession cookie is set server-side. Drop any cached session
+        // so guards refetch `/session` and see the fresh authenticated state.
+        await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
 
         telegram?.HapticFeedback?.notificationOccurred('success')
         setPhase('ready')
-        navigate('/dashboard', { replace: true })
+        navigate(result.redirectUrl ?? '/dashboard', { replace: true })
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : t('bootstrap.loginErrorFallback')
         setErrorMsg(msg)
