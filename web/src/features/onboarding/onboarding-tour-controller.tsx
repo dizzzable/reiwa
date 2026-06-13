@@ -11,47 +11,77 @@
  */
 
 import { AnimatePresence } from "motion/react";
-import { createContext, useContext, useEffect, type PropsWithChildren } from "react";
+import { createContext, useContext, useEffect, useState, type PropsWithChildren } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 
 import { SpotlightOverlay } from "./components/spotlight-overlay";
 import { TourTooltip } from "./components/tour-tooltip";
+import { DemoTutorial } from "./demo-tutorial";
 import { useOnboardingTour } from "@/hooks/use-onboarding-tour";
+import { getAllSubscriptions } from "@/lib/api-client";
 
 interface OnboardingContextValue {
-  /** Programmatically start (or restart) the tour. */
+  /** Programmatically start (or restart) the spotlight tour (real mode). */
   startTour: () => void;
   /** Reset the completed flag and immediately replay the tour. */
   replayTour: () => void;
+  /** Open the demo tutorial (sample data) — used when the trial is declined. */
+  startDemo: () => void;
 }
 
 const OnboardingContext = createContext<OnboardingContextValue>({
   startTour: () => {},
   replayTour: () => {},
+  startDemo: () => {},
 });
 
 export function useOnboardingContext() {
   return useContext(OnboardingContext);
 }
 
+interface AllSubscriptionsShape {
+  subscriptions?: Array<{ status?: string }>;
+}
+
 export function OnboardingTourProvider({ children }: PropsWithChildren) {
   const { t } = useTranslation();
   const location = useLocation();
   const tour = useOnboardingTour();
+  const [demoOpen, setDemoOpen] = useState(false);
 
-  // Auto-start on first dashboard visit
+  // The real spotlight tour must never target a non-existent subscription
+  // (Property 8). It only auto-starts once an active subscription exists.
+  const { data: subsData } = useQuery<AllSubscriptionsShape>({
+    queryKey: ["subscriptions", "all"],
+    queryFn: getAllSubscriptions as () => Promise<AllSubscriptionsShape>,
+    staleTime: 30_000,
+  });
+  const hasActiveSubscription =
+    subsData?.subscriptions?.some((s) => s.status === "ACTIVE" || s.status === "LIMITED") ?? false;
+
+  // Auto-start the real tour on the dashboard only when a subscription exists.
   useEffect(() => {
-    if (tour.shouldAutoStart && location.pathname === "/dashboard") {
+    if (tour.shouldAutoStart && hasActiveSubscription && location.pathname === "/dashboard") {
       // Small delay so the DOM elements are rendered before we try to measure them
       const timer = setTimeout(() => tour.start(), 600);
       return () => clearTimeout(timer);
     }
-  }, [location.pathname, tour.shouldAutoStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname, tour.shouldAutoStart, hasActiveSubscription]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const replayTour = () => {
     tour.resetOnboarding();
     tour.start();
+  };
+
+  const startDemo = () => {
+    setDemoOpen(true);
+  };
+
+  const closeDemo = () => {
+    setDemoOpen(false);
+    tour.markCompleted();
   };
 
   const step = tour.currentStep;
@@ -59,8 +89,9 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   const body = t(`${step.i18nKey}.body` as any) as string;
 
   return (
-    <OnboardingContext.Provider value={{ startTour: tour.start, replayTour }}>
+    <OnboardingContext.Provider value={{ startTour: tour.start, replayTour, startDemo }}>
       {children}
+      <DemoTutorial open={demoOpen} onClose={closeDemo} />
       <AnimatePresence>
         {tour.isActive && (
           <>

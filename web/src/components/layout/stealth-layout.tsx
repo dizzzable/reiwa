@@ -47,6 +47,15 @@ export default function StealthLayout() {
     return <Navigate to="/bootstrap" replace />;
   }
 
+  // Mandatory claim gate (Property 1): a Telegram-first user authenticated into
+  // a WebSession but with no `WebAccount` (explicit `null` from the session
+  // probe) must set login + password before reaching any cabinet page. We only
+  // gate on an explicit `null` — an absent/`undefined` field means the probe
+  // degraded and we must not lock out an already-claimed user.
+  if (session.webAccount === null) {
+    return <Navigate to="/claim" replace />;
+  }
+
   // Temp-password users (admin-issued reset) must set a new password before
   // they can use anything. The session carries the flag from the WebAccount;
   // block every protected route until it's cleared.

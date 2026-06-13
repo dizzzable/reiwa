@@ -31,7 +31,8 @@ import {
   hasRecentlyPassedChannel,
   markChannelPassed,
 } from '../lib/channel-gate.js';
-import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl, attachSigninTokenToUrl } from '../widgets/main-keyboard.js';
+import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial-button.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
 import { coerceLocale } from './coerce-locale.js';
@@ -41,6 +42,42 @@ import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 interface BootstrapSessionShape {
   readonly language?: string;
+}
+
+/** A subscription counts as "active" when ACTIVE or LIMITED (not expired/deleted). */
+function hasActiveSubscription(subscriptions: readonly Subscription[]): boolean {
+  return subscriptions.some((s) => s.status === 'ACTIVE' || s.status === 'LIMITED');
+}
+
+interface CatalogPlanShape {
+  readonly isTrial?: boolean;
+  readonly trialFree?: boolean;
+  readonly durations?: ReadonlyArray<{
+    readonly prices?: ReadonlyArray<{ readonly price: number | string; readonly currency: string }>;
+  }>;
+}
+
+const TRIAL_PRICE_CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {
+  USD: '$',
+  RUB: '₽',
+  USDT: '$',
+  TON: 'TON',
+};
+
+/**
+ * Lowest price across a paid trial plan's durations, formatted with the
+ * currency symbol (e.g. "$2.00"). Returns `null` when no price is available.
+ */
+function extractTrialPriceLabel(plans: readonly CatalogPlanShape[]): string | null {
+  const trialPlan = plans.find((p) => p.isTrial === true && p.trialFree === false);
+  if (trialPlan === undefined) return null;
+  const prices = (trialPlan.durations ?? []).flatMap((d) =>
+    (d.prices ?? []).map((p) => ({ amount: Number(p.price), currency: p.currency })),
+  );
+  if (prices.length === 0) return null;
+  const cheapest = prices.reduce((min, p) => (p.amount < min.amount ? p : min), prices[0]);
+  const symbol = TRIAL_PRICE_CURRENCY_SYMBOLS[cheapest.currency] ?? '';
+  return `${symbol}${cheapest.amount.toFixed(2)}`;
 }
 
 /**
@@ -121,6 +158,51 @@ async function buildWelcomeView(
     }
   }
 
+  // Trial button (Property 5/6/10/11): a primary, premium-emoji button shown to
+  // subscription-less users that deep-links into the cabinet (Mini App when
+  // available, else the magic-link URL) where the trial activates. Best-effort:
+  // any probe failure simply hides the button rather than blocking the menu.
+  let trialButton = null;
+  if (deps.adminClient !== null && tgUser !== undefined) {
+    const subscribed = hasActiveSubscription(subscriptions);
+    if (!subscribed) {
+      let eligibility: TrialEligibilityShape | null = null;
+      try {
+        eligibility = (await deps.adminClient.trial.getEligibility({
+          telegramId: String(tgUser.id),
+        })) as TrialEligibilityShape | null;
+      } catch (err: unknown) {
+        deps.logger?.warn({ err, telegramId: tgUser.id }, 'bot/start: trial eligibility probe failed');
+      }
+      // Only pay for the catalog round-trip when a paid trial is configured.
+      let paidTrialPriceLabel: string | null = null;
+      if (eligibility?.reason === 'TRIAL_REQUIRES_PAYMENT') {
+        try {
+          const plans = (await deps.adminClient.catalog.getPublicPlans()) as
+            | CatalogPlanShape[]
+            | null;
+          paidTrialPriceLabel = extractTrialPriceLabel(plans ?? []);
+        } catch (err: unknown) {
+          deps.logger?.warn({ err, telegramId: tgUser.id }, 'bot/start: trial catalog probe failed');
+        }
+      }
+      const cabinetUrl =
+        deps.urls.publicWebUrl !== null && deps.urls.publicWebUrl !== undefined
+          ? attachSigninTokenToUrl(`${deps.urls.publicWebUrl}/dashboard`, signinToken)
+          : null;
+      trialButton = resolveTrialButton({
+        hasActiveSubscription: false,
+        eligibility,
+        paidTrialPriceLabel,
+        miniAppUrl,
+        cabinetUrl,
+        botEmojis: botCfg.botEmojis,
+        translator: deps.translator,
+        lang,
+      });
+    }
+  }
+
   const keyboard = buildMainKeyboard({
     buttons: botCfg.buttons,
     miniAppUrl,
@@ -129,6 +211,7 @@ async function buildWelcomeView(
     translator: deps.translator,
     supportUrl,
     signinToken,
+    trialButton,
   });
 
   return { text: message.text, entities: message.entities, keyboard };

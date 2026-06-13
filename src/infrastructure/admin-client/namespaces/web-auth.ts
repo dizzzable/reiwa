@@ -61,6 +61,22 @@ export class WebAuthNamespace {
     );
   }
 
+  /**
+   * Claim: attach a `WebAccount` (login + password) to an ALREADY-EXISTING
+   * `User` identified by its canonical reiwa_id. Used by the mandatory
+   * first-entry onboarding for Telegram-first users (a `User` exists but no
+   * `WebAccount`). The caller MUST pass the userId resolved from the
+   * authenticated WebSession, so it can only ever attach credentials to the
+   * caller's own account. 409 on existing web account / taken login.
+   */
+  claim(userId: string, login: string, password: string): Promise<WebAuthRegisterResult> {
+    return this.transport.request<WebAuthRegisterResult>(
+      'POST',
+      '/api/internal/web-auth/claim',
+      { userId, login, password },
+    );
+  }
+
   login(login: string, password: string): Promise<WebAuthLoginResult> {
     return this.transport.request<WebAuthLoginResult>(
       'POST',

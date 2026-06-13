@@ -27,6 +27,7 @@ import { SubscriptionCarousel } from "./components/subscription-carousel";
 import { SubscriptionActions } from "./components/subscription-actions";
 import { DevicesList } from "./components/devices-list";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
+import { TrialCta } from "./components/trial-cta";
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -171,7 +172,10 @@ export default function DashboardPage() {
           )}
         </>
       ) : (
-        <EmptySubscriptionCta onBuy={() => navigate("/plans")} />
+        <>
+          <TrialCta />
+          <EmptySubscriptionCta onBuy={() => navigate("/plans")} />
+        </>
       )}
     </div>
   );

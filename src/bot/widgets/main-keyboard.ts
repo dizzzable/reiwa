@@ -187,6 +187,27 @@ export interface MainKeyboardOptions {
    * `support_url` and `callback` don't take URLs at all.
    */
   readonly signinToken?: string | null;
+  /** Optional primary trial button rendered at the top for eligible users. */
+  readonly trialButton?: TrialButtonSpec | null;
+}
+
+/**
+ * Optional primary "trial" button injected at the TOP of the keyboard for
+ * subscription-less users (see `.kiro/specs/web-cabinet-onboarding`,
+ * Property 5/6/10/11). Always rendered with `style: 'primary'`; carries the
+ * premium `icon_custom_emoji_id` when configured (Bot API 9.4) and degrades to
+ * a leading unicode glyph in `text` otherwise. Deep-links into the cabinet
+ * (Mini App when available, else the magic-link URL) where the trial CTA lives.
+ */
+export interface TrialButtonSpec {
+  /** Full button label; includes a leading unicode glyph when no premium icon. */
+  readonly text: string;
+  /** Premium custom-emoji id; when set, `text` should omit the unicode glyph. */
+  readonly iconCustomEmojiId?: string | null;
+  /** Magic-link cabinet URL (already `?signin=` stamped). Used for `url` kind. */
+  readonly url?: string | null;
+  /** Mini App URL — preferred target when Telegram-safe. */
+  readonly miniAppUrl?: string | null;
 }
 
 const NUMERIC_HANDLE = /^-?\d+$/;
@@ -239,7 +260,7 @@ export function attachSigninTokenToUrl(url: string, token: string | null | undef
  * `onePerRow=false` (max 2 per row).
  */
 export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard {
-  const { buttons, miniAppUrl, publicWebUrl, lang, translator, supportUrl, signinToken } = options;
+  const { buttons, miniAppUrl, publicWebUrl, lang, translator, supportUrl, signinToken, trialButton } = options;
   const visible = [...buttons]
     .filter((b) => b.visible)
     .sort((a, b) => a.order - b.order);
@@ -252,6 +273,24 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
       rowItems = 0;
     }
   };
+
+  // Primary trial button (top, own row) — only when a usable target exists.
+  // Prefer the Mini App (richer activation flow), else the magic-link URL.
+  if (trialButton !== null && trialButton !== undefined) {
+    const trialExtras: { icon_custom_emoji_id?: string; style: 'primary' } = { style: 'primary' };
+    if (
+      trialButton.iconCustomEmojiId !== null &&
+      trialButton.iconCustomEmojiId !== undefined &&
+      trialButton.iconCustomEmojiId.length > 0
+    ) {
+      trialExtras.icon_custom_emoji_id = trialButton.iconCustomEmojiId;
+    }
+    if (isTelegramSafeButtonUrl(trialButton.miniAppUrl)) {
+      kb.webApp({ text: trialButton.text, ...trialExtras }, trialButton.miniAppUrl as string).row();
+    } else if (isTelegramSafeButtonUrl(trialButton.url)) {
+      kb.url({ text: trialButton.text, ...trialExtras }, trialButton.url as string).row();
+    }
+  }
 
   for (const btn of visible) {
     const localisedLabel = translator.resolveButtonLabel(btn.id, btn.label, lang);

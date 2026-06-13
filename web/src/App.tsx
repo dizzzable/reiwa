@@ -59,6 +59,7 @@ const PromocodesSettingsPage = lazy(() => import("@/features/settings/promocodes
 const SupportPage = lazy(() => import("@/features/support/support-page"));
 const PointsExchangePage = lazy(() => import("@/features/referrals/points-exchange-page"));
 const OnboardingPage = lazy(() => import("@/features/onboarding/onboarding-page"));
+const ClaimPage = lazy(() => import("@/features/auth/claim-page"));
 
 function PageLoader() {
   return (
@@ -82,6 +83,7 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/recover" element={<RecoverPage />} />
         <Route path="/change-password" element={<ChangePasswordPage />} />
+        <Route path="/claim" element={<ClaimPage />} />
         <Route path="/payment-return" element={<PaymentReturn />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
 

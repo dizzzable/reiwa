@@ -28,6 +28,8 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'menu.btn_support': '🆘 Поддержка',
   'menu.btn_miniapp': '📱 Открыть приложение',
   'menu.btn_lang': '🌐 Язык',
+  'menu.btn_trial_free': 'Попробовать бесплатно',
+  'menu.btn_trial_paid': 'Попробовать за {{price}}',
 
   // ── Pre-registration funnel ─────────────────────────────────────────────────
   'start.open_app': '📱 Открыть приложение',

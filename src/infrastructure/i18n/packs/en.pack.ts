@@ -26,6 +26,8 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'menu.btn_support': '🆘 Support',
   'menu.btn_miniapp': '📱 Open app',
   'menu.btn_lang': '🌐 Language',
+  'menu.btn_trial_free': 'Try for free',
+  'menu.btn_trial_paid': 'Try for {{price}}',
 
   // ── Pre-registration funnel ─────────────────────────────────────────────────
   'start.open_app': '📱 Open app',

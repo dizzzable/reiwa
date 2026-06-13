@@ -32,6 +32,23 @@ const registerSchema = z.object({
   referralCode: z.string().min(1).max(64).optional(),
 });
 
+// Claim: mandatory first-entry onboarding for an authenticated Telegram-first
+// user who has a `User` but no `WebAccount`. Same field rules as register.
+const claimSchema = z.object({
+  username: z
+    .string()
+    .min(3, "Username must be at least 3 characters")
+    .max(32, "Username must be at most 32 characters")
+    .regex(
+      /^[a-zA-Z0-9_-]+$/,
+      "Username may only contain alphanumeric characters, hyphens, or underscores",
+    ),
+  passwordHash: z
+    .string()
+    .length(64, "Password hash must be a 64-character SHA-256 hex string")
+    .regex(/^[a-f0-9]+$/i, "Password hash must be a valid hex string"),
+});
+
 const loginSchema = z.object({
   username: z
     .string()
@@ -491,6 +508,67 @@ export function createAuthRouter(deps: {
       }
 
       getRequestLogger(req).error({ err: errMsg }, "auth/change-password failed");
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // ── POST /api/v1/auth/claim ─────────────────────────────────────────────────
+  //
+  // Mandatory first-entry onboarding: an authenticated Telegram-first user
+  // (resolved into a WebSession by `/auth/telegram/bootstrap`) sets a login +
+  // password so they can reach their account from a browser without Telegram.
+  // The userId is taken from the server-side WebSession — NEVER from the body —
+  // so a caller can only ever attach credentials to their own account.
+  router.post("/auth/claim", async (req: Request, res: Response) => {
+    try {
+      // Must be authenticated (WebSession from Mini App bootstrap / login).
+      if (!req.webSession || !req.webSessionId) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
+      }
+
+      const parsed = claimSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          message: "Validation failed",
+          errors: parsed.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+          })),
+        });
+        return;
+      }
+
+      const { username, passwordHash } = parsed.data;
+
+      if (!adminClient) {
+        res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
+        return;
+      }
+
+      const userId = req.webSession.userId;
+      const result = await adminClient.webAuth.claim(userId, username, passwordHash);
+
+      res.json({
+        success: true,
+        userId: result.userId,
+        redirectUrl: "/dashboard",
+      });
+    } catch (e: unknown) {
+      const { status: upstreamStatus, message: errMsg } = describeUpstreamError(e);
+
+      // Login taken / user already claimed → 409, recoverable on /claim.
+      if (isUpstreamStatus(e, 409) || errMsg.toLowerCase().includes("taken")) {
+        res.status(409).json({ message: "Username is already taken" });
+        return;
+      }
+      // Policy-violating login/password → 400, recoverable on /claim.
+      if (isUpstreamStatus(e, 400)) {
+        res.status(400).json({ message: "Invalid login or password format" });
+        return;
+      }
+      // Fail-closed on everything else: keep the gate shut.
+      getRequestLogger(req).error({ err: errMsg, upstreamStatus }, "auth/claim failed");
       res.status(500).json({ message: "Internal server error" });
     }
   });

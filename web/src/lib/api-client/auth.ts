@@ -25,6 +25,12 @@ export interface RegisterResponse {
   redirectUrl: string;
 }
 
+export interface ClaimResponse {
+  success: boolean;
+  userId: string;
+  redirectUrl: string;
+}
+
 export interface RecoverResponse {
   method: "telegram" | "email" | "none";
   message: string;
@@ -118,4 +124,16 @@ export const checkUsername = (username: string) =>
 export const recoverPassword = (username: string) =>
   apiClient
     .post<RecoverResponse>("/auth/recover", { username })
+    .then((r) => r.data);
+
+// ── Claim (mandatory first-entry onboarding) ─────────────────────────────────
+//
+// A Telegram-first user (authenticated via Mini App bootstrap / magic-link
+// into a WebSession) sets login + password so they can also reach their
+// account from a browser. The reiwa BFF takes the userId from the server-side
+// WebSession, NEVER the body, so this can only attach credentials to the
+// caller's own account. 409 = login taken / already claimed; 400 = invalid.
+export const claimAccount = (username: string, passwordHash: string) =>
+  apiClient
+    .post<ClaimResponse>("/auth/claim", { username, passwordHash })
     .then((r) => r.data);

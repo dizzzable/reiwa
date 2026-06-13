@@ -147,6 +147,13 @@ export function useOnboardingTour() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Marks the tutorial as completed without running the spotlight tour. Used
+   *  by the demo tutorial (which has its own UI) so it stays one-shot too. */
+  const markCompleted = useCallback(() => {
+    persistCompleted(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const shouldAutoStart = !hasCompleted;
 
   return {
@@ -159,6 +166,7 @@ export function useOnboardingTour() {
     prev,
     skip,
     resetOnboarding,
+    markCompleted,
     shouldAutoStart,
   };
 }
