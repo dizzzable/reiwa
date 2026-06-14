@@ -66,8 +66,11 @@ async function resolveInviteLink(
       ?.catch(() => null)) as ReferralInviteShape | null | undefined;
     const token = response?.invite?.token ?? response?.token ?? null;
     if (token === null) return null;
-    if (urls.publicWebUrl !== null) return `${urls.publicWebUrl}/ref/${token}`;
+    // Prefer the Telegram deep-link in the bot — a friend who taps it opens the
+    // bot directly (and `/start ref_<token>` attributes the referral). Fall back
+    // to the public web `/ref/<token>` URL only when no bot username is set.
     if (botUsername) return `https://t.me/${botUsername}?start=ref_${token}`;
+    if (urls.publicWebUrl !== null) return `${urls.publicWebUrl}/ref/${token}`;
     return null;
   } catch {
     return null;

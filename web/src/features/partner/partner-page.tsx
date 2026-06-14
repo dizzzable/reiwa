@@ -30,7 +30,7 @@ type ActiveSheet = "level" | "referrals" | "balance" | "info" | null;
 export default function PartnerPage() {
   const { t } = useTranslation();
   const { session } = useSession();
-  const { branding } = useBranding();
+  const { branding, botUsername } = useBranding();
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
   const { data: partnerInfo, isLoading } = useQuery({
@@ -50,12 +50,14 @@ export default function PartnerPage() {
   const totalEarned = info?.totalEarned ?? 0;
   const totalWithdrawn = info?.totalWithdrawn ?? 0;
 
-  // Build invite links
-  const botUsername = (window as any).__REIWA_BOT_USERNAME__ ?? "RezeisBot";
-  const reiwaDomain = (window as any).__REIWA_DOMAIN__ ?? window.location.origin;
-  const referralCode = session?.telegramId ?? session?.username ?? "";
-  const telegramLink = `https://t.me/${botUsername}?start=${referralCode}`;
+  // Build invite links. Bot username comes from the public config
+  // (reiwa `BOT_USERNAME`); the web origin is this SPA's own domain.
+  const referralCode = session?.id ?? session?.telegramId ?? session?.username ?? "";
+  const reiwaDomain = window.location.origin;
   const webLink = `${reiwaDomain}/register?ref=${referralCode}`;
+  const telegramLink = botUsername
+    ? `https://t.me/${botUsername}?start=${referralCode}`
+    : webLink;
 
   // Format balance in rubles (stored in kopecks)
   const balanceRub = (balance / 100).toFixed(2);

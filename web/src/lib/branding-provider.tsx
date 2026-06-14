@@ -42,6 +42,7 @@ interface BrandingContextValue {
   readonly defaultLocale: string;
   readonly defaultCurrency: string;
   readonly customIcons: CustomIcon[];
+  readonly botUsername: string | null;
   readonly isLoading: boolean;
 }
 
@@ -51,6 +52,7 @@ const BrandingContext = createContext<BrandingContextValue>({
   defaultLocale: DEFAULT_PUBLIC_CONFIG.defaultLocale,
   defaultCurrency: DEFAULT_PUBLIC_CONFIG.defaultCurrency,
   customIcons: DEFAULT_PUBLIC_CONFIG.customIcons,
+  botUsername: DEFAULT_PUBLIC_CONFIG.botUsername ?? null,
   isLoading: true,
 });
 
@@ -111,9 +113,10 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       defaultLocale: config.defaultLocale,
       defaultCurrency: config.defaultCurrency,
       customIcons: config.customIcons ?? [],
+      botUsername: config.botUsername ?? null,
       isLoading,
     }),
-    [config.branding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, isLoading],
+    [config.branding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, config.botUsername, isLoading],
   );
 
   return (

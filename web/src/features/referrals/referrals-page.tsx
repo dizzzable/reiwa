@@ -35,7 +35,7 @@ type ActiveSheet = "invited" | "points" | "info" | null;
 export default function ReferralsPage() {
   const { t } = useTranslation();
   const { session } = useSession();
-  const { branding } = useBranding();
+  const { branding, botUsername } = useBranding();
   const navigate = useNavigate();
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
@@ -53,12 +53,15 @@ export default function ReferralsPage() {
 
   // Build invite links. Reiwa_id (session.id, CUID) is the canonical
   // referral code — it works for web-first users with no Telegram. We fall
-  // back to telegramId / username only if id is somehow absent.
-  const botUsername = (window as any).__REIWA_BOT_USERNAME__ ?? "RezeisBot";
-  const reiwaDomain = (window as any).__REIWA_DOMAIN__ ?? window.location.origin;
+  // back to telegramId / username only if id is somehow absent. The bot
+  // username comes from the public config (reiwa `BOT_USERNAME`); the web
+  // origin is this SPA's own domain.
   const referralCode = session?.id ?? session?.telegramId ?? session?.username ?? "";
-  const telegramLink = `https://t.me/${botUsername}?start=${referralCode}`;
+  const reiwaDomain = window.location.origin;
   const webLink = `${reiwaDomain}/register?ref=${referralCode}`;
+  const telegramLink = botUsername
+    ? `https://t.me/${botUsername}?start=${referralCode}`
+    : webLink;
 
   const totalInvited = (summary as any)?.totalReferrals ?? 0;
   const qualified = (summary as any)?.qualifiedReferrals ?? 0;

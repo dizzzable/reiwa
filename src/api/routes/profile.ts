@@ -179,11 +179,17 @@ export function createProfileRouter(deps: {
 
   // GET /api/v1/config — public bot/app config
   router.get("/config", async (_req, res) => {
+    // The bot username is a reiwa-side env (`BOT_USERNAME`), not part of the
+    // rezeis branding payload. Merge it in so the SPA can build correct
+    // `t.me/<bot>?start=<ref>` referral links instead of falling back to a
+    // hardcoded placeholder.
+    const botUsername = deps.config.BOT_USERNAME ?? null;
     try {
       const botConfig = await adminClient?.branding.getPublicConfig();
-      res.json(botConfig ?? {});
+      const base = (botConfig ?? {}) as Record<string, unknown>;
+      res.json({ ...base, botUsername });
     } catch {
-      res.json({});
+      res.json({ botUsername });
     }
   });
 

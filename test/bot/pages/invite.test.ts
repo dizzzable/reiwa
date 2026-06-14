@@ -70,7 +70,7 @@ describe('registerInvitePage (hub)', () => {
 
     const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
     expect(text).toContain('ru:referral.hub.title');
-    expect(text).toContain('https://reiwa.example/ref/tok-1');
+    expect(text).toContain('https://t.me/reiwa_test_bot?start=ref_tok-1');
     expect(text).toContain('ru:referral.hub.stat_invited(count=3)');
     expect(text).toContain('ru:referral.hub.stat_qualified(count=1)');
     expect(text).toContain('ru:referral.hub.stat_pending(count=2)');

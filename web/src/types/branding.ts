@@ -103,6 +103,12 @@ export interface PublicConfig {
   defaultCurrency: string;
   /** Operator's custom icon library (reusable glyphs the cabinet can render). */
   customIcons: CustomIcon[];
+  /**
+   * Telegram bot username (no leading `@`), injected by the reiwa edge from
+   * its `BOT_USERNAME` env. Used to build `t.me/<bot>?start=<ref>` referral /
+   * invite links. `null` when not configured.
+   */
+  botUsername?: string | null;
   /** Platform-branding texts (project name, web page title). */
   platformBranding?: {
     projectName: string | null;
@@ -152,5 +158,6 @@ export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
   defaultLocale: "ru",
   defaultCurrency: "USD",
   customIcons: [],
+  botUsername: null,
   platformBranding: { projectName: null, webTitle: null },
 };

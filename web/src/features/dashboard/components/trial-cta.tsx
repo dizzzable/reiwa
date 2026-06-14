@@ -16,7 +16,7 @@
  * run instead (Property 8, wired in the tutorial wave).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -27,11 +27,7 @@ import { activateTrial, getPlans, getTrialEligibility } from "@/lib/api-client";
 import { useBranding } from "@/lib/branding-provider";
 import { usePurchaseStore } from "@/stores/purchase.store";
 import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
-import {
-  readOnboardingPrefs,
-  shouldShowWebOffer,
-  writeOnboardingPrefs,
-} from "@/lib/onboarding-prefs";
+import { writeOnboardingPrefs } from "@/lib/onboarding-prefs";
 import type { Plan } from "@/types/api";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -77,10 +73,6 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
-  // Throttle decision is taken once on mount so it doesn't flip while the user
-  // is looking at the card.
-  const allowedByThrottle = useRef(shouldShowWebOffer(readOnboardingPrefs())).current;
-
   const { data: eligibility } = useQuery<TrialEligibility>({
     queryKey: ["trial", "eligibility"],
     queryFn: getTrialEligibility as () => Promise<TrialEligibility>,
@@ -98,14 +90,12 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
   const trialPlan = useMemo(() => plans.find((p) => p.isTrial), [plans]);
   const freeEligible = eligibility?.eligible === true;
   const paidTrial = trialPlan !== undefined && trialPlan.trialFree === false;
-  const visible = allowedByThrottle && !dismissed && (freeEligible || paidTrial);
-
-  // Record that the offer was surfaced (drives the throttle window).
-  useEffect(() => {
-    if (visible) {
-      writeOnboardingPrefs({ lastOfferShownAt: Date.now() });
-    }
-  }, [visible]);
+  // The dashboard renders this only in the empty-state (no active subscription),
+  // where the trial offer IS the primary action — so it is shown whenever the
+  // user is eligible, mirroring the always-visible bot trial button. (We do not
+  // throttle here: throttling left subscription-less users with only a "Buy"
+  // button while the bot still offered the trial.)
+  const visible = !dismissed && (freeEligible || paidTrial);
 
   if (!visible) return null;
 
