@@ -276,8 +276,10 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
 
   // Primary trial button (top, own row) — only when a usable target exists.
   // Prefer the Mini App (richer activation flow), else the magic-link URL.
+  // Rendered with `style: 'success'` (green) per the onboarding spec — it's a
+  // positive, free-offer CTA that should stand out from the regular buttons.
   if (trialButton !== null && trialButton !== undefined) {
-    const trialExtras: { icon_custom_emoji_id?: string; style: 'primary' } = { style: 'primary' };
+    const trialExtras: { icon_custom_emoji_id?: string; style: 'success' } = { style: 'success' };
     if (
       trialButton.iconCustomEmojiId !== null &&
       trialButton.iconCustomEmojiId !== undefined &&

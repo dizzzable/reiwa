@@ -71,6 +71,15 @@ describe('resolveTrialButton', () => {
     expect(spec?.text).toBe('menu.btn_trial_free'); // no unicode prefix
   });
 
+  it('falls back to the GIFT registry key for the premium emoji when TRIAL is unset', () => {
+    const spec = resolveTrialButton({
+      ...baseInputs,
+      botEmojis: { GIFT: { unicode: '🎁', tgEmojiId: '5276422526350681413' } },
+    });
+    expect(spec?.iconCustomEmojiId).toBe('5276422526350681413');
+    expect(spec?.text).toBe('menu.btn_trial_free');
+  });
+
   it('renders a paid trial button carrying the price', () => {
     const spec = resolveTrialButton({
       ...baseInputs,

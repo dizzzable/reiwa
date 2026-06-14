@@ -46,6 +46,13 @@ export interface ResolveTrialButtonInputs {
 /** Reason returned by the trial-eligibility probe for a configured paid trial. */
 const PAID_TRIAL_REASON = 'TRIAL_REQUIRES_PAYMENT';
 
+/**
+ * Emoji-registry keys tried (in order) for the trial button's premium icon.
+ * Not every deployment seeds a dedicated `TRIAL` slot, so we fall back to the
+ * gift/promo keys the operator most likely configured for a "free gift" CTA.
+ */
+const TRIAL_EMOJI_KEYS = ['TRIAL', 'GIFT', 'PROMO'] as const;
+
 export function resolveTrialButton(inputs: ResolveTrialButtonInputs): TrialButtonSpec | null {
   // Suppression (Property 10): never show the trial button to a subscriber.
   if (inputs.hasActiveSubscription) return null;
@@ -67,10 +74,17 @@ export function resolveTrialButton(inputs: ResolveTrialButtonInputs): TrialButto
       })
     : inputs.translator.t('menu.btn_trial_free', inputs.lang);
 
-  const premiumId = resolvePremiumId('TRIAL', inputs.botEmojis);
+  // Premium custom emoji: the operator configures it in the bot-config emoji
+  // registry. There is no dedicated `TRIAL` slot in every deployment, so we
+  // try the trial-ish keys in priority order and use the first one that has a
+  // configured premium id. Falls back to the matching unicode glyph (so a
+  // non-premium owner still sees a relevant emoji).
+  const emojiKey = TRIAL_EMOJI_KEYS.find((key) => resolvePremiumId(key, inputs.botEmojis) !== null);
+  const premiumId = emojiKey !== undefined ? resolvePremiumId(emojiKey, inputs.botEmojis) : null;
   // Premium owners get the custom emoji as the button icon (no unicode prefix
   // to avoid a double glyph); everyone else gets a leading unicode glyph.
-  const text = premiumId !== null ? baseLabel : `${resolveUnicode('TRIAL', inputs.botEmojis)} ${baseLabel}`;
+  const text =
+    premiumId !== null ? baseLabel : `${resolveUnicode('TRIAL', inputs.botEmojis)} ${baseLabel}`;
 
   return {
     text,
