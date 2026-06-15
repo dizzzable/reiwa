@@ -36,6 +36,7 @@ import { resolvePlaceholders } from '../../infrastructure/bot-config/emoji-utils
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
+  buildScreenKeyboard,
   findScreenByName,
 } from './screen-renderer.js';
 import type { PageRegistrar } from './types.js';
@@ -44,7 +45,7 @@ const NUMERIC_HANDLE = /^-?\d+$/;
 const SCREEN_OVERRIDE_NAME = 'help';
 
 export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
-  const { translator, userLocale, getConfig, envSupportUsername } = deps;
+  const { translator, userLocale, getConfig, envSupportUsername, urls } = deps;
 
   bot.callbackQuery('help', async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -66,13 +67,21 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
         })
       : translator.t('support.title', lang);
 
+    // Operator's own custom buttons (if any) render FIRST; the system
+    // buttons (contact + back) are appended below. Previously the custom
+    // buttons were dropped whenever a built-in screen added system buttons.
+    const hasCustomButtons = (overrideScreen?.buttons.length ?? 0) > 0;
+    const buildKeyboard = (): InlineKeyboard =>
+      overrideScreen
+        ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl)
+        : new InlineKeyboard();
+
     if (handle.length > 0 && !NUMERIC_HANDLE.test(handle)) {
       const prefill = translator.t('help.contact_prefill', lang);
       const supportUrl = `https://t.me/${encodeURIComponent(handle)}?text=${encodeURIComponent(prefill)}`;
-      const kb = new InlineKeyboard().url(
-        translator.t('help.contact_button', lang),
-        supportUrl,
-      );
+      const kb = buildKeyboard();
+      if (hasCustomButtons) kb.row();
+      kb.url(translator.t('help.contact_button', lang), supportUrl);
       appendBackToMenuRow(kb, backLabel);
       const rendered = resolvePlaceholders(title, botCfg.botEmojis);
       await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
@@ -89,7 +98,8 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
           ? title
           : translator.t('support.not_configured', lang);
 
-    const kb = new InlineKeyboard().text(backLabel, 'menu:main');
+    const kb = buildKeyboard();
+    appendBackToMenuRow(kb, backLabel);
     const renderedFallback = resolvePlaceholders(fallbackBody, botCfg.botEmojis);
     await editOrReply(ctx, {
       text: renderedFallback.text,

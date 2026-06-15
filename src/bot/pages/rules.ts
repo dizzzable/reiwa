@@ -28,6 +28,7 @@ import { resolvePlaceholders } from '../../infrastructure/bot-config/emoji-utils
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
+  buildScreenKeyboard,
   findScreenByName,
 } from './screen-renderer.js';
 import type { PageRegistrar } from './types.js';
@@ -35,7 +36,7 @@ import type { PageRegistrar } from './types.js';
 const SCREEN_OVERRIDE_NAME = 'rules';
 
 export const registerRulesPage: PageRegistrar = (bot, deps) => {
-  const { adminClient, translator, userLocale, getConfig } = deps;
+  const { adminClient, translator, userLocale, getConfig, urls } = deps;
 
   bot.callbackQuery('rules', async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -61,17 +62,23 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
     // bots without the capability is handled by Telegram automatically.
     const rendered = resolvePlaceholders(text, botCfg.botEmojis);
 
+    // Operator's own custom buttons (if any) render FIRST; system buttons
+    // (rules URL + back) are appended below. Previously custom buttons were
+    // dropped whenever the rules screen added its system buttons.
+    const hasCustomButtons = (overrideScreen?.buttons.length ?? 0) > 0;
+    const kb = overrideScreen
+      ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl)
+      : new InlineKeyboard();
+
     if (link.length > 0) {
-      const kb = new InlineKeyboard().url(
-        translator.t('rules.open_button', lang),
-        link,
-      );
+      if (hasCustomButtons) kb.row();
+      kb.url(translator.t('rules.open_button', lang), link);
       appendBackToMenuRow(kb, backLabel);
       await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
       return;
     }
 
-    const kb = new InlineKeyboard().text(backLabel, 'menu:main');
+    appendBackToMenuRow(kb, backLabel);
     await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
   });
 };
