@@ -32,6 +32,7 @@ import {
   markChannelPassed,
 } from '../lib/channel-gate.js';
 import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl, attachSigninTokenToUrl } from '../widgets/main-keyboard.js';
+import { pickScreenText, buildScreenKeyboard } from './screen-renderer.js';
 import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial-button.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
@@ -99,6 +100,24 @@ async function buildWelcomeView(
   const lang = coerceLocale(deps.userLocale.getSync(tgUser?.id ?? 0));
   const botCfg = await deps.getConfig();
 
+  // Start-screen override: when the operator published a flow whose root
+  // ("Стартовый экран") screen has copy, it drives the /start greeting —
+  // replacing the static `visual.welcomeMessage`. Locale-aware via
+  // `pickScreenText` (EN copy for EN users, RU fallback otherwise). When no
+  // root screen exists, fall back to the welcome message, honouring its
+  // optional EN override (`bot.welcome_message@en`).
+  const rootScreen =
+    botCfg.screens?.find(
+      (s) => s.isRoot && (s.textRu.trim().length > 0 || s.textEn.trim().length > 0),
+    ) ?? null;
+  const welcomeTemplate = rootScreen
+    ? pickScreenText(rootScreen, lang)
+    : lang === 'en' &&
+        typeof botCfg.visual.welcomeMessageEn === 'string' &&
+        botCfg.visual.welcomeMessageEn.trim().length > 0
+      ? botCfg.visual.welcomeMessageEn
+      : botCfg.visual.welcomeMessage;
+
   const subscriptions =
     deps.adminClient !== null && tgUser !== undefined
       ? (((await deps.adminClient.subscription
@@ -111,7 +130,7 @@ async function buildWelcomeView(
       ? buildProfileSummary({
           firstName,
           subscriptions: [],
-          welcomeTemplate: botCfg.visual.welcomeMessage,
+          welcomeTemplate,
           botEmojis: botCfg.botEmojis,
           translator: deps.translator,
           lang,
@@ -119,7 +138,7 @@ async function buildWelcomeView(
       : buildProfileSummary({
           firstName,
           subscriptions,
-          welcomeTemplate: botCfg.visual.welcomeMessage,
+          welcomeTemplate,
           botEmojis: botCfg.botEmojis,
           translator: deps.translator,
           lang,
@@ -213,6 +232,25 @@ async function buildWelcomeView(
     signinToken,
     trialButton,
   });
+
+  // When the start-screen override defines its own buttons, render them
+  // ABOVE the standard main keyboard so operators can add custom CTAs
+  // without losing the cabinet / invite / trial menu below.
+  if (rootScreen !== null && rootScreen.buttons.length > 0) {
+    const screenKb = buildScreenKeyboard(
+      rootScreen,
+      lang,
+      deps.urls.publicWebUrl,
+      miniAppUrl,
+    );
+    if (screenKb.inline_keyboard.length > 0) {
+      const merged = new InlineKeyboard([
+        ...screenKb.inline_keyboard,
+        ...keyboard.inline_keyboard,
+      ]);
+      return { text: message.text, entities: message.entities, keyboard: merged };
+    }
+  }
 
   return { text: message.text, entities: message.entities, keyboard };
 }

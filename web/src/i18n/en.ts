@@ -411,6 +411,18 @@ export const en: RuDict = {
       error: 'Failed to send recovery request',
     },
   },
+  changePassword: {
+    title: 'Change password',
+    description: 'Enter the temporary password your administrator issued, then set a new one.',
+    currentPassword: 'Current password',
+    currentPasswordPlaceholder: 'Temporary password',
+    newPassword: 'New password',
+    newPasswordPlaceholder: 'At least 8 characters',
+    passwordLengthError: 'Password must be 8 to 128 characters',
+    submit: 'Change password',
+    success: 'Password changed. Welcome!',
+    errorGeneric: 'Could not change the password. Check your current password and try again.',
+  },
   nav: {
     home: 'Home',
     subscription: 'Subscription',

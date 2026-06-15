@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
+import { toast } from 'sonner'
 import { NetworkBg } from '@/components/ui/network-bg'
+import { ReiwaLogo } from '@/components/ui/reiwa-logo'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { hashPassword } from '@/lib/crypto'
 import { changePasswordAuth } from '@/lib/api-client'
+import { useBranding } from '@/lib/branding-provider'
 import { useAuthStore } from '@/stores/auth.store'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 
@@ -14,6 +17,7 @@ export default function ChangePasswordPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { branding } = useBranding()
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -43,7 +47,8 @@ export default function ChangePasswordPage() {
       // requiresPasswordChange flag (otherwise StealthLayout bounces back here).
       await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
 
-      // Redirect to dashboard on success
+      // Confirm success (the toast rides along to the dashboard) then redirect.
+      toast.success(t('changePassword.success'))
       navigate('/dashboard', { replace: true })
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'response' in err) {
@@ -68,16 +73,28 @@ export default function ChangePasswordPage() {
         className="relative z-10 w-full max-w-sm"
       >
         {/* Header */}
-        <div className="mb-8 text-center">
-          <div
-            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
-            style={{
-              background: 'radial-gradient(circle, rgba(244,63,94,0.3) 0%, transparent 70%)',
-              boxShadow: '0 0 40px rgba(244,63,94,0.3)',
-            }}
+        <div className="mb-8 flex flex-col items-center text-center">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            className="mb-5"
           >
-            <span className="text-3xl">🔑</span>
-          </div>
+            <div
+              className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 backdrop-blur-xl"
+              style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
+            >
+              {branding.logoUrl ? (
+                <img
+                  src={branding.logoUrl}
+                  alt={branding.brandName}
+                  className="h-11 w-11 rounded-xl object-contain"
+                />
+              ) : (
+                <ReiwaLogo className="h-11 w-11 text-(--brand-primary)" title={branding.brandName} />
+              )}
+            </div>
+          </motion.div>
           <h1 className="text-xl font-bold text-white">
             {t('changePassword.title')}
           </h1>

@@ -9,6 +9,13 @@ export type MenuTextEmojiIds = Record<string, string>
 
 export interface BotVisualConfig {
   welcomeMessage: string
+  /**
+   * Optional English welcome message (operator's `bot.welcome_message@en`
+   * override). When set and the user's locale is EN, the bot greets with
+   * this instead of `welcomeMessage`. `null`/absent → serve the base
+   * (RU) greeting to everyone.
+   */
+  welcomeMessageEn?: string | null
   botDescription: string
   supportUsername: string
   channelUsername: string

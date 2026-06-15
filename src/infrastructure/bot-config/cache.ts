@@ -147,6 +147,7 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   ],
   visual: {
     welcomeMessage: 'Привет, {{firstName}}! 👋\n\nДобро пожаловать в Rezeis VPN.',
+    welcomeMessageEn: null,
     botDescription: 'Быстрый и надёжный VPN',
     supportUsername: '',
     channelUsername: '',

@@ -84,7 +84,11 @@ export function createApp(deps: CreateAppDeps) {
           "connect-src": ["'self'", "https://telegram.org"],
           // The SDK is also pulled into the document; allow telegram.org as
           // a generic default-src source for any sub-resource it triggers.
-          "img-src": ["'self'", "data:", "https://telegram.org"],
+          // `https:` + `blob:` let operator-configured brand logos
+          // (`branding.logoUrl` / `cardLogoUrl`) load from any HTTPS host or
+          // a blob/data URI — otherwise external logos render as a broken
+          // image in the Mini App. Mirrors the rezeis-admin img-src policy.
+          "img-src": ["'self'", "data:", "blob:", "https:"],
         },
       },
       // Telegram embeds the Mini App in an iframe; the legacy

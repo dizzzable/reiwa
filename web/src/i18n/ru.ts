@@ -409,6 +409,18 @@ export const ru = {
       error: 'Не удалось отправить запрос на восстановление',
     },
   },
+  changePassword: {
+    title: 'Смена пароля',
+    description: 'Введите временный пароль, который выдал администратор, и задайте новый.',
+    currentPassword: 'Текущий пароль',
+    currentPasswordPlaceholder: 'Временный пароль',
+    newPassword: 'Новый пароль',
+    newPasswordPlaceholder: 'Минимум 8 символов',
+    passwordLengthError: 'Пароль должен содержать от 8 до 128 символов',
+    submit: 'Сменить пароль',
+    success: 'Пароль изменён. Добро пожаловать!',
+    errorGeneric: 'Не удалось сменить пароль. Проверьте текущий пароль и попробуйте снова.',
+  },
   nav: {
     home: 'Главная',
     subscription: 'Подписка',

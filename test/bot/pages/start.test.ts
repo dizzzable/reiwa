@@ -95,6 +95,83 @@ describe('registerStartPage', () => {
     expect(ctx.replyWithPhoto).not.toHaveBeenCalled();
   });
 
+  it('renders the isRoot screen copy as the welcome when a flow is published', async () => {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        screens: [
+          {
+            id: 's1',
+            shortId: 'root',
+            name: 'welcome',
+            textRu: 'Кастомный старт {{firstName}}',
+            textEn: 'Custom start {{firstName}}',
+            parseMode: 'plain',
+            mediaType: null,
+            mediaFileId: null,
+            mediaUrl: null,
+            isRoot: true,
+            buttons: [],
+          },
+        ],
+        screensVersion: 'v1',
+      },
+    });
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+    const ctx = buildStartCtx();
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(ctx.reply.mock.calls[0][0]).toContain('Кастомный старт');
+  });
+
+  it('prepends the isRoot screen custom buttons above the main keyboard', async () => {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        screens: [
+          {
+            id: 's1',
+            shortId: 'root',
+            name: 'welcome',
+            textRu: 'Старт',
+            textEn: '',
+            parseMode: 'plain',
+            mediaType: null,
+            mediaFileId: null,
+            mediaUrl: null,
+            isRoot: true,
+            buttons: [
+              {
+                id: 'b1',
+                labelRu: 'Канал',
+                labelEn: 'Channel',
+                row: 0,
+                col: 0,
+                action: 'url',
+                targetShortId: null,
+                url: 'https://example.com',
+                webAppUrl: null,
+                callbackAction: null,
+                style: 'default',
+                iconCustomEmojiId: null,
+              },
+            ],
+          },
+        ],
+        screensVersion: 'v1',
+      },
+    });
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+    const ctx = buildStartCtx();
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    const opts = ctx.reply.mock.calls[0][1] as {
+      reply_markup: { inline_keyboard: Array<Array<{ url?: string }>> };
+    };
+    expect(opts.reply_markup.inline_keyboard[0][0].url).toBe('https://example.com');
+  });
+
   it('adopts the admin-supplied locale into the user locale cache', async () => {
     const adminClient = buildAdmin({ bootstrap: { language: 'en' } });
     const bot = buildFakeBot();
