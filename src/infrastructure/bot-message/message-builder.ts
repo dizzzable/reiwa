@@ -17,6 +17,7 @@ import {
   lineWithEmoji,
   resolvePlaceholders,
   resolveUnicode,
+  applyCustomEmojiTokens,
 } from "../bot-config/emoji-utils.js";
 import type { TranslatorPort } from "../../application/ports/translator.port.js";
 import type { SupportedLocale } from "../../core/enums/locale.enum.js";
@@ -28,6 +29,12 @@ export interface ProfileSummaryParams {
   subscriptions: readonly Subscription[];
   welcomeTemplate: string;
   botEmojis?: BotEmojiMap | null;
+  /**
+   * Operator custom-emoji library (`:slug:` → id/fallback). When present,
+   * `:slug:` tokens in the welcome copy render as the fallback glyph plus a
+   * premium custom-emoji entity (when an id is configured).
+   */
+  customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null;
   translator: TranslatorPort;
   lang: SupportedLocale;
 }
@@ -127,7 +134,7 @@ export function buildProfileSummary(params: ProfileSummaryParams): {
   text: string;
   entities: TgCustomEmojiEntity[];
 } {
-  const { firstName, subscriptions, welcomeTemplate, botEmojis, translator, lang } =
+  const { firstName, subscriptions, welcomeTemplate, botEmojis, customEmojis, translator, lang } =
     params;
 
   const withName = welcomeTemplate.replace(/\{\{firstName\}\}/g, firstName);
@@ -135,7 +142,7 @@ export function buildProfileSummary(params: ProfileSummaryParams): {
 
   const visible = subscriptions.filter((s) => s.status !== "DELETED");
   if (visible.length === 0) {
-    return welcomePart;
+    return applyCustomEmojiTokens(welcomePart.text, welcomePart.entities, customEmojis);
   }
 
   const lines: Array<{ text: string; entities: TgCustomEmojiEntity[] }> = [
@@ -169,5 +176,6 @@ export function buildProfileSummary(params: ProfileSummaryParams): {
     );
   }
 
-  return joinLines(lines);
+  const joined = joinLines(lines);
+  return applyCustomEmojiTokens(joined.text, joined.entities, customEmojis);
 }

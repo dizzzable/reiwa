@@ -164,6 +164,76 @@ export function resolvePlaceholders(
 }
 
 /**
+ * Replace `:slug:` custom-emoji tokens in an already-rendered (text, entities)
+ * pair with the operator's fallback glyph, attaching a Telegram custom-emoji
+ * entity when a `custom_emoji_id` is configured (premium render).
+ *
+ * Runs as a post-pass over the FINAL message so existing entities (premium
+ * `{{KEY}}` glyphs, mini-profile icons) are re-based correctly: every token
+ * replacement shifts later offsets by `glyphLen - tokenLen`. Tokens whose slug
+ * is unknown are left untouched (operators may use `:foo:` literally).
+ */
+export function applyCustomEmojiTokens(
+  text: string,
+  entities: readonly TgCustomEmojiEntity[],
+  customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null,
+): { text: string; entities: TgCustomEmojiEntity[] } {
+  if (!customEmojis) return { text, entities: [...entities] };
+
+  const re = /:([a-z0-9_]+):/g;
+  interface Replacement {
+    readonly start: number;
+    readonly end: number;
+    readonly carrier: string;
+    readonly id: string | null;
+  }
+  const reps: Replacement[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const entry = customEmojis[match[1]];
+    if (entry === undefined) continue;
+    const fallback = entry.fallback?.trim() ?? '';
+    // Need a visible carrier glyph to host a premium entity; fall back to a
+    // neutral star when an id exists but no fallback glyph was provided.
+    const carrier = fallback.length > 0 ? fallback : entry.id ? '⭐' : '';
+    if (carrier.length === 0 && !entry.id) continue;
+    reps.push({ start: match.index, end: match.index + match[0].length, carrier, id: entry.id });
+  }
+  if (reps.length === 0) return { text, entities: [...entities] };
+
+  let result = '';
+  let lastIndex = 0;
+  const newEntities: TgCustomEmojiEntity[] = [];
+  for (const rep of reps) {
+    result += text.slice(lastIndex, rep.start);
+    const offset = utf16Length(result);
+    result += rep.carrier;
+    if (rep.id) {
+      newEntities.push({
+        type: 'custom_emoji',
+        offset,
+        length: utf16Length(rep.carrier),
+        custom_emoji_id: rep.id,
+      });
+    }
+    lastIndex = rep.end;
+  }
+  result += text.slice(lastIndex);
+
+  // Re-base pre-existing entities by the net length change of every token
+  // replacement that ends at or before the entity's original offset.
+  for (const e of entities) {
+    let delta = 0;
+    for (const rep of reps) {
+      if (rep.end <= e.offset) delta += utf16Length(rep.carrier) - (rep.end - rep.start);
+    }
+    newEntities.push({ ...e, offset: e.offset + delta });
+  }
+
+  return { text: result, entities: newEntities };
+}
+
+/**
  * Join an array of { text, entities } lines into a single message.
  * Adjusts entity offsets as lines are concatenated with '\n' separators.
  */

@@ -132,6 +132,7 @@ async function buildWelcomeView(
           subscriptions: [],
           welcomeTemplate,
           botEmojis: botCfg.botEmojis,
+          customEmojis: botCfg.customEmojis,
           translator: deps.translator,
           lang,
         })
@@ -140,6 +141,7 @@ async function buildWelcomeView(
           subscriptions,
           welcomeTemplate,
           botEmojis: botCfg.botEmojis,
+          customEmojis: botCfg.customEmojis,
           translator: deps.translator,
           lang,
         });

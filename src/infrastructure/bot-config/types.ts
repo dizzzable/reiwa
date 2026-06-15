@@ -85,6 +85,14 @@ export interface BotConfig {
    */
   translations?: Record<string, string>
   /**
+   * Operator custom-emoji library projected for bot copy: `:slug:` →
+   * `{ id, fallback }`. `id` is the Telegram `custom_emoji_id` (premium
+   * render); `fallback` is the unicode glyph shown otherwise. reiwa replaces
+   * `:slug:` tokens in the welcome greeting with the fallback glyph plus a
+   * custom-emoji entity when `id` is present. Optional/additive.
+   */
+  customEmojis?: Record<string, { id: string | null; fallback: string | null }>
+  /**
    * Operator-managed dynamic screens projected from the BotFlow graph
    * (rezeis-admin). When a published flow exists, the screens listed
    * here override reiwa's built-in sub-menus (help / rules / invite),

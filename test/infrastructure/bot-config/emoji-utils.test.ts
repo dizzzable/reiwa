@@ -25,6 +25,7 @@ import {
   resolvePlaceholders,
   resolveUnicode,
   utf16Length,
+  applyCustomEmojiTokens,
 } from '../../../src/infrastructure/bot-config/emoji-utils.js';
 
 describe('firstCharLengthUtf16', () => {
@@ -194,3 +195,51 @@ describe('joinLines', () => {
     });
   });
 });
+
+describe('applyCustomEmojiTokens', () => {
+  const map = {
+    news_emoji_5: { id: '5333', fallback: '📰' },
+    plain_glyph: { id: null, fallback: '🔥' },
+    no_render: { id: null, fallback: null },
+  };
+
+  it('returns the input unchanged when no custom-emoji map is provided', () => {
+    const out = applyCustomEmojiTokens(':news_emoji_5: hi', [], null);
+    expect(out.text).toBe(':news_emoji_5: hi');
+    expect(out.entities).toEqual([]);
+  });
+
+  it('replaces a :slug: token with its fallback glyph + a premium entity', () => {
+    const out = applyCustomEmojiTokens(':news_emoji_5: Привет', [], map);
+    expect(out.text).toBe('📰 Привет');
+    expect(out.entities).toEqual([
+      { type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: '5333' },
+    ]);
+  });
+
+  it('renders the fallback glyph without an entity when no id is configured', () => {
+    const out = applyCustomEmojiTokens('a :plain_glyph: b', [], map);
+    expect(out.text).toBe('a 🔥 b');
+    expect(out.entities).toEqual([]);
+  });
+
+  it('leaves unknown / unrenderable tokens untouched', () => {
+    const out = applyCustomEmojiTokens(':unknown: :no_render:', [], map);
+    expect(out.text).toBe(':unknown: :no_render:');
+  });
+
+  it('re-bases pre-existing entities after the replacement point', () => {
+    // ":news_emoji_5:" is 14 UTF-16 units; "📰" is 2 → net -12 shift for
+    // entities that sit after the token.
+    const text = ':news_emoji_5: 👤';
+    const profileOffset = utf16Length(':news_emoji_5: ');
+    const existing = [
+      { type: 'custom_emoji' as const, offset: profileOffset, length: 2, custom_emoji_id: '999' },
+    ];
+    const out = applyCustomEmojiTokens(text, existing, map);
+    expect(out.text).toBe('📰 👤');
+    const profile = out.entities.find((e) => e.custom_emoji_id === '999');
+    expect(profile?.offset).toBe(utf16Length('📰 '));
+    expect(out.entities.some((e) => e.custom_emoji_id === '5333')).toBe(true);
+  });
+})
