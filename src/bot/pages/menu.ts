@@ -27,6 +27,7 @@ import {
 } from '../lib/channel-gate.js';
 
 import { coerceLocale } from './coerce-locale.js';
+import { sendWelcomeScreen } from './start.js';
 import type { PageDeps, PageRegistrar } from './types.js';
 
 /**
@@ -97,9 +98,11 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
   });
 
   bot.callbackQuery('check_channel', async (ctx) => {
-    await ctx.answerCallbackQuery();
     const tgUser = ctx.from;
-    if (tgUser === undefined) return;
+    if (tgUser === undefined) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
     const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
 
     try {
@@ -110,6 +113,7 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
         const chatId = resolveChannelChatId(policy);
         const member = await ctx.api.getChatMember(chatId as string | number, tgUser.id);
         if (!isSubscribedStatus(member.status)) {
+          await ctx.answerCallbackQuery();
           await ctx.reply(deps.translator.t('channel.not_subscribed', lang));
           return;
         }
@@ -120,24 +124,11 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       // 502s; locking the user out on a transient probe is the wrong call.
     }
 
-    // Channel check passed — show main menu.
-    const botCfg = await deps.getConfig();
-    const miniAppUrl =
-      botCfg.features.miniAppEnabled && deps.urls.miniAppUrl !== null
-        ? deps.urls.miniAppUrl
-        : null;
-    const signinToken = await issueSigninToken(deps.adminClient, tgUser.id, deps.logger);
-    const keyboard = buildMainKeyboard({
-      buttons: botCfg.buttons,
-      miniAppUrl,
-      publicWebUrl: deps.urls.publicWebUrl,
-      lang,
-      translator: deps.translator,
-      supportUrl: resolveSupportUrlForMenu(deps, botCfg.visual.supportUsername, lang),
-      signinToken,
-    });
-    await ctx.reply(deps.translator.t('channel.verified', lang), {
-      reply_markup: keyboard,
-    });
+    // Channel check passed — confirm via toast and render the FULL welcome
+    // screen (banner + greeting + keyboard), identical to /start. Previously
+    // this sent a bare keyboard with no banner, so users had to re-/start to
+    // see the branded welcome.
+    await ctx.answerCallbackQuery({ text: deps.translator.t('channel.verified', lang) });
+    await sendWelcomeScreen(ctx, deps);
   });
 };

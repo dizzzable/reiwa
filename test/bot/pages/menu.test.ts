@@ -14,6 +14,7 @@ interface FakeApiCtx {
     getChatMember: ReturnType<typeof vi.fn>;
   };
   reply: ReturnType<typeof vi.fn>;
+  replyWithPhoto: ReturnType<typeof vi.fn>;
   answerCallbackQuery: ReturnType<typeof vi.fn>;
 }
 
@@ -22,6 +23,7 @@ function buildApiCtx(getChatMember: ReturnType<typeof vi.fn>): FakeApiCtx {
     from: { id: 1 },
     api: { getChatMember },
     reply: vi.fn().mockResolvedValue(undefined),
+    replyWithPhoto: vi.fn().mockResolvedValue(undefined),
     answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -53,7 +55,7 @@ describe('registerMenuPage', () => {
     expect(ctx.reply.mock.calls[0][0]).toBe('ru:menu.choose_action');
   });
 
-  it('check_channel renders channel.verified when no policy is configured', async () => {
+  it('check_channel confirms via toast + renders the welcome when no policy is configured', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();
     registerMenuPage(bot as unknown as Parameters<typeof registerMenuPage>[0], deps);
@@ -62,7 +64,9 @@ describe('registerMenuPage', () => {
     const ctx = buildApiCtx(getChatMember);
     await handler(ctx as unknown as BotContext);
     expect(getChatMember).not.toHaveBeenCalled();
-    expect(ctx.reply.mock.calls.at(-1)?.[0]).toBe('ru:channel.verified');
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: 'ru:channel.verified' });
+    // Full welcome rendered (banner store absent in tests → plain reply).
+    expect(ctx.reply).toHaveBeenCalled();
   });
 
   it('check_channel rejects users who are not subscribed', async () => {
@@ -106,7 +110,8 @@ describe('registerMenuPage', () => {
     const getChatMember = vi.fn().mockResolvedValue({ status: 'member' });
     const ctx = buildApiCtx(getChatMember);
     await handler(ctx as unknown as BotContext);
-    expect(ctx.reply.mock.calls.at(-1)?.[0]).toBe('ru:channel.verified');
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: 'ru:channel.verified' });
+    expect(ctx.reply).toHaveBeenCalled();
   });
 
   it('check_channel falls through (lets user in) when getChatMember throws', async () => {
@@ -127,7 +132,8 @@ describe('registerMenuPage', () => {
     const getChatMember = vi.fn().mockRejectedValue(new Error('502'));
     const ctx = buildApiCtx(getChatMember);
     await handler(ctx as unknown as BotContext);
-    expect(ctx.reply.mock.calls.at(-1)?.[0]).toBe('ru:channel.verified');
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: 'ru:channel.verified' });
+    expect(ctx.reply).toHaveBeenCalled();
   });
 
   // Suppress unused config import warning.

@@ -2,6 +2,9 @@ import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
+import { createOptionalSessionMiddleware } from "../middleware/session.js";
+import type { AuthRequest } from "../middleware/session.js";
+import { resolveUserIdentity, hasUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
 
 export function createPlansRouter(deps: {
@@ -9,13 +12,18 @@ export function createPlansRouter(deps: {
   sessionStore: SessionStore | null;
   config: ReiwaConfig;
 }) {
-  const { adminClient } = deps;
+  const { adminClient, sessionStore } = deps;
   const router = Router();
+  // Optional session: a logged-in caller's identity is forwarded so the
+  // catalog is resolved per context (paid trials + NEW/EXISTING/INVITED
+  // plans appear). Logged-out callers still get the anonymous catalog.
+  const optionalSession = createOptionalSessionMiddleware(sessionStore);
 
   // GET /api/v1/plans
-  router.get("/plans", async (req, res) => {
+  router.get("/plans", optionalSession, async (req: AuthRequest, res) => {
     try {
-      const plans = await adminClient?.catalog.getPublicPlans();
+      const identity = hasUserIdentity(req) ? resolveUserIdentity(req) : undefined;
+      const plans = await adminClient?.catalog.getPublicPlans(identity);
       res.json(plans ?? []);
     } catch (e: unknown) {
       sendSafeError(req, res, e, 500, "Failed to load plans", "plans");

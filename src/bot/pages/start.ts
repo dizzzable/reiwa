@@ -118,12 +118,19 @@ async function buildWelcomeView(
       ? botCfg.visual.welcomeMessageEn
       : botCfg.visual.welcomeMessage;
 
-  const subscriptions =
-    deps.adminClient !== null && tgUser !== undefined
-      ? (((await deps.adminClient.subscription
-          .getAll({ telegramId: String(tgUser.id) })
-          .catch(() => null)) as { subscriptions?: Subscription[] } | null)?.subscriptions ?? [])
-      : [];
+  const subscriptions = await (async (): Promise<readonly Subscription[]> => {
+    if (deps.adminClient === null || tgUser === undefined) return [];
+    try {
+      const res = (await deps.adminClient.subscription.getAll({
+        telegramId: String(tgUser.id),
+      })) as { subscriptions?: Subscription[] } | null;
+      return res?.subscriptions ?? [];
+    } catch {
+      // Best-effort: a probe failure (or an admin client without the
+      // subscription namespace) must not break the welcome render.
+      return [];
+    }
+  })();
 
   const message =
     botCfg.visual.subscriptionInfoFormat === 'minimal'
@@ -199,7 +206,9 @@ async function buildWelcomeView(
       let paidTrialPriceLabel: string | null = null;
       if (eligibility?.reason === 'TRIAL_REQUIRES_PAYMENT') {
         try {
-          const plans = (await deps.adminClient.catalog.getPublicPlans()) as
+          const plans = (await deps.adminClient.catalog.getPublicPlans({
+            telegramId: String(tgUser.id),
+          })) as
             | CatalogPlanShape[]
             | null;
           paidTrialPriceLabel = extractTrialPriceLabel(plans ?? []);
@@ -255,6 +264,75 @@ async function buildWelcomeView(
   }
 
   return { text: message.text, entities: message.entities, keyboard };
+}
+
+/**
+ * Send the full welcome screen (banner + greeting caption + main keyboard),
+ * exactly as the `/start` cold path does. Shared so warm entry points (e.g.
+ * the post-channel-subscription `check_channel` callback) render an identical
+ * screen instead of a bare keyboard with no banner. Banner is best-effort:
+ * operator banner → bundled default → plain-text reply.
+ */
+export async function sendWelcomeScreen(ctx: BotContext, deps: PageDeps): Promise<void> {
+  const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+  const botCfg = await deps.getConfig();
+  const view = await buildWelcomeView(ctx, deps);
+
+  if (typeof botCfg.visual.bannerUrl === 'string' && botCfg.visual.bannerUrl.length > 0) {
+    const photoSource = await resolveBannerSource(botCfg.visual.bannerUrl, {
+      rezeisAdminUrl: deps.urls.rezeisAdminUrl,
+      logger: deps.logger
+        ? {
+            warn: (obj, msg) => {
+              deps.logger?.warn(obj as Record<string, unknown>, msg);
+            },
+          }
+        : undefined,
+    });
+    if (photoSource !== null) {
+      try {
+        await ctx.replyWithPhoto(photoSource, {
+          caption: view.text,
+          caption_entities: view.entities.length > 0 ? [...view.entities] : undefined,
+          reply_markup: view.keyboard,
+        });
+        return;
+      } catch (err: unknown) {
+        deps.logger?.warn(
+          { err, bannerUrl: botCfg.visual.bannerUrl },
+          'bot/start banner send failed',
+        );
+      }
+    }
+  } else if (deps.bannerStore !== undefined) {
+    try {
+      const banner = await deps.bannerStore.resolve('default', lang);
+      if (banner !== null) {
+        if (banner.kind === 'url') {
+          await ctx.replyWithPhoto(banner.url, {
+            caption: view.text,
+            caption_entities: view.entities.length > 0 ? [...view.entities] : undefined,
+            reply_markup: view.keyboard,
+          });
+        } else {
+          const { InputFile } = await import('grammy');
+          await ctx.replyWithPhoto(new InputFile(banner.path), {
+            caption: view.text,
+            caption_entities: view.entities.length > 0 ? [...view.entities] : undefined,
+            reply_markup: view.keyboard,
+          });
+        }
+        return;
+      }
+    } catch (err: unknown) {
+      deps.logger?.warn({ err }, 'bot/start banner-store send failed');
+    }
+  }
+
+  await ctx.reply(view.text, {
+    entities: view.entities.length > 0 ? [...view.entities] : undefined,
+    reply_markup: view.keyboard,
+  });
 }
 
 export const registerStartPage: PageRegistrar = (bot, deps) => {
@@ -452,78 +530,9 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       }
     }
 
-    // Phase 3: render welcome. Banner is best-effort.
-    const view = await buildWelcomeView(ctx, deps);
-
-    if (
-      typeof botCfg.visual.bannerUrl === 'string' &&
-      botCfg.visual.bannerUrl.length > 0
-    ) {
-      // Resolve operator-managed banner reference to a sendable
-      // photo source. Internal `/uploads/...` URLs are downloaded
-      // by reiwa-bot and uploaded to Telegram as multipart, so they
-      // don't need to be publicly reachable. Public URLs / file_ids
-      // are forwarded verbatim.
-      const photoSource = await resolveBannerSource(botCfg.visual.bannerUrl, {
-        rezeisAdminUrl: deps.urls.rezeisAdminUrl,
-        logger: deps.logger
-          ? {
-              warn: (obj, msg) => {
-                deps.logger?.warn(obj as Record<string, unknown>, msg);
-              },
-            }
-          : undefined,
-      });
-      if (photoSource !== null) {
-        try {
-          await ctx.replyWithPhoto(photoSource, {
-            caption: view.text,
-            caption_entities:
-              view.entities.length > 0 ? [...view.entities] : undefined,
-            reply_markup: view.keyboard,
-          });
-          return;
-        } catch (err: unknown) {
-          deps.logger?.warn(
-            { err, bannerUrl: botCfg.visual.bannerUrl },
-            'bot/start banner send failed',
-          );
-          // Fall through — emit a plain reply so the user still gets the menu.
-        }
-      }
-    } else if (deps.bannerStore !== undefined) {
-      try {
-        const banner = await deps.bannerStore.resolve('default', lang);
-        if (banner !== null) {
-          if (banner.kind === 'url') {
-            await ctx.replyWithPhoto(banner.url, {
-              caption: view.text,
-              caption_entities:
-                view.entities.length > 0 ? [...view.entities] : undefined,
-              reply_markup: view.keyboard,
-            });
-          } else {
-            const { InputFile } = await import('grammy');
-            await ctx.replyWithPhoto(new InputFile(banner.path), {
-              caption: view.text,
-              caption_entities:
-                view.entities.length > 0 ? [...view.entities] : undefined,
-              reply_markup: view.keyboard,
-            });
-          }
-          return;
-        }
-      } catch (err: unknown) {
-        deps.logger?.warn({ err }, 'bot/start banner-store send failed');
-      }
-    }
-
-    // No banner available — plain text reply.
-    await ctx.reply(view.text, {
-      entities:
-        view.entities.length > 0 ? [...view.entities] : undefined,
-      reply_markup: view.keyboard,
-    });
+    // Phase 3: render the welcome screen (banner + greeting + keyboard).
+    // Best-effort banner; shared with the post-channel-subscription path.
+    await sendWelcomeScreen(ctx, deps);
   });
 
   // ── menu:main callback — warm path, in-place edit ─────────────────────────
