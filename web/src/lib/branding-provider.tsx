@@ -61,7 +61,7 @@ const LOCALE_STORAGE_KEY = "reiwa_locale";
 export function BrandingProvider({ children }: PropsWithChildren) {
   const { i18n } = useTranslation();
 
-  const { data, isLoading } = useQuery<PublicConfig>({
+  const { data, isLoading, refetch } = useQuery<PublicConfig>({
     queryKey: ["public-config"],
     queryFn: getReiwaPublicConfig,
     staleTime: 5 * 60_000,
@@ -70,6 +70,24 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     refetchOnWindowFocus: false,
     placeholderData: DEFAULT_PUBLIC_CONFIG,
   });
+
+  // Refetch branding when the tab / Mini App regains visibility so an open
+  // session picks up operator theme edits without a manual reload. Throttled
+  // so rapid tab switches don't hammer the endpoint (the server-side cache
+  // makes each call cheap regardless).
+  useEffect(() => {
+    let lastRefetch = 0;
+    const THROTTLE_MS = 15_000;
+    const onVisible = (): void => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastRefetch < THROTTLE_MS) return;
+      lastRefetch = now;
+      void refetch();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refetch]);
 
   const config = data ?? DEFAULT_PUBLIC_CONFIG;
 

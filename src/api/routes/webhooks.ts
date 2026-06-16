@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 
 import type { ReiwaConfig } from "../../config.js";
 import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
+import { resetBrandingCache } from "./branding.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { verifyWebhookSignature } from "../../lib/webhook-signature.js";
@@ -114,6 +115,12 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // refetches the current accessMode immediately.  No relay
           // to the bot — the bot reads through the same cache.
           getPolicyCache((req.app.locals['adminClient'] ?? null) as AdminClient | null).invalidate();
+          break;
+        }
+        case "reiwa.branding.invalidate": {
+          // Drop the cached public-config so the cabinet picks up the new
+          // theme on its next load instead of waiting for the HTTP TTL.
+          resetBrandingCache();
           break;
         }
         default:

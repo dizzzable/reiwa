@@ -69,13 +69,14 @@ class EffectErrorBoundary extends Component<{ children: ReactNode; resetKey: str
 export function CardEffectLayer({ effect, props, opacity = 1, className, active }: CardEffectLayerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
+  const [faded, setFaded] = useState(false);
 
-  // Mount the effect while the card is on screen. In the carousel the parent
-  // also passes `active` for the current card + its immediate neighbours, so
-  // they stay mounted (pre-warmed) even while clipped off-screen by the
-  // horizontal scroll track — the swipe-in then shows the live background
-  // instantly instead of "popping" after WebGL init. Far-away / page-scrolled
-  // cards (active falsy AND off-screen) stay unmounted to pause GPU work.
+  // Mount the effect while the card is on screen (standalone usage). In the
+  // carousel the parent passes an explicit `active` boolean: in that mode it
+  // drives mounting EXCLUSIVELY (ignore the IntersectionObserver) so that at
+  // most ONE card holds a live WebGL context at a time — mobile browsers cap
+  // contexts at ~8 and the "oldest context will be lost" thrash is exactly the
+  // flicker/under-load users see with several subscriptions.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -87,7 +88,19 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
     return () => io.disconnect();
   }, []);
 
-  const shouldMount = visible || active === true;
+  const shouldMount = active === undefined ? visible : active;
+
+  // Fade the effect in over the always-present static gradient base so it
+  // appears smoothly instead of popping after WebGL init. Reset when unmounted
+  // so a remount fades again.
+  useEffect(() => {
+    if (!shouldMount) {
+      setFaded(false);
+      return;
+    }
+    const id = requestAnimationFrame(() => setFaded(true));
+    return () => cancelAnimationFrame(id);
+  }, [shouldMount]);
 
   const isValid = effect !== "NONE" && effect in CARD_EFFECT_COMPONENTS;
   if (!isValid) return null;
@@ -101,7 +114,10 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
       ref={ref}
       aria-hidden
       className={className}
-      style={{ opacity: Math.min(Math.max(opacity, 0.05), 1) }}
+      style={{
+        opacity: faded ? Math.min(Math.max(opacity, 0.05), 1) : 0,
+        transition: "opacity 450ms ease",
+      }}
     >
       {shouldMount && (
         <EffectErrorBoundary resetKey={id}>

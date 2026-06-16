@@ -21,6 +21,7 @@
  */
 import type { LocalePackHydrator } from '../../application/ports/translator.port.js';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
+import type { ConfigPersistencePort } from '../../application/ports/config-persistence.port.js';
 
 import type { BotConfig } from './types.js';
 
@@ -39,6 +40,14 @@ export interface BotConfigCacheOptions {
   readonly fallback: BotConfig;
   readonly ttlMs?: number;
   readonly logger?: LoggerPort;
+  /**
+   * Optional durable last-known-good store (Workstream 4). When present:
+   *   - every successful fetch is persisted (fire-and-forget)
+   *   - a cold-start fetch failure seeds the returned config from the
+   *     store instead of the hardcoded `fallback`
+   * Omitted (tests / no Redis) → behaves exactly as before.
+   */
+  readonly persistence?: ConfigPersistencePort;
 }
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
@@ -54,6 +63,7 @@ export class BotConfigCache {
   private readonly fallback: BotConfig;
   private readonly ttlMs: number;
   private readonly logger: LoggerPort | undefined;
+  private readonly persistence: ConfigPersistencePort | undefined;
   private entry: CacheEntry | null = null;
 
   constructor(options: BotConfigCacheOptions) {
@@ -62,6 +72,7 @@ export class BotConfigCache {
     this.fallback = options.fallback;
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
     this.logger = options.logger;
+    this.persistence = options.persistence;
   }
 
   /**
@@ -92,19 +103,87 @@ export class BotConfigCache {
           'BotConfigCache: hydrator.setOverrides threw',
         );
       }
+      // Persist the fresh snapshot as last-known-good (fire-and-forget).
+      // A store outage must not slow down or fail the hot path.
+      void this.persistence?.save(raw).catch((err: unknown) => {
+        this.logger?.warn({ err }, 'BotConfigCache: persistence.save threw');
+      });
       return this.entry.data;
     } catch (err: unknown) {
       this.logger?.warn(
         { err },
         'BotConfigCache: refresh failed; serving stale or fallback',
       );
-      return this.entry?.data ?? this.fallback;
+      if (this.entry !== null) return this.entry.data;
+      // Cold start with a failed upstream fetch: prefer the persisted
+      // last-known-good config (correct branding + banner) over the
+      // hardcoded default. We intentionally do NOT set `entry`, so the
+      // cache keeps retrying the fetcher until upstream recovers.
+      const persisted = await this.loadPersisted();
+      if (persisted !== null) return persisted;
+      return this.fallback;
+    }
+  }
+
+  /**
+   * Best-effort read of the durable last-known-good snapshot, hydrating
+   * the translator from it so localized copy survives a cold start too.
+   * Returns `null` when no store is configured, the store is empty, or
+   * the load fails.
+   */
+  private async loadPersisted(): Promise<BotConfig | null> {
+    if (this.persistence === undefined) return null;
+    try {
+      const persisted = await this.persistence.load();
+      if (persisted === null) return null;
+      try {
+        this.hydrator.setOverrides(
+          (persisted as RawBotConfig).translations,
+        );
+      } catch {
+        // ignore hydrator failure — the config itself is still usable
+      }
+      this.logger?.info(
+        {},
+        'BotConfigCache: seeded from persisted last-known-good config',
+      );
+      return persisted;
+    } catch (err: unknown) {
+      this.logger?.warn({ err }, 'BotConfigCache: persistence.load threw');
+      return null;
     }
   }
 
   /** Test seam — drop the cached entry so the next `get()` re-fetches. */
   reset(): void {
     this.entry = null;
+  }
+
+  /**
+   * Stamp a Telegram-resolved banner `file_id` into the live config
+   * snapshot and re-persist it, so a custom banner survives a reboot and
+   * can be re-sent via `file_id` without re-downloading from rezeis
+   * (Workstream 4). Best-effort and a no-op unless the current snapshot's
+   * `bannerUrl` matches the supplied `bannerUrl` (guards against stamping
+   * a stale id after the operator swaps the banner). Mutates a shallow
+   * copy so the cached reference identity changes for downstream readers.
+   */
+  stampBannerFileId(bannerUrl: string, fileId: string): void {
+    const current = this.entry?.data;
+    if (current === undefined) return;
+    if (current.visual.bannerUrl !== bannerUrl) return;
+    if (current.visual.bannerFileId === fileId) return;
+    const next: BotConfig = {
+      ...current,
+      visual: { ...current.visual, bannerFileId: fileId },
+    };
+    this.entry = { data: next, fetchedAt: this.entry?.fetchedAt ?? Date.now() };
+    void this.persistence?.save(next).catch((err: unknown) => {
+      this.logger?.warn(
+        { err },
+        'BotConfigCache: persistence.save (banner stamp) threw',
+      );
+    });
   }
 
   /**

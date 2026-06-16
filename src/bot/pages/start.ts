@@ -153,6 +153,16 @@ async function buildWelcomeView(
           lang,
         });
 
+  // A suppressed greeting (operator hid `bot.welcome_message`) can leave the
+  // message empty when the user has no subscriptions. Telegram rejects empty
+  // text, so fall back to a neutral "choose an action" line — NOT the welcome
+  // default (that would defeat the operator's intent to hide the greeting).
+  const safeText =
+    message.text.trim().length > 0
+      ? message.text
+      : deps.translator.t('menu.choose_action', lang);
+  const safeEntities = message.text.trim().length > 0 ? message.entities : [];
+
   const miniAppUrl =
     botCfg.features.miniAppEnabled && deps.urls.miniAppUrl !== null
       ? deps.urls.miniAppUrl
@@ -259,11 +269,35 @@ async function buildWelcomeView(
         ...screenKb.inline_keyboard,
         ...keyboard.inline_keyboard,
       ]);
-      return { text: message.text, entities: message.entities, keyboard: merged };
+      return { text: safeText, entities: safeEntities, keyboard: merged };
     }
   }
 
-  return { text: message.text, entities: message.entities, keyboard };
+  return { text: safeText, entities: safeEntities, keyboard };
+}
+
+/**
+ * In-memory cache of the Telegram `file_id` for the operator banner, keyed by
+ * its configured URL. The first send uploads the banner (downloading the bytes
+ * from rezeis for `/uploads/...` URLs) and Telegram returns a reusable
+ * `file_id`; every subsequent /start reuses it — no re-download, no re-upload
+ * to Telegram, and no per-request dependency on rezeis. Eliminates the visible
+ * "banner under-loads / re-uploads each time" lag. Dropped for a URL when a
+ * send with the cached id fails (stale id), so the next /start re-uploads.
+ */
+const bannerFileIdCache = new Map<string, string>();
+
+function rememberBannerFileId(url: string, sent: unknown): string | undefined {
+  const photo = (sent as { photo?: Array<{ file_id?: string }> } | undefined)?.photo;
+  const fileId =
+    Array.isArray(photo) && photo.length > 0 ? photo[photo.length - 1]?.file_id : undefined;
+  if (typeof fileId === 'string' && fileId.length > 0) {
+    // Bound the cache — operators have one or two banners; clear if it grows.
+    if (bannerFileIdCache.size > 16) bannerFileIdCache.clear();
+    bannerFileIdCache.set(url, fileId);
+    return fileId;
+  }
+  return undefined;
 }
 
 /**
@@ -279,27 +313,51 @@ export async function sendWelcomeScreen(ctx: BotContext, deps: PageDeps): Promis
   const view = await buildWelcomeView(ctx, deps);
 
   if (typeof botCfg.visual.bannerUrl === 'string' && botCfg.visual.bannerUrl.length > 0) {
-    const photoSource = await resolveBannerSource(botCfg.visual.bannerUrl, {
-      rezeisAdminUrl: deps.urls.rezeisAdminUrl,
-      logger: deps.logger
-        ? {
-            warn: (obj, msg) => {
-              deps.logger?.warn(obj as Record<string, unknown>, msg);
-            },
-          }
-        : undefined,
-    });
+    const bannerUrl = botCfg.visual.bannerUrl;
+    // Reuse the cached Telegram file_id when we have one (instant, no fetch).
+    // On a cold start the in-memory map is empty, so fall back to the
+    // file_id persisted in the last-known-good snapshot (Workstream 4) —
+    // a custom banner then re-sends instantly even before the first
+    // upstream config fetch lands.
+    const persistedFileId =
+      typeof botCfg.visual.bannerFileId === 'string' && botCfg.visual.bannerFileId.length > 0
+        ? botCfg.visual.bannerFileId
+        : undefined;
+    if (persistedFileId !== undefined && !bannerFileIdCache.has(bannerUrl)) {
+      bannerFileIdCache.set(bannerUrl, persistedFileId);
+    }
+    const cachedFileId = bannerFileIdCache.get(bannerUrl);
+    const photoSource =
+      cachedFileId ??
+      (await resolveBannerSource(bannerUrl, {
+        rezeisAdminUrl: deps.urls.rezeisAdminUrl,
+        logger: deps.logger
+          ? {
+              warn: (obj, msg) => {
+                deps.logger?.warn(obj as Record<string, unknown>, msg);
+              },
+            }
+          : undefined,
+      }));
     if (photoSource !== null) {
       try {
-        await ctx.replyWithPhoto(photoSource, {
+        const sent = await ctx.replyWithPhoto(photoSource, {
           caption: view.text,
           caption_entities: view.entities.length > 0 ? [...view.entities] : undefined,
           reply_markup: view.keyboard,
         });
+        // Cache the file_id Telegram assigned so future sends skip the upload,
+        // and stamp it into the durable snapshot so it survives a restart.
+        if (cachedFileId === undefined) {
+          const resolved = rememberBannerFileId(bannerUrl, sent);
+          if (resolved !== undefined) deps.rememberBannerFileId?.(bannerUrl, resolved);
+        }
         return;
       } catch (err: unknown) {
+        // A stale cached file_id can 400 — drop it so the next /start re-uploads.
+        if (cachedFileId !== undefined) bannerFileIdCache.delete(bannerUrl);
         deps.logger?.warn(
-          { err, bannerUrl: botCfg.visual.bannerUrl },
+          { err, bannerUrl },
           'bot/start banner send failed',
         );
       }

@@ -77,6 +77,14 @@ export interface PageDeps {
    */
   readonly envSupportUsername?: string;
   /**
+   * Best-effort hook to persist a Telegram-resolved banner `file_id`
+   * into the durable last-known-good config snapshot (Workstream 4).
+   * Lets a custom banner survive a reboot — on cold start the bot re-sends
+   * via the cached `file_id` (carried on `visual.bannerFileId`) instead of
+   * re-downloading the bytes from rezeis. Omitted in tests / degraded mode.
+   */
+  readonly rememberBannerFileId?: (bannerUrl: string, fileId: string) => void;
+  /**
    * Optional structured logger. When omitted (tests, supervised
    * scripts) pages that need to log fall back to console.* — the
    * legacy contract. Production main.ts always supplies a child

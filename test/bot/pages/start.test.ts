@@ -84,6 +84,21 @@ describe('registerStartPage', () => {
     expect(bot.commandHandlers.has('start')).toBe(true);
   });
 
+  it('falls back to a neutral line (not the welcome default) when the greeting is suppressed', async () => {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        visual: { ...DEFAULT_BOT_CONFIG.visual, welcomeMessage: '' },
+      },
+    });
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+    const ctx = buildStartCtx();
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(ctx.reply.mock.calls[0][0]).toBe('ru:menu.choose_action');
+  });
+
   it('renders the welcome message + main keyboard when no admin client', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps();

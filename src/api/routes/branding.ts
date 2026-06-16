@@ -29,6 +29,22 @@ interface CachedPayload {
 const CACHE_TTL_MS = 60_000;
 const STALE_WHILE_REVALIDATE_MS = 5 * 60_000;
 
+// Module-scoped so an operator branding save (relayed via the
+// `reiwa.branding.invalidate` webhook) can drop the cache process-wide,
+// making the new theme appear on the next cabinet load instead of waiting
+// for the TTL. A single router instance is created per process.
+let cached: CachedPayload | null = null;
+let inflight: Promise<CachedPayload> | null = null;
+let packsCache: { body: unknown; fetchedAt: number } | null = null;
+
+/** Drop the cached public-config + custom-emoji packs. Called on the admin
+ *  branding-invalidate webhook so theme edits propagate promptly. */
+export function resetBrandingCache(): void {
+  cached = null;
+  inflight = null;
+  packsCache = null;
+}
+
 export function createBrandingRouter(deps: {
   adminClient: AdminClient | null;
   logger?: Logger;
@@ -48,9 +64,6 @@ export function createBrandingRouter(deps: {
       console.error("[branding] background refresh failed:", (err as Error).message);
     }
   };
-
-  let cached: CachedPayload | null = null;
-  let inflight: Promise<CachedPayload> | null = null;
 
   async function fetchFresh(): Promise<CachedPayload> {
     if (!adminClient) {
@@ -160,7 +173,6 @@ export function createBrandingRouter(deps: {
 
   // GET /api/v1/custom-emoji/packs — operator custom emoji packs (cached).
   // Lets the cabinet feed render `:slug:` tokens as inline images / Lottie.
-  let packsCache: { body: unknown; fetchedAt: number } | null = null;
   router.get("/custom-emoji/packs", async (req, res) => {
     try {
       const now = Date.now();

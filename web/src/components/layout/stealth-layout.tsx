@@ -17,15 +17,23 @@ import { Navigate, Outlet } from "react-router-dom";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { SideNav } from "@/components/layout/side-nav";
 import { PageTransition } from "@/components/layout/page-transition";
+import { AppBackground } from "@/components/layout/app-background";
 import { NetworkBg } from "@/components/ui/network-bg";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
+import { useBranding } from "@/lib/branding-provider";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
 
 export default function StealthLayout() {
   const { session, isLoading } = useSession();
+  const { branding } = useBranding();
   const isDesktop = useIsDesktop();
+
+  // When the operator configured a custom app background it takes precedence
+  // over the default ambient `NetworkBg` (single WebGL context, no double FX).
+  const hasAppBackground =
+    branding.appBackground !== undefined && branding.appBackground.effect !== "NONE";
 
   // Subscribe to per-user realtime events while the session is open.
   // The hook is a no-op until `isAuthenticated` becomes true, and tears
@@ -69,7 +77,7 @@ export default function StealthLayout() {
     return (
       <OnboardingTourProvider>
         <div className="relative flex h-dvh w-full overflow-hidden bg-(--brand-bg-primary) text-foreground">
-          <NetworkBg />
+          {hasAppBackground ? <AppBackground /> : <NetworkBg />}
           <div className="relative z-20 shrink-0" data-tour="bottom-nav">
             <SideNav />
           </div>
@@ -90,7 +98,7 @@ export default function StealthLayout() {
       {/* Full-viewport branded backdrop; the cabinet itself lives in a
           phone-width column centered on desktop (see .app-shell). */}
       <div className="relative flex h-dvh w-full justify-center overflow-hidden bg-(--brand-bg-primary) text-foreground">
-        <NetworkBg />
+        {hasAppBackground ? <AppBackground /> : <NetworkBg />}
 
         <div className="app-shell z-10 flex flex-col overflow-hidden">
           {/* Scrollable main content with page-transition wrapper */}

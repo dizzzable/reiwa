@@ -20,6 +20,8 @@ import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../con
 import { AdminClient } from '../lib/admin-client.js';
 import type { BotConfig } from '../infrastructure/bot-config/types.js';
 import { BotConfigCache, DEFAULT_BOT_CONFIG } from '../infrastructure/bot-config/cache.js';
+import { RedisConfigPersistence } from '../infrastructure/bot-config/redis-config-persistence.js';
+import type { ConfigPersistencePort } from '../application/ports/config-persistence.port.js';
 import { BannerStore } from '../infrastructure/banner/index.js';
 import { BOT_COMMANDS } from '../core/enums/command.enum.js';
 import { isTelegramSafeButtonUrl } from './widgets/main-keyboard.js';
@@ -66,6 +68,21 @@ type BotContext = Context & SessionFlavor<BotSession>;
 
 let botConfigCache: BotConfigCache | null = null;
 
+/**
+ * Durable last-known-good store for the bot config (Workstream 4). Built
+ * once from `REDIS_URL` so a reboot before the first upstream fetch seeds
+ * the cache from the last good config instead of the hardcoded default.
+ * `undefined` when Redis isn't configured → cache stays in-memory only.
+ */
+let configPersistence: ConfigPersistencePort | undefined;
+
+function getConfigPersistence(): ConfigPersistencePort | undefined {
+  if (configPersistence !== undefined) return configPersistence;
+  if (!config.REDIS_URL) return undefined;
+  configPersistence = new RedisConfigPersistence(config.REDIS_URL);
+  return configPersistence;
+}
+
 async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig> {
   if (botConfigCache !== null) return botConfigCache.get();
   if (!adminClient) return DEFAULT_BOT_CONFIG;
@@ -76,6 +93,7 @@ async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig>
     fetcher: () => adminClient.branding.getBotConfig(),
     hydrator: translator,
     fallback: DEFAULT_BOT_CONFIG,
+    persistence: getConfigPersistence(),
   });
   return botConfigCache.get();
 }
@@ -175,6 +193,9 @@ async function startBot(): Promise<void> {
     },
     bannerStore,
     envSupportUsername: config.BOT_SUPPORT_USERNAME ?? undefined,
+    rememberBannerFileId: (bannerUrl: string, fileId: string): void => {
+      botConfigCache?.stampBannerFileId(bannerUrl, fileId);
+    },
     logger,
   };
   registerLangPage(bot, pageDeps);

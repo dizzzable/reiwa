@@ -57,6 +57,18 @@ export interface CardEffectSlot {
   cardEffectOpacity: number;
 }
 
+/**
+ * Site-wide app background — an animated effect rendered behind the whole
+ * cabinet (mirrors backend `AppBackgroundSettings`). `effect: "NONE"` keeps
+ * the plain `bgPrimary` colour. Reuses the card-effect registry, mounted once
+ * at the cabinet shell (a single WebGL context max).
+ */
+export interface AppBackground {
+  effect: CardEffect;
+  props: Record<string, unknown>;
+  opacity: number;
+}
+
 export interface Branding {
   brandName: string;
   logoUrl: string | null;
@@ -83,6 +95,11 @@ export interface Branding {
    */
   cardEffectsByIndex: CardEffectSlot[];
   bgEffect: BgEffect;
+  /**
+   * Site-wide animated app background (NONE = plain bgPrimary colour).
+   * Optional so an older payload without the field is handled gracefully.
+   */
+  appBackground?: AppBackground;
   /** How cabinet menu icons are coloured: default / theme / custom. */
   iconColorMode: IconColorMode;
   /** Per-icon hex colours (used when iconColorMode === "custom"). */
@@ -146,6 +163,7 @@ export const DEFAULT_BRANDING: Branding = {
   cardEffectOpacity: 1,
   cardEffectsByIndex: [],
   bgEffect: "NONE",
+  appBackground: { effect: "NONE", props: {}, opacity: 1 },
   iconColorMode: "default",
   iconColors: {},
   borderRadius: "rounded-2xl",

@@ -26,6 +26,15 @@ export interface BotVisualConfig {
    * admin bot editor (`bot-config` → texts → `bot.banner_url`).
    */
   bannerUrl?: string | null
+  /**
+   * Resolved Telegram `file_id` of the banner, stamped by reiwa after a
+   * successful `sendPhoto` and carried into the persisted last-known-good
+   * snapshot (Workstream 4). On a cold restart reiwa can re-send the
+   * welcome banner via this `file_id` without re-fetching the bytes from
+   * rezeis, so a custom banner survives a reboot even before the first
+   * upstream config fetch lands. Additive; `null`/absent → no cached id.
+   */
+  bannerFileId?: string | null
 }
 
 export interface BotFeatures {

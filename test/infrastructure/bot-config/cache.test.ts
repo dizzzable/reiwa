@@ -17,6 +17,7 @@ import {
   DEFAULT_BOT_CONFIG,
 } from '../../../src/infrastructure/bot-config/cache.js';
 import type { LocalePackHydrator } from '../../../src/application/ports/translator.port.js';
+import type { ConfigPersistencePort } from '../../../src/application/ports/config-persistence.port.js';
 import type { BotConfig } from '../../../src/infrastructure/bot-config/types.js';
 
 const SAMPLE: BotConfig & { translations: Record<string, string> } = {
@@ -164,6 +165,181 @@ describe('BotConfigCache', () => {
     cache.reset();
     await cache.get();
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('BotConfigCache persistence (Workstream 4)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  interface FakeStore {
+    port: ConfigPersistencePort;
+    saved: BotConfig[];
+    stored: BotConfig | null;
+    throwOnSave: boolean;
+    throwOnLoad: boolean;
+  }
+
+  function fakeStore(initial: BotConfig | null = null): FakeStore {
+    const s: FakeStore = {
+      saved: [],
+      stored: initial,
+      throwOnSave: false,
+      throwOnLoad: false,
+      port: {
+        async load() {
+          if (s.throwOnLoad) throw new Error('boom: load');
+          return s.stored;
+        },
+        async save(config) {
+          if (s.throwOnSave) throw new Error('boom: save');
+          s.saved.push(config);
+          s.stored = config;
+        },
+      },
+    };
+    return s;
+  }
+
+  // Property 7: a successful fetch persists a fresh snapshot.
+  it('persists the config on a successful fetch', async () => {
+    const fetcher = vi.fn(async () => SAMPLE);
+    const spy = spyHydrator();
+    const store = fakeStore();
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    await cache.get();
+    await vi.runAllTimersAsync();
+    expect(store.saved).toHaveLength(1);
+    expect(store.saved[0]).toBe(SAMPLE);
+  });
+
+  // Property 7: cold-start fetch failure seeds from persistence, not default.
+  it('seeds from persistence on a cold-start fetch failure', async () => {
+    const persisted: BotConfig = {
+      ...DEFAULT_BOT_CONFIG,
+      visual: { ...DEFAULT_BOT_CONFIG.visual, botDescription: 'persisted' },
+    };
+    const fetcher = vi.fn(async () => {
+      throw new Error('upstream down');
+    });
+    const spy = spyHydrator();
+    const store = fakeStore(persisted);
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    const out = await cache.get();
+    expect(out).toBe(persisted);
+    expect(out).not.toBe(DEFAULT_BOT_CONFIG);
+  });
+
+  // Property 7: empty persistence on cold-start failure → hardcoded default.
+  it('falls back to the default when persistence is empty', async () => {
+    const fetcher = vi.fn(async () => {
+      throw new Error('upstream down');
+    });
+    const spy = spyHydrator();
+    const store = fakeStore(null);
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    const out = await cache.get();
+    expect(out).toBe(DEFAULT_BOT_CONFIG);
+  });
+
+  // Property 8: a store outage is non-fatal (save throws → still serves data).
+  it('serves the fetched config even when persistence.save throws', async () => {
+    const fetcher = vi.fn(async () => SAMPLE);
+    const spy = spyHydrator();
+    const store = fakeStore();
+    store.throwOnSave = true;
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    const out = await cache.get();
+    expect(out).toBe(SAMPLE);
+    await vi.runAllTimersAsync();
+  });
+
+  // Property 8: load throwing on cold-start failure degrades to default.
+  it('falls back to the default when persistence.load throws', async () => {
+    const fetcher = vi.fn(async () => {
+      throw new Error('upstream down');
+    });
+    const spy = spyHydrator();
+    const store = fakeStore();
+    store.throwOnLoad = true;
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    const out = await cache.get();
+    expect(out).toBe(DEFAULT_BOT_CONFIG);
+  });
+
+  // Property 8: a resolved banner file_id is stamped + re-persisted.
+  it('stampBannerFileId stamps the file_id and re-persists', async () => {
+    const withBanner: BotConfig = {
+      ...DEFAULT_BOT_CONFIG,
+      visual: { ...DEFAULT_BOT_CONFIG.visual, bannerUrl: 'https://x/banner.jpg' },
+    };
+    const fetcher = vi.fn(async () => withBanner);
+    const spy = spyHydrator();
+    const store = fakeStore();
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    await cache.get();
+    cache.stampBannerFileId('https://x/banner.jpg', 'FILE_ID_123');
+    await vi.runAllTimersAsync();
+    const last = store.saved[store.saved.length - 1];
+    expect(last.visual.bannerFileId).toBe('FILE_ID_123');
+    const out = await cache.get();
+    expect(out.visual.bannerFileId).toBe('FILE_ID_123');
+  });
+
+  // Property 8: stamping a mismatched bannerUrl is a no-op.
+  it('stampBannerFileId is a no-op when the bannerUrl does not match', async () => {
+    const withBanner: BotConfig = {
+      ...DEFAULT_BOT_CONFIG,
+      visual: { ...DEFAULT_BOT_CONFIG.visual, bannerUrl: 'https://x/banner.jpg' },
+    };
+    const fetcher = vi.fn(async () => withBanner);
+    const spy = spyHydrator();
+    const store = fakeStore();
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    await cache.get();
+    const savedBefore = store.saved.length;
+    cache.stampBannerFileId('https://other/banner.jpg', 'FILE_ID_123');
+    await vi.runAllTimersAsync();
+    expect(store.saved.length).toBe(savedBefore);
   });
 });
 
