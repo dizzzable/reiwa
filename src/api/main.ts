@@ -5,6 +5,7 @@ import { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore } from "../infrastructure/redis/session.js";
 import { createLogger } from "../infrastructure/logger/index.js";
 import { REIWA_VERSION } from "../core/version.js";
+import { printReiwaBanner } from "../core/banner.js";
 import { createApp } from "./app.js";
 
 const config = loadConfig();
@@ -71,6 +72,7 @@ async function connectStore(
 
 // ── Server ────────────────────────────────────────────────────────────────────
 async function start(): Promise<void> {
+  printReiwaBanner("api");
   await connectStore(sessionStore, "SessionStore");
   await connectStore(webSessionStore, "WebSessionStore");
 

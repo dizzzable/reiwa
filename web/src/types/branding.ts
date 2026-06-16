@@ -58,15 +58,41 @@ export interface CardEffectSlot {
 }
 
 /**
- * Site-wide app background — an animated effect rendered behind the whole
- * cabinet (mirrors backend `AppBackgroundSettings`). `effect: "NONE"` keeps
- * the plain `bgPrimary` colour. Reuses the card-effect registry, mounted once
- * at the cabinet shell (a single WebGL context max).
+ * Site-wide app background — rendered behind the whole cabinet (mirrors backend
+ * `AppBackgroundSettings`). A `kind` discriminator selects a plain colour
+ * (`none`), a static gradient, a static tiled texture, or an animated effect.
+ * Reuses the card-effect registry for `effect`, mounted once at the shell.
  */
+export type AppBackgroundKind = "none" | "gradient" | "texture" | "effect";
+
+export type AppBackgroundTexture =
+  | "dots"
+  | "grid"
+  | "diagonal"
+  | "cross"
+  | "waves"
+  | "carbon"
+  | "triangles"
+  | "noise";
+
+export interface AppBackgroundTextureSettings {
+  pattern: AppBackgroundTexture;
+  color: string;
+  background: string;
+  scale: number;
+  opacity: number;
+}
+
 export interface AppBackground {
+  kind: AppBackgroundKind;
+  /** Animated effect (kind === "effect"). */
   effect: CardEffect;
   props: Record<string, unknown>;
   opacity: number;
+  /** Static CSS gradient (kind === "gradient"). */
+  gradient: string;
+  /** Static tiled texture (kind === "texture"). */
+  texture: AppBackgroundTextureSettings;
 }
 
 export interface Branding {
@@ -163,7 +189,20 @@ export const DEFAULT_BRANDING: Branding = {
   cardEffectOpacity: 1,
   cardEffectsByIndex: [],
   bgEffect: "NONE",
-  appBackground: { effect: "NONE", props: {}, opacity: 1 },
+  appBackground: {
+    kind: "none",
+    effect: "NONE",
+    props: {},
+    opacity: 1,
+    gradient: "linear-gradient(135deg, #0a0a0a 0%, #171717 100%)",
+    texture: {
+      pattern: "dots",
+      color: "#22c55e",
+      background: "#0a0a0a",
+      scale: 24,
+      opacity: 0.15,
+    },
+  },
   iconColorMode: "default",
   iconColors: {},
   borderRadius: "rounded-2xl",

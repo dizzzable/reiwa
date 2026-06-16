@@ -1,6 +1,7 @@
 import { loadConfig, resolveRezeisAdminUrl } from "../config.js";
 import { AdminClient } from "../lib/admin-client.js";
 import { createLogger } from "../infrastructure/logger/index.js";
+import { printReiwaBanner } from "../core/banner.js";
 
 const config = loadConfig();
 const rezeisAdminUrl = resolveRezeisAdminUrl(config);
@@ -98,6 +99,7 @@ async function runExpiryAlerts(): Promise<void> {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function runWorker(): Promise<void> {
+  printReiwaBanner("worker");
   logger.info("reiwa-worker starting");
 
   if (!adminClient) {

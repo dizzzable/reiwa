@@ -33,7 +33,7 @@ export default function StealthLayout() {
   // When the operator configured a custom app background it takes precedence
   // over the default ambient `NetworkBg` (single WebGL context, no double FX).
   const hasAppBackground =
-    branding.appBackground !== undefined && branding.appBackground.effect !== "NONE";
+    branding.appBackground !== undefined && branding.appBackground.kind !== "none";
 
   // Subscribe to per-user realtime events while the session is open.
   // The hook is a no-op until `isAuthenticated` becomes true, and tears

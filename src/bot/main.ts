@@ -38,6 +38,7 @@ import {
   registerStartPage,
 } from './pages/index.js';
 import { notifyOperatorBotStarted, notifyDeveloperCredits } from './lib/startup-notice.js';
+import { printReiwaBanner } from '../core/banner.js';
 import {
   detectLocaleFromTelegram,
   translator,
@@ -106,6 +107,8 @@ async function startBot(): Promise<void> {
     process.stdin.resume();
     return;
   }
+
+  printReiwaBanner('bot');
 
   // Root logger for this process. Pages receive a child bound to the
   // page tag so log lines are easy to filter downstream.
