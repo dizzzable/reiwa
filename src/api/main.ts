@@ -16,7 +16,6 @@ const rezeisAdminUrl = resolveRezeisAdminUrl(config);
 // by `pino-http` and inherit the `service` binding.
 const logger = createLogger({
   service: "api",
-  pretty: config.NODE_ENV !== "production",
 });
 
 // ── Clients ───────────────────────────────────────────────────────────────────
@@ -72,7 +71,6 @@ async function connectStore(
 
 // ── Server ────────────────────────────────────────────────────────────────────
 async function start(): Promise<void> {
-  printReiwaBanner("api");
   await connectStore(sessionStore, "SessionStore");
   await connectStore(webSessionStore, "WebSessionStore");
 
@@ -88,6 +86,8 @@ async function start(): Promise<void> {
       },
       "reiwa-api listening",
     );
+    // Success banner — printed only once the HTTP server is actually listening.
+    printReiwaBanner("api");
   });
 
   // Report our running version to the admin panel so its "Updates" widget

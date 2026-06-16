@@ -8,7 +8,6 @@ const rezeisAdminUrl = resolveRezeisAdminUrl(config);
 
 const logger = createLogger({
   service: "worker",
-  pretty: config.NODE_ENV !== "production",
 });
 
 const adminClient =
@@ -99,7 +98,6 @@ async function runExpiryAlerts(): Promise<void> {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function runWorker(): Promise<void> {
-  printReiwaBanner("worker");
   logger.info("reiwa-worker starting");
 
   if (!adminClient) {
@@ -116,6 +114,8 @@ async function runWorker(): Promise<void> {
   setInterval(runExpiryAlerts, 60 * 60 * 1_000);
 
   logger.info({ schedule: "1h" }, "reiwa-worker running expiry alerts");
+  // Success banner — printed once the worker loop is scheduled and running.
+  printReiwaBanner("worker");
 
   const shutdown = (signal: string): void => {
     logger.info({ signal }, "reiwa-worker shutting down");

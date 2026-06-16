@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.5.18-blue" alt="Version" /></a>
+  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.5.19-blue" alt="Version" /></a>
   <a href="https://github.com/dizzzable/reiwa/pkgs/container/reiwa"><img src="https://img.shields.io/badge/ghcr.io-reiwa-2496ED?logo=docker&logoColor=white" alt="GHCR" /></a>
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js" />
@@ -56,10 +56,10 @@ GitHub Container Registry публикует **единый** образ при 
 docker pull ghcr.io/dizzzable/reiwa:latest
 
 # Pin to a specific release
-docker pull ghcr.io/dizzzable/reiwa:v0.9.5.18
+docker pull ghcr.io/dizzzable/reiwa:v0.9.5.19
 ```
 
-Доступные теги: `latest` (актуальный main), `v0.9.5.18` (тег релиза), плюс `sha-<short>` для каждого коммита в `main`. Прод-`docker-compose.yml` использует `latest`.
+Доступные теги: `latest` (актуальный main), `v0.9.5.19` (тег релиза), плюс `sha-<short>` для каждого коммита в `main`. Прод-`docker-compose.yml` использует `latest`.
 
 > Один образ обслуживает всё: API на `REIWA_PORT` (по умолчанию `node dist/api/main.js`) раздаёт собранную SPA из `/app/web`, бот — `dist/bot/main.js`, воркер — `dist/worker/main.js`. Роль выбирается командой запуска контейнера.
 

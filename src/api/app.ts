@@ -117,8 +117,36 @@ export function createApp(deps: CreateAppDeps) {
           if (res.statusCode >= 400) return "warn";
           return "info";
         },
-        // Pino-http logs the full URL by default. Cookies/Auth headers
-        // are already in the redact list on the root logger.
+        // Don't log the high-frequency health/readiness probes — the Docker
+        // healthcheck hits `/api/v1/health` every few seconds and would
+        // otherwise drown the log stream in noise.
+        autoLogging: {
+          ignore: (req) => {
+            const url = (req.url ?? "").split("?")[0];
+            return (
+              url === "/api/v1/health" ||
+              url === "/api/v1/ready" ||
+              url === "/api/v1/live" ||
+              url.endsWith("/health") ||
+              url.endsWith("/ready") ||
+              url.endsWith("/live") ||
+              url.endsWith("/favicon.ico")
+            );
+          },
+        },
+        // Compact, structured one-liners. The default serializers dump every
+        // request/response header (CSP, cookies, rate-limit, etc.) on every
+        // line; we keep only the fields that matter for tracing a request.
+        serializers: {
+          req: (req: { id?: string; method?: string; url?: string }) => ({
+            id: req.id,
+            method: req.method,
+            url: (req.url ?? "").split("?")[0],
+          }),
+          res: (res: { statusCode?: number }) => ({
+            statusCode: res.statusCode,
+          }),
+        },
       }),
     );
   }

@@ -108,13 +108,11 @@ async function startBot(): Promise<void> {
     return;
   }
 
-  printReiwaBanner('bot');
 
   // Root logger for this process. Pages receive a child bound to the
   // page tag so log lines are easy to filter downstream.
   const logger = createLogger({
     service: 'bot',
-    pretty: config.NODE_ENV !== 'production',
   });
 
   const rezeisAdminUrl = resolveRezeisAdminUrl(config);
@@ -326,11 +324,14 @@ async function runPollingLoop(
         // short enough that we'll grab the slot within ~5s of a rival
         // releasing it. Default would be 30s.
         timeout: 5,
-        onStart: (info) =>
+        onStart: (info) => {
           logger.info(
             { username: info.username, attempt },
             attempt === 0 ? 'reiwa-bot started' : 'reiwa-bot resumed polling',
-          ),
+          );
+          // Success banner — printed once, on the first successful poll start.
+          if (attempt === 0) printReiwaBanner('bot');
+        },
       });
       // bot.start() returns when the polling loop terminates cleanly
       // (e.g. .stop() called). Treat that as a graceful shutdown rather

@@ -21,6 +21,12 @@ export interface CreateLoggerOptions {
    */
   readonly service: 'api' | 'bot' | 'worker';
   readonly level?: LogLevel;
+  /**
+   * Force a specific output format. When omitted, the logger renders
+   * human-readable, structured single-line output (pino-pretty) unless
+   * `LOG_FORMAT=json` is set — operators shipping to a log pipeline opt
+   * into raw JSON with that env var.
+   */
   readonly pretty?: boolean;
 }
 
@@ -59,18 +65,30 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     redact: { paths: [...REDACT_PATHS], remove: true },
   };
 
-  if (options.pretty) {
-    // `pino-pretty` is an optional dep — we don't ship it in production.
-    // If the require fails (e.g. inside the prod container), fall back to
-    // plain JSON output silently.
+  // Default to human-readable structured output everywhere; operators who
+  // ship logs to a JSON pipeline opt out with `LOG_FORMAT=json`. An explicit
+  // `options.pretty` still wins (tests / special cases).
+  const usePretty = options.pretty ?? process.env['LOG_FORMAT'] !== 'json';
+
+  if (usePretty) {
+    // `pino-pretty` is a production dependency. If the require somehow fails,
+    // fall back to plain JSON output silently rather than crashing boot.
     try {
       const transport = pino.transport({
         target: 'pino-pretty',
-        options: { colorize: true, translateTime: 'SYS:HH:MM:ss.l', singleLine: false },
+        options: {
+          colorize: true,
+          translateTime: 'SYS:yyyy-mm-dd HH:MM:ss.l',
+          // One readable line per record; the structured fields are appended
+          // after the message so logs stay greppable but compact.
+          singleLine: true,
+          ignore: 'pid,hostname',
+          messageFormat: '[{service}] {msg}',
+        },
       });
       return pino(opts, transport);
     } catch {
-      // pino-pretty not installed — emit JSON.
+      // pino-pretty unavailable — emit JSON.
     }
   }
 
