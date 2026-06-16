@@ -60,7 +60,7 @@
 import * as http from 'node:http';
 
 import type { Bot, Context } from 'grammy';
-import { GrammyError, InlineKeyboard } from 'grammy';
+import { GrammyError, InlineKeyboard, InputFile } from 'grammy';
 
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
@@ -93,12 +93,31 @@ interface BroadcastPayload {
   readonly buttons?: unknown;
 }
 
+interface DevNotifyPayload {
+  readonly text?: unknown;
+  readonly parseMode?: unknown;
+}
+
+interface DevNotifyDocumentPayload {
+  readonly filename?: unknown;
+  readonly content?: unknown;
+  readonly caption?: unknown;
+  readonly parseMode?: unknown;
+}
+
 interface ListenerOptions {
   readonly bot: Bot<Context> | null;
   readonly cache: BotConfigCache | null;
   readonly secret: string | null;
   readonly port: number;
   readonly logger: ReturnType<typeof createLogger>;
+  /**
+   * Telegram id of the bot's developer/operator (`BOT_DEV_ID`). Target of the
+   * `/notify-dev` endpoint — lets rezeis route system events to the dev's DM
+   * automatically when no operator group/topic is configured, without rezeis
+   * ever knowing the dev id. `undefined` → `/notify-dev` is a no-op.
+   */
+  readonly devId?: number;
   /**
    * Invoked when Telegram returns 403 Forbidden during a `/notify`
    * delivery. Lets the host record `isBotBlocked: true` on the user
@@ -195,7 +214,7 @@ function isValidParseMode(value: unknown): value is 'MarkdownV2' | 'HTML' {
 }
 
 export function startInternalHttpListener(opts: ListenerOptions): void {
-  const { bot, cache, secret, port, logger, onUserBlocked } = opts;
+  const { bot, cache, secret, port, logger, onUserBlocked, devId } = opts;
   if (secret === null || secret.length === 0) {
     logger.info(
       'Internal HTTP listener disabled (REZEIS_INTERNAL_SHARED_SECRET unset)',
@@ -239,6 +258,14 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
       }
       if (url === '/notify') {
         await handleNotify({ bot, logger, raw, res, onUserBlocked });
+        return;
+      }
+      if (url === '/notify-dev') {
+        await handleNotifyDev({ bot, devId, logger, raw, res });
+        return;
+      }
+      if (url === '/notify-dev-document') {
+        await handleNotifyDevDocument({ bot, devId, logger, raw, res });
         return;
       }
       if (url === '/notify-broadcast') {
@@ -327,6 +354,119 @@ interface NotifyHandlerOptions {
   readonly raw: string;
   readonly res: http.ServerResponse;
   readonly onUserBlocked?: (telegramId: string) => Promise<void> | void;
+}
+
+interface DevNotifyHandlerOptions {
+  readonly bot: Bot<Context> | null;
+  readonly devId?: number;
+  readonly logger: ReturnType<typeof createLogger>;
+  readonly raw: string;
+  readonly res: http.ServerResponse;
+}
+
+/**
+ * `/notify-dev` — deliver a system-event card to the bot's developer/operator
+ * (`BOT_DEV_ID`). Used by rezeis as the automatic fallback when no operator
+ * group/topic is configured: the message lands in the dev's private DM with
+ * this same bot, so it's visible only to them. No-ops (204) when the bot or
+ * `BOT_DEV_ID` isn't available, so a misconfigured deployment never errors.
+ */
+async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
+  const { bot, devId, logger, raw, res } = opts;
+  if (bot === null || devId === undefined) {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+  let payload: DevNotifyPayload;
+  try {
+    payload = JSON.parse(raw) as DevNotifyPayload;
+  } catch {
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
+  const text = typeof payload.text === 'string' ? payload.text : null;
+  if (text === null || text.length === 0) {
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
+  const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
+  try {
+    await bot.api.sendMessage(devId, text, {
+      ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
+      link_preview_options: { is_disabled: true },
+    });
+    res.statusCode = 204;
+    res.end();
+  } catch (err: unknown) {
+    logger.warn({ err, devId }, 'Notify-dev: send failed');
+    // Soft-success: the firehose is best-effort; don't make admin retry.
+    res.statusCode = 204;
+    res.end();
+  }
+}
+
+/** Telegram caption hard limit (1024). HTML entities are not counted, but we
+ *  trim defensively so a verbose error message can never make the send fail. */
+const TG_CAPTION_LIMIT = 1024;
+
+/**
+ * `/notify-dev-document` — deliver an `.txt` error report (e.g. `error_0.txt`)
+ * to the bot's developer/operator (`BOT_DEV_ID`) as a Telegram document, with
+ * the sectioned error card carried as the document caption and a universal
+ * "❌ Закрыть" (`close`) button. This is the dev-DM analogue of the operator
+ * group's error report and matches the agreed card layout. No-ops (204) when
+ * the bot or `BOT_DEV_ID` isn't available.
+ */
+async function handleNotifyDevDocument(opts: DevNotifyHandlerOptions): Promise<void> {
+  const { bot, devId, logger, raw, res } = opts;
+  if (bot === null || devId === undefined) {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+  let payload: DevNotifyDocumentPayload;
+  try {
+    payload = JSON.parse(raw) as DevNotifyDocumentPayload;
+  } catch {
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
+  const content = typeof payload.content === 'string' ? payload.content : null;
+  if (content === null || content.length === 0) {
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
+  const filename =
+    typeof payload.filename === 'string' && payload.filename.trim().length > 0
+      ? payload.filename.trim()
+      : 'error.txt';
+  const captionRaw = typeof payload.caption === 'string' ? payload.caption : undefined;
+  const caption =
+    captionRaw !== undefined && captionRaw.length > TG_CAPTION_LIMIT
+      ? captionRaw.slice(0, TG_CAPTION_LIMIT)
+      : captionRaw;
+  const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
+  const keyboard = new InlineKeyboard().text('❌ Закрыть', 'close');
+  try {
+    const document = new InputFile(Buffer.from(content, 'utf8'), filename);
+    await bot.api.sendDocument(devId, document, {
+      ...(caption !== undefined ? { caption } : {}),
+      ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
+      reply_markup: keyboard,
+    });
+    res.statusCode = 204;
+    res.end();
+  } catch (err: unknown) {
+    logger.warn({ err, devId }, 'Notify-dev-document: send failed');
+    // Soft-success: the firehose is best-effort; don't make admin retry.
+    res.statusCode = 204;
+    res.end();
+  }
 }
 
 async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {

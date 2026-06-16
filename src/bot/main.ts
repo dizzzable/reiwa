@@ -39,6 +39,7 @@ import {
 } from './pages/index.js';
 import { notifyOperatorBotStarted, notifyDeveloperCredits } from './lib/startup-notice.js';
 import { printReiwaBanner } from '../core/banner.js';
+import { createErrorReporter } from '../infrastructure/error-reporter/index.js';
 import {
   detectLocaleFromTelegram,
   translator,
@@ -124,6 +125,8 @@ async function startBot(): Promise<void> {
           config.REZEIS_INTERNAL_SHARED_SECRET ?? undefined,
         )
       : null;
+
+  const errorReporter = createErrorReporter({ adminClient, source: 'bot' });
 
   // Pre-warm the config cache
   const botConfig = await getBotConfig(adminClient);
@@ -217,6 +220,11 @@ async function startBot(): Promise<void> {
 
   bot.catch((err) => {
     logger.error({ err: err.error, ctx: { update: err.message } }, 'Bot handler error');
+    errorReporter.report({
+      message: err.error instanceof Error ? err.error.message : String(err.error),
+      stack: err.error instanceof Error ? err.error.stack : undefined,
+      context: { scope: 'bot.catch' },
+    });
   });
 
   // ── Config refresh timer ───────────────────────────────────────────────────
@@ -291,6 +299,7 @@ async function startBot(): Promise<void> {
     cache: botConfigCache,
     secret: config.REZEIS_INTERNAL_SHARED_SECRET ?? null,
     port: config.BOT_INVALIDATE_PORT ?? 5100,
+    devId: config.BOT_DEV_ID,
     logger,
     onUserBlocked: async (telegramId: string) => {
       if (adminClient === null) return;

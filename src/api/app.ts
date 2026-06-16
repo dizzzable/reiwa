@@ -9,6 +9,7 @@ import type { Logger } from "pino";
 import type { AdminClient } from "../lib/admin-client.js";
 import type { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore, createWebSessionMiddleware } from "../infrastructure/redis/session.js";
+import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
 import { resolveReiwaPublicUrl, resolveRezeisAdminUrl } from "../config.js";
@@ -52,6 +53,7 @@ export interface CreateAppDeps {
 
 export function createApp(deps: CreateAppDeps) {
   const { config, logger } = deps;
+  const errorReporter = createErrorReporter({ adminClient: deps.adminClient, source: 'api' });
   const reiwaPublicUrl = resolveReiwaPublicUrl(config);
   const app = express();
 
@@ -349,6 +351,11 @@ export function createApp(deps: CreateAppDeps) {
     } else {
       console.error("[reiwa-api error]", err.message);
     }
+    errorReporter.report({
+      message: err.message,
+      stack: err.stack,
+      context: { scope: 'api.error-handler', path: (req.path ?? '').split('?')[0] },
+    });
     res.status(500).json({ message: "Internal server error" });
   });
 

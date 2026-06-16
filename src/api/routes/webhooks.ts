@@ -90,6 +90,38 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           res.status(200).json({ messageId: relayed.messageId });
           return;
         }
+        case "reiwa.dev.notify": {
+          // Auto dev-fallback: deliver a system-event card to the bot's
+          // BOT_DEV_ID (the bot knows it; rezeis doesn't). Used when no
+          // operator group/topic is configured. Best-effort.
+          const text = str(meta["text"]);
+          if (!text) {
+            res.status(400).json({ message: "missing text" });
+            return;
+          }
+          await relayToBot("/notify-dev", {
+            text,
+            ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
+          });
+          break;
+        }
+        case "reiwa.dev.notify.document": {
+          // Auto dev-fallback (errors): deliver the full `.txt` error report as
+          // a Telegram document to the bot's BOT_DEV_ID, with the sectioned
+          // card as caption + a Close button. Best-effort.
+          const content = str(meta["content"]);
+          if (!content) {
+            res.status(400).json({ message: "missing content" });
+            return;
+          }
+          await relayToBot("/notify-dev-document", {
+            content,
+            ...(str(meta["filename"]) ? { filename: str(meta["filename"]) } : {}),
+            ...(str(meta["caption"]) ? { caption: str(meta["caption"]) } : {}),
+            ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
+          });
+          break;
+        }
         case "reiwa.channel.broadcast": {
           const chatId = str(meta["chatId"]);
           const text = str(meta["text"]);

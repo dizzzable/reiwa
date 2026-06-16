@@ -63,4 +63,19 @@ export class SystemNamespace {
   reportReiwaVersion(version: string): Promise<unknown> {
     return this.transport.request('POST', '/api/internal/system/reiwa-version', { version });
   }
+
+  /**
+   * Report a reiwa runtime error/warning to rezeis so it's captured centrally
+   * as a system event (audit log → Events page → .txt export). Fire-and-forget
+   * — callers must never block on or throw from this.
+   */
+  reportError(input: {
+    readonly source: 'api' | 'bot' | 'worker';
+    readonly message: string;
+    readonly level?: 'error' | 'warning';
+    readonly context?: Record<string, unknown>;
+    readonly stack?: string;
+  }): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/system/error', input);
+  }
 }

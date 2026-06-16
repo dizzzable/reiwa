@@ -2,6 +2,7 @@ import { loadConfig, resolveRezeisAdminUrl } from "../config.js";
 import { AdminClient } from "../lib/admin-client.js";
 import { createLogger } from "../infrastructure/logger/index.js";
 import { printReiwaBanner } from "../core/banner.js";
+import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 
 const config = loadConfig();
 const rezeisAdminUrl = resolveRezeisAdminUrl(config);
@@ -18,6 +19,8 @@ const adminClient =
         config.REZEIS_INTERNAL_SHARED_SECRET ?? undefined,
       )
     : null;
+
+const errorReporter = createErrorReporter({ adminClient, source: 'worker' });
 
 const BOT_TOKEN = config.BOT_TOKEN;
 
@@ -92,6 +95,11 @@ async function runExpiryAlerts(): Promise<void> {
     }
   } catch (err: unknown) {
     jobLog.error({ err }, "Expiry alerts run failed");
+    errorReporter.report({
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+      context: { scope: 'worker.expiry-alerts' },
+    });
   }
 }
 
