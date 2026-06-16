@@ -74,6 +74,7 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'help.contact_support': 'Contact support: @{{username}}',
   'help.contact_button': '🆘 Message support',
   'help.contact_prefill': 'Hi! I need help.',
+  'error.unknown': '⚠️ Something went wrong. We have been notified — please try again shortly or contact support.',
 
   // ── Slash-command bubble (Telegram setMyCommands) ───────────────────────────
   'commands.start.description': 'Main menu',

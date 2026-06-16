@@ -4,6 +4,8 @@ import { AdminClient } from "../lib/admin-client.js";
 import { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore } from "../infrastructure/redis/session.js";
 import { createLogger } from "../infrastructure/logger/index.js";
+import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
+import { installProcessErrorGuards } from "../infrastructure/error-reporter/process-guards.js";
 import { REIWA_VERSION } from "../core/version.js";
 import { printReiwaBanner } from "../core/banner.js";
 import { createApp } from "./app.js";
@@ -35,6 +37,11 @@ const sessionStore = config.REDIS_URL
 const webSessionStore = config.REDIS_URL
   ? new WebSessionStore(config.REDIS_URL, { logger })
   : null;
+
+// Last-resort guards for failures that escape the per-route try/catch and
+// the Express error middleware (stray rejections, uncaught throws in timers).
+const errorReporter = createErrorReporter({ adminClient, source: "api" });
+installProcessErrorGuards({ logger, errorReporter });
 
 const app = createApp({ adminClient, sessionStore, webSessionStore, config, logger });
 

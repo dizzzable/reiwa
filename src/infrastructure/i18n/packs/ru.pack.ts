@@ -76,6 +76,7 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'help.contact_support': 'Связаться с поддержкой: @{{username}}',
   'help.contact_button': '🆘 Написать в поддержку',
   'help.contact_prefill': 'Здравствуйте! Мне нужна помощь.',
+  'error.unknown': '⚠️ Что-то пошло не так. Мы уже знаем о проблеме — попробуйте ещё раз чуть позже или напишите в поддержку.',
 
   // ── Slash-command bubble (Telegram setMyCommands) ───────────────────────────
   'commands.start.description': 'Главное меню',

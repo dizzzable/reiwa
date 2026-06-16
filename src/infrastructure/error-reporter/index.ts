@@ -12,7 +12,7 @@
  */
 import type { AdminClient } from '../../lib/admin-client.js';
 
-export type ErrorSource = 'api' | 'bot' | 'worker';
+export type ErrorSource = 'api' | 'bot' | 'worker' | 'web';
 
 export interface ErrorReporter {
   report(input: {

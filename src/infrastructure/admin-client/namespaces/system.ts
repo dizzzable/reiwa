@@ -70,7 +70,7 @@ export class SystemNamespace {
    * — callers must never block on or throw from this.
    */
   reportError(input: {
-    readonly source: 'api' | 'bot' | 'worker';
+    readonly source: 'api' | 'bot' | 'worker' | 'web';
     readonly message: string;
     readonly level?: 'error' | 'warning';
     readonly context?: Record<string, unknown>;

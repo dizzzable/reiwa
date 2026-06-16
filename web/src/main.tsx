@@ -6,6 +6,8 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from 'sonner'
 import { queryClient } from '@/lib/query-client'
 import { registerServiceWorker } from '@/lib/register-sw'
+import { installGlobalErrorReporting } from '@/lib/client-error-reporter'
+import { AppErrorBoundary } from '@/components/error-boundary'
 import { BrandingProvider } from '@/lib/branding-provider'
 import App from './App'
 import '@/index.css'
@@ -13,6 +15,10 @@ import '@/i18n/i18n'
 
 // Register service worker for PWA support
 registerServiceWorker()
+
+// Forward browser/Mini App runtime errors (window.onerror + unhandled
+// rejections) to the BFF so they join the bot/api/worker firehose.
+installGlobalErrorReporting()
 
 const root = document.getElementById('root')!
 
@@ -22,7 +28,9 @@ createRoot(root).render(
       <BrowserRouter>
         <BrandingProvider>
           <TooltipProvider delayDuration={300}>
-            <App />
+            <AppErrorBoundary>
+              <App />
+            </AppErrorBoundary>
             <Toaster
               position="top-center"
               offset={16}

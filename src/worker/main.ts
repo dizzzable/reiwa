@@ -3,6 +3,7 @@ import { AdminClient } from "../lib/admin-client.js";
 import { createLogger } from "../infrastructure/logger/index.js";
 import { printReiwaBanner } from "../core/banner.js";
 import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
+import { installProcessErrorGuards } from "../infrastructure/error-reporter/process-guards.js";
 
 const config = loadConfig();
 const rezeisAdminUrl = resolveRezeisAdminUrl(config);
@@ -21,6 +22,9 @@ const adminClient =
     : null;
 
 const errorReporter = createErrorReporter({ adminClient, source: 'worker' });
+
+// Last-resort guards for failures that escape the per-job try/catch.
+installProcessErrorGuards({ logger, errorReporter });
 
 const BOT_TOKEN = config.BOT_TOKEN;
 

@@ -1,6 +1,11 @@
 import type { RuDict } from './ru';
 
 export const en: RuDict = {
+  errorBoundary: {
+    title: 'Something went wrong',
+    body: 'An unexpected error occurred. We have received a report about it. Please try reloading the page.',
+    reload: 'Reload',
+  },
   accessMode: {
     banner: {
       INVITED: {

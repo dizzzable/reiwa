@@ -40,6 +40,8 @@ import {
 import { notifyOperatorBotStarted, notifyDeveloperCredits } from './lib/startup-notice.js';
 import { printReiwaBanner } from '../core/banner.js';
 import { createErrorReporter } from '../infrastructure/error-reporter/index.js';
+import { installProcessErrorGuards } from '../infrastructure/error-reporter/process-guards.js';
+import { createBotErrorHandler } from './lib/error-handler.js';
 import {
   detectLocaleFromTelegram,
   translator,
@@ -127,6 +129,10 @@ async function startBot(): Promise<void> {
       : null;
 
   const errorReporter = createErrorReporter({ adminClient, source: 'bot' });
+
+  // Last-resort guards for failures that escape grammy's bot.catch (stray
+  // promise rejections, uncaught throws in timers/listeners).
+  installProcessErrorGuards({ logger, errorReporter });
 
   // Pre-warm the config cache
   const botConfig = await getBotConfig(adminClient);
@@ -218,14 +224,16 @@ async function startBot(): Promise<void> {
 
   // ── Error handler ──────────────────────────────────────────────────────────
 
-  bot.catch((err) => {
-    logger.error({ err: err.error, ctx: { update: err.message } }, 'Bot handler error');
-    errorReporter.report({
-      message: err.error instanceof Error ? err.error.message : String(err.error),
-      stack: err.error instanceof Error ? err.error.stack : undefined,
-      context: { scope: 'bot.catch' },
-    });
-  });
+  bot.catch(
+    createBotErrorHandler({
+      logger,
+      errorReporter,
+      translator,
+      userLocale: pageDeps.userLocale,
+      getConfig: pageDeps.getConfig,
+      envSupportUsername: pageDeps.envSupportUsername,
+    }),
+  );
 
   // ── Config refresh timer ───────────────────────────────────────────────────
   //

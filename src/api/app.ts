@@ -36,6 +36,7 @@ import { createRealtimeRouter } from "./routes/realtime.js";
 import { createContentRouter } from "./routes/content.js";
 import { createRezeisWebhookRouter } from "./routes/webhooks.js";
 import { createInternalMetricsRouter } from "./routes/internal-metrics.js";
+import { createClientErrorsRouter } from "./routes/client-errors.js";
 
 export interface CreateAppDeps {
   adminClient: AdminClient | null;
@@ -236,6 +237,10 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createPushRouter(deps));
   app.use("/api/v1", createRealtimeRouter(deps));
   app.use("/api/v1", createContentRouter(deps));
+
+  // Client-error ingest — the web/TMA cabinet SPA reports its own runtime
+  // errors here so they join the bot/api/worker firehose.
+  app.use("/api/v1", createClientErrorsRouter(deps));
   // Inbound rezeis-admin webhook receiver (admin → reiwa public domain →
   // relayed to the bot locally). Signature-authenticated; see webhooks.ts.
   app.use("/api/v1", createRezeisWebhookRouter({ config }));
