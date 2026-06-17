@@ -393,10 +393,14 @@ async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
     return;
   }
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
+  // Universal "Close" button so the dev can dismiss a handled event card
+  // (routed by the shared `close` callback → deletes the message).
+  const keyboard = new InlineKeyboard().text('❌ Закрыть', 'close');
   try {
     await bot.api.sendMessage(devId, text, {
       ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
       link_preview_options: { is_disabled: true },
+      reply_markup: keyboard,
     });
     res.statusCode = 204;
     res.end();

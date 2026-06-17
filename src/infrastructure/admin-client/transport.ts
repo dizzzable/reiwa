@@ -80,7 +80,12 @@ export class AdminTransport {
     await this.pool.close();
   }
 
-  async request<T>(method: HttpMethod | string, path: string, body?: unknown): Promise<T> {
+  async request<T>(
+    method: HttpMethod | string,
+    path: string,
+    body?: unknown,
+    extraHeaders?: Record<string, string>,
+  ): Promise<T> {
     const fullPath = `${this.basePath}${path}`;
     const upper = method.toUpperCase() as HttpMethod;
     const signingHeaders = this.buildSigningHeaders(upper, path, body);
@@ -91,6 +96,9 @@ export class AdminTransport {
       path: fullPath,
       headers: {
         'Content-Type': 'application/json',
+        // Caller-supplied headers (e.g. the guest support token) are applied
+        // first so they can never override auth / trace / signing below.
+        ...extraHeaders,
         Authorization: `Bearer ${this.apiKey}`,
         ...traceHeaders,
         ...signingHeaders,
@@ -155,6 +163,49 @@ export class AdminTransport {
     return { status: response.statusCode, body: response.body };
   }
 
+  /**
+   * Issues a GET and returns the raw response body as a Node `Readable`
+   * together with the upstream `Content-Type` and `Content-Length`. Used to
+   * proxy permissioned binary downloads (e.g. support attachments) straight
+   * back to the browser without buffering. Returns `null` on a 4xx/5xx.
+   */
+  async fetchBinary(
+    path: string,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<{
+    status: number;
+    contentType: string | null;
+    contentLength: number | null;
+    body: NodeJS.ReadableStream;
+  } | null> {
+    const fullPath = `${this.basePath}${path}`;
+    const signingHeaders = this.buildSigningHeaders('GET', path);
+    const traceHeaders = this.buildTraceHeaders();
+    const response = await this.pool.request({
+      method: 'GET',
+      path: fullPath,
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        ...traceHeaders,
+        ...signingHeaders,
+        ...extraHeaders,
+      },
+    });
+    if (response.statusCode >= 400) {
+      await response.body.text().catch(() => undefined);
+      return null;
+    }
+    const contentType = headerValue(response.headers['content-type']);
+    const lengthRaw = headerValue(response.headers['content-length']);
+    const contentLength = lengthRaw !== null ? Number.parseInt(lengthRaw, 10) : null;
+    return {
+      status: response.statusCode,
+      contentType,
+      contentLength: Number.isFinite(contentLength as number) ? contentLength : null,
+      body: response.body,
+    };
+  }
+
   private buildSigningHeaders(method: HttpMethod, path: string, body?: unknown): Record<string, string> {
     if (!this.sharedSecret) return {};
     const bodyStr = body !== undefined ? JSON.stringify(body) : '';
@@ -182,4 +233,10 @@ export class AdminTransport {
     if (!id) return {};
     return { [REQUEST_ID_HEADER]: id };
   }
+}
+
+/** Normalize an undici header (string | string[] | undefined) to a string. */
+function headerValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return typeof value === 'string' ? value : null;
 }

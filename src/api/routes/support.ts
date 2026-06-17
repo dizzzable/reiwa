@@ -83,5 +83,34 @@ export function createSupportRouter(deps: {
     }
   });
 
+  // POST /api/v1/support/guest/attach — explicitly claim the anonymous
+  // conversation in this browser for the logged-in account. Requires BOTH a
+  // session (the account) and the httpOnly guest cookie (the conversation);
+  // ownership transfer is never implicit.
+  router.post("/support/guest/attach", requireSession, async (req: AuthRequest, res) => {
+    const token = req.cookies?.["reiwa_support"] as string | undefined;
+    if (typeof token !== "string" || token.length === 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const identity = resolveUserIdentity(req);
+    const ref = identity.userId ?? identity.telegramId ?? null;
+    if (!ref) {
+      res.status(400).json({ error: "no_identity" });
+      return;
+    }
+    try {
+      await adminClient?.support.attachGuest(token, ref);
+      // The conversation is now account-owned; the guest cookie is inert.
+      res.clearCookie("reiwa_support", { path: "/" });
+      res.json({ ok: true });
+    } catch (err: unknown) {
+      const notFound = isUpstreamStatus(err, 404);
+      if (notFound) res.clearCookie("reiwa_support", { path: "/" });
+      getRequestLogger(req).warn({ err }, "POST /support/guest/attach failed");
+      res.status(notFound ? 404 : 500).json({ error: notFound ? "not_found" : "internal" });
+    }
+  });
+
   return router;
 }

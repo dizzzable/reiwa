@@ -24,6 +24,12 @@ export const TTL = {
   RATE_REGISTER: 60 * 60,
   /** Recovery rate limit window — 1 hour */
   RATE_RECOVER: 60 * 60,
+  /** Guest support creation rate limit window — 1 hour */
+  RATE_GUEST_CREATE: 60 * 60,
+  /** Guest support reply rate limit window — 1 minute */
+  RATE_GUEST_REPLY: 60,
+  /** Guest support attachment upload rate limit window — 1 minute */
+  RATE_GUEST_UPLOAD: 60,
   /** Brute-force tracking window — 1 hour */
   BRUTE_FORCE: 60 * 60,
   /** Recovery queue (queued password generation) — 24 hours */
@@ -86,6 +92,32 @@ export function rateRegisterKey(ip: string): string {
  */
 export function rateRecoverKey(ip: string): string {
   return `rate:recover:${ip}`;
+}
+
+/**
+ * Build a Redis key for the anonymous guest-support creation rate limit.
+ * Keyed by IP — bounds how many conversations one IP can open per window.
+ * Value: Counter (integer)
+ */
+export function rateGuestCreateKey(ip: string): string {
+  return `rate:guest_create:${ip}`;
+}
+
+/**
+ * Build a Redis key for the anonymous guest-support reply rate limit.
+ * Keyed by IP. Value: Counter (integer)
+ */
+export function rateGuestReplyKey(ip: string): string {
+  return `rate:guest_reply:${ip}`;
+}
+
+/**
+ * Build a Redis key for the anonymous guest-support attachment upload limit.
+ * Keyed by IP — bounds heavier multipart/base64 uploads separately from text
+ * replies. Value: Counter (integer)
+ */
+export function rateGuestUploadKey(ip: string): string {
+  return `rate:guest_upload:${ip}`;
 }
 
 /**

@@ -7,6 +7,9 @@ import {
   rateLoginKey,
   rateRegisterKey,
   rateRecoverKey,
+  rateGuestCreateKey,
+  rateGuestReplyKey,
+  rateGuestUploadKey,
   bannedIpKey,
   TTL,
 } from "../../infrastructure/redis/keys.js";
@@ -99,6 +102,35 @@ export const RATE_LIMITS = {
     keyBuilder: rateRecoverKey,
     onExceed: "ban",
     blockBehavior: "at_limit",
+  } satisfies RateLimitConfig,
+
+  // Anonymous guest support: open at most 5 conversations/hour/IP (bounds the
+  // number of concurrent open guest conversations from one source) …
+  guestCreate: {
+    maxAttempts: 5,
+    windowSeconds: TTL.RATE_GUEST_CREATE,
+    keyBuilder: rateGuestCreateKey,
+    onExceed: "block",
+    blockBehavior: "at_limit",
+  } satisfies RateLimitConfig,
+
+  // … and at most 30 messages/minute/IP on an open conversation.
+  guestReply: {
+    maxAttempts: 30,
+    windowSeconds: TTL.RATE_GUEST_REPLY,
+    keyBuilder: rateGuestReplyKey,
+    onExceed: "block",
+    blockBehavior: "after_limit",
+  } satisfies RateLimitConfig,
+
+  // Attachment uploads are heavier (base64 body up to ~13 MB) — a tighter
+  // 12/minute/IP budget, separate from the text-reply limiter.
+  guestUpload: {
+    maxAttempts: 12,
+    windowSeconds: TTL.RATE_GUEST_UPLOAD,
+    keyBuilder: rateGuestUploadKey,
+    onExceed: "block",
+    blockBehavior: "after_limit",
   } satisfies RateLimitConfig,
 } as const;
 

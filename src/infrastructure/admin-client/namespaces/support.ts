@@ -58,4 +58,109 @@ export class SupportNamespace {
       { content },
     );
   }
+
+  // ── Anonymous (guest) conversations ────────────────────────────────────────
+  // Authorization is bound server-side to the raw token relayed in the
+  // `x-support-guest-token` header; rezeis resolves it by hash. The token is
+  // never placed in the path/body, and the client never asserts a ticket id.
+
+  createGuest(input: {
+    readonly subject: string;
+    readonly message: string;
+    readonly email?: string | null;
+    readonly clientIp?: string | null;
+  }): Promise<GuestTicketResponse> {
+    const headers: Record<string, string> = {};
+    if (input.clientIp) headers['x-support-client-ip'] = input.clientIp;
+    return this.transport.request<GuestTicketResponse>(
+      'POST',
+      '/api/internal/support/guest',
+      { subject: input.subject, message: input.message, email: input.email ?? undefined },
+      headers,
+    );
+  }
+
+  getGuest(token: string): Promise<unknown> {
+    return this.transport.request('GET', '/api/internal/support/guest', undefined, {
+      'x-support-guest-token': token,
+    });
+  }
+
+  replyGuest(token: string, content: string): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/support/guest/reply', { content }, {
+      'x-support-guest-token': token,
+    });
+  }
+
+  closeGuest(token: string): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/support/guest/close', {}, {
+      'x-support-guest-token': token,
+    });
+  }
+
+  /** Attach a guest conversation (bound to `token`) to a logged-in account. */
+  attachGuest(token: string, userRef: string): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/support/guest/attach', { userRef }, {
+      'x-support-guest-token': token,
+    });
+  }
+
+  /**
+   * Panel-managed runtime config for the public edge: the master enabled
+   * flag, the public Turnstile site key, and the secret used for captcha
+   * verification. Fetched (and cached) by the guest router instead of env.
+   */
+  getRuntimeConfig(): Promise<GuestRuntimeConfig> {
+    return this.transport.request<GuestRuntimeConfig>('GET', '/api/internal/support/guest/config');
+  }
+
+  /** Relay a base64 attachment upload for the bound guest conversation. */
+  uploadGuestAttachment(token: string, input: GuestAttachmentUpload): Promise<unknown> {
+    return this.transport.request(
+      'POST',
+      '/api/internal/support/guest/attachments',
+      {
+        filename: input.filename,
+        mimeType: input.mimeType,
+        content: input.content,
+        dataBase64: input.dataBase64,
+      },
+      { 'x-support-guest-token': token },
+    );
+  }
+
+  /** Open a binary stream for an attachment on the bound guest conversation. */
+  downloadGuestAttachment(
+    token: string,
+    attachmentId: string,
+  ): Promise<{
+    status: number;
+    contentType: string | null;
+    contentLength: number | null;
+    body: NodeJS.ReadableStream;
+  } | null> {
+    return this.transport.fetchBinary(
+      `/api/internal/support/guest/attachments/${encodeURIComponent(attachmentId)}`,
+      { 'x-support-guest-token': token },
+    );
+  }
+}
+
+export interface GuestAttachmentUpload {
+  readonly filename: string;
+  readonly mimeType?: string;
+  readonly content?: string;
+  readonly dataBase64: string;
+}
+
+export interface GuestTicketResponse {
+  readonly token: string;
+  readonly resumeCode: string;
+  readonly ticket: unknown;
+}
+
+export interface GuestRuntimeConfig {
+  readonly enabled: boolean;
+  readonly turnstileSiteKey: string;
+  readonly turnstileSecret: string | null;
 }

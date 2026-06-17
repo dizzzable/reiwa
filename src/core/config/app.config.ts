@@ -92,6 +92,22 @@ const schema = z.object({
     .optional()
     .transform((value) => (value && value.length > 0 ? value : null)),
   /**
+   * Cloudflare Turnstile keys for the anonymous support widget. When the
+   * secret is set, the public guest-support create endpoint requires a valid
+   * Turnstile token; when unset, the endpoint falls back to rate limiting
+   * alone. The site key is served to the widget for the client-side challenge.
+   */
+  SUPPORT_TURNSTILE_SECRET: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => (value && value.length > 0 ? value : null)),
+  SUPPORT_TURNSTILE_SITE_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => (value && value.length > 0 ? value : null)),
+  /**
    * Telegram dev/operator id used as the recipient of internal alerts
    * (errors, suspicious-activity pings). Numeric. Optional — when unset
    * dev pings fall through to the bot logger.

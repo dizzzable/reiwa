@@ -148,8 +148,14 @@ export {
   getTicket,
   getTickets,
   replyToTicket,
+  createGuestTicket,
+  getGuestConversation,
+  replyGuestConversation,
+  closeGuestConversation,
+  getGuestSupportConfig,
   type SupportTicket,
   type SupportTicketMessage,
+  type GuestTicket,
 } from "./support.js";
 
 // Web push

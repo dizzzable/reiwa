@@ -30,6 +30,7 @@ import { createReferralsRouter } from "./routes/referrals.js";
 import { createDevicesRouter } from "./routes/devices.js";
 import { createPartnerRouter } from "./routes/partner.js";
 import { createSupportRouter } from "./routes/support.js";
+import { createSupportGuestRouter } from "./routes/support-guest.js";
 import { createLinkingRouter } from "./routes/linking.js";
 import { createPushRouter } from "./routes/push.js";
 import { createRealtimeRouter } from "./routes/realtime.js";
@@ -155,6 +156,15 @@ export function createApp(deps: CreateAppDeps) {
   }
 
   // ── Parsers ───────────────────────────────────────────────────────────────
+  // Guest attachment uploads relay the file as base64 JSON, so this single
+  // endpoint needs a larger body budget than the global 1 MB cap. It is
+  // mounted BEFORE the global parser: body-parser sets `req._body`, so the
+  // global `express.json` below skips re-parsing. rezeis re-validates the
+  // decoded bytes (allow-list + magic-byte + true size cap) regardless.
+  app.use(
+    "/api/v1/support/guest/attachments",
+    express.json({ limit: "16mb" }),
+  );
   // Capture the raw body bytes so the rezeis-admin webhook receiver can verify
   // the HMAC signature over the exact payload (the signature is computed over
   // `<timestamp>.<rawBody>`, so a re-serialised body would never match).
@@ -233,6 +243,16 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1/devices", createDevicesRouter(deps));
   app.use("/api/v1", createPartnerRouter(deps));
   app.use("/api/v1", createSupportRouter(deps));
+  // Anonymous guest support chat — public (no session). Abuse protection is
+  // layered in Phase 2 task 6 (dedicated limiter + captcha).
+  app.use(
+    "/api/v1",
+    createSupportGuestRouter({
+      adminClient: deps.adminClient,
+      config,
+      webSessionStore: deps.webSessionStore,
+    }),
+  );
   app.use("/api/v1", createLinkingRouter(deps));
   app.use("/api/v1", createPushRouter(deps));
   app.use("/api/v1", createRealtimeRouter(deps));

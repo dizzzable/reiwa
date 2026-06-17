@@ -70,6 +70,7 @@ const PUBLIC_PATHS = [
   "/bootstrap",
   "/tma",
   "/payment-return",
+  "/support/guest",
 ];
 
 const BENIGN_401_PATHS = ["/session", "/auth/"];

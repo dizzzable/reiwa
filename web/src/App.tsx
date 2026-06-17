@@ -60,6 +60,7 @@ const SupportPage = lazy(() => import("@/features/support/support-page"));
 const PointsExchangePage = lazy(() => import("@/features/referrals/points-exchange-page"));
 const OnboardingPage = lazy(() => import("@/features/onboarding/onboarding-page"));
 const ClaimPage = lazy(() => import("@/features/auth/claim-page"));
+const GuestSupportPage = lazy(() => import("@/features/support/guest-support-page"));
 
 function PageLoader() {
   return (
@@ -86,6 +87,8 @@ export default function App() {
         <Route path="/claim" element={<ClaimPage />} />
         <Route path="/payment-return" element={<PaymentReturn />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
+        {/* Public anonymous support — no login required. */}
+        <Route path="/support/guest" element={<GuestSupportPage />} />
 
         {/* Protected shell */}
         <Route element={<StealthLayout />}>
