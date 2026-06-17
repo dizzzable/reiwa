@@ -19,7 +19,12 @@ import { apiLimiter } from "./middleware/rate-limit.js";
 import { createCsrfProtection } from "./middleware/csrf-protection.js";
 import { createContextDetectionMiddleware } from "./middleware/context-detection.js";
 import { createAuthRouter } from "./routes/auth.js";
-import { createBrandingRouter } from "./routes/branding.js";
+import { createBrandingRouter, getPublicConfigPayload } from "./routes/branding.js";
+import {
+  buildWebManifest,
+  getBrandingAssetCache,
+  isSafeBrandingFile,
+} from "./branding-pwa.js";
 import { createProfileRouter } from "./routes/profile.js";
 import { createPlansRouter } from "./routes/plans.js";
 import { createSubscriptionRouter } from "./routes/subscription.js";
@@ -320,6 +325,50 @@ export function createApp(deps: CreateAppDeps) {
     } catch (err: unknown) {
       if (logger) logger.debug({ err, file }, "emoji proxy failed");
       res.status(502).end();
+    }
+  });
+
+  // ── Branding assets proxy + disk cache ────────────────────────────────────
+  // Operator logo / PWA icon live on the admin host under
+  // `/uploads/branding/<file>`. Unlike the icons/emoji proxies this one mirrors
+  // the bytes to a local disk cache so the brand survives an admin outage
+  // (fetch-once → serve-from-cache). On admin-down with no cache we redirect to
+  // the default Reiwa icon so the manifest/`<img>` never breaks.
+  const brandingAssetCache = getBrandingAssetCache();
+  app.get("/uploads/branding/:file", async (req: Request, res: Response) => {
+    const file = String(req.params["file"] ?? "");
+    if (!isSafeBrandingFile(file)) {
+      res.status(404).end();
+      return;
+    }
+    const asset = await brandingAssetCache.resolve({ file, adminBaseUrl, logger });
+    if (asset === null) {
+      // Graceful fallback — keep installability + auth screens working.
+      res.redirect(302, "/icons/icon-512x512.png");
+      return;
+    }
+    res.setHeader("Content-Type", asset.contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(asset.buffer);
+  });
+
+  // ── Dynamic Web App Manifest (white-label PWA install) ────────────────────
+  // Registered BEFORE the static handler so it wins over the baked
+  // `web/dist/manifest.webmanifest`. Pulls operator branding from the shared
+  // public-config cache; on any failure it serves the default Reiwa manifest so
+  // installability is never broken by an upstream hiccup.
+  app.get("/manifest.webmanifest", async (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "application/manifest+json");
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    try {
+      const payload = await getPublicConfigPayload(deps.adminClient, (err) =>
+        logger?.debug?.({ err }, "manifest branding refresh failed"),
+      );
+      const branding = (payload.body as { branding?: unknown }).branding;
+      res.json(buildWebManifest(branding as Parameters<typeof buildWebManifest>[0]));
+    } catch (err: unknown) {
+      if (logger) logger.debug({ err }, "manifest build failed; serving default");
+      res.json(buildWebManifest(null));
     }
   });
 

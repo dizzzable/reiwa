@@ -108,6 +108,24 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     }
   }, [config.platformBranding?.webTitle, config.platformBranding?.projectName, config.branding.brandName]);
 
+  // Point the iOS "Add to Home Screen" icon at the operator's PWA icon / logo.
+  // iOS reads `<link rel="apple-touch-icon">` from the DOM at install time, so
+  // updating it here white-labels the home-screen icon on Safari (the dynamic
+  // manifest covers Android/Chrome). Falls back to the static Reiwa icon.
+  useEffect(() => {
+    const icon =
+      config.branding.pwaIconUrl?.trim() ||
+      config.branding.logoUrl?.trim() ||
+      "/icons/icon-192x192.png";
+    let link = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "apple-touch-icon";
+      document.head.appendChild(link);
+    }
+    link.href = icon;
+  }, [config.branding.pwaIconUrl, config.branding.logoUrl]);
+
   // Synchronise i18n with the operator-configured default locale, but only
   // when the user has not made an explicit choice yet.
   useEffect(() => {

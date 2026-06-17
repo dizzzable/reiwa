@@ -98,6 +98,8 @@ export interface AppBackground {
 export interface Branding {
   brandName: string;
   logoUrl: string | null;
+  /** Square PNG for PWA install (home-screen icon). Falls back to logoUrl. */
+  pwaIconUrl?: string | null;
   primary: string;
   primaryFg: string;
   bgPrimary: string;
@@ -176,6 +178,7 @@ export interface CustomIcon {
 export const DEFAULT_BRANDING: Branding = {
   brandName: "Reiwa",
   logoUrl: null,
+  pwaIconUrl: null,
   primary: "#22c55e",
   primaryFg: "#0a0a0a",
   bgPrimary: "#0a0a0a",

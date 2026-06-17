@@ -33,9 +33,12 @@ import {
   Shield,
   CheckCircle2,
   Tag,
+  Download,
+  Share,
 } from "lucide-react";
 
 import { useSession } from "@/hooks/use-session";
+import { useInstallPrompt } from "@/hooks/use-install-prompt";
 import { signOut, updateLanguage } from "@/lib/api-client";
 import { setLocale } from "@/i18n/i18n";
 import { useBranding } from "@/lib/branding-provider";
@@ -52,8 +55,10 @@ export default function SettingsPage() {
   const { session } = useSession();
   const { branding } = useBranding();
   const { replayTour } = useOnboardingContext();
+  const install = useInstallPrompt();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [showLangDialog, setShowLangDialog] = useState(false);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
 
   const signOutMutation = useMutation({
     mutationFn: signOut,
@@ -202,6 +207,22 @@ export default function SettingsPage() {
           sublabel={t("settings.faqSub")}
           onClick={() => navigate("/settings/faq")}
         />
+        {install.canInstall || install.isIos ? (
+          <MenuItem
+            icon={<Download className="h-5 w-5" />}
+            iconBg="bg-(--brand-primary)/10 text-(--brand-primary)"
+            tint={iconTint("install")}
+            label={t("settings.installApp")}
+            sublabel={t("settings.installAppSub")}
+            onClick={() => {
+              if (install.canInstall) {
+                void install.promptInstall();
+              } else {
+                setShowInstallHelp(true);
+              }
+            }}
+          />
+        ) : null}
         <MenuItem
           icon={<GraduationCap className="h-5 w-5" />}
           iconBg="bg-sky-500/10 text-sky-400"
@@ -252,6 +273,30 @@ export default function SettingsPage() {
               onClick={() => changeLang("en")}
             />
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Install (iOS) Help Dialog ── */}
+      <Dialog open={showInstallHelp} onOpenChange={setShowInstallHelp}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{t("settings.installIosTitle", { brand: branding.brandName })}</DialogTitle>
+            <DialogDescription>{t("settings.installIosIntro")}</DialogDescription>
+          </DialogHeader>
+          <ol className="space-y-3 py-1 text-sm text-zinc-300">
+            <li className="flex items-center gap-2">
+              <Share className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+              <span>{t("settings.installIosStep1")}</span>
+            </li>
+            <li className="flex items-center gap-2">
+              <Download className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+              <span>{t("settings.installIosStep2")}</span>
+            </li>
+            <li className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+              <span>{t("settings.installIosStep3")}</span>
+            </li>
+          </ol>
         </DialogContent>
       </Dialog>
 

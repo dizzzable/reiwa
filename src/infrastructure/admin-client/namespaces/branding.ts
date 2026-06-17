@@ -8,6 +8,8 @@ import type { AdminTransport } from '../transport.js';
 export interface BrandingPayload {
   readonly brandName: string;
   readonly logoUrl: string | null;
+  /** Square PNG for PWA install (home-screen icon). Falls back to logoUrl. */
+  readonly pwaIconUrl?: string | null;
   readonly primary: string;
   readonly primaryFg: string;
   readonly bgPrimary: string;

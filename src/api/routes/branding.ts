@@ -45,6 +45,85 @@ export function resetBrandingCache(): void {
   packsCache = null;
 }
 
+/** Minimal default payload (no admin client) so the SPA / manifest can still
+ *  bootstrap. Locales fall back to Russian-only. */
+function defaultPublicConfig(): unknown {
+  return {
+    branding: {
+      brandName: "Rezeis",
+      logoUrl: null,
+      pwaIconUrl: null,
+      primary: "#22c55e",
+      primaryFg: "#0a0a0a",
+      bgPrimary: "#0a0a0a",
+      bgSecondary: "#171717",
+      cardGradient: "linear-gradient(135deg, #064e3b 0%, #22c55e 100%)",
+      cardPattern: null,
+      bgEffect: "NONE",
+      borderRadius: "rounded-2xl",
+      fontFamily: "Inter, system-ui, sans-serif",
+    },
+    locales: ["ru"],
+    defaultLocale: "ru",
+  };
+}
+
+async function fetchFreshPayload(adminClient: AdminClient | null): Promise<CachedPayload> {
+  if (!adminClient) {
+    const body = defaultPublicConfig();
+    return { body, etag: computeEtag(body), fetchedAt: Date.now() };
+  }
+  const body = await adminClient.branding.getReiwaPublicConfig();
+  return { body, etag: computeEtag(body), fetchedAt: Date.now() };
+}
+
+/**
+ * Shared cached public-config accessor (60s TTL + stale-while-revalidate 5m).
+ * Used by the SPA endpoints AND the dynamic web-manifest route so both share
+ * one upstream call and one cache. `onBgFailure` lets callers log background
+ * refresh failures with their own logger.
+ */
+export async function getPublicConfigPayload(
+  adminClient: AdminClient | null,
+  onBgFailure?: (err: unknown) => void,
+): Promise<CachedPayload> {
+  const now = Date.now();
+  if (cached !== null && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached;
+  }
+  // Stale-while-revalidate: serve stale immediately, refresh in background.
+  if (cached !== null && now - cached.fetchedAt < STALE_WHILE_REVALIDATE_MS) {
+    if (inflight === null) {
+      inflight = fetchFreshPayload(adminClient)
+        .then((fresh) => {
+          cached = fresh;
+          inflight = null;
+          return fresh;
+        })
+        .catch((err) => {
+          inflight = null;
+          onBgFailure?.(err);
+          return cached as CachedPayload;
+        });
+    }
+    return cached;
+  }
+  // Cache fully expired — wait for fresh fetch (deduplicated across requests).
+  if (inflight === null) {
+    inflight = fetchFreshPayload(adminClient)
+      .then((fresh) => {
+        cached = fresh;
+        inflight = null;
+        return fresh;
+      })
+      .catch((err) => {
+        inflight = null;
+        throw err;
+      });
+  }
+  return inflight;
+}
+
 export function createBrandingRouter(deps: {
   adminClient: AdminClient | null;
   logger?: Logger;
@@ -65,73 +144,8 @@ export function createBrandingRouter(deps: {
     }
   };
 
-  async function fetchFresh(): Promise<CachedPayload> {
-    if (!adminClient) {
-      // No admin client — return a minimal default payload so the SPA can
-      // still bootstrap. Locales fall back to Russian-only.
-      const body = {
-        branding: {
-          brandName: "Rezeis",
-          logoUrl: null,
-          primary: "#22c55e",
-          primaryFg: "#0a0a0a",
-          bgPrimary: "#0a0a0a",
-          bgSecondary: "#171717",
-          cardGradient: "linear-gradient(135deg, #064e3b 0%, #22c55e 100%)",
-          cardPattern: null,
-          bgEffect: "NONE",
-          borderRadius: "rounded-2xl",
-          fontFamily: "Inter, system-ui, sans-serif",
-        },
-        locales: ["ru"],
-        defaultLocale: "ru",
-      };
-      const etag = computeEtag(body);
-      return { body, etag, fetchedAt: Date.now() };
-    }
-    const body = await adminClient.branding.getReiwaPublicConfig();
-    const etag = computeEtag(body);
-    return { body, etag, fetchedAt: Date.now() };
-  }
-
-  async function getPayload(): Promise<CachedPayload> {
-    const now = Date.now();
-    if (cached !== null && now - cached.fetchedAt < CACHE_TTL_MS) {
-      return cached;
-    }
-    // Stale-while-revalidate: serve stale immediately, refresh in background.
-    if (cached !== null && now - cached.fetchedAt < STALE_WHILE_REVALIDATE_MS) {
-      if (inflight === null) {
-        inflight = fetchFresh()
-          .then((fresh) => {
-            cached = fresh;
-            inflight = null;
-            return fresh;
-          })
-          .catch((err) => {
-            inflight = null;
-            logBgFailure(err);
-            // Return current stale value on failure.
-            return cached as CachedPayload;
-          });
-      }
-      return cached;
-    }
-    // Cache fully expired — wait for fresh fetch (deduplicated across concurrent requests).
-    if (inflight === null) {
-      inflight = fetchFresh()
-        .then((fresh) => {
-          cached = fresh;
-          inflight = null;
-          return fresh;
-        })
-        .catch((err) => {
-          inflight = null;
-          throw err;
-        });
-    }
-    return inflight;
-  }
+  const getPayload = (): Promise<CachedPayload> =>
+    getPublicConfigPayload(adminClient, logBgFailure);
 
   // GET /api/v1/public-config — full payload (branding + locales)
   router.get("/public-config", async (req, res) => {

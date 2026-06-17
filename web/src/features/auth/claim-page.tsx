@@ -5,7 +5,7 @@ import { motion } from 'motion/react'
 import { ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
-import { ReiwaLogo } from '@/components/ui/reiwa-logo'
+import { BrandLogo } from '@/components/ui/brand-logo'
 import { SESSION_QUERY_KEY, useSession } from '@/hooks/use-session'
 import { claimAccount } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
@@ -135,7 +135,7 @@ export default function ClaimPage() {
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col items-center mb-8"
         >
-          <ReiwaLogo className="mb-5 h-10 w-auto" />
+          <BrandLogo className="mb-5 h-10 w-auto" />
           <div
             className="flex h-16 w-16 items-center justify-center rounded-2xl mb-4"
             style={{

@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
-import { ReiwaLogo } from '@/components/ui/reiwa-logo'
+import { BrandLogo } from '@/components/ui/brand-logo'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { login } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
@@ -123,7 +123,7 @@ export default function SignInPage() {
             className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 backdrop-blur-xl"
             style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
           >
-            <ReiwaLogo className="h-11 w-11 text-(--brand-primary)" title="Reiwa" />
+            <BrandLogo className="h-11 w-11" />
           </div>
         </motion.div>
 

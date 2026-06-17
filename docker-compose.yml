@@ -47,6 +47,11 @@ services:
       - .env
     ports:
       - "127.0.0.1:${REIWA_PORT:-5000}:${REIWA_PORT:-5000}"
+    volumes:
+      # Disk mirror of operator branding assets (logo / PWA icon) proxied from
+      # rezeis-admin. Lets the brand survive an admin-panel outage. Set
+      # BRANDING_CACHE_DIR=/data/branding-cache in .env to use this mount.
+      - reiwa-branding-cache:/data/branding-cache
     depends_on:
       reiwa-redis:
         condition: service_healthy
@@ -95,3 +100,5 @@ networks:
 volumes:
   reiwa-redis-data:
     name: reiwa-redis-data
+  reiwa-branding-cache:
+    name: reiwa-branding-cache

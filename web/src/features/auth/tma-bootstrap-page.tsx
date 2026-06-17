@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { NetworkBg } from '@/components/ui/network-bg'
-import { ReiwaLogo } from '@/components/ui/reiwa-logo'
+import { BrandLogo } from '@/components/ui/brand-logo'
 import { bootstrapTelegram, getSession } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { useTelegramWebApp } from '@/hooks/use-telegram-webapp'
@@ -82,7 +82,7 @@ export default function BootstrapPage() {
             className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-white/5 ring-1 ring-white/10 backdrop-blur-xl"
             style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
           >
-            <ReiwaLogo className="h-14 w-14 text-(--brand-primary)" title="Reiwa" />
+            <BrandLogo className="h-14 w-14" />
           </div>
         </motion.div>
 
