@@ -102,6 +102,12 @@ export interface BotConfig {
    */
   customEmojis?: Record<string, { id: string | null; fallback: string | null }>
   /**
+   * Whether the bot owner's account has Telegram Premium. When `false`,
+   * reiwa strips `custom_emoji` entities from rendered copy so a non-premium
+   * owner's messages never fail to send. Defaults to `true` when absent.
+   */
+  botEmojiOwnerHasPremium?: boolean
+  /**
    * Operator-managed dynamic screens projected from the BotFlow graph
    * (rezeis-admin). When a published flow exists, the screens listed
    * here override reiwa's built-in sub-menus (help / rules / invite),

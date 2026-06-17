@@ -26,6 +26,8 @@ import {
   resolveUnicode,
   utf16Length,
   applyCustomEmojiTokens,
+  renderBotCopy,
+  stripCustomEmojiEntities,
 } from '../../../src/infrastructure/bot-config/emoji-utils.js';
 
 describe('firstCharLengthUtf16', () => {
@@ -241,5 +243,39 @@ describe('applyCustomEmojiTokens', () => {
     const profile = out.entities.find((e) => e.custom_emoji_id === '999');
     expect(profile?.offset).toBe(utf16Length('📰 '));
     expect(out.entities.some((e) => e.custom_emoji_id === '5333')).toBe(true);
+  });
+})
+
+describe('stripCustomEmojiEntities', () => {
+  it('drops only custom_emoji entities, keeping text-format ones intact', () => {
+    const entities = [
+      { type: 'custom_emoji' as const, offset: 0, length: 2, custom_emoji_id: '5333' },
+      { type: 'bold' as unknown as 'custom_emoji', offset: 3, length: 4 },
+    ];
+    const out = stripCustomEmojiEntities(entities);
+    expect(out).toEqual([{ type: 'bold', offset: 3, length: 4 }]);
+  });
+
+  it('returns an empty array when given an empty array', () => {
+    expect(stripCustomEmojiEntities([])).toEqual([]);
+  });
+})
+
+describe('renderBotCopy owner-premium awareness', () => {
+  const botEmojis = { CARD: { unicode: '💳', tgEmojiId: '12345' } };
+  const customEmojis = { news_emoji_5: { id: '5333', fallback: '📰' } };
+
+  it('keeps custom_emoji entities when the owner has premium (default)', () => {
+    const out = renderBotCopy('{{CARD}} :news_emoji_5: hi', botEmojis, customEmojis);
+    expect(out.text).toBe('💳 📰 hi');
+    expect(out.entities.some((e) => e.type === 'custom_emoji')).toBe(true);
+    expect(out.entities.length).toBe(2);
+  });
+
+  it('strips custom_emoji entities when the owner has no premium (fallback glyphs stay as text)', () => {
+    const out = renderBotCopy('{{CARD}} :news_emoji_5: hi', botEmojis, customEmojis, false);
+    // Text (fallback glyphs) is unchanged — only the premium entities are gone.
+    expect(out.text).toBe('💳 📰 hi');
+    expect(out.entities.every((e) => e.type !== 'custom_emoji')).toBe(true);
   });
 })

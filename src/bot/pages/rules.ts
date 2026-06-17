@@ -24,7 +24,7 @@ import { InlineKeyboard } from 'grammy';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
-import { resolvePlaceholders } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -58,9 +58,9 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
     const text = overrideScreen
       ? applyScreenTemplate(overrideScreen, lang, { rulesLink: link })
       : fallbackText;
-    // `{{KEY}}` → premium custom-emoji (operator-managed); unicode fallback for
-    // bots without the capability is handled by Telegram automatically.
-    const rendered = resolvePlaceholders(text, botCfg.botEmojis);
+    // `{{KEY}}` + `:slug:` → premium custom-emoji (operator-managed); unicode
+    // fallback for bots without the capability is handled by Telegram.
+    const rendered = renderBotCopy(text, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
 
     // Operator's own custom buttons (if any) render FIRST; system buttons
     // (rules URL + back) are appended below. Previously custom buttons were

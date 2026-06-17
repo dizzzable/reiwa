@@ -20,7 +20,7 @@ import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
-import { resolvePlaceholders } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -178,9 +178,9 @@ async function renderReferralHub(
   }
   appendBackToMenuRow(kb, backLabel);
 
-  // Resolve `{{KEY}}` placeholders into premium custom-emoji (operator-managed
-  // via the "Эмодзи" editor). Literal unicode emoji pass through unchanged.
-  const rendered = resolvePlaceholders(parts.join('\n\n'), botCfg.botEmojis);
+  // Resolve `{{KEY}}` placeholders + `:slug:` pack tokens into premium
+  // custom-emoji (operator-managed via the "Эмодзи" editor + emoji packs).
+  const rendered = renderBotCopy(parts.join('\n\n'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
   await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
 }
 
@@ -227,6 +227,6 @@ async function renderPartnerHub(
   }
   appendBackToMenuRow(kb, backLabel);
 
-  const rendered = resolvePlaceholders(parts.join('\n\n'), botCfg.botEmojis);
+  const rendered = renderBotCopy(parts.join('\n\n'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
   await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
 }

@@ -140,6 +140,7 @@ async function buildWelcomeView(
           welcomeTemplate,
           botEmojis: botCfg.botEmojis,
           customEmojis: botCfg.customEmojis,
+          ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
           translator: deps.translator,
           lang,
         })
@@ -149,6 +150,7 @@ async function buildWelcomeView(
           welcomeTemplate,
           botEmojis: botCfg.botEmojis,
           customEmojis: botCfg.customEmojis,
+          ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
           translator: deps.translator,
           lang,
         });

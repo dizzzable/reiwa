@@ -32,7 +32,7 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
-import { resolvePlaceholders } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -83,7 +83,7 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
       if (hasCustomButtons) kb.row();
       kb.url(translator.t('help.contact_button', lang), supportUrl);
       appendBackToMenuRow(kb, backLabel);
-      const rendered = resolvePlaceholders(title, botCfg.botEmojis);
+      const rendered = renderBotCopy(title, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
       await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
       return;
     }
@@ -100,7 +100,7 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
 
     const kb = buildKeyboard();
     appendBackToMenuRow(kb, backLabel);
-    const renderedFallback = resolvePlaceholders(fallbackBody, botCfg.botEmojis);
+    const renderedFallback = renderBotCopy(fallbackBody, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
     await editOrReply(ctx, {
       text: renderedFallback.text,
       entities: renderedFallback.entities,

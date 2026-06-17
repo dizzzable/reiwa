@@ -234,6 +234,42 @@ export function applyCustomEmojiTokens(
 }
 
 /**
+ * Render operator bot copy through BOTH emoji systems in one pass:
+ *   1. `{{KEY}}` semantic placeholders → premium custom-emoji / unicode
+ *      (the bot-config "Эмодзи" registry), then
+ *   2. `:slug:` custom-emoji pack tokens → fallback glyph + premium entity
+ *      (the Custom Emoji packs).
+ *
+ * Every screen that shows operator copy should go through this so the emoji
+ * configured in rezeis render consistently everywhere — not just on the
+ * welcome screen (which historically was the only caller of the `:slug:`
+ * pass, so pack emoji looked "standard" on every other screen).
+ */
+export function renderBotCopy(
+  template: string,
+  botEmojis?: BotEmojiMap | null,
+  customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null,
+  ownerHasPremium: boolean = true,
+): { text: string; entities: TgCustomEmojiEntity[] } {
+  const placeholders = resolvePlaceholders(template, botEmojis);
+  const rendered = applyCustomEmojiTokens(placeholders.text, placeholders.entities, customEmojis);
+  if (ownerHasPremium) return rendered;
+  return { text: rendered.text, entities: stripCustomEmojiEntities(rendered.entities) };
+}
+
+/**
+ * Drop `custom_emoji` entities from a rendered result. Telegram rejects a bot
+ * message carrying custom-emoji entities when the bot owner has no Premium, so
+ * a non-premium deployment renders the fallback glyphs as plain text instead.
+ * Pure + total — same `text`, only fewer entities.
+ */
+export function stripCustomEmojiEntities(
+  entities: readonly TgCustomEmojiEntity[],
+): TgCustomEmojiEntity[] {
+  return entities.filter((e) => e.type !== 'custom_emoji');
+}
+
+/**
  * Join an array of { text, entities } lines into a single message.
  * Adjusts entity offsets as lines are concatenated with '\n' separators.
  */

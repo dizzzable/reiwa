@@ -18,6 +18,7 @@ import {
   resolvePlaceholders,
   resolveUnicode,
   applyCustomEmojiTokens,
+  stripCustomEmojiEntities,
 } from "../bot-config/emoji-utils.js";
 import type { TranslatorPort } from "../../application/ports/translator.port.js";
 import type { SupportedLocale } from "../../core/enums/locale.enum.js";
@@ -35,6 +36,8 @@ export interface ProfileSummaryParams {
    * premium custom-emoji entity (when an id is configured).
    */
   customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null;
+  /** When false, `custom_emoji` entities are stripped (non-premium owner). */
+  ownerHasPremium?: boolean;
   translator: TranslatorPort;
   lang: SupportedLocale;
 }
@@ -134,15 +137,20 @@ export function buildProfileSummary(params: ProfileSummaryParams): {
   text: string;
   entities: TgCustomEmojiEntity[];
 } {
-  const { firstName, subscriptions, welcomeTemplate, botEmojis, customEmojis, translator, lang } =
+  const { firstName, subscriptions, welcomeTemplate, botEmojis, customEmojis, ownerHasPremium, translator, lang } =
     params;
+
+  // Non-premium owners can't send custom_emoji entities — strip them so the
+  // message still delivers (fallback glyphs remain inline as text).
+  const finalize = (r: { text: string; entities: TgCustomEmojiEntity[] }): { text: string; entities: TgCustomEmojiEntity[] } =>
+    ownerHasPremium === false ? { text: r.text, entities: stripCustomEmojiEntities(r.entities) } : r;
 
   const withName = welcomeTemplate.replace(/\{\{firstName\}\}/g, firstName);
   const welcomePart = resolvePlaceholders(withName, botEmojis, 0);
 
   const visible = subscriptions.filter((s) => s.status !== "DELETED");
   if (visible.length === 0) {
-    return applyCustomEmojiTokens(welcomePart.text, welcomePart.entities, customEmojis);
+    return finalize(applyCustomEmojiTokens(welcomePart.text, welcomePart.entities, customEmojis));
   }
 
   const lines: Array<{ text: string; entities: TgCustomEmojiEntity[] }> = [
@@ -177,5 +185,5 @@ export function buildProfileSummary(params: ProfileSummaryParams): {
   }
 
   const joined = joinLines(lines);
-  return applyCustomEmojiTokens(joined.text, joined.entities, customEmojis);
+  return finalize(applyCustomEmojiTokens(joined.text, joined.entities, customEmojis));
 }
