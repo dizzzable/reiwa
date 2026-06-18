@@ -58,6 +58,8 @@
  * listener is skipped entirely — no auth means no endpoint, period.
  */
 import * as http from 'node:http';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 
 import type { Bot, Context } from 'grammy';
 import { GrammyError, InlineKeyboard, InputFile } from 'grammy';
@@ -544,14 +546,16 @@ async function handleNotifyBackupDocument(opts: {
     `?recordId=${encodeURIComponent(recordId)}&token=${encodeURIComponent(token)}`;
   try {
     const response = await fetch(downloadUrl);
-    if (!response.ok) {
+    if (!response.ok || response.body === null) {
       logger.warn({ status: response.status, recordId }, 'Notify-backup-document: fetch failed');
       res.statusCode = 204;
       res.end();
       return;
     }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const document = new InputFile(buffer, filename);
+    // Stream the file straight through to Telegram instead of buffering — a
+    // 2 GB backup (Local Bot API Server) must never be held in memory.
+    const stream = Readable.fromWeb(response.body as WebReadableStream<Uint8Array>);
+    const document = new InputFile(stream, filename);
     await bot.api.sendDocument(chatId, document, {
       ...(caption !== undefined ? { caption } : {}),
       ...(topicThreadId !== undefined ? { message_thread_id: topicThreadId } : {}),

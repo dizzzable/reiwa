@@ -173,7 +173,18 @@ async function startBot(): Promise<void> {
     logger,
   });
 
-  const bot = new Bot<BotContext>(config.BOT_TOKEN);
+  const bot = new Bot<BotContext>(
+    config.BOT_TOKEN,
+    config.TELEGRAM_BOT_API_ROOT
+      ? { client: { apiRoot: config.TELEGRAM_BOT_API_ROOT } }
+      : undefined,
+  );
+  if (config.TELEGRAM_BOT_API_ROOT) {
+    logger.info(
+      { apiRoot: config.TELEGRAM_BOT_API_ROOT },
+      'Using self-hosted Telegram Bot API server (2 GB upload limit)',
+    );
+  }
   bot.use(session({ initial: (): BotSession => ({}) }));
 
   // ── Locale auto-detect middleware ──────────────────────────────────────────

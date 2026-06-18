@@ -86,6 +86,30 @@ services:
     networks:
       - remnawave-network
 
+  # ── Local Bot API Server (OPT-IN) ──────────────────────────────────────────
+  # Self-hosted Telegram Bot API server that raises the bot's sendDocument
+  # upload limit from 50 MB → 2 GB (needed to deliver large DB backups to
+  # Telegram). Disabled by default; enable with:
+  #   docker compose --profile bigfiles up -d
+  # Requires TELEGRAM_API_ID + TELEGRAM_API_HASH (from https://my.telegram.org)
+  # in .env, and set TELEGRAM_BOT_API_ROOT=http://telegram-bot-api:8081 so the
+  # bot routes through it. One-time: the bot must log out of the cloud API
+  # before first use of a local server (see docs/notes).
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: telegram-bot-api
+    hostname: telegram-bot-api
+    restart: unless-stopped
+    profiles: ["bigfiles"]
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_LOCAL: "true"
+    volumes:
+      - telegram-bot-api-data:/var/lib/telegram-bot-api
+    networks:
+      - remnawave-network
+
 networks:
   # Общая сеть с rezeis и (если на этом же VPS) с Remnawave. По ней reiwa
   # ходит к rezeis по имени `rezeis:8000`. Сеть ВНЕШНЯЯ — должна существовать
@@ -102,3 +126,5 @@ volumes:
     name: reiwa-redis-data
   reiwa-branding-cache:
     name: reiwa-branding-cache
+  telegram-bot-api-data:
+    name: telegram-bot-api-data

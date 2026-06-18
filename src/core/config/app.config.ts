@@ -75,6 +75,19 @@ const schema = z.object({
 
   BOT_TOKEN: z.string().trim().min(1).optional(),
   /**
+   * Base URL of the Telegram Bot API the bot talks to. Default is the cloud
+   * API (`https://api.telegram.org`, 50 MB upload cap). Point this at a
+   * self-hosted Local Bot API Server (e.g. `http://telegram-bot-api:8081`)
+   * to raise `sendDocument` uploads to 2 GB — required for delivering large
+   * database backups to Telegram. The trailing slash is trimmed on read.
+   */
+  TELEGRAM_BOT_API_ROOT: z
+    .string()
+    .trim()
+    .url()
+    .optional()
+    .transform((value) => (value && value.length > 0 ? value.replace(/\/+$/, '') : null)),
+  /**
    * Telegram support handle — usually `@SupportBot` or a numeric chat
    * id. Used by the bot's `help` callback and `/help` command to render
    * a "Contact support" button or link when the operator-managed
