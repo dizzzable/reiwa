@@ -105,6 +105,15 @@ interface DevNotifyDocumentPayload {
   readonly parseMode?: unknown;
 }
 
+interface BackupDocumentPayload {
+  readonly recordId?: unknown;
+  readonly token?: unknown;
+  readonly filename?: unknown;
+  readonly caption?: unknown;
+  readonly chatId?: unknown;
+  readonly topicThreadId?: unknown;
+}
+
 interface ListenerOptions {
   readonly bot: Bot<Context> | null;
   readonly cache: BotConfigCache | null;
@@ -124,6 +133,12 @@ interface ListenerOptions {
    * so admin stops trying to deliver. Best-effort — failures swallowed.
    */
   readonly onUserBlocked?: (telegramId: string) => Promise<void> | void;
+  /**
+   * Admin base URL (`http://rezeis:8000` or `https://admin.example.com`) used
+   * by `/notify-backup-document` to fetch a backup file from rezeis (signed
+   * download URL) and upload it to Telegram. `null` disables that endpoint.
+   */
+  readonly rezeisAdminUrl?: string | null;
 }
 
 /**
@@ -214,7 +229,7 @@ function isValidParseMode(value: unknown): value is 'MarkdownV2' | 'HTML' {
 }
 
 export function startInternalHttpListener(opts: ListenerOptions): void {
-  const { bot, cache, secret, port, logger, onUserBlocked, devId } = opts;
+  const { bot, cache, secret, port, logger, onUserBlocked, devId, rezeisAdminUrl } = opts;
   if (secret === null || secret.length === 0) {
     logger.info(
       'Internal HTTP listener disabled (REZEIS_INTERNAL_SHARED_SECRET unset)',
@@ -266,6 +281,10 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
       }
       if (url === '/notify-dev-document') {
         await handleNotifyDevDocument({ bot, devId, logger, raw, res });
+        return;
+      }
+      if (url === '/notify-backup-document') {
+        await handleNotifyBackupDocument({ bot, logger, raw, res, rezeisAdminUrl: rezeisAdminUrl ?? null });
         return;
       }
       if (url === '/notify-broadcast') {
@@ -468,6 +487,80 @@ async function handleNotifyDevDocument(opts: DevNotifyHandlerOptions): Promise<v
   } catch (err: unknown) {
     logger.warn({ err, devId }, 'Notify-dev-document: send failed');
     // Soft-success: the firehose is best-effort; don't make admin retry.
+    res.statusCode = 204;
+    res.end();
+  }
+}
+
+/**
+ * `/notify-backup-document` — fetch a backup file from rezeis (signed download
+ * URL) and upload it to the configured Telegram chat/topic. Used on the split
+ * deployment where rezeis has no bot token: rezeis hands the bot a short-lived
+ * token, the bot pulls the bytes over the docker hop and re-uploads them.
+ * Best-effort.
+ */
+async function handleNotifyBackupDocument(opts: {
+  readonly bot: Bot<Context> | null;
+  readonly logger: ReturnType<typeof createLogger>;
+  readonly raw: string;
+  readonly res: http.ServerResponse;
+  readonly rezeisAdminUrl: string | null;
+}): Promise<void> {
+  const { bot, logger, raw, res, rezeisAdminUrl } = opts;
+  if (bot === null || rezeisAdminUrl === null) {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+  let payload: BackupDocumentPayload;
+  try {
+    payload = JSON.parse(raw) as BackupDocumentPayload;
+  } catch {
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
+  const recordId = typeof payload.recordId === 'string' ? payload.recordId : null;
+  const token = typeof payload.token === 'string' ? payload.token : null;
+  const chatId = typeof payload.chatId === 'string' ? payload.chatId : null;
+  if (recordId === null || token === null || chatId === null) {
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
+  const filename =
+    typeof payload.filename === 'string' && payload.filename.trim().length > 0
+      ? payload.filename.trim()
+      : 'backup.sql.gz';
+  const captionRaw = typeof payload.caption === 'string' ? payload.caption : undefined;
+  const caption =
+    captionRaw !== undefined && captionRaw.length > TG_CAPTION_LIMIT
+      ? captionRaw.slice(0, TG_CAPTION_LIMIT)
+      : captionRaw;
+  const topicThreadId =
+    typeof payload.topicThreadId === 'number' ? payload.topicThreadId : undefined;
+  const downloadUrl =
+    `${rezeisAdminUrl.replace(/\/+$/, '')}/api/internal/backups/download` +
+    `?recordId=${encodeURIComponent(recordId)}&token=${encodeURIComponent(token)}`;
+  try {
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      logger.warn({ status: response.status, recordId }, 'Notify-backup-document: fetch failed');
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const document = new InputFile(buffer, filename);
+    await bot.api.sendDocument(chatId, document, {
+      ...(caption !== undefined ? { caption } : {}),
+      ...(topicThreadId !== undefined ? { message_thread_id: topicThreadId } : {}),
+    });
+    res.statusCode = 204;
+    res.end();
+  } catch (err: unknown) {
+    logger.warn({ err, recordId }, 'Notify-backup-document: send failed');
+    // Soft-success: delivery is best-effort; don't make admin retry forever.
     res.statusCode = 204;
     res.end();
   }

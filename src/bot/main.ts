@@ -309,6 +309,7 @@ async function startBot(): Promise<void> {
     port: config.BOT_INVALIDATE_PORT ?? 5100,
     devId: config.BOT_DEV_ID,
     logger,
+    rezeisAdminUrl,
     onUserBlocked: async (telegramId: string) => {
       if (adminClient === null) return;
       try {

@@ -143,6 +143,29 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           });
           break;
         }
+        case "reiwa.backup.document": {
+          // rezeis hands the bot a signed download URL token; the bot fetches
+          // the backup file from rezeis (docker hop) and uploads it to the
+          // configured chat/topic. No bytes travel through this webhook.
+          const recordId = str(meta["recordId"]);
+          const token = str(meta["token"]);
+          const chatId = str(meta["chatId"]);
+          if (!recordId || !token || !chatId) {
+            res.status(400).json({ message: "missing recordId/token/chatId" });
+            return;
+          }
+          await relayToBot("/notify-backup-document", {
+            recordId,
+            token,
+            chatId,
+            ...(str(meta["filename"]) ? { filename: str(meta["filename"]) } : {}),
+            ...(str(meta["caption"]) ? { caption: str(meta["caption"]) } : {}),
+            ...(typeof meta["topicThreadId"] === "number"
+              ? { topicThreadId: meta["topicThreadId"] }
+              : {}),
+          });
+          break;
+        }
         case "reiwa.platform.policy_invalidated": {
           // Drop the cached platform policy so the next gated request
           // refetches the current accessMode immediately.  No relay
