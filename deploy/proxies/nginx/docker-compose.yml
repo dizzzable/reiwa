@@ -3,7 +3,7 @@
 #   ../gen-self-signed-cert.sh app.example.com .
 services:
   reiwa-nginx:
-    image: nginx:1.28
+    image: nginx:1.30
     container_name: reiwa-nginx
     hostname: reiwa-nginx
     restart: always
