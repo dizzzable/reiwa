@@ -9,7 +9,8 @@ import { usePurchaseStore } from '@/stores/purchase.store'
 import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
 import { CustomIconView } from '@/components/ui/custom-icon-view'
-import { customIconId, resolvePlanIcon } from './plan-icons'
+import { EmojiText } from '@/components/ui/emoji-text'
+import { customIconId, isEmojiIcon, resolvePlanIcon } from './plan-icons'
 
 /**
  * Lowest price for a plan, expressed in the preferred display currency
@@ -107,7 +108,9 @@ export default function PlansPage() {
               >
                 {/* Icon */}
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-(--brand-primary)/10 text-(--brand-primary)">
-                  {custom ? (
+                  {isEmojiIcon(plan.icon) ? (
+                    <EmojiText text={plan.icon} className="text-2xl leading-none" />
+                  ) : custom ? (
                     <CustomIconView url={custom.url} color={custom.color} className="h-6 w-6" />
                   ) : (
                     <Icon className="h-6 w-6" />

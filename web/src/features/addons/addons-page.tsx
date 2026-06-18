@@ -29,8 +29,9 @@ import { gatewayLabel } from "@/lib/gateway-display";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
 import { useBranding } from "@/lib/branding-provider";
-import { customIconId, resolveBuiltInIcon } from "@/features/plans/plan-icons";
+import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { CustomIconView } from "@/components/ui/custom-icon-view";
+import { EmojiText } from "@/components/ui/emoji-text";
 import { useAddOnStore } from "@/stores/addons.store";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
@@ -241,7 +242,9 @@ function SelectAddOn() {
               className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/3 p-4 text-left transition-colors hover:bg-white/6 active:scale-[0.98]"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 text-(--brand-primary)">
-                {custom ? (
+                {isEmojiIcon(addOn.icon) ? (
+                  <EmojiText text={addOn.icon} className="text-xl leading-none" />
+                ) : custom ? (
                   <CustomIconView url={custom.url} color={custom.color} className="h-5 w-5" />
                 ) : BuiltIn ? (
                   <BuiltIn className="h-5 w-5" />

@@ -80,6 +80,18 @@ export function customIconId(icon: string | null | undefined): string | null {
 }
 
 /**
+ * `true` when an `icon` value is an emoji — either a custom-pack `:slug:`
+ * shortcode or a raw Unicode glyph — rather than a built-in Lucide key, a
+ * `custom:<id>` uploaded icon, or null. Such values render via `EmojiText`.
+ */
+export function isEmojiIcon(icon: string | null | undefined): icon is string {
+  if (typeof icon !== "string" || icon.length === 0) return false;
+  if (icon.startsWith(CUSTOM_ICON_PREFIX)) return false;
+  if (icon in ICON_MAP) return false;
+  return true;
+}
+
+/**
  * Maps a built-in lucide icon key to its component, or null when the value is
  * not a known built-in key (e.g. a `custom:<id>` ref or null). Reusable across
  * plans and add-ons.
