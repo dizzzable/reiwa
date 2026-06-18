@@ -692,6 +692,19 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     res.statusCode = 204;
     res.end();
   } catch (err: unknown) {
+    // Permanent client errors (chat not found / bot not in chat / bad topic
+    // id) won't be fixed by a retry — they mean the operator's Chat ID / topic
+    // is wrong. Ack (204) so the admin side doesn't escalate to a 502 cascade,
+    // and log a concise warning instead of a full stack trace.
+    if (err instanceof GrammyError && err.error_code >= 400 && err.error_code < 500) {
+      logger.warn(
+        { eventId, chatId, code: err.error_code, description: err.description },
+        'Broadcast: permanent delivery failure — check Chat ID / topic id / bot membership',
+      );
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
     logger.error({ err, eventId, chatId }, 'Broadcast: sendMessage failed');
     res.statusCode = 502;
     res.end();
