@@ -97,7 +97,9 @@ export function NotificationBell() {
                     {!n.isRead && (
                       <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />
                     )}
-                    <p className="flex-1 truncate text-sm font-medium text-white">{n.title}</p>
+                    <p className="flex-1 truncate text-sm font-medium text-white">
+                      <EmojiText text={n.title} />
+                    </p>
                   </div>
                   {n.body && (
                     <p className="mt-0.5 truncate text-xs text-zinc-400">

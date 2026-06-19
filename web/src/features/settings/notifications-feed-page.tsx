@@ -150,7 +150,9 @@ export default function NotificationsFeedPage() {
                     {!n.isRead && (
                       <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />
                     )}
-                    <p className="text-sm font-medium text-white truncate">{n.title}</p>
+                    <p className="text-sm font-medium text-white truncate">
+                      <EmojiText text={n.title} />
+                    </p>
                   </div>
                   <p className="mt-1 text-xs text-zinc-400 line-clamp-1">
                     <EmojiText text={firstSentence(n.body)} />

@@ -33,7 +33,9 @@ export function NotificationModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="pr-6">{notification.title}</DialogTitle>
+          <DialogTitle className="pr-6">
+            <EmojiText text={notification.title} />
+          </DialogTitle>
         </DialogHeader>
         <p className="text-[11px] text-zinc-500">
           {formatDateTime(notification.createdAt)}
