@@ -321,6 +321,7 @@ async function startBot(): Promise<void> {
     devId: config.BOT_DEV_ID,
     logger,
     rezeisAdminUrl,
+    keyboardUrls: { miniAppUrl: reiwaWebAppUrl, publicWebUrl: reiwaUrlButtonUrl },
     onUserBlocked: async (telegramId: string) => {
       if (adminClient === null) return;
       try {

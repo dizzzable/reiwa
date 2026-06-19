@@ -20,6 +20,15 @@ export default function BootstrapPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const calledRef = useRef(false)
 
+  // Intended deep-link destination forwarded by the context router / Mini App
+  // deep-link (`?next=/renew`). Only honour same-origin absolute paths so a
+  // crafted `next` can't redirect the user off-app.
+  const nextDestination = (() => {
+    if (typeof window === 'undefined') return null
+    const raw = new URLSearchParams(window.location.search).get('next')
+    return raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : null
+  })()
+
   useEffect(() => {
     if (!isReady || calledRef.current) return
     calledRef.current = true
@@ -33,7 +42,7 @@ export default function BootstrapPage() {
           if (session) {
             queryClient.setQueryData(SESSION_QUERY_KEY, session)
             setPhase('ready')
-            navigate('/dashboard', { replace: true })
+            navigate(nextDestination ?? '/dashboard', { replace: true })
             return
           }
         } catch {
@@ -55,7 +64,7 @@ export default function BootstrapPage() {
 
         telegram?.HapticFeedback?.notificationOccurred('success')
         setPhase('ready')
-        navigate(result.redirectUrl ?? '/dashboard', { replace: true })
+        navigate(nextDestination ?? result.redirectUrl ?? '/dashboard', { replace: true })
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : t('bootstrap.loginErrorFallback')
         setErrorMsg(msg)
@@ -65,7 +74,7 @@ export default function BootstrapPage() {
     }
 
     void run()
-  }, [isReady, initData, navigate, queryClient, telegram, t])
+  }, [isReady, initData, navigate, queryClient, telegram, t, nextDestination])
 
   return (
     <div className="relative flex h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden">

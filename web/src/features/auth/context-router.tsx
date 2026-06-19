@@ -29,10 +29,17 @@ export default function ContextRouter() {
         ? window.Telegram.WebApp.initData
         : ''
 
+    // Preserve an intended deep-link destination (`?next=`) across the
+    // context hop so Mini App deep-links survive the bootstrap redirect.
+    const search = typeof window !== 'undefined' ? window.location.search : ''
+    const nextRaw = new URLSearchParams(search).get('next')
+    const nextSuffix =
+      nextRaw && nextRaw.startsWith('/') ? `?next=${encodeURIComponent(nextRaw)}` : ''
+
     if (initData && initData.length > 0) {
-      navigate('/tma', { replace: true })
+      navigate(`/tma${nextSuffix}`, { replace: true })
     } else {
-      navigate('/', { replace: true })
+      navigate(nextSuffix ? `/${nextSuffix}` : '/', { replace: true })
     }
   }, [navigate])
 

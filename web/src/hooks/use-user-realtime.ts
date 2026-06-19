@@ -73,6 +73,9 @@ const TYPE_TO_KEYS: Record<string, readonly string[][]> = {
 const ALWAYS_INVALIDATE: readonly string[][] = [
   ["activity", "notifications"],
   ["activity", "notifications-unread-count"],
+  // Cabinet feed + dashboard bell query keys.
+  ["notifications"],
+  ["notifications", "unread-count"],
 ];
 
 const DEBOUNCE_MS = 400;

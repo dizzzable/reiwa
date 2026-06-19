@@ -26,6 +26,7 @@ import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
 import { SubscriptionActions } from "./components/subscription-actions";
 import { DevicesList } from "./components/devices-list";
+import { NotificationBell } from "./components/notification-bell";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
 import { TrialCta } from "./components/trial-cta";
 
@@ -115,6 +116,7 @@ export default function DashboardPage() {
           >
             <TicketPercent className="h-4 w-4" />
           </button>
+          <NotificationBell />
         </div>
       </div>
 
@@ -167,6 +169,8 @@ export default function DashboardPage() {
                 isLoading={devicesLoading}
                 subscriptionId={activeSubscriptionId}
                 subscriptionUrl={activeSubscription?.url ?? null}
+                deviceLimit={activeSubscription?.deviceLimit ?? null}
+                trafficLimit={activeSubscription?.trafficLimit ?? null}
               />
             </div>
           )}

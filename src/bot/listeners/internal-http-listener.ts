@@ -66,6 +66,7 @@ import { GrammyError, InlineKeyboard, InputFile } from 'grammy';
 
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
+import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import {
   REQUEST_SIGNATURE_HEADER,
   REQUEST_TIMESTAMP_HEADER,
@@ -76,6 +77,20 @@ interface ButtonInput {
   readonly text: string;
   readonly url?: string;
   readonly callbackData?: string;
+  /**
+   * Relative Mini App path (e.g. `/renew`). Resolved against the bot's own
+   * `miniAppUrl` into a Telegram `web_app` inline button — opens the cabinet
+   * directly at that route. Falls back to a plain URL button against
+   * `publicWebUrl` when no Mini App URL is configured; dropped when neither is
+   * available or the resolved URL isn't Telegram-safe (e.g. local dev).
+   */
+  readonly webAppPath?: string;
+}
+
+/** Resolved deep-link targets the keyboard builder anchors relative paths to. */
+interface KeyboardUrls {
+  readonly miniAppUrl?: string | null;
+  readonly publicWebUrl?: string | null;
 }
 
 interface NotifyPayload {
@@ -141,6 +156,13 @@ interface ListenerOptions {
    * download URL) and upload it to Telegram. `null` disables that endpoint.
    */
   readonly rezeisAdminUrl?: string | null;
+  /**
+   * Deep-link targets the keyboard builder anchors relative button paths to
+   * (`webAppPath`). The bot owns these (it knows its own Mini App URL); rezeis
+   * sends only the relative path so it stays decoupled from the bot username /
+   * public Mini App URL.
+   */
+  readonly keyboardUrls?: KeyboardUrls;
 }
 
 /**
@@ -205,7 +227,7 @@ function readBody(req: http.IncomingMessage, max: number): Promise<string> {
   });
 }
 
-function buildKeyboard(input: unknown): InlineKeyboard | undefined {
+function buildKeyboard(input: unknown, urls?: KeyboardUrls): InlineKeyboard | undefined {
   if (!Array.isArray(input)) return undefined;
   const kb = new InlineKeyboard();
   let placed = false;
@@ -213,6 +235,28 @@ function buildKeyboard(input: unknown): InlineKeyboard | undefined {
     if (raw === null || typeof raw !== 'object') continue;
     const item = raw as ButtonInput;
     if (typeof item.text !== 'string' || item.text.length === 0) continue;
+    // Mini App deep-link button — opens the cabinet straight on a route.
+    if (typeof item.webAppPath === 'string' && item.webAppPath.length > 0) {
+      const path = item.webAppPath.startsWith('/') ? item.webAppPath : `/${item.webAppPath}`;
+      const miniAppUrl = urls?.miniAppUrl ?? null;
+      const publicWebUrl = urls?.publicWebUrl ?? null;
+      const webAppUrl = miniAppUrl !== null ? `${miniAppUrl.replace(/\/+$/, '')}${path}` : null;
+      if (webAppUrl !== null && isTelegramSafeButtonUrl(webAppUrl)) {
+        kb.webApp(item.text, webAppUrl);
+        kb.row();
+        placed = true;
+        continue;
+      }
+      // Fallback: plain URL button to the public web (in-app browser).
+      const fallbackUrl = publicWebUrl !== null ? `${publicWebUrl.replace(/\/+$/, '')}${path}` : null;
+      if (fallbackUrl !== null && isTelegramSafeButtonUrl(fallbackUrl)) {
+        kb.url(item.text, fallbackUrl);
+        kb.row();
+        placed = true;
+      }
+      // Neither target available (dev / unconfigured) → drop silently.
+      continue;
+    }
     if (typeof item.url === 'string' && item.url.length > 0) {
       kb.url(item.text, item.url);
       kb.row();
@@ -231,7 +275,7 @@ function isValidParseMode(value: unknown): value is 'MarkdownV2' | 'HTML' {
 }
 
 export function startInternalHttpListener(opts: ListenerOptions): void {
-  const { bot, cache, secret, port, logger, onUserBlocked, devId, rezeisAdminUrl } = opts;
+  const { bot, cache, secret, port, logger, onUserBlocked, devId, rezeisAdminUrl, keyboardUrls } = opts;
   if (secret === null || secret.length === 0) {
     logger.info(
       'Internal HTTP listener disabled (REZEIS_INTERNAL_SHARED_SECRET unset)',
@@ -274,7 +318,7 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
         return;
       }
       if (url === '/notify') {
-        await handleNotify({ bot, logger, raw, res, onUserBlocked });
+        await handleNotify({ bot, logger, raw, res, onUserBlocked, keyboardUrls });
         return;
       }
       if (url === '/notify-dev') {
@@ -290,7 +334,7 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
         return;
       }
       if (url === '/notify-broadcast') {
-        await handleBroadcast({ bot, logger, raw, res });
+        await handleBroadcast({ bot, logger, raw, res, keyboardUrls });
         return;
       }
       res.statusCode = 404;
@@ -375,6 +419,7 @@ interface NotifyHandlerOptions {
   readonly raw: string;
   readonly res: http.ServerResponse;
   readonly onUserBlocked?: (telegramId: string) => Promise<void> | void;
+  readonly keyboardUrls?: KeyboardUrls;
 }
 
 interface DevNotifyHandlerOptions {
@@ -606,7 +651,7 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     return;
   }
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
-  const reply_markup = buildKeyboard(payload.buttons);
+  const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls);
 
   try {
     const sent = await bot.api.sendMessage(telegramId, text, {
@@ -647,6 +692,7 @@ interface BroadcastHandlerOptions {
   readonly logger: ReturnType<typeof createLogger>;
   readonly raw: string;
   readonly res: http.ServerResponse;
+  readonly keyboardUrls?: KeyboardUrls;
 }
 
 async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
@@ -678,7 +724,7 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     return;
   }
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
-  const reply_markup = buildKeyboard(payload.buttons);
+  const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls);
   const messageThreadId = typeof payload.topicThreadId === 'number' && Number.isInteger(payload.topicThreadId)
     ? payload.topicThreadId
     : undefined;

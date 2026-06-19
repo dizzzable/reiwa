@@ -18,6 +18,20 @@ const ENDPOINT = '/api/v1/client-errors';
 const DEDUP_MS = 30_000;
 const MAX_PER_MIN = 10;
 
+/**
+ * Transient / benign browser noise that must NOT reach the operator error feed.
+ * Service-worker update/fetch failures happen routinely on redeploy (the cached
+ * `sw.js` hash changes) or on flaky mobile networks, and `ResizeObserver loop`
+ * is a harmless layout warning. Mirrors the rezeis admin client-logger filter.
+ */
+const NON_REPORTABLE_PATTERNS: readonly RegExp[] = [
+  /failed to (update|register|unregister) a serviceworker/i,
+  /an unknown error occurred when fetching the script/i,
+  /the script resource is behind a redirect/i,
+  /serviceworker.*(fetch|script)/i,
+  /resizeobserver loop/i,
+];
+
 const recent = new Map<string, number>();
 let windowStart = Date.now();
 let windowCount = 0;
@@ -34,6 +48,10 @@ export function reportClientError(input: ClientErrorInput): void {
   try {
     const message = (input.message || '').toString().slice(0, 2000);
     if (message.length === 0) return;
+
+    // Drop transient/benign browser noise (service-worker churn, RO loop) so it
+    // never lands in the operator's error feed as an ERROR event.
+    if (NON_REPORTABLE_PATTERNS.some((re) => re.test(message))) return;
 
     const now = Date.now();
     const key = `${input.kind ?? 'error'}:${message}`.slice(0, 200);

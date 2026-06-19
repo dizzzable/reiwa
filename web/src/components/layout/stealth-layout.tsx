@@ -12,7 +12,7 @@
  * checking on its own.
  */
 
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { SideNav } from "@/components/layout/side-nav";
@@ -29,6 +29,7 @@ export default function StealthLayout() {
   const { session, isLoading } = useSession();
   const { branding } = useBranding();
   const isDesktop = useIsDesktop();
+  const location = useLocation();
 
   // When the operator configured a custom app background it takes precedence
   // over the default ambient `NetworkBg` (single WebGL context, no double FX).
@@ -52,7 +53,16 @@ export default function StealthLayout() {
   }
 
   if (!session) {
-    return <Navigate to="/bootstrap" replace />;
+    // Preserve the intended destination across the bootstrap/auth handshake so
+    // a Mini App deep-link (e.g. the expiry notification's "Продлить" button →
+    // `${miniAppUrl}/renew`) lands the user on the right page after auth instead
+    // of dumping them on /dashboard.
+    const intended = `${location.pathname}${location.search}`;
+    const next =
+      location.pathname !== "/" && location.pathname !== "/dashboard"
+        ? `?next=${encodeURIComponent(intended)}`
+        : "";
+    return <Navigate to={`/bootstrap${next}`} replace />;
   }
 
   // Mandatory claim gate (Property 1): a Telegram-first user authenticated into

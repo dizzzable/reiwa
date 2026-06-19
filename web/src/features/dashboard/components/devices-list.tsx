@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { Apple, Copy, Globe, Monitor, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { Apple, Copy, Globe, Info, Monitor, RefreshCw, Smartphone, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -42,6 +42,9 @@ interface DevicesListProps {
   subscriptionId: string;
   /** Current connect URL for this subscription (used by the copy action). */
   subscriptionUrl?: string | null;
+  /** Active subscription limits, shown in the multi-subscription info modal. */
+  deviceLimit?: number | null;
+  trafficLimit?: number | null;
 }
 
 export function DevicesList({
@@ -49,6 +52,8 @@ export function DevicesList({
   isLoading,
   subscriptionId,
   subscriptionUrl,
+  deviceLimit,
+  trafficLimit,
 }: DevicesListProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -56,6 +61,7 @@ export function DevicesList({
   // warnings match the cabinet's glass UI instead of the browser chrome).
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [revokeHwid, setRevokeHwid] = useState<string | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const revokeMutation = useMutation({
     mutationFn: (hwid: string) => deleteSubscriptionDevice(subscriptionId, hwid),
@@ -113,6 +119,13 @@ export function DevicesList({
           {t("devices.title")}
         </h3>
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setInfoOpen(true)}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+            aria-label={t("devices.multiInfoAria")}
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
           <button
             onClick={handleCopy}
             disabled={!subscriptionUrl}
@@ -243,6 +256,35 @@ export function DevicesList({
               {t("common.cancel")}
             </StadiumButton>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Multi-subscription info ── */}
+      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("devices.multiInfoTitle")}</DialogTitle>
+            <DialogDescription>{t("devices.multiInfoBody")}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-1 space-y-2 rounded-2xl border border-white/6 bg-white/2 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-zinc-400">{t("devices.multiInfoDeviceLimit")}</span>
+              <span className="font-medium text-zinc-100">
+                {deviceLimit && deviceLimit > 0 ? deviceLimit : t("devices.unlimited")}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-zinc-400">{t("devices.multiInfoTrafficLimit")}</span>
+              <span className="font-medium text-zinc-100">
+                {trafficLimit && trafficLimit > 0
+                  ? t("devices.multiInfoTrafficValue", { value: trafficLimit })
+                  : t("devices.unlimited")}
+              </span>
+            </div>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            {t("devices.multiInfoHint")}
+          </p>
         </DialogContent>
       </Dialog>
     </div>
