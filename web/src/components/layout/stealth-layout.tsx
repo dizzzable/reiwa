@@ -12,6 +12,7 @@
  * checking on its own.
  */
 
+import { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
@@ -22,14 +23,77 @@ import { NetworkBg } from "@/components/ui/network-bg";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
 import { useBranding } from "@/lib/branding-provider";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
+import { useInstallPrompt } from "@/hooks/use-install-prompt";
 import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
+import { reportSurface } from "@/lib/api-client";
+
+type Surface = "tma" | "pwa" | "browser";
+type FormFactor = "mobile" | "tablet" | "desktop";
+type Os = "ios" | "android" | "windows" | "macos" | "linux" | "other";
+
+/** True when running inside a Telegram Mini App (validated initData present). */
+function detectTma(): boolean {
+  if (typeof window === "undefined") return false;
+  const tg = (window as { Telegram?: { WebApp?: { initData?: string } } }).Telegram;
+  return typeof tg?.WebApp?.initData === "string" && tg.WebApp.initData.length > 0;
+}
+
+/** Detect the host OS from the UA for usage analytics. */
+function detectOs(): Os {
+  if (typeof navigator === "undefined") return "other";
+  const ua = navigator.userAgent || "";
+  if (/android/i.test(ua)) return "android";
+  if (
+    /iphone|ipad|ipod/i.test(ua) ||
+    (/macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1)
+  ) {
+    return "ios";
+  }
+  if (/windows/i.test(ua)) return "windows";
+  if (/macintosh|mac os x/i.test(ua)) return "macos";
+  if (/linux/i.test(ua)) return "linux";
+  return "other";
+}
+
+/** Detect the device form factor from the UA. */
+function detectFormFactor(): FormFactor {
+  if (typeof navigator === "undefined") return "desktop";
+  const ua = navigator.userAgent || "";
+  const isTablet =
+    /ipad/i.test(ua) ||
+    (/macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) ||
+    (/android/i.test(ua) && !/mobile/i.test(ua));
+  if (isTablet) return "tablet";
+  if (/mobile|iphone|ipod|android.+mobile/i.test(ua)) return "mobile";
+  return "desktop";
+}
+
+const SURFACE_REPORTED_KEY = "reiwa_surface_reported";
 
 export default function StealthLayout() {
   const { session, isLoading } = useSession();
   const { branding } = useBranding();
   const isDesktop = useIsDesktop();
   const location = useLocation();
+  const { isStandalone } = useInstallPrompt();
+
+  // Report the usage surface (tma/pwa/browser) + form factor + os once per
+  // browser session. Installed-PWA sessions get upgraded to the 30-day window
+  // server-side; everything feeds the admin usage analytics. Guarded by
+  // sessionStorage so we report at most once per tab session.
+  useEffect(() => {
+    if (!session) return;
+    try {
+      if (sessionStorage.getItem(SURFACE_REPORTED_KEY) === "1") return;
+      sessionStorage.setItem(SURFACE_REPORTED_KEY, "1");
+    } catch {
+      // sessionStorage unavailable (private mode) — fall through and report;
+      // worst case it's one extra request, never a crash.
+    }
+    const surface: Surface = detectTma() ? "tma" : isStandalone ? "pwa" : "browser";
+    void reportSurface({ surface, formFactor: detectFormFactor(), os: detectOs() });
+  }, [session, isStandalone]);
 
   // When the operator configured a custom app background it takes precedence
   // over the default ambient `NetworkBg` (single WebGL context, no double FX).

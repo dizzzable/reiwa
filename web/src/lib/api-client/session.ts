@@ -21,5 +21,16 @@ export const acceptRules = () =>
 export const setOnboardingCompleted = (completed: boolean) =>
   apiClient.patch("/session/onboarding", { completed }).then((r) => r.data);
 
+/**
+ * Reports which surface the cabinet is running on (tma/pwa/browser) plus form
+ * factor + os, once per session. The BFF upgrades installed-PWA sessions to the
+ * 30-day window and records the surface for analytics. Best-effort.
+ */
+export const reportSurface = (input: {
+  surface: "tma" | "pwa" | "browser";
+  formFactor: "mobile" | "tablet" | "desktop";
+  os: "ios" | "android" | "windows" | "macos" | "linux" | "other";
+}) => apiClient.post("/surface/seen", input).then((r) => r.data);
+
 export const getPlatformPolicy = () =>
   apiClient.get<PlatformPolicy>("/platform-policy").then((r) => r.data);

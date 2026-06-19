@@ -38,7 +38,7 @@ export {
 } from "./auth.js";
 
 // Session + platform
-export { acceptRules, getPlatformPolicy, getSession, setOnboardingCompleted } from "./session.js";
+export { acceptRules, getPlatformPolicy, getSession, setOnboardingCompleted, reportSurface } from "./session.js";
 
 // Plans
 export { getPlans } from "./plans.js";

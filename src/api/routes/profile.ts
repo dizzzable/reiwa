@@ -75,6 +75,47 @@ export function createProfileRouter(deps: {
     },
   );
 
+  // POST /api/v1/surface/seen — the cabinet reports which surface it's running
+  // on (tma / pwa / browser) + form factor + os, once per session. Effects:
+  // (1) when standalone PWA, upgrade the session to the 30-day window; (2)
+  // persist the surface snapshot + PWA-install milestone on the rezeis user
+  // record for usage analytics. Best-effort: a failed persist never breaks the
+  // session or cabinet. Body: `{ surface, formFactor, os }`.
+  router.post("/surface/seen", requireSession, async (req: AuthRequest, res) => {
+    const body = (req.body ?? {}) as { surface?: unknown; formFactor?: unknown; os?: unknown };
+    const surface =
+      body.surface === "tma" || body.surface === "pwa" || body.surface === "browser"
+        ? body.surface
+        : "browser";
+    const formFactor =
+      body.formFactor === "mobile" || body.formFactor === "tablet" || body.formFactor === "desktop"
+        ? body.formFactor
+        : "desktop";
+    const os =
+      typeof body.os === "string" &&
+      ["ios", "android", "windows", "macos", "linux", "other"].includes(body.os)
+        ? body.os
+        : "other";
+    // Only an installed PWA gets the long-lived 30-day session.
+    if (surface === "pwa") {
+      try {
+        await req.markSessionStandalone(os);
+      } catch {
+        // Session upgrade is best-effort — fall through to persist + ack.
+      }
+    }
+    try {
+      await adminClient?.user.recordSurfaceSeen(resolveUserIdentity(req), {
+        surface,
+        formFactor,
+        os,
+      });
+    } catch {
+      // Best-effort analytics persist — the cabinet must never break on this.
+    }
+    res.json({ ok: true });
+  });
+
   // GET /api/v1/platform-policy
   router.get("/platform-policy", async (_req, res) => {
     try {

@@ -154,4 +154,21 @@ export class UserNamespace {
       { telegramId },
     );
   }
+
+  /**
+   * Record the surface the user is currently using (tma / pwa / browser) plus
+   * form factor + OS, once per cabinet session. Stamps the PWA-install
+   * milestone server-side and refreshes the latest-seen snapshot powering the
+   * admin usage analytics.
+   */
+  recordSurfaceSeen(
+    identity: UserIdentity,
+    input: { surface: string; formFactor: string; os: string },
+  ): Promise<{ ok: true }> {
+    return this.transport.request<{ ok: true }>(
+      'POST',
+      '/api/internal/user/surface-seen',
+      { ...identityBody(identity), surface: input.surface, formFactor: input.formFactor, os: input.os },
+    );
+  }
 }

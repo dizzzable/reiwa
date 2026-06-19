@@ -12,6 +12,8 @@
 export const TTL = {
   /** Web session storage — 24 hours */
   SESSION: 24 * 60 * 60,
+  /** Web session for an installed PWA (standalone) — 30 days */
+  SESSION_PWA: 30 * 24 * 60 * 60,
   /** Telegram linking code — 10 minutes */
   TELEGRAM_LINK: 10 * 60,
   /** Email verification challenge — 30 minutes */

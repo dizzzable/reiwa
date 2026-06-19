@@ -23,6 +23,11 @@ export interface WebSession {
   createdAt: number;
   ip: string;
   lastActivity: number;
+  /** True once the user opened the cabinet as an installed PWA (standalone).
+   *  Standalone sessions get the 30-day TTL instead of the default 24h. */
+  standalone?: boolean;
+  /** Latest-seen PWA platform (`ios`/`android`/`desktop`). */
+  platform?: string;
 }
 
 export interface SessionConfig {
@@ -122,8 +127,28 @@ export class WebSessionStore {
       sessionKey(sessionId),
       JSON.stringify(session),
       "EX",
-      TTL.SESSION,
+      sessionTtlSeconds(session),
     );
+  }
+
+  /**
+   * Mark a session as an installed-PWA (standalone) session and re-persist it
+   * with the 30-day TTL. Idempotent: re-reports just refresh the platform +
+   * extend the window. Returns the updated session (or null if it's gone).
+   */
+  async setStandalone(sessionId: string, platform: string): Promise<WebSession | null> {
+    const session = await this.get(sessionId);
+    if (!session) return null;
+    session.standalone = true;
+    session.platform = platform;
+    session.lastActivity = Date.now();
+    await this.redis.set(
+      sessionKey(sessionId),
+      JSON.stringify(session),
+      "EX",
+      sessionTtlSeconds(session),
+    );
+    return session;
   }
 
   async destroy(sessionId: string): Promise<void> {
@@ -136,6 +161,11 @@ export class WebSessionStore {
 }
 
 // ── Cookie Security Flag Helpers ────────────────────────────────────────────
+
+/** TTL (seconds) for a session — 30 days when standalone (installed PWA), else 24h. */
+function sessionTtlSeconds(session: WebSession): number {
+  return session.standalone === true ? TTL.SESSION_PWA : TTL.SESSION;
+}
 
 interface CookieOptions {
   httpOnly: boolean;
@@ -224,6 +254,12 @@ export function createWebSessionMiddleware(
   // explicitly waived, so a misconfigured deploy crashes at startup
   // instead of silently issuing insecure session cookies.
   const cookieOptions = resolveSecureCookieOptions(config, logger);
+  // 30-day variant for installed-PWA (standalone) sessions — same security
+  // flags, longer maxAge.
+  const pwaCookieOptions: CookieOptions = {
+    ...cookieOptions,
+    maxAge: TTL.SESSION_PWA * 1000,
+  };
 
   return async (req: Request, res: Response, next: NextFunction) => {
     // Read session ID from cookie
@@ -235,9 +271,21 @@ export function createWebSessionMiddleware(
       if (session) {
         req.webSession = session;
         req.webSessionId = sessionId;
-        // Touch session to update lastActivity
+        // Touch session to update lastActivity (slides the Redis TTL).
         const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
         await store.touch(sessionId, ip);
+        // Slide the COOKIE too: re-issue it with a fresh maxAge so an actively
+        // used session never expires out from under the user. Without this the
+        // cookie kept its original 24h lifetime from login regardless of
+        // activity — a home-screen PWA would force a re-login every 24h even
+        // for daily users. The Redis TTL already slides on touch; this keeps
+        // the browser-side cookie in lockstep. Installed-PWA (standalone)
+        // sessions slide on the 30-day window.
+        res.cookie(
+          cookieName,
+          sessionId,
+          session.standalone === true ? pwaCookieOptions : cookieOptions,
+        );
       } else {
         // Server-side session missing while cookie remains — clear stale cookie
         res.clearCookie(cookieName, { path: "/" });
@@ -255,6 +303,16 @@ export function createWebSessionMiddleware(
       const newSessionId = await store.create({ userId }, ip);
       res.cookie(cookieName, newSessionId, cookieOptions);
       return newSessionId;
+    };
+
+    // Attach helper: upgrade the current session to an installed-PWA session.
+    req.markSessionStandalone = async (platform: string): Promise<void> => {
+      if (!req.webSessionId) return;
+      const updated = await store.setStandalone(req.webSessionId, platform);
+      if (updated) {
+        req.webSession = updated;
+        res.cookie(cookieName, req.webSessionId, pwaCookieOptions);
+      }
     };
 
     // Attach helper: destroy the current web session
