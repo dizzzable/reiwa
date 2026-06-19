@@ -333,3 +333,55 @@ self.addEventListener('notificationclick', (event) => {
     })(),
   )
 })
+
+// ── Push subscription rotation ───────────────────────────────────────────────
+//
+// Browsers fire `pushsubscriptionchange` when they invalidate/rotate the push
+// subscription (provider key rotation, periodic refresh, storage pressure).
+// Without re-subscribing here the user silently stops receiving pushes — the
+// classic "push worked yesterday, nothing today" failure. We mint a fresh
+// subscription with the current VAPID key and re-register it on the BFF. Runs
+// even when the app is closed (the SW is woken for this event).
+self.addEventListener('pushsubscriptionchange', (event: Event) => {
+  ;(event as ExtendableEvent).waitUntil(resubscribePush())
+})
+
+async function resubscribePush(): Promise<void> {
+  try {
+    const keyRes = await fetch('/api/v1/push/public-key', { credentials: 'include' })
+    if (!keyRes.ok) return
+    const { publicKey } = (await keyRes.json()) as { publicKey?: string }
+    if (typeof publicKey !== 'string' || publicKey.length === 0) return
+
+    const sub = await self.registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: swUrlBase64ToArrayBuffer(publicKey),
+    })
+    const json = sub.toJSON()
+    await fetch('/api/v1/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        endpoint: sub.endpoint,
+        keys: { p256dh: json.keys?.p256dh ?? '', auth: json.keys?.auth ?? '' },
+        userAgent: self.navigator?.userAgent ?? 'service-worker',
+      }),
+    })
+  } catch {
+    // Best-effort — re-subscription is retried on the next cabinet load via
+    // `ensurePushSubscription()`.
+  }
+}
+
+function swUrlBase64ToArrayBuffer(base64String: string): ArrayBuffer {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = self.atob(base64)
+  const buffer = new ArrayBuffer(raw.length)
+  const view = new Uint8Array(buffer)
+  for (let i = 0; i < raw.length; i += 1) {
+    view[i] = raw.charCodeAt(i)
+  }
+  return buffer
+}

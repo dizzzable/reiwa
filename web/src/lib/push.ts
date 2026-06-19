@@ -159,6 +159,76 @@ export async function unsubscribeFromPush(): Promise<boolean> {
 }
 
 /**
+ * Heal the push subscription on cabinet load — WITHOUT prompting.
+ *
+ * Web-push subscriptions silently rot: the browser rotates/drops them, or the
+ * operator regenerates the VAPID keys, after which the push provider rejects
+ * the old endpoint with `410 Gone` and the server prunes it — so pushes stop
+ * arriving even though the cabinet still shows push as "enabled". This runs
+ * only when permission is ALREADY granted and:
+ *   1. re-subscribes when the browser has no subscription (it was dropped), or
+ *      when the existing subscription was minted with a DIFFERENT VAPID key
+ *      (operator rotated keys → old endpoint is dead), and
+ *   2. re-registers the (fresh or still-valid) subscription on the BFF so a
+ *      server-side prune is repaired.
+ * Best-effort and idempotent: never throws into the cabinet, never prompts.
+ */
+export async function ensurePushSubscription(): Promise<void> {
+  if (typeof window === 'undefined') return
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    return
+  }
+  if (Notification.permission !== 'granted') return
+  try {
+    const { publicKey } = await getPushPublicKey()
+    if (publicKey.length === 0) return
+    const desiredKey = urlBase64ToUint8Array(publicKey)
+    const reg = await navigator.serviceWorker.ready
+    let sub = await reg.pushManager.getSubscription()
+    // Drop a subscription minted with a stale VAPID key — its endpoint is dead.
+    if (sub !== null && !sameApplicationServerKey(sub, desiredKey)) {
+      try {
+        await sub.unsubscribe()
+      } catch {
+        // best-effort
+      }
+      sub = null
+    }
+    if (sub === null) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      })
+    }
+    const json = sub.toJSON()
+    await pushSubscribe({
+      endpoint: sub.endpoint,
+      keys: {
+        p256dh: json.keys?.p256dh ?? '',
+        auth: json.keys?.auth ?? '',
+      },
+      userAgent: navigator.userAgent,
+    })
+  } catch {
+    // Healing is best-effort — the explicit opt-in in settings remains the
+    // user-facing path; we must never break the cabinet over this.
+  }
+}
+
+/** True when the subscription was created with the given VAPID key bytes. */
+function sameApplicationServerKey(sub: PushSubscription, desired: ArrayBuffer): boolean {
+  const current = sub.options?.applicationServerKey
+  if (!current) return false
+  const a = new Uint8Array(current)
+  const b = new Uint8Array(desired)
+  if (a.byteLength !== b.byteLength) return false
+  for (let i = 0; i < a.byteLength; i += 1) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+/**
  * Convert a URL-safe base64 string (Web Push standard form for VAPID
  * keys) to the raw bytes the browser PushManager expects.
  *

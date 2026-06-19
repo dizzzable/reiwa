@@ -27,6 +27,7 @@ import { useInstallPrompt } from "@/hooks/use-install-prompt";
 import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
 import { reportSurface } from "@/lib/api-client";
+import { ensurePushSubscription } from "@/lib/push";
 
 type Surface = "tma" | "pwa" | "browser";
 type FormFactor = "mobile" | "tablet" | "desktop";
@@ -70,6 +71,7 @@ function detectFormFactor(): FormFactor {
 }
 
 const SURFACE_REPORTED_KEY = "reiwa_surface_reported";
+const PUSH_RESYNC_KEY = "reiwa_push_resynced";
 
 export default function StealthLayout() {
   const { session, isLoading } = useSession();
@@ -94,6 +96,20 @@ export default function StealthLayout() {
     const surface: Surface = detectTma() ? "tma" : isStandalone ? "pwa" : "browser";
     void reportSurface({ surface, formFactor: detectFormFactor(), os: detectOs() });
   }, [session, isStandalone]);
+
+  // Heal a rotated / pruned web-push subscription once per session (no prompt;
+  // only when permission is already granted). Repairs the "push silently stops
+  // arriving" drift after VAPID rotation or a server-side 410 cleanup.
+  useEffect(() => {
+    if (!session) return;
+    try {
+      if (sessionStorage.getItem(PUSH_RESYNC_KEY) === "1") return;
+      sessionStorage.setItem(PUSH_RESYNC_KEY, "1");
+    } catch {
+      // sessionStorage unavailable — fall through; healing is idempotent.
+    }
+    void ensurePushSubscription();
+  }, [session]);
 
   // When the operator configured a custom app background it takes precedence
   // over the default ambient `NetworkBg` (single WebGL context, no double FX).
