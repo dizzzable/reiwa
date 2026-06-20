@@ -114,11 +114,11 @@ export function DevicesList({
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-zinc-300">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="min-w-0 text-sm font-semibold text-zinc-300">
           {t("devices.title")}
         </h3>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             onClick={() => setInfoOpen(true)}
             className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"

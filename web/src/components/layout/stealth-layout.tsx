@@ -171,7 +171,7 @@ export default function StealthLayout() {
           <div className="relative z-20 shrink-0" data-tour="bottom-nav">
             <SideNav />
           </div>
-          <main className="scroll-area relative z-10 flex-1 overflow-y-auto">
+          <main className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto">
             <div className="mx-auto w-full max-w-[46rem] px-2">
               <PageTransition>
                 <Outlet />
@@ -192,7 +192,7 @@ export default function StealthLayout() {
 
         <div className="app-shell z-10 flex flex-col overflow-hidden">
           {/* Scrollable main content with page-transition wrapper */}
-          <main className="scroll-area relative z-10 flex-1 overflow-y-auto">
+          <main className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto">
             <PageTransition>
               <Outlet />
             </PageTransition>
