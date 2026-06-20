@@ -136,6 +136,9 @@ html, body, #root {
   height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
+  /* Allow single-finger scroll/carousel pan but disallow pinch-zoom. Pairs
+     with installIosZoomLock(); iOS ignores the viewport `user-scalable=no`. */
+  touch-action: pan-x pan-y;
   -webkit-tap-highlight-color: transparent;
 }
 

@@ -74,35 +74,25 @@ float snoise(vec2 v){
   return 130.0 * dot(m, g);
 }
 
-struct ColorStop {
-  vec3 color;
-  float position;
-};
-
-#define COLOR_RAMP(colors, factor, finalColor) {              \
-  int index = 0;                                            \
-  for (int i = 0; i < 2; i++) {                               \
-     ColorStop currentColor = colors[i];                    \
-     bool isInBetween = currentColor.position <= factor;    \
-     index = int(mix(float(index), float(i), float(isInBetween))); \
-  }                                                         \
-  ColorStop currentColor = colors[index];                   \
-  ColorStop nextColor = colors[index + 1];                  \
-  float range = nextColor.position - currentColor.position; \
-  float lerpFactor = (factor - currentColor.position) / range; \
-  finalColor = mix(currentColor.color, nextColor.color, lerpFactor); \
+// Three fixed colour stops at 0.0 / 0.5 / 1.0, implemented as a plain function
+// (NOT a multi-line #define): Safari/iOS's WebGL2 GLSL ES 3.00 preprocessor
+// mishandles backslash-continued multi-line macros ("shaderSource: string not
+// ASCII"), so the original COLOR_RAMP macro failed to compile on iOS and the
+// aurora silently never rendered — while Chrome/Android were fine. Inlining
+// also drops the dynamic array indexing iOS is touchy about. Output is
+// identical to the original ramp.
+vec3 colorRamp3(vec3 c0, vec3 c1, vec3 c2, float factor) {
+  float f = clamp(factor, 0.0, 1.0);
+  if (f < 0.5) {
+    return mix(c0, c1, f / 0.5);
+  }
+  return mix(c1, c2, (f - 0.5) / 0.5);
 }
 
 void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
 
-  ColorStop colors[3];
-  colors[0] = ColorStop(uColorStops[0], 0.0);
-  colors[1] = ColorStop(uColorStops[1], 0.5);
-  colors[2] = ColorStop(uColorStops[2], 1.0);
-
-  vec3 rampColor;
-  COLOR_RAMP(colors, uv.x, rampColor);
+  vec3 rampColor = colorRamp3(uColorStops[0], uColorStops[1], uColorStops[2], uv.x);
 
   float height = snoise(vec2(uv.x * 2.0 + uTime * 0.1, uTime * 0.25)) * 0.5 * uAmplitude;
   height = exp(height);

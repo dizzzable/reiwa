@@ -7,6 +7,7 @@ import { Toaster } from 'sonner'
 import { queryClient } from '@/lib/query-client'
 import { registerServiceWorker } from '@/lib/register-sw'
 import { installGlobalErrorReporting } from '@/lib/client-error-reporter'
+import { installIosZoomLock } from '@/lib/ios-zoom-lock'
 import { AppErrorBoundary } from '@/components/error-boundary'
 import { BrandingProvider } from '@/lib/branding-provider'
 import App from './App'
@@ -19,6 +20,11 @@ registerServiceWorker()
 // Forward browser/Mini App runtime errors (window.onerror + unhandled
 // rejections) to the BFF so they join the bot/api/worker firehose.
 installGlobalErrorReporting()
+
+// iOS Safari/WKWebView ignores `user-scalable=no`, so suppress pinch- and
+// double-tap-zoom in JS — keeps the Mini App from zooming/panning out of
+// bounds on iPhone (Android already honours the viewport meta).
+installIosZoomLock()
 
 const root = document.getElementById('root')!
 

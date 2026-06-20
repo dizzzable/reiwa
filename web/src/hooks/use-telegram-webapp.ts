@@ -25,6 +25,9 @@ interface TelegramWebApp {
   expand: () => void
   close: () => void
   isVersionAtLeast: (version: string) => boolean
+  /** Bot API 7.7+ — stop the swipe-down-to-minimise gesture that lets the
+   *  whole Mini App be dragged (reads as "content out of bounds" on iOS). */
+  disableVerticalSwipes?: () => void
   HapticFeedback: {
     impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void
     notificationOccurred: (type: 'error' | 'success' | 'warning') => void
@@ -115,6 +118,13 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
       // Signal to Telegram that we're ready
       tg.ready()
       tg.expand()
+
+      // Stop the vertical swipe-to-minimise drag (Bot API 7.7+) so the Mini
+      // App can't be pulled around — on iOS that drag is what makes content
+      // look like it slips out of bounds. Guarded: older clients lack it.
+      if (typeof tg.disableVerticalSwipes === 'function' && tg.isVersionAtLeast('7.7')) {
+        tg.disableVerticalSwipes()
+      }
 
       const platform = tg.platform
       const isMobile  = platform === 'ios' || platform === 'android'
