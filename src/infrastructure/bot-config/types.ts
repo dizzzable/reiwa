@@ -27,6 +27,13 @@ export interface BotVisualConfig {
    */
   bannerUrl?: string | null
   /**
+   * When `true`, reiwa uses the global `bannerUrl` as the banner on every
+   * dynamic screen that doesn't carry its own media. When `false`/absent,
+   * only screens with their own media show a banner. Managed via the
+   * main-menu inspector in Bot Studio (`bot.banner_apply_all`). Additive.
+   */
+  bannerApplyAll?: boolean
+  /**
    * Resolved Telegram `file_id` of the banner, stamped by reiwa after a
    * successful `sendPhoto` and carried into the persisted last-known-good
    * snapshot (Workstream 4). On a cold restart reiwa can re-send the

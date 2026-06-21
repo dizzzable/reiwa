@@ -23,6 +23,7 @@ import {
   findScreenByShortId,
   pickScreenText,
 } from './screen-renderer.js';
+import { renderScreenWithBanner, resolveScreenBannerRef } from './screen-banner.js';
 import type { PageRegistrar } from './types.js';
 
 const SCREEN_PREFIX = 'screen:';
@@ -72,11 +73,37 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
     }
 
     try {
-      await editOrReply(ctx, {
-        text: renderedText.text,
-        entities: renderedText.entities,
-        replyMarkup: keyboard,
-      });
+      // Render the screen's banner (own photo media, or the global banner
+      // when "one banner for all screens" is on) as a real photo. Falls
+      // back to the in-place text edit when no banner is desired or it
+      // can't be resolved.
+      const bannerRef = resolveScreenBannerRef(screen, config.visual);
+      const bannerHandled = await renderScreenWithBanner(
+        ctx,
+        {
+          text: renderedText.text,
+          entities: renderedText.entities,
+          replyMarkup: keyboard,
+          bannerRef,
+        },
+        {
+          rezeisAdminUrl: urls.rezeisAdminUrl,
+          logger: logger
+            ? {
+                warn: (obj, msg) => {
+                  logger.warn(obj as Record<string, unknown>, msg);
+                },
+              }
+            : undefined,
+        },
+      );
+      if (!bannerHandled) {
+        await editOrReply(ctx, {
+          text: renderedText.text,
+          entities: renderedText.entities,
+          replyMarkup: keyboard,
+        });
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('message is not modified')) {
