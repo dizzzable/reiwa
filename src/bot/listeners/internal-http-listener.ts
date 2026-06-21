@@ -67,6 +67,7 @@ import { GrammyError, InlineKeyboard, InputFile } from 'grammy';
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { resolveBannerSource } from '../pages/banner-resolver.js';
 import {
   REQUEST_SIGNATURE_HEADER,
   REQUEST_TIMESTAMP_HEADER,
@@ -99,6 +100,7 @@ interface NotifyPayload {
   readonly text?: unknown;
   readonly parseMode?: unknown;
   readonly buttons?: unknown;
+  readonly bannerUrl?: unknown;
 }
 
 interface BroadcastPayload {
@@ -318,7 +320,7 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
         return;
       }
       if (url === '/notify') {
-        await handleNotify({ bot, logger, raw, res, onUserBlocked, keyboardUrls });
+        await handleNotify({ bot, logger, raw, res, onUserBlocked, keyboardUrls, rezeisAdminUrl: rezeisAdminUrl ?? null });
         return;
       }
       if (url === '/notify-dev') {
@@ -420,6 +422,7 @@ interface NotifyHandlerOptions {
   readonly res: http.ServerResponse;
   readonly onUserBlocked?: (telegramId: string) => Promise<void> | void;
   readonly keyboardUrls?: KeyboardUrls;
+  readonly rezeisAdminUrl?: string | null;
 }
 
 interface DevNotifyHandlerOptions {
@@ -652,15 +655,47 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
   }
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
   const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls);
+  const bannerUrl =
+    typeof payload.bannerUrl === 'string' && payload.bannerUrl.trim().length > 0
+      ? payload.bannerUrl.trim()
+      : null;
 
   try {
-    const sent = await bot.api.sendMessage(telegramId, text, {
-      parse_mode: parseMode,
-      reply_markup,
-      // Most user-facing notifications shouldn't ping silently — let
-      // Telegram apply the user's chat preferences. We don't override
-      // disable_notification.
-    });
+    let sent: { message_id: number } | undefined;
+    // Banner-tagged notification → send as a photo with the text as caption
+    // (Telegram caption limit 1024). Relative `/uploads/...` URLs are fetched
+    // from rezeis by the resolver. Any photo failure falls back to text so a
+    // banner glitch never drops the notification.
+    if (bannerUrl !== null && text.length <= TG_CAPTION_LIMIT) {
+      const photo = await resolveBannerSource(bannerUrl, {
+        rezeisAdminUrl: opts.rezeisAdminUrl ?? null,
+        logger: { warn: (o, m) => opts.logger.warn(o as Record<string, unknown>, m) },
+      });
+      if (photo !== null) {
+        try {
+          sent = await bot.api.sendPhoto(telegramId, photo, {
+            caption: text,
+            parse_mode: parseMode,
+            reply_markup,
+          });
+        } catch (photoErr: unknown) {
+          if (photoErr instanceof GrammyError && photoErr.error_code === 403) throw photoErr;
+          opts.logger.warn(
+            { err: photoErr, telegramId },
+            'Notify: sendPhoto failed; falling back to text',
+          );
+        }
+      }
+    }
+    if (sent === undefined) {
+      sent = await bot.api.sendMessage(telegramId, text, {
+        parse_mode: parseMode,
+        reply_markup,
+        // Most user-facing notifications shouldn't ping silently — let
+        // Telegram apply the user's chat preferences. We don't override
+        // disable_notification.
+      });
+    }
     // Return the Telegram message id so admin can persist it and later
     // edit/delete the message within Telegram's 48h edit window.
     res.statusCode = 200;
