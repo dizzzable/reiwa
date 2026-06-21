@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -15,6 +15,24 @@ export default function PromoPage() {
   const [code, setCode] = useState('')
   const [success, setSuccess] = useState(false)
   const [resultMsg, setResultMsg] = useState('')
+
+  // Deep-link prefill: a promo-tagged broadcast button opens this page at
+  // `/promo?code=<code>`. Read it once on mount, prefill the input, then strip
+  // the param via history.replaceState so a refresh / back doesn't leave the
+  // code lingering in the address bar (and the user can still edit it).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const prefill = params.get('code')?.trim()
+    if (!prefill) return
+    setCode(prefill.toUpperCase())
+    params.delete('code')
+    const query = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+    )
+  }, [])
 
   const mutation = useMutation({
     mutationFn: () => activatePromocode(code.trim().toUpperCase()),
