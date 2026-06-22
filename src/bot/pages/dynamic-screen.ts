@@ -17,7 +17,7 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
-import { renderBotCopy } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   buildScreenKeyboard,
   findScreenByShortId,
@@ -40,13 +40,19 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
 
     const config = await getConfig();
     const screen = findScreenByShortId(config.screens, shortId);
+    const backButton = renderSystemButton(backLabel, 'back', config);
 
     if (screen === null) {
       logger?.warn(
         { shortId, screensCount: config.screens?.length ?? 0 },
         'dynamic-screen: shortId not found in config',
       );
-      const kb = new InlineKeyboard().text(backLabel, 'menu:main');
+      const kb = new InlineKeyboard();
+      if (backButton.iconCustomEmojiId !== undefined) {
+        kb.text({ text: backButton.text, icon_custom_emoji_id: backButton.iconCustomEmojiId }, 'menu:main');
+      } else {
+        kb.text(backButton.text, 'menu:main');
+      }
       await editOrReply(ctx, {
         text: translator.t('screen.not_found', lang),
         replyMarkup: kb,
@@ -74,7 +80,11 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
     // still get one for free — drop a `[◀️ В меню]` row at the bottom
     // when the screen has zero rows configured.
     if (screen.buttons.length === 0) {
-      keyboard.text(backLabel, 'menu:main');
+      if (backButton.iconCustomEmojiId !== undefined) {
+        keyboard.text({ text: backButton.text, icon_custom_emoji_id: backButton.iconCustomEmojiId }, 'menu:main');
+      } else {
+        keyboard.text(backButton.text, 'menu:main');
+      }
     }
 
     try {

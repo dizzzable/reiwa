@@ -86,7 +86,11 @@ export function applyScreenTemplate(
 export function appendBackToMenuRow(
   kb: InlineKeyboard,
   backLabel: string,
+  iconCustomEmojiId?: string,
 ): InlineKeyboard {
+  if (iconCustomEmojiId !== undefined && iconCustomEmojiId.length > 0) {
+    return kb.row().text({ text: backLabel, icon_custom_emoji_id: iconCustomEmojiId }, 'menu:main');
+  }
   return kb.row().text(backLabel, 'menu:main');
 }
 

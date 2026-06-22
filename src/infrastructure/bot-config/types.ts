@@ -129,6 +129,13 @@ export interface BotConfig {
    * caches. Empty string when no flow is published.
    */
   screensVersion?: string
+  /**
+   * Operator-assigned premium-emoji icons for built-in system buttons
+   * (back / invite_share / rules_open / help_contact …), keyed by a stable
+   * system-button id → Telegram `custom_emoji_id`. reiwa applies them as
+   * `icon_custom_emoji_id`. Optional/additive — absent on older payloads.
+   */
+  systemButtonIcons?: Record<string, string>
 }
 
 /**

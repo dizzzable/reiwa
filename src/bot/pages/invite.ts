@@ -20,7 +20,7 @@ import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
-import { renderBotCopy, renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderButtonLabel, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -189,15 +189,22 @@ async function renderReferralHub(
   const sharePrompt = t('invite.share_prompt');
   const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(sharePrompt)}`;
 
+  const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
   const kb = new InlineKeyboard()
-    .url(hubButton(t('invite.share_button'), botCfg), shareUrl)
+    .url(
+      share.iconCustomEmojiId !== undefined
+        ? { text: share.text, icon_custom_emoji_id: share.iconCustomEmojiId }
+        : share.text,
+      shareUrl,
+    )
     .row()
     .copyText(renderButtonLabel(t('invite.copy_button'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium).text, inviteLink);
   if (isTelegramSafeButtonUrl(urls.publicWebUrl)) {
     kb.row().webApp(hubButton(t('referral.hub.open_cabinet'), botCfg), `${urls.publicWebUrl}/referrals`);
     kb.row().webApp(hubButton(t('referral.hub.open_exchange'), botCfg), `${urls.publicWebUrl}/referrals/exchange`);
   }
-  appendBackToMenuRow(kb, backLabel);
+  const back = renderSystemButton(backLabel, 'back', botCfg);
+  appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
 
   // Resolve `{{KEY}}` placeholders + `:slug:` pack tokens into premium
   // custom-emoji (operator-managed via the "Эмодзи" editor + emoji packs).
@@ -240,13 +247,20 @@ async function renderPartnerHub(
     parts.push(`${t('referral.hub.link_label')}\n${inviteLink}`);
     const sharePrompt = t('invite.share_prompt');
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(sharePrompt)}`;
-    kb.url(hubButton(t('invite.share_button'), botCfg), shareUrl).row().copyText(renderButtonLabel(t('invite.copy_button'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium).text, inviteLink);
+    const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
+    kb.url(
+      share.iconCustomEmojiId !== undefined
+        ? { text: share.text, icon_custom_emoji_id: share.iconCustomEmojiId }
+        : share.text,
+      shareUrl,
+    ).row().copyText(renderButtonLabel(t('invite.copy_button'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium).text, inviteLink);
   }
   if (isTelegramSafeButtonUrl(urls.publicWebUrl)) {
     if (inviteLink !== null) kb.row();
     kb.webApp(hubButton(t('partner.hub.open_cabinet'), botCfg), `${urls.publicWebUrl}/partner`);
   }
-  appendBackToMenuRow(kb, backLabel);
+  const back = renderSystemButton(backLabel, 'back', botCfg);
+  appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
 
   const rendered = renderBotCopy(parts.join('\n\n'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
   await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });

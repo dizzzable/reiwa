@@ -32,7 +32,7 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
-import { renderBotCopy } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -85,8 +85,15 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
       const supportUrl = `https://t.me/${encodeURIComponent(handle)}?text=${encodeURIComponent(prefill)}`;
       const kb = buildKeyboard();
       if (hasCustomButtons) kb.row();
-      kb.url(translator.t('help.contact_button', lang), supportUrl);
-      appendBackToMenuRow(kb, backLabel);
+      const contact = renderSystemButton(translator.t('help.contact_button', lang), 'help_contact', botCfg);
+      kb.url(
+        contact.iconCustomEmojiId !== undefined
+          ? { text: contact.text, icon_custom_emoji_id: contact.iconCustomEmojiId }
+          : contact.text,
+        supportUrl,
+      );
+      const back = renderSystemButton(backLabel, 'back', botCfg);
+      appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
       const rendered = renderBotCopy(title, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
       await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
       return;
@@ -103,7 +110,8 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
           : translator.t('support.not_configured', lang);
 
     const kb = buildKeyboard();
-    appendBackToMenuRow(kb, backLabel);
+    const back = renderSystemButton(backLabel, 'back', botCfg);
+    appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
     const renderedFallback = renderBotCopy(fallbackBody, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
     await editOrReply(ctx, {
       text: renderedFallback.text,

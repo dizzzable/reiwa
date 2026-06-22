@@ -345,6 +345,47 @@ export function renderButtonLabel(
 }
 
 /**
+ * Resolve the operator-assigned premium icon for a built-in system button
+ * (back / invite_share / rules_open / help_contact …). Returns the Telegram
+ * `custom_emoji_id` or `undefined`. Premium-gated: a non-Premium owner can't
+ * render `icon_custom_emoji_id`, so we return nothing rather than ship an
+ * icon Telegram would reject.
+ */
+export function resolveSystemButtonIcon(
+  key: string,
+  systemButtonIcons?: Record<string, string> | null,
+  ownerHasPremium: boolean = true,
+): string | undefined {
+  if (!ownerHasPremium) return undefined;
+  const id = systemButtonIcons?.[key]?.trim();
+  return id !== undefined && id.length > 0 ? id : undefined;
+}
+
+/**
+ * Render a built-in SYSTEM button label + icon. Combines label token
+ * substitution / promotion (`renderButtonLabel`) with the operator's explicit
+ * per-system-button icon override (which wins over a label-promoted icon).
+ */
+export function renderSystemButton(
+  label: string,
+  systemKey: string,
+  cfg: {
+    readonly botEmojis?: BotEmojiMap | null;
+    readonly customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null;
+    readonly systemButtonIcons?: Record<string, string> | null;
+    readonly botEmojiOwnerHasPremium?: boolean;
+  },
+): RenderedButtonLabel {
+  const ownerHasPremium = cfg.botEmojiOwnerHasPremium ?? true;
+  const rendered = renderButtonLabel(label, cfg.botEmojis, cfg.customEmojis, ownerHasPremium);
+  const override = resolveSystemButtonIcon(systemKey, cfg.systemButtonIcons, ownerHasPremium);
+  const icon = override ?? rendered.iconCustomEmojiId;
+  return icon !== undefined
+    ? { text: rendered.text, iconCustomEmojiId: icon }
+    : { text: rendered.text };
+}
+
+/**
  * Join an array of { text, entities } lines into a single message.
  * Adjusts entity offsets as lines are concatenated with '\n' separators.
  */

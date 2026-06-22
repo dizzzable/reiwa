@@ -24,7 +24,7 @@ import { InlineKeyboard } from 'grammy';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
-import { renderBotCopy } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -76,13 +76,21 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
 
     if (link.length > 0) {
       if (hasCustomButtons) kb.row();
-      kb.url(translator.t('rules.open_button', lang), link);
-      appendBackToMenuRow(kb, backLabel);
+      const open = renderSystemButton(translator.t('rules.open_button', lang), 'rules_open', botCfg);
+      kb.url(
+        open.iconCustomEmojiId !== undefined
+          ? { text: open.text, icon_custom_emoji_id: open.iconCustomEmojiId }
+          : open.text,
+        link,
+      );
+      const back = renderSystemButton(backLabel, 'back', botCfg);
+      appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
       await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
       return;
     }
 
-    appendBackToMenuRow(kb, backLabel);
+    const back = renderSystemButton(backLabel, 'back', botCfg);
+    appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
     await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
   });
 };
