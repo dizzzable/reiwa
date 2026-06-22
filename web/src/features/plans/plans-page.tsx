@@ -56,7 +56,13 @@ export default function PlansPage() {
   // context-available plans. The payload intentionally omits
   // `isActive`/`isArchived`, so filtering on them here hid every plan
   // (both were `undefined`). Trust the backend's filtering.
-  const activePlans = plans
+  //
+  // Free trials are CLAIMED (not bought) via the dashboard TrialCta
+  // (`activateTrial`), so they must not appear in the paid "Buy" catalog —
+  // otherwise a plan flipped from paid→free trial lingers here as a phantom
+  // priced slot that errors on click. Paid trials (`trialFree === false`)
+  // stay purchasable.
+  const activePlans = plans.filter((p) => !(p.isTrial && p.trialFree))
 
   function handleSelect(plan: Plan) {
     selectPlan(plan)
