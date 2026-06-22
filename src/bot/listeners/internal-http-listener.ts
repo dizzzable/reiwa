@@ -67,6 +67,8 @@ import { GrammyError, InlineKeyboard, InputFile } from 'grammy';
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
+import type { BotEmojiMap } from '../../infrastructure/bot-config/types.js';
 import { resolveBannerSource } from '../pages/banner-resolver.js';
 import {
   REQUEST_SIGNATURE_HEADER,
@@ -92,6 +94,17 @@ interface ButtonInput {
 interface KeyboardUrls {
   readonly miniAppUrl?: string | null;
   readonly publicWebUrl?: string | null;
+}
+
+/**
+ * Operator emoji registry + custom-emoji packs, so notification button labels
+ * resolve `{{KEY}}` / `:slug:` tokens to glyphs and promote a leading premium
+ * token to `icon_custom_emoji_id`. Sourced from the bot-config cache.
+ */
+interface NotifyEmojiContext {
+  readonly botEmojis?: BotEmojiMap | null;
+  readonly customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null;
+  readonly ownerHasPremium?: boolean;
 }
 
 interface NotifyPayload {
@@ -229,14 +242,36 @@ function readBody(req: http.IncomingMessage, max: number): Promise<string> {
   });
 }
 
-function buildKeyboard(input: unknown, urls?: KeyboardUrls): InlineKeyboard | undefined {
+function buildKeyboard(
+  input: unknown,
+  urls?: KeyboardUrls,
+  emoji?: NotifyEmojiContext,
+): InlineKeyboard | undefined {
   if (!Array.isArray(input)) return undefined;
   const kb = new InlineKeyboard();
   let placed = false;
+  // Resolve `{{KEY}}` / `:slug:` tokens in the label to glyphs and promote a
+  // leading premium token to the button's `icon_custom_emoji_id` — same
+  // contract the bot keyboards use, so notification buttons render premium
+  // pack emoji instead of leaking the raw `:slug:` text.
+  const labelArg = (
+    text: string,
+  ): string | { text: string; icon_custom_emoji_id: string } => {
+    const r = renderButtonLabel(
+      text,
+      emoji?.botEmojis,
+      emoji?.customEmojis,
+      emoji?.ownerHasPremium ?? true,
+    );
+    return r.iconCustomEmojiId !== undefined
+      ? { text: r.text, icon_custom_emoji_id: r.iconCustomEmojiId }
+      : r.text;
+  };
   for (const raw of input) {
     if (raw === null || typeof raw !== 'object') continue;
     const item = raw as ButtonInput;
     if (typeof item.text !== 'string' || item.text.length === 0) continue;
+    const textArg = labelArg(item.text);
     // Mini App deep-link button — opens the cabinet straight on a route.
     if (typeof item.webAppPath === 'string' && item.webAppPath.length > 0) {
       const path = item.webAppPath.startsWith('/') ? item.webAppPath : `/${item.webAppPath}`;
@@ -244,7 +279,7 @@ function buildKeyboard(input: unknown, urls?: KeyboardUrls): InlineKeyboard | un
       const publicWebUrl = urls?.publicWebUrl ?? null;
       const webAppUrl = miniAppUrl !== null ? `${miniAppUrl.replace(/\/+$/, '')}${path}` : null;
       if (webAppUrl !== null && isTelegramSafeButtonUrl(webAppUrl)) {
-        kb.webApp(item.text, webAppUrl);
+        kb.webApp(textArg, webAppUrl);
         kb.row();
         placed = true;
         continue;
@@ -252,7 +287,7 @@ function buildKeyboard(input: unknown, urls?: KeyboardUrls): InlineKeyboard | un
       // Fallback: plain URL button to the public web (in-app browser).
       const fallbackUrl = publicWebUrl !== null ? `${publicWebUrl.replace(/\/+$/, '')}${path}` : null;
       if (fallbackUrl !== null && isTelegramSafeButtonUrl(fallbackUrl)) {
-        kb.url(item.text, fallbackUrl);
+        kb.url(textArg, fallbackUrl);
         kb.row();
         placed = true;
       }
@@ -260,11 +295,11 @@ function buildKeyboard(input: unknown, urls?: KeyboardUrls): InlineKeyboard | un
       continue;
     }
     if (typeof item.url === 'string' && item.url.length > 0) {
-      kb.url(item.text, item.url);
+      kb.url(textArg, item.url);
       kb.row();
       placed = true;
     } else if (typeof item.callbackData === 'string' && item.callbackData.length > 0) {
-      kb.text(item.text, item.callbackData);
+      kb.text(textArg, item.callbackData);
       kb.row();
       placed = true;
     }
@@ -274,6 +309,27 @@ function buildKeyboard(input: unknown, urls?: KeyboardUrls): InlineKeyboard | un
 
 function isValidParseMode(value: unknown): value is 'MarkdownV2' | 'HTML' {
   return value === 'MarkdownV2' || value === 'HTML';
+}
+
+/**
+ * Best-effort emoji context from the bot-config cache for notification button
+ * labels. Returns `undefined` when no cache is wired or a read fails — labels
+ * then render verbatim (graceful degradation).
+ */
+async function resolveEmojiContext(
+  cache: BotConfigCache | null | undefined,
+): Promise<NotifyEmojiContext | undefined> {
+  if (cache === null || cache === undefined) return undefined;
+  try {
+    const cfg = await cache.get();
+    return {
+      botEmojis: cfg.botEmojis,
+      customEmojis: cfg.customEmojis,
+      ownerHasPremium: cfg.botEmojiOwnerHasPremium,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export function startInternalHttpListener(opts: ListenerOptions): void {
@@ -320,7 +376,7 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
         return;
       }
       if (url === '/notify') {
-        await handleNotify({ bot, logger, raw, res, onUserBlocked, keyboardUrls, rezeisAdminUrl: rezeisAdminUrl ?? null });
+        await handleNotify({ bot, logger, raw, res, onUserBlocked, keyboardUrls, rezeisAdminUrl: rezeisAdminUrl ?? null, cache });
         return;
       }
       if (url === '/notify-dev') {
@@ -336,7 +392,7 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
         return;
       }
       if (url === '/notify-broadcast') {
-        await handleBroadcast({ bot, logger, raw, res, keyboardUrls });
+        await handleBroadcast({ bot, logger, raw, res, keyboardUrls, cache });
         return;
       }
       res.statusCode = 404;
@@ -423,6 +479,7 @@ interface NotifyHandlerOptions {
   readonly onUserBlocked?: (telegramId: string) => Promise<void> | void;
   readonly keyboardUrls?: KeyboardUrls;
   readonly rezeisAdminUrl?: string | null;
+  readonly cache?: BotConfigCache | null;
 }
 
 interface DevNotifyHandlerOptions {
@@ -654,7 +711,8 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     return;
   }
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
-  const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls);
+  const emojiCtx = await resolveEmojiContext(opts.cache);
+  const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls, emojiCtx);
   const bannerUrl =
     typeof payload.bannerUrl === 'string' && payload.bannerUrl.trim().length > 0
       ? payload.bannerUrl.trim()
@@ -728,6 +786,7 @@ interface BroadcastHandlerOptions {
   readonly raw: string;
   readonly res: http.ServerResponse;
   readonly keyboardUrls?: KeyboardUrls;
+  readonly cache?: BotConfigCache | null;
 }
 
 async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
@@ -759,7 +818,8 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     return;
   }
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
-  const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls);
+  const emojiCtx = await resolveEmojiContext(opts.cache);
+  const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls, emojiCtx);
   const messageThreadId = typeof payload.topicThreadId === 'number' && Number.isInteger(payload.topicThreadId)
     ? payload.topicThreadId
     : undefined;
