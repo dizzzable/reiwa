@@ -29,9 +29,10 @@
  */
 import { InlineKeyboard } from 'grammy';
 
-import type { BotMenuButton } from '../../infrastructure/bot-config/types.js';
+import type { BotMenuButton, BotEmojiMap } from '../../infrastructure/bot-config/types.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
+import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
 
 export type ButtonKind = 'url' | 'webapp' | 'callback' | 'support_url';
 
@@ -189,6 +190,14 @@ export interface MainKeyboardOptions {
   readonly signinToken?: string | null;
   /** Optional primary trial button rendered at the top for eligible users. */
   readonly trialButton?: TrialButtonSpec | null;
+  /**
+   * Operator emoji registry + custom-emoji packs, so button labels resolve
+   * `{{KEY}}` / `:slug:` tokens to glyphs and promote a leading premium token
+   * to the button's `icon_custom_emoji_id`. Optional/additive.
+   */
+  readonly botEmojis?: BotEmojiMap | null;
+  readonly customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null;
+  readonly ownerHasPremium?: boolean;
 }
 
 /**
@@ -260,7 +269,7 @@ export function attachSigninTokenToUrl(url: string, token: string | null | undef
  * `onePerRow=false` (max 2 per row).
  */
 export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard {
-  const { buttons, miniAppUrl, publicWebUrl, lang, translator, supportUrl, signinToken, trialButton } = options;
+  const { buttons, miniAppUrl, publicWebUrl, lang, translator, supportUrl, signinToken, trialButton, botEmojis, customEmojis, ownerHasPremium } = options;
   const visible = [...buttons]
     .filter((b) => b.visible)
     .sort((a, b) => a.order - b.order);
@@ -296,7 +305,9 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
 
   for (const btn of visible) {
     const localisedLabel = translator.resolveButtonLabel(btn.id, btn.label, lang);
-    const label = btn.emoji ? `${btn.emoji} ${localisedLabel}` : localisedLabel;
+    const rawLabel = btn.emoji ? `${btn.emoji} ${localisedLabel}` : localisedLabel;
+    const rendered = renderButtonLabel(rawLabel, botEmojis, customEmojis, ownerHasPremium ?? true);
+    const label = rendered.text;
     const binding = resolveButtonBinding(btn);
 
     // Bot API 9.4 (February 2026) lets bots whose owner has a Telegram
@@ -312,7 +323,7 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
     const iconValue =
       btn.iconCustomEmojiId !== null && btn.iconCustomEmojiId !== undefined && btn.iconCustomEmojiId.length > 0
         ? btn.iconCustomEmojiId
-        : undefined;
+        : rendered.iconCustomEmojiId;
     const buttonExtras: { icon_custom_emoji_id?: string; style?: 'danger' | 'success' | 'primary' } = {};
     if (iconValue !== undefined) buttonExtras.icon_custom_emoji_id = iconValue;
     if (styleValue !== undefined) buttonExtras.style = styleValue;

@@ -64,6 +64,11 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
       lang,
       urls.publicWebUrl,
       urls.miniAppUrl,
+      {
+        botEmojis: config.botEmojis,
+        customEmojis: config.customEmojis,
+        ownerHasPremium: config.botEmojiOwnerHasPremium,
+      },
     );
     // Operators who don't configure their own back button should
     // still get one for free — drop a `[◀️ В меню]` row at the bottom

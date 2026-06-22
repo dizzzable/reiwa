@@ -254,6 +254,9 @@ async function buildWelcomeView(
     supportUrl,
     signinToken,
     trialButton,
+    botEmojis: botCfg.botEmojis,
+    customEmojis: botCfg.customEmojis,
+    ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
   });
 
   // When the start-screen override defines its own buttons, render them
@@ -265,6 +268,11 @@ async function buildWelcomeView(
       lang,
       deps.urls.publicWebUrl,
       miniAppUrl,
+      {
+        botEmojis: botCfg.botEmojis,
+        customEmojis: botCfg.customEmojis,
+        ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
+      },
     );
     if (screenKb.inline_keyboard.length > 0) {
       const merged = new InlineKeyboard([

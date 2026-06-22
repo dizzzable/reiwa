@@ -270,6 +270,81 @@ export function stripCustomEmojiEntities(
 }
 
 /**
+ * Render an inline-keyboard BUTTON label.
+ *
+ * Telegram inline-button text can't carry `custom_emoji` entities — the only
+ * place a custom emoji renders on a button is the Bot API 9.4
+ * `icon_custom_emoji_id` field (a single leading icon, premium owners only).
+ * So this helper:
+ *   1. Promotes a LEADING `:slug:` / `{{KEY}}` token to `icon_custom_emoji_id`
+ *      when it resolves to a premium id, the owner has Premium, and stripping
+ *      it still leaves visible label text (Telegram rejects empty labels).
+ *   2. Substitutes any remaining `{{KEY}}` → unicode glyph and `:slug:` →
+ *      pack fallback glyph as PLAIN TEXT, so a raw `:slug:` never leaks into
+ *      the button caption.
+ *
+ * Unknown `:slug:` tokens (no pack entry) are left untouched so operators can
+ * still type a literal `:foo:` if they mean it.
+ */
+export interface RenderedButtonLabel {
+  readonly text: string;
+  readonly iconCustomEmojiId?: string;
+}
+
+const LEADING_PLACEHOLDER_RE = /^\s*\{\{([A-Z0-9_]+)\}\}\s*/;
+const LEADING_SLUG_RE = /^\s*:([a-z0-9_]+):\s*/;
+const ALL_PLACEHOLDER_RE = /\{\{([A-Z0-9_]+)\}\}/g;
+const ALL_SLUG_RE = /:([a-z0-9_]+):/g;
+
+export function renderButtonLabel(
+  label: string,
+  botEmojis?: BotEmojiMap | null,
+  customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null,
+  ownerHasPremium: boolean = true,
+): RenderedButtonLabel {
+  let iconCustomEmojiId: string | undefined;
+  let body = label;
+
+  if (ownerHasPremium) {
+    const slugMatch = LEADING_SLUG_RE.exec(body);
+    if (slugMatch && customEmojis) {
+      const entry = customEmojis[slugMatch[1]];
+      const stripped = body.slice(slugMatch[0].length);
+      if (entry?.id && stripped.trim().length > 0) {
+        iconCustomEmojiId = entry.id;
+        body = stripped;
+      }
+    }
+    if (iconCustomEmojiId === undefined) {
+      const phMatch = LEADING_PLACEHOLDER_RE.exec(body);
+      if (phMatch) {
+        const id = resolvePremiumId(phMatch[1], botEmojis);
+        const stripped = body.slice(phMatch[0].length);
+        if (id !== null && stripped.trim().length > 0) {
+          iconCustomEmojiId = id;
+          body = stripped;
+        }
+      }
+    }
+  }
+
+  let text = body.replace(ALL_PLACEHOLDER_RE, (_m, key: string) =>
+    resolveUnicode(key, botEmojis),
+  );
+  text = text.replace(ALL_SLUG_RE, (m: string, slug: string) => {
+    const entry = customEmojis?.[slug];
+    if (entry === undefined) return m;
+    const fallback = entry.fallback?.trim() ?? '';
+    if (fallback.length > 0) return fallback;
+    return entry.id !== null ? '⭐' : m;
+  });
+  text = text.trim();
+  if (text.length === 0) text = label.trim();
+
+  return iconCustomEmojiId !== undefined ? { text, iconCustomEmojiId } : { text };
+}
+
+/**
  * Join an array of { text, entities } lines into a single message.
  * Adjusts entity offsets as lines are concatenated with '\n' separators.
  */

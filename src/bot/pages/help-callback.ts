@@ -73,7 +73,11 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
     const hasCustomButtons = (overrideScreen?.buttons.length ?? 0) > 0;
     const buildKeyboard = (): InlineKeyboard =>
       overrideScreen
-        ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl)
+        ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl, {
+            botEmojis: botCfg.botEmojis,
+            customEmojis: botCfg.customEmojis,
+            ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
+          })
         : new InlineKeyboard();
 
     if (handle.length > 0 && !NUMERIC_HANDLE.test(handle)) {

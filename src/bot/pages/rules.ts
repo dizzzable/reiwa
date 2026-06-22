@@ -67,7 +67,11 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
     // dropped whenever the rules screen added its system buttons.
     const hasCustomButtons = (overrideScreen?.buttons.length ?? 0) > 0;
     const kb = overrideScreen
-      ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl)
+      ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl, {
+          botEmojis: botCfg.botEmojis,
+          customEmojis: botCfg.customEmojis,
+          ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
+        })
       : new InlineKeyboard();
 
     if (link.length > 0) {

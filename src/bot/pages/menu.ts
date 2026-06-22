@@ -91,6 +91,9 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       translator: deps.translator,
       supportUrl: resolveSupportUrlForMenu(deps, botCfg.visual.supportUsername, lang),
       signinToken,
+      botEmojis: botCfg.botEmojis,
+      customEmojis: botCfg.customEmojis,
+      ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
     });
     await ctx.reply(deps.translator.t('menu.choose_action', lang), {
       reply_markup: keyboard,

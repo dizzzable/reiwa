@@ -25,8 +25,21 @@ import { InlineKeyboard } from 'grammy';
 import type { BotScreen, BotScreenButton } from '../../infrastructure/bot-config/types.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
+import type { BotEmojiMap } from '../../infrastructure/bot-config/types.js';
+import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
 
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+
+/**
+ * Emoji context threaded into the keyboard builder so button labels resolve
+ * `{{KEY}}` / `:slug:` tokens to glyphs (and promote a leading premium token
+ * to the button's `icon_custom_emoji_id`). Optional — omitted in tests.
+ */
+export interface ScreenButtonEmojiContext {
+  readonly botEmojis?: BotEmojiMap | null;
+  readonly customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null;
+  readonly ownerHasPremium?: boolean;
+}
 
 /**
  * Pick the locale-appropriate text from a screen. Falls back to the
@@ -112,6 +125,7 @@ export function buildScreenKeyboard(
   lang: SupportedLocale,
   publicWebUrl: string | null,
   miniAppUrl: string | null,
+  emoji?: ScreenButtonEmojiContext,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const sorted = [...screen.buttons].sort(
@@ -119,16 +133,24 @@ export function buildScreenKeyboard(
   );
   let currentRow = -1;
   for (const btn of sorted) {
-    const label = pickButtonLabel(btn, lang);
+    const rendered = renderButtonLabel(
+      pickButtonLabel(btn, lang),
+      emoji?.botEmojis,
+      emoji?.customEmojis,
+      emoji?.ownerHasPremium ?? true,
+    );
+    const label = rendered.text;
     if (btn.row !== currentRow) {
       if (currentRow !== -1) kb.row();
       currentRow = btn.row;
     }
     const styleValue = mapStyle(btn.style);
+    // Operator's explicit per-button icon wins; otherwise use the icon
+    // promoted from a leading custom-emoji token in the label.
     const iconValue =
       btn.iconCustomEmojiId !== null && btn.iconCustomEmojiId.length > 0
         ? btn.iconCustomEmojiId
-        : undefined;
+        : rendered.iconCustomEmojiId;
     const buttonExtras: {
       icon_custom_emoji_id?: string;
       style?: 'danger' | 'success' | 'primary';
