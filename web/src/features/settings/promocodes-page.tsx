@@ -15,6 +15,9 @@ import { motion } from "motion/react";
 import { toast } from "sonner";
 
 import { activatePromocode, getPromoActivations } from "@/lib/api-client";
+import type { PromoActivationResult } from "@/lib/api-client";
+import { promoSuccessKey, promoErrorKey } from "@/features/promo/promo-result";
+import { SESSION_QUERY_KEY } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -35,11 +38,27 @@ export default function PromocodesPage() {
 
   const activateMutation = useMutation({
     mutationFn: (promoCode: string) => activatePromocode(promoCode),
-    onSuccess: () => {
-      toast.success(t("promo.success"));
-      setCode("");
-      queryClient.invalidateQueries({ queryKey: ["promo"] });
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+    onSuccess: (data: PromoActivationResult) => {
+      switch (data.step) {
+        case "ACTIVATED":
+          toast.success(t(promoSuccessKey(data.reward)));
+          setCode("");
+          queryClient.invalidateQueries({ queryKey: ["promo"] });
+          queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
+          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+          break;
+        case "SELECT_SUBSCRIPTION":
+        case "CREATE_NEW":
+          // These need the full chooser / confirm UI — hand off to the
+          // dedicated promo page with the code prefilled.
+          navigate(`/promo?code=${encodeURIComponent(code.trim().toUpperCase())}`);
+          break;
+        case "REJECTED":
+        default:
+          toast.error(t(promoErrorKey(data.errorCode)));
+          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
+          break;
+      }
     },
     onError: () => {
       toast.error(t("promo.error"));

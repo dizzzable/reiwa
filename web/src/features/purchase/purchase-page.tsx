@@ -320,7 +320,12 @@ function QuoteView() {
           }
         }}
         validatePromo={async (code) => {
-          await activatePromocode(code);
+          const result = await activatePromocode(code);
+          // Only an actual activation counts as "applied"; rejections / pending
+          // steps must surface as an error instead of a false green check.
+          if (result.step !== "ACTIVATED") {
+            throw new Error(result.errorCode ?? "PROMO_NOT_APPLIED");
+          }
         }}
       />
 

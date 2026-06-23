@@ -30,11 +30,20 @@ export class PromocodesNamespace {
    * resolves the rezeis-admin user from the `userRef` (reiwa_id or
    * telegramId) and runs the activation pipeline.
    */
-  activate(identity: UserIdentity, code: string): Promise<unknown> {
+  activate(
+    identity: UserIdentity,
+    code: string,
+    opts?: { subscriptionId?: string; confirmCreateNew?: boolean },
+  ): Promise<unknown> {
     return this.transport.request(
       'POST',
       '/api/internal/promocodes/activate-by-ref',
-      { userRef: reference(identity), code },
+      {
+        userRef: reference(identity),
+        code,
+        subscriptionId: opts?.subscriptionId,
+        confirmCreateNew: opts?.confirmCreateNew,
+      },
     );
   }
 

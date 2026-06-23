@@ -21,6 +21,10 @@ export interface ReiwaSession {
   webAccount?: ReiwaWebAccount | null;
   /** Server-persisted onboarding-tour state. `false` → the tour auto-starts. */
   onboardingCompleted?: boolean;
+  /** Permanent personal discount (%) — drives the violet promo-icon glow. */
+  personalDiscount?: number;
+  /** One-time next-purchase discount (%) — drives the amber promo-icon glow. */
+  purchaseDiscount?: number;
 }
 
 // ─── Plans ───────────────────────────────────────────────────────────────────

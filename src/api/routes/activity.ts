@@ -42,7 +42,17 @@ export function createActivityRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       const result = await adminClient?.activity.getUnreadCount(resolveUserIdentity(req));
-      res.json(result ?? { count: 0 });
+      // rezeis returns `{ unread: number }`; the SPA bell expects `{ count }`.
+      // Normalise here (accept either) so a freshly-delivered notification
+      // actually lights up the bell instead of always reading 0.
+      const raw = (result ?? {}) as { unread?: number; count?: number };
+      const count =
+        typeof raw.unread === "number"
+          ? raw.unread
+          : typeof raw.count === "number"
+            ? raw.count
+            : 0;
+      res.json({ count });
     },
   );
 

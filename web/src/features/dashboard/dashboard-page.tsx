@@ -12,6 +12,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ShoppingCart, TicketPercent } from "lucide-react";
@@ -36,6 +37,14 @@ export default function DashboardPage() {
   const { session } = useSession();
   const { branding } = useBranding();
   const { purchasesBlocked, restricted } = useAccessMode();
+
+  // Active-discount glow for the promo shortcut: violet for the permanent
+  // personal discount, amber for the one-time next-purchase discount, split
+  // when both are set (they don't stack — personal takes priority on price —
+  // but both are surfaced so the user sees what's active).
+  const hasPersonalDiscount = (session?.personalDiscount ?? 0) > 0;
+  const hasPurchaseDiscount = (session?.purchaseDiscount ?? 0) > 0;
+  const promoGlowStyle = buildPromoGlowStyle(hasPersonalDiscount, hasPurchaseDiscount);
 
   // Fetch all subscriptions for the carousel
   const { data: allSubsData, isLoading: subsLoading } = useQuery({
@@ -111,7 +120,8 @@ export default function DashboardPage() {
           </button>
           <button
             onClick={() => navigate("/promo")}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6 transition-colors"
+            style={promoGlowStyle}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6 transition-all"
             aria-label={t("card.actions.promo")}
           >
             <TicketPercent className="h-4 w-4" />
@@ -183,4 +193,43 @@ export default function DashboardPage() {
       )}
     </div>
   );
+}
+
+/**
+ * Glow style for the promo shortcut based on the user's active discounts.
+ * Violet = permanent personal discount, amber = one-time next-purchase
+ * discount, split (left violet / right amber) when both are active. Returns
+ * `undefined` when no discount is active so the icon keeps its neutral look.
+ */
+function buildPromoGlowStyle(
+  hasPersonal: boolean,
+  hasPurchase: boolean,
+): CSSProperties | undefined {
+  const VIOLET = "168, 85, 247";
+  const AMBER = "245, 158, 11";
+  if (hasPersonal && hasPurchase) {
+    return {
+      background: `linear-gradient(90deg, rgba(${VIOLET}, 0.22) 0 50%, rgba(${AMBER}, 0.22) 50% 100%)`,
+      borderColor: "transparent",
+      color: "#ffffff",
+      boxShadow: `-6px 0 16px -3px rgba(${VIOLET}, 0.85), 6px 0 16px -3px rgba(${AMBER}, 0.9)`,
+    };
+  }
+  if (hasPersonal) {
+    return {
+      background: `rgba(${VIOLET}, 0.16)`,
+      borderColor: `rgba(${VIOLET}, 0.55)`,
+      color: "#d8b4fe",
+      boxShadow: `0 0 16px -2px rgba(${VIOLET}, 0.85)`,
+    };
+  }
+  if (hasPurchase) {
+    return {
+      background: `rgba(${AMBER}, 0.16)`,
+      borderColor: `rgba(${AMBER}, 0.6)`,
+      color: "#fcd34d",
+      boxShadow: `0 0 16px -2px rgba(${AMBER}, 0.9)`,
+    };
+  }
+  return undefined;
 }

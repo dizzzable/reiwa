@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { ArrowLeft, Tag, CheckCircle2 } from 'lucide-react'
-import { activatePromocode } from '@/lib/api-client'
+import { ArrowLeft, Tag, CheckCircle2, ChevronRight } from 'lucide-react'
+import { activatePromocode, getAllSubscriptions } from '@/lib/api-client'
+import type { PromoActivationResult } from '@/lib/api-client'
+import { SESSION_QUERY_KEY } from '@/hooks/use-session'
+import { promoSuccessKey, promoErrorKey } from './promo-result'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { TipCard } from '@/components/ui/tip-card'
 import { toast } from 'sonner'
@@ -12,9 +15,22 @@ import { toast } from 'sonner'
 export default function PromoPage() {
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const [code, setCode] = useState('')
   const [success, setSuccess] = useState(false)
   const [resultMsg, setResultMsg] = useState('')
+  // Pending step state — drives the subscription chooser / create-new confirm.
+  const [selectIds, setSelectIds] = useState<readonly string[] | null>(null)
+  const [confirmCreateNew, setConfirmCreateNew] = useState(false)
+
+  // Subscriptions are only needed to label the chooser; fetch lazily once a
+  // SELECT_SUBSCRIPTION step appears.
+  const { data: subsData } = useQuery({
+    queryKey: ['subscriptions', 'all'],
+    queryFn: getAllSubscriptions,
+    enabled: selectIds !== null,
+  })
+  const subscriptions = subsData?.subscriptions ?? []
 
   // Deep-link prefill: a promo-tagged broadcast button opens this page at
   // `/promo?code=<code>`. Read it once on mount, prefill the input, then strip
@@ -34,18 +50,43 @@ export default function PromoPage() {
     )
   }, [])
 
-  const mutation = useMutation({
-    mutationFn: () => activatePromocode(code.trim().toUpperCase()),
-    onSuccess: (data: { success?: boolean; message?: string }) => {
-      if (data?.success) {
+  function handleResult(data: PromoActivationResult): void {
+    switch (data.step) {
+      case 'ACTIVATED': {
+        const key = promoSuccessKey(data.reward)
+        setSelectIds(null)
+        setConfirmCreateNew(false)
         setSuccess(true)
-        setResultMsg(data.message ?? t('promo.successDefault'))
+        setResultMsg(t(key))
+        // Refresh session (discount glow on the dashboard promo icon) and the
+        // subscription/notification feeds so a granted reward shows at once.
+        void queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
+        void queryClient.invalidateQueries({ queryKey: ['subscriptions', 'all'] })
         window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
-      } else {
-        toast.error(data?.message ?? t('promo.invalid'))
-        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error')
+        break
       }
-    },
+      case 'SELECT_SUBSCRIPTION':
+        setConfirmCreateNew(false)
+        setSelectIds(data.availableSubscriptionIds)
+        break
+      case 'CREATE_NEW':
+        setSelectIds(null)
+        setConfirmCreateNew(true)
+        break
+      case 'REJECTED':
+      default: {
+        const ec = data.errorCode ?? ''
+        toast.error(t(promoErrorKey(ec)))
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error')
+        break
+      }
+    }
+  }
+
+  const mutation = useMutation({
+    mutationFn: (opts?: { subscriptionId?: string; confirmCreateNew?: boolean }) =>
+      activatePromocode(code.trim().toUpperCase(), opts),
+    onSuccess: handleResult,
     onError: (e: unknown) => {
       const msg = e instanceof Error ? e.message : t('promo.activationError')
       toast.error(msg)
@@ -89,27 +130,85 @@ export default function PromoPage() {
           {t('promo.tip')}
         </TipCard>
 
-        <div className="space-y-3">
-          <input
-            type="text"
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder={t('promo.inputPlaceholder')}
-            maxLength={32}
-            className="w-full rounded-2xl border border-white/[0.08] bg-zinc-800/50 px-5 py-4 text-center text-lg font-mono font-bold uppercase tracking-[0.3em] text-white placeholder:text-zinc-600 focus:border-(--brand-primary)/50 focus:outline-none transition-colors"
-            onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) mutation.mutate() }}
-          />
+        {/* Step: choose which subscription the reward applies to. */}
+        {selectIds !== null ? (
+          <div className="space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">{t('promo.selectSubscription.title')}</h2>
+              <p className="text-xs text-zinc-400">{t('promo.selectSubscription.description')}</p>
+            </div>
+            <div className="space-y-2">
+              {selectIds.map((id) => {
+                const sub = subscriptions.find((s) => s.id === id)
+                const label =
+                  sub?.plan?.name ?? sub?.profileName ?? `${t('promo.subscriptionLabel')} ${id.slice(-6)}`
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={mutation.isPending}
+                    onClick={() => mutation.mutate({ subscriptionId: id })}
+                    className="flex w-full items-center justify-between rounded-2xl border border-white/8 bg-zinc-800/50 px-5 py-4 text-left transition-colors hover:border-(--brand-primary)/50 disabled:opacity-50"
+                  >
+                    <span className="text-sm font-medium text-white">{label}</span>
+                    <ChevronRight className="h-4 w-4 text-zinc-500" />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : confirmCreateNew ? (
+          /* Step: confirm creating a brand-new subscription from the promo. */
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-white">{t('promo.createNew.title')}</h2>
+              <p className="text-xs text-zinc-400">{t('promo.createNew.description')}</p>
+            </div>
+            <div className="flex gap-3">
+              <StadiumButton
+                fullWidth
+                onClick={() => mutation.mutate({ confirmCreateNew: true })}
+                disabled={mutation.isPending}
+                loading={mutation.isPending}
+                glow
+              >
+                {t('promo.createNew.confirm')}
+              </StadiumButton>
+              <StadiumButton
+                fullWidth
+                variant="ghost"
+                onClick={() => {
+                  setConfirmCreateNew(false)
+                }}
+                disabled={mutation.isPending}
+              >
+                {t('promo.createNew.cancel')}
+              </StadiumButton>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder={t('promo.inputPlaceholder')}
+              maxLength={32}
+              className="w-full rounded-2xl border border-white/8 bg-zinc-800/50 px-5 py-4 text-center text-lg font-mono font-bold uppercase tracking-[0.3em] text-white placeholder:text-zinc-600 focus:border-(--brand-primary)/50 focus:outline-none transition-colors"
+              onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) mutation.mutate(undefined) }}
+            />
 
-          <StadiumButton
-            fullWidth size="lg"
-            onClick={() => mutation.mutate()}
-            disabled={!code.trim() || mutation.isPending}
-            loading={mutation.isPending}
-            glow={!!code.trim()}
-          >
-            {t('promo.activate')}
-          </StadiumButton>
-        </div>
+            <StadiumButton
+              fullWidth size="lg"
+              onClick={() => mutation.mutate(undefined)}
+              disabled={!code.trim() || mutation.isPending}
+              loading={mutation.isPending}
+              glow={!!code.trim()}
+            >
+              {t('promo.activate')}
+            </StadiumButton>
+          </div>
+        )}
       </div>
     </div>
   )

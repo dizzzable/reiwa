@@ -86,6 +86,7 @@ export {
   getEligibleSubscriptions,
   getPromoActivations,
 } from "./promocodes.js";
+export type { PromoActivationResult, PromoActivationStep } from "./promocodes.js";
 
 // Referrals
 export {

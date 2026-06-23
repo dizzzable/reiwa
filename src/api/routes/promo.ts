@@ -26,7 +26,7 @@ export function createPromoRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { code } = (req.body ?? {}) as Record<string, unknown>;
+        const { code, subscriptionId, confirmCreateNew } = (req.body ?? {}) as Record<string, unknown>;
         if (!code) {
           res.status(400).json({ message: "code is required" });
           return;
@@ -34,6 +34,13 @@ export function createPromoRouter(deps: {
         const result = await adminClient?.promocodes.activate(
           resolveUserIdentity(req),
           String(code),
+          {
+            subscriptionId:
+              typeof subscriptionId === "string" && subscriptionId.length > 0
+                ? subscriptionId
+                : undefined,
+            confirmCreateNew: confirmCreateNew === true,
+          },
         );
         res.json(result ?? {});
       } catch (e: unknown) {
