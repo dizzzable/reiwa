@@ -3,7 +3,7 @@ import type { ComponentType, SVGProps } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { ArrowLeft, Coins, Calendar, Zap, Tag, HardDrive, Loader2, Check } from 'lucide-react'
+import { ArrowLeft, Coins, Calendar, Zap, Tag, HardDrive, Loader2, Check, Copy } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getPointsExchangeOptions, exchangePoints } from '@/lib/api-client'
 import { StadiumButton } from '@/components/ui/stadium-button'
@@ -24,6 +24,8 @@ export default function PointsExchangePage() {
   const queryClient = useQueryClient()
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [points, setPoints] = useState('')
+  const [giftCode, setGiftCode] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const typeLabel = (type: string) => t(`pointsExchange.types.${type}.label`, { defaultValue: type })
   const typeUnit = (type: string) => t(`pointsExchange.types.${type}.unit`, { defaultValue: '' })
@@ -35,20 +37,66 @@ export default function PointsExchangePage() {
 
   const mutation = useMutation({
     mutationFn: () => exchangePoints(selectedType!, parseInt(points)),
-    onSuccess: (result: any) => {
-      toast.success(t('pointsExchange.success'))
+    onSuccess: (result) => {
+      if (result.success === false) {
+        toast.error(t('pointsExchange.error'))
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['points-exchange-options'] })
       queryClient.invalidateQueries({ queryKey: ['session'] })
+      if (result.code) {
+        // GIFT_SUBSCRIPTION — show the minted promo code so the user can pass
+        // it on. Without surfacing it the reward would be invisible.
+        setGiftCode(result.code)
+      } else {
+        toast.success(t('pointsExchange.success'))
+      }
       setSelectedType(null)
       setPoints('')
     },
     onError: () => toast.error(t('pointsExchange.error')),
   })
 
+  async function copyGiftCode() {
+    if (!giftCode) return
+    try {
+      await navigator.clipboard.writeText(giftCode)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-(--brand-primary)" />
+      </div>
+    )
+  }
+
+  if (giftCode) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-6 px-8 text-center pb-20">
+        <div className="flex h-20 w-20 items-center justify-center rounded-full border border-violet-500/30 bg-violet-500/10">
+          <Zap className="h-10 w-10 text-violet-400" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold text-white">{t('pointsExchange.giftCodeTitle')}</h2>
+          <p className="mt-1 text-sm text-zinc-400">{t('pointsExchange.giftCodeHint')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={copyGiftCode}
+          className="flex w-full max-w-xs items-center justify-between gap-3 rounded-2xl border border-white/10 bg-zinc-800/60 px-5 py-4 transition-colors hover:border-(--brand-primary)/50"
+        >
+          <span className="font-mono text-lg font-bold tracking-widest text-white">{giftCode}</span>
+          {copied ? <Check className="h-5 w-5 text-emerald-400" /> : <Copy className="h-5 w-5 text-zinc-400" />}
+        </button>
+        <StadiumButton fullWidth size="lg" glow onClick={() => { setGiftCode(null); navigate('/referrals') }}>
+          {t('pointsExchange.done')}
+        </StadiumButton>
       </div>
     )
   }

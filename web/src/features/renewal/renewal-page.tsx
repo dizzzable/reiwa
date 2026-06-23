@@ -10,7 +10,9 @@ import {
   createRenewalCheckout,
   getAllSubscriptions,
   getEnabledGateways,
+  getPartnerInfo,
   getRenewalOptions,
+  payWithPartnerBalance,
 } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
@@ -348,6 +350,29 @@ function RenewalReview() {
   });
   const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
 
+  const { data: partner } = useQuery({
+    queryKey: ["partner", "info"],
+    queryFn: getPartnerInfo,
+    staleTime: 60_000,
+  });
+  const balanceMutation = useMutation({
+    mutationFn: (item: RenewalOptionItem) =>
+      payWithPartnerBalance({
+        purchaseType: "RENEW",
+        planId: String(item.planId),
+        durationDays: item.durationDays ?? 0,
+        subscriptionId: item.subscriptionId,
+      }),
+    onSuccess: () => {
+      toast.success(t("renewal.balancePaid"));
+      void queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+      void queryClient.invalidateQueries({ queryKey: ["subscriptions-all"] });
+      void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
+      navigate("/dashboard", { replace: true });
+    },
+    onError: () => toast.error(t("renewal.balanceError")),
+  });
+
   if (isLoading) {
     return (
       <div className="flex h-48 items-center justify-center">
@@ -360,6 +385,20 @@ function RenewalReview() {
     selectedSubscriptionIds.includes(i.subscriptionId),
   );
   const priceError = error || !data || data.total === null || items.some((i) => !i.renewable);
+  // Partner-balance pay is offered only for a single-subscription renewal whose
+  // priced currency matches the partner balance currency and is covered by it.
+  const balanceItem =
+    items.length === 1 && items[0]!.planId !== null && items[0]!.durationDays !== null
+      ? items[0]!
+      : null;
+  const balanceEligible =
+    balanceItem !== null &&
+    !!partner &&
+    partner.isActive &&
+    partner.balancePaymentEnabled &&
+    partner.balanceCurrency === balanceItem.currency &&
+    balanceItem.amount !== null &&
+    partner.balance >= Math.round(Number(balanceItem.amount) * 100);
 
   if (priceError) {
     return (
@@ -433,6 +472,19 @@ function RenewalReview() {
       >
         {t("renewal.pay")}
       </StadiumButton>
+      {balanceEligible && balanceItem && partner && (
+        <StadiumButton
+          fullWidth
+          variant="secondary"
+          loading={balanceMutation.isPending}
+          onClick={() => balanceMutation.mutate(balanceItem)}
+        >
+          {t("renewal.payWithBalance", {
+            amount: (partner.balance / 100).toFixed(2),
+            currency: partner.balanceCurrency,
+          })}
+        </StadiumButton>
+      )}
       <StadiumButton fullWidth variant="ghost" onClick={() => navigate("/dashboard")}>
         {t("renewal.home")}
       </StadiumButton>

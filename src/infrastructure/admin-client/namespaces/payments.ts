@@ -51,6 +51,43 @@ export class PaymentsNamespace {
     return this.transport.request('POST', '/api/internal/payments/checkout', payload);
   }
 
+  /**
+   * Pay for a subscription (new / additional / renew / upgrade) with the
+   * partner balance. Completes synchronously on the rezeis side (no external
+   * gateway) after debiting the balance.
+   */
+  payWithPartnerBalance(
+    identity: UserIdentity,
+    input: {
+      readonly purchaseType: PurchaseType;
+      readonly planId: string;
+      readonly durationDays: number;
+      readonly subscriptionId?: string;
+      readonly channel?: string;
+      readonly deviceType?: string;
+    },
+  ): Promise<unknown> {
+    const payload: Record<string, unknown> = {
+      purchaseType: input.purchaseType,
+      planId: input.planId,
+      durationDays: input.durationDays,
+    };
+    if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+      payload['userId'] = identity.userId;
+    }
+    if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+      payload['telegramId'] = identity.telegramId;
+    }
+    if (input.subscriptionId) payload['subscriptionId'] = input.subscriptionId;
+    if (input.channel) payload['channel'] = input.channel;
+    if (input.deviceType) payload['deviceType'] = input.deviceType;
+    return this.transport.request(
+      'POST',
+      '/api/internal/payments/partner-balance/checkout',
+      payload,
+    );
+  }
+
   getStatus(paymentId: string, identity: UserIdentity = {}): Promise<unknown> {
     const query: string[] = [];
     if (typeof identity.userId === 'string' && identity.userId.length > 0) {

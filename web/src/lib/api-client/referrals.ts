@@ -75,11 +75,20 @@ export const getPointsExchangeOptions = () =>
     .get<PointsExchangeOptions>("/referrals/exchange/options")
     .then((r) => r.data);
 
+export interface ExchangePointsResult {
+  readonly success: boolean;
+  readonly message?: string;
+  readonly value?: number;
+  /** Single-use promo code minted by a GIFT_SUBSCRIPTION exchange. */
+  readonly code?: string;
+  readonly error?: string;
+}
+
 export const exchangePoints = (
   type: string,
   points: number,
   subscriptionId?: number,
 ) =>
   apiClient
-    .post("/referrals/exchange", { type, points, subscriptionId })
+    .post<ExchangePointsResult>("/referrals/exchange", { type, points, subscriptionId })
     .then((r) => r.data);

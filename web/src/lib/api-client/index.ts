@@ -122,7 +122,10 @@ export {
   getPartnerReferrals,
   getPartnerStatus,
   getPartnerWithdrawals,
+  payWithPartnerBalance,
   type PartnerStatus,
+  type PartnerInfo,
+  type PartnerBalancePayResult,
   type PartnerReferralUser,
   type PartnerReferralsResponse,
 } from "./partner.js";

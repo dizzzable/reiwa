@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, Check, Smartphone, Apple, Monitor, Laptop } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getQuote, createCheckout, getEnabledGateways, activatePromocode } from "@/lib/api-client";
+import { getPartnerInfo, payWithPartnerBalance } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { usePurchaseStore } from "@/stores/purchase.store";
@@ -232,6 +233,13 @@ function QuoteView() {
   const { selectedPlan, selectedDuration, selectedGateway, selectedDevice, setQuote, goBack } =
     usePurchaseStore();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  const { data: partner } = useQuery({
+    queryKey: ["partner", "info"],
+    queryFn: getPartnerInfo,
+    staleTime: 60_000,
+  });
 
   const deviceLabel = selectedDevice
     ? t(`purchase.device.${selectedDevice.toLowerCase()}`)
@@ -251,6 +259,23 @@ function QuoteView() {
     queryFn: () =>
       getQuote(selectedPlan!.id, selectedDuration!.days, selectedGateway!.id),
     enabled: !!(selectedPlan && selectedDuration && selectedGateway),
+  });
+
+  const balanceMutation = useMutation({
+    mutationFn: () =>
+      payWithPartnerBalance({
+        purchaseType: "NEW",
+        planId: String(selectedPlan!.id),
+        durationDays: selectedDuration!.days,
+        deviceType: selectedDevice ?? undefined,
+      }),
+    onSuccess: () => {
+      toast.success(t("purchase.quote.balancePaid"));
+      void queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+      void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
+      navigate("/dashboard", { replace: true });
+    },
+    onError: () => toast.error(t("purchase.quote.balanceError")),
   });
 
   if (isLoading) {
@@ -338,6 +363,23 @@ function QuoteView() {
       >
         {t("purchase.quote.pay")}
       </StadiumButton>
+      {partner &&
+        partner.isActive &&
+        partner.balancePaymentEnabled &&
+        partner.balanceCurrency === quote.currency &&
+        partner.balance >= Math.round(quote.finalPrice * 100) && (
+          <StadiumButton
+            fullWidth
+            variant="secondary"
+            loading={balanceMutation.isPending}
+            onClick={() => balanceMutation.mutate()}
+          >
+            {t("purchase.quote.payWithBalance", {
+              amount: (partner.balance / 100).toFixed(2),
+              currency: partner.balanceCurrency,
+            })}
+          </StadiumButton>
+        )}
       <StadiumButton fullWidth variant="ghost" onClick={goBack}>
         {t("purchase.quote.change")}
       </StadiumButton>

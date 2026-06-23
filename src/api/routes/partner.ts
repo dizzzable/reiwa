@@ -25,6 +25,31 @@ export function createPartnerRouter(deps: {
     }
   });
 
+  // POST /api/v1/partner/pay — pay for a subscription with the partner balance.
+  router.post("/partner/pay", requireSession, async (req: AuthRequest, res) => {
+    try {
+      const { purchaseType, planId, durationDays, subscriptionId, deviceType } =
+        (req.body ?? {}) as Record<string, unknown>;
+      if (!purchaseType || !planId || durationDays === undefined) {
+        res.status(400).json({ message: "purchaseType, planId and durationDays are required" });
+        return;
+      }
+      const channel = req.context === "tma" ? "TMA" : "WEB";
+      const result = await adminClient?.payments.payWithPartnerBalance(resolveUserIdentity(req), {
+        purchaseType: String(purchaseType) as "NEW" | "ADDITIONAL" | "RENEW" | "UPGRADE",
+        planId: String(planId),
+        durationDays: Number(durationDays),
+        subscriptionId:
+          typeof subscriptionId === "string" && subscriptionId.length > 0 ? subscriptionId : undefined,
+        channel,
+        deviceType: typeof deviceType === "string" && deviceType.length > 0 ? deviceType : undefined,
+      });
+      res.json(result ?? {});
+    } catch (e: unknown) {
+      sendSafeError(req, res, e, 400, "Partner balance payment failed", "partner/pay");
+    }
+  });
+
   // GET /api/v1/partner/status
   // Lightweight check used by the bottom-nav to switch between the Referral
   // and Partner tab on every dashboard mount. Returns `{ isActive: false }`

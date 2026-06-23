@@ -8,6 +8,30 @@ export interface PartnerStatus {
   isActive: boolean;
 }
 
+/** Partner info returned by `/partner/info` (null when not a partner). */
+export interface PartnerInfo {
+  id: string;
+  isActive: boolean;
+  /** Balance in minor units (cents/kopecks). */
+  balance: number;
+  totalEarned: number;
+  totalWithdrawn: number;
+  programAvailable: boolean;
+  /** Operator allows paying for subscriptions with the partner balance. */
+  balancePaymentEnabled: boolean;
+  /** Currency the balance is denominated in (e.g. "RUB"). */
+  balanceCurrency: string | null;
+  createdAt: string;
+}
+
+/** Result of a partner-balance payment (mirrors the checkout shape). */
+export interface PartnerBalancePayResult {
+  paymentId?: string;
+  transactionStatus?: string;
+  amount?: string;
+  currency?: string;
+}
+
 export interface PartnerReferralUser {
   id: string;
   label: string;
@@ -23,7 +47,20 @@ export interface PartnerReferralsResponse {
 }
 
 export const getPartnerInfo = () =>
-  apiClient.get("/partner/info").then((r) => r.data);
+  apiClient.get<PartnerInfo | null>("/partner/info").then((r) => r.data);
+
+/**
+ * Pay for a subscription (new / additional / renew / upgrade) with the
+ * partner balance. Completes synchronously server-side.
+ */
+export const payWithPartnerBalance = (input: {
+  purchaseType: "NEW" | "ADDITIONAL" | "RENEW" | "UPGRADE";
+  planId: string;
+  durationDays: number;
+  subscriptionId?: string;
+  deviceType?: string;
+}) =>
+  apiClient.post<PartnerBalancePayResult>("/partner/pay", input).then((r) => r.data);
 
 export const getPartnerReferrals = (page = 1, limit = 6) =>
   apiClient
