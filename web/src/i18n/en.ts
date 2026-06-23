@@ -119,6 +119,7 @@ export const en: RuDict = {
     signingIn: 'Signing in…',
     connectingViaTelegram: 'Signing in via Telegram…',
     connecting: 'Connecting…',
+    tagline: 'VPN Service',
   },
   dashboard: {
     title: 'Dashboard',

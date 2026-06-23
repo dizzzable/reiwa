@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { BrandLogo } from '@/components/ui/brand-logo'
+import { useBranding } from '@/lib/branding-provider'
 import { bootstrapTelegram, getSession } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { useTelegramWebApp } from '@/hooks/use-telegram-webapp'
@@ -16,6 +17,7 @@ export default function BootstrapPage() {
   const queryClient = useQueryClient()
   const { t } = useTranslation()
   const { initData, isReady, telegram } = useTelegramWebApp()
+  const { branding } = useBranding()
   const [phase, setPhase]     = useState<BootstrapPhase>('detecting')
   const [errorMsg, setErrorMsg] = useState('')
   const calledRef = useRef(false)
@@ -102,10 +104,10 @@ export default function BootstrapPage() {
           transition={{ delay: 0.2 }}
         >
           <h1 className="text-3xl font-bold tracking-[0.15em] text-white uppercase">
-            Reiwa
+            {branding.brandName}
           </h1>
           <p className="mt-1 text-sm text-zinc-500 tracking-widest uppercase">
-            VPN Service
+            {branding.tagline?.trim() || t('bootstrap.tagline')}
           </p>
         </motion.div>
 

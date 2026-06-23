@@ -10,6 +10,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { motion } from "motion/react";
 import { Bell, ChevronRight } from "lucide-react";
 
 import { getNotifications, getUnreadCount } from "@/lib/api-client";
@@ -57,7 +58,18 @@ export function NotificationBell() {
         className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 transition-colors hover:bg-white/6 hover:text-white"
         aria-label={t("notifications.feedTitle")}
       >
-        <Bell className="h-4 w-4" />
+        <motion.span
+          className="inline-flex"
+          style={{ transformOrigin: "50% 0%" }}
+          animate={hasUnread ? { rotate: [0, -14, 12, -9, 7, 0] } : { rotate: 0 }}
+          transition={
+            hasUnread
+              ? { duration: 1, repeat: Infinity, repeatDelay: 2.4, ease: "easeInOut" }
+              : { duration: 0.2 }
+          }
+        >
+          <Bell className="h-4 w-4" />
+        </motion.span>
         {hasUnread && (
           <span className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center">
             <span className="absolute inline-flex h-4 w-4 animate-ping rounded-full bg-(--brand-primary) opacity-50" />
@@ -97,12 +109,12 @@ export function NotificationBell() {
                     {!n.isRead && (
                       <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />
                     )}
-                    <p className="flex-1 truncate text-sm font-medium text-white">
+                    <p className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium text-white">
                       <EmojiText text={n.title} />
                     </p>
                   </div>
                   {n.body && (
-                    <p className="mt-0.5 truncate text-xs text-zinc-400">
+                    <p className="mt-0.5 line-clamp-2 break-words text-xs text-zinc-400">
                       <EmojiText text={n.body} />
                     </p>
                   )}

@@ -117,6 +117,7 @@ export const ru = {
     signingIn: 'Вход в систему…',
     connectingViaTelegram: 'Входим через Telegram…',
     connecting: 'Подключение…',
+    tagline: 'VPN-сервис',
   },
   dashboard: {
     title: 'Главная',

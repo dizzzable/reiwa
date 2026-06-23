@@ -65,7 +65,13 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (tour.shouldAutoStart && hasActiveSubscription && location.pathname === "/dashboard") {
       // Small delay so the DOM elements are rendered before we try to measure them
-      const timer = setTimeout(() => tour.start(), 600);
+      const timer = setTimeout(() => {
+        tour.start();
+        // Mark the tour as seen the moment it auto-starts (not only on
+        // finish/skip), so a page reload mid-tour doesn't relaunch it for the
+        // user. Replay stays available from Settings (resetOnboarding + start).
+        tour.markCompleted();
+      }, 600);
       return () => clearTimeout(timer);
     }
   }, [location.pathname, tour.shouldAutoStart, hasActiveSubscription]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -31,6 +31,7 @@ const DEFAULT_THEME = "#020202";
 
 interface BrandingLike {
   readonly brandName?: string | null;
+  readonly tagline?: string | null;
   readonly logoUrl?: string | null;
   readonly pwaIconUrl?: string | null;
   readonly bgPrimary?: string | null;
@@ -57,6 +58,7 @@ function iconType(src: string): string {
 export function buildWebManifest(branding: BrandingLike | null | undefined): Record<string, unknown> {
   const name = (branding?.brandName ?? "").trim() || "Reiwa";
   const theme = (branding?.bgPrimary ?? "").trim() || DEFAULT_THEME;
+  const description = (branding?.tagline ?? "").trim() || name;
   const icon = ((branding?.pwaIconUrl ?? "").trim() || (branding?.logoUrl ?? "").trim()) || null;
 
   let icons: ReadonlyArray<Record<string, string>>;
@@ -81,7 +83,7 @@ export function buildWebManifest(branding: BrandingLike | null | undefined): Rec
   return {
     name,
     short_name: name,
-    description: `${name}`,
+    description,
     start_url: "/",
     scope: "/",
     display: "standalone",

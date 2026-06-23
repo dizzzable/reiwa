@@ -97,6 +97,8 @@ export interface AppBackground {
 
 export interface Branding {
   brandName: string;
+  /** Optional short subtitle shown on the splash + in-app loader. */
+  tagline?: string | null;
   logoUrl: string | null;
   /** Square PNG for PWA install (home-screen icon). Falls back to logoUrl. */
   pwaIconUrl?: string | null;
@@ -177,6 +179,7 @@ export interface CustomIcon {
  */
 export const DEFAULT_BRANDING: Branding = {
   brandName: "Reiwa",
+  tagline: null,
   logoUrl: null,
   pwaIconUrl: null,
   primary: "#22c55e",

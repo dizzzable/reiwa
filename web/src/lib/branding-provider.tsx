@@ -126,6 +126,23 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     link.href = icon;
   }, [config.branding.pwaIconUrl, config.branding.logoUrl]);
 
+  // White-label the iOS home-screen app title. Safari bakes the value of
+  // `<meta name="apple-mobile-web-app-title">` (hardcoded "Reiwa" in index.html)
+  // into the installed icon label, so patch it from the operator brand name.
+  useEffect(() => {
+    const name = config.branding.brandName?.trim();
+    if (!name) return;
+    let meta = document.querySelector<HTMLMetaElement>(
+      'meta[name="apple-mobile-web-app-title"]',
+    );
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "apple-mobile-web-app-title";
+      document.head.appendChild(meta);
+    }
+    meta.content = name;
+  }, [config.branding.brandName]);
+
   // Synchronise i18n with the operator-configured default locale, but only
   // when the user has not made an explicit choice yet.
   useEffect(() => {

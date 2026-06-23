@@ -6,6 +6,7 @@ import { motion } from 'motion/react'
 
 import { NetworkBg } from '@/components/ui/network-bg'
 import { BrandLogo } from '@/components/ui/brand-logo'
+import { useBranding } from '@/lib/branding-provider'
 import { botSignin, getSession } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 
@@ -35,6 +36,7 @@ export default function WebHomePage() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
   const { t } = useTranslation()
+  const { branding } = useBranding()
   const calledRef   = useRef(false)
   const [statusKey, setStatusKey] = useState<'connecting' | 'signin'>('connecting')
 
@@ -128,10 +130,10 @@ export default function WebHomePage() {
           transition={{ delay: 0.2 }}
         >
           <h1 className="text-3xl font-bold tracking-[0.15em] text-white uppercase">
-            Reiwa
+            {branding.brandName}
           </h1>
           <p className="mt-1 text-sm tracking-widest text-zinc-500 uppercase">
-            VPN Service
+            {branding.tagline?.trim() || t('bootstrap.tagline')}
           </p>
         </motion.div>
 
