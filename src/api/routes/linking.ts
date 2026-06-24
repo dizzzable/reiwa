@@ -52,7 +52,9 @@ export function createLinkingRouter(deps: {
       // Generate linking code via Rezeis_Admin
       const result = await adminClient.linking.telegram.generate(userId);
 
-      // Get bot username from config or admin
+      // Get bot username — bot-config first, then the reiwa `BOT_USERNAME` env
+      // fallback so the "Open bot" deep-link button always works even when the
+      // admin bot-config doesn't carry a username yet.
       let botUsername: string | null = null;
       try {
         const botConfig = (await adminClient.branding.getBotConfig()) as Record<string, unknown>;
@@ -64,7 +66,10 @@ export function createLinkingRouter(deps: {
           botUsername = botUsername.replace(/^@/, "").trim();
         }
       } catch {
-        // Bot config fetch failed — botUsername will be null
+        // Bot config fetch failed — fall back to the env below.
+      }
+      if (!botUsername) {
+        botUsername = config.BOT_USERNAME ? config.BOT_USERNAME.replace(/^@/, "").trim() : null;
       }
 
       res.json({
