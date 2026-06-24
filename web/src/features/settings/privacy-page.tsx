@@ -25,6 +25,7 @@ import {
   verifyEmailLink,
 } from "@/lib/api-client";
 import { useSession, SESSION_QUERY_KEY } from "@/hooks/use-session";
+import { useBranding } from "@/lib/branding-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +35,7 @@ export default function PrivacyPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { session } = useSession();
+  const { emailEnabled } = useBranding();
   const [activeSheet, setActiveSheet] = useState<"password" | "telegram" | "email" | null>(null);
 
   const telegramLinked = Boolean(session?.telegramId);
@@ -69,18 +71,20 @@ export default function PrivacyPage() {
           linked={telegramLinked}
           onClick={() => setActiveSheet("telegram")}
         />
-        <PrivacyItem
-          icon={<Mail className="h-5 w-5" />}
-          iconBg="bg-emerald-500/10 text-emerald-400"
-          label={t("privacy.linkEmail")}
-          sublabel={
-            emailVerified
-              ? `${session?.webAccount?.email ?? ""} · ${t("privacy.verifiedStatus")}`
-              : t("privacy.linkEmailSub")
-          }
-          linked={emailVerified}
-          onClick={() => setActiveSheet("email")}
-        />
+        {emailEnabled && (
+          <PrivacyItem
+            icon={<Mail className="h-5 w-5" />}
+            iconBg="bg-emerald-500/10 text-emerald-400"
+            label={t("privacy.linkEmail")}
+            sublabel={
+              emailVerified
+                ? `${session?.webAccount?.email ?? ""} · ${t("privacy.verifiedStatus")}`
+                : t("privacy.linkEmailSub")
+            }
+            linked={emailVerified}
+            onClick={() => setActiveSheet("email")}
+          />
+        )}
       </div>
 
       {/* Change Password Dialog */}
@@ -104,18 +108,20 @@ export default function PrivacyPage() {
       </Dialog>
 
       {/* Link Email Dialog */}
-      <Dialog open={activeSheet === "email"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("privacy.linkEmail")}</DialogTitle>
-          </DialogHeader>
-          <LinkEmailForm
-            verified={emailVerified}
-            currentEmail={session?.webAccount?.email ?? null}
-            onSuccess={() => setActiveSheet(null)}
-          />
-        </DialogContent>
-      </Dialog>
+      {emailEnabled && (
+        <Dialog open={activeSheet === "email"} onOpenChange={(open) => !open && setActiveSheet(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("privacy.linkEmail")}</DialogTitle>
+            </DialogHeader>
+            <LinkEmailForm
+              verified={emailVerified}
+              currentEmail={session?.webAccount?.email ?? null}
+              onSuccess={() => setActiveSheet(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

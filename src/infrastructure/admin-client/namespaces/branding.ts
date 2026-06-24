@@ -47,6 +47,11 @@ export interface PublicConfigPayload {
     readonly url: string;
     readonly color: string | null;
   }>;
+  /**
+   * Whether platform email delivery is configured + enabled. When `false`,
+   * the cabinet hides "link email" and email password-recovery affordances.
+   */
+  readonly emailEnabled?: boolean;
 }
 
 export class BrandingNamespace {

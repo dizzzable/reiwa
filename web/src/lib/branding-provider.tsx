@@ -43,6 +43,7 @@ interface BrandingContextValue {
   readonly defaultCurrency: string;
   readonly customIcons: CustomIcon[];
   readonly botUsername: string | null;
+  readonly emailEnabled: boolean;
   readonly isLoading: boolean;
 }
 
@@ -53,6 +54,7 @@ const BrandingContext = createContext<BrandingContextValue>({
   defaultCurrency: DEFAULT_PUBLIC_CONFIG.defaultCurrency,
   customIcons: DEFAULT_PUBLIC_CONFIG.customIcons,
   botUsername: DEFAULT_PUBLIC_CONFIG.botUsername ?? null,
+  emailEnabled: DEFAULT_PUBLIC_CONFIG.emailEnabled ?? false,
   isLoading: true,
 });
 
@@ -167,9 +169,10 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       defaultCurrency: config.defaultCurrency,
       customIcons: config.customIcons ?? [],
       botUsername: config.botUsername ?? null,
+      emailEnabled: config.emailEnabled ?? false,
       isLoading,
     }),
-    [config.branding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, config.botUsername, isLoading],
+    [config.branding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, config.botUsername, config.emailEnabled, isLoading],
   );
 
   return (

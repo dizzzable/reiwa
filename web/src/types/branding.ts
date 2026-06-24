@@ -161,6 +161,12 @@ export interface PublicConfig {
     projectName: string | null;
     webTitle: string | null;
   };
+  /**
+   * Whether platform email delivery is configured + enabled. When `false`,
+   * the cabinet hides email password-recovery and "link email" affordances —
+   * there's no way to deliver a code, so offering them would be a dead end.
+   */
+  emailEnabled?: boolean;
 }
 
 /** One operator-uploaded custom icon. Mirrors the backend `CustomIconInterface`. */
@@ -223,4 +229,5 @@ export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
   customIcons: [],
   botUsername: null,
   platformBranding: { projectName: null, webTitle: null },
+  emailEnabled: false,
 };
