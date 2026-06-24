@@ -90,12 +90,17 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
   const trialPlan = useMemo(() => plans.find((p) => p.isTrial), [plans]);
   const freeEligible = eligibility?.eligible === true;
   const paidTrial = trialPlan !== undefined && trialPlan.trialFree === false;
+  // The trial requires a linked Telegram account (free-trial path returns this
+  // reason for a web-only user). Steer them to the linking flow instead of
+  // silently hiding the offer.
+  const needsTelegramLink =
+    eligibility?.reason === "TRIAL_REQUIRES_TELEGRAM" && !freeEligible && !paidTrial;
   // The dashboard renders this only in the empty-state (no active subscription),
   // where the trial offer IS the primary action — so it is shown whenever the
   // user is eligible, mirroring the always-visible bot trial button. (We do not
   // throttle here: throttling left subscription-less users with only a "Buy"
   // button while the bot still offered the trial.)
-  const visible = !dismissed && (freeEligible || paidTrial);
+  const visible = !dismissed && (freeEligible || paidTrial || needsTelegramLink);
 
   if (!visible) return null;
 
@@ -105,6 +110,10 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
     : "";
 
   async function handleActivate() {
+    if (needsTelegramLink) {
+      navigate("/settings/privacy");
+      return;
+    }
     if (paidTrial && trialPlan) {
       selectPlan(trialPlan);
       navigate("/purchase");
@@ -144,10 +153,18 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
         <Gift className="h-7 w-7" style={{ color: "var(--brand-primary)" }} />
       </div>
       <h2 className="text-lg font-semibold text-zinc-100">
-        {paidTrial ? t("trialCta.titlePaid") : t("trialCta.titleFree")}
+        {needsTelegramLink
+          ? t("trialCta.titleLinkTelegram")
+          : paidTrial
+            ? t("trialCta.titlePaid")
+            : t("trialCta.titleFree")}
       </h2>
       <p className="mt-1 text-sm text-zinc-400">
-        {paidTrial ? t("trialCta.subtitlePaid") : t("trialCta.subtitleFree")}
+        {needsTelegramLink
+          ? t("trialCta.subtitleLinkTelegram")
+          : paidTrial
+            ? t("trialCta.subtitlePaid")
+            : t("trialCta.subtitleFree")}
       </p>
 
       {error && (
@@ -165,6 +182,11 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
             {t("trialCta.activating")}
+          </>
+        ) : needsTelegramLink ? (
+          <>
+            <Gift className="h-4 w-4" />
+            {t("trialCta.buttonLinkTelegram")}
           </>
         ) : paidTrial ? (
           t("trialCta.buttonPaid", { price: priceLabel })

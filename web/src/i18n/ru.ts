@@ -143,6 +143,9 @@ export const ru = {
     activating: 'Активация…',
     dismiss: 'Позже',
     errorGeneric: 'Не удалось активировать пробный период. Попробуйте ещё раз.',
+    titleLinkTelegram: 'Привяжите Telegram',
+    subtitleLinkTelegram: 'Пробная подписка станет доступна после привязки Telegram-аккаунта.',
+    buttonLinkTelegram: 'Привязать Telegram',
   },
   subscription: {
     title: 'Моя подписка',

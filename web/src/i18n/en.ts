@@ -145,6 +145,9 @@ export const en: RuDict = {
     activating: 'Activating…',
     dismiss: 'Maybe later',
     errorGeneric: 'Could not activate the trial. Please try again.',
+    titleLinkTelegram: 'Link Telegram',
+    subtitleLinkTelegram: 'The trial unlocks once you link your Telegram account.',
+    buttonLinkTelegram: 'Link Telegram',
   },
   subscription: {
     title: 'My subscription',
