@@ -32,6 +32,27 @@ import { SESSION_QUERY_KEY } from '@/hooks/use-session'
  * flow is active so a user staring at a long network round-trip knows
  * we're authenticating, not crashed.
  */
+/**
+ * Wait (bounded) for the Telegram WebApp SDK to populate `window.Telegram`.
+ * Resolves as soon as the SDK object exists — `initData` present means we're
+ * inside a Mini App, empty means a plain browser — so the decision is made
+ * immediately in both real cases. Only when the (async) SDK script hasn't
+ * loaded yet do we poll, falling back to `null` after `maxMs` so a browser
+ * that can't reach telegram.org (RU IP, no VPN) is never stuck waiting.
+ */
+async function detectTelegramInitData(maxMs: number): Promise<string | null> {
+  const start = Date.now()
+  for (;;) {
+    const webApp = window.Telegram?.WebApp
+    if (webApp) {
+      const data = webApp.initData
+      return typeof data === 'string' && data.length > 0 ? data : null
+    }
+    if (Date.now() - start >= maxMs) return null
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+}
+
 export default function WebHomePage() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
@@ -51,7 +72,14 @@ export default function WebHomePage() {
       // NOT see the login form — route them to /tma which authenticates via
       // Telegram. This makes the Mini App work regardless of which URL the
       // button points at, so operators never need to configure `/tma`.
-      const tgInitData = window.Telegram?.WebApp?.initData
+      //
+      // The Telegram SDK script is loaded `async` (so a RU-IP browser without
+      // a VPN — which can't reach telegram.org — never blocks the first paint
+      // on it). We therefore give the SDK a short, bounded window to populate
+      // `window.Telegram`: the decision is final the moment the SDK object
+      // exists (initData present → TMA, empty → plain browser); if it never
+      // loads we fall through to the web flow after ~1.5s instead of hanging.
+      const tgInitData = await detectTelegramInitData(1500)
       if (typeof tgInitData === 'string' && tgInitData.length > 0) {
         navigate('/tma', { replace: true })
         return

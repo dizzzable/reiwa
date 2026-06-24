@@ -32,7 +32,7 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
-import { renderBotCopy, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -66,6 +66,20 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
           supportHandle: supportHandleDisplay,
         })
       : translator.t('support.title', lang);
+    // HTML screens render the operator's markup via parse_mode; otherwise the
+    // entity-based render keeps premium custom-emoji working.
+    const useHtml = overrideScreen?.parseMode === 'html';
+    const sendCopy = (body: string, kb: InlineKeyboard): Promise<void> => {
+      if (useHtml) {
+        return editOrReply(ctx, {
+          text: renderBotCopyHtml(body, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium),
+          parseMode: 'HTML',
+          replyMarkup: kb,
+        });
+      }
+      const rendered = renderBotCopy(body, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
+      return editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
+    };
 
     // Operator's own custom buttons (if any) render FIRST; the system
     // buttons (contact + back) are appended below. Previously the custom
@@ -94,8 +108,7 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
       );
       const back = renderSystemButton(backLabel, 'back', botCfg);
       appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
-      const rendered = renderBotCopy(title, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
-      await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
+      await sendCopy(title, kb);
       return;
     }
 
@@ -112,11 +125,6 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
     const kb = buildKeyboard();
     const back = renderSystemButton(backLabel, 'back', botCfg);
     appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
-    const renderedFallback = renderBotCopy(fallbackBody, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
-    await editOrReply(ctx, {
-      text: renderedFallback.text,
-      entities: renderedFallback.entities,
-      replyMarkup: kb,
-    });
+    await sendCopy(fallbackBody, kb);
   });
 };

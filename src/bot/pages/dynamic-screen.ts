@@ -17,7 +17,7 @@ import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
-import { renderBotCopy, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   buildScreenKeyboard,
   findScreenByShortId,
@@ -61,10 +61,17 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
     }
 
     const text = pickScreenText(screen, lang);
-    // `{{KEY}}` placeholders → premium custom-emoji (operator-managed via the
-    // "Эмодзи" editor). Telegram falls back to the unicode glyph for bots
-    // without the capability, so this never breaks delivery.
-    const renderedText = renderBotCopy(text, config.botEmojis, config.customEmojis, config.botEmojiOwnerHasPremium);
+    // Operator-chosen format: HTML screens render the markup as Telegram HTML
+    // (premium emoji via <tg-emoji> tags) and send with parse_mode HTML; other
+    // screens keep the entity-based render (premium emoji via entities).
+    const useHtml = screen.parseMode === 'html';
+    const renderedText = useHtml
+      ? {
+          text: renderBotCopyHtml(text, config.botEmojis, config.customEmojis, config.botEmojiOwnerHasPremium),
+          entities: undefined,
+        }
+      : renderBotCopy(text, config.botEmojis, config.customEmojis, config.botEmojiOwnerHasPremium);
+    const parseMode = useHtml ? ('HTML' as const) : undefined;
     const keyboard = buildScreenKeyboard(
       screen,
       lang,
@@ -98,6 +105,7 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
         {
           text: renderedText.text,
           entities: renderedText.entities,
+          parseMode,
           replyMarkup: keyboard,
           bannerRef,
         },
@@ -116,6 +124,7 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
         await editOrReply(ctx, {
           text: renderedText.text,
           entities: renderedText.entities,
+          parseMode,
           replyMarkup: keyboard,
         });
       }

@@ -26,13 +26,30 @@ export interface EditMessageOptions {
   readonly text: string;
   readonly entities?: readonly TgEntity[];
   readonly replyMarkup?: InlineKeyboard;
+  /**
+   * When `'HTML'`, the message is sent with `parse_mode: 'HTML'` (and no
+   * entities — Telegram forbids combining the two). Used by screens whose
+   * operator-chosen `parseMode` is HTML. On a Telegram parse error (e.g. a
+   * stray `<` in legacy copy) we transparently retry as plain text so a
+   * delivery is never lost.
+   */
+  readonly parseMode?: 'HTML';
+}
+
+/** True for the Telegram "can't parse entities" 400 family. */
+function isParseError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /can't parse|parse entities|unsupported start tag|unclosed|tag .* mismatch|byte offset/i.test(
+    msg,
+  );
 }
 
 export async function editOrReply(
   ctx: Context,
   options: EditMessageOptions,
 ): Promise<void> {
-  const { text, entities, replyMarkup } = options;
+  const { text, entities, replyMarkup, parseMode } = options;
+  const html = parseMode === 'HTML';
   const msg = ctx.callbackQuery?.message;
   const hasPhoto =
     msg !== undefined &&
@@ -51,37 +68,58 @@ export async function editOrReply(
   // Video messages can't be edited in place to a text reply — delete
   // and re-send. Captionless edits also fall through to delete+send.
   if (hasVideo && ctx.chat?.id !== undefined) {
+    const chatId = ctx.chat.id;
     await ctx.deleteMessage().catch(() => undefined);
-    await ctx.api.sendMessage(ctx.chat.id, text, {
-      entities: entities && entities.length > 0 ? [...entities] : undefined,
-      reply_markup: replyMarkup,
-    });
+    try {
+      await ctx.api.sendMessage(chatId, text, {
+        parse_mode: html ? 'HTML' : undefined,
+        entities: !html && entities && entities.length > 0 ? [...entities] : undefined,
+        reply_markup: replyMarkup,
+      });
+    } catch (err) {
+      if (!html || !isParseError(err)) throw err;
+      await ctx.api.sendMessage(chatId, text, { reply_markup: replyMarkup });
+    }
     return;
   }
 
   if (hasPhoto || hasAnimation) {
+    // HTML captions are sent as-is (truncating could split a tag); the entity
+    // path keeps its 1024-char clamp.
     const truncatedText =
-      text.length > TELEGRAM_CAPTION_MAX
+      !html && text.length > TELEGRAM_CAPTION_MAX
         ? text.slice(0, TELEGRAM_CAPTION_MAX - 3) + '...'
         : text;
     const truncatedEntities =
-      text.length > TELEGRAM_CAPTION_MAX && entities
+      !html && text.length > TELEGRAM_CAPTION_MAX && entities
         ? entities.filter((e) => e.offset + e.length <= TELEGRAM_CAPTION_MAX - 3)
         : entities;
-    await ctx.editMessageCaption({
-      caption: truncatedText,
-      caption_entities:
-        truncatedEntities && truncatedEntities.length > 0
-          ? [...truncatedEntities]
-          : undefined,
-      reply_markup: replyMarkup,
-    });
+    try {
+      await ctx.editMessageCaption({
+        caption: truncatedText,
+        parse_mode: html ? 'HTML' : undefined,
+        caption_entities:
+          !html && truncatedEntities && truncatedEntities.length > 0
+            ? [...truncatedEntities]
+            : undefined,
+        reply_markup: replyMarkup,
+      });
+    } catch (err) {
+      if (!html || !isParseError(err)) throw err;
+      await ctx.editMessageCaption({ caption: truncatedText, reply_markup: replyMarkup });
+    }
     return;
   }
 
   // Regular text message — edit text in place.
-  await ctx.editMessageText(text, {
-    entities: entities && entities.length > 0 ? [...entities] : undefined,
-    reply_markup: replyMarkup,
-  });
+  try {
+    await ctx.editMessageText(text, {
+      parse_mode: html ? 'HTML' : undefined,
+      entities: !html && entities && entities.length > 0 ? [...entities] : undefined,
+      reply_markup: replyMarkup,
+    });
+  } catch (err) {
+    if (!html || !isParseError(err)) throw err;
+    await ctx.editMessageText(text, { reply_markup: replyMarkup });
+  }
 }

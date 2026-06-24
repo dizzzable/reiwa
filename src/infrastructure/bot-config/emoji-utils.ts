@@ -269,6 +269,63 @@ export function stripCustomEmojiEntities(
   return entities.filter((e) => e.type !== 'custom_emoji');
 }
 
+// ── HTML render mode ────────────────────────────────────────────────────────
+
+/** Wrap a glyph in a Telegram custom-emoji HTML tag (premium owners only). */
+function tgEmojiTag(customEmojiId: string, glyph: string): string {
+  // Telegram requires a numeric emoji-id and a fallback glyph inside the tag.
+  const id = customEmojiId.replace(/[^0-9]/g, '');
+  if (id.length === 0) return glyph;
+  return `<tg-emoji emoji-id="${id}">${glyph}</tg-emoji>`;
+}
+
+/**
+ * HTML-output variant of {@link renderBotCopy}, used for screens whose
+ * `parseMode === 'html'`. The operator's HTML markup (`<b>`, `<pre>`, `<a>`…)
+ * is left intact and the message is sent with `parse_mode: 'HTML'` — so this
+ * does NOT build entities (Telegram forbids combining parse_mode + entities).
+ *
+ * Emoji tokens are still resolved so premium glyphs render consistently:
+ *   - `{{KEY}}` → `<tg-emoji>` (premium) or the unicode glyph,
+ *   - `:slug:`  → `<tg-emoji>` (premium) or the pack fallback glyph.
+ *
+ * A non-Premium owner gets plain glyphs (no `<tg-emoji>` tags), mirroring the
+ * entity path's `ownerHasPremium` handling.
+ */
+export function renderBotCopyHtml(
+  template: string,
+  botEmojis?: BotEmojiMap | null,
+  customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null,
+  ownerHasPremium: boolean = true,
+): string {
+  let out = template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_m, key: string) => {
+    const unicode = resolveUnicode(key, botEmojis);
+    const premiumId = ownerHasPremium ? resolvePremiumId(key, botEmojis) : null;
+    return premiumId ? tgEmojiTag(premiumId, unicode) : unicode;
+  });
+
+  if (customEmojis) {
+    out = out.replace(/:([a-z0-9_]+):/g, (m: string, slug: string) => {
+      const entry = customEmojis[slug];
+      if (entry === undefined) return m;
+      const fallback = entry.fallback?.trim() ?? '';
+      const carrier = fallback.length > 0 ? fallback : entry.id ? '⭐' : '';
+      if (carrier.length === 0) return m;
+      const premiumId = ownerHasPremium ? entry.id : null;
+      return premiumId ? tgEmojiTag(premiumId, carrier) : carrier;
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Drop `custom_emoji` entities from a rendered result. Telegram rejects a bot
+ * message carrying custom-emoji entities when the bot owner has no Premium, so
+ * a non-premium deployment renders the fallback glyphs as plain text instead.
+ * Pure + total — same `text`, only fewer entities.
+ */
+
 /**
  * Render an inline-keyboard BUTTON label.
  *

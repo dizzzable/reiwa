@@ -20,7 +20,7 @@ import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
-import { renderBotCopy, renderButtonLabel, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderBotCopyHtml, renderButtonLabel, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -208,7 +208,18 @@ async function renderReferralHub(
 
   // Resolve `{{KEY}}` placeholders + `:slug:` pack tokens into premium
   // custom-emoji (operator-managed via the "Эмодзи" editor + emoji packs).
-  const rendered = renderBotCopy(parts.join('\n\n'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
+  // When the override screen opts into HTML, render the operator's markup as
+  // Telegram HTML (parse_mode) instead of the entity path.
+  const composed = parts.join('\n\n');
+  if (overrideScreen?.parseMode === 'html') {
+    await editOrReply(ctx, {
+      text: renderBotCopyHtml(composed, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium),
+      parseMode: 'HTML',
+      replyMarkup: kb,
+    });
+    return;
+  }
+  const rendered = renderBotCopy(composed, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
   await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
 }
 

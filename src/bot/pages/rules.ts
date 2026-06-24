@@ -24,7 +24,7 @@ import { InlineKeyboard } from 'grammy';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
-import { renderBotCopy, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -59,8 +59,17 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
       ? applyScreenTemplate(overrideScreen, lang, { rulesLink: link })
       : fallbackText;
     // `{{KEY}}` + `:slug:` → premium custom-emoji (operator-managed); unicode
-    // fallback for bots without the capability is handled by Telegram.
+    // fallback for bots without the capability is handled by Telegram. HTML
+    // screens render the operator's markup via parse_mode instead of entities.
+    const useHtml = overrideScreen?.parseMode === 'html';
     const rendered = renderBotCopy(text, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
+    const htmlText = useHtml
+      ? renderBotCopyHtml(text, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium)
+      : '';
+    const sendCopy = (kb: InlineKeyboard): Promise<void> =>
+      useHtml
+        ? editOrReply(ctx, { text: htmlText, parseMode: 'HTML', replyMarkup: kb })
+        : editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
 
     // Operator's own custom buttons (if any) render FIRST; system buttons
     // (rules URL + back) are appended below. Previously custom buttons were
@@ -85,12 +94,12 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
       );
       const back = renderSystemButton(backLabel, 'back', botCfg);
       appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
-      await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
+      await sendCopy(kb);
       return;
     }
 
     const back = renderSystemButton(backLabel, 'back', botCfg);
     appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
-    await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
+    await sendCopy(kb);
   });
 };

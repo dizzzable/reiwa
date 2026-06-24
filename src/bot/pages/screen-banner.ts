@@ -119,6 +119,22 @@ export interface RenderScreenOptions {
   readonly entities?: readonly TgEntity[];
   readonly replyMarkup?: InlineKeyboard;
   readonly bannerRef: string | null;
+  /**
+   * When `'HTML'`, the caption is sent with `parse_mode: 'HTML'` (and no
+   * `caption_entities` — Telegram forbids combining the two). Used by
+   * screens whose operator-chosen `parseMode` is HTML. On a Telegram parse
+   * error (e.g. a stray `<` in legacy copy) we transparently retry without
+   * a parse mode so a delivery is never lost.
+   */
+  readonly parseMode?: 'HTML';
+}
+
+/** True for the Telegram "can't parse entities" 400 family. */
+function isParseError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /can't parse|parse entities|unsupported start tag|unclosed|tag .* mismatch|byte offset/i.test(
+    msg,
+  );
 }
 
 function messageHasPhoto(ctx: Context): boolean {
@@ -142,23 +158,40 @@ export async function renderScreenWithBanner(
   options: RenderScreenOptions,
   deps: ScreenBannerDeps,
 ): Promise<boolean> {
-  const { text, entities, replyMarkup, bannerRef } = options;
+  const { text, entities, replyMarkup, bannerRef, parseMode } = options;
   if (bannerRef === null) return false;
 
   const source = await resolveSource(bannerRef, deps);
   if (source === null) return false;
 
-  const { caption, caption_entities } = truncateCaption(text, entities);
+  const html = parseMode === 'HTML';
+  // HTML captions are sent as-is (truncating could split a tag); the entity
+  // path keeps its 1024-char clamp.
+  const { caption, caption_entities } = html
+    ? { caption: text, caption_entities: undefined }
+    : truncateCaption(text, entities);
 
   if (messageHasPhoto(ctx)) {
     // Photo → photo: swap the media in place (no flicker).
     try {
-      const media = InputMediaBuilder.photo(source, { caption, caption_entities });
+      const media = html
+        ? InputMediaBuilder.photo(source, { caption, parse_mode: 'HTML' })
+        : InputMediaBuilder.photo(source, { caption, caption_entities });
       const edited = await ctx.editMessageMedia(media, { reply_markup: replyMarkup });
       if (typeof source !== 'string') rememberFileId(bannerRef, edited);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('message is not modified')) {
+      if (html && isParseError(err)) {
+        // Stray markup in a legacy HTML screen — retry the swap as a plain
+        // caption so the banner still renders.
+        try {
+          const media = InputMediaBuilder.photo(source, { caption });
+          const edited = await ctx.editMessageMedia(media, { reply_markup: replyMarkup });
+          if (typeof source !== 'string') rememberFileId(bannerRef, edited);
+        } catch (retryErr: unknown) {
+          deps.logger?.warn({ err: retryErr, bannerRef }, 'screen-banner: editMessageMedia retry failed');
+        }
+      } else if (!msg.includes('message is not modified')) {
         deps.logger?.warn({ err, bannerRef }, 'screen-banner: editMessageMedia failed');
       }
     }
@@ -172,19 +205,36 @@ export async function renderScreenWithBanner(
   try {
     const sent = await ctx.api.sendPhoto(chatId, source, {
       caption,
-      caption_entities,
+      parse_mode: html ? 'HTML' : undefined,
+      caption_entities: html ? undefined : caption_entities,
       reply_markup: replyMarkup,
     });
     if (typeof source !== 'string') rememberFileId(bannerRef, sent);
   } catch (err: unknown) {
+    if (html && isParseError(err)) {
+      // Stray markup — resend the photo with a plain caption.
+      try {
+        const sent = await ctx.api.sendPhoto(chatId, source, { caption, reply_markup: replyMarkup });
+        if (typeof source !== 'string') rememberFileId(bannerRef, sent);
+        return true;
+      } catch {
+        /* fall through to the plain-text safety net below */
+      }
+    }
     deps.logger?.warn({ err, bannerRef }, 'screen-banner: sendPhoto failed');
     // Never strand the user — fall back to a plain text message.
     await ctx.api
       .sendMessage(chatId, text, {
-        entities: entities && entities.length > 0 ? [...entities] : undefined,
+        parse_mode: html ? 'HTML' : undefined,
+        entities: !html && entities && entities.length > 0 ? [...entities] : undefined,
         reply_markup: replyMarkup,
       })
-      .catch(() => undefined);
+      .catch(() =>
+        // Last resort: drop the parse mode entirely.
+        html
+          ? ctx.api.sendMessage(chatId, text, { reply_markup: replyMarkup }).catch(() => undefined)
+          : undefined,
+      );
   }
   return true;
 }
