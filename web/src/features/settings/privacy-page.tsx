@@ -12,9 +12,9 @@
  */
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Check, Copy, Key, Mail, Send } from "lucide-react";
+import { Check, Copy, Key, Mail, Send } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -33,7 +33,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 export default function PrivacyPage() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { session } = useSession();
   const { emailEnabled } = useBranding();
   const [activeSheet, setActiveSheet] = useState<"password" | "telegram" | "email" | null>(null);
@@ -45,12 +44,7 @@ export default function PrivacyPage() {
     <div className="min-h-full pb-6">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 pt-6 pb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/settings" label={t("common.back")} />
         <h1 className="text-lg font-semibold">{t("settings.privacy")}</h1>
       </div>
 

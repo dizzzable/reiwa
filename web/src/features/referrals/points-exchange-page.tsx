@@ -3,11 +3,13 @@ import type { ComponentType, SVGProps } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { ArrowLeft, Coins, Calendar, Zap, Tag, HardDrive, Loader2, Check, Copy } from 'lucide-react'
+import { Coins, Calendar, Zap, Tag, HardDrive, Loader2, Check, Copy, ArrowLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getPointsExchangeOptions, exchangePoints } from '@/lib/api-client'
 import { StadiumButton } from '@/components/ui/stadium-button'
+import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
+import { useSafeBack } from '@/hooks/use-safe-back'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -20,6 +22,7 @@ const TYPE_META: Record<string, { icon: ComponentType<SVGProps<SVGSVGElement>>; 
 
 export default function PointsExchangePage() {
   const navigate = useNavigate()
+  const safeBack = useSafeBack('/referrals')
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [selectedType, setSelectedType] = useState<string | null>(null)
@@ -105,9 +108,7 @@ export default function PointsExchangePage() {
     return (
       <div className="pb-8">
         <div className="flex items-center gap-3 px-5 py-5">
-          <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400">
-            <ArrowLeft className="h-5 w-5" />
-          </button>
+          <BackButton fallback="/referrals" label={t('pointsExchange.title')} />
           <h1 className="text-lg font-semibold">{t('pointsExchange.title')}</h1>
         </div>
         <div className="px-5">
@@ -124,7 +125,12 @@ export default function PointsExchangePage() {
   return (
     <div className="pb-8">
       <div className="flex items-center gap-3 px-5 py-5">
-        <button onClick={() => selectedType ? setSelectedType(null) : navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400">
+        <button
+          type="button"
+          onClick={() => (selectedType ? setSelectedType(null) : safeBack())}
+          aria-label={t('pointsExchange.title')}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn"
+        >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="text-lg font-semibold">{t('pointsExchange.title')}</h1>
@@ -203,7 +209,7 @@ export default function PointsExchangePage() {
                 onChange={(e) => setPoints(e.target.value)}
                 min={selectedOption?.minPoints ?? 1}
                 max={selectedOption?.maxPoints === -1 ? options.pointsBalance : Math.min(selectedOption?.maxPoints ?? 999, options.pointsBalance)}
-                className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-lg font-bold text-white text-center outline-none focus:ring-1 focus:ring-(--brand-primary)/50"
+                className="glass-input w-full rounded-xl px-4 py-3 text-lg font-bold text-white text-center"
               />
               <div className="flex justify-between text-[10px] text-zinc-600">
                 <span>{t('pointsExchange.min', { value: selectedOption?.minPoints })}</span>

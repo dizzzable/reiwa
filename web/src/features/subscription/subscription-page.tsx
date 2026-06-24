@@ -2,9 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { ArrowLeft, ShoppingCart, RotateCcw, Copy, ExternalLink, Wifi, WifiOff } from 'lucide-react'
+import { ShoppingCart, RotateCcw, Copy, ExternalLink, Wifi, WifiOff } from 'lucide-react'
 import { getSubscription, getActionPolicy } from '@/lib/api-client'
 import { StadiumButton } from '@/components/ui/stadium-button'
+import { BackButton } from '@/components/ui/back-button'
 import { SubscriptionStatusBadge } from '@/components/ui/subscription-status-badge'
 import { TipCard } from '@/components/ui/tip-card'
 import { formatDate, getDaysLeft } from '@/lib/utils'
@@ -46,9 +47,7 @@ export default function SubscriptionPage() {
     <div className="pb-8">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-5">
-        <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/dashboard" label={t('common.back')} />
         <h1 className="text-lg font-semibold">{t('subscription.pageTitle')}</h1>
       </div>
 

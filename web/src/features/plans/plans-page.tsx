@@ -2,12 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { ArrowLeft, Shield } from 'lucide-react'
+import { Shield } from 'lucide-react'
 import { getPlans } from '@/lib/api-client'
 import type { Plan } from '@/types/api'
 import { usePurchaseStore } from '@/stores/purchase.store'
 import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
+import { BackButton } from '@/components/ui/back-button'
 import { CustomIconView } from '@/components/ui/custom-icon-view'
 import { EmojiText } from '@/components/ui/emoji-text'
 import { customIconId, isEmojiIcon, resolvePlanIcon } from './plan-icons'
@@ -72,9 +73,7 @@ export default function PlansPage() {
   return (
     <div className="pb-8">
       <div className="flex items-center gap-3 px-5 py-5">
-        <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/dashboard" label={t('common.back')} />
         <div>
           <h1 className="text-lg font-semibold">{t('plans.title')}</h1>
           <p className="text-xs text-zinc-500">{t('plans.subtitle')}</p>

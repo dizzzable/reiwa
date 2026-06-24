@@ -6,9 +6,9 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, CreditCard } from "lucide-react";
+import { CreditCard } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { motion } from "motion/react";
 
 import { getTransactions } from "@/lib/api-client";
@@ -18,7 +18,6 @@ import { formatDateTime } from "@/lib/utils";
 
 export default function TransactionsPage() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["transactions"],
@@ -32,12 +31,7 @@ export default function TransactionsPage() {
     <div className="min-h-full pb-6">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 pt-6 pb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/settings" label={t("common.back")} />
         <h1 className="text-lg font-semibold">{t("settings.transactions")}</h1>
       </div>
 

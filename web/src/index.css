@@ -172,6 +172,37 @@ body {
   -webkit-backdrop-filter: blur(16px);
 }
 
+/* ─── Glass input / textarea ───────────────────────────────────────────────────
+   The liquid-glass field used across the cabinet (support form, exchange,
+   etc.) so inputs match the surrounding glass cards instead of looking like
+   flat grey boxes. */
+.glass-input {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-soft);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: oklch(0.985 0 0);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.glass-input::placeholder { color: rgba(161, 161, 170, 0.55); }
+.glass-input:focus,
+.glass-input:focus-visible {
+  outline: none;
+  border-color: color-mix(in oklab, var(--brand-primary) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand-primary) 18%, transparent);
+}
+
+/* ─── Glass icon button (back arrows / round chrome buttons) ─────────────────── */
+.glass-icon-btn {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-soft);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.1s ease;
+}
+.glass-icon-btn:hover { border-color: var(--color-border-strong); }
+.glass-icon-btn:active { transform: scale(0.94); }
+
 /* ─── Brand card (subscription) ────────────────────────────────────────────── */
 .brand-card {
   background-image: var(--brand-card-gradient);

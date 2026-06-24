@@ -4,13 +4,13 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { ArrowLeft, Smartphone, Trash2, Monitor, Apple, Globe } from 'lucide-react'
+import { Smartphone, Trash2, Monitor, Apple, Globe } from 'lucide-react'
 import { toast } from 'sonner'
 import { getUserDevices, deleteUserDevice } from '@/lib/api-client'
 import { StadiumButton } from '@/components/ui/stadium-button'
+import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
 import { useSession } from '@/hooks/use-session'
 
@@ -24,7 +24,6 @@ function platformIcon(platform: string | null) {
 }
 
 export default function DevicesPage() {
-  const navigate = useNavigate()
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { session } = useSession()
@@ -52,9 +51,7 @@ export default function DevicesPage() {
     <div className="pb-8">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-5">
-        <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/dashboard" label={t('common.back')} />
         <div>
           <h1 className="text-lg font-semibold">{t('devices.pageTitle')}</h1>
           <p className="text-xs text-zinc-500">{t('devices.connectedCount', { count: deviceCount })}</p>

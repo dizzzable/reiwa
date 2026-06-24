@@ -13,7 +13,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { ArrowLeft, Bell, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 
 import {
   getNotifications,
@@ -23,6 +23,7 @@ import {
 import { presentNotification } from "@/lib/notification-presenter";
 import { resolveNotificationTarget } from "@/lib/notification-target";
 import { StadiumButton } from "@/components/ui/stadium-button";
+import { BackButton } from "@/components/ui/back-button";
 import { EmojiText } from "@/components/ui/emoji-text";
 import { NotificationModal } from "./components/notification-modal";
 import { cn, formatDateTime } from "@/lib/utils";
@@ -97,12 +98,7 @@ export default function NotificationsFeedPage() {
   return (
     <div className="min-h-full pb-6">
       <div className="flex items-center gap-3 px-5 pt-6 pb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/settings/notifications" label={t("common.back")} />
         <h1 className="text-lg font-semibold">{t("notifications.feedTitle")}</h1>
       </div>
 

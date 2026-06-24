@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { ArrowLeft, Send, Plus, MessageSquare, Loader2 } from 'lucide-react'
 import { getTickets, getTicket, createTicket, replyToTicket } from '@/lib/api-client'
 import type { SupportTicket } from '@/lib/api-client'
+import { BackButton } from '@/components/ui/back-button'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -21,7 +22,10 @@ function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[];
   return (
     <div className="pb-8">
       <div className="flex items-center justify-between px-5 py-5">
-        <h1 className="text-lg font-semibold">{t('support.title')}</h1>
+        <div className="flex items-center gap-3">
+          <BackButton fallback="/settings" label={t('support.title')} />
+          <h1 className="text-lg font-semibold">{t('support.title')}</h1>
+        </div>
         <button
           onClick={onCreate}
           className="flex items-center gap-1.5 rounded-full bg-(--brand-primary) px-4 py-2 text-sm font-medium text-(--brand-primary-fg) active:scale-95 transition-transform"
@@ -111,7 +115,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-4 border-b border-white/[0.06]">
-        <button onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400">
+        <button onClick={onBack} aria-label={t('common.back')} className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="flex-1 min-w-0">
@@ -155,7 +159,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={t('support.messagePlaceholder')}
-              className="flex-1 rounded-full bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-(--brand-primary)/50"
+              className="glass-input flex-1 rounded-full px-4 py-3 text-sm text-white"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && text.trim()) {
                   e.preventDefault()
@@ -194,7 +198,7 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
   return (
     <div className="pb-8">
       <div className="flex items-center gap-3 px-5 py-5">
-        <button onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400">
+        <button onClick={onBack} aria-label={t('common.back')} className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="text-lg font-semibold">{t('support.newTicketTitle')}</h1>
@@ -207,7 +211,7 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder={t('support.subjectPlaceholder')}
-            className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-(--brand-primary)/50"
+            className="glass-input w-full rounded-xl px-4 py-3 text-sm text-white"
             maxLength={200}
           />
         </div>
@@ -218,7 +222,7 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
             onChange={(e) => setMessage(e.target.value)}
             placeholder={t('support.messagePlaceholderLong')}
             rows={5}
-            className="w-full rounded-xl bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-(--brand-primary)/50 resize-none"
+            className="glass-input w-full rounded-xl px-4 py-3 text-sm text-white resize-none"
           />
         </div>
         <button
@@ -277,3 +281,4 @@ export default function SupportPage() {
     />
   )
 }
+

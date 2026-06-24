@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, RotateCcw } from "lucide-react";
+import { Check, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -24,6 +24,7 @@ import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
+import { BackButton } from "@/components/ui/back-button";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 
@@ -83,13 +84,7 @@ export default function RenewalPage() {
   return (
     <div className="mx-auto max-w-md pb-24 pt-4">
       <div className="flex items-center gap-3 px-5 pb-4">
-        <button
-          onClick={() => navigate(-1)}
-          aria-label={t("renewal.back")}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-zinc-300 active:scale-95"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/dashboard" label={t("renewal.back")} />
         <div className="flex items-center gap-2">
           <RotateCcw className="h-5 w-5 text-(--brand-primary)" />
           <h1 className="text-lg font-semibold">{t("renewal.title")}</h1>

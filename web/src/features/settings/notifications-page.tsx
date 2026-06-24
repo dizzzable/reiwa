@@ -8,7 +8,8 @@
 
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Bell, BellRing } from "lucide-react";
+import { Bell, BellRing } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 
 export default function NotificationsPage() {
   const { t } = useTranslation();
@@ -17,12 +18,7 @@ export default function NotificationsPage() {
   return (
     <div className="min-h-full pb-6">
       <div className="flex items-center gap-3 px-5 pt-6 pb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/settings" label={t("common.back")} />
         <h1 className="text-lg font-semibold">{t("settings.notifications")}</h1>
       </div>
 

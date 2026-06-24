@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { ArrowLeft, Tag, CheckCircle2, ChevronRight } from 'lucide-react'
+import { Tag, CheckCircle2, ChevronRight } from 'lucide-react'
 import { activatePromocode, getAllSubscriptions } from '@/lib/api-client'
 import type { PromoActivationResult } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { promoSuccessKey, promoErrorKey } from './promo-result'
 import { StadiumButton } from '@/components/ui/stadium-button'
+import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
 import { toast } from 'sonner'
 
@@ -119,9 +120,7 @@ export default function PromoPage() {
   return (
     <div className="pb-8">
       <div className="flex items-center gap-3 px-5 py-5">
-        <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/dashboard" label={t('common.back')} />
         <h1 className="text-lg font-semibold">{t('promo.title')}</h1>
       </div>
 

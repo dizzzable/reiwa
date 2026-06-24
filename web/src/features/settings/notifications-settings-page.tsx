@@ -6,9 +6,9 @@
  */
 
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Bell, Smartphone } from "lucide-react";
+import { Bell, Smartphone } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { toast } from "sonner";
 
 import { Switch } from "@/components/ui/switch";
@@ -25,17 +25,11 @@ import { getPushPublicKey } from "@/lib/api-client";
 
 export default function NotificationsSettingsPage() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
 
   return (
     <div className="min-h-full pb-6">
       <div className="flex items-center gap-3 px-5 pt-6 pb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <BackButton fallback="/settings/notifications" label={t("common.back")} />
         <h1 className="text-lg font-semibold">{t("notifications.settingsTitle")}</h1>
       </div>
 
