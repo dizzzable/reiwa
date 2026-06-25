@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.5.54-blue" alt="Version" /></a>
+  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.5.55-blue" alt="Version" /></a>
   <a href="https://github.com/dizzzable/reiwa/pkgs/container/reiwa"><img src="https://img.shields.io/badge/ghcr.io-reiwa-2496ED?logo=docker&logoColor=white" alt="GHCR" /></a>
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js" />

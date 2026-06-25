@@ -39,7 +39,7 @@ import {
 
 import { useSession } from "@/hooks/use-session";
 import { useInstallPrompt } from "@/hooks/use-install-prompt";
-import { signOut, updateLanguage, getTickets } from "@/lib/api-client";
+import { signOut, updateLanguage, getNotifications } from "@/lib/api-client";
 import { setLocale } from "@/i18n/i18n";
 import { useBranding } from "@/lib/branding-provider";
 import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
@@ -60,17 +60,20 @@ export default function SettingsPage() {
   const [showLangDialog, setShowLangDialog] = useState(false);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
 
-  // Support indicator: count the user's tickets the operator has replied to
-  // (status WAITING_REPLY = "your move"). Shared query key with the support
-  // page so the cache is reused. Clears once the user replies (status → open).
-  const { data: supportTickets } = useQuery({
-    queryKey: ["tickets"],
-    queryFn: getTickets,
+  // Support indicator: count UNREAD support replies (the operator answered and
+  // the user hasn't opened the ticket yet). Driven by the same notification
+  // feed + `['notifications']` cache as the bell, so it (a) reflects the real
+  // number of unread replies — not just "1 ticket" — and (b) clears the moment
+  // the user opens the ticket (which marks the support_reply events read and
+  // invalidates this key), instead of lingering until the user replies.
+  const { data: notifData } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => getNotifications(),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
-  const supportUnread = (supportTickets ?? []).filter(
-    (ticket) => ticket.status === "waiting_reply",
+  const supportUnread = (notifData?.notifications ?? []).filter(
+    (n) => n.type === "support_reply" && !n.readAt,
   ).length;
 
   const signOutMutation = useMutation({
