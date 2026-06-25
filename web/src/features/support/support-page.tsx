@@ -129,6 +129,16 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
     }
   }, [ticket?.messages])
 
+  // Opening a ticket marks its `support_reply` notification read server-side
+  // (rezeis getOne). Once the ticket payload is back, refresh the bell /
+  // settings badge so the unread indicator clears immediately instead of
+  // waiting for the 60s poll. Keyed on ticket.id → runs once per opened ticket.
+  useEffect(() => {
+    if (!ticket?.id) return
+    queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
+    queryClient.invalidateQueries({ queryKey: ['notifications'] })
+  }, [ticket?.id, queryClient])
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
