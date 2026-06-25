@@ -156,6 +156,12 @@ export interface PublicConfig {
    * invite links. `null` when not configured.
    */
   botUsername?: string | null;
+  /**
+   * Operator support handle (no leading `@`), injected by the reiwa edge from
+   * its `BOT_SUPPORT_USERNAME` env. Used by the Support page to deep-link to
+   * the Telegram support account (`t.me/<handle>?text=…`). `null` when unset.
+   */
+  supportUsername?: string | null;
   /** Platform-branding texts (project name, web page title). */
   platformBranding?: {
     projectName: string | null;

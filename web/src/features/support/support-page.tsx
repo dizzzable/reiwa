@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import { ArrowLeft, Send, Plus, MessageSquare, Loader2 } from 'lucide-react'
 import { getTickets, getTicket, createTicket, replyToTicket } from '@/lib/api-client'
 import type { SupportTicket } from '@/lib/api-client'
 import { BackButton } from '@/components/ui/back-button'
+import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -19,6 +21,16 @@ function formatTime(dateStr: string) {
 
 function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[]; onSelect: (id: string) => void; onCreate: () => void }) {
   const { t } = useTranslation()
+  const { supportUsername } = useBranding()
+
+  function openTelegramSupport() {
+    if (!supportUsername) return
+    const url = `https://t.me/${supportUsername}?text=${encodeURIComponent(t('support.contactPrefill'))}`
+    const tg = (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (u: string) => void } } }).Telegram
+    if (tg?.WebApp?.openTelegramLink) tg.WebApp.openTelegramLink(url)
+    else window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <div className="pb-8">
       <div className="flex items-center justify-between px-5 py-5">
@@ -26,13 +38,26 @@ function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[];
           <BackButton fallback="/settings" label={t('support.title')} />
           <h1 className="text-lg font-semibold">{t('support.title')}</h1>
         </div>
-        <button
-          onClick={onCreate}
-          className="flex items-center gap-1.5 rounded-full bg-(--brand-primary) px-4 py-2 text-sm font-medium text-(--brand-primary-fg) active:scale-95 transition-transform"
-        >
-          <Plus className="h-4 w-4" />
-          {t('support.newTicket')}
-        </button>
+        <div className="flex items-center gap-2">
+          {supportUsername && (
+            <button
+              type="button"
+              onClick={openTelegramSupport}
+              aria-label={t('support.contactTelegram')}
+              title={t('support.contactTelegram')}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            onClick={onCreate}
+            className="flex items-center gap-1.5 rounded-full bg-(--brand-primary) px-4 py-2 text-sm font-medium text-(--brand-primary-fg) active:scale-95 transition-transform"
+          >
+            <Plus className="h-4 w-4" />
+            {t('support.newTicket')}
+          </button>
+        </div>
       </div>
 
       {tickets.length === 0 ? (
@@ -54,11 +79,14 @@ function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[];
               <div className="flex items-start justify-between gap-2">
                 <p className="font-medium text-sm truncate flex-1">{ticket.subject}</p>
                 <span className={cn(
-                  'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase',
+                  'shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase',
                   ticket.status === 'open' ? 'bg-emerald-500/20 text-emerald-400' :
-                  ticket.status === 'waiting_reply' ? 'bg-violet-500/20 text-violet-400' :
+                  ticket.status === 'waiting_reply' ? 'bg-(--brand-primary) text-(--brand-primary-fg)' :
                   'bg-zinc-700 text-zinc-400'
                 )}>
+                  {ticket.status === 'waiting_reply' && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                  )}
                   {ticket.status === 'open' ? t('support.statusOpen') : ticket.status === 'waiting_reply' ? t('support.statusWaitingShort') : t('support.statusClosed')}
                 </span>
               </div>
@@ -240,12 +268,26 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
 export default function SupportPage() {
   const [view, setView] = useState<'list' | 'chat' | 'create'>('list')
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const { data: tickets = [], isLoading } = useQuery({
     queryKey: ['tickets'],
     queryFn: getTickets,
     refetchInterval: 10000,
   })
+
+  // Deep-link: the bot "Открыть обращение" notification button opens
+  // `/support?ticket=<id>` (mini-app or web). Jump straight into that ticket so
+  // the user sees the reply that prompted the notification, then strip the
+  // param so a refresh / back doesn't re-trigger it.
+  useEffect(() => {
+    const ticketId = searchParams.get('ticket')
+    if (!ticketId) return
+    setSelectedTicketId(ticketId)
+    setView('chat')
+    searchParams.delete('ticket')
+    setSearchParams(searchParams, { replace: true })
+  }, [searchParams, setSearchParams])
 
   if (isLoading) {
     return (

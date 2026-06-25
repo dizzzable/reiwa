@@ -13,6 +13,12 @@ export type NotificationTarget =
 export function resolveNotificationTarget(type: string): NotificationTarget {
   const t = (type ?? '').toLowerCase();
 
+  // Support replies → the Support section so the user can open the ticket
+  // and read / continue the conversation.
+  if (t.includes('support')) {
+    return { kind: 'route', path: '/support' };
+  }
+
   // Referral events → the referral cabinet (who joined, rewards, etc.).
   if (t.includes('referral')) {
     return { kind: 'route', path: '/referrals' };

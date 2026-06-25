@@ -50,6 +50,17 @@ export function presentNotification(
     case "ADMIN_MESSAGE":
       title = readString(payload.title) ?? t("notifications.types.adminMessage");
       break;
+    case "support_reply":
+      // Support replies carry a localized title + body in the payload (set by
+      // rezeis). Fall back to a synthesized line from the ticket subject so the
+      // feed never shows a blank row.
+      title = readString(payload.title) ?? t("notifications.types.supportReply");
+      resolvedBody =
+        body ||
+        t("notifications.supportReplyBody", {
+          subject: readString(payload.subject) ?? "",
+        });
+      break;
     case "expires_in_3_days":
     case "expires_in_1_days":
       // Expiry reminders carry no `text` — synthesise a friendly title/body

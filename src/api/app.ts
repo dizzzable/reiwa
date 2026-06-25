@@ -236,7 +236,7 @@ export function createApp(deps: CreateAppDeps) {
   app.locals['adminClient'] = deps.adminClient;
 
   // ── Routers (all mounted at /api/v1; sub-paths live inside each router) ───
-  app.use("/api/v1", createBrandingRouter({ adminClient: deps.adminClient, logger }));
+  app.use("/api/v1", createBrandingRouter({ adminClient: deps.adminClient, logger, supportUsername: config.BOT_SUPPORT_USERNAME ?? null }));
   app.use("/api/v1", createAuthRouter(deps));
   app.use("/api/v1", createProfileRouter(deps));
   app.use("/api/v1", createPlansRouter(deps));

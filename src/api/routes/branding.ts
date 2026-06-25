@@ -127,8 +127,19 @@ export async function getPublicConfigPayload(
 export function createBrandingRouter(deps: {
   adminClient: AdminClient | null;
   logger?: Logger;
+  /**
+   * Operator support handle (`BOT_SUPPORT_USERNAME`), merged into the cabinet
+   * public-config so the Support page can render a "contact support on
+   * Telegram" deep-link. The bot owns this env; the cabinet never sees it
+   * otherwise. `null` when unset → the cabinet hides the affordance.
+   */
+  supportUsername?: string | null;
 }) {
   const { adminClient, logger } = deps;
+  const supportUsername =
+    typeof deps.supportUsername === 'string' && deps.supportUsername.trim().length > 0
+      ? deps.supportUsername.replace(/^@+/, '').trim()
+      : null;
   const router = Router();
 
   // Background-refresh closure has no `req` in scope, so `getRequestLogger`
@@ -158,7 +169,14 @@ export function createBrandingRouter(deps: {
       }
       res.setHeader("ETag", payload.etag);
       res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
-      res.json(payload.body);
+      // Merge the reiwa-owned support handle (env) into the cabinet config so
+      // the Support page can deep-link to the Telegram support account. Done
+      // per-response (not in the cached body) since it's a static env value.
+      const body =
+        supportUsername !== null && payload.body !== null && typeof payload.body === "object"
+          ? { ...(payload.body as Record<string, unknown>), supportUsername }
+          : payload.body;
+      res.json(body);
     } catch (e: unknown) {
       getRequestLogger(req).error({ err: e }, "GET /public-config failed");
       res.status(503).json({ message: "Configuration unavailable" });

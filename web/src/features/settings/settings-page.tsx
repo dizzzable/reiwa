@@ -18,7 +18,7 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import {
@@ -39,7 +39,7 @@ import {
 
 import { useSession } from "@/hooks/use-session";
 import { useInstallPrompt } from "@/hooks/use-install-prompt";
-import { signOut, updateLanguage } from "@/lib/api-client";
+import { signOut, updateLanguage, getTickets } from "@/lib/api-client";
 import { setLocale } from "@/i18n/i18n";
 import { useBranding } from "@/lib/branding-provider";
 import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
@@ -59,6 +59,19 @@ export default function SettingsPage() {
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [showLangDialog, setShowLangDialog] = useState(false);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
+
+  // Support indicator: count the user's tickets the operator has replied to
+  // (status WAITING_REPLY = "your move"). Shared query key with the support
+  // page so the cache is reused. Clears once the user replies (status → open).
+  const { data: supportTickets } = useQuery({
+    queryKey: ["tickets"],
+    queryFn: getTickets,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  const supportUnread = (supportTickets ?? []).filter(
+    (ticket) => ticket.status === "waiting_reply",
+  ).length;
 
   const signOutMutation = useMutation({
     mutationFn: signOut,
@@ -197,6 +210,7 @@ export default function SettingsPage() {
           tint={iconTint("support")}
           label={t("settings.support")}
           sublabel={t("settings.supportSub")}
+          badge={supportUnread}
           onClick={() => navigate("/support")}
         />
         <MenuItem
@@ -342,6 +356,7 @@ function MenuItem({
   label,
   sublabel,
   onClick,
+  badge,
 }: {
   icon: React.ReactNode;
   iconBg: string;
@@ -350,6 +365,8 @@ function MenuItem({
   label: string;
   sublabel?: string;
   onClick: () => void;
+  /** Optional unread/attention count shown as a pill before the chevron. */
+  badge?: number;
 }) {
   // When a tint is provided we drop the per-icon accent class and paint the
   // glyph + a soft matching background from the single tint colour.
@@ -377,6 +394,11 @@ function MenuItem({
         <p className="text-sm font-medium text-white">{label}</p>
         {sublabel && <p className="text-xs text-zinc-500 truncate">{sublabel}</p>}
       </div>
+      {badge !== undefined && badge > 0 && (
+        <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-(--brand-primary) px-1.5 text-[10px] font-bold text-(--brand-primary-fg)">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
       <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" />
     </button>
   );
