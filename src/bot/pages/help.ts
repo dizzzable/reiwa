@@ -19,6 +19,7 @@
 import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
+import { replyWithOptionalBanner } from './reply-with-banner.js';
 import type { PageRegistrar } from './types.js';
 
 const NUMERIC_HANDLE = /^-?\d+$/;
@@ -41,7 +42,7 @@ export const registerHelpCommandPage: PageRegistrar = (bot, deps) => {
         .url(deps.translator.t('help.contact_button', lang), supportUrl)
         .row()
         .text(backLabel, 'menu:main');
-      await ctx.reply(title, { reply_markup: kb });
+      await replyWithOptionalBanner(ctx, deps, botCfg, { text: title, replyMarkup: kb });
       return;
     }
 
@@ -50,6 +51,6 @@ export const registerHelpCommandPage: PageRegistrar = (bot, deps) => {
         ? `${title}\n\n${deps.translator.t('help.contact_support', lang, { username: handle })}`
         : deps.translator.t('support.not_configured', lang);
     const kb = new InlineKeyboard().text(backLabel, 'menu:main');
-    await ctx.reply(fallbackBody, { reply_markup: kb });
+    await replyWithOptionalBanner(ctx, deps, botCfg, { text: fallbackBody, replyMarkup: kb });
   });
 };

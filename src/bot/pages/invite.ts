@@ -190,6 +190,7 @@ async function renderReferralHub(
   const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(sharePrompt)}`;
 
   const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
+  const copy = renderSystemButton(t('invite.copy_button'), 'invite_copy', botCfg);
   const kb = new InlineKeyboard()
     .url(
       share.iconCustomEmojiId !== undefined
@@ -198,7 +199,12 @@ async function renderReferralHub(
       shareUrl,
     )
     .row()
-    .copyText(renderButtonLabel(t('invite.copy_button'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium).text, inviteLink);
+    .copyText(
+      copy.iconCustomEmojiId !== undefined
+        ? { text: copy.text, icon_custom_emoji_id: copy.iconCustomEmojiId }
+        : copy.text,
+      inviteLink,
+    );
   if (isTelegramSafeButtonUrl(urls.publicWebUrl)) {
     kb.row().webApp(hubButton(t('referral.hub.open_cabinet'), botCfg), `${urls.publicWebUrl}/referrals`);
     kb.row().webApp(hubButton(t('referral.hub.open_exchange'), botCfg), `${urls.publicWebUrl}/referrals/exchange`);
@@ -259,12 +265,18 @@ async function renderPartnerHub(
     const sharePrompt = t('invite.share_prompt');
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(sharePrompt)}`;
     const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
+    const copy = renderSystemButton(t('invite.copy_button'), 'invite_copy', botCfg);
     kb.url(
       share.iconCustomEmojiId !== undefined
         ? { text: share.text, icon_custom_emoji_id: share.iconCustomEmojiId }
         : share.text,
       shareUrl,
-    ).row().copyText(renderButtonLabel(t('invite.copy_button'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium).text, inviteLink);
+    ).row().copyText(
+      copy.iconCustomEmojiId !== undefined
+        ? { text: copy.text, icon_custom_emoji_id: copy.iconCustomEmojiId }
+        : copy.text,
+      inviteLink,
+    );
   }
   if (isTelegramSafeButtonUrl(urls.publicWebUrl)) {
     if (inviteLink !== null) kb.row();
