@@ -95,6 +95,19 @@ export interface AppBackground {
   texture: AppBackgroundTextureSettings;
 }
 
+/**
+ * Per-plan tariff-card style (mirrors backend `PlanCardStyle`), keyed by
+ * `planId` in `Branding.planCardStyles`. Absent entry → the cabinet derives a
+ * deterministic auto gradient from the plan id. `textureUrl` (uploaded image)
+ * takes priority over `texturePreset` (built-in pattern).
+ */
+export interface PlanCardStyle {
+  gradient?: string | null;
+  accent?: string | null;
+  texturePreset?: AppBackgroundTexture | null;
+  textureUrl?: string | null;
+}
+
 export interface Branding {
   brandName: string;
   /** Optional short subtitle shown on the splash + in-app loader. */
@@ -136,6 +149,12 @@ export interface Branding {
   iconColors: Record<string, string>;
   borderRadius: string;
   fontFamily: string;
+  /**
+   * Per-plan tariff-card styles keyed by `planId`. Absent/empty → the cabinet
+   * uses a deterministic auto gradient per plan. Optional so an older payload
+   * without the field is handled gracefully.
+   */
+  planCardStyles?: Record<string, PlanCardStyle>;
 }
 
 export interface PublicConfig {
@@ -225,6 +244,7 @@ export const DEFAULT_BRANDING: Branding = {
   iconColors: {},
   borderRadius: "rounded-2xl",
   fontFamily: "Geist Variable, system-ui, sans-serif",
+  planCardStyles: {},
 };
 
 export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {

@@ -11,7 +11,9 @@ import { cn } from '@/lib/utils'
 import { BackButton } from '@/components/ui/back-button'
 import { CustomIconView } from '@/components/ui/custom-icon-view'
 import { EmojiText } from '@/components/ui/emoji-text'
+import { CardWatermark } from '@/components/ui/card-watermark'
 import { customIconId, isEmojiIcon, resolvePlanIcon } from './plan-icons'
+import { resolvePlanCardStyle } from './plan-card-visual'
 
 /**
  * Lowest price for a plan, expressed in the preferred display currency
@@ -44,7 +46,7 @@ export default function PlansPage() {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { selectPlan } = usePurchaseStore()
-  const { defaultCurrency, customIcons } = useBranding()
+  const { branding, defaultCurrency, customIcons } = useBranding()
 
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ['plans'],
@@ -80,10 +82,10 @@ export default function PlansPage() {
         </div>
       </div>
 
-      <div className="px-5 space-y-3">
+      <div className="px-5 space-y-4">
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-2xl bg-zinc-800/50" />
+            <div key={i} className="h-[150px] animate-pulse rounded-card bg-zinc-800/50" />
           ))
         ) : activePlans.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
@@ -96,60 +98,106 @@ export default function PlansPage() {
             const customId = customIconId(plan.icon)
             const custom = customId ? customIcons.find((c) => c.id === customId) : undefined
             const Icon = resolvePlanIcon(plan.icon, plan.type)
+            // Per-plan visual (operator-configured via WEB Reiwa, keyed by
+            // planId) → else a deterministic auto gradient so every plan
+            // (including archived/unconfigured) still reads as distinct.
+            const visual = resolvePlanCardStyle(String(plan.id), branding)
+            const accent = visual.accent ?? branding.primary
 
             return (
               <motion.button
                 key={plan.id}
-                initial={{ opacity: 0, y: 8 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.06 }}
                 onClick={() => handleSelect(plan)}
                 className={cn(
-                  'w-full text-left glass-card p-4',
-                  'hover:border-(--brand-primary)/30 hover:bg-(--brand-primary)/[0.04]',
-                  'active:scale-[0.98] transition-all duration-150',
-                  'flex items-center gap-4',
+                  '@container/card group relative flex min-h-[150px] w-full flex-col justify-between',
+                  'overflow-hidden rounded-card p-5 text-left text-white select-none',
+                  'shadow-xl shadow-black/40 ring-1 ring-white/10',
+                  'transition-transform duration-150 active:scale-[0.98]',
                 )}
               >
-                {/* Icon */}
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-(--brand-primary)/10 text-(--brand-primary)">
-                  {isEmojiIcon(plan.icon) ? (
-                    <EmojiText text={plan.icon} className="text-2xl leading-none" />
-                  ) : custom ? (
-                    <CustomIconView url={custom.url} color={custom.color} className="h-6 w-6" />
-                  ) : (
-                    <Icon className="h-6 w-6" />
-                  )}
-                </div>
+                {/* Static foundation: dark base + per-plan gradient */}
+                <div className="absolute inset-0 -z-30 bg-zinc-950" />
+                <div
+                  className="absolute inset-0 -z-25"
+                  style={{ backgroundImage: visual.gradient }}
+                />
+                {/* Texture overlay: uploaded image (cover) wins over a preset
+                    tiled pattern. The panel embeds the operator's image here. */}
+                {visual.textureUrl ? (
+                  <div
+                    className="absolute inset-0 -z-20 bg-cover bg-center opacity-25"
+                    style={{ backgroundImage: `url(${visual.textureUrl})` }}
+                  />
+                ) : visual.textureImage ? (
+                  <div
+                    className="absolute inset-0 -z-20"
+                    style={{
+                      backgroundImage: visual.textureImage,
+                      backgroundSize: visual.textureSize ?? undefined,
+                    }}
+                  />
+                ) : null}
+                {/* Vignette so text stays legible over any gradient/texture */}
+                <div className="absolute inset-0 -z-10 bg-linear-to-br from-black/35 via-black/10 to-black/55" />
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-white truncate">{plan.name}</p>
-                    {plan.isTrial && (
-                      <span className="shrink-0 rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-medium text-violet-300">
-                        {t('plans.trialBadge')}
-                      </span>
+                {/* Brand watermark — operator glyph or custom image, faint */}
+                <CardWatermark
+                  preset={branding.cardLogo}
+                  customUrl={branding.cardLogoUrl}
+                  className="absolute -right-5 -bottom-7 h-32 w-32 @sm:h-36 @sm:w-36"
+                />
+
+                {/* Top: clean plan icon (no chip) + name + traffic/devices */}
+                <div className="relative flex items-start gap-3.5">
+                  <div className="shrink-0 leading-none drop-shadow" style={{ color: accent }}>
+                    {isEmojiIcon(plan.icon) ? (
+                      <EmojiText text={plan.icon} className="text-3xl leading-none" />
+                    ) : custom ? (
+                      <CustomIconView url={custom.url} color={custom.color} className="h-9 w-9" />
+                    ) : (
+                      <Icon className="h-8 w-8" strokeWidth={1.75} />
                     )}
                   </div>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    {plan.trafficLimit ? `${plan.trafficLimit} GB` : t('plans.unlimited')}
-                    {plan.deviceLimit ? ` · ${t('plans.devicesSuffix', { count: plan.deviceLimit })}` : ''}
-                  </p>
-                  <p className="text-xs text-zinc-600 mt-0.5">
-                    {t('plans.durationOptions', { count: plan.durations.length })}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-base font-semibold tracking-wide drop-shadow">
+                        {plan.name}
+                      </p>
+                      {plan.isTrial && (
+                        <span className="shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase backdrop-blur-md">
+                          {t('plans.trialBadge')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[13px] font-medium text-white/85">
+                      {plan.trafficLimit ? `${plan.trafficLimit} GB` : t('plans.unlimited')}
+                      {plan.deviceLimit
+                        ? ` · ${t('plans.devicesSuffix', { count: plan.deviceLimit })}`
+                        : ''}
+                    </p>
+                  </div>
                 </div>
 
-                {/* Price */}
-                {price && (
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-bold text-(--brand-primary)">
-                      {t('plans.from')} {CURRENCY_SYMBOLS[price.currency] ?? ''}{price.amount.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-zinc-500">/{price.days} {t('plans.daysShort')}</p>
-                  </div>
-                )}
+                {/* Bottom: duration options (left) + lowest price (right) */}
+                <div className="relative flex items-end justify-between gap-2">
+                  <p className="text-[11px] tracking-wider text-white/55 uppercase">
+                    {t('plans.durationOptions', { count: plan.durations.length })}
+                  </p>
+                  {price && (
+                    <div className="text-right">
+                      <p className="text-lg font-bold drop-shadow" style={{ color: accent }}>
+                        {t('plans.from')} {CURRENCY_SYMBOLS[price.currency] ?? ''}
+                        {price.amount.toFixed(2)}
+                      </p>
+                      <p className="text-[11px] text-white/60">
+                        /{price.days} {t('plans.daysShort')}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </motion.button>
             )
           })
