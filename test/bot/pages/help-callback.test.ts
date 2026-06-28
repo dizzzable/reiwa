@@ -60,6 +60,37 @@ describe('registerHelpCallbackPage', () => {
     expect(kb.inline_keyboard[0][0].url).toContain('https://t.me/rezeis_support');
   });
 
+  it('renders the in-app Support page button before the contact + back buttons when a Mini App URL is configured', async () => {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      miniAppUrl: 'https://app.example.com',
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        visual: { ...DEFAULT_BOT_CONFIG.visual, supportUsername: '@rezeis_support' },
+      },
+    });
+    registerHelpCallbackPage(
+      bot as unknown as Parameters<typeof registerHelpCallbackPage>[0],
+      deps,
+    );
+    const ctx = buildFakeCtx();
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    const [, opts] = ctx.editMessageText.mock.calls[0];
+    const kb = (
+      opts as {
+        reply_markup: {
+          inline_keyboard: Array<Array<{ url?: string; web_app?: { url: string }; callback_data?: string }>>
+        }
+      }
+    ).reply_markup;
+    // #1 in-app Support page (web_app → /support), #2 contact URL, #3 back to menu.
+    expect(kb.inline_keyboard[0][0].web_app?.url).toBe('https://app.example.com/support');
+    const urlBtn = kb.inline_keyboard.flat().find((b) => typeof b.url === 'string');
+    expect(urlBtn?.url).toContain('https://t.me/rezeis_support');
+    const backBtn = kb.inline_keyboard.flat().find((b) => b.callback_data === 'menu:main');
+    expect(backBtn).toBeDefined();
+  });
+
   it('renders in the user persisted locale (en)', async () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps({

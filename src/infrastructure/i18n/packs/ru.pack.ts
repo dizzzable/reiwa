@@ -75,6 +75,7 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'rules.unavailable': '📜 Правила сервиса пока готовятся. Если у вас есть вопрос — напишите в поддержку.',
   'help.contact_support': 'Связаться с поддержкой: @{{username}}',
   'help.contact_button': '🆘 Написать в поддержку',
+  'help.open_app_button': '🆘 Поддержка в приложении',
   'help.contact_prefill': 'Здравствуйте! Мне нужна помощь.',
   'error.unknown': '⚠️ Что-то пошло не так. Мы уже знаем о проблеме — попробуйте ещё раз чуть позже или напишите в поддержку.',
 

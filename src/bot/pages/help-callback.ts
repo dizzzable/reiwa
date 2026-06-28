@@ -33,7 +33,7 @@ import { InlineKeyboard } from 'grammy';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
 import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
-import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
+import { resolveConfiguredSupportUrl, isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -83,9 +83,9 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
     };
 
     // Operator's own custom buttons (if any) render FIRST; the system
-    // buttons (contact + back) are appended below. Previously the custom
-    // buttons were dropped whenever a built-in screen added system buttons.
-    const hasCustomButtons = (overrideScreen?.buttons.length ?? 0) > 0;
+    // buttons (open app + contact + back) are appended below. Previously the
+    // custom buttons were dropped whenever a built-in screen added system
+    // buttons.
     const buildKeyboard = (): InlineKeyboard =>
       overrideScreen
         ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl, {
@@ -100,11 +100,37 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
           })
         : new InlineKeyboard();
 
+    // System buttons appended after any operator custom buttons, each on its
+    // own row. We track whether the keyboard already has a row so the FIRST
+    // appended button doesn't create a leading empty row (grammy seeds the
+    // markup with one empty row; calling `.row()` before the first button
+    // would leave it dangling).
+    const supportPageUrl = ((): string | null => {
+      const appBase = (urls.miniAppUrl ?? '').trim();
+      if (appBase.length === 0) return null;
+      const candidate = `${appBase.replace(/\/$/, '')}/support`;
+      return isTelegramSafeButtonUrl(candidate) ? candidate : null;
+    })();
+
     if (handle.length > 0 && !NUMERIC_HANDLE.test(handle)) {
       const prefill = translator.t('help.contact_prefill', lang);
       const supportUrl = `https://t.me/${encodeURIComponent(handle)}?text=${encodeURIComponent(prefill)}`;
       const kb = buildKeyboard();
-      if (hasCustomButtons) kb.row();
+      let hasRows = (overrideScreen?.buttons.length ?? 0) > 0;
+      // #1 in-app Support page (Mini App)
+      if (supportPageUrl !== null) {
+        if (hasRows) kb.row();
+        hasRows = true;
+        const appBtn = renderSystemButton(translator.t('help.open_app_button', lang), 'help_open_app', botCfg);
+        kb.webApp(
+          appBtn.iconCustomEmojiId !== undefined
+            ? { text: appBtn.text, icon_custom_emoji_id: appBtn.iconCustomEmojiId }
+            : appBtn.text,
+          supportPageUrl,
+        );
+      }
+      // #2 contact support chat (Telegram DM deep-link)
+      if (hasRows) kb.row();
       const contact = renderSystemButton(translator.t('help.contact_button', lang), 'help_contact', botCfg);
       kb.url(
         contact.iconCustomEmojiId !== undefined
@@ -112,6 +138,7 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
           : contact.text,
         supportUrl,
       );
+      // #3 back to main menu
       const back = renderSystemButton(backLabel, 'back', botCfg);
       appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
       await sendCopy(title, kb);
@@ -120,7 +147,7 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
 
     // Numeric handle (rare — operator's chat id, no public username) —
     // surface a plain-text fallback so users at least see *something*
-    // actionable.
+    // actionable. The in-app Support page button is still offered.
     const fallbackBody =
       handle.length > 0
         ? `${title}\n\n${translator.t('help.contact_support', lang, { username: handle })}`
@@ -129,6 +156,18 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
           : translator.t('support.not_configured', lang);
 
     const kb = buildKeyboard();
+    let hasRows = (overrideScreen?.buttons.length ?? 0) > 0;
+    if (supportPageUrl !== null) {
+      if (hasRows) kb.row();
+      hasRows = true;
+      const appBtn = renderSystemButton(translator.t('help.open_app_button', lang), 'help_open_app', botCfg);
+      kb.webApp(
+        appBtn.iconCustomEmojiId !== undefined
+          ? { text: appBtn.text, icon_custom_emoji_id: appBtn.iconCustomEmojiId }
+          : appBtn.text,
+        supportPageUrl,
+      );
+    }
     const back = renderSystemButton(backLabel, 'back', botCfg);
     appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
     await sendCopy(fallbackBody, kb);

@@ -73,6 +73,7 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'rules.unavailable': '📜 Service rules are still being prepared. If you have a question — message support.',
   'help.contact_support': 'Contact support: @{{username}}',
   'help.contact_button': '🆘 Message support',
+  'help.open_app_button': '🆘 Support in the app',
   'help.contact_prefill': 'Hi! I need help.',
   'error.unknown': '⚠️ Something went wrong. We have been notified — please try again shortly or contact support.',
 
