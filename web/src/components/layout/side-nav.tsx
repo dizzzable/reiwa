@@ -13,16 +13,49 @@
 
 import { motion } from "motion/react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
+import { MessageSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
-import { isTabActive, useNavTabs } from "@/components/layout/use-nav-tabs";
+import { getNotifications } from "@/lib/api-client";
+import { isTabActive, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
 
 export function SideNav() {
   const location = useLocation();
+  const { t } = useTranslation();
   const { branding } = useBranding();
-  const tabs = useNavTabs();
+  const baseTabs = useNavTabs();
+
+  // Desktop convenience: surface Support as its own sidebar entry instead of
+  // burying it in Settings. Mobile keeps it under Settings (bottom-nav space
+  // is limited), so this lives in SideNav only — not the shared useNavTabs.
+  const { data: notifData } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => getNotifications(),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  const supportUnread = (notifData?.notifications ?? []).filter(
+    (n) => n.type === "support_reply" && !n.readAt,
+  ).length;
+
+  const supportTab: NavTab = {
+    to: "/support",
+    icon: MessageSquare,
+    label: t("bottomNav.support"),
+    testId: "tab-support",
+    matchPrefix: ["/support"],
+  };
+  // Insert Support before Settings, and stop Settings from claiming /support
+  // (so the active pill lands on Support, not Settings, on the support page).
+  const tabs: readonly NavTab[] = baseTabs.flatMap((tab) =>
+    tab.to === "/settings"
+      ? [supportTab, { ...tab, matchPrefix: tab.matchPrefix.filter((p) => p !== "/support") }]
+      : [tab],
+  );
 
   return (
     <nav
@@ -71,6 +104,11 @@ export function SideNav() {
                 )}
                 <Icon className="h-5 w-5 shrink-0" strokeWidth={isActive ? 2.25 : 1.75} />
                 <span className="truncate">{tab.label}</span>
+                {tab.to === "/support" && supportUnread > 0 && (
+                  <span className="ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
+                    {supportUnread > 99 ? "99+" : supportUnread}
+                  </span>
+                )}
               </NavLink>
             </li>
           );

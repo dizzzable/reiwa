@@ -170,7 +170,7 @@ export interface BotScreenButton {
   labelEn: string
   row: number
   col: number
-  action: 'navigate' | 'url' | 'webapp' | 'callback' | 'back' | 'start_over'
+  action: 'navigate' | 'url' | 'webapp' | 'callback' | 'back' | 'start_over' | 'support_url'
   targetShortId: string | null
   url: string | null
   webAppUrl: string | null

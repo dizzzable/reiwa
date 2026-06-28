@@ -88,6 +88,14 @@ interface ButtonInput {
    * available or the resolved URL isn't Telegram-safe (e.g. local dev).
    */
   readonly webAppPath?: string;
+  /** Telegram Bot API 9.4 button color (premium-owner bots only). */
+  readonly style?: 'primary' | 'success' | 'danger';
+  /**
+   * Optional 0-based row index. Buttons sharing a row render side-by-side;
+   * omitted → the button falls on its own row (historical layout), so existing
+   * notifications are unaffected.
+   */
+  readonly row?: number;
 }
 
 /** Resolved deep-link targets the keyboard builder anchors relative paths to. */
@@ -250,28 +258,54 @@ function buildKeyboard(
   if (!Array.isArray(input)) return undefined;
   const kb = new InlineKeyboard();
   let placed = false;
+  // Row-aware layout: buttons carrying the same `row` index render side-by-side.
+  // A button without a `row` falls back to its position in the array, so each
+  // such button lands on its own row — identical to the historical layout when
+  // no rows are configured. We stable-sort by effective row first (so rows
+  // group even when the operator listed them out of order), then `beginButton`
+  // emits a Telegram row break only when a real button is about to be placed
+  // AND the row changed — dropped buttons (unsafe/unresolved URLs) never leave
+  // an empty row behind.
+  let lastRow: number | null = null;
+  const rowOf = (item: ButtonInput, fallback: number): number =>
+    typeof item.row === 'number' && Number.isInteger(item.row) && item.row >= 0
+      ? item.row
+      : fallback;
+  const ordered = input
+    .map((raw, i) => ({ raw, i }))
+    .filter(({ raw }) => raw !== null && typeof raw === 'object')
+    .map(({ raw, i }) => ({ item: raw as ButtonInput, eff: rowOf(raw as ButtonInput, i) }))
+    .sort((a, b) => a.eff - b.eff);
+  const beginButton = (rowIdx: number): void => {
+    if (placed && rowIdx !== lastRow) kb.row();
+    lastRow = rowIdx;
+    placed = true;
+  };
   // Resolve `{{KEY}}` / `:slug:` tokens in the label to glyphs and promote a
   // leading premium token to the button's `icon_custom_emoji_id` — same
   // contract the bot keyboards use, so notification buttons render premium
   // pack emoji instead of leaking the raw `:slug:` text.
   const labelArg = (
     text: string,
-  ): string | { text: string; icon_custom_emoji_id: string } => {
+    style?: 'primary' | 'success' | 'danger',
+  ): string | { text: string; icon_custom_emoji_id?: string; style?: 'primary' | 'success' | 'danger' } => {
     const r = renderButtonLabel(
       text,
       emoji?.botEmojis,
       emoji?.customEmojis,
       emoji?.ownerHasPremium ?? true,
     );
-    return r.iconCustomEmojiId !== undefined
-      ? { text: r.text, icon_custom_emoji_id: r.iconCustomEmojiId }
-      : r.text;
+    if (r.iconCustomEmojiId === undefined && style === undefined) return r.text;
+    const out: { text: string; icon_custom_emoji_id?: string; style?: 'primary' | 'success' | 'danger' } = {
+      text: r.text,
+    };
+    if (r.iconCustomEmojiId !== undefined) out.icon_custom_emoji_id = r.iconCustomEmojiId;
+    if (style !== undefined) out.style = style;
+    return out;
   };
-  for (const raw of input) {
-    if (raw === null || typeof raw !== 'object') continue;
-    const item = raw as ButtonInput;
+  for (const { item, eff } of ordered) {
     if (typeof item.text !== 'string' || item.text.length === 0) continue;
-    const textArg = labelArg(item.text);
+    const textArg = labelArg(item.text, item.style);
     // Mini App deep-link button — opens the cabinet straight on a route.
     if (typeof item.webAppPath === 'string' && item.webAppPath.length > 0) {
       const path = item.webAppPath.startsWith('/') ? item.webAppPath : `/${item.webAppPath}`;
@@ -279,29 +313,25 @@ function buildKeyboard(
       const publicWebUrl = urls?.publicWebUrl ?? null;
       const webAppUrl = miniAppUrl !== null ? `${miniAppUrl.replace(/\/+$/, '')}${path}` : null;
       if (webAppUrl !== null && isTelegramSafeButtonUrl(webAppUrl)) {
+        beginButton(eff);
         kb.webApp(textArg, webAppUrl);
-        kb.row();
-        placed = true;
         continue;
       }
       // Fallback: plain URL button to the public web (in-app browser).
       const fallbackUrl = publicWebUrl !== null ? `${publicWebUrl.replace(/\/+$/, '')}${path}` : null;
       if (fallbackUrl !== null && isTelegramSafeButtonUrl(fallbackUrl)) {
+        beginButton(eff);
         kb.url(textArg, fallbackUrl);
-        kb.row();
-        placed = true;
       }
       // Neither target available (dev / unconfigured) → drop silently.
       continue;
     }
     if (typeof item.url === 'string' && item.url.length > 0) {
+      beginButton(eff);
       kb.url(textArg, item.url);
-      kb.row();
-      placed = true;
     } else if (typeof item.callbackData === 'string' && item.callbackData.length > 0) {
+      beginButton(eff);
       kb.text(textArg, item.callbackData);
-      kb.row();
-      placed = true;
     }
   }
   return placed ? kb : undefined;

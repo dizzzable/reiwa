@@ -21,6 +21,7 @@
  */
 import { InlineKeyboard } from 'grammy';
 
+import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
 import { buildProfileSummary } from '../../infrastructure/bot-message/message-builder.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import {
@@ -272,6 +273,7 @@ async function buildWelcomeView(
         botEmojis: botCfg.botEmojis,
         customEmojis: botCfg.customEmojis,
         ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
+        supportUrl,
       },
     );
     if (screenKb.inline_keyboard.length > 0) {
@@ -577,11 +579,30 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
               const member = await ctx.api.getChatMember(chatId as string | number, tgUser.id);
               if (!isSubscribedStatus(member.status)) {
                 const joinUrl = resolveChannelJoinUrl(policy);
+                // Resolve premium custom-emoji tokens (`:slug:`) on the gate
+                // button labels the same way every other keyboard does — a
+                // leading token is promoted to `icon_custom_emoji_id` (premium
+                // owners) with a unicode fallback, so operators can put a pack
+                // emoji on "Перейти в канал" / "Я подписался" without the raw
+                // `:slug:` leaking into the caption.
+                const renderGate = (
+                  label: string,
+                ): { text: string; icon_custom_emoji_id?: string } => {
+                  const r = renderButtonLabel(
+                    label,
+                    botCfg.botEmojis,
+                    botCfg.customEmojis,
+                    botCfg.botEmojiOwnerHasPremium ?? true,
+                  );
+                  return r.iconCustomEmojiId !== undefined
+                    ? { text: r.text, icon_custom_emoji_id: r.iconCustomEmojiId }
+                    : { text: r.text };
+                };
                 const keyboard = new InlineKeyboard();
                 if (joinUrl !== null) {
-                  keyboard.url(deps.translator.t('channel.join_button', lang), joinUrl).row();
+                  keyboard.url(renderGate(deps.translator.t('channel.join_button', lang)), joinUrl).row();
                 }
-                keyboard.text(deps.translator.t('channel.check_button', lang), 'check_channel');
+                keyboard.text(renderGate(deps.translator.t('channel.check_button', lang)), 'check_channel');
                 await ctx.reply(deps.translator.t('channel.required', lang), {
                   reply_markup: keyboard,
                 });

@@ -543,6 +543,7 @@ export const en: RuDict = {
     referral: 'Referral',
     partner: 'Partner',
     settings: 'Settings',
+    support: 'Support',
   },
   card: {
     activeStatus: 'Active',

@@ -24,6 +24,7 @@ import {
   pickScreenText,
 } from './screen-renderer.js';
 import { renderScreenWithBanner, resolveScreenBannerRef } from './screen-banner.js';
+import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
 import type { PageRegistrar } from './types.js';
 
 const SCREEN_PREFIX = 'screen:';
@@ -81,6 +82,11 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
         botEmojis: config.botEmojis,
         customEmojis: config.customEmojis,
         ownerHasPremium: config.botEmojiOwnerHasPremium,
+        supportUrl: resolveConfiguredSupportUrl(
+          config.visual.supportUsername,
+          deps.envSupportUsername,
+          translator.t('help.contact_prefill', lang),
+        ),
       },
     );
     // Operators who don't configure their own back button should

@@ -33,6 +33,7 @@ import { InlineKeyboard } from 'grammy';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
 import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
+import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -91,6 +92,11 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
             botEmojis: botCfg.botEmojis,
             customEmojis: botCfg.customEmojis,
             ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
+            supportUrl: resolveConfiguredSupportUrl(
+              botCfg.visual.supportUsername,
+              envSupportUsername,
+              translator.t('help.contact_prefill', lang),
+            ),
           })
         : new InlineKeyboard();
 

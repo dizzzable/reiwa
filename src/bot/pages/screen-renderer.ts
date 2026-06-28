@@ -39,6 +39,13 @@ export interface ScreenButtonEmojiContext {
   readonly botEmojis?: BotEmojiMap | null;
   readonly customEmojis?: Record<string, { id: string | null; fallback: string | null }> | null;
   readonly ownerHasPremium?: boolean;
+  /**
+   * Resolved `t.me/<handle>?text=<prefill>` deep-link for `support_url`
+   * buttons. `null`/absent → such buttons are dropped (no support handle
+   * configured). The caller builds it from the bot config + env so the
+   * renderer stays decoupled from how the handle/prefill are resolved.
+   */
+  readonly supportUrl?: string | null;
 }
 
 /**
@@ -211,6 +218,17 @@ export function buildScreenKeyboard(
           if (isTelegramSafeButtonUrl(anchored)) {
             kb.webApp({ text: label, ...buttonExtras }, anchored);
           }
+        }
+        break;
+      }
+      case 'support_url': {
+        // Deep-link to the operator's Telegram support DM. The caller resolves
+        // `t.me/<handle>?text=<prefill>` from BOT_SUPPORT_USERNAME / admin
+        // config; if unset (numeric/empty handle), the button is dropped
+        // rather than rendering a broken link.
+        const url = (emoji?.supportUrl ?? '').trim();
+        if (url.length > 0 && isTelegramSafeButtonUrl(url)) {
+          kb.url({ text: label, ...buttonExtras }, url);
         }
         break;
       }

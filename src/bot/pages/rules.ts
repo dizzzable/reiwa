@@ -22,6 +22,7 @@
 import { InlineKeyboard } from 'grammy';
 
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
+import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
 import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
@@ -80,6 +81,11 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
           botEmojis: botCfg.botEmojis,
           customEmojis: botCfg.customEmojis,
           ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
+          supportUrl: resolveConfiguredSupportUrl(
+            botCfg.visual.supportUsername,
+            deps.envSupportUsername,
+            translator.t('help.contact_prefill', lang),
+          ),
         })
       : new InlineKeyboard();
 

@@ -241,6 +241,23 @@ export function resolveSupportDeepLink(
 }
 
 /**
+ * Resolve the support deep-link from the operator's admin handle (primary) and
+ * the env handle (fallback), with a localized prefill. Returns `null` when
+ * neither yields a usable public `@username` (numeric chat id / empty). Shared
+ * by the main keyboard, screen `support_url` buttons, and error fallbacks so
+ * they all build the identical `t.me/<handle>?text=<prefill>` target.
+ */
+export function resolveConfiguredSupportUrl(
+  adminSupportUsername: string | null | undefined,
+  envSupportUsername: string | null | undefined,
+  prefill: string | null | undefined,
+): string | null {
+  const admin = (adminSupportUsername ?? '').replace(/^@+/, '').trim();
+  const handle = admin.length > 0 ? admin : (envSupportUsername ?? '').trim();
+  return resolveSupportDeepLink(handle, prefill);
+}
+
+/**
  * Append `?signin=<token>` to a URL in a way that's robust to URLs
  * that already carry query parameters (operator-configured
  * `actionTarget` e.g. `https://example.com/?utm_source=tg`).

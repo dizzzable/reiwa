@@ -541,6 +541,7 @@ export const ru = {
     referral: 'Реферал',
     partner: 'Партнёр',
     settings: 'Настройки',
+    support: 'Поддержка',
   },
   card: {
     activeStatus: 'Активна',
