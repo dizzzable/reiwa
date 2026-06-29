@@ -127,6 +127,7 @@ export class PaymentsNamespace {
       readonly successUrl?: string | null;
       readonly failUrl?: string | null;
       readonly durations?: ReadonlyArray<{ readonly subscriptionId: string; readonly days: number }>;
+      readonly plans?: ReadonlyArray<{ readonly subscriptionId: string; readonly planId: string }>;
     },
   ): Promise<unknown> {
     const payload: Record<string, unknown> = {
@@ -146,6 +147,9 @@ export class PaymentsNamespace {
     if (input.failUrl) payload['failUrl'] = input.failUrl;
     if (input.durations && input.durations.length > 0) {
       payload['durations'] = input.durations;
+    }
+    if (input.plans && input.plans.length > 0) {
+      payload['plans'] = input.plans;
     }
     return this.transport.request('POST', '/api/internal/payments/renewal-checkout', payload);
   }

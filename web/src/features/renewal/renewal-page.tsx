@@ -11,6 +11,7 @@ import {
   getAllSubscriptions,
   getEnabledGateways,
   getPartnerInfo,
+  getPlans,
   getRenewalOptions,
   payWithPartnerBalance,
 } from "@/lib/api-client";
@@ -19,7 +20,9 @@ import { TipCard } from "@/components/ui/tip-card";
 import { PromoInput } from "@/features/purchase/components/promo-input";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
-import type { RenewalOptionItem, Subscription } from "@/types/api";
+import type { Plan, RenewalOptionItem, Subscription } from "@/types/api";
+import { useBranding } from "@/lib/branding-provider";
+import { cn } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
@@ -49,6 +52,14 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   RUB: "₽",
   USD: "$",
   EUR: "€",
+};
+
+/** Maps a backend renewal warning code to a localized "why not renewable" hint. */
+const RENEWAL_REASON_KEYS: Record<string, string> = {
+  TRIAL_FREE_NOT_RENEWABLE: "renewal.reason.trial",
+  SOURCE_PLAN_MISSING: "renewal.reason.noPlan",
+  GATEWAY_NOT_AVAILABLE: "renewal.reason.noGateway",
+  ARCHIVED_PLAN_REPLACEMENT: "renewal.reason.archived",
 };
 
 function formatPrice(amount: string | null, currency: string | null): string {
@@ -93,6 +104,7 @@ export default function RenewalPage() {
 
       <StepTransition stepKey={step}>
         {step === "subscriptions" && <SelectSubscriptions />}
+        {step === "plan" && <SelectPlan />}
         {step === "gateway" && <SelectGateway />}
         {step === "review" && <RenewalReview />}
         {step === "checkout" && <CheckoutStep />}
@@ -104,9 +116,11 @@ export default function RenewalPage() {
 
 function SelectSubscriptions() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const {
     selectedSubscriptionIds,
     selectedDurations,
+    selectedPlans,
     toggleSubscription,
     setSelectedSubscriptions,
     setSelectedDuration,
@@ -117,11 +131,18 @@ function SelectSubscriptions() {
     subscriptionId,
     days,
   }));
+  const plansPayload = Object.entries(selectedPlans).map(([subscriptionId, planId]) => ({
+    subscriptionId,
+    planId,
+  }));
 
   const { data: options, isLoading: optionsLoading } = useQuery({
-    queryKey: ["renewal-options", selectedDurations],
+    queryKey: ["renewal-options", selectedDurations, selectedPlans],
     queryFn: () =>
-      getRenewalOptions(durationsPayload.length > 0 ? { durations: durationsPayload } : undefined),
+      getRenewalOptions({
+        ...(durationsPayload.length > 0 ? { durations: durationsPayload } : {}),
+        ...(plansPayload.length > 0 ? { plans: plansPayload } : {}),
+      }),
     staleTime: 60_000,
   });
   const { data: subsData, isLoading: subsLoading } = useQuery({
@@ -142,14 +163,31 @@ function SelectSubscriptions() {
         row.option !== undefined && row.option.renewable,
     );
 
+  // Free-trial subscriptions can't be renewed — the user must UPGRADE to a
+  // paid plan instead. Detect them so we can route to the upgrade flow.
+  const trialSubs = (subsData?.subscriptions ?? []).filter((sub) => {
+    const opt = optionById.get(sub.id);
+    return sub.isTrial && (opt === undefined || !opt.renewable);
+  });
+
   // Skip the selection step entirely when there is exactly one renewable
-  // subscription — auto-select it and advance to the gateway step.
+  // subscription — auto-select it and advance. A plan-less sub goes to the
+  // tariff-selection step first; others go straight to the gateway.
   useEffect(() => {
     if (!isLoading && renewable.length === 1 && selectedSubscriptionIds.length === 0) {
-      setSelectedSubscriptions([renewable[0]!.sub.id]);
-      setStep("gateway");
+      const only = renewable[0]!;
+      setSelectedSubscriptions([only.sub.id]);
+      setStep(only.option.requiresPlanSelection && !selectedPlans[only.sub.id] ? "plan" : "gateway");
     }
-  }, [isLoading, renewable, selectedSubscriptionIds.length, setSelectedSubscriptions, setStep]);
+  }, [isLoading, renewable, selectedSubscriptionIds.length, selectedPlans, setSelectedSubscriptions, setStep]);
+
+  // Trying to renew but nothing is renewable and the user holds a free trial →
+  // send them to the upgrade flow (a trial is upgraded, never renewed).
+  useEffect(() => {
+    if (!isLoading && renewable.length === 0 && trialSubs.length > 0) {
+      navigate("/upgrade", { replace: true });
+    }
+  }, [isLoading, renewable.length, trialSubs.length, navigate]);
 
   if (isLoading) {
     return (
@@ -162,9 +200,17 @@ function SelectSubscriptions() {
   }
 
   if (renewable.length === 0) {
+    // Trials are being redirected to upgrade — render nothing to avoid a flash.
+    if (trialSubs.length > 0) return null;
+    // Surface the most relevant reason instead of a bare "none renewable".
+    const reasonCode = (options?.items ?? [])
+      .flatMap((i) => i.warnings.map((w) => w.code))
+      .find((c) => RENEWAL_REASON_KEYS[c] !== undefined);
+    const reason = reasonCode ? t(RENEWAL_REASON_KEYS[reasonCode]!) : null;
     return (
-      <div className="px-5">
+      <div className="px-5 space-y-2">
         <TipCard tone="info">{t("renewal.noneRenewable")}</TipCard>
+        {reason && <p className="px-1 text-xs text-zinc-500">{reason}</p>}
       </div>
     );
   }
@@ -175,13 +221,16 @@ function SelectSubscriptions() {
       <div className="px-5 space-y-2">
         {renewable.map(({ sub, option }) => {
           const checked = selectedSubscriptionIds.includes(sub.id);
+          const needsPlan = (option.requiresPlanSelection ?? false) && !selectedPlans[sub.id];
           const planLabel = sub.plan?.name ?? option.planName ?? "";
           const currentDays = selectedDurations[sub.id] ?? option.durationDays;
           const durationLabel = currentDays
             ? t("purchase.duration.days", { count: currentDays })
             : "";
-          const subtitle = [planLabel, durationLabel].filter(Boolean).join(" · ");
-          const showDurationPicker = option.availableDurations.length > 1;
+          const subtitle = needsPlan
+            ? t("renewal.choosePlanHint")
+            : [planLabel, durationLabel].filter(Boolean).join(" · ");
+          const showDurationPicker = !needsPlan && option.availableDurations.length > 1;
           return (
             <div key={sub.id} className="space-y-2">
               <SubscriptionSelectCard
@@ -191,9 +240,15 @@ function SelectSubscriptions() {
                 control="check"
                 subtitle={subtitle}
                 trailing={
-                  <span className="text-sm font-semibold text-(--brand-primary)">
-                    {formatPrice(option.amount, option.currency)}
-                  </span>
+                  needsPlan ? (
+                    <span className="text-xs font-medium text-(--brand-primary)">
+                      {t("renewal.choosePlanCta")}
+                    </span>
+                  ) : (
+                    <span className="text-sm font-semibold text-(--brand-primary)">
+                      {formatPrice(option.amount, option.currency)}
+                    </span>
+                  )
                 }
               />
               {showDurationPicker && (
@@ -231,9 +286,192 @@ function SelectSubscriptions() {
           size="lg"
           glow
           disabled={selectedSubscriptionIds.length === 0}
+          onClick={() => {
+            // If any chosen subscription still needs a tariff, go pick it first.
+            const needsPlan = selectedSubscriptionIds.some((id) => {
+              const opt = optionById.get(id);
+              return (opt?.requiresPlanSelection ?? false) && !selectedPlans[id];
+            });
+            setStep(needsPlan ? "plan" : "gateway");
+          }}
+        >
+          {t("renewal.continue")}
+        </StadiumButton>
+      </div>
+    </div>
+  );
+}
+
+/** Lowest display price for a catalog plan (gateway price → else displayPrices). */
+function lowestPlanPrice(
+  plan: Plan,
+  preferredCurrency: string,
+): { amount: number; currency: string } | null {
+  const gateway = plan.durations.flatMap((d) =>
+    d.prices.map((p) => ({ currency: p.currency, amount: Number(p.price) })),
+  );
+  const display = (plan.displayPrices ?? []).map((p) => ({
+    currency: p.currency,
+    amount: Number(p.price),
+  }));
+  const all = gateway.length ? gateway : display;
+  if (!all.length) return null;
+  const preferred = all.filter((p) => p.currency === preferredCurrency);
+  const usd = all.filter((p) => p.currency === "USD");
+  const list = preferred.length ? preferred : usd.length ? usd : all;
+  return list.reduce((min, p) => (p.amount < min.amount ? p : min), list[0]!);
+}
+
+/**
+ * Tariff-selection step for plan-less (panel-imported) subscriptions: pick a
+ * plan from the catalog (+ a duration) for each selected subscription that has
+ * no inherent plan, then continue to the gateway.
+ */
+function SelectPlan() {
+  const { t } = useTranslation();
+  const { defaultCurrency } = useBranding();
+  const {
+    selectedSubscriptionIds,
+    selectedPlans,
+    selectedDurations,
+    setSelectedPlan,
+    setSelectedDuration,
+    setStep,
+  } = useRenewalStore();
+
+  const { data: plans = [], isLoading: plansLoading } = useQuery({
+    queryKey: ["plans"],
+    queryFn: getPlans,
+    staleTime: 300_000,
+  });
+  const { data: baseOptions, isLoading: baseLoading } = useQuery({
+    queryKey: ["renewal-options", {}, {}],
+    queryFn: () => getRenewalOptions(),
+    staleTime: 60_000,
+  });
+  const { data: subsData } = useQuery({
+    queryKey: ["subscriptions-all"],
+    queryFn: getAllSubscriptions,
+    staleTime: 60_000,
+  });
+  const isLoading = plansLoading || baseLoading;
+
+  const optionById = new Map((baseOptions?.items ?? []).map((o) => [o.subscriptionId, o]));
+  const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
+  // Only paid plans are valid renewal targets.
+  const catalog = plans.filter((p) => !(p.isTrial && p.trialFree));
+  const targets = selectedSubscriptionIds.filter(
+    (id) => optionById.get(id)?.requiresPlanSelection ?? false,
+  );
+  // "Chosen" only counts once we actually know the targets (post-load).
+  const allChosen = targets.length > 0 && targets.every((id) => Boolean(selectedPlans[id]));
+
+  // Reached the plan step but nothing needs a tariff (e.g. all selected subs
+  // already carry a plan) → skip straight to the gateway. Never strand here.
+  useEffect(() => {
+    if (!isLoading && targets.length === 0) {
+      setStep(selectedSubscriptionIds.length === 0 ? "subscriptions" : "gateway");
+    }
+  }, [isLoading, targets.length, selectedSubscriptionIds.length, setStep]);
+
+  if (isLoading) {
+    return (
+      <div className="px-5 space-y-2">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="px-5 text-sm text-zinc-400">{t("renewal.choosePlanTitle")}</p>
+      {targets.map((subId) => {
+        const sub = subById.get(subId);
+        const chosenPlanId = selectedPlans[subId];
+        const chosenPlan = catalog.find((p) => String(p.id) === chosenPlanId);
+        return (
+          <div key={subId} className="space-y-2 px-5">
+            {targets.length > 1 && sub && (
+              <p className="text-xs font-medium text-zinc-500">{subscriptionTitle(sub)}</p>
+            )}
+            {catalog.map((plan) => {
+              const active = String(plan.id) === chosenPlanId;
+              const price = lowestPlanPrice(plan, defaultCurrency);
+              return (
+                <button
+                  key={plan.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPlan(subId, String(plan.id));
+                    const firstDays = plan.durations[0]?.days;
+                    if (firstDays) setSelectedDuration(subId, firstDays);
+                  }}
+                  className={cn(
+                    "flex w-full items-center justify-between glass-card p-4 transition-all active:scale-[0.98]",
+                    active ? "ring-2 ring-(--brand-primary)" : "hover:border-(--brand-primary)/30",
+                  )}
+                >
+                  <div className="min-w-0 text-left">
+                    <p className="truncate font-medium text-white">{plan.name}</p>
+                    <p className="text-xs text-zinc-500">
+                      {plan.trafficLimit ? `${plan.trafficLimit} GB` : t("plans.unlimited")}
+                      {plan.deviceLimit
+                        ? ` · ${t("plans.devicesSuffix", { count: plan.deviceLimit })}`
+                        : ""}
+                    </p>
+                  </div>
+                  {price && (
+                    <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
+                      {t("plans.from")} {CURRENCY_SYMBOLS[price.currency] ?? ""}
+                      {price.amount.toFixed(2)}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {chosenPlan && chosenPlan.durations.length > 1 && (
+              <div className="pt-1">
+                <p className="mb-1.5 text-xs text-zinc-500">{t("renewal.durationLabel")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {chosenPlan.durations.map((d) => {
+                    const active = (selectedDurations[subId] ?? chosenPlan.durations[0]?.days) === d.days;
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => setSelectedDuration(subId, d.days)}
+                        className={cn(
+                          "rounded-full px-3 py-1.5 text-xs font-medium transition-all active:scale-95",
+                          active
+                            ? "bg-(--brand-primary) text-black"
+                            : "bg-white/5 text-zinc-300 hover:bg-white/10",
+                        )}
+                      >
+                        {t("purchase.duration.days", { count: d.days })}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <div className="px-5 space-y-2 pt-2">
+        <StadiumButton
+          fullWidth
+          size="lg"
+          glow
+          disabled={!allChosen}
           onClick={() => setStep("gateway")}
         >
           {t("renewal.continue")}
+        </StadiumButton>
+        <StadiumButton fullWidth variant="ghost" onClick={() => setStep("subscriptions")}>
+          {t("renewal.back")}
         </StadiumButton>
       </div>
     </div>
@@ -317,24 +555,28 @@ function RenewalReview() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { selectedSubscriptionIds, selectedDurations, selectedGateway, setStep } =
+  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedGateway, setStep } =
     useRenewalStore();
 
   const durationsPayload = selectedSubscriptionIds
     .filter((id) => selectedDurations[id] !== undefined)
     .map((id) => ({ subscriptionId: id, days: selectedDurations[id]! }));
+  const plansPayload = selectedSubscriptionIds
+    .filter((id) => selectedPlans[id] !== undefined)
+    .map((id) => ({ subscriptionId: id, planId: selectedPlans[id]! }));
 
   const {
     data,
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["renewal-review", selectedSubscriptionIds, selectedGateway?.id, selectedDurations],
+    queryKey: ["renewal-review", selectedSubscriptionIds, selectedGateway?.id, selectedDurations, selectedPlans],
     queryFn: () =>
       getRenewalOptions({
         subscriptionIds: selectedSubscriptionIds,
         gatewayType: selectedGateway!.id,
         ...(durationsPayload.length > 0 ? { durations: durationsPayload } : {}),
+        ...(plansPayload.length > 0 ? { plans: plansPayload } : {}),
       }),
     enabled: selectedSubscriptionIds.length > 0 && !!selectedGateway,
   });
@@ -490,12 +732,15 @@ function RenewalReview() {
 function CheckoutStep() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { selectedSubscriptionIds, selectedDurations, selectedGateway, setCheckoutResult } =
+  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedGateway, setCheckoutResult } =
     useRenewalStore();
 
   const durationsPayload = selectedSubscriptionIds
     .filter((id) => selectedDurations[id] !== undefined)
     .map((id) => ({ subscriptionId: id, days: selectedDurations[id]! }));
+  const plansPayload = selectedSubscriptionIds
+    .filter((id) => selectedPlans[id] !== undefined)
+    .map((id) => ({ subscriptionId: id, planId: selectedPlans[id]! }));
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -503,6 +748,7 @@ function CheckoutStep() {
         selectedSubscriptionIds,
         selectedGateway!.id,
         durationsPayload.length > 0 ? durationsPayload : undefined,
+        plansPayload.length > 0 ? plansPayload : undefined,
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);

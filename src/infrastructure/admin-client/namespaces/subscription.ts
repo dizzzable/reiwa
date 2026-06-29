@@ -116,6 +116,7 @@ export class SubscriptionNamespace {
       readonly gatewayType?: string;
       readonly channel?: string;
       readonly durations?: ReadonlyArray<{ readonly subscriptionId: string; readonly days: number }>;
+      readonly plans?: ReadonlyArray<{ readonly subscriptionId: string; readonly planId: string }>;
     } = {},
   ): Promise<unknown> {
     const payload: Record<string, unknown> = { ...identityPayload(identity) };
@@ -130,6 +131,9 @@ export class SubscriptionNamespace {
     }
     if (options.durations && options.durations.length > 0) {
       payload['durations'] = options.durations;
+    }
+    if (options.plans && options.plans.length > 0) {
+      payload['plans'] = options.plans;
     }
     return this.transport.request('POST', '/api/internal/subscriptions/renewal-options', payload);
   }

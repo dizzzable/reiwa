@@ -145,6 +145,8 @@ export interface RenewalOptionItem {
   amount: string | null;
   discountPercent: number;
   renewable: boolean;
+  /** True when the sub has no inherent plan and the user must pick a tariff. */
+  requiresPlanSelection?: boolean;
   warnings: { code: string; message: string }[];
 }
 

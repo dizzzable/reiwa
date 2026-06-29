@@ -59,6 +59,7 @@ export const getRenewalOptions = (input?: {
   subscriptionIds?: (string | number)[];
   gatewayType?: string;
   durations?: { subscriptionId: string; days: number }[];
+  plans?: { subscriptionId: string; planId: string }[];
 }) =>
   apiClient
     .post<RenewalOptions>("/subscription/renewal-options", {
@@ -67,6 +68,7 @@ export const getRenewalOptions = (input?: {
       ...(input?.durations && input.durations.length > 0
         ? { durations: input.durations }
         : {}),
+      ...(input?.plans && input.plans.length > 0 ? { plans: input.plans } : {}),
     })
     .then((r) => r.data);
 

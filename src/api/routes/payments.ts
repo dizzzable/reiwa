@@ -135,6 +135,7 @@ export function createPaymentsRouter(deps: {
           gatewayType,
           source,
           durations,
+          plans,
           successUrl: bodySuccessUrl,
           failUrl: bodyFailUrl,
         } = (req.body ?? {}) as Record<string, unknown>;
@@ -159,6 +160,15 @@ export function createPaymentsRouter(deps: {
               typeof d === "object" &&
               typeof (d as { subscriptionId?: unknown }).subscriptionId === "string" &&
               Number.isFinite((d as { days?: unknown }).days),
+          );
+        const plansValid =
+          Array.isArray(plans) &&
+          plans.every(
+            (p) =>
+              p !== null &&
+              typeof p === "object" &&
+              typeof (p as { subscriptionId?: unknown }).subscriptionId === "string" &&
+              typeof (p as { planId?: unknown }).planId === "string",
           );
 
         const successOverride =
@@ -197,6 +207,13 @@ export function createPaymentsRouter(deps: {
               ? {
                   durations: (durations as ReadonlyArray<{ subscriptionId: string; days: number }>).map(
                     (d) => ({ subscriptionId: String(d.subscriptionId), days: Number(d.days) }),
+                  ),
+                }
+              : {}),
+            ...(plansValid
+              ? {
+                  plans: (plans as ReadonlyArray<{ subscriptionId: string; planId: string }>).map(
+                    (p) => ({ subscriptionId: String(p.subscriptionId), planId: String(p.planId) }),
                   ),
                 }
               : {}),

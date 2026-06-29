@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import type { GatewayOption } from "./purchase.store";
 
-export type RenewalStep = "subscriptions" | "gateway" | "review" | "checkout" | "polling";
+export type RenewalStep = "subscriptions" | "plan" | "gateway" | "review" | "checkout" | "polling";
 
 interface RenewalState {
   step: RenewalStep;
@@ -10,6 +10,8 @@ interface RenewalState {
   selectedSubscriptionIds: string[];
   /** Per-subscription chosen renewal duration (days). Absent → original. */
   selectedDurations: Record<string, number>;
+  /** Per-subscription chosen plan id (for plan-less, panel-imported subs). */
+  selectedPlans: Record<string, string>;
   selectedGateway: GatewayOption | null;
   paymentId: string | null;
   paymentUrl: string | null;
@@ -18,6 +20,7 @@ interface RenewalState {
   toggleSubscription: (id: string) => void;
   setSelectedSubscriptions: (ids: string[]) => void;
   setSelectedDuration: (subscriptionId: string, days: number) => void;
+  setSelectedPlan: (subscriptionId: string, planId: string) => void;
   selectGateway: (gateway: GatewayOption) => void;
   setCheckoutResult: (paymentId: string, paymentUrl: string | null) => void;
   reset: () => void;
@@ -28,6 +31,7 @@ const INITIAL: Pick<
   | "step"
   | "selectedSubscriptionIds"
   | "selectedDurations"
+  | "selectedPlans"
   | "selectedGateway"
   | "paymentId"
   | "paymentUrl"
@@ -35,6 +39,7 @@ const INITIAL: Pick<
   step: "subscriptions",
   selectedSubscriptionIds: [],
   selectedDurations: {},
+  selectedPlans: {},
   selectedGateway: null,
   paymentId: null,
   paymentUrl: null,
@@ -54,6 +59,10 @@ export const useRenewalStore = create<RenewalState>((set) => ({
   setSelectedDuration: (subscriptionId, days) =>
     set((state) => ({
       selectedDurations: { ...state.selectedDurations, [subscriptionId]: days },
+    })),
+  setSelectedPlan: (subscriptionId, planId) =>
+    set((state) => ({
+      selectedPlans: { ...state.selectedPlans, [subscriptionId]: planId },
     })),
   selectGateway: (gateway) => set({ selectedGateway: gateway, step: "review" }),
   setCheckoutResult: (paymentId, paymentUrl) =>

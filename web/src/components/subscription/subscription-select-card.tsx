@@ -1,11 +1,12 @@
 /**
  * SubscriptionSelectCard
  * ──────────────────────
- * Unified, compact subscription tile used by every "pick a subscription" flow
- * (renewal, upgrade, add-ons). It mirrors the dashboard card's information —
- * identity, traffic bar, expiry, device limit — without the heavy WebGL
- * background, the action icons or the "details" affordance, so the three
- * wizards read as one design system.
+ * Unified "pick a subscription" tile used by every selection flow (renewal,
+ * upgrade, add-ons). It now mirrors the DASHBOARD subscription card's visual —
+ * the operator brand gradient, corner watermark, vignette and the same
+ * identity / traffic / expiry / device layout — but **static** (no per-card
+ * WebGL effect), so a list of selectable cards stays cheap to render while
+ * reading as the same design as the dashboard.
  *
  * `control` chooses the selection affordance:
  *   - "check"  → square checkbox (multi-select, e.g. combined renewal)
@@ -14,9 +15,11 @@
  */
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Check } from "lucide-react";
+import { Check, Wifi, WifiOff } from "lucide-react";
 
 import type { Subscription } from "@/types/api";
+import { CardWatermark } from "@/components/ui/card-watermark";
+import { useBranding } from "@/lib/branding-provider";
 import { cn, formatDate } from "@/lib/utils";
 
 /** Subscription identity as shown on the dashboard card (profile first). */
@@ -44,8 +47,10 @@ export function SubscriptionSelectCard({
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
+  const { branding } = useBranding();
   const sub = subscription;
 
+  const isActive = sub.status === "ACTIVE" || sub.status === "LIMITED";
   const used = sub.trafficUsed ?? null;
   const total = sub.trafficLimit ?? null;
   const progress =
@@ -65,45 +70,66 @@ export function SubscriptionSelectCard({
       disabled={disabled}
       aria-pressed={selected}
       className={cn(
-        "w-full glass-card p-4 text-left transition-all active:scale-[0.98] disabled:opacity-50",
-        selected
-          ? "border-(--brand-primary)/50 bg-(--brand-primary)/6"
-          : "hover:border-(--brand-primary)/30",
+        "@container/card group relative w-full overflow-hidden rounded-card p-4 text-left text-white select-none",
+        "shadow-xl shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50",
+        selected ? "ring-2 ring-(--brand-primary)" : "ring-1 ring-white/10",
       )}
     >
+      {/* Static foundation: dark base + operator brand gradient + vignette */}
+      <div className="absolute inset-0 -z-30 bg-zinc-950" />
+      <div
+        className="absolute inset-0 -z-20"
+        style={{ backgroundImage: branding.cardGradient, opacity: 0.9 }}
+      />
+      <div className="absolute inset-0 -z-10 bg-linear-to-b from-black/45 via-black/15 to-black/65" />
+
+      {/* Brand watermark — operator glyph or custom image, faint */}
+      <CardWatermark
+        preset={branding.cardLogo}
+        customUrl={branding.cardLogoUrl}
+        className="pointer-events-none absolute -right-4 -bottom-6 h-28 w-28"
+      />
+
       {/* Header: control + identity + trailing (price) */}
-      <div className="flex items-center gap-3">
+      <div className="relative flex items-center gap-3">
         {control !== "none" && (
           <span
             className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center border",
+              "flex h-6 w-6 shrink-0 items-center justify-center border backdrop-blur-md",
               control === "radio" ? "rounded-full" : "rounded-md",
               selected
-                ? "border-(--brand-primary) bg-(--brand-primary) text-black"
-                : "border-white/20",
+                ? "border-(--brand-primary) bg-(--brand-primary) text-(--brand-primary-fg)"
+                : "border-white/40 bg-black/20",
             )}
           >
             {selected &&
               (control === "radio" ? (
-                <span className="h-2.5 w-2.5 rounded-full bg-black" />
+                <span className="h-2.5 w-2.5 rounded-full bg-(--brand-primary-fg)" />
               ) : (
                 <Check className="h-4 w-4" />
               ))}
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-mono text-sm font-medium text-white">
-            {subscriptionTitle(sub)}
-          </p>
-          {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
+          <div className="flex items-center gap-1.5">
+            {isActive ? (
+              <Wifi className="h-3.5 w-3.5 shrink-0 opacity-90" />
+            ) : (
+              <WifiOff className="h-3.5 w-3.5 shrink-0 opacity-60" />
+            )}
+            <p className="truncate text-sm font-semibold tracking-wide drop-shadow">
+              {subscriptionTitle(sub)}
+            </p>
+          </div>
+          {subtitle && <p className="mt-0.5 truncate text-xs text-white/65">{subtitle}</p>}
         </div>
-        {trailing && <div className="shrink-0">{trailing}</div>}
+        {trailing && <div className="shrink-0 drop-shadow">{trailing}</div>}
       </div>
 
       {/* Traffic bar (or "unlimited") */}
       {progress !== null ? (
-        <div className="mt-3 space-y-1">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/8">
+        <div className="relative mt-3 space-y-1">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/35 backdrop-blur-sm">
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{
@@ -112,7 +138,7 @@ export function SubscriptionSelectCard({
               }}
             />
           </div>
-          <div className="flex items-center justify-between text-[11px] text-zinc-500">
+          <div className="flex items-center justify-between text-[11px] text-white/60">
             <span>{t("subscriptionPicker.traffic")}</span>
             <span>
               {used} / {total} {t("subscriptionPicker.gb")}
@@ -120,14 +146,14 @@ export function SubscriptionSelectCard({
           </div>
         </div>
       ) : total === null ? (
-        <div className="mt-3 flex items-center justify-between text-[11px] text-zinc-500">
+        <div className="relative mt-3 flex items-center justify-between text-[11px] text-white/60">
           <span>{t("subscriptionPicker.traffic")}</span>
           <span>{t("subscriptionPicker.unlimited")}</span>
         </div>
       ) : null}
 
       {/* Footer: expiry + device limit */}
-      <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500">
+      <div className="relative mt-2 flex items-center justify-between text-[11px] text-white/55">
         <span>
           {t("subscriptionPicker.expires")}: {formatDate(sub.expiresAt ?? sub.expireAt)}
         </span>

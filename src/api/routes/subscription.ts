@@ -167,7 +167,7 @@ export function createSubscriptionRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { subscriptionIds, gatewayType, durations } = (req.body ?? {}) as Record<string, unknown>;
+        const { subscriptionIds, gatewayType, durations, plans } = (req.body ?? {}) as Record<string, unknown>;
         const context = req.context ?? "web";
         const channel = context === "tma" ? "TMA" : "WEB";
         const subscriptionIdsValid =
@@ -182,6 +182,15 @@ export function createSubscriptionRouter(deps: {
               typeof (d as { subscriptionId?: unknown }).subscriptionId === "string" &&
               Number.isFinite((d as { days?: unknown }).days),
           );
+        const plansValid =
+          Array.isArray(plans) &&
+          plans.every(
+            (p) =>
+              p !== null &&
+              typeof p === "object" &&
+              typeof (p as { subscriptionId?: unknown }).subscriptionId === "string" &&
+              typeof (p as { planId?: unknown }).planId === "string",
+          );
         const result = await adminClient?.subscription.getRenewalOptions(
           resolveUserIdentity(req),
           {
@@ -195,6 +204,13 @@ export function createSubscriptionRouter(deps: {
               ? {
                   durations: (durations as ReadonlyArray<{ subscriptionId: string; days: number }>).map(
                     (d) => ({ subscriptionId: String(d.subscriptionId), days: Number(d.days) }),
+                  ),
+                }
+              : {}),
+            ...(plansValid
+              ? {
+                  plans: (plans as ReadonlyArray<{ subscriptionId: string; planId: string }>).map(
+                    (p) => ({ subscriptionId: String(p.subscriptionId), planId: String(p.planId) }),
                   ),
                 }
               : {}),
