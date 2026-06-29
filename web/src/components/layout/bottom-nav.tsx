@@ -43,8 +43,9 @@ export function BottomNav() {
       className="relative shrink-0"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      {/* Outer glass capsule — matches the design reference (Telegram-style). */}
-      <div className="mx-3 mb-3 rounded-full border border-white/6 bg-zinc-900/85 px-1 py-1 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+      {/* Outer glass capsule — taller so vertical icon+label fits on small
+          screens without the label being clipped. */}
+      <div className="mx-3 mb-3 rounded-3xl border border-white/6 bg-zinc-900/85 px-1.5 py-1.5 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
         <ul
           className="relative grid gap-1"
           style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
@@ -53,24 +54,23 @@ export function BottomNav() {
             const isActive = isTabActive(tab, location.pathname);
             const Icon = tab.icon;
             return (
-              <li key={tab.to} className="relative">
+              <li key={tab.to} className="relative min-w-0">
                 <NavLink
                   to={tab.to}
                   data-testid={tab.testId}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
-                    "relative z-10 flex items-center justify-center gap-2 rounded-full px-3 py-2.5 text-sm font-medium transition-colors duration-200 select-none",
+                    "relative z-10 flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 font-medium transition-colors duration-200 select-none",
                     isActive
                       ? "text-(--brand-primary-fg)"
                       : "text-zinc-400 hover:text-zinc-200",
                   )}
                 >
-                  {/* Animated active-tab pill — the layoutId trick crossfades
-                      the background between tabs with a spring transition. */}
+                  {/* Animated active-tab pill — slides between tabs via layoutId. */}
                   {isActive && (
                     <motion.span
                       layoutId="bottom-nav-active-pill"
-                      className="absolute inset-0 -z-10 rounded-full"
+                      className="absolute inset-0 -z-10 rounded-2xl"
                       style={{ backgroundColor: "var(--brand-primary)" }}
                       transition={{
                         type: "spring",
@@ -83,12 +83,7 @@ export function BottomNav() {
                     className="h-5 w-5 shrink-0"
                     strokeWidth={isActive ? 2.25 : 1.75}
                   />
-                  <span
-                    className={cn(
-                      "truncate transition-[max-width,opacity] duration-200",
-                      isActive ? "max-w-[140px] opacity-100" : "max-w-0 opacity-0",
-                    )}
-                  >
+                  <span className="max-w-full truncate text-[10px] leading-none tracking-tight">
                     {tab.label}
                   </span>
                 </NavLink>

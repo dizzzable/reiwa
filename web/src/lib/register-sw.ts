@@ -33,12 +33,15 @@ export async function registerServiceWorker(): Promise<void> {
   try {
     const { registerSW } = await import('virtual:pwa-register')
 
-    // Reload exactly once when a newly-activated SW takes control, so a
-    // redeploy is reflected without the user manually hard-refreshing.
-    // Guarded by a flag to avoid reload loops.
+    // Reload exactly once when an UPDATED SW takes control, so a redeploy is
+    // reflected without a manual hard-refresh. Critically, we only reload when
+    // a controller ALREADY existed: on the very first load `clients.claim()`
+    // fires `controllerchange` too, and reloading there (then again after the
+    // reload) caused the "page keeps reloading itself" loop users reported.
+    const hadController = Boolean(navigator.serviceWorker.controller)
     let reloadedForNewSw = false
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloadedForNewSw) return
+      if (reloadedForNewSw || !hadController) return
       reloadedForNewSw = true
       window.location.reload()
     })

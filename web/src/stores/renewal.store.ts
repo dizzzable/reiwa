@@ -15,8 +15,12 @@ interface RenewalState {
   selectedGateway: GatewayOption | null;
   paymentId: string | null;
   paymentUrl: string | null;
+  /** Direction of the last step change — guards auto-advance effects so
+   *  pressing "back" doesn't immediately re-advance (single-gateway trap). */
+  navDirection: "forward" | "back";
 
   setStep: (step: RenewalStep) => void;
+  goBack: (step: RenewalStep) => void;
   toggleSubscription: (id: string) => void;
   setSelectedSubscriptions: (ids: string[]) => void;
   setSelectedDuration: (subscriptionId: string, days: number) => void;
@@ -35,6 +39,7 @@ const INITIAL: Pick<
   | "selectedGateway"
   | "paymentId"
   | "paymentUrl"
+  | "navDirection"
 > = {
   step: "subscriptions",
   selectedSubscriptionIds: [],
@@ -43,12 +48,14 @@ const INITIAL: Pick<
   selectedGateway: null,
   paymentId: null,
   paymentUrl: null,
+  navDirection: "forward",
 };
 
 export const useRenewalStore = create<RenewalState>((set) => ({
   ...INITIAL,
 
-  setStep: (step) => set({ step }),
+  setStep: (step) => set({ step, navDirection: "forward" }),
+  goBack: (step) => set({ step, navDirection: "back" }),
   toggleSubscription: (id) =>
     set((state) => ({
       selectedSubscriptionIds: state.selectedSubscriptionIds.includes(id)
@@ -64,7 +71,7 @@ export const useRenewalStore = create<RenewalState>((set) => ({
     set((state) => ({
       selectedPlans: { ...state.selectedPlans, [subscriptionId]: planId },
     })),
-  selectGateway: (gateway) => set({ selectedGateway: gateway, step: "review" }),
+  selectGateway: (gateway) => set({ selectedGateway: gateway, step: "review", navDirection: "forward" }),
   setCheckoutResult: (paymentId, paymentUrl) =>
     set({ paymentId, paymentUrl, step: "polling" }),
   reset: () => set({ ...INITIAL }),

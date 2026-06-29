@@ -20,9 +20,9 @@ import { TipCard } from "@/components/ui/tip-card";
 import { PromoInput } from "@/features/purchase/components/promo-input";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
-import type { Plan, RenewalOptionItem, Subscription } from "@/types/api";
-import { useBranding } from "@/lib/branding-provider";
+import type { RenewalOptionItem, Subscription } from "@/types/api";
 import { cn } from "@/lib/utils";
+import { TariffCard } from "@/features/plans/tariff-card";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
@@ -302,26 +302,6 @@ function SelectSubscriptions() {
   );
 }
 
-/** Lowest display price for a catalog plan (gateway price → else displayPrices). */
-function lowestPlanPrice(
-  plan: Plan,
-  preferredCurrency: string,
-): { amount: number; currency: string } | null {
-  const gateway = plan.durations.flatMap((d) =>
-    d.prices.map((p) => ({ currency: p.currency, amount: Number(p.price) })),
-  );
-  const display = (plan.displayPrices ?? []).map((p) => ({
-    currency: p.currency,
-    amount: Number(p.price),
-  }));
-  const all = gateway.length ? gateway : display;
-  if (!all.length) return null;
-  const preferred = all.filter((p) => p.currency === preferredCurrency);
-  const usd = all.filter((p) => p.currency === "USD");
-  const list = preferred.length ? preferred : usd.length ? usd : all;
-  return list.reduce((min, p) => (p.amount < min.amount ? p : min), list[0]!);
-}
-
 /**
  * Tariff-selection step for plan-less (panel-imported) subscriptions: pick a
  * plan from the catalog (+ a duration) for each selected subscription that has
@@ -329,7 +309,6 @@ function lowestPlanPrice(
  */
 function SelectPlan() {
   const { t } = useTranslation();
-  const { defaultCurrency } = useBranding();
   const {
     selectedSubscriptionIds,
     selectedPlans,
@@ -337,6 +316,7 @@ function SelectPlan() {
     setSelectedPlan,
     setSelectedDuration,
     setStep,
+    goBack,
   } = useRenewalStore();
 
   const { data: plans = [], isLoading: plansLoading } = useQuery({
@@ -396,41 +376,19 @@ function SelectPlan() {
             {targets.length > 1 && sub && (
               <p className="text-xs font-medium text-zinc-500">{subscriptionTitle(sub)}</p>
             )}
-            {catalog.map((plan) => {
-              const active = String(plan.id) === chosenPlanId;
-              const price = lowestPlanPrice(plan, defaultCurrency);
-              return (
-                <button
-                  key={plan.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedPlan(subId, String(plan.id));
-                    const firstDays = plan.durations[0]?.days;
-                    if (firstDays) setSelectedDuration(subId, firstDays);
-                  }}
-                  className={cn(
-                    "flex w-full items-center justify-between glass-card p-4 transition-all active:scale-[0.98]",
-                    active ? "ring-2 ring-(--brand-primary)" : "hover:border-(--brand-primary)/30",
-                  )}
-                >
-                  <div className="min-w-0 text-left">
-                    <p className="truncate font-medium text-white">{plan.name}</p>
-                    <p className="text-xs text-zinc-500">
-                      {plan.trafficLimit ? `${plan.trafficLimit} GB` : t("plans.unlimited")}
-                      {plan.deviceLimit
-                        ? ` · ${t("plans.devicesSuffix", { count: plan.deviceLimit })}`
-                        : ""}
-                    </p>
-                  </div>
-                  {price && (
-                    <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
-                      {t("plans.from")} {CURRENCY_SYMBOLS[price.currency] ?? ""}
-                      {price.amount.toFixed(2)}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            {catalog.map((plan, idx) => (
+              <TariffCard
+                key={plan.id}
+                plan={plan}
+                index={idx}
+                selected={String(plan.id) === chosenPlanId}
+                onClick={() => {
+                  setSelectedPlan(subId, String(plan.id));
+                  const firstDays = plan.durations[0]?.days;
+                  if (firstDays) setSelectedDuration(subId, firstDays);
+                }}
+              />
+            ))}
             {chosenPlan && chosenPlan.durations.length > 1 && (
               <div className="pt-1">
                 <p className="mb-1.5 text-xs text-zinc-500">{t("renewal.durationLabel")}</p>
@@ -470,7 +428,7 @@ function SelectPlan() {
         >
           {t("renewal.continue")}
         </StadiumButton>
-        <StadiumButton fullWidth variant="ghost" onClick={() => setStep("subscriptions")}>
+        <StadiumButton fullWidth variant="ghost" onClick={() => goBack("subscriptions")}>
           {t("renewal.back")}
         </StadiumButton>
       </div>
@@ -480,7 +438,7 @@ function SelectPlan() {
 
 function SelectGateway() {
   const { t } = useTranslation();
-  const { selectGateway, setStep } = useRenewalStore();
+  const { selectGateway, goBack, navDirection } = useRenewalStore();
   const { data: gateways = [], isLoading } = useQuery({
     queryKey: ["gateways"],
     queryFn: getEnabledGateways,
@@ -495,12 +453,14 @@ function SelectGateway() {
       currency: gw.currency,
     } satisfies GatewayOption);
 
-  // Auto-select when a single gateway is available.
+  // Auto-select when a single gateway is available — but only when arriving
+  // FORWARD. Without the guard, pressing "back" from review re-mounts this and
+  // immediately re-advances to review (a trap).
   useEffect(() => {
-    if (!isLoading && gateways.length === 1) {
+    if (!isLoading && gateways.length === 1 && navDirection === "forward") {
       choose(gateways[0]!);
     }
-  }, [isLoading, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoading, gateways, navDirection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isTma = !!window.Telegram?.WebApp?.initData;
   const sorted = [...gateways].sort((a, b) => {
@@ -543,7 +503,7 @@ function SelectGateway() {
         )}
       </div>
       <div className="px-5">
-        <StadiumButton fullWidth variant="ghost" onClick={() => setStep("subscriptions")}>
+        <StadiumButton fullWidth variant="ghost" onClick={() => goBack("subscriptions")}>
           {t("renewal.back")}
         </StadiumButton>
       </div>
@@ -555,7 +515,7 @@ function RenewalReview() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedGateway, setStep } =
+  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedGateway, setStep, goBack } =
     useRenewalStore();
 
   const durationsPayload = selectedSubscriptionIds
@@ -641,7 +601,7 @@ function RenewalReview() {
     return (
       <div className="px-5 space-y-3">
         <TipCard tone="danger">{t("renewal.priceError")}</TipCard>
-        <StadiumButton fullWidth variant="secondary" onClick={() => setStep("gateway")}>
+        <StadiumButton fullWidth variant="secondary" onClick={() => goBack("gateway")}>
           {t("renewal.back")}
         </StadiumButton>
       </div>
