@@ -15,6 +15,7 @@ import { useState } from "react";
 import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { motion, useReducedMotion } from "motion/react";
 import { ShoppingCart, TicketPercent } from "lucide-react";
 
 import { getAllSubscriptions, getSubscriptionDevices } from "@/lib/api-client";
@@ -22,7 +23,7 @@ import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBanner } from "@/components/access-mode-banner";
-import { openExternalUrl } from "@/lib/utils";
+import { openExternalUrl, cn } from "@/lib/utils";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
 import { SubscriptionActions } from "./components/subscription-actions";
@@ -37,6 +38,7 @@ export default function DashboardPage() {
   const { session } = useSession();
   const { branding } = useBranding();
   const { purchasesBlocked, restricted } = useAccessMode();
+  const reduceMotion = useReducedMotion();
 
   // Active-discount glow for the promo shortcut: violet for the permanent
   // personal discount, amber for the one-time next-purchase discount, split
@@ -110,14 +112,31 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            onClick={() => navigate("/plans")}
-            disabled={purchasesBlocked}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6 transition-colors disabled:opacity-40 disabled:pointer-events-none"
-            aria-label={t("card.actions.buy")}
-          >
-            <ShoppingCart className="h-4 w-4" />
-          </button>
+          <div className="relative shrink-0">
+            {!purchasesBlocked && !reduceMotion && (
+              <motion.span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-full"
+                style={{ border: "1.5px solid var(--brand-primary)" }}
+                initial={{ opacity: 0.5, scale: 1 }}
+                animate={{ opacity: 0, scale: 1.75 }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+              />
+            )}
+            <button
+              onClick={() => navigate("/plans")}
+              disabled={purchasesBlocked}
+              className={cn(
+                "relative flex h-9 w-9 items-center justify-center rounded-full border transition-all disabled:opacity-40 disabled:pointer-events-none",
+                purchasesBlocked
+                  ? "border-white/6 bg-white/3 text-zinc-400"
+                  : "border-(--brand-primary)/40 bg-(--brand-primary)/15 text-(--brand-primary) hover:bg-(--brand-primary)/25",
+              )}
+              aria-label={t("card.actions.buy")}
+            >
+              <ShoppingCart className="h-4 w-4" />
+            </button>
+          </div>
           <button
             onClick={() => navigate("/promo")}
             style={promoGlowStyle}

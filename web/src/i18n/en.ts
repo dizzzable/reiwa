@@ -203,6 +203,10 @@ export const en: RuDict = {
     durationOptions_other: '{{count}} duration options',
     from: 'from',
     daysShort: 'd.',
+    fromDuration_one: 'from {{count}} day',
+    fromDuration_few: 'from {{count}} days',
+    fromDuration_many: 'from {{count}} days',
+    fromDuration_other: 'from {{count}} days',
   },
   purchase: {
     label: 'Purchase',

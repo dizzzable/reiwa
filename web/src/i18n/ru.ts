@@ -201,6 +201,10 @@ export const ru = {
     durationOptions_other: '{{count}} вариантов срока',
     from: 'от',
     daysShort: 'дн.',
+    fromDuration_one: 'от {{count}} дня',
+    fromDuration_few: 'от {{count}} дней',
+    fromDuration_many: 'от {{count}} дней',
+    fromDuration_other: 'от {{count}} дней',
   },
   purchase: {
     label: 'Покупка',

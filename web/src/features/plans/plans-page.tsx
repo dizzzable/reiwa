@@ -13,7 +13,7 @@ import { CustomIconView } from '@/components/ui/custom-icon-view'
 import { EmojiText } from '@/components/ui/emoji-text'
 import { CardWatermark } from '@/components/ui/card-watermark'
 import { customIconId, isEmojiIcon, resolvePlanIcon } from './plan-icons'
-import { resolvePlanCardStyle } from './plan-card-visual'
+import { resolvePlanCardStyle, readablePriceColor } from './plan-card-visual'
 
 /**
  * Lowest price for a plan, expressed in the preferred display currency
@@ -111,6 +111,9 @@ export default function PlansPage() {
             // (including archived/unconfigured) still reads as distinct.
             const visual = resolvePlanCardStyle(String(plan.id), branding)
             const accent = visual.accent ?? branding.primary
+            // Price colour keeps the accent hue but is forced bright so it
+            // always reads against the card (testers reported low contrast).
+            const priceColor = readablePriceColor(accent)
 
             return (
               <motion.button
@@ -200,14 +203,17 @@ export default function PlansPage() {
                     {t('plans.durationOptions', { count: plan.durations.length })}
                   </p>
                   {price && (
-                    <div className="text-right">
-                      <p className="text-lg font-bold drop-shadow" style={{ color: accent }}>
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className="rounded-full bg-black/35 px-2.5 py-1 text-base font-bold ring-1 ring-white/15 backdrop-blur-sm drop-shadow"
+                        style={{ color: priceColor }}
+                      >
                         {t('plans.from')} {CURRENCY_SYMBOLS[price.currency] ?? ''}
                         {price.amount.toFixed(2)}
-                      </p>
-                      <p className="text-[11px] text-white/60">
-                        /{price.days} {t('plans.daysShort')}
-                      </p>
+                      </span>
+                      <span className="text-[11px] text-white/60">
+                        {t('plans.fromDuration', { count: price.days })}
+                      </span>
                     </div>
                   )}
                 </div>
