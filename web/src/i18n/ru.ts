@@ -546,6 +546,10 @@ export const ru = {
     partner: 'Партнёр',
     settings: 'Настройки',
     support: 'Поддержка',
+    plans: 'Тарифы',
+    devices: 'Устройства',
+    activity: 'Активность',
+    promo: 'Промокоды',
   },
   card: {
     activeStatus: 'Активна',

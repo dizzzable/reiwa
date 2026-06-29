@@ -49,13 +49,18 @@ export function SideNav() {
     testId: "tab-support",
     matchPrefix: ["/support"],
   };
-  // Insert Support before Settings, and stop Settings from claiming /support
-  // (so the active pill lands on Support, not Settings, on the support page).
-  const tabs: readonly NavTab[] = baseTabs.flatMap((tab) =>
-    tab.to === "/settings"
-      ? [supportTab, { ...tab, matchPrefix: tab.matchPrefix.filter((p) => p !== "/support") }]
-      : [tab],
-  );
+  // Desktop convenience: when the operator hasn't already surfaced Support as
+  // its own nav destination, inject it before Settings (mobile keeps it under
+  // Settings to save bottom-nav space). When Support IS a configured nav item
+  // it's already in `baseTabs`, so we must not add it twice.
+  const hasSupport = baseTabs.some((tab) => tab.to === "/support");
+  const tabs: readonly NavTab[] = hasSupport
+    ? baseTabs
+    : baseTabs.flatMap((tab) =>
+        tab.to === "/settings"
+          ? [supportTab, { ...tab, matchPrefix: tab.matchPrefix.filter((p) => p !== "/support") }]
+          : [tab],
+      );
 
   return (
     <nav

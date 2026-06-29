@@ -548,6 +548,10 @@ export const en: RuDict = {
     partner: 'Partner',
     settings: 'Settings',
     support: 'Support',
+    plans: 'Plans',
+    devices: 'Devices',
+    activity: 'Activity',
+    promo: 'Promo codes',
   },
   card: {
     activeStatus: 'Active',

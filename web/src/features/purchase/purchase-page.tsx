@@ -1,13 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, type ComponentType, type SVGProps } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, Check, Smartphone, Apple, Monitor, Laptop } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getQuote, createCheckout, getEnabledGateways, activatePromocode } from "@/lib/api-client";
 import { getPartnerInfo, payWithPartnerBalance } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
+import { AppleGlyph, AndroidGlyph, WindowsGlyph, MacosGlyph } from "@/components/ui/device-glyphs";
 import { usePurchaseStore } from "@/stores/purchase.store";
 import { useBranding } from "@/lib/branding-provider";
 import { useAccessMode } from "@/lib/use-access-mode";
@@ -92,13 +93,13 @@ function SelectDuration({
 
 const DEVICE_OPTIONS: ReadonlyArray<{
   id: DeviceTypeOption;
-  Icon: typeof Smartphone;
+  Icon: ComponentType<SVGProps<SVGSVGElement>>;
   labelKey: string;
 }> = [
-  { id: "IPHONE", Icon: Apple, labelKey: "purchase.device.iphone" },
-  { id: "ANDROID", Icon: Smartphone, labelKey: "purchase.device.android" },
-  { id: "WINDOWS", Icon: Monitor, labelKey: "purchase.device.windows" },
-  { id: "MAC", Icon: Laptop, labelKey: "purchase.device.mac" },
+  { id: "IPHONE", Icon: AppleGlyph, labelKey: "purchase.device.iphone" },
+  { id: "ANDROID", Icon: AndroidGlyph, labelKey: "purchase.device.android" },
+  { id: "WINDOWS", Icon: WindowsGlyph, labelKey: "purchase.device.windows" },
+  { id: "MAC", Icon: MacosGlyph, labelKey: "purchase.device.mac" },
 ];
 
 function SelectDevice({ onSelect }: { onSelect: (d: DeviceTypeOption) => void }) {
@@ -112,9 +113,9 @@ function SelectDevice({ onSelect }: { onSelect: (d: DeviceTypeOption) => void })
           <button
             key={id}
             onClick={() => onSelect(id)}
-            className="glass-card flex flex-col items-center gap-3 p-5 hover:border-(--brand-primary)/30 hover:bg-(--brand-primary)/[0.04] active:scale-[0.97] transition-all"
+            className="glass-card flex flex-col items-center gap-3 p-5 ring-1 ring-white/5 hover:ring-(--brand-primary)/30 hover:bg-(--brand-primary)/4 active:scale-[0.97] transition-all"
           >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--brand-primary)/10 text-(--brand-primary)">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur-sm text-(--brand-primary)">
               <Icon className="h-6 w-6" />
             </span>
             <span className="text-sm font-medium text-white">{t(labelKey)}</span>
@@ -510,7 +511,7 @@ export default function PurchasePage() {
             }
           }}
           aria-label={t("purchase.back")}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>

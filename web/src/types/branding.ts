@@ -108,6 +108,28 @@ export interface PlanCardStyle {
   textureUrl?: string | null;
 }
 
+/** Cabinet navigation destinations (mirrors backend `NAV_DESTINATIONS`). */
+export const NAV_DESTINATIONS = [
+  "subscriptions",
+  "plans",
+  "referrals",
+  "devices",
+  "activity",
+  "promo",
+  "support",
+  "settings",
+] as const;
+export type NavDestinationId = (typeof NAV_DESTINATIONS)[number];
+
+/** Destinations that are always visible and cannot be hidden. */
+export const NAV_ESSENTIAL_DESTINATIONS: readonly NavDestinationId[] = ["subscriptions", "settings"];
+
+/** One bottom-nav entry: a destination id + whether it shows in the nav bar. */
+export interface NavItemSetting {
+  id: NavDestinationId;
+  visible: boolean;
+}
+
 export interface Branding {
   brandName: string;
   /** Optional short subtitle shown on the splash + in-app loader. */
@@ -155,6 +177,12 @@ export interface Branding {
    * without the field is handled gracefully.
    */
   planCardStyles?: Record<string, PlanCardStyle>;
+  /**
+   * Cabinet bottom-navigation layout (ordered destinations + visibility).
+   * Absent → the cabinet uses its built-in default nav. Mirrors backend
+   * `navItems`.
+   */
+  navItems?: NavItemSetting[];
 }
 
 export interface PublicConfig {
@@ -245,6 +273,16 @@ export const DEFAULT_BRANDING: Branding = {
   borderRadius: "rounded-2xl",
   fontFamily: "Geist Variable, system-ui, sans-serif",
   planCardStyles: {},
+  navItems: [
+    { id: "subscriptions", visible: true },
+    { id: "referrals", visible: true },
+    { id: "settings", visible: true },
+    { id: "plans", visible: false },
+    { id: "devices", visible: false },
+    { id: "activity", visible: false },
+    { id: "promo", visible: false },
+    { id: "support", visible: false },
+  ],
 };
 
 export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {

@@ -6,7 +6,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { Smartphone, Trash2, Monitor, Apple, Globe } from 'lucide-react'
+import { Smartphone, Trash2, Globe } from 'lucide-react'
+import { AndroidGlyph, AppleGlyph, WindowsGlyph, MacosGlyph, LinuxGlyph } from '@/components/ui/device-glyphs'
 import { toast } from 'sonner'
 import { getUserDevices, deleteUserDevice } from '@/lib/api-client'
 import { StadiumButton } from '@/components/ui/stadium-button'
@@ -15,11 +16,13 @@ import { TipCard } from '@/components/ui/tip-card'
 import { useSession } from '@/hooks/use-session'
 
 function platformIcon(platform: string | null) {
-  if (!platform) return <Smartphone className="h-5 w-5" />
+  if (!platform) return <Smartphone className="h-5 w-5 text-zinc-400" />
   const p = platform.toLowerCase()
-  if (p.includes('android')) return <Smartphone className="h-5 w-5 text-emerald-400" />
-  if (p.includes('ios') || p.includes('iphone') || p.includes('mac')) return <Apple className="h-5 w-5 text-zinc-300" />
-  if (p.includes('windows')) return <Monitor className="h-5 w-5 text-blue-400" />
+  if (p.includes('android')) return <AndroidGlyph className="h-5 w-5 text-emerald-400" />
+  if (p.includes('ios') || p.includes('iphone') || p.includes('ipad')) return <AppleGlyph className="h-5 w-5 text-zinc-200" />
+  if (p.includes('mac') || p.includes('darwin') || p.includes('osx')) return <MacosGlyph className="h-5 w-5 text-zinc-200" />
+  if (p.includes('windows') || p.includes('win')) return <WindowsGlyph className="h-5 w-5 text-sky-400" />
+  if (p.includes('linux')) return <LinuxGlyph className="h-5 w-5 text-amber-400" />
   return <Globe className="h-5 w-5 text-zinc-400" />
 }
 

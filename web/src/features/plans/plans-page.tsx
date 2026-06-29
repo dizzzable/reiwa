@@ -123,7 +123,7 @@ export default function PlansPage() {
                 transition={{ delay: i * 0.06 }}
                 onClick={() => handleSelect(plan)}
                 className={cn(
-                  '@container/card group relative flex min-h-[150px] w-full flex-col justify-between',
+                  '@container/card group relative flex min-h-[172px] w-full flex-col justify-between gap-3',
                   'overflow-hidden rounded-card p-5 text-left text-white select-none',
                   'shadow-xl shadow-black/40 ring-1 ring-white/10',
                   'transition-transform duration-150 active:scale-[0.98]',
@@ -174,7 +174,7 @@ export default function PlansPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-base font-semibold tracking-wide drop-shadow">
+                      <p className="truncate text-[17px] font-semibold tracking-wide drop-shadow">
                         {plan.name}
                       </p>
                       {plan.isTrial && (
@@ -183,14 +183,14 @@ export default function PlansPage() {
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 text-[13px] font-medium text-white/85">
+                    <p className="mt-1 text-sm font-medium text-white/85">
                       {plan.trafficLimit ? `${plan.trafficLimit} GB` : t('plans.unlimited')}
                       {plan.deviceLimit
                         ? ` · ${t('plans.devicesSuffix', { count: plan.deviceLimit })}`
                         : ''}
                     </p>
                     {plan.description && (
-                      <p className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-white/65">
+                      <p className="mt-1.5 line-clamp-2 text-[13px] leading-snug text-white/70">
                         {plan.description}
                       </p>
                     )}
@@ -199,13 +199,13 @@ export default function PlansPage() {
 
                 {/* Bottom: duration options (left) + lowest price (right) */}
                 <div className="relative flex items-end justify-between gap-2">
-                  <p className="text-[11px] tracking-wider text-white/55 uppercase">
+                  <p className="min-w-0 truncate text-[11px] tracking-wider text-white/55 uppercase">
                     {t('plans.durationOptions', { count: plan.durations.length })}
                   </p>
                   {price && (
-                    <div className="flex flex-col items-end gap-1">
+                    <div className="flex shrink-0 flex-col items-end gap-0.5">
                       <span
-                        className="rounded-full bg-black/35 px-2.5 py-1 text-base font-bold ring-1 ring-white/15 backdrop-blur-sm drop-shadow"
+                        className="rounded-full bg-black/30 px-2.5 py-0.5 text-[15px] font-bold ring-1 ring-white/10 backdrop-blur-sm drop-shadow"
                         style={{ color: priceColor }}
                       >
                         {t('plans.from')} {CURRENCY_SYMBOLS[price.currency] ?? ''}

@@ -16,7 +16,8 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { Apple, Copy, Globe, Info, Monitor, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { Copy, Globe, Info, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { AndroidGlyph, AppleGlyph, WindowsGlyph, MacosGlyph, LinuxGlyph } from "@/components/ui/device-glyphs";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -294,9 +295,12 @@ export function DevicesList({
 function platformIcon(platform: string | null) {
   if (!platform) return <Smartphone className="h-4 w-4 text-zinc-400" />;
   const p = platform.toLowerCase();
-  if (p.includes("android")) return <Smartphone className="h-4 w-4 text-emerald-400" />;
-  if (p.includes("ios") || p.includes("iphone") || p.includes("mac"))
-    return <Apple className="h-4 w-4 text-zinc-300" />;
-  if (p.includes("windows")) return <Monitor className="h-4 w-4 text-blue-400" />;
+  if (p.includes("android")) return <AndroidGlyph className="h-4 w-4 text-emerald-400" />;
+  if (p.includes("ios") || p.includes("iphone") || p.includes("ipad"))
+    return <AppleGlyph className="h-4 w-4 text-zinc-200" />;
+  if (p.includes("mac") || p.includes("darwin") || p.includes("osx"))
+    return <MacosGlyph className="h-4 w-4 text-zinc-200" />;
+  if (p.includes("windows") || p.includes("win")) return <WindowsGlyph className="h-4 w-4 text-sky-400" />;
+  if (p.includes("linux")) return <LinuxGlyph className="h-4 w-4 text-amber-400" />;
   return <Globe className="h-4 w-4 text-zinc-400" />;
 }

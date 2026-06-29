@@ -45,7 +45,10 @@ export function BottomNav() {
     >
       {/* Outer glass capsule — matches the design reference (Telegram-style). */}
       <div className="mx-3 mb-3 rounded-full border border-white/6 bg-zinc-900/85 px-1 py-1 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-        <ul className="relative grid grid-cols-3 gap-1">
+        <ul
+          className="relative grid gap-1"
+          style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+        >
           {tabs.map((tab) => {
             const isActive = isTabActive(tab, location.pathname);
             const Icon = tab.icon;
