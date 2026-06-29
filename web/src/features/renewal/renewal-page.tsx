@@ -219,7 +219,7 @@ function SelectSubscriptions() {
     <div className="space-y-3">
       <p className="px-5 text-sm text-zinc-400">{t("renewal.selectSubtitle")}</p>
       <div className="px-5 space-y-2">
-        {renewable.map(({ sub, option }) => {
+        {renewable.map(({ sub, option }, index) => {
           const checked = selectedSubscriptionIds.includes(sub.id);
           const needsPlan = (option.requiresPlanSelection ?? false) && !selectedPlans[sub.id];
           const planLabel = sub.plan?.name ?? option.planName ?? "";
@@ -238,6 +238,7 @@ function SelectSubscriptions() {
                 selected={checked}
                 onSelect={() => toggleSubscription(sub.id)}
                 control="check"
+                index={index}
                 subtitle={subtitle}
                 trailing={
                   needsPlan ? (

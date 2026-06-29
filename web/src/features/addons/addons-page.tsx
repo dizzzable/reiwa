@@ -131,13 +131,14 @@ function SelectSubscription() {
     <div className="space-y-3">
       <p className="px-5 text-sm text-zinc-400">{t("addons.selectSubtitle")}</p>
       <div className="px-5 space-y-2">
-        {active.map((sub) => (
+        {active.map((sub, index) => (
           <SubscriptionSelectCard
             key={sub.id}
             subscription={sub}
             selected={sub.id === selectedSubscriptionId}
             onSelect={() => selectSubscription(sub.id)}
             control="radio"
+            index={index}
             subtitle={sub.plan?.name ?? undefined}
           />
         ))}
