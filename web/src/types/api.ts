@@ -71,6 +71,12 @@ export interface Plan {
   /** For trial plans: whether it is free (claimed) or paid (purchased). */
   trialFree?: boolean;
   durations: PlanDuration[];
+  /**
+   * Gateway-independent, operator-configured prices for catalog display only
+   * ("от X / N дн" on the tariff card). Present even when no payment gateway is
+   * active, unlike `durations[].prices`. Checkout still uses `durations`.
+   */
+  displayPrices?: { currency: string; price: number | string; days: number }[];
 }
 
 // ─── Subscription ────────────────────────────────────────────────────────────

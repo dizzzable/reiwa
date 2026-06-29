@@ -24,16 +24,24 @@ function getLowestPrice(
   plan: Plan,
   preferredCurrency: string,
 ): { amount: number; currency: string; days: number } | null {
-  if (!plan.durations.length) return null
-  const allPrices = plan.durations.flatMap(d =>
-    d.prices.map(p => ({ ...p, amount: Number(p.price), days: d.days })),
+  // Prefer the gateway-aware prices (they carry the user's discounts). When no
+  // payment gateway is active those are empty, so fall back to the operator's
+  // configured `displayPrices` so the card still shows a price.
+  const gatewayPrices = plan.durations.flatMap(d =>
+    d.prices.map(p => ({ currency: p.currency, amount: Number(p.price), days: d.days })),
   )
+  const displayPrices = (plan.displayPrices ?? []).map(p => ({
+    currency: p.currency,
+    amount: Number(p.price),
+    days: p.days,
+  }))
+  const allPrices = gatewayPrices.length ? gatewayPrices : displayPrices
   if (!allPrices.length) return null
   const preferred = allPrices.filter(p => p.currency === preferredCurrency)
   const usd = allPrices.filter(p => p.currency === 'USD')
   const rub = allPrices.filter(p => p.currency === 'RUB')
   const list = preferred.length ? preferred : usd.length ? usd : rub.length ? rub : allPrices
-  const minDays = Math.min(...plan.durations.map(d => d.days))
+  const minDays = Math.min(...allPrices.map(p => p.days))
   const minPrice = list.reduce((min, p) => (p.amount < min.amount ? p : min), list[0])
   return { amount: minPrice.amount, currency: minPrice.currency, days: minDays }
 }
@@ -178,6 +186,11 @@ export default function PlansPage() {
                         ? ` · ${t('plans.devicesSuffix', { count: plan.deviceLimit })}`
                         : ''}
                     </p>
+                    {plan.description && (
+                      <p className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-white/65">
+                        {plan.description}
+                      </p>
+                    )}
                   </div>
                 </div>
 
