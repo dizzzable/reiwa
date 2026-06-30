@@ -137,3 +137,30 @@ export const claimAccount = (username: string, passwordHash: string) =>
   apiClient
     .post<ClaimResponse>("/auth/claim", { username, passwordHash })
     .then((r) => r.data);
+
+// ── Link an EXISTING web account from the Mini App ───────────────────────────
+//
+// "I already have an account" flow on the claim screen. The user proves control
+// of their Telegram id via signed `initData` (sent in the Authorization header,
+// same as bootstrap) AND ownership of their existing web account via login +
+// password. rezeis binds the Telegram id to that account when safe and the BFF
+// re-mints the WebSession as the existing account. Typed refusals come back as
+// 409 with a `code` (`NEEDS_ADMIN_MERGE` / `WEB_ACCOUNT_HAS_OTHER_TELEGRAM`);
+// bad credentials as 401.
+export interface LinkExistingResponse {
+  readonly ok: boolean;
+  readonly status: "linked" | "already_linked";
+  readonly redirectUrl: string;
+}
+export const linkExistingAccount = (
+  initData: string,
+  username: string,
+  passwordHash: string,
+) =>
+  apiClient
+    .post<LinkExistingResponse>(
+      "/auth/telegram/link-existing",
+      { username, passwordHash },
+      { headers: { Authorization: `tma ${initData}` } },
+    )
+    .then((r) => r.data);

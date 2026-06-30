@@ -40,6 +40,17 @@ export interface WebAuthBotSigninConsumeResult {
   readonly userId: string | null;
 }
 
+export type WebAuthTelegramClaimStatus =
+  | 'linked'
+  | 'already_linked'
+  | 'needs_admin_merge'
+  | 'web_account_has_other_telegram';
+
+export interface WebAuthTelegramClaimResult {
+  readonly status: WebAuthTelegramClaimStatus;
+  readonly userId?: string;
+}
+
 export class WebAuthNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
@@ -82,6 +93,26 @@ export class WebAuthNamespace {
       'POST',
       '/api/internal/web-auth/login',
       { login, password },
+    );
+  }
+
+  /**
+   * Self-service Telegram link: bind the caller's (BFF-proven) Telegram id to
+   * an EXISTING web account identified by login + password. The reiwa BFF
+   * passes the `telegramId` it validated from `initData` — never a client body.
+   * Returns a typed status: `linked` / `already_linked` carry the `userId` the
+   * BFF re-mints a WebSession for; `needs_admin_merge` /
+   * `web_account_has_other_telegram` are refusals surfaced to the user.
+   */
+  telegramClaim(
+    telegramId: string,
+    login: string,
+    password: string,
+  ): Promise<WebAuthTelegramClaimResult> {
+    return this.transport.request<WebAuthTelegramClaimResult>(
+      'POST',
+      '/api/internal/web-auth/telegram-claim',
+      { telegramId, login, password },
     );
   }
 

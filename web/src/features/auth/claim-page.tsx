@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { BrandLogo } from '@/components/ui/brand-logo'
 import { SESSION_QUERY_KEY, useSession } from '@/hooks/use-session'
-import { claimAccount } from '@/lib/api-client'
+import { claimAccount, linkExistingAccount } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
 
 // ── Validation (mirrors register-page rules) ─────────────────────────────────
@@ -19,6 +19,18 @@ function validateUsername(value: string): string | null {
   if (value.length < 3) return 'tooShort'
   if (value.length > 32) return 'tooLong'
   if (!USERNAME_REGEX.test(value)) return 'invalidChars'
+  return null
+}
+
+/**
+ * Lenient validator for the "log in to an existing account" mode: the user
+ * types an EXISTING login (which may be longer / contain dots from an earlier
+ * claim), so we only require non-empty and a sane max length — the server is
+ * the source of truth and returns a generic failure on mismatch.
+ */
+function validateLoginUsername(value: string): string | null {
+  if (!value) return 'required'
+  if (value.length > 64) return 'tooLong'
   return null
 }
 
@@ -51,6 +63,14 @@ export default function ClaimPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  // "login" mode binds the current Telegram to an EXISTING web account; only
+  // offered inside the Mini App, where a signed `initData` proves the Telegram
+  // id. Plain-browser visitors (no initData) only get the create-credentials
+  // flow.
+  const initData =
+    typeof window !== 'undefined' ? window.Telegram?.WebApp?.initData ?? '' : ''
+  const canLinkExisting = initData.length > 0
+  const [mode, setMode] = useState<'claim' | 'login'>('claim')
 
   // No session → send back through the entry router (which routes to sign-in).
   if (!isLoading && !isAuthenticated) {
@@ -67,19 +87,27 @@ export default function ClaimPage() {
   function handleUsernameChange(value: string) {
     setUsername(value)
     setServerError(null)
-    setUsernameError(value ? validateUsername(value) : null)
+    setUsernameError(value ? (mode === 'login' ? validateLoginUsername(value) : validateUsername(value)) : null)
   }
 
   function handlePasswordChange(value: string) {
     setPassword(value)
     setServerError(null)
-    setPasswordError(value ? validatePassword(value) : null)
+    // In login mode the password is an existing one — only require non-empty.
+    setPasswordError(value ? (mode === 'login' ? null : validatePassword(value)) : null)
+  }
+
+  function switchMode(next: 'claim' | 'login') {
+    setMode(next)
+    setServerError(null)
+    setUsernameError(null)
+    setPasswordError(null)
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const uError = validateUsername(username)
-    const pError = validatePassword(password)
+    const uError = mode === 'login' ? validateLoginUsername(username) : validateUsername(username)
+    const pError = mode === 'login' ? (password ? null : 'required') : validatePassword(password)
     setUsernameError(uError)
     setPasswordError(pError)
     if (uError || pError) return
@@ -88,7 +116,12 @@ export default function ClaimPage() {
     setServerError(null)
     try {
       const passwordHash = await hashPassword(password)
-      await claimAccount(username, passwordHash)
+      if (mode === 'login') {
+        // Bind this Telegram to the existing account and re-mint the session.
+        await linkExistingAccount(initData, username, passwordHash)
+      } else {
+        await claimAccount(username, passwordHash)
+      }
       // Refetch the session so StealthLayout sees the linked WebAccount and
       // lets the user through.
       await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
@@ -96,8 +129,26 @@ export default function ClaimPage() {
     } catch (err: unknown) {
       setSubmitting(false)
       if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status?: number; data?: { message?: string } } }
+        const axiosErr = err as { response?: { status?: number; data?: { message?: string; code?: string } } }
         const status = axiosErr.response?.status
+        const code = axiosErr.response?.data?.code
+        if (mode === 'login') {
+          // Typed refusals from the link-existing flow.
+          if (status === 409 && code === 'NEEDS_ADMIN_MERGE') {
+            setServerError(t('claim.linkExisting.errorNeedsMerge'))
+          } else if (status === 409) {
+            setServerError(t('claim.linkExisting.errorOtherTelegram'))
+          } else if (status === 401) {
+            setServerError(t('claim.linkExisting.errorInvalid'))
+          } else if (status === 429) {
+            setServerError(t('claim.errorRateLimit'))
+          } else if (status === 502 || status === 503) {
+            setServerError(t('claim.errorServiceUnavailable'))
+          } else {
+            setServerError(t('claim.errorGeneric'))
+          }
+          return
+        }
         if (status === 409) {
           setUsernameError('required') // surface near the field
           setServerError(t('claim.errorUsernameTaken'))
@@ -145,8 +196,12 @@ export default function ClaimPage() {
           >
             <ShieldCheck className="h-8 w-8 text-(--brand-primary)" />
           </div>
-          <h1 className="text-2xl font-bold text-white">{t('claim.title')}</h1>
-          <p className="mt-2 text-center text-sm text-zinc-500">{t('claim.subtitle')}</p>
+          <h1 className="text-2xl font-bold text-white">
+            {t(mode === 'login' ? 'claim.linkExisting.title' : 'claim.title')}
+          </h1>
+          <p className="mt-2 text-center text-sm text-zinc-500">
+            {t(mode === 'login' ? 'claim.linkExisting.subtitle' : 'claim.subtitle')}
+          </p>
         </motion.div>
 
         <motion.form
@@ -252,10 +307,37 @@ export default function ClaimPage() {
                 {t('claim.submitting')}
               </>
             ) : (
-              t('claim.submit')
+              t(mode === 'login' ? 'claim.linkExisting.submit' : 'claim.submit')
             )}
           </button>
         </motion.form>
+
+        {/* Toggle between "create credentials" and "log into an existing account".
+            Only shown inside the Mini App, where initData proves the Telegram id. */}
+        {canLinkExisting && (
+          <div className="mt-5 text-center text-xs text-zinc-500">
+            {mode === 'claim' ? (
+              <>
+                {t('claim.linkExisting.prompt')}{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('login')}
+                  className="font-medium text-(--brand-primary) hover:underline"
+                >
+                  {t('claim.linkExisting.action')}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => switchMode('claim')}
+                className="font-medium text-(--brand-primary) hover:underline"
+              >
+                {t('claim.linkExisting.back')}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -677,6 +677,89 @@ export function createAuthRouter(deps: {
     }
   });
 
+  // ── POST /api/v1/auth/telegram/link-existing ────────────────────────────────
+  //
+  // Mini App "I already have an account" flow. The user proves control of the
+  // Telegram id via signed `initData` (Authorization: tma <initData>) AND
+  // ownership of their existing web account via login + password. rezeis binds
+  // the Telegram id to that account when safe (free / same / empty shell); we
+  // then re-mint the WebSession as the existing account so the subscription
+  // shows up and bot→Mini App auto-login lands there. Typed refusals
+  // (needs_admin_merge / other-telegram) map to 409 for the SPA to explain.
+  router.post("/auth/telegram/link-existing", authLimiter, async (req: AuthRequest, res) => {
+    try {
+      const initData = (req.headers.authorization ?? "").replace(/^tma\s+/i, "");
+      if (!initData || !config.BOT_TOKEN) {
+        res.status(400).json({ message: "Missing init data or bot token not configured" });
+        return;
+      }
+      const tgUser = validateTelegramInitData(initData, config.BOT_TOKEN);
+      if (!tgUser) {
+        res.status(401).json({ message: "Invalid Telegram init data" });
+        return;
+      }
+      const parsed = loginSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          message: "Validation failed",
+          errors: parsed.error.issues.map((i) => ({ field: i.path.join("."), message: i.message })),
+        });
+        return;
+      }
+      if (!adminClient) {
+        res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
+        return;
+      }
+
+      const telegramId = String(tgUser.id);
+      const result = await adminClient.webAuth.telegramClaim(
+        telegramId,
+        parsed.data.username,
+        parsed.data.passwordHash,
+      );
+
+      if (result.status === "needs_admin_merge") {
+        res.status(409).json({
+          code: "NEEDS_ADMIN_MERGE",
+          message: "This Telegram account already has its own history. Please contact support to merge accounts.",
+        });
+        return;
+      }
+      if (result.status === "web_account_has_other_telegram") {
+        res.status(409).json({
+          code: "WEB_ACCOUNT_HAS_OTHER_TELEGRAM",
+          message: "This account is already linked to a different Telegram account.",
+        });
+        return;
+      }
+      if (!result.userId) {
+        getRequestLogger(req).error({ status: result.status }, "auth/telegram/link-existing: linked status without userId");
+        res.status(500).json({ message: "Internal server error" });
+        return;
+      }
+
+      // Re-mint the WebSession as the existing account (replaces any session
+      // the user held as the empty Telegram shell).
+      try {
+        await req.destroyWebSession?.();
+      } catch {
+        /* best-effort: a stale session is overwritten by createWebSession below */
+      }
+      await req.createWebSession(result.userId);
+      res.json({ ok: true, status: result.status, redirectUrl: "/dashboard" });
+    } catch (e: unknown) {
+      // Invalid credentials (or a policy-violating login) come back as upstream
+      // 401/400 — collapse both to a generic failure (no account enumeration).
+      if (isUpstreamStatus(e, 401) || isUpstreamStatus(e, 400)) {
+        res.status(401).json({ message: "Invalid login or password" });
+        return;
+      }
+      const { status: upstreamStatus, message: errMsg } = describeUpstreamError(e);
+      getRequestLogger(req).error({ err: errMsg, upstreamStatus }, "auth/telegram/link-existing failed");
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // ── Legacy: POST /api/v1/auth/sign-out ──────────────────────────────────────
   router.post(
     "/auth/sign-out",

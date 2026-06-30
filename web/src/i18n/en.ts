@@ -529,6 +529,17 @@ export const en: RuDict = {
       tooShort: 'At least 8 characters',
       tooLong: 'Maximum 128 characters',
     },
+    linkExisting: {
+      prompt: 'Already have an account and used the service?',
+      action: 'Log in',
+      back: 'Create a new account instead',
+      title: 'Log in to your account',
+      subtitle: 'Enter your existing login and password — we’ll link this Telegram to that account and bring over your subscription.',
+      submit: 'Log in and link',
+      errorInvalid: 'Invalid login or password.',
+      errorNeedsMerge: 'This Telegram already has its own history. Please contact support to merge the accounts.',
+      errorOtherTelegram: 'This account is already linked to a different Telegram account.',
+    },
   },
   auth: {
     signIn: 'Sign In',
