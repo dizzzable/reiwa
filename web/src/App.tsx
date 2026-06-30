@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
+import { useAdAttribution } from "@/hooks/use-ad-attribution";
 
 /**@/features/auth/tma-bootstrap-page
  * Reiwa SPA — root router.
@@ -71,6 +72,7 @@ function PageLoader() {
 }
 
 export default function App() {
+  useAdAttribution();
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>

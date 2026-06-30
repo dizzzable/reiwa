@@ -405,6 +405,20 @@ export async function sendWelcomeScreen(ctx: BotContext, deps: PageDeps): Promis
   });
 }
 
+/**
+ * Extracts the advertising tracking code from a `/start ad_<code>` payload.
+ * Returns `null` when the payload is not an advertising payload or the code is
+ * malformed (so the existing link/referral routing is unaffected). Mirrors the
+ * rezeis `parseAdPayload` contract: `ad_` prefix + `[A-Za-z0-9_-]{3,32}` code.
+ */
+function parseAdCode(payload: string): string | null {
+  if (!payload.startsWith('ad_')) {
+    return null;
+  }
+  const code = payload.slice(3);
+  return /^[A-Za-z0-9_-]{3,32}$/.test(code) ? code : null;
+}
+
 export const registerStartPage: PageRegistrar = (bot, deps) => {
   // ── /start command — cold path with bootstrap + banner ────────────────────
   bot.command('start', async (ctx) => {
@@ -563,6 +577,27 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
 
     // Re-resolve locale: bootstrap may have updated it from the admin response.
     lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+
+    // Phase 1.5: advertising attribution. When the deep-link carried an
+    // `ad_<code>` payload, record the click + first-touch acquisition in rezeis
+    // now that the user row exists. Done BEFORE the channel gate so attribution
+    // is persisted (on the User row) even if the user must subscribe first.
+    // Best-effort: a failure must never break the welcome flow.
+    const adCode = parseAdCode(startPayload);
+    if (adCode !== null && deps.adminClient !== null) {
+      try {
+        await deps.adminClient.advertising.recordClick({
+          code: adCode,
+          telegramId: String(tgUser.id),
+        });
+      } catch (err: unknown) {
+        deps.logger?.warn(
+          { err, telegramId: tgUser.id },
+          'bot/start: advertising click ingest failed',
+        );
+      }
+    }
+
     const botCfg = await deps.getConfig();
 
     // Phase 2: channel-subscription gate. Driven entirely by the platform

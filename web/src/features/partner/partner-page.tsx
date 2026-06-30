@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { InviteLinkHero } from "../referrals/components/invite-link-hero";
 import { StatCard } from "../referrals/components/stat-card";
 import { PartnerReferralsList } from "./components/partner-referrals-list";
+import { PartnerAdvertisingSection } from "./components/partner-advertising-section";
 
 type ActiveSheet = "level" | "referrals" | "balance" | "info" | null;
 
@@ -127,6 +128,11 @@ export default function PartnerPage() {
       {/* Referred users list */}
       <div className="mx-5 mt-5">
         <PartnerReferralsList />
+      </div>
+
+      {/* Advertising — partner campaigns + request */}
+      <div className="mx-5 mt-5">
+        <PartnerAdvertisingSection />
       </div>
 
       {/* Level Sheet */}

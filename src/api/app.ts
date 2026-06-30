@@ -34,6 +34,7 @@ import { createPromoRouter } from "./routes/promo.js";
 import { createReferralsRouter } from "./routes/referrals.js";
 import { createDevicesRouter } from "./routes/devices.js";
 import { createPartnerRouter } from "./routes/partner.js";
+import { createAdvertisingRouter } from "./routes/advertising.js";
 import { createSupportRouter } from "./routes/support.js";
 import { createSupportGuestRouter } from "./routes/support-guest.js";
 import { createLinkingRouter } from "./routes/linking.js";
@@ -247,6 +248,7 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createReferralsRouter(deps));
   app.use("/api/v1/devices", createDevicesRouter(deps));
   app.use("/api/v1", createPartnerRouter(deps));
+  app.use("/api/v1", createAdvertisingRouter(deps));
   app.use("/api/v1", createSupportRouter(deps));
   // Anonymous guest support chat — public (no session). Abuse protection is
   // layered in Phase 2 task 6 (dedicated limiter + captcha).

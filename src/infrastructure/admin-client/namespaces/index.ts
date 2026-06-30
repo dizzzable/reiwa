@@ -9,6 +9,12 @@
 export { ActivityNamespace } from './activity.js';
 export { AddOnsNamespace } from './add-ons.js';
 export type { AddOn, AddOnPrice } from './add-ons.js';
+export { AdvertisingNamespace } from './advertising.js';
+export type {
+  RecordAdClickInput,
+  CreatePartnerAdRequestInput,
+  PartnerAdPlacementStat,
+} from './advertising.js';
 export { BrandingNamespace } from './branding.js';
 export type { BrandingPayload, PublicConfigPayload } from './branding.js';
 export { CatalogNamespace } from './catalog.js';

@@ -20,6 +20,7 @@
 import {
   ActivityNamespace,
   AddOnsNamespace,
+  AdvertisingNamespace,
   BrandingNamespace,
   CatalogNamespace,
   DevicesNamespace,
@@ -63,6 +64,7 @@ export class AdminClient {
   readonly support: SupportNamespace;
   readonly faq: FaqNamespace;
   readonly addOns: AddOnsNamespace;
+  readonly advertising: AdvertisingNamespace;
 
   constructor(baseUrl: string, apiKey: string, sharedSecret?: string | null) {
     this.transport = new AdminTransport({ baseUrl, apiKey, sharedSecret });
@@ -85,6 +87,7 @@ export class AdminClient {
     this.support = new SupportNamespace(this.transport);
     this.faq = new FaqNamespace(this.transport);
     this.addOns = new AddOnsNamespace(this.transport);
+    this.advertising = new AdvertisingNamespace(this.transport);
   }
 
   /**

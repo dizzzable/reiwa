@@ -192,3 +192,15 @@ export {
   type AddOnPrice,
   type FaqItem,
 } from "./content.js";
+
+// Advertising (click ingest + partner self-service)
+export {
+  recordAdClick,
+  getPartnerAdRequests,
+  createPartnerAdRequest,
+  getPartnerAdStats,
+  type AdPlatform,
+  type PartnerAdRequest,
+  type PartnerAdPlacementStat,
+  type CreatePartnerAdRequestInput,
+} from "./advertising.js";
