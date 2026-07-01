@@ -10,6 +10,8 @@ export type ExternalAuthProvider = "TELEGRAM" | "GOOGLE" | "YANDEX" | "MAILRU";
 export interface PublicExternalProvider {
   provider: ExternalAuthProvider;
   displayName: string;
+  /** Telegram only: `oidc` (redirect) vs `widget` (classic Login Widget). */
+  mode?: "oidc" | "widget";
 }
 
 /** Full-page redirect entry point for an OAuth provider (not an XHR). */

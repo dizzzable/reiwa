@@ -793,6 +793,12 @@ export function createAuthRouter(deps: {
     if (p === "mailru") return "MAILRU";
     return null;
   };
+  // Superset that also maps Telegram — used for the OIDC redirect flow
+  // (oauth.telegram.org) which, unlike the widget, goes through /start + code.
+  const toExtProvider = (
+    p: string,
+  ): "GOOGLE" | "YANDEX" | "MAILRU" | "TELEGRAM" | null =>
+    p === "telegram" ? "TELEGRAM" : toUpperOAuthProvider(p);
   const EXT_COOKIE_OPTS = {
     httpOnly: true,
     secure: true,
@@ -817,7 +823,7 @@ export function createAuthRouter(deps: {
 
   router.get("/auth/ext/:provider/start", loginRateLimiter, async (req: Request, res: Response) => {
     const provider = String(req.params.provider);
-    const upper = toUpperOAuthProvider(provider);
+    const upper = toExtProvider(provider);
     if (!upper || !adminClient) {
       res.redirect("/sign-in?error=ext_unavailable");
       return;
@@ -849,7 +855,9 @@ export function createAuthRouter(deps: {
     }
     try {
       let resolution;
-      if (provider === "telegram") {
+      if (provider === "telegram" && typeof req.query.code !== "string") {
+        // Classic Login Widget path (no OAuth `code`): the widget posts signed
+        // fields we HMAC-verify here with the bot token.
         if (!config.BOT_TOKEN) {
           res.redirect("/sign-in?error=ext_unavailable");
           return;
@@ -869,7 +877,9 @@ export function createAuthRouter(deps: {
           ...(name ? { name } : {}),
         });
       } else {
-        const upper = toUpperOAuthProvider(provider);
+        // OAuth2 / OIDC authorization-code path — used by Google/Yandex/Mail.ru
+        // AND by Telegram when the operator enabled its OIDC mode.
+        const upper = toExtProvider(provider);
         if (!upper) {
           res.redirect("/sign-in?error=ext_unavailable");
           return;

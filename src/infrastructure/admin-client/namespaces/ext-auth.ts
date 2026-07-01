@@ -11,6 +11,8 @@ export type ExternalAuthProvider = 'TELEGRAM' | 'GOOGLE' | 'YANDEX' | 'MAILRU';
 export interface PublicExternalProvider {
   readonly provider: ExternalAuthProvider;
   readonly displayName: string;
+  /** Telegram only: `oidc` (redirect) vs `widget` (classic Login Widget). */
+  readonly mode?: 'oidc' | 'widget';
 }
 
 export type ExternalAuthResolution =
