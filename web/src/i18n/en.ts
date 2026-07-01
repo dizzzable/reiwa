@@ -143,6 +143,12 @@ export const en: RuDict = {
     subtitlePaid: 'Start with a trial plan.',
     buttonPaid: 'Try for {{price}}',
     activating: 'Activating…',
+    activationSteps: {
+      '0': 'Activating your trial…',
+      '1': 'Creating your profile…',
+      '2': 'Setting up your connection…',
+      '3': 'Almost done, just a moment…',
+    },
     dismiss: 'Maybe later',
     errorGeneric: 'Could not activate the trial. Please try again.',
     titleLinkTelegram: 'Link Telegram',

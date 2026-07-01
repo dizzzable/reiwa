@@ -313,25 +313,39 @@ export default function ClaimPage() {
         </motion.form>
 
         {/* Toggle between "create credentials" and "log into an existing account".
-            Only shown inside the Mini App, where initData proves the Telegram id. */}
+            Only shown inside the Mini App, where initData proves the Telegram id.
+            In claim mode the prompt is deliberately eye-catching (brand-tinted
+            pill + gentle breathing opacity) so returning users notice they can
+            log into an existing account instead of creating a duplicate. */}
         {canLinkExisting && (
-          <div className="mt-5 text-center text-xs text-zinc-500">
+          <div className="mt-6 text-center">
             {mode === 'claim' ? (
-              <>
-                {t('claim.linkExisting.prompt')}{' '}
-                <button
-                  type="button"
-                  onClick={() => switchMode('login')}
-                  className="font-medium text-(--brand-primary) hover:underline"
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.25 }}
+                className="flex justify-center"
+              >
+                <motion.div
+                  animate={{ opacity: [1, 0.6, 1] }}
+                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                  className="inline-flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 rounded-full border border-(--brand-primary)/30 bg-(--brand-primary)/10 px-4 py-2 text-sm"
                 >
-                  {t('claim.linkExisting.action')}
-                </button>
-              </>
+                  <span className="text-zinc-300">{t('claim.linkExisting.prompt')}</span>
+                  <button
+                    type="button"
+                    onClick={() => switchMode('login')}
+                    className="font-bold text-(--brand-primary) underline decoration-2 underline-offset-2 transition-all hover:brightness-125 active:scale-95"
+                  >
+                    {t('claim.linkExisting.action')}
+                  </button>
+                </motion.div>
+              </motion.div>
             ) : (
               <button
                 type="button"
                 onClick={() => switchMode('claim')}
-                className="font-medium text-(--brand-primary) hover:underline"
+                className="text-xs font-medium text-zinc-500 transition-colors hover:text-(--brand-primary) hover:underline"
               >
                 {t('claim.linkExisting.back')}
               </button>

@@ -16,7 +16,7 @@
  * run instead (Property 8, wired in the tutorial wave).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -36,6 +36,9 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   USDT: "$",
   TON: "TON",
 };
+
+/** Number of staged reassurance messages shown while the trial provisions. */
+const TRIAL_ACTIVATION_STEP_COUNT = 4;
 
 interface TrialEligibility {
   eligible: boolean;
@@ -72,6 +75,18 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
   const [activating, setActivating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  // Staged progress messages during activation. Provisioning a Remnawave
+  // profile can take several seconds; a rotating status keeps the user informed
+  // (and reassured it isn't stuck) instead of a bare, ambiguous "Activating…".
+  const [activationStep, setActivationStep] = useState(0);
+  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (stepTimerRef.current) clearInterval(stepTimerRef.current);
+    },
+    [],
+  );
 
   const { data: eligibility } = useQuery<TrialEligibility>({
     queryKey: ["trial", "eligibility"],
@@ -121,6 +136,11 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
     }
     setActivating(true);
     setError(null);
+    setActivationStep(0);
+    // Advance the reassurance message up to the last step and hold there.
+    stepTimerRef.current = setInterval(() => {
+      setActivationStep((step) => Math.min(step + 1, TRIAL_ACTIVATION_STEP_COUNT - 1));
+    }, 2200);
     try {
       await activateTrial();
       await queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
@@ -128,6 +148,11 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
     } catch {
       setActivating(false);
       setError(t("trialCta.errorGeneric"));
+    } finally {
+      if (stepTimerRef.current) {
+        clearInterval(stepTimerRef.current);
+        stepTimerRef.current = null;
+      }
     }
   }
 
@@ -197,6 +222,12 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
           </>
         )}
       </button>
+
+      {activating && (
+        <p className="mt-3 text-xs text-zinc-400" aria-live="polite">
+          {t(`trialCta.activationSteps.${activationStep}`)}
+        </p>
+      )}
 
       <button
         onClick={handleDismiss}
