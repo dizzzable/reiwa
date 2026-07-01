@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
@@ -9,11 +9,13 @@ import { StadiumButton } from '@/components/ui/stadium-button'
 import { login } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
+import { ExternalAuthButtons } from './external-auth-buttons'
 
 export default function SignInPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -21,6 +23,17 @@ export default function SignInPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rateLimitSeconds, setRateLimitSeconds] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Surface an external-auth failure passed back by the BFF as `?error=...`
+  // (denied / ext_state / ext_failed / ext_unavailable), then strip the param
+  // so a refresh doesn't re-show it.
+  useEffect(() => {
+    const extError = searchParams.get('error')
+    if (!extError) return
+    setError(extError === 'denied' ? t('auth.errorExternalDenied') : t('auth.errorExternal'))
+    searchParams.delete('error')
+    setSearchParams(searchParams, { replace: true })
+  }, [searchParams, setSearchParams, t])
 
   // Countdown timer for rate limiting
   useEffect(() => {
@@ -212,6 +225,16 @@ export default function SignInPage() {
             {isSubmitting ? t('auth.signingIn') : t('auth.signInButton')}
           </StadiumButton>
         </motion.form>
+
+        {/* External sign-in (renders nothing when no providers are enabled) */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.32 }}
+          className="w-full"
+        >
+          <ExternalAuthButtons />
+        </motion.div>
 
         {/* Links */}
         <motion.div

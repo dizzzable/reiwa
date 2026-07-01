@@ -1,10 +1,11 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
+import { createHash, randomBytes } from "node:crypto";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
-import { diagnoseTelegramInitData, parseTelegramInitData, validateTelegramInitData } from "../../lib/telegram-auth.js";
+import { diagnoseTelegramInitData, parseTelegramInitData, validateTelegramInitData, validateTelegramWidget } from "../../lib/telegram-auth.js";
 import { requireMode } from "../middleware/access-mode.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
@@ -771,6 +772,181 @@ export function createAuthRouter(deps: {
       res.json({ ok: true });
     },
   );
+
+  // ── External auth (web-cabinet social sign-in / registration) ───────────────
+  //
+  // OAuth providers (Google/Yandex/Mail.ru): the browser hits `/start`, we set a
+  // CSRF `state` + PKCE verifier cookie and 302 to the provider; the provider
+  // redirects back to `/callback`, we validate state and forward the code to
+  // rezeis (which holds the secret) to resolve the account decision. Telegram
+  // is verified HERE (we hold the bot token) then resolved upstream. A new
+  // sign-up mints a session and lands on `/finish-setup` (login + password stay
+  // mandatory); an existing identity lands on `/dashboard`.
+  const extRedirectUri = (req: Request, provider: string): string => {
+    const fwd = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim();
+    const proto = fwd && fwd.length > 0 ? fwd : req.protocol;
+    return `${proto}://${req.get("host")}/api/v1/auth/ext/${provider}/callback`;
+  };
+  const toUpperOAuthProvider = (p: string): "GOOGLE" | "YANDEX" | "MAILRU" | null => {
+    if (p === "google") return "GOOGLE";
+    if (p === "yandex") return "YANDEX";
+    if (p === "mailru") return "MAILRU";
+    return null;
+  };
+  const EXT_COOKIE_OPTS = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+    maxAge: 600_000,
+    path: "/api/v1/auth/ext",
+  };
+
+  router.get("/auth/ext/providers", async (req: Request, res: Response) => {
+    if (!adminClient) {
+      res.json({ providers: [] });
+      return;
+    }
+    try {
+      const providers = await adminClient.extAuth.listProviders();
+      res.json({ providers });
+    } catch (e: unknown) {
+      getRequestLogger(req).warn({ err: describeUpstreamError(e).message }, "auth/ext/providers failed");
+      res.json({ providers: [] });
+    }
+  });
+
+  router.get("/auth/ext/:provider/start", loginRateLimiter, async (req: Request, res: Response) => {
+    const provider = String(req.params.provider);
+    const upper = toUpperOAuthProvider(provider);
+    if (!upper || !adminClient) {
+      res.redirect("/sign-in?error=ext_unavailable");
+      return;
+    }
+    try {
+      const state = randomBytes(16).toString("hex");
+      const verifier = randomBytes(32).toString("base64url");
+      const codeChallenge = createHash("sha256").update(verifier).digest("base64url");
+      res.cookie("ext_state", `${provider}:${state}`, EXT_COOKIE_OPTS);
+      res.cookie("ext_verifier", verifier, EXT_COOKIE_OPTS);
+      const { url } = await adminClient.extAuth.authorizeUrl({
+        provider: upper,
+        state,
+        redirectUri: extRedirectUri(req, provider),
+        codeChallenge,
+      });
+      res.redirect(url);
+    } catch (e: unknown) {
+      getRequestLogger(req).warn({ err: describeUpstreamError(e).message }, "auth/ext/start failed");
+      res.redirect("/sign-in?error=ext_failed");
+    }
+  });
+
+  router.get("/auth/ext/:provider/callback", loginRateLimiter, async (req: AuthRequest, res: Response) => {
+    const provider = String(req.params.provider);
+    if (!adminClient) {
+      res.redirect("/sign-in?error=ext_unavailable");
+      return;
+    }
+    try {
+      let resolution;
+      if (provider === "telegram") {
+        if (!config.BOT_TOKEN) {
+          res.redirect("/sign-in?error=ext_unavailable");
+          return;
+        }
+        const fields: Record<string, string> = {};
+        for (const [k, v] of Object.entries(req.query)) {
+          fields[k] = typeof v === "string" ? v : Array.isArray(v) ? String(v[0] ?? "") : "";
+        }
+        const tgUser = validateTelegramWidget(fields, config.BOT_TOKEN);
+        if (!tgUser) {
+          res.redirect("/sign-in?error=ext_failed");
+          return;
+        }
+        const name = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || tgUser.username || null;
+        resolution = await adminClient.extAuth.resolveTelegram({
+          providerUserId: String(tgUser.id),
+          ...(name ? { name } : {}),
+        });
+      } else {
+        const upper = toUpperOAuthProvider(provider);
+        if (!upper) {
+          res.redirect("/sign-in?error=ext_unavailable");
+          return;
+        }
+        const code = typeof req.query.code === "string" ? req.query.code : null;
+        const state = typeof req.query.state === "string" ? req.query.state : null;
+        const storedState = req.cookies?.ext_state as string | undefined;
+        const verifier = req.cookies?.ext_verifier as string | undefined;
+        res.clearCookie("ext_state", { path: "/api/v1/auth/ext" });
+        res.clearCookie("ext_verifier", { path: "/api/v1/auth/ext" });
+        if (!code || !state || storedState !== `${provider}:${state}`) {
+          res.redirect("/sign-in?error=ext_state");
+          return;
+        }
+        resolution = await adminClient.extAuth.resolveOAuth({
+          provider: upper,
+          code,
+          redirectUri: extRedirectUri(req, provider),
+          ...(verifier ? { codeVerifier: verifier } : {}),
+        });
+      }
+
+      if (resolution.action === "denied") {
+        res.redirect("/sign-in?error=denied");
+        return;
+      }
+      await req.createWebSession(resolution.userId);
+      res.redirect(resolution.action === "finish_setup" ? "/finish-setup" : "/dashboard");
+    } catch (e: unknown) {
+      getRequestLogger(req).warn({ err: describeUpstreamError(e).message }, "auth/ext/callback failed");
+      res.redirect("/sign-in?error=ext_failed");
+    }
+  });
+
+  const extFinishSchema = z.object({
+    username: z
+      .string()
+      .min(3, "Username must be at least 3 characters")
+      .max(32, "Username must be at most 32 characters")
+      .regex(/^[a-zA-Z0-9_-]+$/, "Username may only contain alphanumeric characters, hyphens, or underscores"),
+    passwordHash: z
+      .string()
+      .length(64, "Password hash must be a 64-character SHA-256 hex string")
+      .regex(/^[a-f0-9]+$/i, "Password hash must be a valid hex string"),
+  });
+
+  router.post("/auth/ext/finish-setup", loginRateLimiter, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.webSession || !req.webSessionId) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
+      }
+      const parsed = extFinishSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ message: "Validation failed" });
+        return;
+      }
+      if (!adminClient) {
+        res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
+        return;
+      }
+      await adminClient.extAuth.finishSetup({
+        userId: req.webSession.userId,
+        login: parsed.data.username,
+        passwordHash: parsed.data.passwordHash,
+      });
+      res.json({ success: true, redirectUrl: "/dashboard" });
+    } catch (e: unknown) {
+      const { message: errMsg } = describeUpstreamError(e);
+      if (isUpstreamStatus(e, 409)) {
+        res.status(409).json({ message: "This login is already taken" });
+        return;
+      }
+      getRequestLogger(req).error({ err: errMsg }, "auth/ext/finish-setup failed");
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
 
   return router;
 }

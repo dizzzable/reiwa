@@ -42,6 +42,15 @@ export {
 // Session + platform
 export { acceptRules, getPlatformPolicy, getSession, setOnboardingCompleted, reportSurface } from "./session.js";
 
+// External auth (web-cabinet social sign-in)
+export {
+  externalStartPath,
+  externalTelegramCallbackPath,
+  getExternalProviders,
+  finishExternalSetup,
+} from "./ext-auth.js";
+export type { ExternalAuthProvider, PublicExternalProvider } from "./ext-auth.js";
+
 // Plans
 export { getPlans } from "./plans.js";
 

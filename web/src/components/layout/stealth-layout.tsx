@@ -154,6 +154,13 @@ export default function StealthLayout() {
     return <Navigate to="/claim" replace />;
   }
 
+  // External-auth registration gate: a user who signed up via a social provider
+  // has a shell `WebAccount` (email attached) but no `login` yet. Login +
+  // password stay mandatory, so force finish-setup before any cabinet route.
+  if (session.webAccount && !session.webAccount.login) {
+    return <Navigate to="/finish-setup" replace />;
+  }
+
   // Temp-password users (admin-issued reset) must set a new password before
   // they can use anything. The session carries the flag from the WebAccount;
   // block every protected route until it's cleared.

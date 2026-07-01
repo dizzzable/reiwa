@@ -25,6 +25,7 @@ import {
   CatalogNamespace,
   DevicesNamespace,
   EventsNamespace,
+  ExtAuthNamespace,
   FaqNamespace,
   LinkingNamespace,
   PartnerNamespace,
@@ -58,6 +59,7 @@ export class AdminClient {
   readonly partner: PartnerNamespace;
   readonly branding: BrandingNamespace;
   readonly webAuth: WebAuthNamespace;
+  readonly extAuth: ExtAuthNamespace;
   readonly linking: LinkingNamespace;
   readonly push: PushNamespace;
   readonly events: EventsNamespace;
@@ -81,6 +83,7 @@ export class AdminClient {
     this.partner = new PartnerNamespace(this.transport);
     this.branding = new BrandingNamespace(this.transport);
     this.webAuth = new WebAuthNamespace(this.transport);
+    this.extAuth = new ExtAuthNamespace(this.transport);
     this.linking = new LinkingNamespace(this.transport);
     this.push = new PushNamespace(this.transport);
     this.events = new EventsNamespace(this.transport);

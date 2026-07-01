@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface TelegramUser {
   id: number;
@@ -73,6 +73,56 @@ export function validateTelegramInitData(initData: string, botToken: string): Te
     if (!userRaw) return null;
 
     return JSON.parse(userRaw) as TelegramUser;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validates a Telegram **Login Widget** payload (distinct from Mini App
+ * initData): the secret key is `SHA256(bot_token)` and the data-check-string is
+ * every field except `hash`, sorted and joined by `\n`. Returns the user on a
+ * valid, fresh (<24h) signature, else `null`.
+ *
+ * Reference: https://core.telegram.org/widgets/login#checking-authorization
+ */
+export function validateTelegramWidget(
+  fields: Record<string, string | undefined>,
+  botToken: string,
+): TelegramUser | null {
+  try {
+    const hash = fields.hash;
+    if (!hash) return null;
+
+    const entries = Object.entries(fields).filter(
+      ([k, v]) => k !== 'hash' && v !== undefined,
+    ) as [string, string][];
+
+    const dataCheckString = entries
+      .slice()
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+
+    const secretKey = createHash('sha256').update(botToken).digest();
+    const computed = createHmac('sha256', secretKey).update(dataCheckString).digest();
+    const providedBuf = Buffer.from(hash, 'hex');
+    if (computed.length !== providedBuf.length || !timingSafeEqual(computed, providedBuf)) {
+      return null;
+    }
+
+    const authDate = Number(fields.auth_date ?? 0);
+    const now = Math.floor(Date.now() / 1000);
+    if (now - authDate > 86400) return null;
+
+    const id = Number(fields.id ?? 0);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    return {
+      id,
+      first_name: fields.first_name ?? '',
+      last_name: fields.last_name,
+      username: fields.username,
+    };
   } catch {
     return null;
   }

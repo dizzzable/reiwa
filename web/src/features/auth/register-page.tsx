@@ -8,6 +8,7 @@ import { NetworkBg } from '@/components/ui/network-bg'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { registerUser, checkUsername, login } from '@/lib/api-client'
 import { useAccessMode } from '@/lib/use-access-mode'
+import { ExternalAuthButtons } from './external-auth-buttons'
 import { AccessModeBanner } from '@/components/access-mode-banner'
 
 // ── Validation ────────────────────────────────────────────────────────────────
@@ -466,6 +467,16 @@ export default function RegisterPage() {
             </button>
           </motion.form>
         )}
+
+        {/* External sign-in / registration (renders nothing when disabled) */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.15 }}
+          className="mt-6 w-full"
+        >
+          <ExternalAuthButtons />
+        </motion.div>
 
         {/* Sign-in link — always visible */}
         <motion.div

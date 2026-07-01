@@ -18,6 +18,12 @@ export type {
 export { BrandingNamespace } from './branding.js';
 export type { BrandingPayload, PublicConfigPayload } from './branding.js';
 export { CatalogNamespace } from './catalog.js';
+export { ExtAuthNamespace } from './ext-auth.js';
+export type {
+  ExternalAuthProvider,
+  ExternalAuthResolution,
+  PublicExternalProvider,
+} from './ext-auth.js';
 export { DevicesNamespace } from './devices.js';
 export { EventsNamespace } from './events.js';
 export type { EventCategory, EventInput, EventSeverity } from './events.js';
