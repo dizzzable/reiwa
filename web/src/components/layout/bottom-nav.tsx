@@ -31,12 +31,15 @@ import { motion } from "motion/react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
+import { useBranding } from "@/lib/branding-provider";
 import { resolveActiveTabTo, useNavTabs } from "@/components/layout/use-nav-tabs";
 
 export function BottomNav() {
   const location = useLocation();
   const tabs = useNavTabs();
   const activeTo = resolveActiveTabTo(tabs, location.pathname);
+  const { branding } = useBranding();
+  const navGap = branding.navGap ?? 2;
 
   return (
     <nav
@@ -47,7 +50,7 @@ export function BottomNav() {
       {/* Outer glass capsule — hugs its content (width grows with the number
           of tabs) and stays centered, instead of stretching full-width. */}
       <div className="mx-auto mb-3 w-fit max-w-[calc(100%-1.5rem)] rounded-3xl border border-white/6 bg-zinc-900/85 px-1 py-1.5 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-        <ul className="relative flex gap-0.5">
+        <ul className="relative flex" style={{ gap: `${navGap}px` }}>
           {tabs.map((tab) => {
             const isActive = tab.to === activeTo;
             const Icon = tab.icon;

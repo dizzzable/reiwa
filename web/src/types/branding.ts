@@ -184,6 +184,11 @@ export interface Branding {
    * `navItems`.
    */
   navItems?: NavItemSetting[];
+  /**
+   * Spacing (px) between the bottom-nav buttons. Mirrors backend `navGap`.
+   * Absent → the cabinet's default (2).
+   */
+  navGap?: number;
 }
 
 export interface PublicConfig {
@@ -284,6 +289,7 @@ export const DEFAULT_BRANDING: Branding = {
     { id: "promo", visible: false },
     { id: "support", visible: false },
   ],
+  navGap: 2,
 };
 
 export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
