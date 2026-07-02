@@ -2,6 +2,7 @@ import { useMemo, type ComponentType, type SVGProps } from "react";
 import {
   Activity,
   Bolt,
+  CircleHelp,
   Handshake,
   LifeBuoy,
   MonitorSmartphone,
@@ -133,6 +134,13 @@ export function useNavTabs(): readonly NavTab[] {
         testId: "tab-settings",
         matchPrefix: settingsPrefix,
       },
+      faq: {
+        to: "/settings/faq",
+        icon: CircleHelp,
+        label: t("bottomNav.faq"),
+        testId: "tab-faq",
+        matchPrefix: ["/settings/faq"],
+      },
     };
 
     const seen = new Set<NavDestinationId>();
@@ -149,9 +157,26 @@ export function useNavTabs(): readonly NavTab[] {
   }, [partner.isActive, t, branding.navItems]);
 }
 
-/** True when `pathname` falls under any of the tab's match prefixes. */
-export function isTabActive(tab: NavTab, pathname: string): boolean {
-  return tab.matchPrefix.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+/**
+ * Resolves the single active tab's `to` by LONGEST matching prefix, so nested
+ * routes win (e.g. `/settings/faq` → the FAQ tab, not the `/settings` tab).
+ * Returns `null` when nothing matches.
+ */
+export function resolveActiveTabTo(
+  tabs: readonly NavTab[],
+  pathname: string,
+): string | null {
+  let bestTo: string | null = null;
+  let bestLen = -1;
+  for (const tab of tabs) {
+    for (const prefix of tab.matchPrefix) {
+      if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+        if (prefix.length > bestLen) {
+          bestLen = prefix.length;
+          bestTo = tab.to;
+        }
+      }
+    }
+  }
+  return bestTo;
 }

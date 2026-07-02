@@ -634,6 +634,7 @@ export const ru = {
     devices: 'Устройства',
     activity: 'Активность',
     promo: 'Промокоды',
+    faq: 'Помощь',
   },
   card: {
     activeStatus: 'Активна',

@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { getNotifications } from "@/lib/api-client";
-import { isTabActive, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
+import { resolveActiveTabTo, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
 
 export function SideNav() {
   const location = useLocation();
@@ -83,8 +83,10 @@ export function SideNav() {
 
       {/* Primary destinations */}
       <ul className="flex flex-col gap-1">
-        {tabs.map((tab) => {
-          const isActive = isTabActive(tab, location.pathname);
+        {(() => {
+          const activeTo = resolveActiveTabTo(tabs, location.pathname);
+          return tabs.map((tab) => {
+          const isActive = tab.to === activeTo;
           const Icon = tab.icon;
           return (
             <li key={tab.to} className="relative">
@@ -117,7 +119,8 @@ export function SideNav() {
               </NavLink>
             </li>
           );
-        })}
+          });
+        })()}
       </ul>
     </nav>
   );

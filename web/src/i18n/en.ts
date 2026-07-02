@@ -636,6 +636,7 @@ export const en: RuDict = {
     devices: 'Devices',
     activity: 'Activity',
     promo: 'Promo codes',
+    faq: 'Help',
   },
   card: {
     activeStatus: 'Active',

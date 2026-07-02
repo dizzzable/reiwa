@@ -31,11 +31,12 @@ import { motion } from "motion/react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
-import { isTabActive, useNavTabs } from "@/components/layout/use-nav-tabs";
+import { resolveActiveTabTo, useNavTabs } from "@/components/layout/use-nav-tabs";
 
 export function BottomNav() {
   const location = useLocation();
   const tabs = useNavTabs();
+  const activeTo = resolveActiveTabTo(tabs, location.pathname);
 
   return (
     <nav
@@ -43,15 +44,12 @@ export function BottomNav() {
       className="relative shrink-0"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      {/* Outer glass capsule — taller so vertical icon+label fits on small
-          screens without the label being clipped. */}
-      <div className="mx-3 mb-3 rounded-3xl border border-white/6 bg-zinc-900/85 px-1.5 py-1.5 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-        <ul
-          className="relative grid gap-1"
-          style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
-        >
+      {/* Outer glass capsule — hugs its content (width grows with the number
+          of tabs) and stays centered, instead of stretching full-width. */}
+      <div className="mx-auto mb-3 w-fit max-w-[calc(100%-1.5rem)] rounded-3xl border border-white/6 bg-zinc-900/85 px-1 py-1.5 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        <ul className="relative flex gap-0.5">
           {tabs.map((tab) => {
-            const isActive = isTabActive(tab, location.pathname);
+            const isActive = tab.to === activeTo;
             const Icon = tab.icon;
             return (
               <li key={tab.to} className="relative min-w-0">
@@ -60,7 +58,7 @@ export function BottomNav() {
                   data-testid={tab.testId}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
-                    "relative z-10 flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 font-medium transition-colors duration-200 select-none",
+                    "relative z-10 flex min-h-[52px] w-16 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 font-medium transition-colors duration-200 select-none",
                     isActive
                       ? "text-(--brand-primary-fg)"
                       : "text-zinc-400 hover:text-zinc-200",

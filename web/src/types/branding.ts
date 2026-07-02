@@ -117,6 +117,7 @@ export const NAV_DESTINATIONS = [
   "activity",
   "promo",
   "support",
+  "faq",
   "settings",
 ] as const;
 export type NavDestinationId = (typeof NAV_DESTINATIONS)[number];
