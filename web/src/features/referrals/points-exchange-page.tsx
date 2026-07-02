@@ -120,7 +120,15 @@ export default function PointsExchangePage() {
 
   const selectedOption = options.types.find((t) => t.type === selectedType)
   const numPoints = parseInt(points) || 0
-  const computedValue = selectedOption ? Math.floor(numPoints / selectedOption.pointsCost) : 0
+  // A gift subscription is a fixed-price item: it always costs exactly
+  // `pointsCost` and yields exactly ONE promo code, no matter how many points
+  // are entered. Every other type scales linearly with the points spent.
+  const isGift = selectedType === 'GIFT_SUBSCRIPTION'
+  const computedValue = !selectedOption
+    ? 0
+    : isGift
+      ? (numPoints >= selectedOption.pointsCost ? 1 : 0)
+      : Math.floor(numPoints / selectedOption.pointsCost)
 
   return (
     <div className="pb-8">
@@ -207,14 +215,22 @@ export default function PointsExchangePage() {
                 type="number"
                 value={points}
                 onChange={(e) => setPoints(e.target.value)}
+                readOnly={isGift}
                 min={selectedOption?.minPoints ?? 1}
                 max={selectedOption?.maxPoints === -1 ? options.pointsBalance : Math.min(selectedOption?.maxPoints ?? 999, options.pointsBalance)}
-                className="glass-input w-full rounded-xl px-4 py-3 text-lg font-bold text-white text-center"
+                className={cn(
+                  'glass-input w-full rounded-xl px-4 py-3 text-lg font-bold text-white text-center',
+                  isGift && 'opacity-70',
+                )}
               />
-              <div className="flex justify-between text-[10px] text-zinc-600">
-                <span>{t('pointsExchange.min', { value: selectedOption?.minPoints })}</span>
-                <span>{t('pointsExchange.max', { value: selectedOption?.maxPoints === -1 ? options.pointsBalance : selectedOption?.maxPoints })}</span>
-              </div>
+              {isGift ? (
+                <p className="text-[10px] text-zinc-500">{t('pointsExchange.giftFixedHint', { cost: selectedOption?.pointsCost })}</p>
+              ) : (
+                <div className="flex justify-between text-[10px] text-zinc-600">
+                  <span>{t('pointsExchange.min', { value: selectedOption?.minPoints })}</span>
+                  <span>{t('pointsExchange.max', { value: selectedOption?.maxPoints === -1 ? options.pointsBalance : selectedOption?.maxPoints })}</span>
+                </div>
+              )}
             </div>
 
             {/* Preview */}

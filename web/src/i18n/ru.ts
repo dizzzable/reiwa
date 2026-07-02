@@ -963,6 +963,7 @@ export const ru = {
     done: 'Готово',
     giftCodeTitle: 'Промокод создан',
     giftCodeHint: 'Передайте этот промокод другу — он активирует подписку.',
+    giftFixedHint: 'Фиксированная стоимость: {{cost}} баллов = 1 промокод.',
     types: {
       SUBSCRIPTION_DAYS: { label: 'Дни подписки', unit: 'дней' },
       GIFT_SUBSCRIPTION: { label: 'Подарочная подписка', unit: 'промокод' },

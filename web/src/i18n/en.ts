@@ -965,6 +965,7 @@ export const en: RuDict = {
     done: 'Done',
     giftCodeTitle: 'Promo code created',
     giftCodeHint: 'Share this promo code with a friend — it activates a subscription.',
+    giftFixedHint: 'Fixed cost: {{cost}} points = 1 promo code.',
     types: {
       SUBSCRIPTION_DAYS: { label: 'Subscription days', unit: 'days' },
       GIFT_SUBSCRIPTION: { label: 'Gift subscription', unit: 'promo code' },
