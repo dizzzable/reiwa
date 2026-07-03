@@ -8,12 +8,14 @@
  * by the renewal picker).
  */
 import { motion } from "motion/react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 
 import type { Plan } from "@/types/api";
 import { useBranding } from "@/lib/branding-provider";
-import { cn } from "@/lib/utils";
+import { brandAuroraStops, cn } from "@/lib/utils";
+import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { CardWatermark } from "@/components/ui/card-watermark";
 import { CustomIconView } from "@/components/ui/custom-icon-view";
 import { EmojiText } from "@/components/ui/emoji-text";
@@ -75,6 +77,27 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
   const accent = visual.accent ?? branding.primary;
   const priceColor = readablePriceColor(accent);
 
+  // Reuse the operator's GLOBAL card-background effect (same one the
+  // subscription cards use) so the catalog reads cohesively. `aurora` (the
+  // default) is auto-tinted to the brand colour when no colorStops are pinned.
+  // Rendered off-screen-paused via the CardEffectLayer IntersectionObserver, so
+  // a long catalog only runs the effect for cards actually in view.
+  const auroraStops = useMemo(() => brandAuroraStops(branding.primary), [branding.primary]);
+  const effect = branding.cardEffect;
+  const effectProps = useMemo<Record<string, unknown>>(() => {
+    const base = branding.cardEffectProps ?? {};
+    if (effect === "aurora" && base["colorStops"] === undefined) {
+      return { colorStops: auroraStops, amplitude: 1.1, blend: 0.55, speed: 0.8, ...base };
+    }
+    return base;
+  }, [effect, branding.cardEffectProps, auroraStops]);
+  const effectOpacity = branding.cardEffectOpacity ?? 1;
+  // A per-plan uploaded image is the deliberate art for that card, so it WINS
+  // over the animated shader — we don't render the effect when a custom image
+  // is set (the two would fight / wash each other out). Preset pattern grains
+  // (textureImage) are subtle overlays and safely sit on top of the effect.
+  const showEffect = effect !== "NONE" && !visual.textureUrl;
+
   return (
     <motion.button
       type="button"
@@ -93,6 +116,18 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
       {/* Static foundation: dark base + per-plan gradient */}
       <div className="absolute inset-0 -z-30 bg-zinc-950" />
       <div className="absolute inset-0 -z-25" style={{ backgroundImage: visual.gradient }} />
+      {/* Animated effect layer (operator-configurable global card effect;
+          NONE = gradient only). Suppressed when the plan has a custom uploaded
+          image so the two never clash. Sits above the gradient, below the
+          per-plan texture + vignette so those keep text legible. */}
+      {showEffect && (
+        <CardEffectLayer
+          effect={effect}
+          props={effectProps}
+          opacity={effectOpacity}
+          className="absolute inset-0 -z-[22]"
+        />
+      )}
       {/* Texture overlay: uploaded image (cover) wins over a preset pattern. */}
       {visual.textureUrl ? (
         <div

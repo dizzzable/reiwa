@@ -42,7 +42,13 @@ export type CardEffect =
   | "waves"
   | "silk"
   | "beams"
-  | "dither";
+  | "dither"
+  | "paperMesh"
+  | "paperWarp"
+  | "paperGrain"
+  | "paperDither"
+  | "paperSwirl"
+  | "paperMetaballs";
 
 /** Icon colouring strategy for cabinet menu icons (mirrors backend). */
 export type IconColorMode = "default" | "theme" | "custom";

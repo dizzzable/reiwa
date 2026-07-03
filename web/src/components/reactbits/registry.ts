@@ -2,12 +2,12 @@
  * Card-background effect registry (reiwa SPA).
  * ───────────────────────────────────────────
  * Ported from the rezeis admin "Background Studio". These are the animated
- * ReactBits effects an operator can place BEHIND the subscription card.
+ * effects an operator can place BEHIND the subscription card / tariff card /
+ * app background.
  *
- * We only include the `ogl` + canvas-2D effects (reiwa ships `ogl` but NOT
- * three.js), so adding them costs zero new heavy dependencies. Each effect is
- * `React.lazy`-loaded so the WebGL/canvas code only downloads when a card
- * actually uses that effect.
+ * Sources: `ogl` + canvas-2D + `@react-three/fiber` (Silk) + WebGL2 Paper
+ * Shaders (`paper*`, via @paper-design/shaders-react). Each effect is
+ * `React.lazy`-loaded so its GPU/canvas code only downloads when actually used.
  *
  * Two coordinated sources of truth, kept in lockstep with the rezeis
  * configurator registry (`web/src/features/branding/card-effect-registry.ts`):
@@ -36,7 +36,13 @@ export type CardEffectId =
   | "waves"
   | "silk"
   | "beams"
-  | "dither";
+  | "dither"
+  | "paperMesh"
+  | "paperWarp"
+  | "paperGrain"
+  | "paperDither"
+  | "paperSwirl"
+  | "paperMetaballs";
 
 type EffectComponent = LazyExoticComponent<ComponentType<Record<string, unknown>>>;
 
@@ -59,6 +65,12 @@ export const CARD_EFFECT_COMPONENTS: Record<CardEffectId, EffectComponent | Comp
   silk: lazy(() => import("./Silk")),
   beams: lazy(() => import("./Beams")),
   dither: lazy(() => import("./Dither")),
+  paperMesh: lazy(() => import("./paper").then((m) => ({ default: m.PaperMesh }))),
+  paperWarp: lazy(() => import("./paper").then((m) => ({ default: m.PaperWarp }))),
+  paperGrain: lazy(() => import("./paper").then((m) => ({ default: m.PaperGrain }))),
+  paperDither: lazy(() => import("./paper").then((m) => ({ default: m.PaperDither }))),
+  paperSwirl: lazy(() => import("./paper").then((m) => ({ default: m.PaperSwirl }))),
+  paperMetaballs: lazy(() => import("./paper").then((m) => ({ default: m.PaperMetaballs }))),
 };
 
 /** Default props per effect — mirrors the rezeis registry defaults. */
@@ -80,4 +92,10 @@ export const CARD_EFFECT_DEFAULTS: Record<CardEffectId, Record<string, unknown>>
   silk: { speed: 5, scale: 1, color: "#7b7481", noiseIntensity: 1.5, rotation: 0 },
   beams: { lightColor: "#ffffff", speed: 2, beamWidth: 2, beamNumber: 12, noiseIntensity: 1.75, scale: 0.2 },
   dither: { waveColor: [0.5, 0.5, 0.5], waveSpeed: 0.05, waveFrequency: 3, waveAmplitude: 0.3, pixelSize: 2, colorNum: 4 },
+  paperMesh: { colors: ["#e0eaff", "#241d9a", "#f75092", "#9f50d3"], distortion: 0.8, swirl: 0.1, speed: 1 },
+  paperWarp: { colors: ["#121212", "#9470ff", "#121212", "#8838ff"], proportion: 0.45, softness: 1, distortion: 0.25, swirl: 0.8, swirlIterations: 10, shapeScale: 0.1, shape: "checks", speed: 1 },
+  paperGrain: { colorBack: "#000000", colors: ["#7300ff", "#eba8ff", "#00bfff", "#2a00ff"], softness: 0.5, intensity: 0.5, noise: 0.25, shape: "corners", speed: 1 },
+  paperDither: { colorBack: "#000000", colorFront: "#00b2ff", shape: "sphere", type: "4x4", size: 2, scale: 0.6, speed: 1 },
+  paperSwirl: { colorBack: "#000000", colors: ["#ffd1d1", "#ff8a8a", "#660000"], bandCount: 4, twist: 0.1, center: 0.2, proportion: 0.5, softness: 0, noiseFrequency: 0.4, noise: 0.2, speed: 0.32 },
+  paperMetaballs: { colorBack: "#000000", colors: ["#6e33cc", "#ff5500", "#ffc105", "#ffc800", "#f585ff"], count: 10, size: 0.83, speed: 1 },
 };

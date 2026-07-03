@@ -4,8 +4,9 @@
  * Resolves the static visual for a tariff card on the `/plans` page from the
  * operator's per-plan `branding.planCardStyles[planId]`, falling back to a
  * deterministic auto gradient so unconfigured (and archived) plans still look
- * distinct from one another. Pure — no React, no WebGL (the tariff list stays
- * light; animated effects remain exclusive to the subscription carousel).
+ * distinct from one another. Pure — no React, no WebGL. The tariff card layers
+ * an animated card-effect on top of this static visual, EXCEPT when a custom
+ * `textureUrl` image is set (then the image wins and the effect is suppressed).
  */
 import { buildTextureCss } from "@/lib/app-texture";
 import type { Branding } from "@/types/branding";
