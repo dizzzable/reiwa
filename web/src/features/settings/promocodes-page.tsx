@@ -3,39 +3,30 @@
  * ───────────────────────────────────
  * User can:
  *   1. Activate a promocode (input + button).
- *   2. View activation history (list of past activations with reward info).
+ *   2. View activation history (shared <PromoHistory /> block — active /
+ *      expired / applied states with per-type colors).
  */
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Gift, Tag } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
-import { motion } from "motion/react";
 import { toast } from "sonner";
 
-import { activatePromocode, getPromoActivations } from "@/lib/api-client";
+import { activatePromocode } from "@/lib/api-client";
 import type { PromoActivationResult } from "@/lib/api-client";
 import { promoSuccessKey, promoErrorKey } from "@/features/promo/promo-result";
+import { PromoHistory } from "@/features/promo/promo-history";
 import { SESSION_QUERY_KEY } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { formatDateTime } from "@/lib/utils";
 
 export default function PromocodesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [code, setCode] = useState("");
-
-  const { data: activationsData, isLoading } = useQuery({
-    queryKey: ["promo", "activations"],
-    queryFn: () => getPromoActivations(1, 30),
-    staleTime: 30_000,
-  });
 
   const activateMutation = useMutation({
     mutationFn: (promoCode: string) => activatePromocode(promoCode),
@@ -67,8 +58,6 @@ export default function PromocodesPage() {
     },
   });
 
-  const activations = (activationsData as any)?.activations ?? [];
-
   return (
     <div className="min-h-full pb-6">
       {/* Header */}
@@ -99,53 +88,8 @@ export default function PromocodesPage() {
           </div>
         </div>
 
-        {/* Activation history */}
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-zinc-300">{t("promo.history")}</p>
-
-          {isLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-2xl" />
-              ))}
-            </div>
-          ) : activations.length === 0 ? (
-            <div className="rounded-2xl border border-white/6 bg-white/2 p-6 text-center">
-              <Gift className="mx-auto h-8 w-8 text-zinc-600" />
-              <p className="mt-2 text-xs text-zinc-500">{t("promo.historyEmpty")}</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {activations.map((activation: any, i: number) => (
-                <motion.div
-                  key={activation.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="flex items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-3.5"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10">
-                    <Tag className="h-4 w-4 text-violet-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-mono font-medium text-zinc-200 truncate">
-                        {activation.promocode?.code ?? activation.promocodeCode ?? "—"}
-                      </p>
-                      <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                        {activation.rewardType}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-zinc-500 mt-0.5">
-                      {formatDateTime(activation.createdAt ?? activation.activatedAt)}
-                      {activation.rewardValue ? ` • +${activation.rewardValue}` : ""}
-                    </p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Activation history (shared block) */}
+        <PromoHistory />
       </div>
     </div>
   );

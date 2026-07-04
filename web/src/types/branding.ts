@@ -61,6 +61,11 @@ export interface CardEffectSlot {
   cardEffect: CardEffect;
   cardEffectProps: Record<string, unknown>;
   cardEffectOpacity: number;
+  /**
+   * Optional per-slot static card gradient (CSS). Overrides the global
+   * `cardGradient` for the Nth subscription card; absent → global gradient.
+   */
+  cardGradient?: string | null;
 }
 
 /**
@@ -112,6 +117,14 @@ export interface PlanCardStyle {
   accent?: string | null;
   texturePreset?: AppBackgroundTexture | null;
   textureUrl?: string | null;
+  /**
+   * Optional per-plan animated background effect for the tariff card. `NONE` /
+   * absent = static gradient only (the tariff card does NOT inherit the
+   * subscription card's global effect). Any other value is a card-effect id.
+   */
+  cardEffect?: CardEffect | null;
+  cardEffectProps?: Record<string, unknown>;
+  cardEffectOpacity?: number | null;
 }
 
 /** Cabinet navigation destinations (mirrors backend `NAV_DESTINATIONS`). */

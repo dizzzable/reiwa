@@ -77,12 +77,33 @@ function SelectDuration({
                       : t("purchase.duration.days", { count: dur.days })}
                 </p>
               </div>
-              {displayPrice && (
-                <p className="text-(--brand-primary) font-semibold">
-                  {CURRENCY_SYMBOLS[displayPrice.currency] ?? ""}
-                  {Number(displayPrice.price).toFixed(2)}
-                </p>
-              )}
+              {displayPrice && (() => {
+                const hasDiscount =
+                  (displayPrice.discountPercent ?? 0) > 0 &&
+                  displayPrice.discountSource !== undefined &&
+                  displayPrice.discountSource !== "NONE" &&
+                  displayPrice.originalPrice !== undefined;
+                const sym = CURRENCY_SYMBOLS[displayPrice.currency] ?? "";
+                return (
+                  <div className="flex flex-col items-end gap-0.5">
+                    {hasDiscount && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-400/30">
+                          −{displayPrice.discountPercent}%
+                        </span>
+                        <span className="text-[11px] text-zinc-500 line-through">
+                          {sym}
+                          {Number(displayPrice.originalPrice).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <p className="text-(--brand-primary) font-semibold">
+                      {sym}
+                      {Number(displayPrice.price).toFixed(2)}
+                    </p>
+                  </div>
+                );
+              })()}
             </button>
           );
         })}

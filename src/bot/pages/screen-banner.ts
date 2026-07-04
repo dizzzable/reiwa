@@ -34,6 +34,8 @@ import type {
   TgEntity,
 } from '../../infrastructure/bot-config/types.js';
 import { resolveBannerSource, type BannerPhotoSource } from './banner-resolver.js';
+import { editOrReply } from './edit-message.js';
+import type { PageDeps } from './types.js';
 
 const TELEGRAM_CAPTION_MAX = 1024;
 
@@ -56,10 +58,10 @@ export interface ScreenBannerDeps {
  * keep the legacy text render.
  */
 export function resolveScreenBannerRef(
-  screen: BotScreen,
+  screen: BotScreen | null,
   visual: BotVisualConfig,
 ): string | null {
-  if (screen.mediaType === 'photo') {
+  if (screen !== null && screen.mediaType === 'photo') {
     const fileId = (screen.mediaFileId ?? '').trim();
     if (fileId.length > 0) return fileId;
     const url = (screen.mediaUrl ?? '').trim();
@@ -269,4 +271,58 @@ export async function renderScreenWithBanner(
       );
   }
   return true;
+}
+
+/**
+ * Render an operator-configured named screen (invite / rules / help) with its
+ * per-screen banner, falling back to a plain in-place text edit when no banner
+ * applies. This is the shared path so every named-override screen behaves like
+ * the generic dynamic-screen handler: a screen's own photo media (or the global
+ * banner when "one banner for all screens" is on) is rendered as a real photo,
+ * and screens with no banner keep the flicker-free caption/text edit.
+ *
+ * `overrideScreen` is the operator's screen (from `findScreenByName`) or `null`
+ * when the operator hasn't customised it — in which case only the global banner
+ * can apply.
+ */
+export async function renderScreenOrEdit(
+  ctx: Context,
+  deps: Pick<PageDeps, 'urls' | 'logger' | 'rememberScreenBannerFileId'>,
+  visual: BotVisualConfig,
+  options: {
+    readonly overrideScreen: BotScreen | null;
+    readonly text: string;
+    readonly entities?: readonly TgEntity[];
+    readonly parseMode?: 'HTML';
+    readonly replyMarkup?: InlineKeyboard;
+  },
+): Promise<void> {
+  const { overrideScreen, text, entities, parseMode, replyMarkup } = options;
+  const bannerRef = resolveScreenBannerRef(overrideScreen, visual);
+  const handled = await renderScreenWithBanner(
+    ctx,
+    {
+      text,
+      entities,
+      parseMode,
+      replyMarkup,
+      bannerRef,
+      screenShortId: overrideScreen?.shortId,
+      ownBannerUrl: overrideScreen?.mediaType === 'photo' ? overrideScreen.mediaUrl : null,
+    },
+    {
+      rezeisAdminUrl: deps.urls.rezeisAdminUrl,
+      rememberScreenBannerFileId: deps.rememberScreenBannerFileId,
+      logger: deps.logger
+        ? {
+            warn: (obj, msg): void => {
+              deps.logger?.warn(obj as Record<string, unknown>, msg);
+            },
+          }
+        : undefined,
+    },
+  );
+  if (!handled) {
+    await editOrReply(ctx, { text, entities, parseMode, replyMarkup });
+  }
 }

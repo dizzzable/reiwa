@@ -305,6 +305,26 @@ export const ru = {
     error: 'Неверный или просроченный промокод',
     history: 'История активаций',
     historyEmpty: 'Промокоды не активировались',
+    historyMeta: {
+      status: {
+        active: 'Активна',
+        expired: 'Истёк',
+        applied: 'Применён',
+      },
+      units: {
+        days: 'дн.',
+        gb: 'ГБ',
+        devices: 'устр.',
+      },
+      rewardTypes: {
+        DURATION: 'Дни подписки',
+        TRAFFIC: 'Трафик',
+        DEVICES: 'Устройства',
+        SUBSCRIPTION: 'Подписка',
+        PERSONAL_DISCOUNT: 'Персональная скидка',
+        PURCHASE_DISCOUNT: 'Скидка на покупку',
+      },
+    },
     successDefault: 'Промокод успешно активирован!',
     invalid: 'Промокод недействителен',
     activationError: 'Ошибка активации',

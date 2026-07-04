@@ -29,7 +29,7 @@ import {
  *
  * Event contract (reads `{ event, metadata }` from the admin webhook body):
  *   - `reiwa.bot.invalidate`    → POST bot `/invalidate`        { reason }
- *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons? }
+ *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
  *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
  * Unknown event types are ack'd (204) so the admin dispatcher doesn't retry.
  */
@@ -85,6 +85,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             text,
             ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
             ...(Array.isArray(meta["buttons"]) ? { buttons: meta["buttons"] } : {}),
+            ...(str(meta["bannerUrl"]) ? { bannerUrl: str(meta["bannerUrl"]) } : {}),
           });
           // Surface the Telegram message id back to admin so it can persist
           // it (broadcast edits/deletes need it within the 48h window).

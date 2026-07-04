@@ -279,13 +279,16 @@ export interface AllSubscriptionsResponse {
 // ─── Promo activations ───────────────────────────────────────────────────
 export interface PromoActivation {
   id: string;
+  /** Snapshot of the activated promocode string. */
+  code: string;
   rewardType: string;
   rewardValue: number | null;
-  createdAt: string;
-  promocode: {
-    code: string;
-    rewardType: string;
-  } | null;
+  /** When the user activated the coupon. */
+  activatedAt: string | null;
+  /** Absolute expiry of the coupon (operator-picked); null = no deadline. */
+  expiresAt: string | null;
+  /** Whether the parent promocode is still enabled. */
+  promocodeIsActive: boolean;
 }
 
 export interface PromoActivationsResponse {

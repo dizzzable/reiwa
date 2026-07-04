@@ -19,6 +19,7 @@ import { InlineKeyboard } from 'grammy';
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import { coerceLocale } from './coerce-locale.js';
 import { editOrReply } from './edit-message.js';
+import { renderScreenOrEdit } from './screen-banner.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import { renderBotCopy, renderBotCopyHtml, renderButtonLabel, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
@@ -218,7 +219,8 @@ async function renderReferralHub(
   // Telegram HTML (parse_mode) instead of the entity path.
   const composed = parts.join('\n\n');
   if (overrideScreen?.parseMode === 'html') {
-    await editOrReply(ctx, {
+    await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+      overrideScreen,
       text: renderBotCopyHtml(composed, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium),
       parseMode: 'HTML',
       replyMarkup: kb,
@@ -226,7 +228,12 @@ async function renderReferralHub(
     return;
   }
   const rendered = renderBotCopy(composed, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
-  await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
+  await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+    overrideScreen,
+    text: rendered.text,
+    entities: rendered.entities,
+    replyMarkup: kb,
+  });
 }
 
 async function renderPartnerHub(
@@ -286,5 +293,13 @@ async function renderPartnerHub(
   appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
 
   const rendered = renderBotCopy(parts.join('\n\n'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
-  await editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
+  // The partner hub reuses the 'invite' screen slot, so its per-screen banner
+  // (if the operator set one) applies here too — text stays partner-specific.
+  const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
+  await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+    overrideScreen,
+    text: rendered.text,
+    entities: rendered.entities,
+    replyMarkup: kb,
+  });
 }

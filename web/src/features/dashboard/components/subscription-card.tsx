@@ -93,6 +93,11 @@ export function SubscriptionCard({ subscription, index, firstDevice, effectActiv
     return base;
   }, [effect, slotProps, branding.cardEffectProps, auroraStops]);
   const effectOpacity = slot?.cardEffectOpacity ?? branding.cardEffectOpacity ?? 1;
+  // Per-slot static gradient overrides the global one for this card position.
+  const cardGradient =
+    (slot?.cardGradient ?? "").trim().length > 0
+      ? (slot!.cardGradient as string)
+      : branding.cardGradient;
 
   return (
     <div
@@ -109,7 +114,7 @@ export function SubscriptionCard({ subscription, index, firstDevice, effectActiv
       <div className="absolute inset-0 -z-30 bg-zinc-950" />
       <div
         className="absolute inset-0 -z-25"
-        style={{ backgroundImage: branding.cardGradient }}
+        style={{ backgroundImage: cardGradient }}
       />
       {/* Animated effect layer (operator-configurable; NONE = gradient only) */}
       {effect !== "NONE" && (

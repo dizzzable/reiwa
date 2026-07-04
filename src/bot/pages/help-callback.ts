@@ -31,7 +31,7 @@
 import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
-import { editOrReply } from './edit-message.js';
+import { renderScreenOrEdit } from './screen-banner.js';
 import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import { resolveConfiguredSupportUrl, isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import {
@@ -72,14 +72,20 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
     const useHtml = overrideScreen?.parseMode === 'html';
     const sendCopy = (body: string, kb: InlineKeyboard): Promise<void> => {
       if (useHtml) {
-        return editOrReply(ctx, {
+        return renderScreenOrEdit(ctx, deps, botCfg.visual, {
+          overrideScreen,
           text: renderBotCopyHtml(body, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium),
           parseMode: 'HTML',
           replyMarkup: kb,
         });
       }
       const rendered = renderBotCopy(body, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
-      return editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
+      return renderScreenOrEdit(ctx, deps, botCfg.visual, {
+        overrideScreen,
+        text: rendered.text,
+        entities: rendered.entities,
+        replyMarkup: kb,
+      });
     };
 
     // Operator's own custom buttons (if any) render FIRST; the system

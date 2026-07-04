@@ -8,6 +8,7 @@ import { activatePromocode, getAllSubscriptions } from '@/lib/api-client'
 import type { PromoActivationResult } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { promoSuccessKey, promoErrorKey } from './promo-result'
+import { PromoHistory } from './promo-history'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
@@ -186,27 +187,31 @@ export default function PromoPage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder={t('promo.inputPlaceholder')}
-              maxLength={32}
-              className="w-full rounded-2xl border border-white/8 bg-zinc-800/50 px-5 py-4 text-center text-lg font-mono font-bold uppercase tracking-[0.3em] text-white placeholder:text-zinc-600 focus:border-(--brand-primary)/50 focus:outline-none transition-colors"
-              onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) mutation.mutate(undefined) }}
-            />
+          <>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder={t('promo.inputPlaceholder')}
+                maxLength={32}
+                className="w-full rounded-2xl border border-white/8 bg-zinc-800/50 px-5 py-4 text-center text-lg font-mono font-bold uppercase tracking-[0.3em] text-white placeholder:text-zinc-600 focus:border-(--brand-primary)/50 focus:outline-none transition-colors"
+                onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) mutation.mutate(undefined) }}
+              />
 
-            <StadiumButton
-              fullWidth size="lg"
-              onClick={() => mutation.mutate(undefined)}
-              disabled={!code.trim() || mutation.isPending}
-              loading={mutation.isPending}
-              glow={!!code.trim()}
-            >
-              {t('promo.activate')}
-            </StadiumButton>
-          </div>
+              <StadiumButton
+                fullWidth size="lg"
+                onClick={() => mutation.mutate(undefined)}
+                disabled={!code.trim() || mutation.isPending}
+                loading={mutation.isPending}
+                glow={!!code.trim()}
+              >
+                {t('promo.activate')}
+              </StadiumButton>
+            </div>
+
+            <PromoHistory />
+          </>
         )}
       </div>
     </div>

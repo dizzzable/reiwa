@@ -55,12 +55,37 @@ export function createPromoRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       const { page = "1", limit = "20" } = req.query as Record<string, string>;
-      const result = await adminClient?.promocodes.getActivations(
+      const pageNum = Math.max(Number(page) || 1, 1);
+      const limitNum = Math.min(Math.max(Number(limit) || 20, 1), 100);
+      const raw = await adminClient?.promocodes.getActivations(
         resolveUserIdentity(req),
-        Number(page),
-        Number(limit),
+        pageNum,
+        limitNum,
       );
-      res.json(result ?? { activations: [], total: 0 });
+      // Upstream returns `{ entries, total }`; the cabinet expects
+      // `{ activations, total, page, limit }` with a flattened row shape
+      // (code + expiry surfaced) so the history block can mark active vs
+      // expired coupons. Normalise here so the SPA never sees the raw shape.
+      const source = (raw ?? {}) as { entries?: unknown; total?: unknown };
+      const entries = Array.isArray(source.entries) ? source.entries : [];
+      const activations = entries.map((entry) => {
+        const e = (entry ?? {}) as Record<string, unknown>;
+        return {
+          id: String(e["id"] ?? ""),
+          code: String(e["promocodeCode"] ?? ""),
+          rewardType: String(e["rewardType"] ?? ""),
+          rewardValue: typeof e["rewardValue"] === "number" ? (e["rewardValue"] as number) : null,
+          activatedAt: typeof e["activatedAt"] === "string" ? (e["activatedAt"] as string) : null,
+          expiresAt: typeof e["expiresAt"] === "string" ? (e["expiresAt"] as string) : null,
+          promocodeIsActive: e["promocodeIsActive"] !== false,
+        };
+      });
+      res.json({
+        activations,
+        total: typeof source.total === "number" ? source.total : activations.length,
+        page: pageNum,
+        limit: limitNum,
+      });
     },
   );
 

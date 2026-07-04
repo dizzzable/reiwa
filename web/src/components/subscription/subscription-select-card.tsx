@@ -85,6 +85,10 @@ export function SubscriptionSelectCard({
     return base;
   }, [effect, slotProps, branding.cardEffectProps, auroraStops]);
   const effectOpacity = slot?.cardEffectOpacity ?? branding.cardEffectOpacity ?? 1;
+  const cardGradient =
+    (slot?.cardGradient ?? "").trim().length > 0
+      ? (slot!.cardGradient as string)
+      : branding.cardGradient;
 
   return (
     <button
@@ -102,7 +106,7 @@ export function SubscriptionSelectCard({
       <div className="absolute inset-0 -z-30 bg-zinc-950" />
       <div
         className="absolute inset-0 -z-25"
-        style={{ backgroundImage: branding.cardGradient, opacity: 0.9 }}
+        style={{ backgroundImage: cardGradient, opacity: 0.9 }}
       />
       {/* Live animated effect (lazy, pauses off-screen). NONE = gradient only. */}
       {effect !== "NONE" && (

@@ -307,6 +307,26 @@ export const en: RuDict = {
     error: 'Invalid or expired promo code',
     history: 'Activation history',
     historyEmpty: 'No activations yet',
+    historyMeta: {
+      status: {
+        active: 'Active',
+        expired: 'Expired',
+        applied: 'Applied',
+      },
+      units: {
+        days: 'd',
+        gb: 'GB',
+        devices: 'dev.',
+      },
+      rewardTypes: {
+        DURATION: 'Subscription days',
+        TRAFFIC: 'Traffic',
+        DEVICES: 'Devices',
+        SUBSCRIPTION: 'Subscription',
+        PERSONAL_DISCOUNT: 'Personal discount',
+        PURCHASE_DISCOUNT: 'Purchase discount',
+      },
+    },
     successDefault: 'Promo code activated successfully!',
     invalid: 'Promo code is invalid',
     activationError: 'Activation error',

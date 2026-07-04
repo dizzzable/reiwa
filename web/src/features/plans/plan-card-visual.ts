@@ -35,6 +35,12 @@ export interface ResolvedPlanCardStyle {
   readonly textureImage: string | null;
   /** CSS background-size for the preset texture tile, or `null`. */
   readonly textureSize: string | null;
+  /** Per-plan animated effect id (`NONE` = static gradient only). */
+  readonly effect: string;
+  /** Tunable params for the per-plan effect. */
+  readonly effectProps: Record<string, unknown>;
+  /** Per-plan effect layer opacity (0.05–1). */
+  readonly effectOpacity: number;
 }
 
 /** Resolve the effective card style for a plan (configured → else auto). */
@@ -59,7 +65,14 @@ export function resolvePlanCardStyle(planId: string, branding: Branding): Resolv
     textureSize = css.backgroundSize;
   }
 
-  return { gradient, accent, textureUrl, textureImage, textureSize };
+  // Per-plan effect is OPT-IN. Tariff cards no longer inherit the subscription
+  // card's global effect — an unset/`NONE` per-plan effect means static.
+  const effect = style?.cardEffect && style.cardEffect !== "NONE" ? style.cardEffect : "NONE";
+  const effectProps = style?.cardEffectProps ?? {};
+  const effectOpacity =
+    typeof style?.cardEffectOpacity === "number" ? style.cardEffectOpacity : 1;
+
+  return { gradient, accent, textureUrl, textureImage, textureSize, effect, effectProps, effectOpacity };
 }
 
 /* ── colour helpers ─────────────────────────────────────────────────────── */

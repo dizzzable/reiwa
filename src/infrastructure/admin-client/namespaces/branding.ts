@@ -25,6 +25,7 @@ export interface BrandingPayload {
     readonly cardEffect: string;
     readonly cardEffectProps: Record<string, unknown>;
     readonly cardEffectOpacity: number;
+    readonly cardGradient?: string | null;
   }>;
   readonly bgEffect: 'NONE' | 'MESH' | 'PARTICLES' | 'NOISE' | 'AURORA';
   readonly borderRadius: string;

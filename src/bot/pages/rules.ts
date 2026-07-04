@@ -24,7 +24,7 @@ import { InlineKeyboard } from 'grammy';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
 import { coerceLocale } from './coerce-locale.js';
-import { editOrReply } from './edit-message.js';
+import { renderScreenOrEdit } from './screen-banner.js';
 import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import {
   applyScreenTemplate,
@@ -69,8 +69,18 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
       : '';
     const sendCopy = (kb: InlineKeyboard): Promise<void> =>
       useHtml
-        ? editOrReply(ctx, { text: htmlText, parseMode: 'HTML', replyMarkup: kb })
-        : editOrReply(ctx, { text: rendered.text, entities: rendered.entities, replyMarkup: kb });
+        ? renderScreenOrEdit(ctx, deps, botCfg.visual, {
+            overrideScreen,
+            text: htmlText,
+            parseMode: 'HTML',
+            replyMarkup: kb,
+          })
+        : renderScreenOrEdit(ctx, deps, botCfg.visual, {
+            overrideScreen,
+            text: rendered.text,
+            entities: rendered.entities,
+            replyMarkup: kb,
+          });
 
     // Operator's own custom buttons (if any) render FIRST; system buttons
     // (rules URL + back) are appended below. Previously custom buttons were

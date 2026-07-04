@@ -36,13 +36,31 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 export function getLowestPlanPrice(
   plan: Plan,
   preferredCurrency: string,
-): { amount: number; currency: string; days: number } | null {
+): {
+  amount: number;
+  currency: string;
+  days: number;
+  originalAmount: number;
+  discountPercent: number;
+  discountSource: string;
+} | null {
   const gateway = plan.durations.flatMap((d) =>
-    d.prices.map((p) => ({ currency: p.currency, amount: Number(p.price), days: d.days })),
+    d.prices.map((p) => ({
+      currency: p.currency,
+      amount: Number(p.price),
+      originalAmount: p.originalPrice !== undefined ? Number(p.originalPrice) : Number(p.price),
+      discountPercent: p.discountPercent ?? 0,
+      discountSource: p.discountSource ?? "NONE",
+      days: d.days,
+    })),
   );
   const display = (plan.displayPrices ?? []).map((p) => ({
     currency: p.currency,
     amount: Number(p.price),
+    // Operator display prices carry no per-user discount — show them as-is.
+    originalAmount: Number(p.price),
+    discountPercent: 0,
+    discountSource: "NONE",
     days: p.days,
   }));
   const all = gateway.length ? gateway : display;
@@ -53,7 +71,14 @@ export function getLowestPlanPrice(
   const list = preferred.length ? preferred : usd.length ? usd : rub.length ? rub : all;
   const minDays = Math.min(...all.map((p) => p.days));
   const min = list.reduce((m, p) => (p.amount < m.amount ? p : m), list[0]!);
-  return { amount: min.amount, currency: min.currency, days: minDays };
+  return {
+    amount: min.amount,
+    currency: min.currency,
+    days: minDays,
+    originalAmount: min.originalAmount,
+    discountPercent: min.discountPercent,
+    discountSource: min.discountSource,
+  };
 }
 
 interface TariffCardProps {
@@ -77,21 +102,21 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
   const accent = visual.accent ?? branding.primary;
   const priceColor = readablePriceColor(accent);
 
-  // Reuse the operator's GLOBAL card-background effect (same one the
-  // subscription cards use) so the catalog reads cohesively. `aurora` (the
-  // default) is auto-tinted to the brand colour when no colorStops are pinned.
-  // Rendered off-screen-paused via the CardEffectLayer IntersectionObserver, so
-  // a long catalog only runs the effect for cards actually in view.
+  // Per-plan animated effect (opt-in). Tariff cards do NOT inherit the
+  // subscription card's global effect anymore — an unset per-plan effect keeps
+  // the card static. `aurora` is auto-tinted to the brand colour when no
+  // explicit colorStops are pinned. Rendered off-screen-paused via the
+  // CardEffectLayer IntersectionObserver.
   const auroraStops = useMemo(() => brandAuroraStops(branding.primary), [branding.primary]);
-  const effect = branding.cardEffect;
+  const effect = visual.effect;
   const effectProps = useMemo<Record<string, unknown>>(() => {
-    const base = branding.cardEffectProps ?? {};
+    const base = visual.effectProps ?? {};
     if (effect === "aurora" && base["colorStops"] === undefined) {
       return { colorStops: auroraStops, amplitude: 1.1, blend: 0.55, speed: 0.8, ...base };
     }
     return base;
-  }, [effect, branding.cardEffectProps, auroraStops]);
-  const effectOpacity = branding.cardEffectOpacity ?? 1;
+  }, [effect, visual.effectProps, auroraStops]);
+  const effectOpacity = visual.effectOpacity ?? 1;
   // A per-plan uploaded image is the deliberate art for that card, so it WINS
   // over the animated shader — we don't render the effect when a custom image
   // is set (the two would fight / wash each other out). Preset pattern grains
@@ -116,10 +141,10 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
       {/* Static foundation: dark base + per-plan gradient */}
       <div className="absolute inset-0 -z-30 bg-zinc-950" />
       <div className="absolute inset-0 -z-25" style={{ backgroundImage: visual.gradient }} />
-      {/* Animated effect layer (operator-configurable global card effect;
-          NONE = gradient only). Suppressed when the plan has a custom uploaded
-          image so the two never clash. Sits above the gradient, below the
-          per-plan texture + vignette so those keep text legible. */}
+      {/* Animated effect layer (per-plan, opt-in; NONE = gradient only).
+          Suppressed when the plan has a custom uploaded image so the two never
+          clash. Sits above the gradient, below the per-plan texture + vignette
+          so those keep text legible. */}
       {showEffect && (
         <CardEffectLayer
           effect={effect}
@@ -194,6 +219,17 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
         </p>
         {price && (
           <div className="flex shrink-0 flex-col items-end gap-0.5">
+            {price.discountPercent > 0 && price.discountSource !== "NONE" && (
+              <div className="flex items-center gap-1.5">
+                <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-400/30">
+                  −{price.discountPercent}%
+                </span>
+                <span className="text-[11px] text-white/45 line-through">
+                  {CURRENCY_SYMBOLS[price.currency] ?? ""}
+                  {price.originalAmount.toFixed(2)}
+                </span>
+              </div>
+            )}
             <span
               className="rounded-full bg-black/30 px-2.5 py-0.5 text-[15px] font-bold ring-1 ring-white/10 backdrop-blur-sm drop-shadow"
               style={{ color: priceColor }}
