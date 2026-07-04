@@ -341,6 +341,80 @@ describe('BotConfigCache persistence (Workstream 4)', () => {
     await vi.runAllTimersAsync();
     expect(store.saved.length).toBe(savedBefore);
   });
+
+  // Per-screen banner file_id is stamped onto the matching screen + re-persisted.
+  it('stampScreenBannerFileId stamps the file_id onto the screen and re-persists', async () => {
+    const withScreen: BotConfig = {
+      ...DEFAULT_BOT_CONFIG,
+      screens: [
+        {
+          id: 'sc1',
+          shortId: 'sc_ref',
+          name: 'Referral',
+          textRu: '',
+          textEn: '',
+          parseMode: 'plain',
+          mediaType: 'photo',
+          mediaFileId: null,
+          mediaUrl: '/uploads/bot-flow/ref.webp',
+          isRoot: false,
+          buttons: [],
+        },
+      ],
+    };
+    const fetcher = vi.fn(async () => withScreen);
+    const spy = spyHydrator();
+    const store = fakeStore();
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    await cache.get();
+    cache.stampScreenBannerFileId('sc_ref', '/uploads/bot-flow/ref.webp', 'SCREEN_FILE_ID');
+    await vi.runAllTimersAsync();
+    const last = store.saved[store.saved.length - 1];
+    expect(last.screens?.[0]?.mediaFileId).toBe('SCREEN_FILE_ID');
+    const out = await cache.get();
+    expect(out.screens?.[0]?.mediaFileId).toBe('SCREEN_FILE_ID');
+  });
+
+  // No-op when the screen's mediaUrl no longer matches (banner was swapped).
+  it('stampScreenBannerFileId is a no-op when the mediaUrl does not match', async () => {
+    const withScreen: BotConfig = {
+      ...DEFAULT_BOT_CONFIG,
+      screens: [
+        {
+          id: 'sc1',
+          shortId: 'sc_ref',
+          name: 'Referral',
+          textRu: '',
+          textEn: '',
+          parseMode: 'plain',
+          mediaType: 'photo',
+          mediaFileId: null,
+          mediaUrl: '/uploads/bot-flow/new.webp',
+          isRoot: false,
+          buttons: [],
+        },
+      ],
+    };
+    const fetcher = vi.fn(async () => withScreen);
+    const spy = spyHydrator();
+    const store = fakeStore();
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+    await cache.get();
+    const savedBefore = store.saved.length;
+    cache.stampScreenBannerFileId('sc_ref', '/uploads/bot-flow/old.webp', 'SCREEN_FILE_ID');
+    await vi.runAllTimersAsync();
+    expect(store.saved.length).toBe(savedBefore);
+  });
 });
 
 describe('DEFAULT_BOT_CONFIG', () => {

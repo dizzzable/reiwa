@@ -217,6 +217,9 @@ async function startBot(): Promise<void> {
     rememberBannerFileId: (bannerUrl: string, fileId: string): void => {
       botConfigCache?.stampBannerFileId(bannerUrl, fileId);
     },
+    rememberScreenBannerFileId: (shortId: string, mediaUrl: string, fileId: string): void => {
+      botConfigCache?.stampScreenBannerFileId(shortId, mediaUrl, fileId);
+    },
     logger,
   };
   registerLangPage(bot, pageDeps);

@@ -187,6 +187,43 @@ export class BotConfigCache {
   }
 
   /**
+   * Stamp a Telegram-resolved `file_id` onto a specific dynamic screen's
+   * `mediaFileId` in the live snapshot and re-persist it — so a per-screen
+   * banner survives a reboot and can be re-sent via `file_id` without
+   * re-downloading from rezeis (mirrors `stampBannerFileId` for the global
+   * banner). Best-effort; a no-op unless the snapshot still has a screen with
+   * this `shortId` whose `mediaUrl` matches (guards against stamping a stale id
+   * after the operator swaps the screen's banner) and it doesn't already carry
+   * this `file_id`. Mutates shallow copies so downstream reference identity
+   * changes.
+   */
+  stampScreenBannerFileId(shortId: string, mediaUrl: string, fileId: string): void {
+    const current = this.entry?.data;
+    if (current === undefined) return;
+    const screens = current.screens;
+    if (!Array.isArray(screens)) return;
+    const idx = screens.findIndex((s) => s.shortId === shortId);
+    if (idx < 0) return;
+    const screen = screens[idx];
+    if (screen === undefined) return;
+    // Only stamp when the screen still points at the same photo URL and
+    // doesn't already carry this id — otherwise a mid-flight banner swap would
+    // pin a stale file_id.
+    if (screen.mediaUrl !== mediaUrl) return;
+    if (screen.mediaFileId === fileId) return;
+    const nextScreens = screens.slice();
+    nextScreens[idx] = { ...screen, mediaFileId: fileId };
+    const next: BotConfig = { ...current, screens: nextScreens };
+    this.entry = { data: next, fetchedAt: this.entry?.fetchedAt ?? Date.now() };
+    void this.persistence?.save(next).catch((err: unknown) => {
+      this.logger?.warn(
+        { err },
+        'BotConfigCache: persistence.save (screen banner stamp) threw',
+      );
+    });
+  }
+
+  /**
    * Operator-driven cache bust. Same wire as `reset()` but with an
    * explicit log line so an operator inspecting bot logs can correlate
    * the invalidate event with their save action in the admin SPA.

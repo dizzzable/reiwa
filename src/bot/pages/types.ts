@@ -85,6 +85,13 @@ export interface PageDeps {
    */
   readonly rememberBannerFileId?: (bannerUrl: string, fileId: string) => void;
   /**
+   * Same as `rememberBannerFileId` but for a specific dynamic screen's OWN
+   * photo banner — persists the resolved `file_id` onto that screen in the
+   * durable snapshot so a reboot re-sends via `file_id` instead of re-fetching
+   * the bytes from rezeis. Omitted in tests / degraded mode.
+   */
+  readonly rememberScreenBannerFileId?: (shortId: string, mediaUrl: string, fileId: string) => void;
+  /**
    * Optional structured logger. When omitted (tests, supervised
    * scripts) pages that need to log fall back to console.* — the
    * legacy contract. Production main.ts always supplies a child

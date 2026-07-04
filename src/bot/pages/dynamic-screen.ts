@@ -114,9 +114,12 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
           parseMode,
           replyMarkup: keyboard,
           bannerRef,
+          screenShortId: screen.shortId,
+          ownBannerUrl: screen.mediaType === 'photo' ? screen.mediaUrl : null,
         },
         {
           rezeisAdminUrl: urls.rezeisAdminUrl,
+          rememberScreenBannerFileId: deps.rememberScreenBannerFileId,
           logger: logger
             ? {
                 warn: (obj, msg) => {

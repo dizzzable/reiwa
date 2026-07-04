@@ -40,6 +40,13 @@ const TELEGRAM_CAPTION_MAX = 1024;
 export interface ScreenBannerDeps {
   readonly rezeisAdminUrl: string | null;
   readonly logger?: { warn: (obj: unknown, msg: string) => void };
+  /**
+   * Persist a Telegram-resolved `file_id` for a screen's OWN photo banner into
+   * the durable last-known-good snapshot, so after a reboot the first send
+   * re-uses the `file_id` instead of re-fetching the bytes from rezeis (which
+   * would fail while the admin host is down). No-op in tests / when omitted.
+   */
+  readonly rememberScreenBannerFileId?: (shortId: string, mediaUrl: string, fileId: string) => void;
 }
 
 /**
@@ -91,14 +98,16 @@ function truncateCaption(
   };
 }
 
-function rememberFileId(ref: string, sent: unknown): void {
+function rememberFileId(ref: string, sent: unknown): string | undefined {
   const photo = (sent as { photo?: Array<{ file_id?: string }> } | undefined)?.photo;
   const fileId =
     Array.isArray(photo) && photo.length > 0 ? photo[photo.length - 1]?.file_id : undefined;
   if (typeof fileId === 'string' && fileId.length > 0) {
     if (screenBannerFileIdCache.size > 32) screenBannerFileIdCache.clear();
     screenBannerFileIdCache.set(ref, fileId);
+    return fileId;
   }
+  return undefined;
 }
 
 /** Turn a banner reference into a Telegram-sendable source (file_id / URL / InputFile). */
@@ -119,6 +128,14 @@ export interface RenderScreenOptions {
   readonly entities?: readonly TgEntity[];
   readonly replyMarkup?: InlineKeyboard;
   readonly bannerRef: string | null;
+  /**
+   * The screen's shortId + its OWN photo `mediaUrl` (when the banner is the
+   * screen's own media, not the global one). When both are set and the sent
+   * banner resolved from this URL, the resulting Telegram `file_id` is stamped
+   * into the durable snapshot so it survives a reboot.
+   */
+  readonly screenShortId?: string;
+  readonly ownBannerUrl?: string | null;
   /**
    * When `'HTML'`, the caption is sent with `parse_mode: 'HTML'` (and no
    * `caption_entities` — Telegram forbids combining the two). Used by
@@ -158,11 +175,26 @@ export async function renderScreenWithBanner(
   options: RenderScreenOptions,
   deps: ScreenBannerDeps,
 ): Promise<boolean> {
-  const { text, entities, replyMarkup, bannerRef, parseMode } = options;
+  const { text, entities, replyMarkup, bannerRef, parseMode, screenShortId, ownBannerUrl } = options;
   if (bannerRef === null) return false;
 
   const source = await resolveSource(bannerRef, deps);
   if (source === null) return false;
+
+  // Persist the resolved Telegram file_id for the screen's OWN banner so a
+  // reboot re-uses it instead of re-fetching from rezeis (only when the banner
+  // is the screen's own photo URL — never for the shared global banner).
+  const stampDurable = (fileId: string | undefined): void => {
+    if (
+      fileId !== undefined &&
+      screenShortId !== undefined &&
+      typeof ownBannerUrl === 'string' &&
+      ownBannerUrl.length > 0 &&
+      bannerRef === ownBannerUrl
+    ) {
+      deps.rememberScreenBannerFileId?.(screenShortId, ownBannerUrl, fileId);
+    }
+  };
 
   const html = parseMode === 'HTML';
   // HTML captions are sent as-is (truncating could split a tag); the entity
@@ -178,7 +210,7 @@ export async function renderScreenWithBanner(
         ? InputMediaBuilder.photo(source, { caption, parse_mode: 'HTML' })
         : InputMediaBuilder.photo(source, { caption, caption_entities });
       const edited = await ctx.editMessageMedia(media, { reply_markup: replyMarkup });
-      if (typeof source !== 'string') rememberFileId(bannerRef, edited);
+      if (typeof source !== 'string') stampDurable(rememberFileId(bannerRef, edited));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (html && isParseError(err)) {
@@ -187,7 +219,7 @@ export async function renderScreenWithBanner(
         try {
           const media = InputMediaBuilder.photo(source, { caption });
           const edited = await ctx.editMessageMedia(media, { reply_markup: replyMarkup });
-          if (typeof source !== 'string') rememberFileId(bannerRef, edited);
+          if (typeof source !== 'string') stampDurable(rememberFileId(bannerRef, edited));
         } catch (retryErr: unknown) {
           deps.logger?.warn({ err: retryErr, bannerRef }, 'screen-banner: editMessageMedia retry failed');
         }
@@ -209,13 +241,13 @@ export async function renderScreenWithBanner(
       caption_entities: html ? undefined : caption_entities,
       reply_markup: replyMarkup,
     });
-    if (typeof source !== 'string') rememberFileId(bannerRef, sent);
+    if (typeof source !== 'string') stampDurable(rememberFileId(bannerRef, sent));
   } catch (err: unknown) {
     if (html && isParseError(err)) {
       // Stray markup — resend the photo with a plain caption.
       try {
         const sent = await ctx.api.sendPhoto(chatId, source, { caption, reply_markup: replyMarkup });
-        if (typeof source !== 'string') rememberFileId(bannerRef, sent);
+        if (typeof source !== 'string') stampDurable(rememberFileId(bannerRef, sent));
         return true;
       } catch {
         /* fall through to the plain-text safety net below */
