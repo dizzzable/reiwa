@@ -15,6 +15,8 @@ import { Bell, ChevronRight } from "lucide-react";
 
 import { getNotifications, getUnreadCount } from "@/lib/api-client";
 import { presentNotification } from "@/lib/notification-presenter";
+import { useSupportInNav } from "@/components/layout/use-nav-tabs";
+import { useSupportUnread } from "@/hooks/use-support-unread";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +47,14 @@ export function NotificationBell() {
     staleTime: 30_000,
   });
 
-  const count = unread?.count ?? 0;
+  // When Support is a bottom-nav destination, its unread replies are surfaced
+  // on that nav tab's own badge — so the bell stops counting them (it keeps
+  // counting every OTHER notification type). When Support isn't in the nav the
+  // bell keeps surfacing support replies too (legacy behaviour).
+  const supportInNav = useSupportInNav();
+  const supportUnread = useSupportUnread();
+  const rawCount = unread?.count ?? 0;
+  const count = supportInNav ? Math.max(0, rawCount - supportUnread) : rawCount;
   const hasUnread = count > 0;
   const recent = (feed?.notifications ?? [])
     .slice(0, RECENT_LIMIT)

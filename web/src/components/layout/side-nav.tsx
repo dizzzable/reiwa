@@ -14,13 +14,11 @@
 import { motion } from "motion/react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
-import { getNotifications } from "@/lib/api-client";
 import { resolveActiveTabTo, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
 
 export function SideNav() {
@@ -28,19 +26,6 @@ export function SideNav() {
   const { t } = useTranslation();
   const { branding } = useBranding();
   const baseTabs = useNavTabs();
-
-  // Desktop convenience: surface Support as its own sidebar entry instead of
-  // burying it in Settings. Mobile keeps it under Settings (bottom-nav space
-  // is limited), so this lives in SideNav only — not the shared useNavTabs.
-  const { data: notifData } = useQuery({
-    queryKey: ["notifications"],
-    queryFn: () => getNotifications(),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-  });
-  const supportUnread = (notifData?.notifications ?? []).filter(
-    (n) => n.type === "support_reply" && !n.readAt,
-  ).length;
 
   const supportTab: NavTab = {
     to: "/support",
@@ -52,7 +37,9 @@ export function SideNav() {
   // Desktop convenience: when the operator hasn't already surfaced Support as
   // its own nav destination, inject it before Settings (mobile keeps it under
   // Settings to save bottom-nav space). When Support IS a configured nav item
-  // it's already in `baseTabs`, so we must not add it twice.
+  // it's already in `baseTabs` (carrying its unread badge), so we must not add
+  // it twice. The injected link intentionally has NO badge — for that case the
+  // header bell still surfaces support replies, so we don't double-indicate.
   const hasSupport = baseTabs.some((tab) => tab.to === "/support");
   const tabs: readonly NavTab[] = hasSupport
     ? baseTabs
@@ -111,9 +98,9 @@ export function SideNav() {
                 )}
                 <Icon className="h-5 w-5 shrink-0" strokeWidth={isActive ? 2.25 : 1.75} />
                 <span className="truncate">{tab.label}</span>
-                {tab.to === "/support" && supportUnread > 0 && (
+                {(tab.badge ?? 0) > 0 && (
                   <span className="ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
-                    {supportUnread > 99 ? "99+" : supportUnread}
+                    {(tab.badge ?? 0) > 99 ? "99+" : tab.badge}
                   </span>
                 )}
               </NavLink>

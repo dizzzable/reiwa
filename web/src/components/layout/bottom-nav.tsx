@@ -54,6 +54,7 @@ export function BottomNav() {
           {tabs.map((tab) => {
             const isActive = tab.to === activeTo;
             const Icon = tab.icon;
+            const badge = tab.badge ?? 0;
             return (
               <li key={tab.to} className="relative min-w-0">
                 <NavLink
@@ -80,10 +81,20 @@ export function BottomNav() {
                       }}
                     />
                   )}
-                  <Icon
-                    className="h-5 w-5 shrink-0"
-                    strokeWidth={isActive ? 2.25 : 1.75}
-                  />
+                  <span className="relative">
+                    <Icon
+                      className="h-5 w-5 shrink-0"
+                      strokeWidth={isActive ? 2.25 : 1.75}
+                    />
+                    {badge > 0 && (
+                      <span
+                        aria-hidden
+                        className="absolute -right-2 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-zinc-900"
+                      >
+                        {badge > 99 ? "99+" : badge}
+                      </span>
+                    )}
+                  </span>
                   <span className="max-w-full truncate text-[10px] leading-none tracking-tight">
                     {tab.label}
                   </span>

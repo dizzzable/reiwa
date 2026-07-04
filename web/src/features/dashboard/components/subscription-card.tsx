@@ -21,7 +21,7 @@ import { Wifi, WifiOff } from "lucide-react";
 import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { CardWatermark } from "@/components/ui/card-watermark";
 import { useBranding } from "@/lib/branding-provider";
-import { brandAuroraStops, cn, formatDate } from "@/lib/utils";
+import { brandAuroraStops, cn, formatDate, getDaysLeft } from "@/lib/utils";
 import type { Subscription } from "@/types/api";
 
 interface SubscriptionCardProps {
@@ -75,6 +75,22 @@ export function SubscriptionCard({ subscription, index, firstDevice, effectActiv
     const hue = Math.round(145 * (1 - trafficProgress));
     return `hsl(${hue} 85% 55%)`;
   }, [trafficProgress]);
+
+  // Days remaining until expiry — the card's hero time metric. `null` when the
+  // subscription has no expiry date (falls back to the plain "expires" line).
+  // Reuses the shared `getDaysLeft` so the count matches everywhere in the app.
+  const rawExpiry = sub.expiresAt ?? sub.expireAt;
+  const daysLeft = rawExpiry ? Math.max(0, getDaysLeft(rawExpiry)) : null;
+  // Urgency accent — mirrors the traffic bar's calm→hot cue. Only tints when
+  // the subscription runs low, so the default look stays on-brand (white).
+  const daysColor =
+    daysLeft === null
+      ? undefined
+      : daysLeft <= 3
+        ? "#f87171"
+        : daysLeft <= 7
+          ? "#fbbf24"
+          : undefined;
 
   // Resolve the card background effect by POSITION. The operator assigns a
   // background to each card slot (slot N → Nth subscription) globally in the
@@ -200,10 +216,31 @@ export function SubscriptionCard({ subscription, index, firstDevice, effectActiv
 
         <div className="flex items-end justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[10px] tracking-wider uppercase opacity-60">
-              {t("card.expiresOn")}
-            </p>
-            <p className="truncate text-[13px] font-semibold @sm:text-sm">{formatDate(sub.expiresAt ?? sub.expireAt)}</p>
+            {daysLeft !== null ? (
+              <>
+                <p className="text-[10px] tracking-wider uppercase opacity-60">
+                  {t("card.remaining")}
+                </p>
+                <p
+                  className="text-base font-bold leading-none @sm:text-lg"
+                  style={daysColor ? { color: daysColor } : undefined}
+                >
+                  {t("card.daysLeft", { count: daysLeft })}
+                </p>
+                <p className="mt-0.5 truncate text-[10px] opacity-55">
+                  {t("card.untilDate", { date: formatDate(rawExpiry) })}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[10px] tracking-wider uppercase opacity-60">
+                  {t("card.expiresOn")}
+                </p>
+                <p className="truncate text-[13px] font-semibold @sm:text-sm">
+                  {formatDate(rawExpiry)}
+                </p>
+              </>
+            )}
           </div>
           <div className="min-w-0 text-right">
             <p className="text-[10px] tracking-wider uppercase opacity-60">

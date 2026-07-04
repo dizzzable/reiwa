@@ -14,6 +14,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { usePartnerStatus } from "@/hooks/use-partner-status";
+import { useSupportUnread } from "@/hooks/use-support-unread";
 import { useBranding } from "@/lib/branding-provider";
 import type { NavDestinationId, NavItemSetting } from "@/types/branding";
 
@@ -24,6 +25,8 @@ export interface NavTab {
   readonly testId: string;
   /** When the route prefix matches we treat this tab as active. */
   readonly matchPrefix: readonly string[];
+  /** Optional unread-count badge (e.g. support replies on the Support tab). */
+  readonly badge?: number;
 }
 
 /** Fallback nav when the operator config is absent (legacy payloads). */
@@ -46,6 +49,7 @@ export function useNavTabs(): readonly NavTab[] {
   const { t } = useTranslation();
   const { status: partner } = usePartnerStatus();
   const { branding } = useBranding();
+  const supportUnread = useSupportUnread();
 
   return useMemo<readonly NavTab[]>(() => {
     const items =
@@ -126,6 +130,7 @@ export function useNavTabs(): readonly NavTab[] {
         label: t("bottomNav.support"),
         testId: "tab-support",
         matchPrefix: ["/support"],
+        badge: supportUnread,
       },
       settings: {
         to: "/settings",
@@ -154,7 +159,21 @@ export function useNavTabs(): readonly NavTab[] {
     if (!seen.has("subscriptions")) tabs.unshift(registry.subscriptions);
     if (!seen.has("settings")) tabs.push(registry.settings);
     return tabs;
-  }, [partner.isActive, t, branding.navItems]);
+  }, [partner.isActive, t, branding.navItems, supportUnread]);
+}
+
+/**
+ * Whether the operator surfaced "Support" as a visible bottom-nav destination.
+ * Drives where the unread-support indicator lives: when Support is in the nav
+ * it carries its own badge and the header bell stops counting support replies;
+ * when it isn't, the bell keeps surfacing them (legacy behaviour). Essentials
+ * (`subscriptions`/`settings`) are irrelevant here — Support is opt-in.
+ */
+export function useSupportInNav(): boolean {
+  const { branding } = useBranding();
+  const items =
+    branding.navItems && branding.navItems.length > 0 ? branding.navItems : DEFAULT_NAV;
+  return items.some((i) => i.id === "support" && i.visible);
 }
 
 /**
