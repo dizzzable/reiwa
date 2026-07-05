@@ -79,6 +79,20 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             res.status(400).json({ message: "missing telegramId/text/eventId" });
             return;
           }
+          // The bot's /notify only accepts a plain Telegram numeric id
+          // (1-19 digits). A non-numeric / out-of-range value (e.g. a dirty
+          // imported id, or a negative chat id) would be rejected there with a
+          // 400 → surfaced here as a misleading 502. Catch it up front: such a
+          // push can never reach Telegram, so drop the Telegram channel (the
+          // cabinet feed + web-push already fired on the rezeis side) and ack.
+          if (!/^\d{1,19}$/.test(telegramId)) {
+            getRequestLogger(req).warn(
+              { telegramId },
+              "reiwa.user.notify: telegramId is not a Telegram numeric id; dropping Telegram push",
+            );
+            res.status(200).json({ messageId: null });
+            return;
+          }
           const relayed = await relayToBot("/notify", {
             eventId,
             telegramId,
@@ -190,8 +204,21 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
       }
       res.status(204).end();
     } catch (err: unknown) {
+      if (err instanceof BotRelayError && err.status >= 400 && err.status < 500) {
+        // The bot rejected the payload as permanently invalid (4xx) — e.g. a
+        // telegramId that isn't a Telegram numeric id, or empty text. A retry
+        // can never succeed, so ack (2xx) to stop the admin dispatcher from
+        // re-firing, and log the details for diagnosis instead of a 502.
+        getRequestLogger(req).warn(
+          { event, botStatus: err.status, path: err.path },
+          "rezeis webhook: bot rejected payload as invalid (permanent); dropping",
+        );
+        res.status(200).json({ dropped: true });
+        return;
+      }
       getRequestLogger(req).error({ err, event }, "rezeis webhook relay failed");
-      // 502 so the admin dispatcher retries with backoff.
+      // 502 so the admin dispatcher retries with backoff (transient bot 5xx /
+      // network — a recoverable condition, unlike a 4xx bad payload above).
       res.status(502).json({ message: "relay failed" });
     }
   });
@@ -223,7 +250,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
       body: bodyStr,
     });
     if (!resp.ok && resp.status !== 204) {
-      throw new Error(`bot relay ${path} -> ${resp.status}`);
+      throw new BotRelayError(path, resp.status);
     }
     if (resp.status === 204) return { messageId: null };
     const json = (await resp.json().catch(() => null)) as { messageId?: unknown } | null;
@@ -240,4 +267,19 @@ function str(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Thrown by `relayToBot` on a non-2xx/204 bot response. Carries the bot's HTTP
+ * status so the webhook can distinguish a permanent 4xx (bad payload — ack &
+ * drop) from a transient 5xx/network error (502 & let the dispatcher retry).
+ */
+class BotRelayError extends Error {
+  public constructor(
+    public readonly path: string,
+    public readonly status: number,
+  ) {
+    super(`bot relay ${path} -> ${status}`);
+    this.name = "BotRelayError";
+  }
 }
