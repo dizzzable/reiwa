@@ -100,13 +100,17 @@ function truncateCaption(
   };
 }
 
-function rememberFileId(ref: string, sent: unknown): string | undefined {
+function rememberFileId(ref: string | null, sent: unknown): string | undefined {
   const photo = (sent as { photo?: Array<{ file_id?: string }> } | undefined)?.photo;
   const fileId =
     Array.isArray(photo) && photo.length > 0 ? photo[photo.length - 1]?.file_id : undefined;
   if (typeof fileId === 'string' && fileId.length > 0) {
-    if (screenBannerFileIdCache.size > 32) screenBannerFileIdCache.clear();
-    screenBannerFileIdCache.set(ref, fileId);
+    // A pre-resolved source (e.g. the bundled default banner) has no ref key —
+    // return the file_id for durable stamping but don't populate the ref cache.
+    if (ref !== null) {
+      if (screenBannerFileIdCache.size > 32) screenBannerFileIdCache.clear();
+      screenBannerFileIdCache.set(ref, fileId);
+    }
     return fileId;
   }
   return undefined;
@@ -138,6 +142,13 @@ export interface RenderScreenOptions {
    */
   readonly screenShortId?: string;
   readonly ownBannerUrl?: string | null;
+  /**
+   * A pre-resolved Telegram-sendable source (URL / file_id / `InputFile`).
+   * When set, it's used verbatim and `bannerRef` resolution is skipped — this
+   * is how the welcome/main screen restores its BUNDLED default banner (a local
+   * `assets/banners/...` file that isn't expressible as a `bannerRef` string).
+   */
+  readonly bannerSource?: BannerPhotoSource;
   /**
    * When `'HTML'`, the caption is sent with `parse_mode: 'HTML'` (and no
    * `caption_entities` — Telegram forbids combining the two). Used by
@@ -177,10 +188,10 @@ export async function renderScreenWithBanner(
   options: RenderScreenOptions,
   deps: ScreenBannerDeps,
 ): Promise<boolean> {
-  const { text, entities, replyMarkup, bannerRef, parseMode, screenShortId, ownBannerUrl } = options;
-  if (bannerRef === null) return false;
+  const { text, entities, replyMarkup, bannerRef, parseMode, screenShortId, ownBannerUrl, bannerSource } = options;
+  if (bannerRef === null && bannerSource === undefined) return false;
 
-  const source = await resolveSource(bannerRef, deps);
+  const source = bannerSource ?? (bannerRef !== null ? await resolveSource(bannerRef, deps) : null);
   if (source === null) return false;
 
   // Persist the resolved Telegram file_id for the screen's OWN banner so a
@@ -368,9 +379,16 @@ export async function renderViewWithBanner(
     readonly screenShortId?: string;
     /** The screen's OWN photo mediaUrl (for durable file_id stamping). */
     readonly ownBannerUrl?: string | null;
+    /**
+     * Pre-resolved sendable source used when the target banner can't be
+     * expressed as a `bannerRef` string — e.g. the welcome screen's BUNDLED
+     * default banner (a local `assets/banners/...` file). Takes precedence
+     * over `bannerRef` resolution.
+     */
+    readonly bannerSource?: BannerPhotoSource;
   },
 ): Promise<void> {
-  if (options.bannerRef !== null) {
+  if (options.bannerRef !== null || options.bannerSource !== undefined) {
     const handled = await renderScreenWithBanner(
       ctx,
       {
@@ -381,6 +399,7 @@ export async function renderViewWithBanner(
         bannerRef: options.bannerRef,
         screenShortId: options.screenShortId,
         ownBannerUrl: options.ownBannerUrl,
+        bannerSource: options.bannerSource,
       },
       deps,
     );

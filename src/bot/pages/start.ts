@@ -37,8 +37,9 @@ import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
 import { coerceLocale } from './coerce-locale.js';
-import { resolveBannerSource } from './banner-resolver.js';
+import { resolveBannerSource, type BannerPhotoSource } from './banner-resolver.js';
 import { renderViewWithBanner, resolveWelcomeBannerRef } from './screen-banner.js';
+import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 interface BootstrapSessionShape {
@@ -405,6 +406,45 @@ export async function sendWelcomeScreen(ctx: BotContext, deps: PageDeps): Promis
 }
 
 /**
+ * Resolve the welcome/main screen's banner into what an IN-PLACE render
+ * (`menu:main`) needs. Mirrors `sendWelcomeScreen`'s banner chain so the main
+ * screen looks identical whether reached cold (`/start`) or warm (back button):
+ *
+ *   1. Operator's custom banner (`visual.bannerFileId` / `bannerUrl`) → returned
+ *      as a `bannerRef` string so `renderScreenWithBanner` resolves + caches it.
+ *   2. Else the BUNDLED default banner from the banner store — a local
+ *      `assets/banners/...` file (→ `InputFile`) or an override URL. This is the
+ *      piece `resolveWelcomeBannerRef` alone misses: without it, returning to the
+ *      main screen from a sub-screen banner deleted the photo and dropped the
+ *      default banner entirely.
+ *
+ * Exactly one of `bannerRef` / `bannerSource` is set when a banner applies;
+ * both are absent only when the main screen genuinely has no banner.
+ */
+async function resolveWelcomeBanner(
+  deps: PageDeps,
+  botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
+  lang: SupportedLocale,
+): Promise<{ bannerRef: string | null; bannerSource?: BannerPhotoSource }> {
+  const customRef = resolveWelcomeBannerRef(botCfg.visual);
+  if (customRef !== null) return { bannerRef: customRef };
+
+  if (deps.bannerStore !== undefined) {
+    try {
+      const banner = await deps.bannerStore.resolve('default', lang);
+      if (banner !== null) {
+        if (banner.kind === 'url') return { bannerRef: null, bannerSource: banner.url };
+        const { InputFile } = await import('grammy');
+        return { bannerRef: null, bannerSource: new InputFile(banner.path) };
+      }
+    } catch (err: unknown) {
+      deps.logger?.warn({ err }, 'menu:main: default banner resolve failed');
+    }
+  }
+  return { bannerRef: null };
+}
+
+/**
  * Extracts the advertising tracking code from a `/start ad_<code>` payload.
  * Returns `null` when the payload is not an advertising payload or the code is
  * malformed (so the existing link/referral routing is unaffected). Mirrors the
@@ -682,13 +722,19 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
     }
     await ctx.answerCallbackQuery();
     const botCfg = await deps.getConfig();
+    const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
     const view = await buildWelcomeView(ctx, deps);
+    // Resolve the main screen's banner the SAME way /start does — operator's
+    // custom banner OR the bundled default banner — so returning to the menu
+    // restores it instead of dropping it (the reported "standard banner
+    // disappears after В меню" bug).
+    const welcomeBanner = await resolveWelcomeBanner(deps, botCfg, lang);
     try {
-      // Restore the MAIN screen's own banner (or none) instead of a plain
-      // caption edit — otherwise a sub-screen's custom banner (e.g. the invite
-      // screen's) lingers on the message after "В меню". `renderViewWithBanner`
-      // swaps to the welcome banner, or deletes a stale photo when the main
-      // screen has no banner.
+      // Restore the MAIN screen's banner (custom or bundled default) instead of
+      // a plain caption edit — otherwise a sub-screen's custom banner (e.g. the
+      // invite screen's) lingers, or the default banner is dropped, after "В
+      // меню". `renderViewWithBanner` swaps to the welcome banner, or deletes a
+      // stale photo only when the main screen genuinely has no banner.
       await renderViewWithBanner(
         ctx,
         {
@@ -705,7 +751,8 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
           text: view.text,
           entities: view.entities,
           replyMarkup: view.keyboard,
-          bannerRef: resolveWelcomeBannerRef(botCfg.visual),
+          bannerRef: welcomeBanner.bannerRef,
+          bannerSource: welcomeBanner.bannerSource,
         },
       );
     } catch (err: unknown) {
