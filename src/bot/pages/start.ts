@@ -13,11 +13,10 @@
  *      still ship the text reply so users never see a dead bot.
  *
  * `bot.callbackQuery('menu:main')` flow (warm path — back-navigation):
- *   • Re-render the welcome screen *in place* via `editOrReply`,
- *     STEALTHNET-style. No fresh bootstrap, no banner re-send — we
- *     just refresh the live message's caption + keyboard so the user's
- *     chat stays a single screen instead of a scrolling tower of
- *     replies.
+ *   • Re-render the welcome screen *in place*, STEALTHNET-style —
+ *     swapping the message's banner back to the MAIN screen's banner
+ *     (via `renderViewWithBanner`) so a sub-screen's custom banner
+ *     doesn't linger, and refreshing the caption + keyboard.
  */
 import { InlineKeyboard } from 'grammy';
 
@@ -38,8 +37,8 @@ import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
 import { coerceLocale } from './coerce-locale.js';
-import { editOrReply } from './edit-message.js';
 import { resolveBannerSource } from './banner-resolver.js';
+import { renderViewWithBanner, resolveWelcomeBannerRef } from './screen-banner.js';
 import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 interface BootstrapSessionShape {
@@ -682,13 +681,33 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       }
     }
     await ctx.answerCallbackQuery();
+    const botCfg = await deps.getConfig();
     const view = await buildWelcomeView(ctx, deps);
     try {
-      await editOrReply(ctx, {
-        text: view.text,
-        entities: view.entities,
-        replyMarkup: view.keyboard,
-      });
+      // Restore the MAIN screen's own banner (or none) instead of a plain
+      // caption edit — otherwise a sub-screen's custom banner (e.g. the invite
+      // screen's) lingers on the message after "В меню". `renderViewWithBanner`
+      // swaps to the welcome banner, or deletes a stale photo when the main
+      // screen has no banner.
+      await renderViewWithBanner(
+        ctx,
+        {
+          rezeisAdminUrl: deps.urls.rezeisAdminUrl,
+          logger: deps.logger
+            ? {
+                warn: (obj, msg): void => {
+                  deps.logger?.warn(obj as Record<string, unknown>, msg);
+                },
+              }
+            : undefined,
+        },
+        {
+          text: view.text,
+          entities: view.entities,
+          replyMarkup: view.keyboard,
+          bannerRef: resolveWelcomeBannerRef(botCfg.visual),
+        },
+      );
     } catch (err: unknown) {
       // Telegram refuses edits when the new content is byte-identical
       // to the old (`message is not modified`) — that's expected when

@@ -1,7 +1,10 @@
 /**
  * Invite hub (referral keyboard button).
  *
- * Rendered in place via `editOrReply`. Branches on the user's partner status:
+ * Rendered in place via `renderScreenOrEdit`, which shows the invite screen's
+ * banner (its own photo media, the global banner when "one banner for all
+ * screens" is on, or none) and clears any banner carried over from the
+ * previous screen. Branches on the user's partner status:
  *
  *   • Active partner  → partner hub: balance / earned / referred summary +
  *     editable description + share link + deep-link to the cabinet partner page.
@@ -18,7 +21,6 @@ import { InlineKeyboard } from 'grammy';
 
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import { coerceLocale } from './coerce-locale.js';
-import { editOrReply } from './edit-message.js';
 import { renderScreenOrEdit } from './screen-banner.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import { renderBotCopy, renderBotCopyHtml, renderButtonLabel, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
@@ -117,7 +119,10 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
 
     if (!isPartner && !botCfg.features.referralsEnabled) {
       const kb = new InlineKeyboard().text(backLabel, 'menu:main');
-      await editOrReply(ctx, {
+      // Still the invite slot — render with its banner (own / global / none)
+      // so we never leave the previous screen's banner lingering here.
+      await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+        overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
         text: translator.t('referral.disabled', lang),
         replyMarkup: kb,
       });
@@ -137,7 +142,8 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
         'invite: link unavailable — admin returned no token or public URL missing',
       );
       const kb = new InlineKeyboard().text(backLabel, 'menu:main');
-      await editOrReply(ctx, {
+      await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+        overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
         text: translator.t('referral.link_unavailable', lang),
         replyMarkup: kb,
       });

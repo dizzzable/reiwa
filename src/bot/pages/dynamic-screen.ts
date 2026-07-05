@@ -23,7 +23,7 @@ import {
   findScreenByShortId,
   pickScreenText,
 } from './screen-renderer.js';
-import { renderScreenWithBanner, resolveScreenBannerRef } from './screen-banner.js';
+import { renderScreenOrEdit } from './screen-banner.js';
 import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
 import type { PageRegistrar } from './types.js';
 
@@ -102,41 +102,17 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
 
     try {
       // Render the screen's banner (own photo media, or the global banner
-      // when "one banner for all screens" is on) as a real photo. Falls
-      // back to the in-place text edit when no banner is desired or it
-      // can't be resolved.
-      const bannerRef = resolveScreenBannerRef(screen, config.visual);
-      const bannerHandled = await renderScreenWithBanner(
-        ctx,
-        {
-          text: renderedText.text,
-          entities: renderedText.entities,
-          parseMode,
-          replyMarkup: keyboard,
-          bannerRef,
-          screenShortId: screen.shortId,
-          ownBannerUrl: screen.mediaType === 'photo' ? screen.mediaUrl : null,
-        },
-        {
-          rezeisAdminUrl: urls.rezeisAdminUrl,
-          rememberScreenBannerFileId: deps.rememberScreenBannerFileId,
-          logger: logger
-            ? {
-                warn: (obj, msg) => {
-                  logger.warn(obj as Record<string, unknown>, msg);
-                },
-              }
-            : undefined,
-        },
-      );
-      if (!bannerHandled) {
-        await editOrReply(ctx, {
-          text: renderedText.text,
-          entities: renderedText.entities,
-          parseMode,
-          replyMarkup: keyboard,
-        });
-      }
+      // when "one banner for all screens" is on) as a real photo — and when
+      // this screen has NO banner but the live message still carries another
+      // screen's banner, delete + resend as text so it never lingers. Shared
+      // with the named-override screens and menu:main via `renderViewWithBanner`.
+      await renderScreenOrEdit(ctx, deps, config.visual, {
+        overrideScreen: screen,
+        text: renderedText.text,
+        entities: renderedText.entities,
+        parseMode,
+        replyMarkup: keyboard,
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('message is not modified')) {

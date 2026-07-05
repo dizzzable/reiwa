@@ -275,11 +275,11 @@ export async function renderScreenWithBanner(
 
 /**
  * Render an operator-configured named screen (invite / rules / help) with its
- * per-screen banner, falling back to a plain in-place text edit when no banner
- * applies. This is the shared path so every named-override screen behaves like
- * the generic dynamic-screen handler: a screen's own photo media (or the global
- * banner when "one banner for all screens" is on) is rendered as a real photo,
- * and screens with no banner keep the flicker-free caption/text edit.
+ * per-screen banner, correctly transitioning from whatever banner the previous
+ * message carried: a screen's own photo media (or the global banner when "one
+ * banner for all screens" is on) is rendered as a real photo, and a screen with
+ * no banner deletes+resends as text when the live message is a stale photo (so
+ * another screen's banner never lingers), else keeps the flicker-free edit.
  *
  * `overrideScreen` is the operator's screen (from `findScreenByName`) or `null`
  * when the operator hasn't customised it — in which case only the global banner
@@ -299,17 +299,8 @@ export async function renderScreenOrEdit(
 ): Promise<void> {
   const { overrideScreen, text, entities, parseMode, replyMarkup } = options;
   const bannerRef = resolveScreenBannerRef(overrideScreen, visual);
-  const handled = await renderScreenWithBanner(
+  await renderViewWithBanner(
     ctx,
-    {
-      text,
-      entities,
-      parseMode,
-      replyMarkup,
-      bannerRef,
-      screenShortId: overrideScreen?.shortId,
-      ownBannerUrl: overrideScreen?.mediaType === 'photo' ? overrideScreen.mediaUrl : null,
-    },
     {
       rezeisAdminUrl: deps.urls.rezeisAdminUrl,
       rememberScreenBannerFileId: deps.rememberScreenBannerFileId,
@@ -321,8 +312,111 @@ export async function renderScreenOrEdit(
           }
         : undefined,
     },
+    {
+      text,
+      entities,
+      parseMode,
+      replyMarkup,
+      bannerRef,
+      screenShortId: overrideScreen?.shortId,
+      ownBannerUrl: overrideScreen?.mediaType === 'photo' ? overrideScreen.mediaUrl : null,
+    },
   );
-  if (!handled) {
-    await editOrReply(ctx, { text, entities, parseMode, replyMarkup });
+}
+
+/**
+ * The global operator/welcome banner reference — ALWAYS the configured banner
+ * (unlike `resolveScreenBannerRef`, this is NOT gated by `bannerApplyAll`,
+ * because the welcome screen shows its banner unconditionally). Prefers the
+ * cached Telegram `file_id` (instant) over the URL. `null` when none set.
+ */
+export function resolveWelcomeBannerRef(visual: BotVisualConfig): string | null {
+  const fileId = (visual.bannerFileId ?? '').trim();
+  if (fileId.length > 0) return fileId;
+  const url = (visual.bannerUrl ?? '').trim();
+  if (url.length > 0) return url;
+  return null;
+}
+
+/**
+ * Render a view (text + keyboard) while correctly transitioning the CURRENT
+ * message's banner to the target one — the missing piece that let a sub-screen's
+ * banner linger after navigating back:
+ *
+ *   • target has a banner → swap/send it (`renderScreenWithBanner`).
+ *   • target has NO banner but the live message is a photo → it carries a stale
+ *     banner from another screen; Telegram can't turn a photo into text via an
+ *     edit, so delete + resend as text.
+ *   • otherwise → plain in-place text/caption edit.
+ *
+ * Used by every screen transition (menu:main back-navigation, named
+ * override screens via `renderScreenOrEdit`, and the dynamic `screen:*`
+ * handler) so the message always shows the TARGET screen's banner — its
+ * own photo media, the global banner when "one banner for all screens" is
+ * on, or none — never whichever screen the user came from.
+ */
+export async function renderViewWithBanner(
+  ctx: Context,
+  deps: ScreenBannerDeps,
+  options: {
+    readonly text: string;
+    readonly entities?: readonly TgEntity[];
+    readonly parseMode?: 'HTML';
+    readonly replyMarkup?: InlineKeyboard;
+    readonly bannerRef: string | null;
+    /** Screen shortId — enables durable file_id stamping of its own banner. */
+    readonly screenShortId?: string;
+    /** The screen's OWN photo mediaUrl (for durable file_id stamping). */
+    readonly ownBannerUrl?: string | null;
+  },
+): Promise<void> {
+  if (options.bannerRef !== null) {
+    const handled = await renderScreenWithBanner(
+      ctx,
+      {
+        text: options.text,
+        entities: options.entities,
+        parseMode: options.parseMode,
+        replyMarkup: options.replyMarkup,
+        bannerRef: options.bannerRef,
+        screenShortId: options.screenShortId,
+        ownBannerUrl: options.ownBannerUrl,
+      },
+      deps,
+    );
+    if (handled) return;
+    // Banner failed to resolve — fall through to the text paths below.
   }
+
+  if (messageHasPhoto(ctx)) {
+    const chatId = ctx.chat?.id;
+    if (chatId !== undefined) {
+      await ctx.deleteMessage().catch(() => undefined);
+      const html = options.parseMode === 'HTML';
+      await ctx.api
+        .sendMessage(chatId, options.text, {
+          parse_mode: html ? 'HTML' : undefined,
+          entities:
+            !html && options.entities && options.entities.length > 0
+              ? [...options.entities]
+              : undefined,
+          reply_markup: options.replyMarkup,
+        })
+        .catch(() =>
+          // Stray markup / entity issue — never strand the user: resend the
+          // text with no parse mode so a delivery still lands.
+          ctx.api
+            .sendMessage(chatId, options.text, { reply_markup: options.replyMarkup })
+            .catch(() => undefined),
+        );
+      return;
+    }
+  }
+
+  await editOrReply(ctx, {
+    text: options.text,
+    entities: options.entities,
+    parseMode: options.parseMode,
+    replyMarkup: options.replyMarkup,
+  });
 }
