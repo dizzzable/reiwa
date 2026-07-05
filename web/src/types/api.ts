@@ -253,6 +253,11 @@ export interface PlatformPolicy {
   rulesLink: string;
   channelLink: string;
   defaultCurrency: string;
+  /**
+   * When true (default), a Telegram user without web login/password must set
+   * them before entering the cabinet. When false, Telegram alone suffices.
+   */
+  requireTelegramWebCredentials?: boolean;
 }
 
 // ─── Devices (HWID) ───────────────────────────────────────────────────────

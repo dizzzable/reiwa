@@ -27,6 +27,12 @@ export interface PlatformPolicyShape {
   readonly channelId?: string | number;
   readonly channelUsername?: string | null;
   readonly channelRecheck?: boolean;
+  /**
+   * When true (default), Telegram users without web login/password must set
+   * them before entering the cabinet; when false, Telegram alone suffices.
+   * Consumed by the cabinet's route guard.
+   */
+  readonly requireTelegramWebCredentials?: boolean;
   readonly defaultCurrency: string;
 }
 

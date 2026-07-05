@@ -14,6 +14,7 @@
 
 import { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { SideNav } from "@/components/layout/side-nav";
@@ -27,6 +28,7 @@ import { useInstallPrompt } from "@/hooks/use-install-prompt";
 import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
 import { reportSurface } from "@/lib/api-client";
+import { getPlatformPolicy } from "@/lib/api-client";
 import { ensurePushSubscription } from "@/lib/push";
 
 type Surface = "tma" | "pwa" | "browser";
@@ -79,6 +81,17 @@ export default function StealthLayout() {
   const isDesktop = useIsDesktop();
   const location = useLocation();
   const { isStandalone } = useInstallPrompt();
+
+  // Whether the operator requires Telegram users to set a web login/password
+  // before entering the cabinet. Default true (enforce) — while the policy
+  // query is loading or unavailable we keep the mandatory flow so we never
+  // accidentally let an un-credentialed first-timer skip it.
+  const { data: platformPolicy } = useQuery({
+    queryKey: ["platform-policy"],
+    queryFn: getPlatformPolicy,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+  });
 
   // Report the usage surface (tma/pwa/browser) + form factor + os once per
   // browser session. Installed-PWA sessions get upgraded to the 30-day window
@@ -145,19 +158,32 @@ export default function StealthLayout() {
     return <Navigate to={`/bootstrap${next}`} replace />;
   }
 
+  // A Telegram-authenticated session already carries a credential (Telegram
+  // itself). By DEFAULT we still require a web login/password on first entry
+  // (operator mandate: a first-time user sets login+password on both the web
+  // Telegram widget and the Mini App). The operator can flip
+  // `requireTelegramWebCredentials` off in Settings → then a Telegram user is
+  // let straight into the cabinet without web credentials. Already-registered
+  // users (webAccount.login set) always pass regardless. Web-first accounts
+  // have no telegram id, so they always keep the mandatory flow.
+  const requireTelegramWebCredentials = platformPolicy?.requireTelegramWebCredentials ?? true;
+  const hasTelegramCredential =
+    session.telegramId != null && String(session.telegramId).trim().length > 0;
+  const skipCredentialSetup = hasTelegramCredential && !requireTelegramWebCredentials;
+
   // Mandatory claim gate (Property 1): a Telegram-first user authenticated into
   // a WebSession but with no `WebAccount` (explicit `null` from the session
   // probe) must set login + password before reaching any cabinet page. We only
   // gate on an explicit `null` — an absent/`undefined` field means the probe
   // degraded and we must not lock out an already-claimed user.
-  if (session.webAccount === null) {
+  if (session.webAccount === null && !skipCredentialSetup) {
     return <Navigate to="/claim" replace />;
   }
 
   // External-auth registration gate: a user who signed up via a social provider
   // has a shell `WebAccount` (email attached) but no `login` yet. Login +
   // password stay mandatory, so force finish-setup before any cabinet route.
-  if (session.webAccount && !session.webAccount.login) {
+  if (session.webAccount && !session.webAccount.login && !skipCredentialSetup) {
     return <Navigate to="/finish-setup" replace />;
   }
 
