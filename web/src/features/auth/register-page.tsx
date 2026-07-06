@@ -9,6 +9,7 @@ import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { registerUser, checkUsername, login } from '@/lib/api-client'
 import { useAccessMode } from '@/lib/use-access-mode'
 import { ExternalAuthButtons } from './external-auth-buttons'
+import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { AccessModeBanner } from '@/components/access-mode-banner'
 
 // ── Validation ────────────────────────────────────────────────────────────────
@@ -491,6 +492,9 @@ export default function RegisterPage() {
               {t('register.signIn')}
             </Link>
           </p>
+          <div className="mt-4 flex justify-center">
+            <GuestSupportLink />
+          </div>
         </motion.div>
       </div>
     </div>

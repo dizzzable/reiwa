@@ -9,6 +9,7 @@ export const en: RuDict = {
   guestSupport: {
     title: 'Support',
     subtitle: 'Describe your problem — no account needed. An operator will reply here.',
+    entry: 'Need help? Contact support',
     form: {
       subject: 'Subject',
       subjectPlaceholder: 'Briefly: what do you need help with',

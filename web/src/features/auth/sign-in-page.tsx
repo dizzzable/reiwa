@@ -10,6 +10,7 @@ import { login } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { ExternalAuthButtons } from './external-auth-buttons'
+import { GuestSupportLink } from '@/features/support/guest-support-link'
 
 export default function SignInPage() {
   const { t } = useTranslation()
@@ -258,6 +259,7 @@ export default function SignInPage() {
               {t('auth.register')}
             </Link>
           </span>
+          <GuestSupportLink />
         </motion.div>
       </div>
     </div>

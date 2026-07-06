@@ -7,6 +7,7 @@ import { ArrowLeft, Send, MessageCircle, Mail, AlertTriangle } from 'lucide-reac
 import { NetworkBg } from '@/components/ui/network-bg'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { recoverPassword, type RecoverResponse } from '@/lib/api-client'
+import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { AxiosError } from 'axios'
 
 type RecoveryState = 'form' | 'result'
@@ -207,6 +208,9 @@ export default function RecoverPage() {
             <ArrowLeft className="h-3.5 w-3.5" />
             {t('auth.recover.backToSignIn')}
           </button>
+          <div className="mt-4 flex justify-center">
+            <GuestSupportLink />
+          </div>
         </div>
       </motion.div>
     </div>

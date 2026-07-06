@@ -7,6 +7,7 @@ export const ru = {
   guestSupport: {
     title: 'Поддержка',
     subtitle: 'Опишите проблему — входить в аккаунт не нужно. Оператор ответит здесь.',
+    entry: 'Нужна помощь? Написать в поддержку',
     form: {
       subject: 'Тема',
       subjectPlaceholder: 'Кратко: с чем нужна помощь',
