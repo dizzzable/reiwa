@@ -537,9 +537,11 @@ export const ru = {
     passwordPlaceholder: 'Минимум 8 символов',
     submit: 'Завершить',
     submitting: 'Сохранение...',
+    cancel: 'Отмена',
+    haveAccount: 'Уже есть аккаунт? Войти',
     showPassword: 'Показать пароль',
     hidePassword: 'Скрыть пароль',
-    errorUsernameTaken: 'Этот логин уже занят',
+    errorUsernameTaken: 'Похоже, у вас уже есть аккаунт с таким логином. Войдите в него — Telegram можно привязать позже в настройках.',
     errorRateLimit: 'Слишком много попыток. Попробуйте позже.',
     errorGeneric: 'Не удалось сохранить. Попробуйте ещё раз.',
     usernameError: {

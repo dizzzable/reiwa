@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { BrandLogo } from '@/components/ui/brand-logo'
 import { SESSION_QUERY_KEY, useSession } from '@/hooks/use-session'
-import { finishExternalSetup } from '@/lib/api-client'
+import { finishExternalSetup, signOut } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,32}$/
@@ -48,6 +48,7 @@ export default function FinishSetupPage() {
   const [usernameError, setUsernameError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
 
   // No session → back through the entry router.
@@ -60,6 +61,22 @@ export default function FinishSetupPage() {
   if (!isLoading && session?.webAccount?.login) {
     navigate('/dashboard', { replace: true })
     return null
+  }
+
+  // Escape hatch: a user who already has an account (e.g. a web-first account
+  // whose Telegram isn't linked yet, so external-auth couldn't auto-match it)
+  // must be able to bail out of the mandatory finish-setup instead of being
+  // trapped. Destroy the shell session and return to the sign-in form so they
+  // can log into their real account (and link Telegram later from Settings).
+  async function handleCancel() {
+    setCancelling(true)
+    try {
+      await signOut()
+    } catch {
+      // Idempotent logout — ignore; we navigate away regardless.
+    }
+    queryClient.clear()
+    navigate('/sign-in', { replace: true })
   }
 
   function handleUsernameChange(value: string) {
@@ -95,7 +112,8 @@ export default function FinishSetupPage() {
         const axiosErr = err as { response?: { status?: number } }
         const status = axiosErr.response?.status
         if (status === 409) {
-          setUsernameError('required')
+          // Login already taken — almost always by the user's own existing
+          // account. Guide them to sign in instead of a dead-end field error.
           setServerError(t('finishSetup.errorUsernameTaken'))
         } else if (status === 429) {
           setServerError(t('finishSetup.errorRateLimit'))
@@ -231,6 +249,17 @@ export default function FinishSetupPage() {
             ) : (
               t('finishSetup.submit')
             )}
+          </button>
+
+          {/* Escape hatch — sign out of the shell session and return to the
+              sign-in form (for users who already have an account). */}
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={submitting || cancelling}
+            className="flex w-full items-center justify-center gap-2 py-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300 disabled:opacity-50"
+          >
+            {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : t('finishSetup.haveAccount')}
           </button>
         </motion.form>
       </div>

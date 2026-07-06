@@ -539,9 +539,11 @@ export const en: RuDict = {
     passwordPlaceholder: 'At least 8 characters',
     submit: 'Finish',
     submitting: 'Saving...',
+    cancel: 'Cancel',
+    haveAccount: 'Already have an account? Sign in',
     showPassword: 'Show password',
     hidePassword: 'Hide password',
-    errorUsernameTaken: 'This login is already taken',
+    errorUsernameTaken: 'Looks like you already have an account with this login. Sign in to it — you can link Telegram later in settings.',
     errorRateLimit: 'Too many attempts. Please try again later.',
     errorGeneric: 'Could not save. Please try again.',
     usernameError: {
