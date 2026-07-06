@@ -28,6 +28,8 @@ import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
+import { openExternalUrl } from "@/lib/utils";
+import { savePendingCheckout } from "@/lib/pending-checkout";
 import { BackButton } from "@/components/ui/back-button";
 import { useBranding } from "@/lib/branding-provider";
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
@@ -369,9 +371,11 @@ function CheckoutStep() {
       }),
     onSuccess: (result) => {
       if (result.checkoutUrl) {
-        const tg = window.Telegram?.WebApp;
-        if (tg) tg.openLink(result.checkoutUrl);
-        else window.open(result.checkoutUrl, "_blank");
+        // Stash the URL so the return page can offer a manual "open payment"
+        // button — the auto-open below is blocked on Telegram Desktop (openLink
+        // must run inside a user gesture, which the async onSuccess has lost).
+        savePendingCheckout(result.paymentId, result.checkoutUrl);
+        openExternalUrl(result.checkoutUrl);
         navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
       } else {
         // Free add-on: applied instantly server-side, no redirect.

@@ -21,7 +21,8 @@ import { PromoInput } from "@/features/purchase/components/promo-input";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
 import type { RenewalOptionItem, Subscription } from "@/types/api";
-import { cn } from "@/lib/utils";
+import { cn, openExternalUrl } from "@/lib/utils";
+import { savePendingCheckout } from "@/lib/pending-checkout";
 import { TariffCard } from "@/features/plans/tariff-card";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
@@ -713,11 +714,11 @@ function CheckoutStep() {
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
-      const tg = window.Telegram?.WebApp;
-      if (result.checkoutUrl) {
-        if (tg) tg.openLink(result.checkoutUrl);
-        else window.open(result.checkoutUrl, "_blank");
-      }
+      // Stash the URL so the return page can offer a manual "open payment"
+      // button — the auto-open below is blocked on Telegram Desktop (openLink
+      // must run inside a user gesture, which the async onSuccess has lost).
+      savePendingCheckout(result.paymentId, result.checkoutUrl ?? null);
+      if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
     onError: () => toast.error(t("renewal.checkoutError")),

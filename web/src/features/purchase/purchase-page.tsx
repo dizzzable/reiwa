@@ -12,11 +12,12 @@ import { AppleGlyph, AndroidGlyph, WindowsGlyph, MacosGlyph } from "@/components
 import { usePurchaseStore } from "@/stores/purchase.store";
 import { useBranding } from "@/lib/branding-provider";
 import { useAccessMode } from "@/lib/use-access-mode";
+import { savePendingCheckout } from "@/lib/pending-checkout";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { PromoInput } from "./components/promo-input";
 import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
-import { cn } from "@/lib/utils";
+import { cn, openExternalUrl } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { toast } from "sonner";
@@ -447,17 +448,14 @@ function CheckoutStep() {
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
-      // Open payment URL — in TMA context use openLink, otherwise window.open.
-      // `checkoutUrl` can be null for non-redirect flows (e.g. Telegram Stars);
-      // in that case we skip opening and just poll status on the return page.
-      const tg = window.Telegram?.WebApp;
-      if (result.checkoutUrl) {
-        if (tg) {
-          tg.openLink(result.checkoutUrl);
-        } else {
-          window.open(result.checkoutUrl, "_blank");
-        }
-      }
+      // Stash the URL so the return page can offer a manual "open payment"
+      // button. `checkoutUrl` can be null for non-redirect flows (e.g. Telegram
+      // Stars) — then we skip opening and just poll status on the return page.
+      // The auto-open below is blocked on Telegram Desktop (openLink must run
+      // inside a user gesture, which this async onSuccess has already lost), so
+      // the return-page button is the reliable path there.
+      savePendingCheckout(result.paymentId, result.checkoutUrl ?? null);
+      if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
       // Navigate to payment return to poll status
       navigate(`/payment-return?paymentId=${result.paymentId}`, {
         replace: true,

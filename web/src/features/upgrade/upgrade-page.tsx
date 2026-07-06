@@ -24,6 +24,8 @@ import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
+import { openExternalUrl } from "@/lib/utils";
+import { savePendingCheckout } from "@/lib/pending-checkout";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -419,11 +421,11 @@ function CheckoutStep() {
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
-      const tg = window.Telegram?.WebApp;
-      if (result.checkoutUrl) {
-        if (tg) tg.openLink(result.checkoutUrl);
-        else window.open(result.checkoutUrl, "_blank");
-      }
+      // Stash the URL so the return page can offer a manual "open payment"
+      // button — the auto-open below is blocked on Telegram Desktop (openLink
+      // must run inside a user gesture, which the async onSuccess has lost).
+      savePendingCheckout(result.paymentId, result.checkoutUrl ?? null);
+      if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
     onError: () => toast.error(t("upgrade.checkoutError")),

@@ -16,15 +16,18 @@
  * failure until the user taps a button.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslation } from "react-i18next";
+import { ExternalLink } from "lucide-react";
 
 import { getPaymentStatus } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { useBranding } from "@/lib/branding-provider";
+import { openExternalUrl } from "@/lib/utils";
+import { readPendingCheckout, clearPendingCheckout } from "@/lib/pending-checkout";
 
 type PaymentState = "processing" | "success" | "failed" | "timeout";
 
@@ -42,6 +45,15 @@ export default function PaymentReturnPage() {
   const paymentId = searchParams.get("paymentId") ?? "";
   const [state, setState] = useState<PaymentState>("processing");
   const pollCountRef = useRef(0);
+
+  // The provider URL stashed by the flow that created this checkout. On
+  // Telegram Desktop the auto-open (fired from an async mutation callback) is
+  // blocked because `openLink` must run inside a user gesture — so we surface a
+  // manual button here that opens the page from a fresh click.
+  const checkoutUrl = useMemo(() => readPendingCheckout(paymentId), [paymentId]);
+  const openPayment = () => {
+    if (checkoutUrl) openExternalUrl(checkoutUrl);
+  };
 
   // ── Polling logic ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -64,6 +76,7 @@ export default function PaymentReturnPage() {
         if (cancelled) return;
 
         if (status.status === "COMPLETED") {
+          clearPendingCheckout();
           setState("success");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
           queryClient.invalidateQueries({ queryKey: ["subscription"] });
@@ -72,6 +85,7 @@ export default function PaymentReturnPage() {
           return;
         }
         if (status.status === "FAILED" || status.status === "CANCELED") {
+          clearPendingCheckout();
           setState("failed");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
           return;
@@ -118,12 +132,20 @@ export default function PaymentReturnPage() {
       />
 
       <AnimatePresence mode="wait">
-        {state === "processing" && <ProcessingState key="processing" />}
+        {state === "processing" && (
+          <ProcessingState
+            key="processing"
+            checkoutUrl={checkoutUrl}
+            onOpenPayment={openPayment}
+          />
+        )}
         {state === "success" && <SuccessState key="success" primary={branding.primary} />}
         {(state === "failed" || state === "timeout") && (
           <FailedState
             key="failed"
             isTimeout={state === "timeout"}
+            checkoutUrl={checkoutUrl}
+            onOpenPayment={openPayment}
             onRetry={() => navigate("/plans")}
             onHome={() => navigate("/dashboard", { replace: true })}
           />
@@ -135,7 +157,13 @@ export default function PaymentReturnPage() {
 
 // ─── Processing ─────────────────────────────────────────────────────────────
 
-function ProcessingState() {
+function ProcessingState({
+  checkoutUrl,
+  onOpenPayment,
+}: {
+  checkoutUrl: string | null;
+  onOpenPayment: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <motion.div
@@ -191,6 +219,24 @@ function ProcessingState() {
           />
         ))}
       </div>
+
+      {/* Manual open — the reliable path on Telegram Desktop, where the
+          auto-open (openLink from an async callback) is blocked. */}
+      {checkoutUrl && (
+        <div className="mt-1 flex flex-col items-center gap-2">
+          <p className="max-w-xs text-xs text-muted-foreground">
+            {t("paymentAnim.openPaymentHint")}
+          </p>
+          <Button
+            onClick={onOpenPayment}
+            variant="outline"
+            className="gap-2 border-white/10 bg-white/5 backdrop-blur hover:bg-white/10"
+          >
+            <ExternalLink className="h-4 w-4" />
+            {t("paymentAnim.openPayment")}
+          </Button>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -260,10 +306,14 @@ function SuccessState({ primary }: { primary: string }) {
 
 function FailedState({
   isTimeout,
+  checkoutUrl,
+  onOpenPayment,
   onRetry,
   onHome,
 }: {
   isTimeout: boolean;
+  checkoutUrl: string | null;
+  onOpenPayment: () => void;
   onRetry: () => void;
   onHome: () => void;
 }) {
@@ -318,6 +368,16 @@ function FailedState({
       </div>
 
       <div className="flex w-full max-w-xs flex-col gap-3">
+        {isTimeout && checkoutUrl && (
+          <Button
+            onClick={onOpenPayment}
+            variant="outline"
+            className="w-full gap-2 border-white/10 bg-white/5 backdrop-blur hover:bg-white/10"
+          >
+            <ExternalLink className="h-4 w-4" />
+            {t("paymentAnim.openPayment")}
+          </Button>
+        )}
         <Button
           onClick={onRetry}
           className="w-full"

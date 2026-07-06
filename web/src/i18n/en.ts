@@ -854,6 +854,8 @@ export const en: RuDict = {
     successHint: 'Your subscription is being activated. You can return to the app.',
     failed: 'Payment failed',
     failedHint: 'Try again or pick another payment method.',
+    openPayment: 'Open payment page',
+    openPaymentHint: "If the payment page didn't open automatically, tap the button below.",
   },
   privacy: {
     changePassword: 'Change password',
