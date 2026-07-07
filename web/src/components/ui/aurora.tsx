@@ -132,31 +132,48 @@ export function Aurora({
     const ctn = ctnDom.current;
     if (!ctn) return;
 
-    const renderer = new Renderer({
-      alpha: true,
-      premultipliedAlpha: true,
-      antialias: true,
-    });
+    // Guard renderer creation: iOS Safari/WKWebView can refuse a new WebGL2
+    // context (per-page context cap reached, or the GPU process is under
+    // pressure). Failing quietly leaves the always-present static gradient
+    // base visible instead of throwing during render.
+    let renderer: Renderer;
+    try {
+      renderer = new Renderer({
+        alpha: true,
+        premultipliedAlpha: true,
+        antialias: true,
+      });
+    } catch {
+      return;
+    }
     const gl = renderer.gl;
+    if (!gl) return;
     gl.clearColor(0, 0, 0, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.canvas.style.backgroundColor = "transparent";
-    gl.canvas.style.width = "100%";
-    gl.canvas.style.height = "100%";
+    const canvas = gl.canvas as HTMLCanvasElement;
+    canvas.style.backgroundColor = "transparent";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
 
     let program: Program | undefined;
 
+    // Size from the CONTAINER via ResizeObserver rather than `window.resize`.
+    // iOS Safari does not reliably fire `window.resize` when the layout
+    // viewport changes (address-bar collapse/expand on scroll), so a
+    // window-listener leaves the canvas rendering at a stale size — which
+    // reads as the "janky"/misaligned aurora testers reported. A
+    // ResizeObserver on the actual container always tracks the real box.
     function resize() {
-      if (!ctn) return;
-      const width = ctn.offsetWidth;
-      const height = ctn.offsetHeight;
+      const width = Math.max(1, Math.floor(ctn!.offsetWidth));
+      const height = Math.max(1, Math.floor(ctn!.offsetHeight));
       renderer.setSize(width, height);
       if (program) {
         program.uniforms.uResolution.value = [width, height];
       }
     }
-    window.addEventListener("resize", resize);
+    const ro = new ResizeObserver(resize);
+    ro.observe(ctn);
 
     const geometry = new Triangle(gl);
     if (geometry.attributes.uv) {
@@ -181,10 +198,12 @@ export function Aurora({
     });
 
     const mesh = new Mesh(gl, { geometry, program });
-    ctn.appendChild(gl.canvas);
+    ctn.appendChild(canvas);
 
     let animateId = 0;
+    let contextLost = false;
     const update = (t: number) => {
+      if (contextLost) return;
       animateId = requestAnimationFrame(update);
       const current = propsRef.current;
       const time = t * 0.01;
@@ -199,20 +218,44 @@ export function Aurora({
         renderer.render({ scene: mesh });
       }
     };
-    animateId = requestAnimationFrame(update);
+
+    // Recover from a lost context instead of staying blank forever. WebKit
+    // drops the oldest WebGL context when a page holds too many at once (a
+    // hard, low cap on iPhone) and also on backgrounding — without these
+    // handlers the card would render once, lose its context, and never come
+    // back until the component fully remounts.
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      contextLost = true;
+      cancelAnimationFrame(animateId);
+    };
+    const handleContextRestored = () => {
+      contextLost = false;
+      cancelAnimationFrame(animateId);
+      animateId = requestAnimationFrame(update);
+    };
+    canvas.addEventListener("webglcontextlost", handleContextLost);
+    canvas.addEventListener("webglcontextrestored", handleContextRestored);
 
     resize();
+    animateId = requestAnimationFrame(update);
 
     return () => {
       cancelAnimationFrame(animateId);
-      window.removeEventListener("resize", resize);
-      if (ctn && gl.canvas.parentNode === ctn) {
-        ctn.removeChild(gl.canvas);
+      ro.disconnect();
+      canvas.removeEventListener("webglcontextlost", handleContextLost);
+      canvas.removeEventListener("webglcontextrestored", handleContextRestored);
+      if (canvas.parentNode === ctn) {
+        ctn.removeChild(canvas);
       }
       gl.getExtension("WEBGL_lose_context")?.loseContext();
     };
+    // Mount ONCE: every animated prop (amplitude/blend/speed/colorStops) is
+    // read live from `propsRef` inside the frame loop, so a prop change must
+    // NOT tear down and recreate the WebGL context — recreating contexts is
+    // exactly the iOS per-page context-cap churn this component avoids.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amplitude]);
+  }, []);
 
   return (
     <div

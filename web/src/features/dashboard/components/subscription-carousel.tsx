@@ -78,7 +78,12 @@ export function SubscriptionCarousel({
       <div
         ref={trackRef}
         onScroll={handleScroll}
-        className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth scroll-area"
+        // No `scroll-smooth` here: `scroll-behavior: smooth` on a
+        // scroll-snap-mandatory container makes iOS Safari abort the snap
+        // animation mid-flight, leaving the carousel resting between two
+        // cards. Programmatic navigation (arrows/dots) still animates via the
+        // explicit `behavior: "smooth"` arg passed to `scrollTo` in `goTo`.
+        className="flex snap-x snap-mandatory overflow-x-auto scroll-area"
       >
         {subscriptions.map((sub, i) => (
           <CarouselSlide
@@ -166,7 +171,10 @@ function CarouselSlide({
   const longPress = useLongPress(onLongPress);
   return (
     <div
-      className="w-full shrink-0 snap-center"
+      // `snap-always` (scroll-snap-stop: always) forces iOS to land on exactly
+      // one card per swipe — without it a fast flick can coast past a snap
+      // point and rest half-way between two cards.
+      className="w-full shrink-0 snap-center snap-always"
       style={{
         paddingLeft: "1.25rem",
         paddingRight: "1.25rem",

@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { Tag, CheckCircle2, ChevronRight } from 'lucide-react'
+import { Tag, CheckCircle2, ChevronRight, BadgePercent } from 'lucide-react'
 import { activatePromocode, getAllSubscriptions } from '@/lib/api-client'
 import type { PromoActivationResult } from '@/lib/api-client'
-import { SESSION_QUERY_KEY } from '@/hooks/use-session'
+import { SESSION_QUERY_KEY, useSession } from '@/hooks/use-session'
 import { promoSuccessKey, promoErrorKey } from './promo-result'
 import { PromoHistory } from './promo-history'
 import { StadiumButton } from '@/components/ui/stadium-button'
@@ -18,6 +18,7 @@ export default function PromoPage() {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const { session } = useSession()
   const [code, setCode] = useState('')
   const [success, setSuccess] = useState(false)
   const [resultMsg, setResultMsg] = useState('')
@@ -130,6 +131,17 @@ export default function PromoPage() {
           {t('promo.tip')}
         </TipCard>
 
+        {/* Active-discount banner. Surfaces a discount that is currently
+            applied to the account — whether it came from a promocode OR was
+            granted directly by an operator on the profile (which leaves no
+            promocode-activation row, so the history alone couldn't explain
+            why the discount icon glows). Complements the code-labelled rows
+            in PromoHistory below. */}
+        <ActiveDiscountBanner
+          personal={session?.personalDiscount ?? 0}
+          purchase={session?.purchaseDiscount ?? 0}
+        />
+
         {/* Step: choose which subscription the reward applies to. */}
         {selectIds !== null ? (
           <div className="space-y-3">
@@ -214,6 +226,45 @@ export default function PromoPage() {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * ActiveDiscountBanner
+ * ────────────────────
+ * A compact, liquid-glass banner naming the discount(s) currently applied to
+ * the account. Violet accents the permanent personal discount, amber the
+ * one-time next-purchase discount — matching the dashboard promo-icon glow.
+ * Renders nothing when no discount is active.
+ */
+function ActiveDiscountBanner({ personal, purchase }: { personal: number; purchase: number }) {
+  const { t } = useTranslation()
+  if (personal <= 0 && purchase <= 0) return null
+  return (
+    <div className="space-y-2">
+      {personal > 0 && (
+        <div className="flex items-start gap-3 rounded-2xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 backdrop-blur-xl">
+          <BadgePercent className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-violet-100">
+              {t('promo.activeDiscount.personal', { percent: personal })}
+            </p>
+            <p className="mt-0.5 text-xs text-violet-300/70">{t('promo.activeDiscount.hint')}</p>
+          </div>
+        </div>
+      )}
+      {purchase > 0 && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 backdrop-blur-xl">
+          <BadgePercent className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-amber-100">
+              {t('promo.activeDiscount.purchase', { percent: purchase })}
+            </p>
+            <p className="mt-0.5 text-xs text-amber-300/70">{t('promo.activeDiscount.hint')}</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

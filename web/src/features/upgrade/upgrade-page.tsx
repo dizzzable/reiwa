@@ -96,8 +96,12 @@ function SelectSubscription() {
     staleTime: 60_000,
   });
 
+  // EXPIRED is upgrade-eligible on the backend (only DELETED is excluded) —
+  // an expired subscription is exactly the case a user wants to upgrade out
+  // of. DISABLED stays excluded: that's an admin-toggled freeze, not
+  // something the user should route around via upgrade.
   const active = (data?.subscriptions ?? []).filter(
-    (s) => s.status === "ACTIVE" || s.status === "LIMITED",
+    (s) => s.status === "ACTIVE" || s.status === "LIMITED" || s.status === "EXPIRED",
   );
 
   useEffect(() => {

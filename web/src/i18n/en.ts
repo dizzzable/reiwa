@@ -308,6 +308,11 @@ export const en: RuDict = {
     error: 'Invalid or expired promo code',
     history: 'Activation history',
     historyEmpty: 'No activations yet',
+    activeDiscount: {
+      personal: 'Personal discount {{percent}}% is active',
+      purchase: 'Next-purchase discount {{percent}}% is active',
+      hint: 'The discount applies automatically at checkout.',
+    },
     historyMeta: {
       status: {
         active: 'Active',
@@ -780,7 +785,7 @@ export const en: RuDict = {
     title: 'Upgrade',
     back: '← Back',
     selectSubtitle: 'Choose a subscription to upgrade',
-    noneUpgradeable: 'No active subscriptions to upgrade.',
+    noneUpgradeable: 'No subscriptions available to upgrade.',
     noTargets: 'No upgrades are available for this subscription.',
     choosePlan: 'Choose a new plan',
     chooseDuration: 'Choose a term',

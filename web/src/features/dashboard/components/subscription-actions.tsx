@@ -43,6 +43,13 @@ export function SubscriptionActions({
   const sub = subscription;
   const hasUrl = !!sub?.url;
   const isActive = sub?.status === "ACTIVE" || sub?.status === "LIMITED";
+  // Renewing/upgrading an EXPIRED subscription is explicitly supported by the
+  // backend (it only excludes DELETED subscriptions from renewal/upgrade
+  // eligibility) — an expired sub is exactly the case a user most needs to
+  // renew. Top-up (add-ons) stays gated on `isActive`: it raises limits on a
+  // LIVE Remnawave profile, which the backend rejects outright once expired.
+  const canRenewOrUpgrade =
+    sub?.status === "ACTIVE" || sub?.status === "LIMITED" || sub?.status === "EXPIRED";
 
   return (
     <div className="mt-5 grid grid-cols-4 gap-2 px-5">
@@ -61,13 +68,13 @@ export function SubscriptionActions({
       <ActionButton
         icon={<ArrowUpCircle className="h-5 w-5" />}
         label={t("card.actions.upgrade")}
-        disabled={!isActive || purchasesBlocked}
+        disabled={!canRenewOrUpgrade || purchasesBlocked}
         onClick={onUpgrade}
       />
       <ActionButton
         icon={<RotateCcw className="h-5 w-5" />}
         label={t("card.actions.renew")}
-        disabled={!isActive || restricted}
+        disabled={!canRenewOrUpgrade || restricted}
         onClick={onRenew}
       />
       <ActionButton

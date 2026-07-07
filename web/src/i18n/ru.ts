@@ -306,6 +306,11 @@ export const ru = {
     error: 'Неверный или просроченный промокод',
     history: 'История активаций',
     historyEmpty: 'Промокоды не активировались',
+    activeDiscount: {
+      personal: 'Активна персональная скидка {{percent}}%',
+      purchase: 'Активна скидка на следующую покупку {{percent}}%',
+      hint: 'Скидка применится автоматически при оформлении.',
+    },
     historyMeta: {
       status: {
         active: 'Активна',
@@ -778,7 +783,7 @@ export const ru = {
     title: 'Улучшение',
     back: '← Назад',
     selectSubtitle: 'Выберите подписку для улучшения',
-    noneUpgradeable: 'Нет активных подписок для улучшения.',
+    noneUpgradeable: 'Нет подписок, доступных для улучшения.',
     noTargets: 'Для этой подписки нет доступных улучшений.',
     choosePlan: 'Выберите новый тариф',
     chooseDuration: 'Выберите срок',
