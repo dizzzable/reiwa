@@ -163,6 +163,25 @@ body {
 }
 .scroll-area::-webkit-scrollbar { display: none; }
 
+/* ─── Horizontal snap carousel track ───────────────────────────────────────────
+   The subscription carousel is a HORIZONTAL scroller. It must NOT also be a
+   vertical scroller: reusing `.scroll-area` gave the track `overflow-y: auto`,
+   turning it into a nested y-scroller inside the page's vertical `<main>` —
+   iOS then had two scroll axes to disambiguate on every touch and would abort
+   the mandatory x-snap on a fast flick (carousel froze between cards). Here we
+   pin it to one axis. We intentionally do NOT set `touch-action: pan-x`: the
+   root keeps `pan-x pan-y` so a vertical drag STARTED on the card still scrolls
+   the page (the browser disambiguates by initial direction); forcing pan-x
+   would trap vertical page scroll on the card. `overscroll-behavior-x: contain`
+   stops a horizontal overscroll from triggering the browser's back-swipe. */
+.carousel-track {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.carousel-track::-webkit-scrollbar { display: none; }
+
 /* ─── Glass card ───────────────────────────────────────────────────────────── */
 .glass-card {
   background: var(--color-surface);

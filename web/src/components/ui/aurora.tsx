@@ -12,23 +12,28 @@
 import { Renderer, Program, Mesh, Color, Triangle } from "ogl";
 import { useEffect, useRef } from "react";
 
-const VERT = `#version 300 es
-in vec2 position;
+// GLSL ES 1.00 (no `#version 300 es`). This compiles on BOTH a WebGL1 and a
+// WebGL2 context. That matters on iPhone: iOS Safari runs a SHARED GPU process
+// with a low per-page live-WebGL-context cap, so `getContext('webgl2')` can
+// return null under pressure and OGL then SILENTLY falls back to WebGL1 (it
+// only `console.warn`s a shader-compile failure, never throws). A `#version
+// 300 es` shader is a hard compile error on WebGL1 → the canvas stayed blank
+// on iPhone while Android/desktop (WebGL2 available) were fine. A 1.00 shader
+// removes that entire failure class (isolated Telegram WKWebView had its own
+// context budget, which is why a past fix appeared to work only there).
+const VERT = `attribute vec2 position;
 void main() {
   gl_Position = vec4(position, 0.0, 1.0);
 }
 `;
 
-const FRAG = `#version 300 es
-precision highp float;
+const FRAG = `precision highp float;
 
 uniform float uTime;
 uniform float uAmplitude;
 uniform vec3 uColorStops[3];
 uniform vec2 uResolution;
 uniform float uBlend;
-
-out vec4 fragColor;
 
 vec3 permute(vec3 x) {
   return mod(((x * 34.0) + 1.0) * x, 289.0);
@@ -74,13 +79,9 @@ float snoise(vec2 v){
   return 130.0 * dot(m, g);
 }
 
-// Three fixed colour stops at 0.0 / 0.5 / 1.0, implemented as a plain function
-// (NOT a multi-line #define): Safari/iOS's WebGL2 GLSL ES 3.00 preprocessor
-// mishandles backslash-continued multi-line macros ("shaderSource: string not
-// ASCII"), so the original COLOR_RAMP macro failed to compile on iOS and the
-// aurora silently never rendered — while Chrome/Android were fine. Inlining
-// also drops the dynamic array indexing iOS is touchy about. Output is
-// identical to the original ramp.
+// Three fixed colour stops at 0.0 / 0.5 / 1.0 as a plain function taking
+// explicit args — no multi-line #define (iOS mishandled it) and no dynamic
+// array indexing (iOS is touchy about it). Output identical to the original.
 vec3 colorRamp3(vec3 c0, vec3 c1, vec3 c2, float factor) {
   float f = clamp(factor, 0.0, 1.0);
   if (f < 0.5) {
@@ -104,7 +105,7 @@ void main() {
 
   vec3 auroraColor = intensity * rampColor;
 
-  fragColor = vec4(auroraColor * auroraAlpha, auroraAlpha);
+  gl_FragColor = vec4(auroraColor * auroraAlpha, auroraAlpha);
 }
 `;
 

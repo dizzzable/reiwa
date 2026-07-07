@@ -41,11 +41,12 @@ export function SubscriptionCarousel({
   const [activeIndex, setActiveIndex] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<Subscription | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const count = subscriptions.length;
 
   // Derive the active slide from the scroll position. Each slide fills the
   // track width, so the index is round(scrollLeft / trackWidth).
-  const handleScroll = useCallback(() => {
+  const commitActiveIndex = useCallback(() => {
     const el = trackRef.current;
     if (!el) return;
     const width = el.clientWidth || 1;
@@ -56,6 +57,34 @@ export function SubscriptionCarousel({
       return index;
     });
   }, [onActiveIndexChange]);
+
+  // Commit the active card only AFTER scrolling settles — never mid-flick.
+  // Updating `activeIndex` on every scroll event flipped `effectActive`, which
+  // mounted/unmounted a WebGL context WHILE iOS was still animating the
+  // momentum fling; that main-thread churn interrupted the fling and aborted
+  // the mandatory snap, so a fast swipe froze between two cards. Debouncing to
+  // the scroll-idle (plus the native `scrollend` where supported) leaves the
+  // fling untouched — the dots and the animated background update once it
+  // lands.
+  const handleScroll = useCallback(() => {
+    if (idleTimerRef.current !== null) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(commitActiveIndex, 120);
+  }, [commitActiveIndex]);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onScrollEnd = () => commitActiveIndex();
+    el.addEventListener("scrollend", onScrollEnd);
+    return () => el.removeEventListener("scrollend", onScrollEnd);
+  }, [commitActiveIndex]);
+
+  useEffect(
+    () => () => {
+      if (idleTimerRef.current !== null) clearTimeout(idleTimerRef.current);
+    },
+    [],
+  );
 
   const goTo = useCallback((index: number) => {
     const el = trackRef.current;
@@ -83,7 +112,9 @@ export function SubscriptionCarousel({
         // animation mid-flight, leaving the carousel resting between two
         // cards. Programmatic navigation (arrows/dots) still animates via the
         // explicit `behavior: "smooth"` arg passed to `scrollTo` in `goTo`.
-        className="flex snap-x snap-mandatory overflow-x-auto scroll-area"
+        // `.carousel-track` pins the scroller to a single (horizontal) axis —
+        // see index.css for why a nested y-scroller broke the iOS snap.
+        className="flex snap-x snap-mandatory carousel-track"
       >
         {subscriptions.map((sub, i) => (
           <CarouselSlide
