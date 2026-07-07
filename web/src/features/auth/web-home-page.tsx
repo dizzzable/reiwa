@@ -7,8 +7,10 @@ import { motion } from 'motion/react'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { BrandLogo } from '@/components/ui/brand-logo'
 import { useBranding } from '@/lib/branding-provider'
-import { botSignin, getSession } from '@/lib/api-client'
+import { botSignin, getLanding, getSession } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
+import { LANDING_QUERY_KEY } from '@/features/landing/landing-page'
+import { parseLandingPayload } from '@/features/landing/landing-schema'
 
 /**
  * WebHomePage — entry point for browser users (`/`).
@@ -127,10 +129,30 @@ export default function WebHomePage() {
           navigate('/dashboard', { replace: true })
           return
         }
-        navigate('/sign-in', { replace: true })
       } catch {
-        navigate('/sign-in', { replace: true })
+        // No session — fall through to the landing/sign-in decision below.
       }
+
+      // Step 3 — unauthenticated browser visitor: show the operator-authored
+      // landing when it's enabled + published (has visible sections), else
+      // the current behavior (straight to /sign-in). Reuses the same cached
+      // `/api/v1/landing` fetch the landing page itself uses, so enabling
+      // this never adds a second round-trip once warm.
+      try {
+        const landing = await queryClient.fetchQuery({
+          queryKey: LANDING_QUERY_KEY,
+          queryFn: getLanding,
+          staleTime: 60_000,
+        })
+        const parsed = parseLandingPayload(landing)
+        if (parsed.enabled === true && parsed.sections.length > 0) {
+          navigate('/welcome', { replace: true })
+          return
+        }
+      } catch {
+        // Landing unavailable — fail closed to /sign-in (current behavior).
+      }
+      navigate('/sign-in', { replace: true })
     })()
   }, [navigate, queryClient])
 

@@ -24,6 +24,8 @@ const ContextRouter = lazy(() => import("@/features/auth/context-router"));
 const WebHomePage = lazy(() => import("@/features/auth/web-home-page"));
 const TmaBootstrapPage = lazy(() => import("@/features/auth/tma-bootstrap-page"));
 
+const LandingPage = lazy(() => import("@/features/landing/landing-page"));
+
 const RegisterPage = lazy(() => import("@/features/auth/register-page"));
 const RecoverPage = lazy(() => import("@/features/auth/recover-page"));
 const SignInPage = lazy(() => import("@/features/auth/sign-in-page"));
@@ -83,6 +85,7 @@ export default function App() {
         <Route path="/bootstrap" element={<ContextRouter />} />
 
         {/* Public auth pages */}
+        <Route path="/welcome" element={<LandingPage />} />
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/recover" element={<RecoverPage />} />

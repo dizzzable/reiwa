@@ -21,6 +21,11 @@ import { createContextDetectionMiddleware } from "./middleware/context-detection
 import { createAuthRouter } from "./routes/auth.js";
 import { createBrandingRouter, getPublicConfigPayload } from "./routes/branding.js";
 import {
+  createLandingRouter,
+  getEffectiveLandingCached,
+  buildLandingMetaHead,
+} from "./routes/landing.js";
+import {
   buildWebManifest,
   getBrandingAssetCache,
   isSafeBrandingFile,
@@ -238,6 +243,7 @@ export function createApp(deps: CreateAppDeps) {
 
   // ── Routers (all mounted at /api/v1; sub-paths live inside each router) ───
   app.use("/api/v1", createBrandingRouter({ adminClient: deps.adminClient, logger, supportUsername: config.BOT_SUPPORT_USERNAME ?? null }));
+  app.use("/api/v1", createLandingRouter({ adminClient: deps.adminClient, logger }));
   app.use("/api/v1", createAuthRouter(deps));
   app.use("/api/v1", createProfileRouter(deps));
   app.use("/api/v1", createPlansRouter(deps));
@@ -398,6 +404,40 @@ export function createApp(deps: CreateAppDeps) {
         },
       }),
     );
+    // Landing routes get server-injected SEO / social-preview meta when the
+    // landing is enabled+published (crawlers/social see a real preview, not a
+    // bare SPA shell). Best-effort: any failure falls back to plain index.html.
+    // The raw template is cached in-process (index.html changes only on deploy,
+    // which restarts the process).
+    let indexHtmlTemplate: string | null = null;
+    const readIndexTemplate = (): string => {
+      if (indexHtmlTemplate === null) {
+        indexHtmlTemplate = fs.readFileSync(indexHtml, "utf8");
+      }
+      return indexHtmlTemplate;
+    };
+    app.get(["/", "/welcome"], (req: Request, res: Response, next: NextFunction) => {
+      void (async () => {
+        try {
+          const body = await getEffectiveLandingCached(deps.adminClient);
+          const head = buildLandingMetaHead(body);
+          if (head === null) {
+            res.setHeader("Cache-Control", "no-cache");
+            res.sendFile(indexHtml, (err) => {
+              if (err) next(err);
+            });
+            return;
+          }
+          const html = readIndexTemplate().replace("</head>", `${head}</head>`);
+          res.setHeader("Cache-Control", "no-cache");
+          res.type("html").send(html);
+        } catch {
+          res.sendFile(indexHtml, (err) => {
+            if (err) next(err);
+          });
+        }
+      })();
+    });
     // SPA fallback for non-API GETs — hand any unmatched route to the
     // client router. API 404s are left to the routers above.
     app.get(/^(?!\/api\/).*/, (req: Request, res: Response, next: NextFunction) => {

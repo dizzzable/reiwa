@@ -3,6 +3,7 @@ import { Router, Request, Response } from "express";
 import type { ReiwaConfig } from "../../config.js";
 import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
 import { resetBrandingCache } from "./branding.js";
+import { resetLandingCache } from "./landing.js";
 import { evictBrandingAssetCache } from "../branding-pwa.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
@@ -195,6 +196,13 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // Also evict the on-disk branding-asset mirror so a re-uploaded logo
           // / PWA icon is re-fetched fresh on the next request.
           void evictBrandingAssetCache();
+          break;
+        }
+        case "reiwa.landing.invalidate": {
+          // Drop the cached web-landing payload so a freshly-published landing
+          // (or a rollback) appears on the next visitor load instead of waiting
+          // for the HTTP TTL. Web-only — no relay to the bot.
+          resetLandingCache();
           break;
         }
         default:

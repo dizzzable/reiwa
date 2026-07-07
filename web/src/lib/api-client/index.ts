@@ -54,6 +54,9 @@ export type { ExternalAuthProvider, PublicExternalProvider } from "./ext-auth.js
 // Plans
 export { getPlans } from "./plans.js";
 
+// Landing
+export { getLanding } from "./landing.js";
+
 // Subscription
 export {
   activateTrial,

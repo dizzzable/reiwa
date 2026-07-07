@@ -178,6 +178,7 @@ const CACHEABLE_API_EXACT = new Set<string>([
   '/api/v1/plans',
   '/api/v1/gateways',
   '/api/v1/faq',
+  '/api/v1/landing',
 ])
 
 const CACHEABLE_API_PREFIXES: readonly string[] = ['/api/v1/add-ons/plan/']
