@@ -77,7 +77,7 @@ export default function FeaturesGridSection({ section, locale, defaultLocale }: 
           return (
             <li
               key={index}
-              className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-6 text-white"
+              className="ls-surface flex flex-col gap-3 p-6 text-white"
             >
               <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-(--brand-primary)/15 text-(--brand-primary)">
                 <Icon name={item.icon} />

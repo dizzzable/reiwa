@@ -31,7 +31,7 @@ export default function HowItWorksSection({ section, locale, defaultLocale }: Pr
           return (
             <li
               key={index}
-              className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white"
+              className="ls-surface p-6 text-white"
             >
               <span className="mb-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-(--brand-primary) font-semibold text-(--brand-primary-fg)">
                 {index + 1}

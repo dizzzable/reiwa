@@ -44,8 +44,23 @@ export interface LandingSection {
   readonly id: string;
   readonly type: SectionType;
   readonly visible: boolean;
+  readonly animation?: LandingAnimation;
   readonly data: Record<string, unknown>;
 }
+
+export type LandingBackground =
+  | 'none'
+  | 'gradient'
+  | 'aurora'
+  | 'grid'
+  | 'dots'
+  | 'glow'
+  | 'mesh'
+  | 'noise'
+  | 'blobs'
+  | 'spotlight';
+export type LandingSurfaceStyle = 'solid' | 'glass' | 'outline';
+export type LandingAnimation = 'none' | 'fade' | 'fadeUp' | 'zoom';
 
 export interface LandingTheme {
   readonly inherit?: boolean;
@@ -57,6 +72,10 @@ export interface LandingTheme {
   };
   readonly font?: { readonly family?: string; readonly scale?: number };
   readonly radius?: 'none' | 'sm' | 'md' | 'lg' | 'xl';
+  readonly background?: LandingBackground;
+  readonly backgroundColors?: readonly string[];
+  readonly animateBackground?: boolean;
+  readonly surfaceStyle?: LandingSurfaceStyle;
 }
 
 export interface LandingConfigPayload {
@@ -97,7 +116,12 @@ export function parseLandingPayload(raw: unknown): EffectiveLandingPayload {
     if (s['visible'] === false) continue;
     const id = typeof s['id'] === 'string' ? (s['id'] as string) : `${s['type'] as string}-${sections.length}`;
     const data = s['data'] !== null && typeof s['data'] === 'object' ? (s['data'] as Record<string, unknown>) : {};
-    sections.push({ id, type: s['type'] as SectionType, visible: true, data });
+    const animation =
+      typeof s['animation'] === 'string' &&
+      ['none', 'fade', 'fadeUp', 'zoom'].includes(s['animation'] as string)
+        ? (s['animation'] as LandingAnimation)
+        : undefined;
+    sections.push({ id, type: s['type'] as SectionType, visible: true, animation, data });
   }
 
   const locales = Array.isArray(obj['locales'])

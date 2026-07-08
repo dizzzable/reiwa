@@ -33,7 +33,7 @@ export default function FaqSection({ section, locale, defaultLocale }: Props) {
           return (
             <details
               key={index}
-              className="group rounded-2xl border border-white/10 bg-white/5 p-4 text-white open:bg-white/10"
+              className="ls-surface group p-4 text-white open:bg-white/10"
             >
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium">
                 <span>{question}</span>

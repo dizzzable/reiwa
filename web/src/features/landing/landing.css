@@ -1,0 +1,242 @@
+/**
+ * Landing visual system — CSS-only backgrounds, liquid-glass surfaces and
+ * scroll-reveal animations. No WebGL / no heavy libs (this bundle loads before
+ * sign-in). All motion is gated behind prefers-reduced-motion.
+ *
+ * Color inputs come from CSS custom properties set by the renderer:
+ *   --ls-bg      page background
+ *   --ls-primary primary/accent used by effects
+ *   --ls-c1..c3  optional extra background colors
+ */
+
+.ls-root {
+  position: relative;
+  min-height: 100%;
+  isolation: isolate;
+  background: var(--ls-bg, #0a0a0a);
+  color: #fff;
+}
+
+/* ── Background layer ─────────────────────────────────────────────────────── */
+.ls-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  contain: strict;
+}
+
+/* gradient — oversized animated linear gradient */
+.ls-bg--gradient {
+  background: linear-gradient(120deg, var(--ls-c1, var(--ls-primary, #22c55e)), var(--ls-c2, #0a0a0a), var(--ls-c3, var(--ls-primary, #22c55e)));
+  background-size: 300% 300%;
+  opacity: 0.5;
+  animation: ls-gradient 18s ease infinite;
+}
+@keyframes ls-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* aurora — blurred radial blobs slowly rotating/scaling */
+.ls-bg--aurora::before,
+.ls-bg--aurora::after {
+  content: '';
+  position: absolute;
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.45;
+  background: radial-gradient(circle at center, var(--ls-primary, #22c55e), transparent 60%);
+  animation: ls-aurora 22s ease-in-out infinite;
+}
+.ls-bg--aurora::before { top: -20vmax; left: -10vmax; }
+.ls-bg--aurora::after {
+  bottom: -20vmax;
+  right: -10vmax;
+  background: radial-gradient(circle at center, var(--ls-c2, #6366f1), transparent 60%);
+  animation-delay: -11s;
+}
+@keyframes ls-aurora {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(6vmax, 4vmax) scale(1.25) rotate(40deg); }
+  100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+}
+
+/* glow — soft central pulsing radial glow */
+.ls-bg--glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 20%, var(--ls-primary, #22c55e), transparent 55%);
+  opacity: 0.28;
+  animation: ls-glow 8s ease-in-out infinite;
+}
+@keyframes ls-glow {
+  0%, 100% { opacity: 0.18; }
+  50% { opacity: 0.38; }
+}
+
+/* mesh — three offset blurred blobs (static-ish, gentle drift) */
+.ls-bg--mesh::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(30% 30% at 20% 30%, var(--ls-primary, #22c55e) 0%, transparent 60%),
+    radial-gradient(30% 30% at 80% 20%, var(--ls-c2, #6366f1) 0%, transparent 60%),
+    radial-gradient(35% 35% at 60% 80%, var(--ls-c3, #ec4899) 0%, transparent 60%);
+  filter: blur(60px);
+  opacity: 0.4;
+  animation: ls-mesh 26s ease-in-out infinite alternate;
+}
+@keyframes ls-mesh {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-4%, -3%); }
+}
+
+/* grid — static subtle grid lines */
+.ls-bg--grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+
+/* dots — static dotted field */
+.ls-bg--dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+
+/* noise — film-grain overlay (SVG feTurbulence data-URI) over a soft tint */
+.ls-bg--noise {
+  background-color: var(--ls-bg, #0a0a0a);
+}
+.ls-bg--noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, var(--ls-primary, #22c55e), transparent 60%);
+  opacity: 0.16;
+}
+.ls-bg--noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+}
+
+/* blobs — discrete floating colored orbs bobbing */
+.ls-bg--blobs::before,
+.ls-bg--blobs::after {
+  content: '';
+  position: absolute;
+  width: 32vmax;
+  height: 32vmax;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.4;
+  background: radial-gradient(circle at center, var(--ls-primary, #22c55e), transparent 65%);
+  animation: ls-blobs 20s ease-in-out infinite;
+}
+.ls-bg--blobs::before { top: 8%; left: 6%; }
+.ls-bg--blobs::after {
+  bottom: 6%;
+  right: 8%;
+  background: radial-gradient(circle at center, var(--ls-c2, #6366f1), transparent 65%);
+  animation-delay: -10s;
+}
+@keyframes ls-blobs {
+  0%, 100% { transform: translate(0, 0); }
+  33% { transform: translate(4vmax, -3vmax); }
+  66% { transform: translate(-3vmax, 4vmax); }
+}
+
+/* spotlight — radial glow that follows the cursor (via --lx/--ly, set in JS) */
+.ls-bg--spotlight {
+  background: radial-gradient(
+    circle at var(--lx, 50%) var(--ly, 20%),
+    var(--ls-primary, #22c55e),
+    transparent 40%
+  );
+  opacity: 0.22;
+  transition: background 0.15s ease-out;
+}
+
+/* ── Surface styles ──────────────────────────────────────────────────────── */
+.ls-surface {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+}
+[data-surface='glass'] .ls-surface {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  [data-surface='glass'] .ls-surface {
+    background: rgba(30, 30, 40, 0.85);
+  }
+}
+[data-surface='outline'] .ls-surface {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* ── Scroll reveal ───────────────────────────────────────────────────────── */
+.ls-reveal {
+  opacity: 0;
+  transition: opacity 0.6s ease, transform 0.6s ease, filter 0.6s ease;
+  will-change: opacity, transform;
+}
+.ls-reveal--fade { }
+.ls-reveal--fadeUp { transform: translateY(24px); }
+.ls-reveal--zoom { transform: scale(0.96); }
+.ls-reveal.is-visible {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ls-bg--gradient,
+  .ls-bg--aurora::before,
+  .ls-bg--aurora::after,
+  .ls-bg--glow::before,
+  .ls-bg--mesh::before,
+  .ls-bg--blobs::before,
+  .ls-bg--blobs::after {
+    animation: none !important;
+  }
+  .ls-bg--spotlight {
+    transition: none !important;
+  }
+  .ls-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* animateBackground:false — freeze CSS-driven background motion (spotlight is
+   additionally JS-gated so its listener never attaches). */
+.ls-bg[data-animate='off'].ls-bg--gradient,
+.ls-bg[data-animate='off'].ls-bg--aurora::before,
+.ls-bg[data-animate='off'].ls-bg--aurora::after,
+.ls-bg[data-animate='off'].ls-bg--glow::before,
+.ls-bg[data-animate='off'].ls-bg--mesh::before,
+.ls-bg[data-animate='off'].ls-bg--blobs::before,
+.ls-bg[data-animate='off'].ls-bg--blobs::after {
+  animation: none !important;
+}

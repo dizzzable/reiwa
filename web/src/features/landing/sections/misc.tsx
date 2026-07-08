@@ -44,7 +44,7 @@ export function TestimonialsSection({ section, locale, defaultLocale }: Props) {
           return (
             <li
               key={index}
-              className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-6 text-white"
+              className="ls-surface flex flex-col gap-4 p-6 text-white"
             >
               <p className="text-base text-zinc-100">“{quote}”</p>
               <div className="flex items-center gap-3">
