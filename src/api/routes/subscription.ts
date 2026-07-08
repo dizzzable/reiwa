@@ -58,6 +58,33 @@ function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
   };
 }
 
+/**
+ * Flatten the rezeis action-policy shape (`{ actions: { NEW, ADDITIONAL,
+ * RENEW, UPGRADE, TRIAL }, ... }`) into the flat `{ canBuy, canRenew,
+ * canUpgrade, canTrial }` contract the SPA's `ActionPolicy` type expects.
+ * Without this the SPA reads every `can*` flag as `undefined`, so the
+ * subscription page never renders its Renew / Buy / Upgrade buttons.
+ */
+function flattenActionPolicy(raw: unknown): {
+  canBuy: boolean;
+  canRenew: boolean;
+  canUpgrade: boolean;
+  canTrial: boolean;
+} {
+  const actions =
+    raw !== null && typeof raw === "object" && "actions" in raw
+      ? ((raw as { actions?: Record<string, unknown> }).actions ?? {})
+      : {};
+  const flag = (key: string): boolean => actions[key] === true;
+  return {
+    // A "buy" is any purchase that creates a new subscription.
+    canBuy: flag("NEW") || flag("ADDITIONAL"),
+    canRenew: flag("RENEW"),
+    canUpgrade: flag("UPGRADE"),
+    canTrial: flag("TRIAL"),
+  };
+}
+
 export function createSubscriptionRouter(deps: {
   adminClient: AdminClient | null;
   sessionStore: SessionStore | null;
@@ -88,7 +115,7 @@ export function createSubscriptionRouter(deps: {
           resolveUserIdentity(req),
           subscriptionId !== undefined ? String(subscriptionId) : undefined,
         );
-        res.json(policy ?? {});
+        res.json(flattenActionPolicy(policy));
       } catch (e: unknown) {
         sendSafeError(req, res, e, 500, "Failed to load action policy", "subscription/action-policy");
       }

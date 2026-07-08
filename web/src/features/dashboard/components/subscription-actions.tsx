@@ -15,8 +15,10 @@
 import { ArrowUpCircle, Link2, Plus, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 
 import type { Subscription } from "@/types/api";
+import { getPlanAddOns } from "@/lib/api-client";
 import { openExternalUrl } from "@/lib/utils";
 
 interface SubscriptionActionsProps {
@@ -50,6 +52,28 @@ export function SubscriptionActions({
   // LIVE Remnawave profile, which the backend rejects outright once expired.
   const canRenewOrUpgrade =
     sub?.status === "ACTIVE" || sub?.status === "LIMITED" || sub?.status === "EXPIRED";
+  // A FREE trial can't be renewed — only upgraded to a paid plan — so the
+  // Renew action is disabled for it (the user is steered to Upgrade instead).
+  // Paid trials stay renewable.
+  const isFreeTrial = sub?.isTrial === true && sub?.trialFree === true;
+
+  // Top-up (докупка) is only meaningful when the plan actually has add-on
+  // options configured. Fetch the same per-plan catalog the /addons page uses
+  // (shared React Query cache key) and disable the button when it resolves
+  // empty — so the user never lands on a dead-end "no add-ons" screen. Mirrors
+  // the /addons page's own EXTRA_TRAFFIC-on-unlimited filter. Enabled only for
+  // an active, purchasable subscription (the same gate the button already has).
+  const planId = sub?.plan?.id ?? null;
+  const isUnlimitedTraffic = sub?.trafficLimit === null;
+  const { data: addOns } = useQuery({
+    queryKey: ["add-ons", planId],
+    queryFn: () => getPlanAddOns(planId ?? ""),
+    enabled: isActive && !purchasesBlocked && planId !== null,
+    staleTime: 60_000,
+  });
+  const noAddOnsAvailable =
+    addOns !== undefined &&
+    addOns.filter((a) => !(isUnlimitedTraffic && a.type === "EXTRA_TRAFFIC")).length === 0;
 
   return (
     <div className="mt-5 grid grid-cols-4 gap-2 px-5">
@@ -74,13 +98,13 @@ export function SubscriptionActions({
       <ActionButton
         icon={<RotateCcw className="h-5 w-5" />}
         label={t("card.actions.renew")}
-        disabled={!canRenewOrUpgrade || restricted}
+        disabled={!canRenewOrUpgrade || restricted || isFreeTrial}
         onClick={onRenew}
       />
       <ActionButton
         icon={<Plus className="h-5 w-5" />}
         label={t("card.actions.topUp")}
-        disabled={!isActive || purchasesBlocked}
+        disabled={!isActive || purchasesBlocked || noAddOnsAvailable}
         onClick={() => navigate("/addons")}
       />
     </div>

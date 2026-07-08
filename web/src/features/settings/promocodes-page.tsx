@@ -37,6 +37,12 @@ export default function PromocodesPage() {
           setCode("");
           queryClient.invalidateQueries({ queryKey: ["promo"] });
           queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
+          // Refresh every subscription view so a granted reward (e.g. +days)
+          // updates remaining days in the web cabinet immediately.
+          queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+          queryClient.invalidateQueries({ queryKey: ["subscriptions-all"] });
+          queryClient.invalidateQueries({ queryKey: ["subscription"] });
+          queryClient.invalidateQueries({ queryKey: ["devices"] });
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
           break;
         case "SELECT_SUBSCRIPTION":

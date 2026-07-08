@@ -61,10 +61,18 @@ export default function PromoPage() {
         setConfirmCreateNew(false)
         setSuccess(true)
         setResultMsg(t(key))
-        // Refresh session (discount glow on the dashboard promo icon) and the
-        // subscription/notification feeds so a granted reward shows at once.
+        // Refresh session (discount glow on the dashboard promo icon) and
+        // EVERY subscription view so a granted reward (e.g. +days extending
+        // expiry) shows at once. The app uses two distinct all-subscriptions
+        // keys (`['subscriptions','all']` on the dashboard, `['subscriptions-all']`
+        // on renewal/upgrade/addons) plus `['subscription']` on the detail
+        // page and `['devices']` — invalidate them all so remaining days
+        // update in the web cabinet just like they do in Telegram.
         void queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
         void queryClient.invalidateQueries({ queryKey: ['subscriptions', 'all'] })
+        void queryClient.invalidateQueries({ queryKey: ['subscriptions-all'] })
+        void queryClient.invalidateQueries({ queryKey: ['subscription'] })
+        void queryClient.invalidateQueries({ queryKey: ['devices'] })
         window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
         break
       }

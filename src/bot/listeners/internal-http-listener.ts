@@ -67,8 +67,8 @@ import { GrammyError, InlineKeyboard, InputFile } from 'grammy';
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
-import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
-import type { BotEmojiMap } from '../../infrastructure/bot-config/types.js';
+import { renderButtonLabel, renderBotCopy, renderBotCopyHtml } from '../../infrastructure/bot-config/emoji-utils.js';
+import type { BotEmojiMap, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 import { resolveBannerSource } from '../pages/banner-resolver.js';
 import {
   REQUEST_SIGNATURE_HEADER,
@@ -360,6 +360,47 @@ async function resolveEmojiContext(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Render a notification/broadcast BODY with the operator emoji registry so
+ * premium/custom emoji tokens (`{{KEY}}`, `:slug:`) in the message text render
+ * as real Telegram custom emoji — mirroring the screen/reply send paths.
+ * Previously the registry was applied only to button labels, so tokens in the
+ * body leaked as literal text (e.g. `:translucentpack_9:`) or degraded to
+ * plain unicode.
+ *
+ *  - `HTML` parse mode → `<tg-emoji>` tags via `renderBotCopyHtml`.
+ *  - otherwise → `custom_emoji` entities via `renderBotCopy`. Entity mode needs
+ *    plain text, so we only drop the parse mode when entities are actually
+ *    produced; when none are (no premium emoji), the resolved unicode text is
+ *    returned with the original parse mode intact.
+ */
+function renderNotifyBody(
+  text: string,
+  parseMode: 'HTML' | 'Markdown' | 'MarkdownV2' | undefined,
+  emojiCtx: NotifyEmojiContext | undefined,
+): { text: string; parseMode: 'HTML' | 'Markdown' | 'MarkdownV2' | undefined; entities: TgCustomEmojiEntity[] | undefined } {
+  if (emojiCtx === undefined) {
+    return { text, parseMode, entities: undefined };
+  }
+  const ownerHasPremium = emojiCtx.ownerHasPremium ?? true;
+  if (parseMode === 'HTML') {
+    return {
+      text: renderBotCopyHtml(text, emojiCtx.botEmojis, emojiCtx.customEmojis, ownerHasPremium),
+      parseMode: 'HTML',
+      entities: undefined,
+    };
+  }
+  const rendered = renderBotCopy(text, emojiCtx.botEmojis, emojiCtx.customEmojis, ownerHasPremium);
+  if (rendered.entities.length > 0) {
+    // Custom-emoji entities can't coexist with a parse_mode — send plain text
+    // carrying the entities.
+    return { text: rendered.text, parseMode: undefined, entities: rendered.entities };
+  }
+  // No premium entities: keep the caller's parse mode; tokens are already
+  // resolved to their unicode/fallback glyphs so nothing leaks as literal.
+  return { text: rendered.text, parseMode, entities: undefined };
 }
 
 export function startInternalHttpListener(opts: ListenerOptions): void {
@@ -740,9 +781,12 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     res.end();
     return;
   }
-  const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
+  const rawParseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
   const emojiCtx = await resolveEmojiContext(opts.cache);
   const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls, emojiCtx);
+  // Render premium/custom emoji in the BODY (not just button labels).
+  const body = renderNotifyBody(text, rawParseMode, emojiCtx);
+  const parseMode = body.parseMode;
   const bannerUrl =
     typeof payload.bannerUrl === 'string' && payload.bannerUrl.trim().length > 0
       ? payload.bannerUrl.trim()
@@ -754,7 +798,7 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     // (Telegram caption limit 1024). Relative `/uploads/...` URLs are fetched
     // from rezeis by the resolver. Any photo failure falls back to text so a
     // banner glitch never drops the notification.
-    if (bannerUrl !== null && text.length <= TG_CAPTION_LIMIT) {
+    if (bannerUrl !== null && body.text.length <= TG_CAPTION_LIMIT) {
       const photo = await resolveBannerSource(bannerUrl, {
         rezeisAdminUrl: opts.rezeisAdminUrl ?? null,
         logger: { warn: (o, m) => opts.logger.warn(o as Record<string, unknown>, m) },
@@ -762,8 +806,9 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
       if (photo !== null) {
         try {
           sent = await bot.api.sendPhoto(telegramId, photo, {
-            caption: text,
+            caption: body.text,
             parse_mode: parseMode,
+            caption_entities: body.entities,
             reply_markup,
           });
         } catch (photoErr: unknown) {
@@ -776,8 +821,9 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
       }
     }
     if (sent === undefined) {
-      sent = await bot.api.sendMessage(telegramId, text, {
+      sent = await bot.api.sendMessage(telegramId, body.text, {
         parse_mode: parseMode,
+        entities: body.entities,
         reply_markup,
         // Most user-facing notifications shouldn't ping silently — let
         // Telegram apply the user's chat preferences. We don't override
@@ -847,16 +893,19 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     res.end();
     return;
   }
-  const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
+  const rawParseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
   const emojiCtx = await resolveEmojiContext(opts.cache);
   const reply_markup = buildKeyboard(payload.buttons, opts.keyboardUrls, emojiCtx);
+  // Render premium/custom emoji in the broadcast BODY (not just buttons).
+  const body = renderNotifyBody(text, rawParseMode, emojiCtx);
   const messageThreadId = typeof payload.topicThreadId === 'number' && Number.isInteger(payload.topicThreadId)
     ? payload.topicThreadId
     : undefined;
 
   try {
-    await bot.api.sendMessage(chatId, text, {
-      parse_mode: parseMode,
+    await bot.api.sendMessage(chatId, body.text, {
+      parse_mode: body.parseMode,
+      entities: body.entities,
       reply_markup,
       message_thread_id: messageThreadId,
     });

@@ -85,11 +85,47 @@ export default function RenewalPage() {
     return () => reset();
   }, [reset]);
 
+  // A free trial can't be renewed — the user must UPGRADE. Decide this up
+  // front, using the AUTHORITATIVE per-subscription `renewable` flag (so PAID
+  // trials, which ARE renewable, still get the normal wizard) and bounce to
+  // /upgrade BEFORE rendering any renewal chrome. Without this the user sees a
+  // "Продление" screen flash before being redirected to "Улучшение". Both
+  // queries share their keys with the wizard steps, so this adds no network.
+  const { data: baseOptions, isLoading: optionsLoading } = useQuery({
+    queryKey: ["renewal-options", {}, {}],
+    queryFn: () => getRenewalOptions(),
+    staleTime: 60_000,
+  });
+  const { data: subsData, isLoading: subsLoading } = useQuery({
+    queryKey: ["subscriptions-all"],
+    queryFn: getAllSubscriptions,
+    staleTime: 60_000,
+  });
+  const decided = !optionsLoading && !subsLoading;
+  const nothingRenewable = (baseOptions?.items ?? []).every((o) => !o.renewable);
+  const hasTrial = (subsData?.subscriptions ?? []).some((s) => s.isTrial);
+  const redirectToUpgrade = decided && nothingRenewable && hasTrial;
+
+  useEffect(() => {
+    if (redirectToUpgrade) navigate("/upgrade", { replace: true });
+  }, [redirectToUpgrade, navigate]);
+
   // Renewal stays OPEN under PURCHASE_BLOCKED (so users keep their VPN); only
   // the emergency RESTRICTED freeze blocks it.
   if (restricted) {
     return (
       <AccessModeBlockedScreen modes={["RESTRICTED"]} onBack={() => navigate("/dashboard")} />
+    );
+  }
+
+  // Until the renew-vs-upgrade decision is settled on entry (or we're about to
+  // bounce a trial to upgrade), show a neutral loader — never the "Продление"
+  // chrome — so the trial → upgrade hand-off feels seamless.
+  if (step === "subscriptions" && (!decided || redirectToUpgrade)) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      </div>
     );
   }
 

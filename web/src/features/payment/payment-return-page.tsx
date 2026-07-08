@@ -81,6 +81,11 @@ export default function PaymentReturnPage() {
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
           queryClient.invalidateQueries({ queryKey: ["subscription"] });
           queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+          // The `['subscriptions-all']` (hyphenated) key used by renewal/
+          // upgrade/addons pages isn't a prefix of `['subscriptions']`, so
+          // invalidate it explicitly too.
+          queryClient.invalidateQueries({ queryKey: ["subscriptions-all"] });
+          queryClient.invalidateQueries({ queryKey: ["devices"] });
           queryClient.invalidateQueries({ queryKey: ["session"] });
           return;
         }
