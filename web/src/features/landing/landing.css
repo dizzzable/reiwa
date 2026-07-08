@@ -17,6 +17,17 @@
   color: #fff;
 }
 
+/* Public landing page owns its own scroll: the cabinet shell locks
+   html/body/#root to `height:100dvh; overflow:hidden`, so the landing must be
+   an independent vertical scroller or its below-the-fold content is unreachable.
+   Not applied inside the admin preview iframe (that document scrolls its body). */
+.ls-root--page {
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ── Background layer ─────────────────────────────────────────────────────── */
 .ls-bg {
   position: fixed;

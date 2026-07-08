@@ -63,7 +63,7 @@ function CatalogPricing({ heading }: { heading: string }) {
         {cleaned.map((plan) => (
           <li
             key={plan.id}
-            className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-6 text-white"
+            className="ls-surface flex flex-col gap-4 p-6 text-white"
           >
             <h3 className="text-lg font-semibold">{plan.name ?? '—'}</h3>
             {plan.description && <p className="text-sm text-zinc-300">{plan.description}</p>}
@@ -133,8 +133,8 @@ function StaticPricing({
           return (
             <li
               key={index}
-              className={`flex flex-col gap-4 rounded-2xl border p-6 text-white ${
-                plan.highlighted ? 'border-(--brand-primary) bg-(--brand-primary)/10' : 'border-white/10 bg-white/5'
+              className={`ls-surface flex flex-col gap-4 p-6 text-white ${
+                plan.highlighted ? 'border-(--brand-primary) bg-(--brand-primary)/10' : ''
               }`}
             >
               {badge && (

@@ -58,7 +58,8 @@ export type LandingBackground =
   | 'mesh'
   | 'noise'
   | 'blobs'
-  | 'spotlight';
+  | 'spotlight'
+  | 'network';
 export type LandingSurfaceStyle = 'solid' | 'glass' | 'outline';
 export type LandingAnimation = 'none' | 'fade' | 'fadeUp' | 'zoom';
 

@@ -105,7 +105,7 @@ export default function LandingRenderer({ config }: LandingRendererProps) {
     <main
       lang={locale}
       data-surface={surface}
-      className="ls-root min-h-dvh w-full"
+      className="ls-root ls-root--page w-full"
       style={style}
     >
       <LandingBg
