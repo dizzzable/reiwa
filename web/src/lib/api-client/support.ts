@@ -12,13 +12,40 @@ export interface SupportTicket {
   messages: SupportTicketMessage[];
 }
 
+export interface SupportAttachmentMeta {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** Present on cabinet tickets; the guest serializer omits it (unused by UI). */
+  createdAt?: string;
+}
+
 export interface SupportTicketMessage {
   id: string;
   authorType: string;
   authorId: string | null;
   content: string;
   createdAt: string;
+  /** Files attached to this message (e.g. an operator reply's photo). */
+  attachments?: SupportAttachmentMeta[];
 }
+
+/**
+ * Same-origin URL for streaming a support attachment. The session cookie is
+ * sent automatically (same-origin `<img>`/`<a>`), and the backend scopes the
+ * fetch to the calling user's own ticket.
+ */
+export const supportAttachmentUrl = (ticketId: string, attachmentId: string): string =>
+  `/api/v1/support/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}`;
+
+/**
+ * Same-origin URL for streaming a GUEST-conversation attachment. Scoped
+ * server-side by the httpOnly guest token (no ticket id in the path), so an
+ * anonymous guest only ever reaches files on their own bound conversation.
+ */
+export const supportGuestAttachmentUrl = (attachmentId: string): string =>
+  `/api/v1/support/guest/attachments/${encodeURIComponent(attachmentId)}`;
 
 export const getTickets = () =>
   apiClient.get<SupportTicket[]>("/support/tickets").then((r) => r.data);
@@ -55,6 +82,8 @@ export interface GuestTicket {
     authorType: string;
     content: string;
     createdAt: string;
+    /** Files attached to this message (e.g. an operator reply's photo). */
+    attachments?: SupportAttachmentMeta[];
   }>;
 }
 

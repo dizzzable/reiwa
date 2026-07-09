@@ -171,8 +171,11 @@ export {
   replyGuestConversation,
   closeGuestConversation,
   getGuestSupportConfig,
+  supportAttachmentUrl,
+  supportGuestAttachmentUrl,
   type SupportTicket,
   type SupportTicketMessage,
+  type SupportAttachmentMeta,
   type GuestTicket,
 } from "./support.js";
 

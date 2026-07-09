@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Send, X, Copy, Check } from 'lucide-react'
+import { Loader2, Send, X, Copy, Check, Paperclip } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -10,7 +10,9 @@ import {
   replyGuestConversation,
   closeGuestConversation,
   getGuestSupportConfig,
+  supportGuestAttachmentUrl,
   type GuestTicket,
+  type SupportAttachmentMeta,
 } from '@/lib/api-client'
 
 declare global {
@@ -366,10 +368,66 @@ function MessageBubble({
         }`}
       >
         <div className="mb-0.5 text-[10px] opacity-60">{author}</div>
-        <div className="whitespace-pre-wrap wrap-break-word">{message.content}</div>
+        {message.content && (
+          <div className="whitespace-pre-wrap wrap-break-word">{message.content}</div>
+        )}
+        {message.attachments && message.attachments.length > 0 && (
+          <div className={message.content ? 'mt-1.5 space-y-1.5' : 'space-y-1.5'}>
+            {message.attachments.map((attachment) => (
+              <GuestAttachmentView key={attachment.id} attachment={attachment} mine={mine} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
+}
+
+/**
+ * Renders one guest-message attachment: an inline image preview for image
+ * types, or a download chip with filename + size otherwise. The binary streams
+ * from the same-origin guest endpoint (httpOnly guest token sent automatically).
+ */
+function GuestAttachmentView({
+  attachment,
+  mine,
+}: {
+  attachment: SupportAttachmentMeta
+  mine: boolean
+}): JSX.Element {
+  const url = supportGuestAttachmentUrl(attachment.id)
+  if (attachment.mimeType.startsWith('image/')) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl">
+        <img
+          src={url}
+          alt={attachment.filename}
+          loading="lazy"
+          className="max-h-64 w-auto max-w-full rounded-xl object-cover"
+        />
+      </a>
+    )
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${
+        mine ? 'bg-white/15 text-white' : 'bg-white/5 text-zinc-200'
+      }`}
+    >
+      <Paperclip className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
+      <span className="shrink-0 opacity-60">{formatGuestBytes(attachment.sizeBytes)}</span>
+    </a>
+  )
+}
+
+function formatGuestBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 // ── Resume code banner ─────────────────────────────────────────────────────────

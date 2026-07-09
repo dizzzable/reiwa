@@ -83,6 +83,42 @@ export function createSupportRouter(deps: {
     }
   });
 
+  // GET /api/v1/support/tickets/:id/attachments/:attachmentId — stream a file
+  // attached to one of the user's OWN tickets (e.g. an operator reply's photo).
+  // Upstream scopes the fetch to the resolved user, so ownership is enforced
+  // server-side; we proxy the binary straight through without buffering.
+  router.get(
+    "/support/tickets/:id/attachments/:attachmentId",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      const ticketId = String(req.params.id);
+      const attachmentId = String(req.params.attachmentId);
+      try {
+        const file = await adminClient?.support.downloadAttachment(
+          resolveUserIdentity(req),
+          ticketId,
+          attachmentId,
+        );
+        if (!file) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        if (file.contentType) res.setHeader("Content-Type", file.contentType);
+        if (file.contentLength !== null) {
+          res.setHeader("Content-Length", String(file.contentLength));
+        }
+        res.setHeader("Cache-Control", "private, no-store");
+        file.body.pipe(res);
+      } catch (err: unknown) {
+        getRequestLogger(req).warn(
+          { err, ticketId },
+          "GET /support/tickets/:id/attachments/:attachmentId failed",
+        );
+        res.status(500).json({ error: "internal" });
+      }
+    },
+  );
+
   // POST /api/v1/support/guest/attach — explicitly claim the anonymous
   // conversation in this browser for the logged-in account. Requires BOTH a
   // session (the account) and the httpOnly guest cookie (the conversation);

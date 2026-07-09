@@ -59,6 +59,26 @@ export class SupportNamespace {
     );
   }
 
+  /**
+   * Open a binary stream for an attachment on one of the user's OWN tickets.
+   * Upstream re-checks the ticket belongs to the resolved user, so a user can
+   * never read another user's file. Returns `null` on 404/permission failure.
+   */
+  downloadAttachment(
+    identity: UserIdentity,
+    ticketId: string,
+    attachmentId: string,
+  ): Promise<{
+    status: number;
+    contentType: string | null;
+    contentLength: number | null;
+    body: NodeJS.ReadableStream;
+  } | null> {
+    return this.transport.fetchBinary(
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    );
+  }
+
   // ── Anonymous (guest) conversations ────────────────────────────────────────
   // Authorization is bound server-side to the raw token relayed in the
   // `x-support-guest-token` header; rezeis resolves it by hash. The token is

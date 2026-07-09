@@ -3,9 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { ArrowLeft, Send, Plus, MessageSquare, Loader2 } from 'lucide-react'
-import { getTickets, getTicket, createTicket, replyToTicket } from '@/lib/api-client'
-import type { SupportTicket } from '@/lib/api-client'
+import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip } from 'lucide-react'
+import { getTickets, getTicket, createTicket, replyToTicket, supportAttachmentUrl } from '@/lib/api-client'
+import type { SupportTicket, SupportAttachmentMeta } from '@/lib/api-client'
 import { BackButton } from '@/components/ui/back-button'
 import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,58 @@ function formatTime(dateStr: string) {
   const isToday = d.toDateString() === now.toDateString()
   if (isToday) return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * Renders one support-message attachment: an inline image preview (tap to open
+ * full-size) for image types, or a download chip with filename + size for
+ * everything else. The binary streams from the same-origin permissioned
+ * endpoint (session cookie sent automatically).
+ */
+function SupportAttachmentView({
+  ticketId,
+  attachment,
+  isUser,
+}: {
+  ticketId: string
+  attachment: SupportAttachmentMeta
+  isUser: boolean
+}) {
+  const url = supportAttachmentUrl(ticketId, attachment.id)
+  const isImage = attachment.mimeType.startsWith('image/')
+  if (isImage) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl">
+        <img
+          src={url}
+          alt={attachment.filename}
+          loading="lazy"
+          className="max-h-64 w-auto max-w-full rounded-xl object-cover"
+        />
+      </a>
+    )
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        'flex items-center gap-2 rounded-xl px-3 py-2 text-xs',
+        isUser ? 'bg-white/15 text-white' : 'bg-white/5 text-zinc-200',
+      )}
+    >
+      <Paperclip className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
+      <span className="shrink-0 opacity-60">{formatBytes(attachment.sizeBytes)}</span>
+    </a>
+  )
 }
 
 function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[]; onSelect: (id: string) => void; onCreate: () => void }) {
@@ -179,7 +231,16 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
                 'max-w-[80%] rounded-2xl px-4 py-2.5',
                 isUser ? 'bg-(--brand-primary)/90 text-white rounded-br-sm' : 'bg-zinc-800 text-zinc-200 rounded-bl-sm'
               )}>
-                <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                {msg.content && (
+                  <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                )}
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className={cn('space-y-2', msg.content ? 'mt-2' : '')}>
+                    {msg.attachments.map((att) => (
+                      <SupportAttachmentView key={att.id} ticketId={ticketId} attachment={att} isUser={isUser} />
+                    ))}
+                  </div>
+                )}
                 <p className={cn('text-[10px] mt-1', isUser ? 'text-white/50' : 'text-zinc-500')}>
                   {formatTime(msg.createdAt)}
                 </p>
