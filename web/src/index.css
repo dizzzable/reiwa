@@ -293,9 +293,20 @@ body {
   to   { transform: rotate(360deg); }
 }
 
+/* Subtle game-like "glint" sheen — a diagonal highlight sweeps across the
+   element periodically (with a long idle gap), used to draw the eye to the
+   quests entry icon without the aggressiveness of the purchase-icon ring. */
+@keyframes glint {
+  0%   { opacity: 0; transform: translateX(-170%) rotate(20deg); }
+  6%   { opacity: 0.6; }
+  20%  { opacity: 0; transform: translateX(170%) rotate(20deg); }
+  100% { opacity: 0; transform: translateX(170%) rotate(20deg); }
+}
+
 .animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
 .animate-fade-up    { animation: fade-up 0.4s ease-out forwards; }
 .animate-spin-slow  { animation: spin-slow 8s linear infinite; }
+.animate-glint      { animation: glint 3.8s ease-in-out infinite; }
 
 @layer base {
   * {

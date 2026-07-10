@@ -44,6 +44,7 @@ export type { CreateCheckoutOptions } from './payments.js';
 export { PromocodesNamespace } from './promocodes.js';
 export { PushNamespace } from './push.js';
 export type { WebPushSubscriptionPayload } from './push.js';
+export { QuestsNamespace } from './quests.js';
 export { ReferralsNamespace } from './referrals.js';
 export type { ExchangePointsInput, PointsExchangeType } from './referrals.js';
 export { SubscriptionNamespace } from './subscription.js';

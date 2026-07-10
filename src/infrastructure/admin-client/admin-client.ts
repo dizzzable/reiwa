@@ -33,6 +33,7 @@ import {
   PaymentsNamespace,
   PromocodesNamespace,
   PushNamespace,
+  QuestsNamespace,
   ReferralsNamespace,
   SubscriptionNamespace,
   SupportNamespace,
@@ -64,6 +65,7 @@ export class AdminClient {
   readonly extAuth: ExtAuthNamespace;
   readonly linking: LinkingNamespace;
   readonly push: PushNamespace;
+  readonly quests: QuestsNamespace;
   readonly events: EventsNamespace;
   readonly support: SupportNamespace;
   readonly faq: FaqNamespace;
@@ -89,6 +91,7 @@ export class AdminClient {
     this.extAuth = new ExtAuthNamespace(this.transport);
     this.linking = new LinkingNamespace(this.transport);
     this.push = new PushNamespace(this.transport);
+    this.quests = new QuestsNamespace(this.transport);
     this.events = new EventsNamespace(this.transport);
     this.support = new SupportNamespace(this.transport);
     this.faq = new FaqNamespace(this.transport);

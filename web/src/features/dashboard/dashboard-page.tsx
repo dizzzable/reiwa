@@ -29,6 +29,7 @@ import { SubscriptionCarousel } from "./components/subscription-carousel";
 import { SubscriptionActions } from "./components/subscription-actions";
 import { DevicesList } from "./components/devices-list";
 import { NotificationBell } from "./components/notification-bell";
+import { QuestsIcon } from "./components/quests-icon";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
 import { TrialCta } from "./components/trial-cta";
 
@@ -145,6 +146,7 @@ export default function DashboardPage() {
           >
             <TicketPercent className="h-4 w-4" />
           </button>
+          <QuestsIcon />
           <NotificationBell />
         </div>
       </div>

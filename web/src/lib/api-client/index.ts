@@ -16,6 +16,18 @@
  */
 export { apiClient } from "./transport.js";
 
+// Quests (gamification)
+export {
+  getQuests,
+  claimQuest,
+  questIconUrl,
+  type QuestCabinetItem,
+  type QuestCabinetResponse,
+  type QuestClaimResult,
+  type QuestType,
+  type QuestRewardType,
+} from "./quests.js";
+
 // Auth
 export {
   bootstrapTelegram,
