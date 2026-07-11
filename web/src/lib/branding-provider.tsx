@@ -130,6 +130,29 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     link.href = icon;
   }, [config.branding.pwaIconUrl, config.branding.logoUrl]);
 
+  // White-label the browser-tab favicon (`<link rel="icon">`, hardcoded to
+  // `/Reiwa-logo.svg` in index.html). The apple-touch-icon effect above only
+  // covers the iOS home-screen install icon; the desktop/mobile browser tab
+  // reads `rel="icon"` separately, so without this the operator's custom icon
+  // shows on the installed PWA but NOT in the browser tab. Prefer the explicit
+  // PWA icon, then the brand logo; fall back to the static Reiwa SVG.
+  useEffect(() => {
+    const favicon =
+      config.branding.pwaIconUrl?.trim() ||
+      config.branding.logoUrl?.trim() ||
+      "/Reiwa-logo.svg";
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    // Drop the hardcoded `type="image/svg+xml"` so a PNG/ICO operator icon
+    // isn't mis-typed; let the browser sniff the actual content type.
+    link.removeAttribute("type");
+    link.href = favicon;
+  }, [config.branding.pwaIconUrl, config.branding.logoUrl]);
+
   // White-label the iOS home-screen app title. Safari bakes the value of
   // `<meta name="apple-mobile-web-app-title">` (hardcoded "Reiwa" in index.html)
   // into the installed icon label, so patch it from the operator brand name.
