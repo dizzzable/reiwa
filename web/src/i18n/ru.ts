@@ -996,6 +996,7 @@ export const ru = {
     actions: {
       link: 'Привязать',
       invite: 'Пригласить',
+      openBot: 'Открыть бота',
     },
     reward: {
       points: '+{{count}} баллов',
@@ -1003,6 +1004,20 @@ export const ru = {
       discount: '+{{count}}% скидка',
       traffic: '+{{count}} ГБ',
       promocode: 'Промокод',
+    },
+    partner: {
+      open: 'Перейти к заданию',
+      openVisit: 'Открыть',
+      codePlaceholder: 'Код активации',
+      submitCode: 'Подтвердить',
+      submitting: 'Проверяем…',
+      codeInvalid: 'Неверный код',
+      confirmVisit: 'Подтвердить',
+      waitSeconds: 'Подтвердить через {{count}}с',
+      pendingPostback: 'Награда появится после подтверждения партнёром',
+      verified: 'Задание засчитано',
+      failed: 'Не удалось подтвердить',
+      newTab: '(откроется в новой вкладке)',
     },
   },
   pointsExchange: {

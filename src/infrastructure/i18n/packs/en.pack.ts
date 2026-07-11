@@ -212,6 +212,12 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'channel.check_button': '✅ I subscribed',
   'channel.not_subscribed': '❌ You are not subscribed yet. Subscribe and try again.',
   'channel.verified': '✅ Subscription confirmed!',
+  // ── Channel-subscription quest (Phase B) ──────────────────────────────────────
+  'quests.channel.verified': '✅ Subscription confirmed! Claim your reward in the cabinet.',
+  'quests.channel.prompt': 'Subscribe to the channel, then tap "I subscribed" to get your reward.',
+  'quests.channel.not_subscribed': '❌ You are not subscribed yet. Subscribe, then tap the button again.',
+  'quests.channel.retry': '⚠️ Could not verify your subscription. Please try again in a moment.',
+  'quests.channel.link_first': '🔗 Link Telegram to your account in the cabinet first, then retry.',
   // ── Bot-started operator notice ───────────────────────────────────────────────
   'bot_event.started': '☀️ Event: Bot started!',
   'bot_event.access_mode': 'Access mode',

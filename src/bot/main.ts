@@ -34,10 +34,12 @@ import {
   registerInvitePage,
   registerLangPage,
   registerMenuPage,
+  registerQuestChannelPage,
   registerRulesPage,
   registerStartPage,
 } from './pages/index.js';
 import { notifyOperatorBotStarted, notifyDeveloperCredits } from './lib/startup-notice.js';
+import { runQuestChannelRecheck } from './lib/quest-channel-recheck.js';
 import { printReiwaBanner } from '../core/banner.js';
 import { createErrorReporter } from '../infrastructure/error-reporter/index.js';
 import { installProcessErrorGuards } from '../infrastructure/error-reporter/process-guards.js';
@@ -229,6 +231,7 @@ async function startBot(): Promise<void> {
   registerHelpCommandPage(bot, pageDeps);
   registerMenuPage(bot, pageDeps);
   registerStartPage(bot, pageDeps);
+  registerQuestChannelPage(bot, pageDeps);
   registerClosePage(bot, pageDeps);
   // Dynamic screens last — its `screen:*` regex catches anything not
   // already grabbed by an earlier `bot.callbackQuery(<id>, ...)` so
@@ -261,6 +264,22 @@ async function startBot(): Promise<void> {
       logger.warn({ err }, 'Background bot-config refresh failed');
     });
   }, CONFIG_REFRESH_MS);
+
+  // ── Channel-quest membership recheck timer ─────────────────────────────────
+  //
+  // rezeis owns quest state but has no Telegram token, so the bot periodically
+  // re-verifies unclaimed SUBSCRIBE_CHANNEL completions with its own
+  // getChatMember and reports the result. A user who left the channel loses
+  // claimability until they re-subscribe. Skipped entirely in degraded mode
+  // (no adminClient). Best-effort: failures are logged, never fatal.
+  if (adminClient !== null) {
+    const CHANNEL_RECHECK_MS = 10 * 60 * 1000;
+    setInterval(() => {
+      void runQuestChannelRecheck({ adminClient, api: bot.api, logger }).catch((err: unknown) => {
+        logger.warn({ err }, 'Quest channel recheck tick failed');
+      });
+    }, CHANNEL_RECHECK_MS);
+  }
 
   // ── Start ──────────────────────────────────────────────────────────────────
 

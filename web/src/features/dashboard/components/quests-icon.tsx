@@ -7,7 +7,7 @@
  * "Забрать" (claim) action. The whole entry hides when the user has no relevant
  * quests. Server (`GET /quests`) is the single source of truth.
  */
-import { useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,8 +27,11 @@ import {
 
 import {
   claimQuest,
+  confirmPartnerVisit,
   getQuests,
   questIconUrl,
+  startPartnerVisit,
+  submitPartnerCode,
   type QuestCabinetItem,
   type QuestClaimResult,
   type QuestLocalizedText,
@@ -40,6 +43,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useBranding } from "@/lib/branding-provider";
 import { cn } from "@/lib/utils";
 
 const PRESET_ICONS: Record<string, LucideIcon> = {
@@ -150,6 +154,7 @@ function QuestRow({
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { botUsername } = useBranding();
 
   const claim = useMutation({
     mutationFn: () => claimQuest(quest.id),
@@ -197,6 +202,20 @@ function QuestRow({
           >
             {claim.isPending ? t("quests.claiming") : t("quests.claim")}
           </button>
+        ) : quest.type === "SUBSCRIBE_CHANNEL" ? (
+          botUsername ? (
+            <a
+              href={`https://t.me/${botUsername}?start=quest_channel_${quest.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => onClose()}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white"
+            >
+              {t("quests.actions.openBot")}
+            </a>
+          ) : null
+        ) : quest.type === "PARTNER_TASK" ? (
+          <PartnerAction quest={quest} />
         ) : (
           questAction(quest.type) && (
             <button
@@ -214,6 +233,158 @@ function QuestRow({
       </div>
     </div>
   );
+}
+
+function PartnerAction({ quest }: { quest: QuestCabinetItem }): JSX.Element | null {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [code, setCode] = useState("");
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Clear the dwell countdown on unmount — the Dialog unmounts its content and
+  // the list can hide the row on refetch, so a bare setInterval would keep
+  // ticking and call setRemaining on a dead component.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const invalidate = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ["quests"] });
+    void queryClient.invalidateQueries({ queryKey: ["session"] });
+  };
+
+  const codeMutation = useMutation({
+    mutationFn: () => submitPartnerCode(quest.id, code.trim()),
+    onSuccess: () => {
+      invalidate();
+      toast.success(t("quests.partner.verified"));
+    },
+    onError: () => toast.error(t("quests.partner.codeInvalid")),
+  });
+
+  const startMutation = useMutation({
+    mutationFn: () => startPartnerVisit(quest.id),
+    onSuccess: (r) => {
+      if (r.landingUrl) window.open(r.landingUrl, "_blank", "noopener,noreferrer");
+      setRemaining(quest.partnerVisitSeconds ?? 15);
+      if (timerRef.current !== null) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setRemaining((prev) => {
+          if (prev === null || prev <= 1) {
+            if (timerRef.current !== null) clearInterval(timerRef.current);
+            timerRef.current = null;
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    },
+    onError: () => toast.error(t("quests.partner.failed")),
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: () => confirmPartnerVisit(quest.id),
+    onSuccess: () => {
+      invalidate();
+      toast.success(t("quests.partner.verified"));
+    },
+    // On a server-side dwell rejection, reset so the user can restart the visit
+    // instead of being stuck on a dead Confirm button.
+    onError: () => {
+      setRemaining(null);
+      toast.error(t("quests.partner.failed"));
+    },
+  });
+
+  const btn = "rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white disabled:opacity-50";
+
+  if (quest.partnerMethod === "manual_code") {
+    return (
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          aria-label={t("quests.partner.codePlaceholder")}
+          placeholder={t("quests.partner.codePlaceholder")}
+          autoComplete="off"
+          className="w-24 rounded-lg border border-white/15 bg-white/5 px-2 py-1.5 text-xs text-white placeholder:text-zinc-500"
+        />
+        <button
+          type="button"
+          disabled={code.trim().length === 0 || codeMutation.isPending}
+          onClick={() => codeMutation.mutate()}
+          className={cn(btn, "bg-(--brand-primary) font-semibold text-(--brand-primary-fg)")}
+        >
+          {codeMutation.isPending ? t("quests.partner.submitting") : t("quests.partner.submitCode")}
+        </button>
+      </div>
+    );
+  }
+
+  if (quest.partnerMethod === "postback") {
+    if (!quest.partnerUrl) return null;
+    // Postback rewards land asynchronously (the partner signs a callback to
+    // rezeis), so surface that expectation — otherwise the row just looks stuck
+    // after the user returns from the partner.
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <a
+          href={quest.partnerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${t("quests.partner.open")} ${t("quests.partner.newTab")}`}
+          className={btn}
+        >
+          {t("quests.partner.open")}
+        </a>
+        <span className="max-w-[180px] text-right text-[10px] leading-tight text-zinc-500">
+          {t("quests.partner.pendingPostback")}
+        </span>
+      </div>
+    );
+  }
+
+  if (quest.partnerMethod === "timed_visit") {
+    // Not started yet → open the partner link and begin the server-timed dwell.
+    if (remaining === null) {
+      return (
+        <button
+          type="button"
+          disabled={startMutation.isPending || !quest.partnerUrl}
+          onClick={() => startMutation.mutate()}
+          className={btn}
+        >
+          {t("quests.partner.openVisit")}
+        </button>
+      );
+    }
+    // Dwell elapsed → the confirm is authoritative-checked server-side.
+    if (remaining <= 0) {
+      return (
+        <button
+          type="button"
+          disabled={confirmMutation.isPending}
+          onClick={() => confirmMutation.mutate()}
+          className={cn(btn, "bg-(--brand-primary) font-semibold text-(--brand-primary-fg)")}
+        >
+          {t("quests.partner.confirmVisit")}
+        </button>
+      );
+    }
+    // Counting down. `aria-live="off"` — a per-second SR announcement would be
+    // noise; the Confirm button becoming enabled is the meaningful state change.
+    return (
+      <span aria-live="off" className="text-xs text-zinc-400">
+        {t("quests.partner.waitSeconds", { count: remaining })}
+      </span>
+    );
+  }
+
+  return null;
 }
 
 function questAction(type: QuestCabinetItem["type"]): { route: string; labelKey: string } | null {

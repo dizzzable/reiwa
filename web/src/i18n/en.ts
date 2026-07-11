@@ -998,6 +998,7 @@ export const en: RuDict = {
     actions: {
       link: 'Link',
       invite: 'Invite',
+      openBot: 'Open bot',
     },
     reward: {
       points: '+{{count}} points',
@@ -1005,6 +1006,20 @@ export const en: RuDict = {
       discount: '+{{count}}% off',
       traffic: '+{{count}} GB',
       promocode: 'Promo code',
+    },
+    partner: {
+      open: 'Open task',
+      openVisit: 'Open',
+      codePlaceholder: 'Activation code',
+      submitCode: 'Verify',
+      submitting: 'Verifying…',
+      codeInvalid: 'Invalid code',
+      confirmVisit: 'Confirm',
+      waitSeconds: 'Confirm in {{count}}s',
+      pendingPostback: 'Reward appears after the partner confirms',
+      verified: 'Task verified',
+      failed: 'Verification failed',
+      newTab: '(opens in a new tab)',
     },
   },
   pointsExchange: {

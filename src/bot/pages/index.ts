@@ -30,6 +30,7 @@ export { registerHelpCommandPage } from './help.js';
 export { registerInvitePage } from './invite.js';
 export { registerLangPage } from './lang.js';
 export { registerMenuPage } from './menu.js';
+export { registerQuestChannelPage } from './quest-channel.js';
 export { registerRulesPage } from './rules.js';
 export { registerStartPage } from './start.js';
 export { replyWithEntities } from './reply.js';

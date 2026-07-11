@@ -214,6 +214,12 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'channel.check_button': '✅ Я подписался',
   'channel.not_subscribed': '❌ Вы ещё не подписаны на канал. Подпишитесь и попробуйте снова.',
   'channel.verified': '✅ Подписка подтверждена!',
+  // ── Channel-subscription quest (Phase B) ──────────────────────────────────────
+  'quests.channel.verified': '✅ Подписка подтверждена! Забрать награду можно в кабинете.',
+  'quests.channel.prompt': 'Подпишитесь на канал, затем нажмите «Я подписался», чтобы получить награду.',
+  'quests.channel.not_subscribed': '❌ Вы ещё не подписаны на канал. Подпишитесь и нажмите кнопку снова.',
+  'quests.channel.retry': '⚠️ Не удалось проверить подписку. Попробуйте ещё раз через пару секунд.',
+  'quests.channel.link_first': '🔗 Сначала привяжите Telegram к аккаунту в кабинете, затем повторите.',
   // ── Bot-started operator notice ───────────────────────────────────────────────
   'bot_event.started': '☀️ Событие: Бот запущен!',
   'bot_event.access_mode': 'Режим доступа',

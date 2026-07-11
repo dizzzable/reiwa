@@ -474,7 +474,42 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
     const startPayload =
       typeof ctx.match === 'string' ? ctx.match.trim() : '';
 
-    // Phase 0a: post-payment return. The payment provider redirects Mini-App
+    // Phase 0a: channel-quest deep link. The cabinet's "Open bot" action sends
+    // `t.me/<bot>?start=quest_channel_<questId>`. We show the join + verify
+    // keyboard; the actual membership check happens in the fail-closed
+    // `quest_channel:<questId>` callback (see pages/quest-channel.ts). Handled
+    // before bootstrap so a returning user lands straight on the quest.
+    if (startPayload.startsWith('quest_channel_') && deps.adminClient !== null) {
+      const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+      const questId = startPayload.slice('quest_channel_'.length).trim();
+      // Validate the id against the SAME CUID grammar the strict callback matcher
+      // (`quest_channel:<id>`) enforces. Without this, a malformed deep-link payload
+      // triggers a wasted upstream call and can build a button whose callback_data
+      // the callback then rejects (or that breaches Telegram's 64-byte limit).
+      if (!/^[a-z][a-z0-9]{19,31}$/i.test(questId)) {
+        await ctx.reply(deps.translator.t('quests.channel.retry', lang));
+        return;
+      }
+      try {
+        const target = (await deps.adminClient.quests.channelTarget({
+          telegramId: String(tgUser.id),
+          questId,
+        })) as { joinUrl: string };
+        const keyboard = new InlineKeyboard()
+          .url(deps.translator.t('channel.join_button', lang), target.joinUrl)
+          .row()
+          .text(deps.translator.t('channel.check_button', lang), `quest_channel:${questId}`);
+        await ctx.reply(deps.translator.t('quests.channel.prompt', lang), {
+          reply_markup: keyboard,
+        });
+      } catch (err: unknown) {
+        deps.logger?.warn({ err, telegramId: tgUser.id, questId }, 'bot/start: quest_channel target failed');
+        await ctx.reply(deps.translator.t('quests.channel.retry', lang));
+      }
+      return;
+    }
+
+    // Phase 0b: post-payment return. The payment provider redirects Mini-App
     // buyers to `t.me/<bot>?start=payment_return` (see lib/payment-return-url).
     // Telegram opens this chat; we acknowledge the payment and offer a one-tap
     // button back into the Mini App, where the payment-return screen is already

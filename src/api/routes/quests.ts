@@ -52,6 +52,55 @@ export function createQuestsRouter(deps: {
     }
   });
 
+  // ── Partner (Phase C) — session-scoped verify proxies ─────────────────────
+  // Identity comes ONLY from the session (resolveUserIdentity), never the body.
+  // There is deliberately NO public postback route here — partner postbacks are
+  // signed callbacks that go straight to rezeis.
+
+  // POST /api/v1/quests/:questId/partner/code — submit a manual activation code.
+  router.post("/quests/:questId/partner/code", requireSession, async (req: AuthRequest, res) => {
+    const questId = String(req.params.questId);
+    const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+    if (code.length === 0 || code.length > 128) {
+      res.status(400).json({ error: "invalid_code" });
+      return;
+    }
+    try {
+      const result = await adminClient?.quests.submitPartnerCode(resolveUserIdentity(req), questId, code);
+      res.json(result ?? {});
+    } catch (err: unknown) {
+      getRequestLogger(req).warn({ err, questId }, "POST /quests/:questId/partner/code failed");
+      const status = isUpstreamStatus(err, 400) ? 400 : isUpstreamStatus(err, 404) ? 404 : 500;
+      res.status(status).json({ error: status === 500 ? "internal" : "verify_rejected" });
+    }
+  });
+
+  // POST /api/v1/quests/:questId/partner/visit/start — start a server-timed visit.
+  router.post("/quests/:questId/partner/visit/start", requireSession, async (req: AuthRequest, res) => {
+    const questId = String(req.params.questId);
+    try {
+      const result = await adminClient?.quests.startPartnerVisit(resolveUserIdentity(req), questId);
+      res.json(result ?? {});
+    } catch (err: unknown) {
+      getRequestLogger(req).warn({ err, questId }, "POST /quests/:questId/partner/visit/start failed");
+      const status = isUpstreamStatus(err, 400) ? 400 : isUpstreamStatus(err, 404) ? 404 : 500;
+      res.status(status).json({ error: status === 500 ? "internal" : "visit_rejected" });
+    }
+  });
+
+  // POST /api/v1/quests/:questId/partner/visit/complete — confirm the visit.
+  router.post("/quests/:questId/partner/visit/complete", requireSession, async (req: AuthRequest, res) => {
+    const questId = String(req.params.questId);
+    try {
+      const result = await adminClient?.quests.confirmPartnerVisit(resolveUserIdentity(req), questId);
+      res.json(result ?? {});
+    } catch (err: unknown) {
+      getRequestLogger(req).warn({ err, questId }, "POST /quests/:questId/partner/visit/complete failed");
+      const status = isUpstreamStatus(err, 400) ? 400 : isUpstreamStatus(err, 404) ? 404 : 500;
+      res.status(status).json({ error: status === 500 ? "internal" : "visit_rejected" });
+    }
+  });
+
   // GET /api/v1/quests/icons/:iconId — stream a sanitized quest icon SVG.
   router.get("/quests/icons/:iconId", requireSession, async (req: AuthRequest, res) => {
     const iconId = String(req.params.iconId);
