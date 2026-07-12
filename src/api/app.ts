@@ -275,7 +275,7 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createContentRouter(deps));
 
   // AI Chat — powered by OpenAI, no authentication required for now
-  app.use("/api/v1", createAiChatRouter({ config }));
+  app.use("/api/v1", createAiChatRouter({ config, adminClient: deps.adminClient }));
 
   // Client-error ingest — the web/TMA cabinet SPA reports its own runtime
   // errors here so they join the bot/api/worker firehose.
