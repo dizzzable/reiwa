@@ -50,6 +50,7 @@ import { createContentRouter } from "./routes/content.js";
 import { createRezeisWebhookRouter } from "./routes/webhooks.js";
 import { createInternalMetricsRouter } from "./routes/internal-metrics.js";
 import { createClientErrorsRouter } from "./routes/client-errors.js";
+import { createAiChatRouter } from "./routes/ai-chat.js";
 
 export interface CreateAppDeps {
   adminClient: AdminClient | null;
@@ -272,6 +273,9 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createPushRouter(deps));
   app.use("/api/v1", createRealtimeRouter(deps));
   app.use("/api/v1", createContentRouter(deps));
+
+  // AI Chat — powered by OpenAI, no authentication required for now
+  app.use("/api/v1", createAiChatRouter({ config }));
 
   // Client-error ingest — the web/TMA cabinet SPA reports its own runtime
   // errors here so they join the bot/api/worker firehose.

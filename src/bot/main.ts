@@ -37,6 +37,7 @@ import {
   registerQuestChannelPage,
   registerRulesPage,
   registerStartPage,
+  registerAiSupportPage,
 } from './pages/index.js';
 import { notifyOperatorBotStarted, notifyDeveloperCredits } from './lib/startup-notice.js';
 import { runQuestChannelRecheck } from './lib/quest-channel-recheck.js';
@@ -233,6 +234,8 @@ async function startBot(): Promise<void> {
   registerStartPage(bot, pageDeps);
   registerQuestChannelPage(bot, pageDeps);
   registerClosePage(bot, pageDeps);
+  // AI support — /support command enters AI chat mode
+  registerAiSupportPage(bot, pageDeps);
   // Dynamic screens last — its `screen:*` regex catches anything not
   // already grabbed by an earlier `bot.callbackQuery(<id>, ...)` so
   // operator-defined screens can shadow built-in callbacks just by
