@@ -142,6 +142,20 @@ const schema = z.object({
    * entirely when REZEIS_INTERNAL_SHARED_SECRET is unset.
    */
   BOT_INVALIDATE_PORT: z.coerce.number().int().min(1024).max(65535).optional(),
+
+  // ── OpenAI / AI Chat ───────────────────────────────────────────────────
+  /** API key for OpenAI-compatible chat API. Required for AI support chat. */
+  OPENAI_API_KEY: optionalString,
+  /** Base URL for OpenAI-compatible API (optional, defaults to OpenAI). */
+  OPENAI_API_URL: z
+    .string()
+    .trim()
+    .url()
+    .optional()
+    .transform((v) => v || null),
+  /** Model name to use for AI chat responses. */
+  OPENAI_MODEL: z.string().trim().min(1).default("gpt-4o-mini"),
+
   /**
    * Telegram bot username (with or without a leading `@`) used to build
    * deep links back to the bot/Mini App when redirecting customers from
