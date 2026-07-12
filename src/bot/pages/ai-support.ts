@@ -4,7 +4,7 @@
  * Adds an AI-powered support mode to the bot:
  * - /support command enters the AI support mode
  * - While in support mode, any text message is answered by AI
- * - The AI uses knowledge base files for context
+ * - The AI uses function calling to fetch live data from the admin panel
  * - /cancel or "❌ Выйти" exits support mode
  *
  * Extends the bot session with an `aiSupportMode` flag.
@@ -13,8 +13,10 @@
 import { InlineKeyboard } from "grammy";
 import type { Context } from "grammy";
 import type { SessionFlavor } from "grammy";
-import { generateResponse } from "../../core/ai/chat-client.js";
-import { readKnowledgeBase } from "../../core/ai/knowledge-loader.js";
+import {
+  generateResponseWithTools,
+  TOOL_DEFINITIONS,
+} from "../../core/ai/chat-client.js";
 import type { PageRegistrar } from "./types.js";
 
 // Extend session type to include AI support mode
@@ -25,7 +27,45 @@ declare module "grammy" {
 }
 
 export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
-  const { getConfig: _getConfig, ...rest } = deps;
+  const { getConfig: _getConfig, adminClient } = deps;
+
+  // ── Tool executor — bridges AI tool calls to AdminClient ───────────
+  const toolExecutor = async (
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<string> => {
+    switch (toolName) {
+      case "get_tariffs": {
+        if (!adminClient) {
+          return JSON.stringify({ error: "Catalog service unavailable" });
+        }
+        try {
+          const plans = await adminClient.catalog.getPublicPlans();
+          return JSON.stringify(plans, null, 2);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Unknown error";
+          return JSON.stringify({ error: `Failed to fetch tariffs: ${msg}` });
+        }
+      }
+
+      case "get_faq": {
+        if (!adminClient) {
+          return JSON.stringify({ error: "FAQ service unavailable" });
+        }
+        try {
+          const locale = typeof args.locale === "string" ? args.locale : null;
+          const faq = await adminClient.faq.getPublicFaq(locale);
+          return JSON.stringify(faq, null, 2);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Unknown error";
+          return JSON.stringify({ error: `Failed to fetch FAQ: ${msg}` });
+        }
+      }
+
+      default:
+        return JSON.stringify({ error: `Unknown tool: ${toolName}` });
+    }
+  };
 
   // ── /support command — enters AI support mode ──────────────────────
   bot.command("support", async (ctx) => {
@@ -95,16 +135,13 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       history.push(...sessionMessages);
     }
 
-    // Load knowledge base
-    let knowledgeEntries: string[] = [];
     try {
-      knowledgeEntries = await readKnowledgeBase();
-    } catch {
-      // No knowledge base — continue without
-    }
-
-    try {
-      const response = await generateResponse(config, text, history, knowledgeEntries);
+      const response = await generateResponseWithTools(
+        config,
+        text,
+        history,
+        toolExecutor,
+      );
 
       // Store in session history
       const msgs = sessionMessages ?? [];
