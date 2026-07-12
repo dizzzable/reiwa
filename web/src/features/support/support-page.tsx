@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip } from 'lucide-react'
+import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, Bot } from 'lucide-react'
 import { getTickets, getTicket, createTicket, replyToTicket, supportAttachmentUrl } from '@/lib/api-client'
 import type { SupportTicket, SupportAttachmentMeta } from '@/lib/api-client'
 import { BackButton } from '@/components/ui/back-button'
 import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { AiChat } from './ai-chat'
 
 function formatTime(dateStr: string) {
   const d = new Date(dateStr)
@@ -338,6 +339,7 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
 
 export default function SupportPage() {
   const [view, setView] = useState<'list' | 'chat' | 'create'>('list')
+  const [tab, setTab] = useState<'ai' | 'tickets'>('ai')
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -356,6 +358,7 @@ export default function SupportPage() {
     if (!ticketId) return
     setSelectedTicketId(ticketId)
     setView('chat')
+    setTab('tickets')
     searchParams.delete('ticket')
     setSearchParams(searchParams, { replace: true })
   }, [searchParams, setSearchParams])
@@ -387,11 +390,46 @@ export default function SupportPage() {
   }
 
   return (
-    <TicketList
-      tickets={tickets}
-      onSelect={(id) => { setSelectedTicketId(id); setView('chat') }}
-      onCreate={() => setView('create')}
-    />
+    <div className="flex flex-col h-full">
+      {/* Tabs */}
+      <div className="flex border-b">
+        <button
+          onClick={() => setTab('ai')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2',
+            tab === 'ai'
+              ? 'border-(--brand-primary) text-(--brand-primary)'
+              : 'border-transparent text-muted-foreground'
+          )}
+        >
+          <Bot className="h-4 w-4" />
+          AI-помощник
+        </button>
+        <button
+          onClick={() => setTab('tickets')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2',
+            tab === 'tickets'
+              ? 'border-(--brand-primary) text-(--brand-primary)'
+              : 'border-transparent text-muted-foreground'
+          )}
+        >
+          <MessageSquare className="h-4 w-4" />
+          Тикеты
+        </button>
+      </div>
+
+      {/* Tab content */}
+      {tab === 'ai' ? (
+        <AiChat />
+      ) : (
+        <TicketList
+          tickets={tickets}
+          onSelect={(id) => { setSelectedTicketId(id); setView('chat') }}
+          onCreate={() => setView('create')}
+        />
+      )}
+    </div>
   )
 }
 
