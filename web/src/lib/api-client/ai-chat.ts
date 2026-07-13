@@ -14,4 +14,4 @@ export interface AiChatResponse {
 }
 
 export const sendAiMessage = (message: string, conversationId?: string): Promise<AiChatResponse> =>
-  apiClient.post("/api/v1/ai-chat/message", { message, conversationId });
+  apiClient.post("/ai-chat/message", { message, conversationId });

@@ -8,6 +8,8 @@
  */
 export { ActivityNamespace } from './activity.js';
 export { AddOnsNamespace } from './add-ons.js';
+export { AiConfigNamespace } from './ai-config.js';
+export type { AiConfigSettings, AiInstruction } from './ai-config.js';
 export type { AddOn, AddOnPrice } from './add-ons.js';
 export { AdvertisingNamespace } from './advertising.js';
 export type {
