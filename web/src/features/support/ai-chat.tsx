@@ -39,7 +39,7 @@ export function AiChat({ onBack }: { onBack?: () => void }) {
     try {
       const res = await sendAiMessage(text, conversationId)
       setConversationId(res.conversationId)
-      setMessages((prev) => [...prev, { role: 'assistant', content: res.response }])
+      setMessages((prev) => [...prev, { role: 'assistant', content: res.response || 'Нет ответа от сервера.' }])
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -86,10 +86,10 @@ export function AiChat({ onBack }: { onBack?: () => void }) {
                   : 'bg-muted rounded-bl-md'
               )}
             >
-              {msg.content.split('\n').map((line, j) => (
+              {(msg.content || '').split('\n').map((line, j) => (
                 <span key={j}>
                   {line}
-                  {j < msg.content.split('\n').length - 1 && <br />}
+                  {j < (msg.content || '').split('\n').length - 1 && <br />}
                 </span>
               ))}
             </div>
