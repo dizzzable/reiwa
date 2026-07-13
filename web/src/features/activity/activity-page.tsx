@@ -162,7 +162,7 @@ export default function ActivityPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-white">{tx.plan?.name ?? tx.gatewayType}</p>
+                      <p className="text-sm font-medium text-white">{tx.title ?? tx.plan?.name ?? tx.gatewayType}</p>
                       <p className="text-xs text-zinc-500 mt-0.5">{formatDateTime(tx.createdAt)}</p>
                     </div>
                     <div className="text-right">

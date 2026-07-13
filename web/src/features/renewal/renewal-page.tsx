@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Check, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -13,8 +13,10 @@ import {
   getPartnerInfo,
   getPlans,
   getRenewalOptions,
+  getSubscriptionAddOns,
   payWithPartnerBalance,
 } from "@/lib/api-client";
+import type { EligibleAddOn } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { PromoInput } from "@/features/purchase/components/promo-input";
@@ -29,7 +31,7 @@ import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
-import { useAccessMode } from "@/lib/use-access-mode";
+import { useAccessMode, useRenewalAddOnsEnabled } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 
 const GATEWAY_ICONS: Record<string, string> = {
@@ -142,6 +144,7 @@ export default function RenewalPage() {
       <StepTransition stepKey={step}>
         {step === "subscriptions" && <SelectSubscriptions />}
         {step === "plan" && <SelectPlan />}
+        {step === "addons" && <SelectRenewalAddOns />}
         {step === "gateway" && <SelectGateway />}
         {step === "review" && <RenewalReview />}
         {step === "checkout" && <CheckoutStep />}
@@ -474,31 +477,172 @@ function SelectPlan() {
   );
 }
 
+function SelectRenewalAddOns() {
+  const { t } = useTranslation();
+  const { selectedSubscriptionIds, selectedGateway, selectedAddOns, toggleAddOn, setStep, goBack } =
+    useRenewalStore();
+  const { data: subsData } = useQuery({
+    queryKey: ["subscriptions-all"],
+    queryFn: getAllSubscriptions,
+    staleTime: 60_000,
+  });
+  const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
+  const currency = selectedGateway?.currency ?? null;
+  const multi = selectedSubscriptionIds.length > 1;
+
+  return (
+    <div className="space-y-4">
+      <div className="px-5">
+        <h2 className="text-base font-semibold">{t("renewal.addonsTitle")}</h2>
+        <p className="mt-1 text-sm text-zinc-400">{t("renewal.addonsSubtitle")}</p>
+      </div>
+      {selectedSubscriptionIds.map((subId) => {
+        const sub = subById.get(subId);
+        return (
+          <RenewalAddOnSection
+            key={subId}
+            subscriptionId={subId}
+            title={multi ? (sub ? subscriptionTitle(sub) : subId) : null}
+            currency={currency}
+            selectedIds={selectedAddOns[subId] ?? []}
+            onToggle={(addOnId) => toggleAddOn(subId, addOnId)}
+          />
+        );
+      })}
+      <div className="px-5 space-y-2 pt-2">
+        <StadiumButton fullWidth size="lg" glow onClick={() => setStep("review")}>
+          {t("renewal.continue")}
+        </StadiumButton>
+        <StadiumButton fullWidth variant="ghost" onClick={() => goBack("gateway")}>
+          {t("renewal.back")}
+        </StadiumButton>
+      </div>
+    </div>
+  );
+}
+
+function RenewalAddOnSection({
+  subscriptionId,
+  title,
+  currency,
+  selectedIds,
+  onToggle,
+}: {
+  subscriptionId: string;
+  title: string | null;
+  currency: string | null;
+  selectedIds: readonly string[];
+  onToggle: (addOnId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["add-ons-eligibility", subscriptionId],
+    queryFn: () => getSubscriptionAddOns(subscriptionId),
+    staleTime: 60_000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="px-5">
+        <div className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+      </div>
+    );
+  }
+  // Add-ons are optional — an eligibility outage or an empty/priceless catalog
+  // for this line simply renders nothing; the renewal still proceeds.
+  if (isError || !data || data.availability !== "AVAILABLE" || data.addOns.length === 0) {
+    return null;
+  }
+  const offerable = data.addOns.filter(
+    (a) => currency === null || a.prices.some((p) => p.currency === currency),
+  );
+  if (offerable.length === 0) return null;
+
+  return (
+    <div className="space-y-2 px-5">
+      {title && <p className="text-xs font-medium text-zinc-500">{title}</p>}
+      {offerable.map((addOn) => {
+        const selected = selectedIds.includes(addOn.id);
+        const price = currency ? addOn.prices.find((p) => p.currency === currency) : undefined;
+        return (
+          <button
+            key={addOn.id}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onToggle(addOn.id)}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-all active:scale-[0.98]",
+              selected
+                ? "border-(--brand-primary)/60 bg-(--brand-primary)/10"
+                : "border-white/6 bg-white/3 hover:bg-white/6",
+            )}
+          >
+            <div
+              className={cn(
+                "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border",
+                selected ? "border-(--brand-primary) bg-(--brand-primary) text-black" : "border-white/20",
+              )}
+            >
+              {selected && <Check className="h-3.5 w-3.5" />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-white">{addOn.name}</p>
+              <p className="text-xs text-zinc-500">
+                {addOn.type === "EXTRA_TRAFFIC"
+                  ? t("addons.extraTraffic", { value: addOn.value })
+                  : t("addons.extraDevices", { count: addOn.value })}
+              </p>
+              {addOn.description && (
+                <p className="mt-0.5 text-xs text-zinc-500/80 line-clamp-2">{addOn.description}</p>
+              )}
+            </div>
+            {price && (
+              <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
+                {formatPrice(price.price, price.currency)}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function SelectGateway() {
   const { t } = useTranslation();
-  const { selectGateway, goBack, navDirection } = useRenewalStore();
+  const { selectGateway, setStep, goBack, navDirection } = useRenewalStore();
+  const renewalAddOns = useRenewalAddOnsEnabled();
+  // Policy-settled signal (same shared query): the add-on capability must be
+  // resolved before we auto-advance a single gateway, otherwise a one-gateway
+  // user with renewalAddOns enabled could be auto-advanced gateway→review while
+  // the flag still reads false, silently skipping the add-on step.
+  const { isLoading: policyLoading } = useAccessMode();
   const { data: gateways = [], isLoading } = useQuery({
     queryKey: ["gateways"],
     queryFn: getEnabledGateways,
     staleTime: 300_000,
   });
 
-  const choose = (gw: { type: string; displayName: string; currency: string }): void =>
+  const choose = (gw: { type: string; displayName: string; currency: string }): void => {
     selectGateway({
       id: gw.type,
       label: gatewayLabel(gw.type, gw.displayName),
       icon: GATEWAY_ICONS[gw.type] ?? "💳",
       currency: gw.currency,
     } satisfies GatewayOption);
+    // Optional add-on selection step sits between gateway and review — only
+    // when the backend rollout enables it (otherwise pricing ignores add-ons).
+    setStep(renewalAddOns ? "addons" : "review");
+  };
 
   // Auto-select when a single gateway is available — but only when arriving
   // FORWARD. Without the guard, pressing "back" from review re-mounts this and
   // immediately re-advances to review (a trap).
   useEffect(() => {
-    if (!isLoading && gateways.length === 1 && navDirection === "forward") {
+    if (!isLoading && !policyLoading && gateways.length === 1 && navDirection === "forward") {
       choose(gateways[0]!);
     }
-  }, [isLoading, gateways, navDirection]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoading, policyLoading, gateways, navDirection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isTma = !!window.Telegram?.WebApp?.initData;
   const sorted = [...gateways].sort((a, b) => {
@@ -553,7 +697,7 @@ function RenewalReview() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedGateway, setStep, goBack } =
+  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedAddOns, selectedGateway, setStep, goBack } =
     useRenewalStore();
 
   const durationsPayload = selectedSubscriptionIds
@@ -584,6 +728,37 @@ function RenewalReview() {
     staleTime: 60_000,
   });
   const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
+
+  // Selected renewal add-ons (T-015): resolve names/prices from the same
+  // per-subscription eligibility used by the selection step (cached), so the
+  // review lists them and the displayed total matches what the backend prices.
+  const currency = selectedGateway?.currency ?? null;
+  const hasAddOnSelections = Object.values(selectedAddOns).some((ids) => ids.length > 0);
+  const eligibilityQueries = useQueries({
+    queries: selectedSubscriptionIds.map((id) => ({
+      queryKey: ["add-ons-eligibility", id],
+      queryFn: () => getSubscriptionAddOns(id),
+      staleTime: 60_000,
+      enabled: hasAddOnSelections,
+    })),
+  });
+  const eligibilityBySub = new Map<string, EligibleAddOn[]>();
+  selectedSubscriptionIds.forEach((id, i) => {
+    const res = eligibilityQueries[i]?.data;
+    if (res && res.availability === "AVAILABLE") eligibilityBySub.set(id, res.addOns);
+  });
+  const addOnLines: Array<{ subscriptionId: string; addOn: EligibleAddOn; price: string | null }> = [];
+  let addOnTotal = 0;
+  for (const subId of selectedSubscriptionIds) {
+    const cat = eligibilityBySub.get(subId) ?? [];
+    for (const addOnId of selectedAddOns[subId] ?? []) {
+      const addOn = cat.find((a) => a.id === addOnId);
+      if (!addOn) continue;
+      const priceRow = currency ? addOn.prices.find((p) => p.currency === currency) : undefined;
+      addOnLines.push({ subscriptionId: subId, addOn, price: priceRow?.price ?? null });
+      if (priceRow) addOnTotal += Number(priceRow.price);
+    }
+  }
 
   const { data: partner } = useQuery({
     queryKey: ["partner", "info"],
@@ -674,10 +849,28 @@ function RenewalReview() {
             </div>
           );
         })}
+        {addOnLines.map(({ subscriptionId, addOn, price }) => (
+          <div
+            key={`${subscriptionId}:${addOn.id}`}
+            className="flex items-center justify-between px-4 py-3 text-sm"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-white">{addOn.name}</p>
+              <p className="truncate text-xs text-zinc-500">
+                {addOn.type === "EXTRA_TRAFFIC"
+                  ? t("addons.extraTraffic", { value: addOn.value })
+                  : t("addons.extraDevices", { count: addOn.value })}
+              </p>
+            </div>
+            <span className="shrink-0 font-medium">
+              {price !== null ? formatPrice(price, currency) : "—"}
+            </span>
+          </div>
+        ))}
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("renewal.total")}</span>
           <span className="text-lg font-bold text-(--brand-primary)">
-            {formatPrice(data!.total, data!.currency)}
+            {formatPrice((Number(data!.total) + addOnTotal).toFixed(2), data!.currency)}
           </span>
         </div>
       </div>
@@ -730,7 +923,7 @@ function RenewalReview() {
 function CheckoutStep() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedGateway, setCheckoutResult } =
+  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedAddOns, selectedGateway, setCheckoutResult, goBack } =
     useRenewalStore();
 
   const durationsPayload = selectedSubscriptionIds
@@ -739,6 +932,13 @@ function CheckoutStep() {
   const plansPayload = selectedSubscriptionIds
     .filter((id) => selectedPlans[id] !== undefined)
     .map((id) => ({ subscriptionId: id, planId: selectedPlans[id]! }));
+  const addOnsPayload = selectedSubscriptionIds
+    .filter((id) => (selectedAddOns[id]?.length ?? 0) > 0)
+    .map((id) => ({ subscriptionId: id, addOnIds: selectedAddOns[id]! }));
+  // Stable per checkout attempt (per mount): a double-invoke / network-ambiguous
+  // retry replays the existing draft instead of minting a second PENDING
+  // combined-renewal transaction. A fresh attempt (remount) gets a new key.
+  const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -747,17 +947,23 @@ function CheckoutStep() {
         selectedGateway!.id,
         durationsPayload.length > 0 ? durationsPayload : undefined,
         plansPayload.length > 0 ? plansPayload : undefined,
+        addOnsPayload.length > 0 ? addOnsPayload : undefined,
+        idempotencyKey,
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
       // Stash the URL so the return page can offer a manual "open payment"
       // button — the auto-open below is blocked on Telegram Desktop (openLink
       // must run inside a user gesture, which the async onSuccess has lost).
-      savePendingCheckout(result.paymentId, result.checkoutUrl ?? null);
+      savePendingCheckout(result.paymentId, result.checkoutUrl ?? null, { returnTo: "/renew" });
       if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
-    onError: () => toast.error(t("renewal.checkoutError")),
+    onError: () => {
+      // Return to review (not a stuck spinner) so the user can retry.
+      toast.error(t("renewal.checkoutError"));
+      goBack("review");
+    },
   });
 
   useEffect(() => {
@@ -767,7 +973,7 @@ function CheckoutStep() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="flex h-48 flex-col items-center justify-center gap-4">
+    <div className="flex h-48 flex-col items-center justify-center gap-4" role="status" aria-live="polite">
       <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
       <p className="text-sm text-zinc-400">{t("renewal.creating")}</p>
     </div>

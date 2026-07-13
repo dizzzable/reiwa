@@ -412,7 +412,7 @@ function Row({ label, value }: { label: string; value: string }) {
 function CheckoutStep() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { selectedSubscriptionId, selectedPlan, selectedDurationDays, selectedGateway, setCheckoutResult } =
+  const { selectedSubscriptionId, selectedPlan, selectedDurationDays, selectedGateway, setCheckoutResult, setStep } =
     useUpgradeStore();
 
   const mutation = useMutation({
@@ -428,11 +428,15 @@ function CheckoutStep() {
       // Stash the URL so the return page can offer a manual "open payment"
       // button — the auto-open below is blocked on Telegram Desktop (openLink
       // must run inside a user gesture, which the async onSuccess has lost).
-      savePendingCheckout(result.paymentId, result.checkoutUrl ?? null);
+      savePendingCheckout(result.paymentId, result.checkoutUrl ?? null, { returnTo: "/upgrade" });
       if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
-    onError: () => toast.error(t("upgrade.checkoutError")),
+    onError: () => {
+      // Return to review (not a stuck spinner) so the user can retry.
+      toast.error(t("upgrade.checkoutError"));
+      setStep("review");
+    },
   });
 
   useEffect(() => {

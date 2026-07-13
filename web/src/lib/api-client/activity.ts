@@ -2,13 +2,18 @@
  * Activity namespace — transactions ledger + notifications inbox.
  */
 import { apiClient } from "./transport.js";
-import type { NotificationsResponse, TransactionsResponse } from "@/types/api";
+import type { NotificationsResponse, TransactionsResponse, AddOnEntitlementsResponse } from "@/types/api";
 
 export const getTransactions = (page = 1, limit = 20) =>
   apiClient
     .get<TransactionsResponse>("/activity/transactions", {
       params: { page, limit },
     })
+    .then((r) => r.data);
+
+export const getAddOnEntitlements = () =>
+  apiClient
+    .get<AddOnEntitlementsResponse>("/activity/add-on-entitlements")
     .then((r) => r.data);
 
 export const getNotifications = (page = 1, limit = 20) =>

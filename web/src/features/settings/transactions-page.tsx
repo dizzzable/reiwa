@@ -63,7 +63,7 @@ export default function TransactionsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-zinc-200 truncate">
-                      {tx.plan?.name ?? tx.gatewayType ?? "Payment"}
+                      {tx.title ?? tx.plan?.name ?? tx.gatewayType ?? t("activity.paymentFallback")}
                     </p>
                     <StatusBadge status={tx.status} />
                   </div>
@@ -86,16 +86,21 @@ export default function TransactionsPage() {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const colorMap: Record<string, string> = {
     COMPLETED: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
     PENDING: "bg-amber-500/10 text-amber-400 border-amber-500/20",
     FAILED: "bg-red-500/10 text-red-400 border-red-500/20",
     CANCELED: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+    REFUNDED: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
   };
   const cls = colorMap[status] ?? colorMap.PENDING;
+  // Localized label from the shared txStatus map; unknown states fall back to
+  // the raw enum so nothing renders blank.
+  const label = t(`activity.txStatus.${status}`, status);
   return (
     <Badge variant="outline" className={`text-[10px] ${cls}`}>
-      {status}
+      {label}
     </Badge>
   );
 }

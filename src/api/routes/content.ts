@@ -3,6 +3,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
+import { requireMode } from "../middleware/access-mode.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
@@ -41,15 +42,41 @@ export function createContentRouter(deps: {
   });
 
   // GET /api/v1/add-ons/plan/:planId — active add-ons for a plan.
+  // An upstream OUTAGE surfaces as 502 (not a masked empty catalog) so the SPA
+  // can tell "no add-ons for this plan" from "backend unavailable" and show a
+  // retry affordance. A NULL adminClient (not yet configured) still degrades to
+  // an empty list rather than erroring.
   router.get("/add-ons/plan/:planId", async (req, res) => {
     try {
       const planId = String(req.params["planId"]);
       const addOns = await adminClient?.addOns.listForPlan(planId);
       res.json({ addOns: addOns ?? [] });
-    } catch {
-      res.json({ addOns: [] });
+    } catch (e: unknown) {
+      sendSafeError(req, res, e, 502, "Add-on catalog unavailable", "add-ons/catalog");
     }
   });
+
+  // GET /api/v1/add-ons/subscriptions/:subscriptionId — v2 subscription-scoped
+  // eligibility. Unlike the legacy plan list, an upstream OUTAGE is NOT
+  // collapsed into an empty catalog: the error propagates so the client can
+  // distinguish "no eligible add-ons" (availability: EMPTY) from "backend
+  // unavailable". The backend remains the sole authority on eligibility/price.
+  router.get(
+    "/add-ons/subscriptions/:subscriptionId",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const subscriptionId = String(req.params["subscriptionId"]);
+        const result = await adminClient?.addOns.listForSubscription(
+          subscriptionId,
+          resolveUserIdentity(req),
+        );
+        res.json(result ?? { contractVersion: 2, availability: "EMPTY", target: null, addOns: [] });
+      } catch (e: unknown) {
+        sendSafeError(req, res, e, 502, "Add-on eligibility unavailable", "add-ons/eligibility");
+      }
+    },
+  );
 
   // POST /api/v1/add-ons/purchase — checkout an add-on top-up for an
   // existing subscription. Context-aware return URLs mirror the payments
@@ -57,6 +84,7 @@ export function createContentRouter(deps: {
   router.post(
     "/add-ons/purchase",
     requireSession,
+    requireMode('purchase.addon'),
     async (req: AuthRequest, res) => {
       try {
         const { addOnId, subscriptionId, gatewayType, source } = (req.body ?? {}) as Record<
@@ -69,6 +97,7 @@ export function createContentRouter(deps: {
           });
           return;
         }
+        const body = (req.body ?? {}) as Record<string, unknown>;
         const context = resolvePurchaseContext(req.context, source);
         const successUrl = buildPaymentReturnUrl({
           context,
@@ -83,6 +112,14 @@ export function createContentRouter(deps: {
           channel: context === "tma" ? "TELEGRAM" : "WEB",
           successUrl,
           failUrl: successUrl,
+          expectedAddOnRevision:
+            typeof body["expectedAddOnRevision"] === "number"
+              ? body["expectedAddOnRevision"]
+              : undefined,
+          idempotencyKey:
+            typeof body["idempotencyKey"] === "string" ? body["idempotencyKey"] : undefined,
+          contractVersion:
+            typeof body["contractVersion"] === "number" ? body["contractVersion"] : undefined,
         });
         res.json(result ?? {});
       } catch (e: unknown) {

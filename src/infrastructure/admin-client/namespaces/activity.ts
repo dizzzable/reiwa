@@ -41,6 +41,13 @@ export class ActivityNamespace {
     );
   }
 
+  getAddOnEntitlements(identity: UserIdentity): Promise<unknown> {
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/add-on-entitlements?${identityQuery(identity)}`,
+    );
+  }
+
   getNotifications(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',

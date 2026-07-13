@@ -136,6 +136,8 @@ export function createPaymentsRouter(deps: {
           source,
           durations,
           plans,
+          addOns,
+          idempotencyKey,
           successUrl: bodySuccessUrl,
           failUrl: bodyFailUrl,
         } = (req.body ?? {}) as Record<string, unknown>;
@@ -159,7 +161,8 @@ export function createPaymentsRouter(deps: {
               d !== null &&
               typeof d === "object" &&
               typeof (d as { subscriptionId?: unknown }).subscriptionId === "string" &&
-              Number.isFinite((d as { days?: unknown }).days),
+              Number.isInteger((d as { days?: unknown }).days) &&
+              (d as { days: number }).days > 0,
           );
         const plansValid =
           Array.isArray(plans) &&
@@ -169,6 +172,18 @@ export function createPaymentsRouter(deps: {
               typeof p === "object" &&
               typeof (p as { subscriptionId?: unknown }).subscriptionId === "string" &&
               typeof (p as { planId?: unknown }).planId === "string",
+          );
+        const addOnsValid =
+          Array.isArray(addOns) &&
+          addOns.every(
+            (a) =>
+              a !== null &&
+              typeof a === "object" &&
+              typeof (a as { subscriptionId?: unknown }).subscriptionId === "string" &&
+              Array.isArray((a as { addOnIds?: unknown }).addOnIds) &&
+              (a as { addOnIds: unknown[] }).addOnIds.every(
+                (id) => typeof id === "string" && id.length > 0,
+              ),
           );
 
         const successOverride =
@@ -216,6 +231,19 @@ export function createPaymentsRouter(deps: {
                     (p) => ({ subscriptionId: String(p.subscriptionId), planId: String(p.planId) }),
                   ),
                 }
+              : {}),
+            ...(addOnsValid
+              ? {
+                  addOns: (
+                    addOns as ReadonlyArray<{ subscriptionId: string; addOnIds: string[] }>
+                  ).map((a) => ({
+                    subscriptionId: String(a.subscriptionId),
+                    addOnIds: a.addOnIds.map((id) => String(id)),
+                  })),
+                }
+              : {}),
+            ...(typeof idempotencyKey === "string" && idempotencyKey.length > 0
+              ? { idempotencyKey }
               : {}),
           },
         );

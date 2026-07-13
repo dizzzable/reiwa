@@ -97,6 +97,7 @@ export {
 export {
   getNotifications,
   getTransactions,
+  getAddOnEntitlements,
   getUnreadCount,
   markAllNotificationsRead,
   markNotificationRead,
@@ -214,11 +215,11 @@ export {
 // Content (FAQ + add-ons)
 export {
   getFaq,
-  getPlanAddOns,
+  getSubscriptionAddOns,
   purchaseAddOn,
-  type AddOn,
   type AddOnCheckoutResult,
-  type AddOnPrice,
+  type AddOnEligibilityResult,
+  type EligibleAddOn,
   type FaqItem,
 } from "./content.js";
 

@@ -167,7 +167,12 @@ registerRoute(staticAssetsRoute)
 //   /api/v1/plans            — public plan catalog
 //   /api/v1/gateways         — enabled payment gateways (catalog, not user)
 //   /api/v1/faq              — operator FAQ content
-//   /api/v1/add-ons/plan/... — add-on catalog for a plan (not user state)
+//
+// The add-on catalog (/api/v1/add-ons/plan/...) is deliberately NOT SW-cached:
+// it is money-facing (price/availability) and must not be served stale across
+// sessions. React Query still caches it in-memory (60s) for snappy in-session
+// navigation, and an outage now surfaces an explicit error state rather than a
+// masked/stale list.
 //
 // NOT cached (account-scoped / sensitive): /auth/*, /profile, /subscription,
 //   /payments/*, /activity, /promo, /referrals, /devices, /partner,
@@ -181,7 +186,7 @@ const CACHEABLE_API_EXACT = new Set<string>([
   '/api/v1/landing',
 ])
 
-const CACHEABLE_API_PREFIXES: readonly string[] = ['/api/v1/add-ons/plan/']
+const CACHEABLE_API_PREFIXES: readonly string[] = []
 
 function isCacheableApiPath(pathname: string): boolean {
   if (CACHEABLE_API_EXACT.has(pathname)) return true

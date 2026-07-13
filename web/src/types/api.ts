@@ -196,12 +196,36 @@ export interface Transaction {
   currency: string;
   pricing: { finalPrice: number; currency: string };
   plan: { id: number; name: string } | null;
+  /** Human title (add-on receipt name / plan name) when available. Falls back
+   *  to the gateway label. */
+  title?: string | null;
   createdAt: string;
 }
 
 export interface TransactionsResponse {
   transactions: Transaction[];
   total: number;
+}
+
+// ─── Add-on entitlements ("My add-ons") ──────────────────────────────────────
+export interface UserAddOnEntitlement {
+  id: string;
+  subscriptionId: string;
+  receiptName: string;
+  type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES";
+  valuePerUnit: number;
+  quantity: number;
+  lifetime: "UNTIL_NEXT_RESET" | "UNTIL_SUBSCRIPTION_END";
+  state: string;
+  currency: string;
+  totalAmount: string;
+  purchasedAt: string;
+  activatedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface AddOnEntitlementsResponse {
+  entitlements: UserAddOnEntitlement[];
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
@@ -264,6 +288,9 @@ export interface PlatformPolicy {
    * them before entering the cabinet. When false, Telegram alone suffices.
    */
   requireTelegramWebCredentials?: boolean;
+  /** Capability: renewal add-on composition enabled (rezeis env). The renewal
+   *  flow shows the add-on selection step only when true. Absent → false. */
+  renewalAddOns?: boolean;
 }
 
 // ─── Devices (HWID) ───────────────────────────────────────────────────────

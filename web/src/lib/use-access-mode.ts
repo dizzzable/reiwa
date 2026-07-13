@@ -44,3 +44,22 @@ export function useAccessMode(): AccessModeState {
     inviteOnly: mode === "INVITED",
   };
 }
+
+/**
+ * Reads the `renewalAddOns` capability from the same shared platform-policy
+ * query. The renewal flow shows its add-on selection step only when this is
+ * true — otherwise backend pricing ignores add-on selections. Fails closed
+ * (false) on outage/absence so the step is hidden unless the backend confirms
+ * the rollout is on.
+ */
+export function useRenewalAddOnsEnabled(): boolean {
+  const { data } = useQuery({
+    queryKey: ["platform-policy"],
+    queryFn: getPlatformPolicy,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+  return data?.renewalAddOns === true;
+}

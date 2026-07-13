@@ -27,7 +27,7 @@ import { getPaymentStatus } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { useBranding } from "@/lib/branding-provider";
 import { openExternalUrl } from "@/lib/utils";
-import { readPendingCheckout, clearPendingCheckout } from "@/lib/pending-checkout";
+import { readPendingCheckout, readPendingCheckoutReturnTo, readPendingCheckoutLabel, clearPendingCheckout } from "@/lib/pending-checkout";
 
 type PaymentState = "processing" | "success" | "failed" | "timeout";
 
@@ -51,6 +51,11 @@ export default function PaymentReturnPage() {
   // blocked because `openLink` must run inside a user gesture — so we surface a
   // manual button here that opens the page from a fresh click.
   const checkoutUrl = useMemo(() => readPendingCheckout(paymentId), [paymentId]);
+  // Where "retry" should send the user — the originating flow (/addons, /renew,
+  // /upgrade), captured before the poll clears the pending record. Falls back
+  // to the plan catalog for legacy/new purchases.
+  const retryTo = useMemo(() => readPendingCheckoutReturnTo(paymentId) ?? "/plans", [paymentId]);
+  const purchaseLabel = useMemo(() => readPendingCheckoutLabel(paymentId), [paymentId]);
   const openPayment = () => {
     if (checkoutUrl) openExternalUrl(checkoutUrl);
   };
@@ -76,7 +81,7 @@ export default function PaymentReturnPage() {
         if (cancelled) return;
 
         if (status.status === "COMPLETED") {
-          clearPendingCheckout();
+          clearPendingCheckout(paymentId);
           setState("success");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
           queryClient.invalidateQueries({ queryKey: ["subscription"] });
@@ -90,7 +95,7 @@ export default function PaymentReturnPage() {
           return;
         }
         if (status.status === "FAILED" || status.status === "CANCELED") {
-          clearPendingCheckout();
+          clearPendingCheckout(paymentId);
           setState("failed");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
           return;
@@ -144,14 +149,14 @@ export default function PaymentReturnPage() {
             onOpenPayment={openPayment}
           />
         )}
-        {state === "success" && <SuccessState key="success" primary={branding.primary} />}
+        {state === "success" && <SuccessState key="success" primary={branding.primary} label={purchaseLabel} />}
         {(state === "failed" || state === "timeout") && (
           <FailedState
             key="failed"
             isTimeout={state === "timeout"}
             checkoutUrl={checkoutUrl}
             onOpenPayment={openPayment}
-            onRetry={() => navigate("/plans")}
+            onRetry={() => navigate(retryTo)}
             onHome={() => navigate("/dashboard", { replace: true })}
           />
         )}
@@ -198,7 +203,7 @@ function ProcessingState({
         </svg>
       </div>
 
-      <div>
+      <div role="status" aria-live="polite">
         <h2 className="text-xl font-semibold text-foreground">
           {t("paymentAnim.processing")}
         </h2>
@@ -248,7 +253,7 @@ function ProcessingState({
 
 // ─── Success ────────────────────────────────────────────────────────────────
 
-function SuccessState({ primary }: { primary: string }) {
+function SuccessState({ primary, label }: { primary: string; label?: string | null }) {
   const { t } = useTranslation();
   return (
     <motion.div
@@ -295,10 +300,13 @@ function SuccessState({ primary }: { primary: string }) {
       {/* Confetti particles */}
       <ConfettiParticles color={primary} />
 
-      <div>
+      <div role="status" aria-live="polite">
         <h2 className="text-xl font-semibold" style={{ color: primary }}>
           {t("paymentAnim.success")}
         </h2>
+        {label ? (
+          <p className="mt-2 text-sm font-medium text-white">{label}</p>
+        ) : null}
         <p className="mt-2 text-sm text-muted-foreground">
           {t("paymentAnim.successHint")}
         </p>
@@ -363,7 +371,7 @@ function FailedState({
         </svg>
       </div>
 
-      <div>
+      <div role="alert" aria-live="assertive">
         <h2 className="text-xl font-semibold text-red-400">
           {t("paymentAnim.failed")}
         </h2>

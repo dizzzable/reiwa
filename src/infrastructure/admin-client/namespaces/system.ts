@@ -34,6 +34,10 @@ export interface PlatformPolicyShape {
    */
   readonly requireTelegramWebCredentials?: boolean;
   readonly defaultCurrency: string;
+  /** Capability: renewal add-on composition enabled (rezeis env). The cabinet
+   *  gates the renewal add-on selection step on this. Optional for back-compat
+   *  with older admin builds (treated as false when absent). */
+  readonly renewalAddOns?: boolean;
 }
 
 export class SystemNamespace {

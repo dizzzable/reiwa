@@ -18,7 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import type { Subscription } from "@/types/api";
-import { getPlanAddOns } from "@/lib/api-client";
+import { getSubscriptionAddOns } from "@/lib/api-client";
 import { openExternalUrl } from "@/lib/utils";
 
 interface SubscriptionActionsProps {
@@ -57,23 +57,20 @@ export function SubscriptionActions({
   // Paid trials stay renewable.
   const isFreeTrial = sub?.isTrial === true && sub?.trialFree === true;
 
-  // Top-up (докупка) is only meaningful when the plan actually has add-on
-  // options configured. Fetch the same per-plan catalog the /addons page uses
-  // (shared React Query cache key) and disable the button when it resolves
-  // empty — so the user never lands on a dead-end "no add-ons" screen. Mirrors
-  // the /addons page's own EXTRA_TRAFFIC-on-unlimited filter. Enabled only for
-  // an active, purchasable subscription (the same gate the button already has).
-  const planId = sub?.plan?.id ?? null;
-  const isUnlimitedTraffic = sub?.trafficLimit === null;
-  const { data: addOns } = useQuery({
-    queryKey: ["add-ons", planId],
-    queryFn: () => getPlanAddOns(planId ?? ""),
-    enabled: isActive && !purchasesBlocked && planId !== null,
+  // Top-up (докупка) is only meaningful when the subscription actually has
+  // eligible add-on options. Query the SAME v2 subscription-scoped eligibility
+  // the /addons wizard uses (shared React Query cache key) and disable the
+  // button when it resolves to zero eligible add-ons — so the user never lands
+  // on a dead-end "no add-ons" screen. The backend gates finite-baseline +
+  // plan applicability server-side, so there is no client-side limit filter to
+  // keep in sync. Enabled only for an active, purchasable subscription.
+  const { data: eligibility } = useQuery({
+    queryKey: ["add-ons-eligibility", sub?.id ?? null],
+    queryFn: () => getSubscriptionAddOns(sub?.id ?? ""),
+    enabled: isActive && !purchasesBlocked && !!sub?.id,
     staleTime: 60_000,
   });
-  const noAddOnsAvailable =
-    addOns !== undefined &&
-    addOns.filter((a) => !(isUnlimitedTraffic && a.type === "EXTRA_TRAFFIC")).length === 0;
+  const noAddOnsAvailable = eligibility !== undefined && eligibility.addOns.length === 0;
 
   return (
     <div className="mt-5 grid grid-cols-4 gap-2 px-5">
@@ -105,7 +102,9 @@ export function SubscriptionActions({
         icon={<Plus className="h-5 w-5" />}
         label={t("card.actions.topUp")}
         disabled={!isActive || purchasesBlocked || noAddOnsAvailable}
-        onClick={() => navigate("/addons")}
+        onClick={() =>
+          navigate(sub?.id ? `/addons?subscriptionId=${encodeURIComponent(sub.id)}` : "/addons")
+        }
       />
     </div>
   );

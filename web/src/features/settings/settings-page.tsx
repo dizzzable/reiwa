@@ -35,6 +35,7 @@ import {
   Tag,
   Download,
   Share,
+  PackagePlus,
 } from "lucide-react";
 
 import { useSession } from "@/hooks/use-session";
@@ -190,6 +191,14 @@ export default function SettingsPage() {
           label={t("settings.transactions")}
           sublabel={t("settings.transactionsSub")}
           onClick={() => navigate("/settings/transactions")}
+        />
+        <MenuItem
+          icon={<PackagePlus className="h-5 w-5" />}
+          iconBg="bg-emerald-500/10 text-emerald-400"
+          tint={iconTint("addons")}
+          label={t("settings.addons")}
+          sublabel={t("settings.addonsSub")}
+          onClick={() => navigate("/settings/add-ons")}
         />
         <MenuItem
           icon={<Tag className="h-5 w-5" />}

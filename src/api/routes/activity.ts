@@ -25,6 +25,16 @@ export function createActivityRouter(deps: {
     },
   );
 
+  // GET /api/v1/activity/add-on-entitlements — the user's "My add-ons" history.
+  router.get(
+    "/activity/add-on-entitlements",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      const result = await adminClient?.activity.getAddOnEntitlements(resolveUserIdentity(req));
+      res.json(result ?? { entitlements: [] });
+    },
+  );
+
   // GET /api/v1/activity/notifications
   router.get(
     "/activity/notifications",
