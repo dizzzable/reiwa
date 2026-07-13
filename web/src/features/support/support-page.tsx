@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, Bot } from 'lucide-react'
 import { getTickets, getTicket, createTicket, replyToTicket, supportAttachmentUrl } from '@/lib/api-client'
 import type { SupportTicket, SupportAttachmentMeta } from '@/lib/api-client'
+import { getAiChatConfig } from '@/lib/api-client/ai-chat'
 import { BackButton } from '@/components/ui/back-button'
 import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
@@ -338,6 +339,7 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
 }
 
 export default function SupportPage() {
+  const { t } = useTranslation()
   const [view, setView] = useState<'list' | 'chat' | 'create'>('list')
   const [tab, setTab] = useState<'ai' | 'tickets'>('ai')
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
@@ -348,6 +350,15 @@ export default function SupportPage() {
     queryFn: getTickets,
     refetchInterval: 10000,
   })
+
+  // The AI assistant is shown ONLY when the operator has it enabled — a
+  // disabled assistant is hidden from users entirely (no tab to poke at).
+  const { data: aiConfig } = useQuery({
+    queryKey: ['ai-chat', 'config'],
+    queryFn: getAiChatConfig,
+    staleTime: 60_000,
+  })
+  const aiEnabled = aiConfig?.enabled === true
 
   // Deep-link: the bot "Открыть обращение" notification button opens
   // `/support?ticket=<id>` (mini-app or web). Jump straight into that ticket so
@@ -389,6 +400,19 @@ export default function SupportPage() {
     )
   }
 
+  const ticketsView = (
+    <TicketList
+      tickets={tickets}
+      onSelect={(id) => { setSelectedTicketId(id); setView('chat') }}
+      onCreate={() => setView('create')}
+    />
+  )
+
+  // AI disabled → no tabs, just the tickets surface (the assistant is hidden).
+  if (!aiEnabled) {
+    return <div className="flex flex-col h-full">{ticketsView}</div>
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Tabs */}
@@ -403,7 +427,7 @@ export default function SupportPage() {
           )}
         >
           <Bot className="h-4 w-4" />
-          AI-помощник
+          {t('support.aiTab')}
         </button>
         <button
           onClick={() => setTab('tickets')}
@@ -415,20 +439,12 @@ export default function SupportPage() {
           )}
         >
           <MessageSquare className="h-4 w-4" />
-          Тикеты
+          {t('support.ticketsTab')}
         </button>
       </div>
 
       {/* Tab content */}
-      {tab === 'ai' ? (
-        <AiChat />
-      ) : (
-        <TicketList
-          tickets={tickets}
-          onSelect={(id) => { setSelectedTicketId(id); setView('chat') }}
-          onCreate={() => setView('create')}
-        />
-      )}
+      {tab === 'ai' ? <AiChat /> : ticketsView}
     </div>
   )
 }

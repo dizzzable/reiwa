@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
  * AI Chat component — embedded in SupportPage alongside ticket system.
  * Sends messages to /api/v1/ai-chat/message with function calling support.
  */
-export function AiChat({ onBack }: { onBack?: () => void }) {
+export function AiChat() {
   const { t } = useTranslation()
   const [messages, setMessages] = useState<AiChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -43,7 +43,7 @@ export function AiChat({ onBack }: { onBack?: () => void }) {
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: '😔 Не удалось получить ответ. Попробуй ещё раз.' },
+        { role: 'assistant', content: `😔 ${t('support.aiError')}` },
       ])
     } finally {
       setLoading(false)
@@ -60,13 +60,13 @@ export function AiChat({ onBack }: { onBack?: () => void }) {
   return (
     <div className="flex flex-col h-full">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3" role="log" aria-live="polite">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground gap-3">
             <Bot className="h-12 w-12 opacity-30" />
-            <p className="text-lg font-medium">🤖 AI-помощник</p>
+            <p className="text-lg font-medium">🤖 {t('support.aiEmptyTitle')}</p>
             <p className="text-sm max-w-xs">
-              Задай вопрос о тарифах, подключении, приложениях — я помогу!
+              {t('support.aiEmptyHint')}
             </p>
           </div>
         )}
@@ -101,7 +101,7 @@ export function AiChat({ onBack }: { onBack?: () => void }) {
             animate={{ opacity: 1 }}
             className="flex justify-start"
           >
-            <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-2.5">
+            <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-2.5" role="status" aria-label={t('support.aiThinking')}>
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
           </motion.div>
@@ -117,14 +117,17 @@ export function AiChat({ onBack }: { onBack?: () => void }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Напиши вопрос..."
+            placeholder={t('support.aiPlaceholder')}
+            aria-label={t('support.aiInputLabel')}
             rows={1}
             className="flex-1 resize-none rounded-xl border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[42px] max-h-[120px]"
             disabled={loading}
           />
           <button
+            type="button"
             onClick={handleSend}
             disabled={!input.trim() || loading}
+            aria-label={t('support.aiSend')}
             className="h-[42px] w-[42px] rounded-xl bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 transition-opacity"
           >
             <Send className="h-4 w-4" />

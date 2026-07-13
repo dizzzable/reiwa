@@ -32,6 +32,12 @@ export const TTL = {
   RATE_GUEST_REPLY: 60,
   /** Guest support attachment upload rate limit window — 1 minute */
   RATE_GUEST_UPLOAD: 60,
+  /** AI chat message rate limit window — 1 minute */
+  RATE_AI_CHAT: 60,
+  /** AI chat conversation memory — 7 days (sliding, refreshed on each turn) */
+  AI_CHAT_MEMORY: 7 * 24 * 60 * 60,
+  /** AI chat long-term per-user memory summary — 90 days (sliding) */
+  AI_CHAT_USER_MEMORY: 90 * 24 * 60 * 60,
   /** Brute-force tracking window — 1 hour */
   BRUTE_FORCE: 60 * 60,
   /** Recovery queue (queued password generation) — 24 hours */
@@ -120,6 +126,33 @@ export function rateGuestReplyKey(ip: string): string {
  */
 export function rateGuestUploadKey(ip: string): string {
   return `rate:guest_upload:${ip}`;
+}
+
+/**
+ * Build a Redis key for the AI-chat message rate limit.
+ * Keyed by IP — bounds paid-LLM calls from one source per window.
+ * Value: Counter (integer)
+ */
+export function rateAiChatKey(ip: string): string {
+  return `rate:ai_chat:${ip}`;
+}
+
+/**
+ * Build a Redis key for durable AI-chat conversation memory.
+ * `scope` is `<ownerKey>::<conversationId>` (owner-bound). Value: JSON
+ * `{ messages: [...], updatedAt }` with a sliding TTL.
+ */
+export function aiChatMemoryKey(scope: string): string {
+  return `ai_chat:conv:${scope}`;
+}
+
+/**
+ * Build a Redis key for the long-term per-user AI memory summary.
+ * `ownerKey` is the caller's `userId`/`telegramId` (owner-bound). Value: JSON
+ * `{ summary, turnsSinceUpdate, updatedAt }`.
+ */
+export function aiChatUserMemoryKey(ownerKey: string): string {
+  return `ai_chat:memory:${ownerKey}`;
 }
 
 /**

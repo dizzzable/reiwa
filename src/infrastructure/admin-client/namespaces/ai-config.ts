@@ -8,6 +8,8 @@ export interface AiConfigSettings {
   apiKey: string;
   model: string;
   modelsEndpoint: string;
+  enabled: boolean;
+  systemPrompt: string;
 }
 
 export interface AiInstruction {

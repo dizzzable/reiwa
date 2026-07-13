@@ -274,8 +274,17 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createRealtimeRouter(deps));
   app.use("/api/v1", createContentRouter(deps));
 
-  // AI Chat — powered by OpenAI, no authentication required for now
-  app.use("/api/v1", createAiChatRouter({ config, adminClient: deps.adminClient }));
+  // AI Chat — powered by OpenAI. Session-authenticated + per-IP rate-limited
+  // (each message fans out to paid LLM calls, so it is never an open proxy).
+  app.use(
+    "/api/v1",
+    createAiChatRouter({
+      config,
+      adminClient: deps.adminClient,
+      sessionStore: deps.sessionStore,
+      webSessionStore: deps.webSessionStore,
+    }),
+  );
 
   // Client-error ingest — the web/TMA cabinet SPA reports its own runtime
   // errors here so they join the bot/api/worker firehose.

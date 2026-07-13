@@ -11,13 +11,36 @@
  */
 
 import { InlineKeyboard } from "grammy";
-import type { Context } from "grammy";
-import type { SessionFlavor } from "grammy";
-import {
-  generateResponseWithTools,
-  TOOL_DEFINITIONS,
-} from "../../core/ai/chat-client.js";
+import { generateResponseWithTools } from "../../core/ai/chat-client.js";
 import type { PageRegistrar } from "./types.js";
+
+// ── Per-chat rate limit ─────────────────────────────────────────────────────
+// Each AI-support message fans out to paid LLM calls, so bound bursts per chat
+// (the bot is a single process, so an in-memory sliding window is sufficient;
+// the REST route has its own Redis limiter).
+const CHAT_RATE_MAX = 15;
+const CHAT_RATE_WINDOW_MS = 60_000;
+const chatHits = new Map<number, number[]>();
+
+function isChatRateLimited(chatId: number): boolean {
+  const now = Date.now();
+  const hits = (chatHits.get(chatId) ?? []).filter((t) => now - t < CHAT_RATE_WINDOW_MS);
+  if (hits.length >= CHAT_RATE_MAX) {
+    chatHits.set(chatId, hits);
+    return true;
+  }
+  hits.push(now);
+  chatHits.set(chatId, hits);
+  // Keep the map flat over the process lifetime: once it grows past a bound,
+  // drop chats whose window has fully elapsed.
+  if (chatHits.size > 1_000) {
+    for (const [id, ts] of chatHits) {
+      const last = ts[ts.length - 1];
+      if (last === undefined || now - last >= CHAT_RATE_WINDOW_MS) chatHits.delete(id);
+    }
+  }
+  return false;
+}
 
 // Extend session type to include AI support mode
 declare module "grammy" {
@@ -27,7 +50,77 @@ declare module "grammy" {
 }
 
 export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
-  const { getConfig: _getConfig, adminClient } = deps;
+  const { adminClient } = deps;
+
+  /**
+   * Resolve OpenAI settings the same way the cabinet does: local env first,
+   * then the rezeis panel config. Without this the bot would report "AI
+   * unavailable" whenever the key is set ONLY in the panel (the documented
+   * fallback path), while the cabinet works — an inconsistent half-config.
+   */
+  interface BotAiRuntime {
+    enabled: boolean;
+    config: { OPENAI_API_KEY: string; OPENAI_API_URL: string; OPENAI_MODEL: string };
+    overrides: string[];
+  }
+
+  const resolveAiConfig = async (): Promise<BotAiRuntime | null> => {
+    const { loadConfig } = await import("../../config.js");
+    const envConfig = loadConfig();
+    const envKey = envConfig.OPENAI_API_KEY;
+
+    let panelKey = "";
+    let panelBaseUrl = "";
+    let panelModel = "";
+    let panelEnabled = false;
+    let systemPrompt = "";
+    let knowledge: string[] = [];
+
+    if (adminClient) {
+      try {
+        const s = await adminClient.aiConfig.getSettings();
+        panelKey = s.apiKey || "";
+        panelBaseUrl = s.baseUrl || "";
+        panelModel = s.model || "";
+        panelEnabled = s.enabled === true;
+        systemPrompt = s.systemPrompt || "";
+      } catch (err) {
+        deps.logger?.warn?.({ err }, "AI config panel fetch failed (bot)");
+      }
+      try {
+        const instructions = await adminClient.aiConfig.getInstructions();
+        knowledge = instructions
+          .filter((i) => i.isActive)
+          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .map((i) => `# ${i.title}\n${i.content}`);
+      } catch (err) {
+        deps.logger?.warn?.({ err }, "AI instructions fetch failed (bot)");
+      }
+    }
+
+    const apiKey = envKey || panelKey;
+    if (!apiKey) return null;
+    return {
+      enabled: envKey ? true : panelEnabled,
+      config: {
+        OPENAI_API_KEY: apiKey,
+        OPENAI_API_URL: (envKey ? envConfig.OPENAI_API_URL : panelBaseUrl) || "",
+        OPENAI_MODEL: (envKey ? envConfig.OPENAI_MODEL : panelModel) || "gpt-4o-mini",
+      },
+      overrides: [systemPrompt, ...knowledge].filter((s) => s.trim().length > 0),
+    };
+  };
+
+  const exitKeyboard = () => new InlineKeyboard().text("❌ Выйти из поддержки", "ai_support_exit");
+
+  const clearSupportMode = (ctx: { session: unknown }) => {
+    try {
+      (ctx.session as Record<string, unknown>).aiSupportMode = false;
+      (ctx.session as Record<string, unknown>).aiMessages = [];
+    } catch {
+      // Session might not be available — noop.
+    }
+  };
 
   // ── Tool executor — bridges AI tool calls to AdminClient ───────────
   const toolExecutor = async (
@@ -69,7 +162,15 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
 
   // ── /support command — enters AI support mode ──────────────────────
   bot.command("support", async (ctx) => {
-    const lang = (ctx.from?.language_code ?? "ru") as "ru" | "en";
+    // Don't enter a dead support mode when the assistant is off/unconfigured.
+    const runtime = await resolveAiConfig();
+    if (!runtime || !runtime.enabled) {
+      await ctx.reply(
+        "😔 *AI-поддержка временно недоступна*\n\nПожалуйста, обратись к оператору через /help",
+        { parse_mode: "Markdown" },
+      );
+      return;
+    }
 
     await ctx.reply(
       "🤖 *Режим AI-поддержки*\n\n"
@@ -87,6 +188,24 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     } catch {
       // Session might not be available
     }
+  });
+
+  // ── /cancel — exits AI support mode (the advertised escape hatch) ──
+  bot.command("cancel", async (ctx, next) => {
+    let wasInSupport = false;
+    try {
+      wasInSupport = !!(ctx.session as Record<string, unknown>).aiSupportMode;
+    } catch {
+      // Session not available — fall through to other handlers.
+    }
+    if (!wasInSupport) {
+      return next();
+    }
+    clearSupportMode(ctx);
+    await ctx.reply(
+      "✅ *Режим AI-поддержки завершён*\n\nЕсли понадобится помощь — пиши /support или /help",
+      { parse_mode: "Markdown" },
+    );
   });
 
   // ── Handle text messages in AI support mode ────────────────────────
@@ -110,14 +229,22 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       return next();
     }
 
+    // Per-chat rate limit — bound paid LLM calls from one chat.
+    const chatId = ctx.chat?.id;
+    if (chatId !== undefined && isChatRateLimited(chatId)) {
+      await ctx.reply("⏳ Слишком много сообщений подряд. Подожди немного и попробуй снова.", {
+        reply_markup: exitKeyboard(),
+      });
+      return;
+    }
+
     // Show typing indicator
     await ctx.api.sendChatAction(ctx.chat!.id, "typing");
 
-    // Get config for OpenAI settings
-    const { loadConfig } = await import("../../config.js");
-    const config = loadConfig();
-
-    if (!config.OPENAI_API_KEY) {
+    // Resolve OpenAI settings (env → rezeis panel) + the operator master switch.
+    const runtime = await resolveAiConfig();
+    if (!runtime || !runtime.enabled) {
+      clearSupportMode(ctx);
       await ctx.reply(
         "😔 *AI-поддержка временно недоступна*\n\n"
         + "Пожалуйста, обратись к оператору через /help",
@@ -137,10 +264,11 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
 
     try {
       const response = await generateResponseWithTools(
-        config,
+        runtime.config,
         text,
         history,
         toolExecutor,
+        runtime.overrides,
       );
 
       // Store in session history
@@ -153,18 +281,21 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       }
       (ctx.session as Record<string, unknown>).aiMessages = msgs;
 
-      // Send the response with a keyboard to exit support mode
-      const kb = new InlineKeyboard().text("❌ Выйти из поддержки", "ai_support_exit");
-      await ctx.reply(response, {
-        parse_mode: "Markdown",
-        reply_markup: kb,
-      });
+      // Send as PLAIN TEXT (no parse_mode): LLM output routinely contains
+      // unbalanced Markdown, which Telegram rejects with a 400 "can't parse
+      // entities" — that would throw the whole reply into the catch and lose an
+      // answer we already paid for. Attach the exit keyboard.
+      await ctx.reply(response, { reply_markup: exitKeyboard() });
     } catch (err: unknown) {
+      // Redact: log only the message/status, never the full error object (an
+      // OpenAI SDK error can carry request headers incl. the Authorization key).
       const msg = err instanceof Error ? err.message : "Unknown error";
-      deps.logger?.error?.({ err }, "AI support response failed");
+      deps.logger?.error?.({ err: msg }, "AI support response failed");
+      // Keep the exit affordance on the error path too, so the user is never
+      // stuck in support mode with no way out.
       await ctx.reply(
-        "😔 *Ошибка*\n\nНе удалось получить ответ. Попробуй ещё раз или напиши /cancel для выхода.",
-        { parse_mode: "Markdown" },
+        "😔 Не удалось получить ответ. Попробуй ещё раз или напиши /cancel для выхода.",
+        { reply_markup: exitKeyboard() },
       );
     }
   });

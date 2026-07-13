@@ -10,6 +10,7 @@ import {
   rateGuestCreateKey,
   rateGuestReplyKey,
   rateGuestUploadKey,
+  rateAiChatKey,
   bannedIpKey,
   TTL,
 } from "../../infrastructure/redis/keys.js";
@@ -129,6 +130,16 @@ export const RATE_LIMITS = {
     maxAttempts: 12,
     windowSeconds: TTL.RATE_GUEST_UPLOAD,
     keyBuilder: rateGuestUploadKey,
+    onExceed: "block",
+    blockBehavior: "after_limit",
+  } satisfies RateLimitConfig,
+
+  // AI chat — each message fans out to up to two paid LLM completions, so keep
+  // a tight 15/minute/IP budget on top of the required session auth.
+  aiChat: {
+    maxAttempts: 15,
+    windowSeconds: TTL.RATE_AI_CHAT,
+    keyBuilder: rateAiChatKey,
     onExceed: "block",
     blockBehavior: "after_limit",
   } satisfies RateLimitConfig,
