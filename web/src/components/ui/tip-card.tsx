@@ -1,9 +1,9 @@
-import { ReactNode } from 'react'
+import { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 type TipTone = 'info' | 'success' | 'warning' | 'danger'
 
-interface TipCardProps {
+interface TipCardProps extends ComponentPropsWithoutRef<'div'> {
   tone?: TipTone
   icon?: ReactNode
   children: ReactNode

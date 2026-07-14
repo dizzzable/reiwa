@@ -83,6 +83,7 @@ export const getPaymentStatus = (paymentId: string) =>
 export const createRenewalCheckout = (
   subscriptionIds: (string | number)[],
   gatewayType: string,
+  expectedQuote: { amount: string; currency: string },
   durations?: { subscriptionId: string; days: number }[],
   plans?: { subscriptionId: string; planId: string }[],
   addOns?: { subscriptionId: string; addOnIds: string[] }[],
@@ -92,6 +93,8 @@ export const createRenewalCheckout = (
     .post<CheckoutResult>("/payments/renewal-checkout", {
       subscriptionIds,
       gatewayType,
+      expectedAmount: expectedQuote.amount,
+      expectedCurrency: expectedQuote.currency,
       source: getClientSource(),
       ...(durations && durations.length > 0 ? { durations } : {}),
       ...(plans && plans.length > 0 ? { plans } : {}),

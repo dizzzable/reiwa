@@ -10,6 +10,27 @@
 import type { AdminTransport } from '../transport.js';
 import type { UserIdentity } from './subscription.js';
 
+export interface AddOnEntitlementActivityItem {
+  readonly id: string;
+  readonly subscriptionId: string;
+  readonly addOnId: string | null;
+  readonly receiptName: string;
+  readonly type: 'EXTRA_TRAFFIC' | 'EXTRA_DEVICES';
+  readonly valuePerUnit: number;
+  readonly quantity: number;
+  readonly lifetime: 'UNTIL_NEXT_RESET' | 'UNTIL_SUBSCRIPTION_END';
+  readonly state: string;
+  readonly currency: string;
+  readonly totalAmount: string;
+  readonly purchasedAt: string;
+  readonly activatedAt: string | null;
+  readonly expiresAt: string | null;
+}
+
+export interface AddOnEntitlementsResponse {
+  readonly entitlements: readonly AddOnEntitlementActivityItem[];
+}
+
 function identityQuery(identity: UserIdentity): string {
   if (typeof identity.userId === 'string' && identity.userId.length > 0) {
     return `userId=${encodeURIComponent(identity.userId)}`;
@@ -41,8 +62,8 @@ export class ActivityNamespace {
     );
   }
 
-  getAddOnEntitlements(identity: UserIdentity): Promise<unknown> {
-    return this.transport.request(
+  getAddOnEntitlements(identity: UserIdentity): Promise<AddOnEntitlementsResponse> {
+    return this.transport.request<AddOnEntitlementsResponse>(
       'GET',
       `/api/internal/user/add-on-entitlements?${identityQuery(identity)}`,
     );

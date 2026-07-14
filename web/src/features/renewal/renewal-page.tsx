@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   activatePromocode,
   createRenewalCheckout,
+  getAddOnEntitlements,
   getAllSubscriptions,
   getEnabledGateways,
   getPartnerInfo,
@@ -27,12 +28,19 @@ import { cn, openExternalUrl } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
 import { TariffCard } from "@/features/plans/tariff-card";
 import { gatewayLabel } from "@/lib/gateway-display";
+import { createRenewalIdempotencyKey } from "./renewal-idempotency";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
 import { useAccessMode, useRenewalAddOnsEnabled } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
+import { selectRenewalReoffer } from "./renewal-reoffer";
+import {
+  addCurrencyAmounts,
+  formatCurrencyAmount,
+  resolveRenewalAddOnReview,
+} from "./renewal-review-policy";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -68,7 +76,7 @@ const RENEWAL_REASON_KEYS: Record<string, string> = {
 function formatPrice(amount: string | null, currency: string | null): string {
   if (amount === null || currency === null) return "—";
   const symbol = CURRENCY_SYMBOLS[currency] ?? "";
-  return `${symbol}${Number(amount).toFixed(2)} ${currency}`;
+  return `${symbol}${formatCurrencyAmount(amount)} ${currency}`;
 }
 
 /** Subscription identity as shown on the dashboard card (profile first). */
@@ -479,31 +487,120 @@ function SelectPlan() {
 
 function SelectRenewalAddOns() {
   const { t } = useTranslation();
-  const { selectedSubscriptionIds, selectedGateway, selectedAddOns, toggleAddOn, setStep, goBack } =
-    useRenewalStore();
+  const {
+    selectedSubscriptionIds,
+    selectedGateway,
+    selectedAddOns,
+    toggleAddOn,
+    reconcileReoffer,
+    setStep,
+    goBack,
+    navDirection,
+  } = useRenewalStore();
+  const currency = selectedGateway?.currency ?? null;
+  const multi = selectedSubscriptionIds.length > 1;
+
   const { data: subsData } = useQuery({
     queryKey: ["subscriptions-all"],
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
   const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
-  const currency = selectedGateway?.currency ?? null;
-  const multi = selectedSubscriptionIds.length > 1;
+
+  // Re-offer source: the add-ons the user had ACTIVE in the current cycle.
+  const {
+    data: historyData,
+    isLoading: historyLoading,
+    isFetching: historyFetching,
+    isError: historyError,
+  } = useQuery({
+    queryKey: ["add-on-entitlements"],
+    queryFn: getAddOnEntitlements,
+    staleTime: 60_000,
+  });
+
+  // Current eligibility per selected subscription (server authority + price).
+  const eligQueries = useQueries({
+    queries: selectedSubscriptionIds.map((subId) => ({
+      queryKey: ["add-ons-eligibility", subId],
+      queryFn: () => getSubscriptionAddOns(subId),
+      staleTime: 60_000,
+    })),
+  });
+
+  const loading =
+    historyLoading ||
+    historyFetching ||
+    eligQueries.some((query) => query.isLoading || query.isFetching);
+
+  // Per-subscription re-offer = eligible+priced add-ons the user had active in
+  // the current cycle, matched to the catalog by id (or type+value for legacy
+  // rows without an addOnId). Only these are re-offered — the renewal never
+  // shows a generic add-on catalog here.
+  const reofferBySub = new Map<string, readonly EligibleAddOn[]>();
+  selectedSubscriptionIds.forEach((subId, index) => {
+    const eligibility = eligQueries[index];
+    const reoffer = selectRenewalReoffer({
+      subscriptionId: subId,
+      currency,
+      history: historyError ? null : (historyData?.entitlements ?? null),
+      eligibleAddOns:
+        !eligibility?.isError && eligibility?.data?.availability === "AVAILABLE"
+          ? eligibility.data.addOns
+          : null,
+    });
+    if (reoffer.length > 0) reofferBySub.set(subId, reoffer);
+  });
+  const totalReofferable = [...reofferBySub.values()].reduce(
+    (count, list) => count + list.length,
+    0,
+  );
+  const reofferKey = `${selectedSubscriptionIds.join("\u0000")}|${currency ?? ""}`;
+  const allowedBySubscription = Object.fromEntries(
+    [...reofferBySub].map(([subId, list]) => [subId, list.map((addOn) => addOn.id)]),
+  );
+  const reofferFingerprint = selectedSubscriptionIds
+    .map((subId) => `${subId}:${(allowedBySubscription[subId] ?? []).slice().sort().join(",")}`)
+    .join("|");
+
+  // A new composition gets defaults once. Settled refetches for the same
+  // composition only intersect the current selection with the live allowed set,
+  // so removed/expired/error entries cannot leak into checkout and explicit
+  // user deselections are never restored.
+  useEffect(() => {
+    if (loading) return;
+    reconcileReoffer(reofferKey, allowedBySubscription);
+    if (totalReofferable === 0) {
+      if (navDirection === "back") goBack("gateway");
+      else setStep("review");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, totalReofferable, reofferKey, reofferFingerprint]);
+
+  if (loading) {
+    return (
+      <div className="px-5" role="status" aria-live="polite">
+        <div className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
       <div className="px-5">
-        <h2 className="text-base font-semibold">{t("renewal.addonsTitle")}</h2>
-        <p className="mt-1 text-sm text-zinc-400">{t("renewal.addonsSubtitle")}</p>
+        <h2 className="text-base font-semibold">{t("renewal.reofferTitle")}</h2>
+        <p className="mt-1 text-sm text-zinc-400">{t("renewal.reofferSubtitle")}</p>
       </div>
       {selectedSubscriptionIds.map((subId) => {
+        const list = reofferBySub.get(subId);
+        if (!list || list.length === 0) return null;
         const sub = subById.get(subId);
         return (
           <RenewalAddOnSection
             key={subId}
-            subscriptionId={subId}
             title={multi ? (sub ? subscriptionTitle(sub) : subId) : null}
             currency={currency}
+            addOns={list}
             selectedIds={selectedAddOns[subId] ?? []}
             onToggle={(addOnId) => toggleAddOn(subId, addOnId)}
           />
@@ -522,46 +619,23 @@ function SelectRenewalAddOns() {
 }
 
 function RenewalAddOnSection({
-  subscriptionId,
   title,
   currency,
+  addOns,
   selectedIds,
   onToggle,
 }: {
-  subscriptionId: string;
   title: string | null;
   currency: string | null;
+  addOns: readonly EligibleAddOn[];
   selectedIds: readonly string[];
   onToggle: (addOnId: string) => void;
 }) {
   const { t } = useTranslation();
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["add-ons-eligibility", subscriptionId],
-    queryFn: () => getSubscriptionAddOns(subscriptionId),
-    staleTime: 60_000,
-  });
-
-  if (isLoading) {
-    return (
-      <div className="px-5">
-        <div className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
-      </div>
-    );
-  }
-  // Add-ons are optional — an eligibility outage or an empty/priceless catalog
-  // for this line simply renders nothing; the renewal still proceeds.
-  if (isError || !data || data.availability !== "AVAILABLE" || data.addOns.length === 0) {
-    return null;
-  }
-  const offerable = data.addOns.filter(
-    (a) => currency === null || a.prices.some((p) => p.currency === currency),
-  );
-  if (offerable.length === 0) return null;
-
   return (
     <div className="space-y-2 px-5">
       {title && <p className="text-xs font-medium text-zinc-500">{title}</p>}
-      {offerable.map((addOn) => {
+      {addOns.map((addOn) => {
         const selected = selectedIds.includes(addOn.id);
         const price = currency ? addOn.prices.find((p) => p.currency === currency) : undefined;
         return (
@@ -697,8 +771,16 @@ function RenewalReview() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedAddOns, selectedGateway, setStep, goBack } =
-    useRenewalStore();
+  const {
+    selectedSubscriptionIds,
+    selectedDurations,
+    selectedPlans,
+    selectedAddOns,
+    selectedGateway,
+    setReviewQuote,
+    setStep,
+    goBack,
+  } = useRenewalStore();
 
   const durationsPayload = selectedSubscriptionIds
     .filter((id) => selectedDurations[id] !== undefined)
@@ -710,6 +792,7 @@ function RenewalReview() {
   const {
     data,
     isLoading,
+    isFetching,
     error,
   } = useQuery({
     queryKey: ["renewal-review", selectedSubscriptionIds, selectedGateway?.id, selectedDurations, selectedPlans],
@@ -742,23 +825,14 @@ function RenewalReview() {
       enabled: hasAddOnSelections,
     })),
   });
-  const eligibilityBySub = new Map<string, EligibleAddOn[]>();
-  selectedSubscriptionIds.forEach((id, i) => {
-    const res = eligibilityQueries[i]?.data;
-    if (res && res.availability === "AVAILABLE") eligibilityBySub.set(id, res.addOns);
+  const addOnReview = resolveRenewalAddOnReview({
+    selectedSubscriptionIds,
+    selectedAddOns,
+    currency,
+    eligibilityQueries,
   });
-  const addOnLines: Array<{ subscriptionId: string; addOn: EligibleAddOn; price: string | null }> = [];
-  let addOnTotal = 0;
-  for (const subId of selectedSubscriptionIds) {
-    const cat = eligibilityBySub.get(subId) ?? [];
-    for (const addOnId of selectedAddOns[subId] ?? []) {
-      const addOn = cat.find((a) => a.id === addOnId);
-      if (!addOn) continue;
-      const priceRow = currency ? addOn.prices.find((p) => p.currency === currency) : undefined;
-      addOnLines.push({ subscriptionId: subId, addOn, price: priceRow?.price ?? null });
-      if (priceRow) addOnTotal += Number(priceRow.price);
-    }
-  }
+  const addOnLines = addOnReview.status === "READY" ? addOnReview.lines : [];
+  const addOnTotal = addOnReview.status === "READY" ? addOnReview.addOnTotal : "0";
 
   const { data: partner } = useQuery({
     queryKey: ["partner", "info"],
@@ -783,7 +857,7 @@ function RenewalReview() {
     onError: () => toast.error(t("renewal.balanceError")),
   });
 
-  if (isLoading) {
+  if (isLoading || isFetching || addOnReview.status === "PENDING") {
     return (
       <div className="flex h-48 items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
@@ -794,7 +868,17 @@ function RenewalReview() {
   const items: RenewalOptionItem[] = (data?.items ?? []).filter((i) =>
     selectedSubscriptionIds.includes(i.subscriptionId),
   );
-  const priceError = error || !data || data.total === null || items.some((i) => !i.renewable);
+  const confirmedAmount =
+    typeof data?.total === "string" ? addCurrencyAmounts([data.total, addOnTotal]) : null;
+  const priceError =
+    error ||
+    !data ||
+    data.total === null ||
+    data.currency === null ||
+    data.currency !== currency ||
+    confirmedAmount === null ||
+    items.some((item) => !item.renewable) ||
+    addOnReview.status === "ERROR";
   // Partner-balance pay is offered only for a single-subscription renewal whose
   // priced currency matches the partner balance currency and is covered by it.
   const balanceItem =
@@ -802,6 +886,7 @@ function RenewalReview() {
       ? items[0]!
       : null;
   const balanceEligible =
+    addOnReview.allowsPartnerBalance &&
     balanceItem !== null &&
     !!partner &&
     partner.isActive &&
@@ -813,13 +898,15 @@ function RenewalReview() {
   if (priceError) {
     return (
       <div className="px-5 space-y-3">
-        <TipCard tone="danger">{t("renewal.priceError")}</TipCard>
+        <TipCard tone="danger" role="alert">{t("renewal.priceError")}</TipCard>
         <StadiumButton fullWidth variant="secondary" onClick={() => goBack("gateway")}>
           {t("renewal.back")}
         </StadiumButton>
       </div>
     );
   }
+
+  const confirmedCurrency = data!.currency!;
 
   return (
     <div className="px-5 space-y-4">
@@ -870,7 +957,7 @@ function RenewalReview() {
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("renewal.total")}</span>
           <span className="text-lg font-bold text-(--brand-primary)">
-            {formatPrice((Number(data!.total) + addOnTotal).toFixed(2), data!.currency)}
+            {formatPrice(confirmedAmount, confirmedCurrency)}
           </span>
         </div>
       </div>
@@ -896,7 +983,10 @@ function RenewalReview() {
         size="lg"
         glow
         icon={<Check className="h-5 w-5" />}
-        onClick={() => setStep("checkout")}
+        onClick={() => {
+          setReviewQuote({ amount: confirmedAmount, currency: confirmedCurrency });
+          setStep("checkout");
+        }}
       >
         {t("renewal.pay")}
       </StadiumButton>
@@ -923,8 +1013,16 @@ function RenewalReview() {
 function CheckoutStep() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { selectedSubscriptionIds, selectedDurations, selectedPlans, selectedAddOns, selectedGateway, setCheckoutResult, goBack } =
-    useRenewalStore();
+  const {
+    selectedSubscriptionIds,
+    selectedDurations,
+    selectedPlans,
+    selectedAddOns,
+    selectedGateway,
+    reviewQuote,
+    setCheckoutResult,
+    goBack,
+  } = useRenewalStore();
 
   const durationsPayload = selectedSubscriptionIds
     .filter((id) => selectedDurations[id] !== undefined)
@@ -938,18 +1036,34 @@ function CheckoutStep() {
   // Stable per checkout attempt (per mount): a double-invoke / network-ambiguous
   // retry replays the existing draft instead of minting a second PENDING
   // combined-renewal transaction. A fresh attempt (remount) gets a new key.
-  const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
+  const idempotencyKey = useMemo(
+    () =>
+      createRenewalIdempotencyKey({
+        subscriptionIds: selectedSubscriptionIds,
+        gatewayType: selectedGateway?.id ?? "",
+        quote: reviewQuote ?? { amount: "", currency: "" },
+        durations: durationsPayload,
+        plans: plansPayload,
+        addOns: addOnsPayload,
+      }),
+    [selectedSubscriptionIds, selectedGateway?.id, reviewQuote, durationsPayload, plansPayload, addOnsPayload],
+  );
 
   const mutation = useMutation({
-    mutationFn: () =>
-      createRenewalCheckout(
+    mutationFn: () => {
+      if (!selectedGateway || !reviewQuote) {
+        throw new Error("RENEWAL_QUOTE_MISSING");
+      }
+      return createRenewalCheckout(
         selectedSubscriptionIds,
-        selectedGateway!.id,
+        selectedGateway.id,
+        reviewQuote,
         durationsPayload.length > 0 ? durationsPayload : undefined,
         plansPayload.length > 0 ? plansPayload : undefined,
         addOnsPayload.length > 0 ? addOnsPayload : undefined,
         idempotencyKey,
-      ),
+      );
+    },
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
       // Stash the URL so the return page can offer a manual "open payment"

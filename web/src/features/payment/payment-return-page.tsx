@@ -24,6 +24,8 @@ import { useTranslation } from "react-i18next";
 import { ExternalLink } from "lucide-react";
 
 import { getPaymentStatus } from "@/lib/api-client";
+import type { PaymentStatus } from "@/types/api";
+import { resolvePaymentResult } from "./payment-result-policy";
 import { Button } from "@/components/ui/button";
 import { useBranding } from "@/lib/branding-provider";
 import { openExternalUrl } from "@/lib/utils";
@@ -80,7 +82,12 @@ export default function PaymentReturnPage() {
         const status = await getPaymentStatus(paymentId);
         if (cancelled) return;
 
-        if (status.status === "COMPLETED") {
+        const result = resolvePaymentResult({
+          status: status.status,
+          checkoutUrl,
+          errorCode: (status as PaymentStatus & { errorCode?: string }).errorCode,
+        });
+        if (result === "success") {
           clearPendingCheckout(paymentId);
           setState("success");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");

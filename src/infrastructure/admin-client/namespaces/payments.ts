@@ -129,6 +129,8 @@ export class PaymentsNamespace {
       readonly durations?: ReadonlyArray<{ readonly subscriptionId: string; readonly days: number }>;
       readonly plans?: ReadonlyArray<{ readonly subscriptionId: string; readonly planId: string }>;
       readonly addOns?: ReadonlyArray<{ readonly subscriptionId: string; readonly addOnIds: readonly string[] }>;
+      readonly expectedAmount?: string;
+      readonly expectedCurrency?: string;
       readonly idempotencyKey?: string;
     },
   ): Promise<unknown> {
@@ -136,6 +138,8 @@ export class PaymentsNamespace {
       subscriptionIds: input.subscriptionIds,
       gatewayType: input.gatewayType,
     };
+    if (typeof input.expectedAmount === 'string') payload['expectedAmount'] = input.expectedAmount;
+    if (typeof input.expectedCurrency === 'string') payload['expectedCurrency'] = input.expectedCurrency;
     if (typeof identity.userId === 'string' && identity.userId.length > 0) {
       payload['userId'] = identity.userId;
     }

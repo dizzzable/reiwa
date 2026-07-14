@@ -784,6 +784,8 @@ export const en: RuDict = {
     continue: 'Continue',
     addonsTitle: 'Add-ons',
     addonsSubtitle: 'Optionally add traffic or devices to this renewal.',
+    reofferTitle: 'Bring back your add-ons?',
+    reofferSubtitle: 'Re-activate the add-ons you were using, billed together with the renewal — uncheck any you no longer need.',
     durationLabel: 'Renewal term',
     choosePlanTitle: 'Choose a plan to renew with',
     choosePlanHint: 'Pick a plan',

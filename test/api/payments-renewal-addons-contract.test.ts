@@ -26,6 +26,8 @@ describe('PaymentsNamespace.createRenewalCheckout add-on forwarding (T-015)', ()
           { subscriptionId: 's1', addOnIds: ['a-traffic', 'a-devices'] },
           { subscriptionId: 's2', addOnIds: ['a-traffic'] },
         ],
+        expectedAmount: '17.50',
+        expectedCurrency: 'USD',
         idempotencyKey: 'idem-1',
       },
     );
@@ -37,6 +39,8 @@ describe('PaymentsNamespace.createRenewalCheckout add-on forwarding (T-015)', ()
       { subscriptionId: 's2', addOnIds: ['a-traffic'] },
     ]);
     expect(body['idempotencyKey']).toBe('idem-1');
+    expect(body['expectedAmount']).toBe('17.50');
+    expect(body['expectedCurrency']).toBe('USD');
     expect(body['userId']).toBe('user-1');
   });
 
@@ -44,7 +48,13 @@ describe('PaymentsNamespace.createRenewalCheckout add-on forwarding (T-015)', ()
     const { namespace, calls } = namespaceWith();
     await namespace.createRenewalCheckout(
       { telegramId: '42' },
-      { subscriptionIds: ['s1'], gatewayType: 'YOOKASSA', addOns: [] },
+      {
+        subscriptionIds: ['s1'],
+        gatewayType: 'YOOKASSA',
+        expectedAmount: '10.00',
+        expectedCurrency: 'USD',
+        addOns: [],
+      },
     );
     const body = calls[0]?.body as Record<string, unknown>;
     expect('addOns' in body).toBe(false);

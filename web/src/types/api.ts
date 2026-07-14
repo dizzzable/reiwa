@@ -211,6 +211,9 @@ export interface TransactionsResponse {
 export interface UserAddOnEntitlement {
   id: string;
   subscriptionId: string;
+  /** Catalog add-on id (null for legacy rows) — used by the renewal re-offer
+   *  to match a previously-activated add-on to the current eligibility catalog. */
+  addOnId: string | null;
   receiptName: string;
   type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES";
   valuePerUnit: number;

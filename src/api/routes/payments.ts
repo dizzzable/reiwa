@@ -9,6 +9,8 @@ import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { UpstreamError } from "../../core/errors/upstream-error.js";
+import { normalizeWireDecimal, resolveRenewalCheckoutError } from "./payments-errors.js";
 
 /**
  * Maps a request body's `purchaseType` field to the matching access-mode
@@ -137,6 +139,8 @@ export function createPaymentsRouter(deps: {
           durations,
           plans,
           addOns,
+          expectedAmount,
+          expectedCurrency,
           idempotencyKey,
           successUrl: bodySuccessUrl,
           failUrl: bodyFailUrl,
@@ -153,6 +157,20 @@ export function createPaymentsRouter(deps: {
         if (typeof gatewayType !== "string" || gatewayType.length === 0) {
           res.status(400).json({ message: "gatewayType is required" });
           return;
+        }
+        if (
+          expectedAmount !== undefined ||
+          expectedCurrency !== undefined
+        ) {
+          if (
+            typeof expectedAmount !== "string" ||
+            normalizeWireDecimal(expectedAmount) === null ||
+            typeof expectedCurrency !== "string" ||
+            !/^[A-Z]{3}$/.test(expectedCurrency)
+          ) {
+            res.status(400).json({ message: "expectedAmount and expectedCurrency must be supplied together" });
+            return;
+          }
         }
         const durationsValid =
           Array.isArray(durations) &&
@@ -215,6 +233,8 @@ export function createPaymentsRouter(deps: {
           {
             subscriptionIds: subscriptionIds as readonly string[],
             gatewayType,
+            expectedAmount: typeof expectedAmount === "string" ? normalizeWireDecimal(expectedAmount)! : expectedAmount,
+            expectedCurrency,
             channel: context === "tma" ? "TMA" : "WEB",
             successUrl,
             failUrl,
@@ -249,6 +269,13 @@ export function createPaymentsRouter(deps: {
         );
         res.json(result ?? {});
       } catch (e: unknown) {
+        if (e instanceof UpstreamError) {
+          const contract = resolveRenewalCheckoutError(e);
+          if (contract) {
+            res.status(contract.status).json(contract.body);
+            return;
+          }
+        }
         sendSafeError(req, res, e, 500, "Failed to create renewal checkout", "payments/renewal-checkout");
       }
     },
