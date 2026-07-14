@@ -7,7 +7,7 @@ import type { AiChatMessage } from '@/lib/api-client/ai-chat'
 import { cn } from '@/lib/utils'
 
 /**
- * AI Chat component — embedded in SupportPage alongside ticket system.
+ * AI Chat component — full-screen assistant for basic support questions.
  * Sends messages to /api/v1/ai-chat/message with function calling support.
  */
 export function AiChat() {
@@ -39,8 +39,10 @@ export function AiChat() {
     try {
       const res = await sendAiMessage(text, conversationId)
       setConversationId(res.conversationId)
-      setMessages((prev) => [...prev, { role: 'assistant', content: res.response }])
-    } catch (err) {
+      // Guard: API/proxy can return undefined content; never call .split on it.
+      const content = (res.response ?? '').trim() || t('support.aiError')
+      setMessages((prev) => [...prev, { role: 'assistant', content }])
+    } catch {
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: `😔 ${t('support.aiError')}` },
@@ -70,31 +72,35 @@ export function AiChat() {
             </p>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-            className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
-          >
-            <div
-              className={cn(
-                'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
-                msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-br-md'
-                  : 'bg-muted rounded-bl-md'
-              )}
+        {messages.map((msg, i) => {
+          const content = msg.content ?? ''
+          const lines = content.split('\n')
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
             >
-              {msg.content.split('\n').map((line, j) => (
-                <span key={j}>
-                  {line}
-                  {j < msg.content.split('\n').length - 1 && <br />}
-                </span>
-              ))}
-            </div>
-          </motion.div>
-        ))}
+              <div
+                className={cn(
+                  'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
+                  msg.role === 'user'
+                    ? 'bg-primary text-primary-foreground rounded-br-md'
+                    : 'bg-muted rounded-bl-md'
+                )}
+              >
+                {lines.map((line, j) => (
+                  <span key={j}>
+                    {line}
+                    {j < lines.length - 1 && <br />}
+                  </span>
+                ))}
+              </div>
+            </motion.div>
+          )
+        })}
         {loading && (
           <motion.div
             initial={{ opacity: 0 }}

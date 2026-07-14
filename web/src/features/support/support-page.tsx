@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, Bot } from 'lucide-react'
+import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, Bot, Zap, X } from 'lucide-react'
 import { getTickets, getTicket, createTicket, replyToTicket, supportAttachmentUrl } from '@/lib/api-client'
 import type { SupportTicket, SupportAttachmentMeta } from '@/lib/api-client'
 import { getAiChatConfig } from '@/lib/api-client/ai-chat'
@@ -11,7 +11,6 @@ import { BackButton } from '@/components/ui/back-button'
 import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { AiChat } from './ai-chat'
 
 function formatTime(dateStr: string) {
   const d = new Date(dateStr)
@@ -73,9 +72,20 @@ function SupportAttachmentView({
   )
 }
 
-function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[]; onSelect: (id: string) => void; onCreate: () => void }) {
+function TicketList({
+  tickets,
+  onSelect,
+  onCreate,
+  aiEnabled,
+}: {
+  tickets: SupportTicket[]
+  onSelect: (id: string) => void
+  onCreate: () => void
+  aiEnabled: boolean
+}) {
   const { t } = useTranslation()
   const { supportUsername } = useBranding()
+  const navigate = useNavigate()
 
   function openTelegramSupport() {
     if (!supportUsername) return
@@ -87,12 +97,12 @@ function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[];
 
   return (
     <div className="pb-8">
-      <div className="flex items-center justify-between px-5 py-5">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-2 px-5 py-5">
+        <div className="flex min-w-0 items-center gap-3">
           <BackButton fallback="/settings" label={t('support.title')} />
-          <h1 className="text-lg font-semibold">{t('support.title')}</h1>
+          <h1 className="truncate text-lg font-semibold">{t('support.title')}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {supportUsername && (
             <button
               type="button"
@@ -104,9 +114,20 @@ function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[];
               <Send className="h-4 w-4" />
             </button>
           )}
+          {aiEnabled && (
+            <button
+              type="button"
+              onClick={() => navigate('/support/ai')}
+              className="flex items-center gap-1.5 rounded-full bg-(--brand-primary) px-3 py-2 text-sm font-medium text-(--brand-primary-fg) active:scale-95 transition-transform sm:px-4"
+            >
+              <Zap className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('support.quickHelp')}</span>
+            </button>
+          )}
           <button
+            type="button"
             onClick={onCreate}
-            className="flex items-center gap-1.5 rounded-full bg-(--brand-primary) px-4 py-2 text-sm font-medium text-(--brand-primary-fg) active:scale-95 transition-transform"
+            className="flex items-center gap-1.5 rounded-full bg-(--brand-primary) px-3 py-2 text-sm font-medium text-(--brand-primary-fg) active:scale-95 transition-transform sm:px-4"
           >
             <Plus className="h-4 w-4" />
             {t('support.newTicket')}
@@ -127,6 +148,7 @@ function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[];
           {tickets.map((ticket) => (
             <button
               key={ticket.id}
+              type="button"
               onClick={() => onSelect(ticket.id)}
               className="w-full glass-card p-4 text-left active:scale-[0.98] transition-transform"
             >
@@ -269,6 +291,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
               }}
             />
             <button
+              type="button"
               onClick={() => text.trim() && replyMutation.mutate(text.trim())}
               disabled={!text.trim() || replyMutation.isPending}
               className="flex h-11 w-11 items-center justify-center rounded-full bg-(--brand-primary) text-(--brand-primary-fg) disabled:opacity-50 active:scale-95 transition-transform"
@@ -282,10 +305,20 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
   )
 }
 
-function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated: (id: string) => void }) {
+function CreateTicketForm({
+  onBack,
+  onCreated,
+  aiEnabled,
+}: {
+  onBack: () => void
+  onCreated: (id: string) => void
+  aiEnabled: boolean
+}) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
+  const [bannerDismissed, setBannerDismissed] = useState(false)
 
   const mutation = useMutation({
     mutationFn: () => createTicket(subject.trim(), message.trim()),
@@ -304,6 +337,43 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
         </button>
         <h1 className="text-lg font-semibold">{t('support.newTicketTitle')}</h1>
       </div>
+
+      {/* AI suggestion banner — only when assistant is enabled; user can dismiss */}
+      <AnimatePresence>
+        {aiEnabled && !bannerDismissed && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mx-5 mb-4 overflow-hidden"
+          >
+            <div className="relative rounded-xl border border-(--brand-primary)/20 bg-(--brand-primary)/10 p-4">
+              <button
+                type="button"
+                onClick={() => setBannerDismissed(true)}
+                className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-zinc-400 transition-colors hover:text-white"
+                aria-label={t('common.close')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <div className="flex items-start gap-3 pr-6">
+                <Bot className="mt-0.5 h-5 w-5 shrink-0 text-(--brand-primary)" />
+                <div className="space-y-2">
+                  <p className="text-sm text-zinc-200">{t('support.aiSuggestion')}</p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/support/ai')}
+                    className="flex items-center gap-1.5 rounded-full bg-(--brand-primary) px-4 py-2 text-xs font-medium text-(--brand-primary-fg) transition-transform active:scale-95"
+                  >
+                    <Zap className="h-3.5 w-3.5" />
+                    {t('support.tryAi')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="px-5 space-y-4">
         <div className="space-y-1.5">
@@ -327,6 +397,7 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
           />
         </div>
         <button
+          type="button"
           onClick={() => mutation.mutate()}
           disabled={!subject.trim() || !message.trim() || mutation.isPending}
           className="w-full rounded-full bg-(--brand-primary) py-3.5 text-sm font-semibold text-(--brand-primary-fg) disabled:opacity-50 active:scale-[0.98] transition-transform"
@@ -339,9 +410,7 @@ function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated
 }
 
 export default function SupportPage() {
-  const { t } = useTranslation()
   const [view, setView] = useState<'list' | 'chat' | 'create'>('list')
-  const [tab, setTab] = useState<'ai' | 'tickets'>('ai')
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -351,8 +420,8 @@ export default function SupportPage() {
     refetchInterval: 10000,
   })
 
-  // The AI assistant is shown ONLY when the operator has it enabled — a
-  // disabled assistant is hidden from users entirely (no tab to poke at).
+  // The AI assistant is shown ONLY when the operator has it enabled —
+  // disabled assistant is hidden from users entirely.
   const { data: aiConfig } = useQuery({
     queryKey: ['ai-chat', 'config'],
     queryFn: getAiChatConfig,
@@ -369,7 +438,6 @@ export default function SupportPage() {
     if (!ticketId) return
     setSelectedTicketId(ticketId)
     setView('chat')
-    setTab('tickets')
     searchParams.delete('ticket')
     setSearchParams(searchParams, { replace: true })
   }, [searchParams, setSearchParams])
@@ -387,6 +455,7 @@ export default function SupportPage() {
       <CreateTicketForm
         onBack={() => setView('list')}
         onCreated={(id) => { setSelectedTicketId(id); setView('chat') }}
+        aiEnabled={aiEnabled}
       />
     )
   }
@@ -400,52 +469,12 @@ export default function SupportPage() {
     )
   }
 
-  const ticketsView = (
+  return (
     <TicketList
       tickets={tickets}
       onSelect={(id) => { setSelectedTicketId(id); setView('chat') }}
       onCreate={() => setView('create')}
+      aiEnabled={aiEnabled}
     />
   )
-
-  // AI disabled → no tabs, just the tickets surface (the assistant is hidden).
-  if (!aiEnabled) {
-    return <div className="flex flex-col h-full">{ticketsView}</div>
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Tabs */}
-      <div className="flex border-b">
-        <button
-          onClick={() => setTab('ai')}
-          className={cn(
-            'flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2',
-            tab === 'ai'
-              ? 'border-(--brand-primary) text-(--brand-primary)'
-              : 'border-transparent text-muted-foreground'
-          )}
-        >
-          <Bot className="h-4 w-4" />
-          {t('support.aiTab')}
-        </button>
-        <button
-          onClick={() => setTab('tickets')}
-          className={cn(
-            'flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2',
-            tab === 'tickets'
-              ? 'border-(--brand-primary) text-(--brand-primary)'
-              : 'border-transparent text-muted-foreground'
-          )}
-        >
-          <MessageSquare className="h-4 w-4" />
-          {t('support.ticketsTab')}
-        </button>
-      </div>
-
-      {/* Tab content */}
-      {tab === 'ai' ? <AiChat /> : ticketsView}
-    </div>
-  )
 }
-

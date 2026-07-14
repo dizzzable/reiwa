@@ -66,6 +66,7 @@ const OnboardingPage = lazy(() => import("@/features/onboarding/onboarding-page"
 const ClaimPage = lazy(() => import("@/features/auth/claim-page"));
 const FinishSetupPage = lazy(() => import("@/features/auth/finish-setup-page"));
 const GuestSupportPage = lazy(() => import("@/features/support/guest-support-page"));
+const AiSupportPage = lazy(() => import("@/features/support/ai-support-page"));
 
 function PageLoader() {
   return (
@@ -123,6 +124,7 @@ export default function App() {
           <Route path="/settings/faq" element={<FaqPage />} />
           <Route path="/settings/promocodes" element={<PromocodesSettingsPage />} />
           <Route path="/support" element={<SupportPage />} />
+          <Route path="/support/ai" element={<AiSupportPage />} />
         </Route>
 
         {/* Unknown paths fall through to the web home which routes the
