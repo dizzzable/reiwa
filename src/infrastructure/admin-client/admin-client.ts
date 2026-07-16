@@ -32,6 +32,7 @@ import {
   LinkingNamespace,
   PartnerNamespace,
   PaymentsNamespace,
+  PaymentMethodsNamespace,
   PromocodesNamespace,
   PushNamespace,
   QuestsNamespace,
@@ -55,6 +56,7 @@ export class AdminClient {
   readonly subscription: SubscriptionNamespace;
   readonly trial: TrialNamespace;
   readonly payments: PaymentsNamespace;
+  readonly paymentMethods: PaymentMethodsNamespace;
   readonly devices: DevicesNamespace;
   readonly activity: ActivityNamespace;
   readonly promocodes: PromocodesNamespace;
@@ -82,6 +84,7 @@ export class AdminClient {
     this.subscription = new SubscriptionNamespace(this.transport);
     this.trial = new TrialNamespace(this.transport);
     this.payments = new PaymentsNamespace(this.transport);
+    this.paymentMethods = new PaymentMethodsNamespace(this.transport);
     this.devices = new DevicesNamespace(this.transport);
     this.activity = new ActivityNamespace(this.transport);
     this.promocodes = new PromocodesNamespace(this.transport);

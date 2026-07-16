@@ -38,6 +38,7 @@ import { createActivityRouter } from "./routes/activity.js";
 import { createPromoRouter } from "./routes/promo.js";
 import { createReferralsRouter } from "./routes/referrals.js";
 import { createDevicesRouter } from "./routes/devices.js";
+import { createPaymentMethodsRouter } from "./routes/payment-methods.js";
 import { createPartnerRouter } from "./routes/partner.js";
 import { createAdvertisingRouter } from "./routes/advertising.js";
 import { createSupportRouter } from "./routes/support.js";
@@ -255,6 +256,7 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createPromoRouter(deps));
   app.use("/api/v1", createReferralsRouter(deps));
   app.use("/api/v1/devices", createDevicesRouter(deps));
+  app.use("/api/v1/payment-methods", createPaymentMethodsRouter(deps));
   app.use("/api/v1", createPartnerRouter(deps));
   app.use("/api/v1", createAdvertisingRouter(deps));
   app.use("/api/v1", createSupportRouter(deps));

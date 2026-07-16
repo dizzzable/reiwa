@@ -141,6 +141,14 @@ export {
   regenerateSubscriptionLink,
 } from "./devices.js";
 
+// Payment methods (saved cards / wallets for autopay)
+export {
+  getPaymentMethods,
+  unbindPaymentMethod,
+  type SavedPaymentMethod,
+  type SavedPaymentMethodsResponse,
+} from "./payment-methods.js";
+
 // Partner
 export {
   createWithdrawal,

@@ -57,6 +57,7 @@ const NotificationsSettingsPage = lazy(() => import("@/features/settings/notific
 const NotificationsFeedPage = lazy(() => import("@/features/settings/notifications-feed-page"));
 const NotificationsPrefsPage = lazy(() => import("@/features/settings/notifications-settings-page"));
 const TransactionsPage = lazy(() => import("@/features/settings/transactions-page"));
+const PaymentMethodsPage = lazy(() => import("@/features/settings/payment-methods-page"));
 const MyAddOnsPage = lazy(() => import("@/features/settings/my-addons-page"));
 const FaqPage = lazy(() => import("@/features/settings/faq-page"));
 const PromocodesSettingsPage = lazy(() => import("@/features/settings/promocodes-page"));
@@ -119,6 +120,7 @@ export default function App() {
           <Route path="/settings/notifications/feed" element={<NotificationsFeedPage />} />
           <Route path="/settings/notifications/settings" element={<NotificationsPrefsPage />} />
           <Route path="/settings/transactions" element={<TransactionsPage />} />
+          <Route path="/settings/payment-methods" element={<PaymentMethodsPage />} />
           <Route path="/settings/add-ons" element={<MyAddOnsPage />} />
           <Route path="/settings/faq" element={<FaqPage />} />
           <Route path="/settings/promocodes" element={<PromocodesSettingsPage />} />
