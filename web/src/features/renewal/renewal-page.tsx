@@ -12,6 +12,7 @@ import {
   getAllSubscriptions,
   getEnabledGateways,
   getPartnerInfo,
+  getPaymentMethods,
   getPlans,
   getRenewalOptions,
   getSubscriptionAddOns,
@@ -36,6 +37,11 @@ import { BackButton } from "@/components/ui/back-button";
 import { useAccessMode, useRenewalAddOnsEnabled } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { selectRenewalReoffer } from "./renewal-reoffer";
+import {
+  formatSavedPaymentMethodMeta,
+  formatSavedPaymentMethodTitle,
+} from "@/lib/saved-payment-method-display";
+import { CreditCard } from "lucide-react";
 import {
   addCurrencyAmounts,
   formatCurrencyAmount,
@@ -684,7 +690,15 @@ function RenewalAddOnSection({
 
 function SelectGateway() {
   const { t } = useTranslation();
-  const { selectGateway, setStep, goBack, navDirection } = useRenewalStore();
+  const {
+    selectGateway,
+    selectSavedPaymentMethod,
+    selectedGateway,
+    selectedSavedPaymentMethodId,
+    setStep,
+    goBack,
+    navDirection,
+  } = useRenewalStore();
   const renewalAddOns = useRenewalAddOnsEnabled();
   // Policy-settled signal (same shared query): the add-on capability must be
   // resolved before we auto-advance a single gateway, otherwise a one-gateway
@@ -696,14 +710,30 @@ function SelectGateway() {
     queryFn: getEnabledGateways,
     staleTime: 300_000,
   });
+  const yookassaEnabled = gateways.some((gw) => gw.type === "YOOKASSA");
+  const { data: paymentMethodsData } = useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: getPaymentMethods,
+    enabled: yookassaEnabled,
+    staleTime: 15_000,
+    retry: false,
+  });
+  const savedYookassaMethods = (paymentMethodsData?.methods ?? []).filter(
+    (method) => method.gatewayType === "YOOKASSA",
+  );
 
-  const choose = (gw: { type: string; displayName: string; currency: string }): void => {
+  const choose = (
+    gw: { type: string; displayName: string; currency: string },
+    savedPaymentMethodId: string | null = null,
+  ): void => {
     selectGateway({
       id: gw.type,
       label: gatewayLabel(gw.type, gw.displayName),
       icon: GATEWAY_ICONS[gw.type] ?? "💳",
       currency: gw.currency,
     } satisfies GatewayOption);
+    // selectGateway clears saved method; re-apply after the store update.
+    queueMicrotask(() => selectSavedPaymentMethod(savedPaymentMethodId));
     // Optional add-on selection step sits between gateway and review — only
     // when the backend rollout enables it (otherwise pricing ignores add-ons).
     setStep(renewalAddOns ? "addons" : "review");
@@ -711,12 +741,19 @@ function SelectGateway() {
 
   // Auto-select when a single gateway is available — but only when arriving
   // FORWARD. Without the guard, pressing "back" from review re-mounts this and
-  // immediately re-advances to review (a trap).
+  // immediately re-advances to review (a trap). Skip auto-advance when the
+  // user has saved YooKassa methods so they can pick a card.
   useEffect(() => {
-    if (!isLoading && !policyLoading && gateways.length === 1 && navDirection === "forward") {
+    if (
+      !isLoading &&
+      !policyLoading &&
+      gateways.length === 1 &&
+      navDirection === "forward" &&
+      savedYookassaMethods.length === 0
+    ) {
       choose(gateways[0]!);
     }
-  }, [isLoading, policyLoading, gateways, navDirection]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoading, policyLoading, gateways, navDirection, savedYookassaMethods.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isTma = !!window.Telegram?.WebApp?.initData;
   const sorted = [...gateways].sort((a, b) => {
@@ -740,8 +777,69 @@ function SelectGateway() {
   return (
     <div className="space-y-3">
       <h2 className="px-5 text-base font-semibold">{t("purchase.gateway.title")}</h2>
+      {savedYookassaMethods.length > 0 && (
+        <div className="px-5 space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            {t("purchase.gateway.savedTitle")}
+          </p>
+          {savedYookassaMethods.map((method) => {
+            const selected =
+              selectedGateway?.id === "YOOKASSA" && selectedSavedPaymentMethodId === method.id;
+            return (
+              <button
+                key={method.id}
+                type="button"
+                onClick={() => {
+                  const yookassa = gateways.find((gw) => gw.type === "YOOKASSA");
+                  if (!yookassa) return;
+                  choose(yookassa, method.id);
+                }}
+                className={cn(
+                  "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
+                  selected && "border-(--brand-primary)/40 bg-(--brand-primary)/5",
+                )}
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+                  <CreditCard className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 text-left">
+                  <p className="truncate font-medium text-white">
+                    {formatSavedPaymentMethodTitle(method, t)}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {formatSavedPaymentMethodMeta(method, t)}
+                  </p>
+                </div>
+                {selected && <Check className="ml-auto h-4 w-4 shrink-0 text-(--brand-primary)" />}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              const yookassa = gateways.find((gw) => gw.type === "YOOKASSA");
+              if (!yookassa) return;
+              choose(yookassa, null);
+            }}
+            className={cn(
+              "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
+              selectedGateway?.id === "YOOKASSA" &&
+                selectedSavedPaymentMethodId === null &&
+                "border-(--brand-primary)/40 bg-(--brand-primary)/5",
+            )}
+          >
+            <GatewayIcon type="YOOKASSA" currency="RUB" className="h-7 w-7" />
+            <div className="text-left">
+              <p className="font-medium text-white">{t("purchase.gateway.newCard")}</p>
+              <p className="text-xs text-zinc-500">YooKassa</p>
+            </div>
+          </button>
+        </div>
+      )}
       <div className="px-5 space-y-2">
-        {sorted.map((gw) => (
+        {sorted
+          .filter((gw) => !(savedYookassaMethods.length > 0 && gw.type === "YOOKASSA"))
+          .map((gw) => (
           <button
             key={gw.type}
             onClick={() => choose(gw)}
@@ -1019,6 +1117,7 @@ function CheckoutStep() {
     selectedPlans,
     selectedAddOns,
     selectedGateway,
+    selectedSavedPaymentMethodId,
     reviewQuote,
     setCheckoutResult,
     goBack,
@@ -1045,8 +1144,17 @@ function CheckoutStep() {
         durations: durationsPayload,
         plans: plansPayload,
         addOns: addOnsPayload,
+        savedPaymentMethodId: selectedSavedPaymentMethodId,
       }),
-    [selectedSubscriptionIds, selectedGateway?.id, reviewQuote, durationsPayload, plansPayload, addOnsPayload],
+    [
+      selectedSubscriptionIds,
+      selectedGateway?.id,
+      reviewQuote,
+      durationsPayload,
+      plansPayload,
+      addOnsPayload,
+      selectedSavedPaymentMethodId,
+    ],
   );
 
   const mutation = useMutation({
@@ -1062,6 +1170,7 @@ function CheckoutStep() {
         plansPayload.length > 0 ? plansPayload : undefined,
         addOnsPayload.length > 0 ? addOnsPayload : undefined,
         idempotencyKey,
+        selectedSavedPaymentMethodId,
       );
     },
     onSuccess: (result) => {

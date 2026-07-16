@@ -241,6 +241,9 @@ export const en: RuDict = {
     gateway: {
       title: 'Payment method',
       empty: 'Payment methods are temporarily unavailable',
+      savedTitle: 'Saved cards',
+      newCard: 'New card / payment page',
+      useSaved: 'Charge saved method',
     },
     quote: {
       title: 'Confirm payment',
@@ -248,6 +251,7 @@ export const en: RuDict = {
       duration: 'Duration',
       device: 'Device',
       method: 'Method',
+      savedMethod: 'Card',
       discount: 'Discount',
       total: 'Total',
       pay: 'Proceed to payment',

@@ -32,6 +32,8 @@ interface PurchaseState {
   selectedDuration: PlanDuration | null;
   selectedDevice: DeviceTypeOption | null;
   selectedGateway: GatewayOption | null;
+  /** Saved card/SBP method for off-session YooKassa charge; null = hosted page. */
+  selectedSavedPaymentMethodId: string | null;
   quote: SubscriptionQuote | null;
   paymentId: string | null;
   paymentUrl: string | null;
@@ -41,6 +43,7 @@ interface PurchaseState {
   selectDuration: (duration: PlanDuration) => void;
   selectDevice: (device: DeviceTypeOption) => void;
   selectGateway: (gateway: GatewayOption) => void;
+  selectSavedPaymentMethod: (methodId: string | null) => void;
   setQuote: (quote: SubscriptionQuote) => void;
   setCheckoutResult: (paymentId: string, paymentUrl: string | null) => void;
   goBack: () => void;
@@ -64,6 +67,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
   selectedDuration: null,
   selectedDevice: null,
   selectedGateway: null,
+  selectedSavedPaymentMethodId: null,
   quote: null,
   paymentId: null,
   paymentUrl: null,
@@ -72,7 +76,14 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
   selectDuration: (duration) =>
     set({ selectedDuration: duration, step: "device", lastNav: "forward" }),
   selectDevice: (device) => set({ selectedDevice: device, step: "gateway", lastNav: "forward" }),
-  selectGateway: (gateway) => set({ selectedGateway: gateway, step: "quote", lastNav: "forward" }),
+  selectGateway: (gateway) =>
+    set({
+      selectedGateway: gateway,
+      selectedSavedPaymentMethodId: null,
+      step: "quote",
+      lastNav: "forward",
+    }),
+  selectSavedPaymentMethod: (methodId) => set({ selectedSavedPaymentMethodId: methodId }),
   setQuote: (quote) => set({ quote, step: "checkout", lastNav: "forward" }),
   setCheckoutResult: (paymentId, paymentUrl) =>
     set({ paymentId, paymentUrl, step: "polling", lastNav: "forward" }),
@@ -85,7 +96,10 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
       // Clear the selection made AT the step we are leaving, so re-entering a
       // step (esp. an auto-selecting one) doesn't immediately bounce forward.
       if (state.step === "device") reset.selectedDevice = null;
-      if (state.step === "gateway") reset.selectedGateway = null;
+      if (state.step === "gateway") {
+        reset.selectedGateway = null;
+        reset.selectedSavedPaymentMethodId = null;
+      }
       if (state.step === "quote") reset.quote = null;
       return { ...state, ...reset };
     }),
@@ -98,6 +112,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
       selectedDuration: null,
       selectedDevice: null,
       selectedGateway: null,
+      selectedSavedPaymentMethodId: null,
       quote: null,
       paymentId: null,
       paymentUrl: null,

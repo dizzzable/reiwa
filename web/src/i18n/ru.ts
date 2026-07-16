@@ -239,6 +239,9 @@ export const ru = {
     gateway: {
       title: 'Способ оплаты',
       empty: 'Платёжные методы временно недоступны',
+      savedTitle: 'Сохранённые карты',
+      newCard: 'Новая карта / страница оплаты',
+      useSaved: 'Списать с сохранённого способа',
     },
     quote: {
       title: 'Подтвердите оплату',
@@ -246,6 +249,7 @@ export const ru = {
       duration: 'Срок',
       device: 'Устройство',
       method: 'Метод',
+      savedMethod: 'Карта',
       discount: 'Скидка',
       total: 'Итого',
       pay: 'Перейти к оплате',

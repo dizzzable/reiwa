@@ -21,6 +21,8 @@ interface RenewalState {
   /** Add-ons explicitly removed by the user, retained across A→B→A. */
   explicitlyDeselectedAddOns: Record<string, true>;
   selectedGateway: GatewayOption | null;
+  /** Saved card/SBP method for off-session YooKassa charge; null = hosted page. */
+  selectedSavedPaymentMethodId: string | null;
   /** Exact all-in quote confirmed on the review step. */
   reviewQuote: { amount: string; currency: string } | null;
   paymentId: string | null;
@@ -45,6 +47,7 @@ interface RenewalState {
    * add-on the user explicitly deselected. */
   reconcileReoffer: (key: string, allowedAddOns: Record<string, string[]>) => void;
   selectGateway: (gateway: GatewayOption) => void;
+  selectSavedPaymentMethod: (methodId: string | null) => void;
   setReviewQuote: (quote: { amount: string; currency: string }) => void;
   setCheckoutResult: (paymentId: string, paymentUrl: string | null) => void;
   reset: () => void;
@@ -60,6 +63,7 @@ const INITIAL: Pick<
   | "reofferInitializedKey"
   | "explicitlyDeselectedAddOns"
   | "selectedGateway"
+  | "selectedSavedPaymentMethodId"
   | "reviewQuote"
   | "paymentId"
   | "paymentUrl"
@@ -73,6 +77,7 @@ const INITIAL: Pick<
   reofferInitializedKey: null,
   explicitlyDeselectedAddOns: {},
   selectedGateway: null,
+  selectedSavedPaymentMethodId: null,
   reviewQuote: null,
   paymentId: null,
   paymentUrl: null,
@@ -172,7 +177,9 @@ export const useRenewalStore = create<RenewalState>((set) => ({
       }
       return { selectedAddOns };
     }),
-  selectGateway: (gateway) => set({ selectedGateway: gateway, navDirection: "forward", reviewQuote: null }),
+  selectGateway: (gateway) =>
+    set({ selectedGateway: gateway, selectedSavedPaymentMethodId: null, navDirection: "forward", reviewQuote: null }),
+  selectSavedPaymentMethod: (methodId) => set({ selectedSavedPaymentMethodId: methodId }),
   setReviewQuote: (quote) => set({ reviewQuote: { ...quote } }),
   setCheckoutResult: (paymentId, paymentUrl) =>
     set({ paymentId, paymentUrl, step: "polling" }),

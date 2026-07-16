@@ -2,9 +2,9 @@ import { useEffect, type ComponentType, type SVGProps } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, CreditCard } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { getQuote, createCheckout, getEnabledGateways, activatePromocode } from "@/lib/api-client";
+import { getQuote, createCheckout, getEnabledGateways, activatePromocode, getPaymentMethods } from "@/lib/api-client";
 import { getPartnerInfo, payWithPartnerBalance } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
@@ -20,6 +20,10 @@ import type { Plan, PlanDuration } from "@/types/api";
 import { cn, openExternalUrl } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
+import {
+  formatSavedPaymentMethodMeta,
+  formatSavedPaymentMethodTitle,
+} from "@/lib/saved-payment-method-display";
 import { toast } from "sonner";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -172,11 +176,25 @@ function SelectGateway({
 }) {
   const { t } = useTranslation();
   const lastNav = usePurchaseStore((s) => s.lastNav);
+  const selectedGateway = usePurchaseStore((s) => s.selectedGateway);
+  const selectedSavedPaymentMethodId = usePurchaseStore((s) => s.selectedSavedPaymentMethodId);
+  const selectSavedPaymentMethod = usePurchaseStore((s) => s.selectSavedPaymentMethod);
   const { data: gateways = [], isLoading } = useQuery({
     queryKey: ["gateways"],
     queryFn: getEnabledGateways,
     staleTime: 300_000,
   });
+  const yookassaEnabled = gateways.some((gw) => gw.type === "YOOKASSA" && gw.isActive !== false);
+  const { data: paymentMethodsData } = useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: getPaymentMethods,
+    enabled: yookassaEnabled,
+    staleTime: 15_000,
+    retry: false,
+  });
+  const savedYookassaMethods = (paymentMethodsData?.methods ?? []).filter(
+    (method) => method.gatewayType === "YOOKASSA",
+  );
 
   // Auto-select if only one gateway is available — but ONLY when the user
   // arrived here going forward. Without the guard, pressing "back" from the
@@ -218,8 +236,84 @@ function SelectGateway({
   return (
     <div className="space-y-3">
       <h2 className="px-5 text-base font-semibold">{t("purchase.gateway.title")}</h2>
+      {savedYookassaMethods.length > 0 && (
+        <div className="px-5 space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            {t("purchase.gateway.savedTitle")}
+          </p>
+          {savedYookassaMethods.map((method) => {
+            const selected =
+              selectedGateway?.id === "YOOKASSA" && selectedSavedPaymentMethodId === method.id;
+            return (
+              <button
+                key={method.id}
+                type="button"
+                onClick={() => {
+                  const yookassa = gateways.find((gw) => gw.type === "YOOKASSA");
+                  if (!yookassa) return;
+                  onSelect({
+                    id: yookassa.type,
+                    label: gatewayLabel(yookassa.type, yookassa.displayName),
+                    icon: GATEWAY_ICONS[yookassa.type] ?? "💳",
+                    currency: yookassa.currency,
+                  });
+                  // selectGateway clears saved method; re-apply after store update.
+                  queueMicrotask(() => selectSavedPaymentMethod(method.id));
+                }}
+                className={cn(
+                  "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
+                  selected && "border-(--brand-primary)/40 bg-(--brand-primary)/5",
+                )}
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+                  <CreditCard className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 text-left">
+                  <p className="truncate font-medium text-white">
+                    {formatSavedPaymentMethodTitle(method, t)}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {formatSavedPaymentMethodMeta(method, t)}
+                  </p>
+                </div>
+                {selected && <Check className="ml-auto h-4 w-4 shrink-0 text-(--brand-primary)" />}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              const yookassa = gateways.find((gw) => gw.type === "YOOKASSA");
+              if (!yookassa) return;
+              onSelect({
+                id: yookassa.type,
+                label: gatewayLabel(yookassa.type, yookassa.displayName),
+                icon: GATEWAY_ICONS[yookassa.type] ?? "💳",
+                currency: yookassa.currency,
+              });
+              queueMicrotask(() => selectSavedPaymentMethod(null));
+            }}
+            className={cn(
+              "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
+              selectedGateway?.id === "YOOKASSA" &&
+                selectedSavedPaymentMethodId === null &&
+                "border-(--brand-primary)/40 bg-(--brand-primary)/5",
+            )}
+          >
+            <span className="flex h-7 w-7 items-center justify-center text-2xl">
+              <GatewayIcon type="YOOKASSA" currency="RUB" className="h-7 w-7" />
+            </span>
+            <div className="text-left">
+              <p className="font-medium text-white">{t("purchase.gateway.newCard")}</p>
+              <p className="text-xs text-zinc-500">YooKassa</p>
+            </div>
+          </button>
+        </div>
+      )}
       <div className="px-5 space-y-2">
-        {sortedGateways.map((gw) => (
+        {sortedGateways
+          .filter((gw) => !(savedYookassaMethods.length > 0 && gw.type === "YOOKASSA"))
+          .map((gw) => (
           <button
             key={gw.type}
             onClick={() =>
@@ -253,8 +347,15 @@ function SelectGateway({
 
 function QuoteView() {
   const { t } = useTranslation();
-  const { selectedPlan, selectedDuration, selectedGateway, selectedDevice, setQuote, goBack } =
-    usePurchaseStore();
+  const {
+    selectedPlan,
+    selectedDuration,
+    selectedGateway,
+    selectedDevice,
+    selectedSavedPaymentMethodId,
+    setQuote,
+    goBack,
+  } = usePurchaseStore();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -263,6 +364,16 @@ function QuoteView() {
     queryFn: getPartnerInfo,
     staleTime: 60_000,
   });
+  const { data: paymentMethodsData } = useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: getPaymentMethods,
+    enabled: selectedGateway?.id === "YOOKASSA" && !!selectedSavedPaymentMethodId,
+    staleTime: 15_000,
+    retry: false,
+  });
+  const savedMethodLabel = paymentMethodsData?.methods.find(
+    (method) => method.id === selectedSavedPaymentMethodId,
+  );
 
   const deviceLabel = selectedDevice
     ? t(`purchase.device.${selectedDevice.toLowerCase()}`)
@@ -344,6 +455,12 @@ function QuoteView() {
             ) : undefined
           }
         />
+        {savedMethodLabel && (
+          <Row
+            label={t("purchase.quote.savedMethod")}
+            value={formatSavedPaymentMethodTitle(savedMethodLabel, t)}
+          />
+        )}
         {quote.discountPercent > 0 && (
           <Row
             label={t("purchase.quote.discount")}
@@ -434,8 +551,14 @@ function Row({
 
 function CheckoutStep() {
   const { t } = useTranslation();
-  const { selectedPlan, selectedDuration, selectedGateway, selectedDevice, setCheckoutResult } =
-    usePurchaseStore();
+  const {
+    selectedPlan,
+    selectedDuration,
+    selectedGateway,
+    selectedDevice,
+    selectedSavedPaymentMethodId,
+    setCheckoutResult,
+  } = usePurchaseStore();
   const navigate = useNavigate();
 
   const mutation = useMutation({
@@ -445,6 +568,7 @@ function CheckoutStep() {
         selectedDuration!.days,
         selectedGateway!.id,
         selectedDevice ?? undefined,
+        selectedSavedPaymentMethodId,
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
