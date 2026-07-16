@@ -27,6 +27,7 @@ export const createCheckout = (
   gatewayType: string,
   deviceType?: string,
   savedPaymentMethodId?: string | null,
+  savePaymentMethod?: boolean,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -39,6 +40,7 @@ export const createCheckout = (
       ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
         ? { savedPaymentMethodId }
         : {}),
+      ...(typeof savePaymentMethod === "boolean" ? { savePaymentMethod } : {}),
     })
     .then((r) => r.data);
 
@@ -101,6 +103,7 @@ export const createRenewalCheckout = (
   addOns?: { subscriptionId: string; addOnIds: string[] }[],
   idempotencyKey?: string,
   savedPaymentMethodId?: string | null,
+  savePaymentMethod?: boolean,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/renewal-checkout", {
@@ -118,5 +121,6 @@ export const createRenewalCheckout = (
       ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
         ? { savedPaymentMethodId }
         : {}),
+      ...(typeof savePaymentMethod === "boolean" ? { savePaymentMethod } : {}),
     })
     .then((r) => r.data);

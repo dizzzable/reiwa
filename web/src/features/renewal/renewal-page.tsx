@@ -26,6 +26,7 @@ import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
 import type { RenewalOptionItem, Subscription } from "@/types/api";
 import { cn, openExternalUrl } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
 import { savePendingCheckout } from "@/lib/pending-checkout";
 import { TariffCard } from "@/features/plans/tariff-card";
 import { gatewayLabel } from "@/lib/gateway-display";
@@ -695,6 +696,8 @@ function SelectGateway() {
     selectSavedPaymentMethod,
     selectedGateway,
     selectedSavedPaymentMethodId,
+    savePaymentMethod,
+    setSavePaymentMethod,
     setStep,
     goBack,
     navDirection,
@@ -834,6 +837,15 @@ function SelectGateway() {
               <p className="text-xs text-zinc-500">YooKassa</p>
             </div>
           </button>
+          {selectedGateway?.id === "YOOKASSA" && selectedSavedPaymentMethodId === null && (
+            <div className="flex items-center justify-between rounded-xl bg-zinc-800/40 px-4 py-3">
+              <div>
+                <p className="text-sm text-zinc-200">{t("purchase.gateway.saveCard")}</p>
+                <p className="text-[11px] text-zinc-500">{t("purchase.gateway.saveCardHint")}</p>
+              </div>
+              <Switch checked={savePaymentMethod} onCheckedChange={setSavePaymentMethod} />
+            </div>
+          )}
         </div>
       )}
       <div className="px-5 space-y-2">
@@ -1118,6 +1130,7 @@ function CheckoutStep() {
     selectedAddOns,
     selectedGateway,
     selectedSavedPaymentMethodId,
+    savePaymentMethod,
     reviewQuote,
     setCheckoutResult,
     goBack,
@@ -1176,6 +1189,7 @@ function CheckoutStep() {
         addOnsPayload.length > 0 ? addOnsPayload : undefined,
         idempotencyKey,
         selectedSavedPaymentMethodId,
+        savePaymentMethod,
       );
     },
     onSuccess: (result) => {

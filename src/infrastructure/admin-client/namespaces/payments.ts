@@ -12,6 +12,8 @@ export interface CreateCheckoutOptions {
   readonly deviceType?: string | null;
   /** Local SavedPaymentMethod.id for off-session YooKassa charge. */
   readonly savedPaymentMethodId?: string | null;
+  /** When false, YooKassa interactive checkout skips card binding. */
+  readonly savePaymentMethod?: boolean;
 }
 
 export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
@@ -55,6 +57,9 @@ export class PaymentsNamespace {
       options.savedPaymentMethodId.length > 0
     ) {
       payload['savedPaymentMethodId'] = options.savedPaymentMethodId;
+    }
+    if (typeof options.savePaymentMethod === 'boolean') {
+      payload['savePaymentMethod'] = options.savePaymentMethod;
     }
     return this.transport.request('POST', '/api/internal/payments/checkout', payload);
   }
@@ -141,6 +146,7 @@ export class PaymentsNamespace {
       readonly expectedCurrency?: string;
       readonly idempotencyKey?: string;
       readonly savedPaymentMethodId?: string;
+      readonly savePaymentMethod?: boolean;
     },
   ): Promise<unknown> {
     const payload: Record<string, unknown> = {
@@ -174,6 +180,9 @@ export class PaymentsNamespace {
     }
     if (typeof input.savedPaymentMethodId === 'string' && input.savedPaymentMethodId.length > 0) {
       payload['savedPaymentMethodId'] = input.savedPaymentMethodId;
+    }
+    if (typeof input.savePaymentMethod === 'boolean') {
+      payload['savePaymentMethod'] = input.savePaymentMethod;
     }
     return this.transport.request('POST', '/api/internal/payments/renewal-checkout', payload);
   }

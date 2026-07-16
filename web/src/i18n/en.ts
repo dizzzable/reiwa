@@ -243,6 +243,8 @@ export const en: RuDict = {
       empty: 'Payment methods are temporarily unavailable',
       savedTitle: 'Saved cards',
       newCard: 'New card / payment page',
+      saveCard: 'Save card',
+      saveCardHint: 'Store for autopayments',
       useSaved: 'Charge saved method',
     },
     quote: {

@@ -34,6 +34,8 @@ interface PurchaseState {
   selectedGateway: GatewayOption | null;
   /** Saved card/SBP method for off-session YooKassa charge; null = hosted page. */
   selectedSavedPaymentMethodId: string | null;
+  /** When true (default), YooKassa interactive checkout binds the card. */
+  savePaymentMethod: boolean;
   quote: SubscriptionQuote | null;
   paymentId: string | null;
   paymentUrl: string | null;
@@ -44,6 +46,7 @@ interface PurchaseState {
   selectDevice: (device: DeviceTypeOption) => void;
   selectGateway: (gateway: GatewayOption) => void;
   selectSavedPaymentMethod: (methodId: string | null) => void;
+  setSavePaymentMethod: (save: boolean) => void;
   setQuote: (quote: SubscriptionQuote) => void;
   setCheckoutResult: (paymentId: string, paymentUrl: string | null) => void;
   goBack: () => void;
@@ -68,6 +71,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
   selectedDevice: null,
   selectedGateway: null,
   selectedSavedPaymentMethodId: null,
+  savePaymentMethod: true,
   quote: null,
   paymentId: null,
   paymentUrl: null,
@@ -80,10 +84,12 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
     set({
       selectedGateway: gateway,
       selectedSavedPaymentMethodId: null,
+      savePaymentMethod: true,
       step: "quote",
       lastNav: "forward",
     }),
   selectSavedPaymentMethod: (methodId) => set({ selectedSavedPaymentMethodId: methodId }),
+  setSavePaymentMethod: (save) => set({ savePaymentMethod: save }),
   setQuote: (quote) => set({ quote, step: "checkout", lastNav: "forward" }),
   setCheckoutResult: (paymentId, paymentUrl) =>
     set({ paymentId, paymentUrl, step: "polling", lastNav: "forward" }),
@@ -113,6 +119,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
       selectedDevice: null,
       selectedGateway: null,
       selectedSavedPaymentMethodId: null,
+      savePaymentMethod: true,
       quote: null,
       paymentId: null,
       paymentUrl: null,

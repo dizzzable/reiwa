@@ -18,6 +18,7 @@ import { PromoInput } from "./components/promo-input";
 import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn, openExternalUrl } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import {
@@ -179,6 +180,8 @@ function SelectGateway({
   const selectedGateway = usePurchaseStore((s) => s.selectedGateway);
   const selectedSavedPaymentMethodId = usePurchaseStore((s) => s.selectedSavedPaymentMethodId);
   const selectSavedPaymentMethod = usePurchaseStore((s) => s.selectSavedPaymentMethod);
+  const savePaymentMethod = usePurchaseStore((s) => s.savePaymentMethod);
+  const setSavePaymentMethod = usePurchaseStore((s) => s.setSavePaymentMethod);
   const { data: gateways = [], isLoading } = useQuery({
     queryKey: ["gateways"],
     queryFn: getEnabledGateways,
@@ -308,6 +311,15 @@ function SelectGateway({
               <p className="text-xs text-zinc-500">YooKassa</p>
             </div>
           </button>
+          {selectedGateway?.id === "YOOKASSA" && selectedSavedPaymentMethodId === null && (
+            <div className="flex items-center justify-between rounded-xl bg-zinc-800/40 px-4 py-3">
+              <div>
+                <p className="text-sm text-zinc-200">{t("purchase.gateway.saveCard")}</p>
+                <p className="text-[11px] text-zinc-500">{t("purchase.gateway.saveCardHint")}</p>
+              </div>
+              <Switch checked={savePaymentMethod} onCheckedChange={setSavePaymentMethod} />
+            </div>
+          )}
         </div>
       )}
       <div className="px-5 space-y-2">
@@ -557,6 +569,7 @@ function CheckoutStep() {
     selectedGateway,
     selectedDevice,
     selectedSavedPaymentMethodId,
+    savePaymentMethod,
     setCheckoutResult,
   } = usePurchaseStore();
   const navigate = useNavigate();
@@ -569,6 +582,7 @@ function CheckoutStep() {
         selectedGateway!.id,
         selectedDevice ?? undefined,
         selectedSavedPaymentMethodId,
+        savePaymentMethod,
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
