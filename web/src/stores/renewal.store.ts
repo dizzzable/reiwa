@@ -67,6 +67,7 @@ const INITIAL: Pick<
   | "explicitlyDeselectedAddOns"
   | "selectedGateway"
   | "selectedSavedPaymentMethodId"
+  | "savePaymentMethod"
   | "reviewQuote"
   | "paymentId"
   | "paymentUrl"
@@ -80,7 +81,6 @@ const INITIAL: Pick<
   reofferInitializedKey: null,
   explicitlyDeselectedAddOns: {},
   selectedGateway: null,
-  selectedSavedPaymentMethodId: null,
   selectedSavedPaymentMethodId: null,
   savePaymentMethod: true,
   reviewQuote: null,
