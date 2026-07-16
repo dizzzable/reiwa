@@ -7,7 +7,7 @@
  *
  * Mounted at: /api/v1/payment-methods
  */
-import { Router, type Response } from 'express';
+import { Router } from 'express';
 import type { AdminClient } from '../../lib/admin-client.js';
 import type { SessionStore } from '../../lib/session-store.js';
 import type { ReiwaConfig } from '../../config.js';
@@ -25,29 +25,29 @@ export function createPaymentMethodsRouter(deps: {
   const router = Router();
 
   // GET /api/v1/payment-methods — list active saved payment methods
-  router.get('/', requireSession, async (req: AuthRequest, res: Response) => {
+  router.get('/', requireSession, async (req: AuthRequest, res) => {
     try {
       if (!adminClient) {
-        res.status(503).json({ error: 'Admin client unavailable' });
+        res.status(503).json({ message: 'Admin client unavailable' });
         return;
       }
       const result = await adminClient.paymentMethods.list(resolveUserIdentity(req));
       res.json(result ?? { methods: [], total: 0 });
-    } catch (error) {
-      sendSafeError(res, error, 'Failed to load payment methods');
+    } catch (e) {
+      sendSafeError(req, res, e, 502, 'Failed to load payment methods', 'payment-methods/list');
     }
   });
 
   // DELETE /api/v1/payment-methods/:methodId — soft-unbind (stop using for autopay)
-  router.delete('/:methodId', requireSession, async (req: AuthRequest, res: Response) => {
+  router.delete('/:methodId', requireSession, async (req: AuthRequest, res) => {
     try {
       if (!adminClient) {
-        res.status(503).json({ error: 'Admin client unavailable' });
+        res.status(503).json({ message: 'Admin client unavailable' });
         return;
       }
-      const methodId = String(req.params.methodId ?? '').trim();
+      const methodId = String(req.params['methodId'] ?? '').trim();
       if (!methodId) {
-        res.status(400).json({ error: 'methodId is required' });
+        res.status(400).json({ message: 'methodId is required' });
         return;
       }
       const result = await adminClient.paymentMethods.unbind(
@@ -55,8 +55,8 @@ export function createPaymentMethodsRouter(deps: {
         methodId,
       );
       res.json(result);
-    } catch (error) {
-      sendSafeError(res, error, 'Failed to unbind payment method');
+    } catch (e) {
+      sendSafeError(req, res, e, 400, 'Failed to unbind payment method', 'payment-methods/unbind');
     }
   });
 
