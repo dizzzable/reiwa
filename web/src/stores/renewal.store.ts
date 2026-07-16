@@ -89,7 +89,7 @@ const INITIAL: Pick<
   navDirection: "forward",
 };
 
-export const useRenewalStore
+export const useRenewalStore = create<RenewalState>((set) => ({
   ...INITIAL,
 
   setStep: (step) => set({ step, navDirection: "forward" }),
