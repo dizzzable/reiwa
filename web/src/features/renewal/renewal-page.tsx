@@ -719,7 +719,7 @@ function SelectGateway() {
     retry: false,
   });
   const savedYookassaMethods = (paymentMethodsData?.methods ?? []).filter(
-    (method) => method.gatewayType === "YOOKASSA",
+    (method) => method.gatewayType === "YOOKASSA" && method.autopayEnabled !== false,
   );
 
   const choose = (

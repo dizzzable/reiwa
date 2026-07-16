@@ -514,7 +514,7 @@ export const en: RuDict = {
     replayTutorialSub: 'Take the cabinet intro tour again',
   },
   paymentMethods: {
-    hint: 'Saved payment methods used for autopayments. Unbinding stops charges for this card or wallet — no support ticket needed.',
+    hint: 'Saved payment methods. You can disable autopay without unbinding a card, or unbind it completely — no support ticket needed.',
     empty: 'No saved payment methods',
     unbind: 'Unbind',
     unbinding: 'Unbinding...',
@@ -522,6 +522,12 @@ export const en: RuDict = {
     unbindConfirm: 'After unbinding, this method will no longer be used for autopayments. You can save a card again on the next checkout.',
     unbound: 'Payment method unbound',
     error: 'Failed to unbind payment method',
+    autopay: 'Autopay',
+    autopayOnHint: 'This card can be charged for autopayments without re-entering details',
+    autopayOffHint: 'Autopay is off for this card — it stays linked',
+    autopayEnabled: 'Autopay enabled',
+    autopayDisabled: 'Autopay disabled',
+    autopayError: 'Failed to update autopay',
     fallbackTitle: 'Payment method',
     expires: 'exp {{month}}/{{year}}',
     types: {

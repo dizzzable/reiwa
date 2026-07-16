@@ -1,9 +1,10 @@
 /**
- * BFF routes for saved payment methods (list + self-service unbind).
+ * BFF routes for saved payment methods (list + unbind + autopay toggle).
  *
  * Proxies to rezeis-admin:
  *   GET    /api/internal/user/:userRef/payment-methods
  *   DELETE /api/internal/user/:userRef/payment-methods/:methodId
+ *   PATCH  /api/internal/user/:userRef/payment-methods/:methodId
  *
  * Mounted at: /api/v1/payment-methods
  */
@@ -57,6 +58,41 @@ export function createPaymentMethodsRouter(deps: {
       res.json(result);
     } catch (e) {
       sendSafeError(req, res, e, 400, 'Failed to unbind payment method', 'payment-methods/unbind');
+    }
+  });
+
+  // PATCH /api/v1/payment-methods/:methodId — enable/disable autopay without unbind
+  router.patch('/:methodId', requireSession, async (req: AuthRequest, res) => {
+    try {
+      if (!adminClient) {
+        res.status(503).json({ message: 'Admin client unavailable' });
+        return;
+      }
+      const methodId = String(req.params['methodId'] ?? '').trim();
+      if (!methodId) {
+        res.status(400).json({ message: 'methodId is required' });
+        return;
+      }
+      const raw = (req.body as { autopayEnabled?: unknown } | null)?.autopayEnabled;
+      if (typeof raw !== 'boolean') {
+        res.status(400).json({ message: 'autopayEnabled (boolean) is required' });
+        return;
+      }
+      const result = await adminClient.paymentMethods.setAutopay(
+        resolveUserIdentity(req),
+        methodId,
+        raw,
+      );
+      res.json(result);
+    } catch (e) {
+      sendSafeError(
+        req,
+        res,
+        e,
+        400,
+        'Failed to update payment method autopay',
+        'payment-methods/autopay',
+      );
     }
   });
 

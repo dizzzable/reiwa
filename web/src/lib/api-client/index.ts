@@ -145,6 +145,7 @@ export {
 export {
   getPaymentMethods,
   unbindPaymentMethod,
+  setPaymentMethodAutopay,
   type SavedPaymentMethod,
   type SavedPaymentMethodsResponse,
 } from "./payment-methods.js";

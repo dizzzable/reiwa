@@ -1,11 +1,13 @@
 /**
- * PaymentMethodsNamespace — list and unbind provider-saved payment methods.
+ * PaymentMethodsNamespace — list, unbind, and toggle autopay for saved methods.
  *
  * Upstream: InternalUserPaymentMethodsController
  *   GET    /api/internal/user/:userRef/payment-methods
  *   DELETE /api/internal/user/:userRef/payment-methods/:methodId
+ *   PATCH  /api/internal/user/:userRef/payment-methods/:methodId  { autopayEnabled }
  *
  * Unbind is local soft-deactivate (YooKassa has no detach-card API).
+ * Autopay toggle keeps the card bound but blocks off-session charge.
  */
 import type { AdminTransport } from '../transport.js';
 import type { UserIdentity } from './subscription.js';
@@ -34,6 +36,18 @@ export class PaymentMethodsNamespace {
     return this.transport.request(
       'DELETE',
       `/api/internal/user/${encodeURIComponent(reference(identity))}/payment-methods/${encodeURIComponent(methodId)}`,
+    );
+  }
+
+  setAutopay(
+    identity: UserIdentity,
+    methodId: string,
+    autopayEnabled: boolean,
+  ): Promise<unknown> {
+    return this.transport.request(
+      'PATCH',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/payment-methods/${encodeURIComponent(methodId)}`,
+      { autopayEnabled },
     );
   }
 }

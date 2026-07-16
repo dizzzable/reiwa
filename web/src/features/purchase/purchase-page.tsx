@@ -193,7 +193,7 @@ function SelectGateway({
     retry: false,
   });
   const savedYookassaMethods = (paymentMethodsData?.methods ?? []).filter(
-    (method) => method.gatewayType === "YOOKASSA",
+    (method) => method.gatewayType === "YOOKASSA" && method.autopayEnabled !== false,
   );
 
   // Auto-select if only one gateway is available — but ONLY when the user
