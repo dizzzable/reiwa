@@ -10,6 +10,8 @@ export interface CreateCheckoutOptions {
   readonly successUrl?: string | null;
   readonly failUrl?: string | null;
   readonly deviceType?: string | null;
+  /** Local SavedPaymentMethod.id for off-session YooKassa charge. */
+  readonly savedPaymentMethodId?: string | null;
 }
 
 export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
@@ -48,6 +50,12 @@ export class PaymentsNamespace {
     if (options.successUrl) payload['successUrl'] = options.successUrl;
     if (options.failUrl) payload['failUrl'] = options.failUrl;
     if (options.deviceType) payload['deviceType'] = options.deviceType;
+    if (
+      typeof options.savedPaymentMethodId === 'string' &&
+      options.savedPaymentMethodId.length > 0
+    ) {
+      payload['savedPaymentMethodId'] = options.savedPaymentMethodId;
+    }
     return this.transport.request('POST', '/api/internal/payments/checkout', payload);
   }
 
@@ -132,6 +140,7 @@ export class PaymentsNamespace {
       readonly expectedAmount?: string;
       readonly expectedCurrency?: string;
       readonly idempotencyKey?: string;
+      readonly savedPaymentMethodId?: string;
     },
   ): Promise<unknown> {
     const payload: Record<string, unknown> = {
@@ -162,6 +171,9 @@ export class PaymentsNamespace {
     }
     if (typeof input.idempotencyKey === 'string' && input.idempotencyKey.length > 0) {
       payload['idempotencyKey'] = input.idempotencyKey;
+    }
+    if (typeof input.savedPaymentMethodId === 'string' && input.savedPaymentMethodId.length > 0) {
+      payload['savedPaymentMethodId'] = input.savedPaymentMethodId;
     }
     return this.transport.request('POST', '/api/internal/payments/renewal-checkout', payload);
   }

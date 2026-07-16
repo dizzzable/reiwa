@@ -36,6 +36,7 @@ import {
   Download,
   Share,
   PackagePlus,
+  WalletCards,
 } from "lucide-react";
 
 import { useSession } from "@/hooks/use-session";
@@ -191,6 +192,14 @@ export default function SettingsPage() {
           label={t("settings.transactions")}
           sublabel={t("settings.transactionsSub")}
           onClick={() => navigate("/settings/transactions")}
+        />
+        <MenuItem
+          icon={<WalletCards className="h-5 w-5" />}
+          iconBg="bg-violet-500/10 text-violet-400"
+          tint={iconTint("paymentMethods")}
+          label={t("settings.paymentMethods")}
+          sublabel={t("settings.paymentMethodsSub")}
+          onClick={() => navigate("/settings/payment-methods")}
         />
         <MenuItem
           icon={<PackagePlus className="h-5 w-5" />}

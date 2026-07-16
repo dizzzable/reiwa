@@ -43,6 +43,7 @@ export { PartnerNamespace } from './partner.js';
 export type { CreateWithdrawalInput } from './partner.js';
 export { PaymentsNamespace } from './payments.js';
 export type { CreateCheckoutOptions } from './payments.js';
+export { PaymentMethodsNamespace } from './payment-methods.js';
 export { PromocodesNamespace } from './promocodes.js';
 export { PushNamespace } from './push.js';
 export type { WebPushSubscriptionPayload } from './push.js';

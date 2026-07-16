@@ -26,6 +26,7 @@ export const createCheckout = (
   durationDays: number,
   gatewayType: string,
   deviceType?: string,
+  savedPaymentMethodId?: string | null,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -35,6 +36,9 @@ export const createCheckout = (
       purchaseType: "NEW",
       deviceType,
       source: getClientSource(),
+      ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
+        ? { savedPaymentMethodId }
+        : {}),
     })
     .then((r) => r.data);
 
@@ -43,6 +47,7 @@ export const createRenewCheckout = (
   durationDays: number,
   gatewayType: string,
   subscriptionId: number | string,
+  savedPaymentMethodId?: string | null,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -52,6 +57,9 @@ export const createRenewCheckout = (
       purchaseType: "RENEW",
       subscriptionId,
       source: getClientSource(),
+      ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
+        ? { savedPaymentMethodId }
+        : {}),
     })
     .then((r) => r.data);
 
@@ -60,6 +68,7 @@ export const createUpgradeCheckout = (
   durationDays: number,
   gatewayType: string,
   subscriptionId: number | string,
+  savedPaymentMethodId?: string | null,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -69,6 +78,9 @@ export const createUpgradeCheckout = (
       purchaseType: "UPGRADE",
       subscriptionId,
       source: getClientSource(),
+      ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
+        ? { savedPaymentMethodId }
+        : {}),
     })
     .then((r) => r.data);
 
@@ -88,6 +100,7 @@ export const createRenewalCheckout = (
   plans?: { subscriptionId: string; planId: string }[],
   addOns?: { subscriptionId: string; addOnIds: string[] }[],
   idempotencyKey?: string,
+  savedPaymentMethodId?: string | null,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/renewal-checkout", {
@@ -102,5 +115,8 @@ export const createRenewalCheckout = (
         ? { addOns: addOns.filter((a) => a.addOnIds.length > 0) }
         : {}),
       ...(idempotencyKey ? { idempotencyKey } : {}),
+      ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
+        ? { savedPaymentMethodId }
+        : {}),
     })
     .then((r) => r.data);

@@ -5,6 +5,8 @@ export type RenewalCheckoutDraft = {
   readonly durations: readonly { readonly subscriptionId: string; readonly days: number }[];
   readonly plans: readonly { readonly subscriptionId: string; readonly planId: string }[];
   readonly addOns: readonly { readonly subscriptionId: string; readonly addOnIds: readonly string[] }[];
+  /** Local SavedPaymentMethod.id for off-session charge, if any. */
+  readonly savedPaymentMethodId?: string | null;
 };
 
 function stableJson(value: unknown): string {
@@ -23,6 +25,7 @@ export function createRenewalIdempotencyKey(draft: RenewalCheckoutDraft): string
   const payload = stableJson({
     ...draft,
     subscriptionIds: [...draft.subscriptionIds].map(String),
+    savedPaymentMethodId: draft.savedPaymentMethodId ?? null,
   });
   let hash = 2166136261;
   for (let index = 0; index < payload.length; index += 1) {
