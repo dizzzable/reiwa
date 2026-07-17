@@ -73,7 +73,6 @@ rezeis-admin, что важно для продакшена, и какой compo
 
 | Переменная | Назначение | Обяз. | Прод |
 |---|---|---|---|
-| `REIWA_COOKIE_SECRET` | Секрет для cookie (резерв под подпись). | да | свой, **секрет** |
 | `REIWA_COOKIE_SECURE` | Выдавать cookie с флагом `Secure` (только HTTPS). В проде форсится. | — | `true` |
 | `REIWA_ALLOW_INSECURE_COOKIES` | Разрешить не-`Secure` cookie в проде (только доверенная сеть/внешний TLS). Иначе API не стартует. | — | `false` |
 | `REIWA_ALLOW_DEGRADED` | Дать API стартовать без Redis (сессии/rate-limit/anti-brute тогда не работают). В проде по умолчанию падает закрыто. | — | `false` |

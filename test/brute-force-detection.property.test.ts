@@ -9,7 +9,7 @@
  * and flag the incident for admin review.
  *
  * Tests:
- * - <3 distinct IPs targeting the same username do NOT trigger detection
+ * - <10 distinct IPs targeting the same username do NOT trigger detection
  * - 3+ distinct IPs targeting the same username DO trigger banning of all offending IPs
  * - Banned IPs receive 403 on subsequent requests
  */
@@ -163,11 +163,11 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
     redis = new InMemoryRedis();
   });
 
-  it("fewer than 3 distinct IPs targeting the same username do NOT trigger detection", async () => {
+  it("fewer than 10 distinct IPs targeting the same username do NOT trigger detection", async () => {
     await fc.assert(
       fc.asyncProperty(
         usernameArb,
-        distinctIpsArb(1, 2),
+        distinctIpsArb(1, 9),
         async (username, ips) => {
           redis.clear();
 
@@ -204,11 +204,11 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
     );
   });
 
-  it("3 or more distinct IPs targeting the same username trigger banning of ALL offending IPs", async () => {
+  it("10 or more distinct IPs targeting the same username trigger banning of ALL offending IPs", async () => {
     await fc.assert(
       fc.asyncProperty(
         usernameArb,
-        distinctIpsArb(3, 8),
+        distinctIpsArb(10, 15),
         async (username, ips) => {
           redis.clear();
 
@@ -217,8 +217,8 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
             (req: Request) => (req.body as any)?.username ?? null,
           );
 
-          // Send only the first 3 IPs to trigger detection exactly at threshold
-          const triggerIps = ips.slice(0, 3);
+          // Send only the first 10 IPs to trigger detection exactly at threshold
+          const triggerIps = ips.slice(0, 10);
           let detectionTriggered = false;
 
           for (let i = 0; i < triggerIps.length; i++) {
@@ -230,12 +230,12 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
 
             await (middleware as any)(req, mock.res, next);
 
-            if (i === 2) {
-              // The 3rd distinct IP should trigger detection and get 403
+            if (i === 9) {
+              // The 10th distinct IP should trigger detection and get 403
               assert.equal(
                 mock.getStatusCode(),
                 403,
-                `3rd IP should receive 403 when coordinated attack is detected`,
+                `10th IP should receive 403 when coordinated attack is detected`,
               );
               detectionTriggered = true;
             } else {
@@ -248,10 +248,10 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
           assert.equal(
             detectionTriggered,
             true,
-            `Coordinated attack detection should trigger with 3 distinct IPs`,
+              `Coordinated attack detection should trigger with 10 distinct IPs`,
           );
 
-          // ALL 3 offending IPs that were tracked should be banned
+          // All offending IPs that were tracked should be banned
           for (const ip of triggerIps) {
             assert.equal(
               redis.has(`banned_ip:${ip}`),
@@ -269,7 +269,7 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
     await fc.assert(
       fc.asyncProperty(
         usernameArb,
-        distinctIpsArb(3, 3),
+        distinctIpsArb(10, 10),
         usernameArb,
         async (username, ips, subsequentUsername) => {
           redis.clear();
@@ -279,7 +279,7 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
             (req: Request) => (req.body as any)?.username ?? null,
           );
 
-          // First: trigger the coordinated attack detection with exactly 3 IPs
+          // First: trigger the coordinated attack detection with exactly 10 IPs
           for (const ip of ips) {
             const req = createMockRequest(ip, username) as Request;
             const mock = createMockResponse();
@@ -287,7 +287,7 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
             await (middleware as any)(req, mock.res, next);
           }
 
-          // Verify all 3 IPs are now banned
+          // Verify all 10 IPs are now banned
           for (const ip of ips) {
             assert.equal(
               redis.has(`banned_ip:${ip}`),

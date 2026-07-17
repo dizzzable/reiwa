@@ -49,7 +49,8 @@ export interface BannerResolverDeps {
  */
 const MAX_PHOTO_BYTES = 9 * 1024 * 1024;
 
-const RELATIVE_UPLOADS_RE = /^\/uploads\//;
+const RELATIVE_UPLOADS_RE =
+  /^\/uploads\/(?:bot-banners|bot-flow|branding|emoji|faq|icons)\/[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)?$/;
 
 /**
  * Map a configured banner reference to the value `replyWithPhoto`
@@ -83,7 +84,11 @@ export async function resolveBannerSource(
       );
       return null;
     }
-    const fullUrl = `${deps.rezeisAdminUrl.replace(/\/+$/, '')}${url}`;
+    const fullUrl = resolveUploadUrl(url, deps.rezeisAdminUrl);
+    if (fullUrl === null) {
+      deps.logger?.warn({ url }, 'banner-resolver: unsafe relative upload URL');
+      return null;
+    }
     const fetcher = deps.fetch ?? fetch;
     let response: Response;
     try {
@@ -128,4 +133,20 @@ export async function resolveBannerSource(
   // Some other absolute path we don't know how to resolve. Punt.
   deps.logger?.warn({ url }, 'banner-resolver: unsupported URL scheme');
   return null;
+}
+
+function resolveUploadUrl(pathname: string, adminUrl: string): string | null {
+  let base: URL;
+  let resolved: URL;
+  try {
+    base = new URL(adminUrl);
+    resolved = new URL(pathname, base);
+  } catch {
+    return null;
+  }
+  if (base.protocol !== 'http:' && base.protocol !== 'https:') return null;
+  if (base.username !== '' || base.password !== '') return null;
+  if (resolved.origin !== base.origin || resolved.pathname !== pathname) return null;
+  if (resolved.search !== '' || resolved.hash !== '') return null;
+  return resolved.href;
 }

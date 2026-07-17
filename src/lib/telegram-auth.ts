@@ -8,21 +8,22 @@ export interface TelegramUser {
   language_code?: string;
 }
 
-export function parseTelegramInitData(
+/**
+ * Parses untrusted initData for failed-auth diagnostics only.
+ * Never use this result for identity, authorization, or account selection.
+ */
+export function parseUnverifiedTelegramInitData(
   initData: string,
-): { user: TelegramUser; auth_date: number } | null {
+): { auth_date: number } | null {
   try {
     const params = new URLSearchParams(initData);
     const hash = params.get('hash');
     if (!hash) return null;
     params.delete('hash');
 
-    const userRaw = params.get('user');
     const authDate = Number(params.get('auth_date') ?? 0);
-    if (!userRaw) return null;
-
-    const user: TelegramUser = JSON.parse(userRaw);
-    return { user, auth_date: authDate };
+    if (!Number.isSafeInteger(authDate) || authDate <= 0) return null;
+    return { auth_date: authDate };
   } catch {
     return null;
   }

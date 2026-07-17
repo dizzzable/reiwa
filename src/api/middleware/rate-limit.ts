@@ -147,16 +147,25 @@ export const RATE_LIMITS = {
 
 export type RateLimitEndpoint = keyof typeof RATE_LIMITS;
 
+const INCREMENT_WITH_TTL_SCRIPT = `
+local count = redis.call("INCR", KEYS[1])
+local ttl = redis.call("TTL", KEYS[1])
+if ttl < 0 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+  ttl = redis.call("TTL", KEYS[1])
+end
+return { count, ttl }
+`;
+
 /**
  * Creates a Redis-based rate limiting middleware for a specific endpoint.
  *
  * Behavior:
  * - Checks if the IP is banned (banned_ip:{ip} key exists) — returns 429 immediately
- * - Checks the current request count against the configured threshold
- * - If within limits: increments the counter and allows the request through
+ * - Atomically increments the request count and sets its expiry on first use
+ * - If within limits: allows the request through
  * - If exceeded: returns 429 with Retry-After header
- * - If Redis is unavailable: allows the request (fail-open) when no rate limits
- *   have been exceeded; returns 503 when rate limit status cannot be determined
+ * - If Redis is unavailable or returns an invalid result: fails closed with 503
  *
  * @param redis - ioredis instance (or null if unavailable)
  * @param endpoint - The endpoint type to rate limit
@@ -192,35 +201,21 @@ export function createRedisRateLimiter(
       }
 
       const key = config.keyBuilder(ip);
-      const currentCountStr = await redis.get(key);
-      const currentCount = currentCountStr ? parseInt(currentCountStr, 10) : 0;
-
-      // Determine if this request should be blocked
-      const shouldBlock =
-        config.blockBehavior === "at_limit"
-          ? currentCount >= config.maxAttempts
-          : currentCount > config.maxAttempts;
-
-      if (shouldBlock) {
-        // Rate limit exceeded — return 429 with Retry-After
-        const ttl = await redis.ttl(key);
-        const retryAfter = ttl > 0 ? ttl : config.windowSeconds;
-
-        res.setHeader("Retry-After", String(retryAfter));
-        res.status(429).json({
-          message: "Too many requests, please try again later",
-          retryAfter,
-        });
-        return;
+      const result = await redis.eval(
+        INCREMENT_WITH_TTL_SCRIPT,
+        1,
+        key,
+        config.windowSeconds,
+      );
+      if (
+        !Array.isArray(result) ||
+        result.length !== 2 ||
+        !result.every((value) => typeof value === "number" && Number.isInteger(value))
+      ) {
+        throw new Error("Invalid Redis rate-limit script result");
       }
-
-      // Increment the counter
-      const newCount = await redis.incr(key);
-
-      // Set TTL on first increment (when key was just created)
-      if (newCount === 1) {
-        await redis.expire(key, config.windowSeconds);
-      }
+      const [newCount, ttl] = result;
+      const retryAfter = ttl > 0 ? ttl : config.windowSeconds;
 
       // After incrementing, check if we've now hit the limit
       const nowExceeded =
@@ -230,9 +225,6 @@ export function createRedisRateLimiter(
 
       if (nowExceeded && config.blockBehavior === "at_limit") {
         // For "at_limit" behavior: the request that hits the limit is also blocked
-        const ttl = await redis.ttl(key);
-        const retryAfter = ttl > 0 ? ttl : config.windowSeconds;
-
         // If this endpoint bans on exceed, ban the IP
         if (config.onExceed === "ban") {
           await redis.set(
@@ -254,9 +246,6 @@ export function createRedisRateLimiter(
 
       // For "after_limit" behavior: check if we just exceeded after increment
       if (nowExceeded && config.blockBehavior === "after_limit") {
-        const ttl = await redis.ttl(key);
-        const retryAfter = ttl > 0 ? ttl : config.windowSeconds;
-
         if (config.onExceed === "ban") {
           await redis.set(
             bannedIpKey(ip),

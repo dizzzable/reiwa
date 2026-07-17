@@ -5,7 +5,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
-import { diagnoseTelegramInitData, parseTelegramInitData, validateTelegramInitData, validateTelegramWidget } from "../../lib/telegram-auth.js";
+import { diagnoseTelegramInitData, parseUnverifiedTelegramInitData, validateTelegramInitData, validateTelegramWidget } from "../../lib/telegram-auth.js";
 import { requireMode } from "../middleware/access-mode.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
@@ -605,9 +605,9 @@ export function createAuthRouter(deps: {
       const tgUser = validateTelegramInitData(initData, config.BOT_TOKEN);
       if (!tgUser) {
         // Diagnostic: distinguish a hash mismatch (token/data problem) from a
-        // stale auth_date (clock skew / reused initData). `parse` is unsigned,
-        // it only reads fields so we can log the age.
-        const parsed = parseTelegramInitData(initData);
+        // stale auth_date (clock skew / reused initData). This unsigned parser
+        // returns no identity and is used only to enrich the rejection log.
+        const parsed = parseUnverifiedTelegramInitData(initData);
         const ageSeconds =
           parsed !== null ? Math.floor(Date.now() / 1000) - parsed.auth_date : null;
         const diag = diagnoseTelegramInitData(initData, config.BOT_TOKEN);

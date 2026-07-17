@@ -204,7 +204,6 @@ export function createApp(deps: CreateAppDeps) {
   if (deps.webSessionStore) {
     const sessionConfig: SessionConfig = {
       redisUrl: config.REDIS_URL ?? "",
-      cookieSecret: config.REIWA_COOKIE_SECRET ?? "dev-secret",
       // Secure cookies are forced on in production (cookies only travel
       // over TLS behind the reverse proxy). The explicit
       // `REIWA_ALLOW_INSECURE_COOKIES=true` escape hatch turns that off
