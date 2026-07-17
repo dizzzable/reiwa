@@ -6,7 +6,7 @@
  *
  * Behavior:
  * - Tracks distinct IPs per username using Redis (`brute_force:{username}`)
- * - When 3+ distinct IPs target the same username within the tracking window (1h),
+ * - When 10+ distinct IPs target the same username within the tracking window (1h),
  *   immediately triggers coordinated attack detection
  * - Bans all offending IPs (`banned_ip:{ip}`) with reason, timestamp, and targeted username
  * - Flags the incident for admin review via logging
@@ -46,7 +46,9 @@ interface CoordinatedAttackIncident {
 // ── Configuration ───────────────────────────────────────────────────────────
 
 /** Number of distinct IPs targeting the same username to trigger detection */
-const COORDINATED_ATTACK_THRESHOLD = 3;
+// Three addresses is common for mobile/home/work transitions and shared NATs.
+// Ten distinct sources in one hour remains a strong distributed-attack signal.
+const COORDINATED_ATTACK_THRESHOLD = 10;
 
 // ── Incident Logger ─────────────────────────────────────────────────────────
 
@@ -81,7 +83,7 @@ function flagIncidentForAdminReview(
  * Creates a middleware that:
  * 1. Checks if the requesting IP is already banned
  * 2. Records the attempt (IP + username) in Redis
- * 3. Detects coordinated attacks (3+ distinct IPs targeting same username)
+ * 3. Detects coordinated attacks (10+ distinct IPs targeting same username)
  * 4. Bans all offending IPs and flags the incident
  *
  * @param getRedis - Function that returns the Redis client instance
