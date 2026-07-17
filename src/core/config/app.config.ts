@@ -184,7 +184,6 @@ const schema = z.object({
    * deployments don't break during the rename.
    */
   REIWA_PUBLIC_WEB_URL: optionalUrl,
-  REIWA_COOKIE_SECRET: z.string().trim().min(1).optional(),
   REIWA_COOKIE_SECURE: z
     .string()
     .optional()

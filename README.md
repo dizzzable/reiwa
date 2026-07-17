@@ -85,7 +85,6 @@ docker network create remnawave-network 2>/dev/null || true
 
 # 4. Сгенерировать секреты прямо в .env (создаются на месте):
 sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$(openssl rand -hex 16)|" .env
-sed -i "s|^REIWA_COOKIE_SECRET=.*|REIWA_COOKIE_SECRET=$(openssl rand -hex 24)|" .env
 sed -i "s|^REZEIS_INTERNAL_SHARED_SECRET=.*|REZEIS_INTERNAL_SHARED_SECRET=$(openssl rand -hex 24)|" .env
 
 # 5. Дозаполнить вручную:
@@ -285,7 +284,7 @@ reiwa/
 | `REZEIS_INTERNAL_SHARED_SECRET` | — | HMAC-подпись внутренних хопов reiwa→admin и reiwa-api→bot (≥32 симв.) |
 | `REZEIS_WEBHOOK_SECRET` | ✅ | Проверка входящих вебхуков от rezeis-admin (`X-Rezeis-Signature`) |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_NAME`, `REDIS_PASSWORD` | ✅ | Redis для сессий / rate-limit / FSM бота |
-| `REIWA_COOKIE_SECRET`, `REIWA_COOKIE_SECURE` | — | Секрет и `Secure`-флаг session-cookie |
+| `REIWA_COOKIE_SECURE` | `true` в production | `Secure`-флаг session-cookie; cookie хранит opaque UUID, валидируемый через Redis |
 | `REIWA_ALLOW_DEGRADED` | — | `true` — разрешить старт при недоступном Redis (по умолчанию fail-closed) |
 | `REIWA_ALLOW_INSECURE_COOKIES` | — | `true` — разрешить небезопасные cookie (только осознанно) |
 

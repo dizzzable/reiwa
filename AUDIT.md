@@ -299,14 +299,14 @@ Relevant examples (now refactored):
 - `src/api/routes/auth.ts`
 - `src/api/routes/linking.ts`
 
-#### `REIWA_COOKIE_SECRET` is accepted but not actually used for signing
+#### `REIWA_COOKIE_SECRET` is accepted but not actually used for signing — ✅ RESOLVED (2026-07-17)
 
 Session cookies store a UUID only, which is server-side validated in Redis, so signing is less critical. Still, config contains `cookieSecret`, but middleware does not sign cookies.
 
-Recommendation:
-
-- Either remove/deprecate `REIWA_COOKIE_SECRET`, or use signed cookies consistently.
-- Document threat model: opaque random session id + Redis validation is acceptable if entropy is high and cookie is secure/httpOnly/sameSite.
+The dead option was removed from config and operator documentation. Session
+cookies contain opaque random UUIDs; Redis lookup is the authority. Signing
+would not prevent replay of a stolen cookie and modifying an ID cannot create a
+valid server-side session.
 
 #### CSRF protection permits no Origin/Referer
 

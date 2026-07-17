@@ -32,7 +32,6 @@ export interface WebSession {
 
 export interface SessionConfig {
   redisUrl: string;
-  cookieSecret: string;
   cookieSecure: boolean;
   isProduction: boolean;
   /**
