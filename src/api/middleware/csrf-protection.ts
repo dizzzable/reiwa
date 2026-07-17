@@ -11,8 +11,8 @@ import { Request, Response, NextFunction } from "express";
  * - For state-changing methods (POST, PUT, DELETE, PATCH):
  *   1. If Origin header is present, validate it matches the allowed origin.
  *   2. If Origin is absent, fall back to Referer header validation.
- *   3. If neither Origin nor Referer is present, allow the request (non-browser
- *      clients like server-to-server calls or curl don't send these headers).
+ *   3. If neither is present, reject authenticated web sessions and allow
+ *      non-browser/server-to-server requests to use their own authentication.
  *   4. If Origin/Referer is present but doesn't match, reject with 403.
  */
 
@@ -79,9 +79,8 @@ export function createCsrfProtection(options: CsrfOptions) {
 
     const isAllowed = (candidate: string | null): boolean => {
       if (candidate === null) return false;
-      if (allowedOrigin !== null && candidate === allowedOrigin) return true;
-      if (selfOrigin !== null && candidate === selfOrigin) return true;
-      return false;
+      if (allowedOrigin !== null) return candidate === allowedOrigin;
+      return selfOrigin !== null && candidate === selfOrigin;
     };
 
     // If Origin header is present, validate it
@@ -106,10 +105,13 @@ export function createCsrfProtection(options: CsrfOptions) {
       return;
     }
 
-    // Neither Origin nor Referer present — allow the request.
-    // Non-browser clients (server-to-server, curl, mobile apps) typically
-    // don't send these headers. Combined with SameSite=lax cookies, this is
-    // safe because browsers always send Origin on cross-origin POST requests.
+    // Cookie-authenticated browser requests must prove their origin. Requests
+    // without a web session continue to their route-specific authentication,
+    // including HMAC-authenticated webhooks.
+    if (req.webSession) {
+      res.status(403).json({ message: "Forbidden: origin required" });
+      return;
+    }
     next();
   };
 }
