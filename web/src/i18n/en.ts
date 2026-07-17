@@ -865,6 +865,7 @@ export const en: RuDict = {
     checkoutError: 'Failed to create payment. Please try again later.',
   },
   deleteSubscription: {
+    open: 'Delete subscription',
     title: 'Delete subscription?',
     body: 'Do you really want to delete the subscription "{{name}}"?',
     warning: 'This is irreversible. Access stops immediately and there is no refund.',

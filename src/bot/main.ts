@@ -52,6 +52,19 @@ import {
 } from '../infrastructure/i18n/index.js';
 import { createLogger } from '../infrastructure/logger/index.js';
 import { createLocaleDetectMiddleware } from './middleware/locale-detect.js';
+import { getMissingBotTokenError } from './startup-policy.js';
+
+const productionBotTokenError = getMissingBotTokenError({
+  nodeEnv: process.env.NODE_ENV,
+  botToken: process.env.BOT_TOKEN,
+});
+if (productionBotTokenError) {
+  // Keep this check before config parsing so an empty BOT_TOKEN gets the same
+  // actionable message as an unset token instead of a generic schema error.
+  // eslint-disable-next-line no-console
+  console.error(`[reiwa-bot] startup failed: ${productionBotTokenError}`);
+  process.exit(1);
+}
 
 const config = loadConfig();
 const reiwaPublicUrl = resolveReiwaPublicUrl(config);
@@ -108,6 +121,14 @@ async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig>
 // ── Bot startup ───────────────────────────────────────────────────────────────
 
 async function startBot(): Promise<void> {
+  const missingBotTokenError = getMissingBotTokenError({
+    nodeEnv: process.env.NODE_ENV,
+    botToken: config.BOT_TOKEN,
+  });
+  if (missingBotTokenError) {
+    throw new Error(missingBotTokenError);
+  }
+
   if (!config.BOT_TOKEN) {
     console.warn('[reiwa-bot] BOT_TOKEN not set — bot disabled');
     process.stdin.resume();

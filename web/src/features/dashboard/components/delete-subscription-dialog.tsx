@@ -2,7 +2,7 @@
  * DeleteSubscriptionDialog
  * ────────────────────────
  * Centered yes/no confirmation for self-service subscription deletion, opened
- * by a long-press on the subscription card. Deletion is final and
+ * by the card delete button or its long-press shortcut. Deletion is final and
  * non-refundable; the copy makes that explicit. Confirm is disabled while the
  * request is in flight to prevent double submission.
  */
