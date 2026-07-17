@@ -22,6 +22,11 @@ function fakeRedis() {
       store.set(k, String(n));
       return n;
     },
+    eval: async (_script: string, _keyCount: number, k: string) => {
+      const n = parseInt(store.get(k) ?? "0", 10) + 1;
+      store.set(k, String(n));
+      return [n, 60];
+    },
     expire: async () => 1,
     ttl: async () => 60,
     set: async (k: string, v: string) => {

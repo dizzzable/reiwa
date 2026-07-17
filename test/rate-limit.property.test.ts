@@ -71,6 +71,17 @@ class InMemoryRedis {
     return remaining > 0 ? remaining : -2;
   }
 
+  async eval(
+    _script: string,
+    _numberOfKeys: number,
+    key: string,
+    windowSeconds: number,
+  ): Promise<[number, number]> {
+    const count = await this.incr(key);
+    if (count === 1) await this.expire(key, windowSeconds);
+    return [count, await this.ttl(key)];
+  }
+
   clear(): void {
     this.store.clear();
   }
@@ -197,6 +208,27 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
         }),
         { numRuns: 100 },
       );
+    });
+
+    it("allows exactly 5 requests during a concurrent burst", async () => {
+      const ip = "203.0.113.10";
+      const middleware = createRedisRateLimiter(redis as unknown as any, "login");
+
+      const results = await Promise.all(
+        Array.from({ length: 50 }, async () => {
+          const req = createMockRequest(ip);
+          const res = createMockResponse();
+          let passed = false;
+          await middleware(req, res, () => {
+            passed = true;
+          });
+          return { passed, statusCode: res.statusCode };
+        }),
+      );
+
+      assert.equal(results.filter(({ passed }) => passed).length, 5);
+      assert.equal(results.filter(({ statusCode }) => statusCode === 429).length, 45);
+      assert.ok(await redis.ttl(RATE_LIMITS.login.keyBuilder(ip)) > 0);
     });
   });
 
