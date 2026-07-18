@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Check, RotateCcw } from "lucide-react";
@@ -1132,20 +1132,24 @@ function CheckoutStep() {
   const addOnsPayload = selectedSubscriptionIds
     .filter((id) => (selectedAddOns[id]?.length ?? 0) > 0)
     .map((id) => ({ subscriptionId: id, addOnIds: selectedAddOns[id]! }));
+  const [attemptId] = useState(() => crypto.randomUUID());
   // Stable per checkout attempt (per mount): a double-invoke / network-ambiguous
   // retry replays the existing draft instead of minting a second PENDING
   // combined-renewal transaction. A fresh attempt (remount) gets a new key.
   const idempotencyKey = useMemo(
     () =>
-      createRenewalIdempotencyKey({
-        subscriptionIds: selectedSubscriptionIds,
-        gatewayType: selectedGateway?.id ?? "",
-        quote: reviewQuote ?? { amount: "", currency: "" },
-        durations: durationsPayload,
-        plans: plansPayload,
-        addOns: addOnsPayload,
-        savedPaymentMethodId: selectedSavedPaymentMethodId,
-      }),
+      createRenewalIdempotencyKey(
+        {
+          subscriptionIds: selectedSubscriptionIds,
+          gatewayType: selectedGateway?.id ?? "",
+          quote: reviewQuote ?? { amount: "", currency: "" },
+          durations: durationsPayload,
+          plans: plansPayload,
+          addOns: addOnsPayload,
+          savedPaymentMethodId: selectedSavedPaymentMethodId,
+        },
+        attemptId,
+      ),
     [
       selectedSubscriptionIds,
       selectedGateway?.id,
@@ -1154,6 +1158,7 @@ function CheckoutStep() {
       plansPayload,
       addOnsPayload,
       selectedSavedPaymentMethodId,
+      attemptId,
     ],
   );
 

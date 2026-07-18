@@ -237,7 +237,7 @@ function CarouselSlide({
           event.stopPropagation();
           onDelete();
         }}
-        className="absolute top-3 right-7 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white/80 shadow-lg backdrop-blur-md transition-colors hover:bg-red-500/80 hover:text-white focus-visible:border-red-300 focus-visible:ring-3 focus-visible:ring-red-300/60 focus-visible:outline-none"
+        className="absolute top-4 right-5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white/80 shadow-lg backdrop-blur-md transition-colors hover:bg-red-500/80 hover:text-white focus-visible:border-red-300 focus-visible:ring-3 focus-visible:ring-red-300/60 focus-visible:outline-none"
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
       </button>

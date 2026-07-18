@@ -21,9 +21,10 @@ function stableJson(value: unknown): string {
 }
 
 /** Deterministic draft fingerprint; retries/remounts reuse the same key. */
-export function createRenewalIdempotencyKey(draft: RenewalCheckoutDraft): string {
+export function createRenewalIdempotencyKey(draft: RenewalCheckoutDraft, attemptId: string): string {
   const payload = stableJson({
     ...draft,
+    attemptId,
     subscriptionIds: [...draft.subscriptionIds].map(String),
     savedPaymentMethodId: draft.savedPaymentMethodId ?? null,
   });

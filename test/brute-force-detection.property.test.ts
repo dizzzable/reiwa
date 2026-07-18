@@ -14,7 +14,7 @@
  * - Banned IPs receive 403 on subsequent requests
  */
 
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
 import { createBruteForceDetection } from "../src/api/middleware/brute-force-detection.js";
@@ -161,6 +161,7 @@ describe("Property 22: Coordinated Brute-Force Detection", () => {
 
   beforeEach(() => {
     redis = new InMemoryRedis();
+    mock.method(console, "warn", () => undefined);
   });
 
   it("fewer than 10 distinct IPs targeting the same username do NOT trigger detection", async () => {

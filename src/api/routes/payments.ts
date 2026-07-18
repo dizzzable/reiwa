@@ -289,18 +289,6 @@ export function createPaymentsRouter(deps: {
     },
   );
 
-  // POST /api/v1/payments/webhooks/:gatewayType
-  // NOTE: must be registered before /:paymentId to avoid route shadowing
-  router.post("/payments/webhooks/:gatewayType", async (req, res) => {
-    try {
-      const { gatewayType } = req.params as Record<string, string>;
-      const result = await adminClient?.payments.forwardWebhook(gatewayType, req.body);
-      res.json(result ?? { received: true });
-    } catch (e: unknown) {
-      sendSafeError(req, res, e, 500, "Webhook processing failed", "payments/webhooks");
-    }
-  });
-
   // GET /api/v1/payments/:paymentId
   router.get(
     "/payments/:paymentId",

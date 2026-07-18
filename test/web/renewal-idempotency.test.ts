@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createRenewalIdempotencyKey } from '../../web/src/features/renewal/renewal-idempotency.js';
 
 describe('renewal idempotency key', () => {
-  it('is stable for the same draft across retry and remount', () => {
+  it('is stable for retries within one checkout attempt', () => {
     const draft = {
       subscriptionIds: ['sub-2', 'sub-1'],
       gatewayType: 'YOOKASSA',
@@ -13,12 +13,16 @@ describe('renewal idempotency key', () => {
       addOns: [{ subscriptionId: 'sub-1', addOnIds: ['addon-1'] }],
     } as const;
 
-    const first = createRenewalIdempotencyKey(draft);
-    const retry = createRenewalIdempotencyKey({ ...draft });
-    const remount = createRenewalIdempotencyKey({ ...draft, subscriptionIds: ['sub-1', 'sub-2'] });
+    const first = createRenewalIdempotencyKey(draft, 'attempt-1');
+    const retry = createRenewalIdempotencyKey({ ...draft }, 'attempt-1');
+    const reordered = createRenewalIdempotencyKey(
+      { ...draft, subscriptionIds: ['sub-1', 'sub-2'] },
+      'attempt-1',
+    );
 
     expect(first).toBe(retry);
-    expect(remount).toBe(first);
+    expect(reordered).toBe(first);
+    expect(createRenewalIdempotencyKey(draft, 'attempt-2')).not.toBe(first);
   });
 
   it('changes when a checkout-defining field changes', () => {
@@ -31,8 +35,8 @@ describe('renewal idempotency key', () => {
       addOns: [],
     } as const;
 
-    expect(createRenewalIdempotencyKey(base)).not.toBe(
-      createRenewalIdempotencyKey({ ...base, gatewayType: 'STRIPE' }),
+    expect(createRenewalIdempotencyKey(base, 'attempt-1')).not.toBe(
+      createRenewalIdempotencyKey({ ...base, gatewayType: 'STRIPE' }, 'attempt-1'),
     );
   });
 });
