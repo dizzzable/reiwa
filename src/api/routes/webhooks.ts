@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 
 import type { ReiwaConfig } from "../../config.js";
 import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
@@ -13,6 +14,22 @@ import {
   REQUEST_TIMESTAMP_HEADER,
   buildInternalSignature,
 } from "../../lib/internal-hmac.js";
+
+const parseModeSchema = z.enum(["HTML", "MarkdownV2"]);
+const buttonSchema = z.object({ text: z.string().trim().min(1).max(64), url: z.string().url().max(2048).refine((value) => value.startsWith("https://")), callbackData: z.never().optional(), webAppPath: z.never().optional() }).strict();
+const buttonsSchema = z.array(buttonSchema).max(20);
+const eventIdSchema = z.string().trim().min(1).max(128);
+const textSchema = z.string().trim().min(1).max(4096);
+const captionSchema = z.string().max(1024);
+const filenameSchema = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9._-]+$/);
+const chatIdSchema = z.string().regex(/^-?\d{1,19}$/);
+const telegramIdSchema = z.string().regex(/^\d{1,19}$/);
+const topicThreadIdSchema = z.number().int().positive();
+const documentContentSchema = z.string().min(1).max(1_000_000);
+
+function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, unknown>): T {
+  return schema.parse(metadata);
+}
 
 /**
  * Inbound rezeis-admin webhook receiver — the snoups/remnashop model.
@@ -40,7 +57,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
 
   const secret = config.REZEIS_WEBHOOK_SECRET;
   const botUrl = config.REIWA_BOT_INTERNAL_URL.replace(/\/+$/, "");
-  const relaySecret = config.REZEIS_INTERNAL_SHARED_SECRET ?? null;
+  const relaySecret = config.REZEIS_INTERNAL_SHARED_SECRET;
 
   router.post("/webhooks/rezeis", async (req: Request, res: Response) => {
     // 1. Verify the admin signature over the RAW body (captured by the
@@ -73,13 +90,8 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           break;
         }
         case "reiwa.user.notify": {
-          const telegramId = str(meta["telegramId"]);
-          const text = str(meta["text"]);
-          const eventId = str(meta["eventId"]);
-          if (!telegramId || !text || !eventId) {
-            res.status(400).json({ message: "missing telegramId/text/eventId" });
-            return;
-          }
+          const parsed = parseRelayMetadata(z.object({ telegramId: telegramIdSchema, text: textSchema, eventId: eventIdSchema, parseMode: parseModeSchema.optional(), buttons: buttonsSchema.optional(), bannerUrl: z.string().url().max(2048).refine((value) => value.startsWith("https://")).optional() }).strict(), meta);
+          const { telegramId, text, eventId } = parsed;
           // The bot's /notify only accepts a plain Telegram numeric id
           // (1-19 digits). A non-numeric / out-of-range value (e.g. a dirty
           // imported id, or a negative chat id) would be rejected there with a
@@ -98,9 +110,9 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             eventId,
             telegramId,
             text,
-            ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
-            ...(Array.isArray(meta["buttons"]) ? { buttons: meta["buttons"] } : {}),
-            ...(str(meta["bannerUrl"]) ? { bannerUrl: str(meta["bannerUrl"]) } : {}),
+            ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
+            ...(parsed.buttons ? { buttons: parsed.buttons } : {}),
+            ...(parsed.bannerUrl ? { bannerUrl: parsed.bannerUrl } : {}),
           });
           // Surface the Telegram message id back to admin so it can persist
           // it (broadcast edits/deletes need it within the 48h window).
@@ -111,14 +123,10 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // Auto dev-fallback: deliver a system-event card to the bot's
           // BOT_DEV_ID (the bot knows it; rezeis doesn't). Used when no
           // operator group/topic is configured. Best-effort.
-          const text = str(meta["text"]);
-          if (!text) {
-            res.status(400).json({ message: "missing text" });
-            return;
-          }
+          const parsed = parseRelayMetadata(z.object({ text: textSchema, parseMode: parseModeSchema.optional() }).strict(), meta);
           await relayToBot("/notify-dev", {
-            text,
-            ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
+            text: parsed.text,
+            ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
           });
           break;
         }
@@ -126,36 +134,24 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // Auto dev-fallback (errors): deliver the full `.txt` error report as
           // a Telegram document to the bot's BOT_DEV_ID, with the sectioned
           // card as caption + a Close button. Best-effort.
-          const content = str(meta["content"]);
-          if (!content) {
-            res.status(400).json({ message: "missing content" });
-            return;
-          }
+          const parsed = parseRelayMetadata(z.object({ content: documentContentSchema, filename: filenameSchema.optional(), caption: captionSchema.optional(), parseMode: parseModeSchema.optional() }).strict(), meta);
           await relayToBot("/notify-dev-document", {
-            content,
-            ...(str(meta["filename"]) ? { filename: str(meta["filename"]) } : {}),
-            ...(str(meta["caption"]) ? { caption: str(meta["caption"]) } : {}),
-            ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
+            content: parsed.content,
+            ...(parsed.filename ? { filename: parsed.filename } : {}),
+            ...(parsed.caption ? { caption: parsed.caption } : {}),
+            ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
           });
           break;
         }
         case "reiwa.channel.broadcast": {
-          const chatId = str(meta["chatId"]);
-          const text = str(meta["text"]);
-          const eventId = str(meta["eventId"]);
-          if (!chatId || !text || !eventId) {
-            res.status(400).json({ message: "missing chatId/text/eventId" });
-            return;
-          }
+          const parsed = parseRelayMetadata(z.object({ chatId: chatIdSchema, text: textSchema, eventId: eventIdSchema, topicThreadId: topicThreadIdSchema.optional(), parseMode: parseModeSchema.optional(), buttons: buttonsSchema.optional() }).strict(), meta);
           await relayToBot("/notify-broadcast", {
-            eventId,
-            chatId,
-            text,
-            ...(typeof meta["topicThreadId"] === "number"
-              ? { topicThreadId: meta["topicThreadId"] }
-              : {}),
-            ...(str(meta["parseMode"]) ? { parseMode: str(meta["parseMode"]) } : {}),
-            ...(Array.isArray(meta["buttons"]) ? { buttons: meta["buttons"] } : {}),
+            eventId: parsed.eventId,
+            chatId: parsed.chatId,
+            text: parsed.text,
+            ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
+            ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
+            ...(parsed.buttons ? { buttons: parsed.buttons } : {}),
           });
           break;
         }
@@ -163,22 +159,14 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // rezeis hands the bot a signed download URL token; the bot fetches
           // the backup file from rezeis (docker hop) and uploads it to the
           // configured chat/topic. No bytes travel through this webhook.
-          const recordId = str(meta["recordId"]);
-          const token = str(meta["token"]);
-          const chatId = str(meta["chatId"]);
-          if (!recordId || !token || !chatId) {
-            res.status(400).json({ message: "missing recordId/token/chatId" });
-            return;
-          }
+          const parsed = parseRelayMetadata(z.object({ recordId: eventIdSchema, token: z.string().trim().min(1).max(2048), chatId: chatIdSchema, filename: filenameSchema.optional(), caption: captionSchema.optional(), topicThreadId: topicThreadIdSchema.optional() }).strict(), meta);
           await relayToBot("/notify-backup-document", {
-            recordId,
-            token,
-            chatId,
-            ...(str(meta["filename"]) ? { filename: str(meta["filename"]) } : {}),
-            ...(str(meta["caption"]) ? { caption: str(meta["caption"]) } : {}),
-            ...(typeof meta["topicThreadId"] === "number"
-              ? { topicThreadId: meta["topicThreadId"] }
-              : {}),
+            recordId: parsed.recordId,
+            token: parsed.token,
+            chatId: parsed.chatId,
+            ...(parsed.filename ? { filename: parsed.filename } : {}),
+            ...(parsed.caption ? { caption: parsed.caption } : {}),
+            ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
           });
           break;
         }
@@ -212,6 +200,10 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
       }
       res.status(204).end();
     } catch (err: unknown) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ message: "invalid webhook metadata" });
+        return;
+      }
       if (err instanceof BotRelayError && err.status >= 400 && err.status < 500) {
         // The bot rejected the payload as permanently invalid (4xx) — e.g. a
         // telegramId that isn't a Telegram numeric id, or empty text. A retry
@@ -242,16 +234,10 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
   async function relayToBot(path: string, body: unknown): Promise<{ messageId: number | null }> {
     const bodyStr = JSON.stringify(body);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (relaySecret) {
-      const { timestamp, signature } = buildInternalSignature({
-        secret: relaySecret,
-        method: "POST",
-        path,
-        body: bodyStr,
-      });
-      headers[REQUEST_TIMESTAMP_HEADER] = timestamp;
-      headers[REQUEST_SIGNATURE_HEADER] = signature;
-    }
+    if (!relaySecret) throw new Error("bot relay authentication is not configured");
+    const { timestamp, signature } = buildInternalSignature({ secret: relaySecret, method: "POST", path, body: bodyStr });
+    headers[REQUEST_TIMESTAMP_HEADER] = timestamp;
+    headers[REQUEST_SIGNATURE_HEADER] = signature;
     const resp = await fetch(`${botUrl}${path}`, {
       method: "POST",
       headers,

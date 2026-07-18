@@ -250,6 +250,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ReiwaConfig {
 
   const cfg = parsed.data;
 
+  if (cfg.NODE_ENV === 'production') {
+    const missing: string[] = [];
+    if (!cfg.REIWA_CORS_ORIGIN) missing.push('REIWA_CORS_ORIGIN');
+    if (!cfg.REZEIS_INTERNAL_SHARED_SECRET) missing.push('REZEIS_INTERNAL_SHARED_SECRET');
+    if (missing.length > 0) {
+      throw new Error(`Missing required production configuration: ${missing.join(', ')}`);
+    }
+  }
+
   // Derive REDIS_URL from the discrete REDIS_* parts when an explicit URL
   // wasn't supplied. The deploy `.env` ships REDIS_HOST/PORT/PASSWORD/NAME
   // (not a single URL), and the whole edge layer — sessions + rate limiter +

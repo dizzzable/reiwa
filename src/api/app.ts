@@ -195,7 +195,7 @@ export function createApp(deps: CreateAppDeps) {
   // ── CORS ──────────────────────────────────────────────────────────────────
   app.use(
     cors({
-      origin: config.REIWA_CORS_ORIGIN ?? reiwaPublicUrl ?? true,
+      origin: config.REIWA_CORS_ORIGIN ?? reiwaPublicUrl ?? false,
       credentials: true,
     }),
   );
