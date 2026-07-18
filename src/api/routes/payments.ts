@@ -240,7 +240,7 @@ export function createPaymentsRouter(deps: {
             gatewayType,
             expectedAmount: typeof expectedAmount === "string" ? normalizeWireDecimal(expectedAmount)! : expectedAmount,
             expectedCurrency,
-            channel: context === "tma" ? "TMA" : "WEB",
+            channel: context === "tma" ? "TELEGRAM" : "WEB",
             successUrl,
             failUrl,
             ...(durationsValid
