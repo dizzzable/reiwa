@@ -13,7 +13,7 @@
  *   - Edge arrows for desktop / accessibility.
  */
 
-import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -126,8 +126,6 @@ export function SubscriptionCarousel({
             firstDevice={firstDeviceById?.[sub.id] ?? null}
             effectActive={i === activeIndex}
             onLongPress={() => setDeleteTarget(sub)}
-            onDelete={() => setDeleteTarget(sub)}
-            deleteLabel={t("deleteSubscription.open")}
           />
         ))}
       </div>
@@ -196,16 +194,12 @@ function CarouselSlide({
   firstDevice,
   effectActive,
   onLongPress,
-  onDelete,
-  deleteLabel,
 }: {
   subscription: Subscription;
   index: number;
   firstDevice: string | null;
   effectActive: boolean;
   onLongPress: () => void;
-  onDelete: () => void;
-  deleteLabel: string;
 }) {
   const longPress = useLongPress(onLongPress);
   return (
@@ -228,19 +222,6 @@ function CarouselSlide({
         firstDevice={firstDevice}
         effectActive={effectActive}
       />
-      <button
-        type="button"
-        aria-label={deleteLabel}
-        title={deleteLabel}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete();
-        }}
-        className="absolute top-4 right-5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white/80 shadow-lg backdrop-blur-md transition-colors hover:bg-red-500/80 hover:text-white focus-visible:border-red-300 focus-visible:ring-3 focus-visible:ring-red-300/60 focus-visible:outline-none"
-      >
-        <Trash2 className="h-4 w-4" aria-hidden="true" />
-      </button>
     </div>
   );
 }
