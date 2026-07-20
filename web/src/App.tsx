@@ -62,6 +62,7 @@ const MyAddOnsPage = lazy(() => import("@/features/settings/my-addons-page"));
 const FaqPage = lazy(() => import("@/features/settings/faq-page"));
 const PromocodesSettingsPage = lazy(() => import("@/features/settings/promocodes-page"));
 const SupportPage = lazy(() => import("@/features/support/support-page"));
+const AiSupportPage = lazy(() => import("@/features/support/ai-support-page"));
 const PointsExchangePage = lazy(() => import("@/features/referrals/points-exchange-page"));
 const OnboardingPage = lazy(() => import("@/features/onboarding/onboarding-page"));
 const ClaimPage = lazy(() => import("@/features/auth/claim-page"));
@@ -125,6 +126,7 @@ export default function App() {
           <Route path="/settings/faq" element={<FaqPage />} />
           <Route path="/settings/promocodes" element={<PromocodesSettingsPage />} />
           <Route path="/support" element={<SupportPage />} />
+          <Route path="/support/ai" element={<AiSupportPage />} />
         </Route>
 
         {/* Unknown paths fall through to the web home which routes the

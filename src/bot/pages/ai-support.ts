@@ -53,10 +53,8 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
   const { adminClient } = deps;
 
   /**
-   * Resolve OpenAI settings the same way the cabinet does: local env first,
-   * then the rezeis panel config. Without this the bot would report "AI
-   * unavailable" whenever the key is set ONLY in the panel (the documented
-   * fallback path), while the cabinet works — an inconsistent half-config.
+   * Resolve OpenAI-compatible settings from rezeis panel only (encrypted API
+   * key at rest). Same source as the cabinet — never OPENAI_* env on reiwa.
    */
   interface BotAiRuntime {
     enabled: boolean;
@@ -65,10 +63,6 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
   }
 
   const resolveAiConfig = async (): Promise<BotAiRuntime | null> => {
-    const { loadConfig } = await import("../../config.js");
-    const envConfig = loadConfig();
-    const envKey = envConfig.OPENAI_API_KEY;
-
     let panelKey = "";
     let panelBaseUrl = "";
     let panelModel = "";
@@ -98,14 +92,13 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       }
     }
 
-    const apiKey = envKey || panelKey;
-    if (!apiKey) return null;
+    if (!panelKey) return null;
     return {
-      enabled: envKey ? true : panelEnabled,
+      enabled: panelEnabled,
       config: {
-        OPENAI_API_KEY: apiKey,
-        OPENAI_API_URL: (envKey ? envConfig.OPENAI_API_URL : panelBaseUrl) || "",
-        OPENAI_MODEL: (envKey ? envConfig.OPENAI_MODEL : panelModel) || "gpt-4o-mini",
+        OPENAI_API_KEY: panelKey,
+        OPENAI_API_URL: panelBaseUrl || "",
+        OPENAI_MODEL: panelModel || "gpt-4o-mini",
       },
       overrides: [systemPrompt, ...knowledge].filter((s) => s.trim().length > 0),
     };
@@ -241,7 +234,7 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     // Show typing indicator
     await ctx.api.sendChatAction(ctx.chat!.id, "typing");
 
-    // Resolve OpenAI settings (env → rezeis panel) + the operator master switch.
+    // Resolve OpenAI-compatible settings from panel (encrypted key) + master switch.
     const runtime = await resolveAiConfig();
     if (!runtime || !runtime.enabled) {
       clearSupportMode(ctx);

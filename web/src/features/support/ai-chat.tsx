@@ -7,8 +7,8 @@ import type { AiChatMessage } from '@/lib/api-client/ai-chat'
 import { cn } from '@/lib/utils'
 
 /**
- * AI Chat component — embedded in SupportPage alongside ticket system.
- * Sends messages to /api/v1/ai-chat/message with function calling support.
+ * Full-screen AI assistant for basic support questions (plans, VPN setup, apps).
+ * Never mutates account state — recommendations only; live tariffs/FAQ via tools.
  */
 export function AiChat() {
   const { t } = useTranslation()
@@ -39,11 +39,13 @@ export function AiChat() {
     try {
       const res = await sendAiMessage(text, conversationId)
       setConversationId(res.conversationId)
-      setMessages((prev) => [...prev, { role: 'assistant', content: res.response }])
-    } catch (err) {
+      // Guard: API/proxy can return undefined content; never .split on it.
+      const content = (res.response ?? '').trim() || t('support.aiError')
+      setMessages((prev) => [...prev, { role: 'assistant', content }])
+    } catch {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: `😔 ${t('support.aiError')}` },
+        { role: 'assistant', content: t('support.aiError') },
       ])
     } finally {
       setLoading(false)
@@ -53,65 +55,77 @@ export function AiChat() {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      void handleSend()
     }
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3" role="log" aria-live="polite">
+    <div className="flex h-full min-h-0 flex-col">
+      <div
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4"
+        role="log"
+        aria-live="polite"
+      >
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground gap-3">
-            <Bot className="h-12 w-12 opacity-30" />
-            <p className="text-lg font-medium">🤖 {t('support.aiEmptyTitle')}</p>
-            <p className="text-sm max-w-xs">
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-zinc-500">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-(--brand-primary)/25 bg-(--brand-primary)/10">
+              <Bot className="h-7 w-7 text-(--brand-primary)" />
+            </div>
+            <p className="text-base font-medium text-zinc-200">{t('support.aiEmptyTitle')}</p>
+            <p className="max-w-sm text-sm leading-relaxed text-zinc-500">
               {t('support.aiEmptyHint')}
             </p>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-            className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
-          >
-            <div
-              className={cn(
-                'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
-                msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-br-md'
-                  : 'bg-muted rounded-bl-md'
-              )}
+        {messages.map((msg, i) => {
+          const content = msg.content ?? ''
+          const lines = content.split('\n')
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
             >
-              {msg.content.split('\n').map((line, j) => (
-                <span key={j}>
-                  {line}
-                  {j < msg.content.split('\n').length - 1 && <br />}
-                </span>
-              ))}
-            </div>
-          </motion.div>
-        ))}
+              <div
+                className={cn(
+                  'max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
+                  msg.role === 'user'
+                    ? 'rounded-br-sm bg-(--brand-primary)/90 text-white'
+                    : 'rounded-bl-sm bg-zinc-800 text-zinc-100',
+                )}
+              >
+                {lines.map((line, j) => (
+                  <span key={j}>
+                    {line}
+                    {j < lines.length - 1 && <br />}
+                  </span>
+                ))}
+              </div>
+            </motion.div>
+          )
+        })}
         {loading && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="flex justify-start"
           >
-            <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-2.5" role="status" aria-label={t('support.aiThinking')}>
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <div
+              className="rounded-2xl rounded-bl-sm bg-zinc-800 px-4 py-2.5"
+              role="status"
+              aria-label={t('support.aiThinking')}
+            >
+              <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
             </div>
           </motion.div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="border-t p-3">
-        <div className="flex gap-2 items-end">
+      <div className="shrink-0 border-t border-white/[0.06] px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}
             value={input}
@@ -120,15 +134,15 @@ export function AiChat() {
             placeholder={t('support.aiPlaceholder')}
             aria-label={t('support.aiInputLabel')}
             rows={1}
-            className="flex-1 resize-none rounded-xl border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[42px] max-h-[120px]"
+            className="glass-input max-h-[120px] min-h-[42px] flex-1 resize-none rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-(--brand-primary)/40"
             disabled={loading}
           />
           <button
             type="button"
-            onClick={handleSend}
+            onClick={() => void handleSend()}
             disabled={!input.trim() || loading}
             aria-label={t('support.aiSend')}
-            className="h-[42px] w-[42px] rounded-xl bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 transition-opacity"
+            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl bg-(--brand-primary) text-(--brand-primary-fg) transition-opacity disabled:opacity-40"
           >
             <Send className="h-4 w-4" />
           </button>

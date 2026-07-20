@@ -15,9 +15,11 @@
  * Conversations are bound to the caller's identity so one user can never read
  * or append to another's history.
  *
- * AI config resolution:
- *   1. Local env vars (OPENAI_API_KEY, OPENAI_API_URL, OPENAI_MODEL)
- *   2. Fallback: rezeis internal API (/internal/ai-config/settings)
+ * AI config resolution (panel-only):
+ *   rezeis internal API `/internal/ai-config/settings` — baseUrl, encrypted
+ *   API key (decrypted for the BFF), model, enabled, systemPrompt +
+ *   active instructions. No OPENAI_* env vars: the key must not bloat
+ *   reiwa `.env`; it is stored encrypted in admin (`apiKeyEnc` / REZEIS_CRYPT_KEY).
  */
 
 import { Router, type Response } from "express";
@@ -53,28 +55,28 @@ let cachedRuntime: { value: AiRuntime | null; at: number } | null = null;
 const RUNTIME_TTL_MS = 30_000;
 
 /**
- * Resolves the AI runtime. The panel is the source of truth for the master
- * `enabled` switch, operator persona (`systemPrompt`) and curated knowledge; a
- * local env `OPENAI_API_KEY` is treated as an explicit opt-in (enabled) and
- * overrides the key/URL/model. Fails closed: no resolvable key → null.
+ * Resolves the AI runtime exclusively from rezeis-admin panel settings
+ * (key encrypted at rest, decrypted only on the internal BFF channel).
+ * Fails closed: no adminClient / no key / disabled → null or enabled=false.
  */
 async function resolveAiRuntime(
-  config: ReiwaConfig,
+  _config: ReiwaConfig,
   adminClient: AdminClient | null,
   onError: (err: unknown) => void,
 ): Promise<AiRuntime | null> {
   const now = Date.now();
   if (cachedRuntime && now - cachedRuntime.at < RUNTIME_TTL_MS) return cachedRuntime.value;
 
-  const envKey = config.OPENAI_API_KEY;
-  let panelKey = "";
-  let panelBaseUrl = "";
-  let panelModel = "";
-  let panelEnabled = false;
-  let systemPrompt = "";
-  let knowledge: string[] = [];
+  let runtime: AiRuntime | null = null;
 
   if (adminClient) {
+    let panelKey = "";
+    let panelBaseUrl = "";
+    let panelModel = "";
+    let panelEnabled = false;
+    let systemPrompt = "";
+    let knowledge: string[] = [];
+
     try {
       const settings = await adminClient.aiConfig.getSettings();
       panelKey = settings.apiKey || "";
@@ -94,20 +96,17 @@ async function resolveAiRuntime(
     } catch (err) {
       onError(err);
     }
-  }
 
-  const apiKey = envKey || panelKey;
-  let runtime: AiRuntime | null = null;
-  if (apiKey) {
-    runtime = {
-      // Env key = explicit opt-in; otherwise the panel toggle governs.
-      enabled: envKey ? true : panelEnabled,
-      apiKey,
-      baseUrl: envKey ? config.OPENAI_API_URL || "" : panelBaseUrl,
-      model: (envKey ? config.OPENAI_MODEL : panelModel) || "gpt-4o-mini",
-      systemPrompt,
-      knowledge,
-    };
+    if (panelKey) {
+      runtime = {
+        enabled: panelEnabled,
+        apiKey: panelKey,
+        baseUrl: panelBaseUrl,
+        model: panelModel || "gpt-4o-mini",
+        systemPrompt,
+        knowledge,
+      };
+    }
   }
 
   cachedRuntime = { value: runtime, at: now };
@@ -188,7 +187,7 @@ export function createAiChatRouter(deps: {
       );
       if (!runtime) {
         res.status(503).json({
-          error: "AI chat is not configured. Set OPENAI_API_KEY or configure in admin panel.",
+          error: "AI chat is not configured. Set provider key in rezeis admin (AI-Support).",
         });
         return;
       }

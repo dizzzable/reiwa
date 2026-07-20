@@ -1,3 +1,20 @@
+# Reiwa v0.9.6.36
+
+🤖 **AI-Support в кабинете + ключ только из панели** — «Быстрая помощь», full-screen chat, баннер на новом тикете; credentials panel-only (encrypted в rezeis). Парный admin: **rezeis v0.9.6.54**.
+
+### 🐛 / поведение
+- **UX:** иконка ✨ на Support → `/support/ai`; dismissible AI-first banner на «Новый тикет»; empty list CTA; fail-closed если AI выключен.
+- **Ключ:** `OPENAI_*` env **игнорируются**; runtime из `/internal/ai-config` (apiKey decrypt на BFF).
+- **Промпт:** recommendations-only, tools `get_tariffs` / `get_faq`; null-safe content в UI.
+- Bot `/support` AI — тот же panel source.
+
+### ✅ Гейты
+- Codex pre-release: PASS (panel-only, fail-closed, tools whitelist).
+- csrf smoke + rezeis cipher/anonymize suites green.
+
+**Полный список изменений:** https://github.com/dizzzable/reiwa/compare/v0.9.6.35...v0.9.6.36
+
+---
 # Reiwa v0.9.6.35
 
 🛡️ **Лимит мульти-подписок в кабинете + bootstrap privacy + CSRF** — при полном слоте нельзя купить ещё одну подписку; add-on/renew/upgrade остаются. Парный admin: **rezeis v0.9.6.53**.

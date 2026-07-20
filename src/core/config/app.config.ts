@@ -143,17 +143,19 @@ const schema = z.object({
    */
   BOT_INVALIDATE_PORT: z.coerce.number().int().min(1024).max(65535).optional(),
 
-  // ── OpenAI / AI Chat ───────────────────────────────────────────────────
-  /** API key for OpenAI-compatible chat API. Required for AI support chat. */
+  // ── OpenAI / AI Chat (DEPRECATED — ignored at runtime) ─────────────────
+  // Provider key/URL/model live in rezeis-admin AI-Support (encrypted at rest).
+  // Kept optional so old .env files still load without failing validation.
+  /** @deprecated Panel-managed only; ignored by ai-chat routes and bot. */
   OPENAI_API_KEY: optionalString,
-  /** Base URL for OpenAI-compatible API (optional, defaults to OpenAI). */
+  /** @deprecated Panel-managed only; ignored by ai-chat routes and bot. */
   OPENAI_API_URL: z
     .string()
     .trim()
     .url()
     .optional()
     .transform((v) => v || null),
-  /** Model name to use for AI chat responses. */
+  /** @deprecated Panel-managed only; ignored by ai-chat routes and bot. */
   OPENAI_MODEL: z.string().trim().min(1).default("gpt-4o-mini"),
 
   /**
