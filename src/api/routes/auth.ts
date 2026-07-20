@@ -92,6 +92,37 @@ const changePasswordSchema = z.object({
     .regex(/^[a-f0-9]+$/i, "New password hash must be a valid hex string"),
 });
 
+// ── Client error shaping ────────────────────────────────────────────────────
+// Public Mini App users must never see operator/env diagnostics (Origin/CSRF,
+// BOT_TOKEN, REIWA_DOMAIN, upstream dumps). Those go in `debug` only when the
+// authenticated Telegram id equals BOT_DEV_ID. Product AccessMode codes are
+// public by design and do not use this helper.
+
+function isBotDevTelegramId(
+  telegramId: string | null | undefined,
+  config: ReiwaConfig,
+): boolean {
+  if (!telegramId || config.BOT_DEV_ID == null) return false;
+  return telegramId === String(config.BOT_DEV_ID);
+}
+
+function bootstrapClientError(input: {
+  message: string;
+  code?: string;
+  telegramId?: string | null;
+  config: ReiwaConfig;
+  debug?: string;
+}): { message: string; code?: string; debug?: string } {
+  const body: { message: string; code?: string; debug?: string } = {
+    message: input.message,
+  };
+  if (input.code) body.code = input.code;
+  if (input.debug && isBotDevTelegramId(input.telegramId, input.config)) {
+    body.debug = input.debug;
+  }
+  return body;
+}
+
 // ── Router Factory ──────────────────────────────────────────────────────────
 
 export function createAuthRouter(deps: {
@@ -622,16 +653,20 @@ export function createAuthRouter(deps: {
         "",
       );
       if (!initData || !config.BOT_TOKEN) {
-        res
-          .status(400)
-          .json({ message: "Missing init data or bot token not configured" });
+        // Public wording stays neutral; token misconfig is operator-only (logs).
+        getRequestLogger(req).error(
+          { hasInitData: Boolean(initData), hasBotToken: Boolean(config.BOT_TOKEN) },
+          "auth/telegram/bootstrap: missing initData or BOT_TOKEN",
+        );
+        res.status(400).json({ message: "Authentication unavailable" });
         return;
       }
       const tgUser = validateTelegramInitData(initData, config.BOT_TOKEN);
       if (!tgUser) {
         // Diagnostic: distinguish a hash mismatch (token/data problem) from a
         // stale auth_date (clock skew / reused initData). This unsigned parser
-        // returns no identity and is used only to enrich the rejection log.
+        // is used only for server logs — never trust it for BOT_DEV_ID gating
+        // (an attacker can forge user.id without a valid hash).
         const parsed = parseUnverifiedTelegramInitData(initData);
         const ageSeconds =
           parsed !== null ? Math.floor(Date.now() / 1000) - parsed.auth_date : null;
@@ -648,7 +683,7 @@ export function createAuthRouter(deps: {
           },
           "auth/telegram/bootstrap: initData validation failed",
         );
-        res.status(401).json({ message: "Invalid Telegram init data" });
+        res.status(401).json({ message: "Authentication failed" });
         return;
       }
       if (!adminClient) {
@@ -674,7 +709,14 @@ export function createAuthRouter(deps: {
           { telegramId },
           "auth/telegram/bootstrap: signin token issue returned null (blocked/unresolvable)",
         );
-        res.status(403).json({ message: "Access denied" });
+        res.status(403).json(
+          bootstrapClientError({
+            message: "Access denied",
+            telegramId,
+            config,
+            debug: "issueBotSigninToken returned null (user missing or isBlocked)",
+          }),
+        );
         return;
       }
       const consumed = await adminClient.webAuth.consumeBotSigninToken(issued.token);
@@ -683,7 +725,14 @@ export function createAuthRouter(deps: {
           { telegramId },
           "auth/telegram/bootstrap: signin token consume returned null",
         );
-        res.status(401).json({ message: "Authentication failed" });
+        res.status(401).json(
+          bootstrapClientError({
+            message: "Authentication failed",
+            telegramId,
+            config,
+            debug: "consumeBotSigninToken returned null (expired/already used)",
+          }),
+        );
         return;
       }
 
@@ -692,14 +741,104 @@ export function createAuthRouter(deps: {
         await req.createWebSession(consumed.userId);
       } catch (err) {
         getRequestLogger(req).error({ err }, "auth/telegram/bootstrap createWebSession failed");
-        res.status(500).json({ message: "Session setup failed" });
+        res.status(500).json(
+          bootstrapClientError({
+            message: "Session setup failed",
+            telegramId,
+            config,
+            debug: "createWebSession threw — check Redis / cookie config",
+          }),
+        );
         return;
       }
 
       res.json({ ok: true, redirectUrl: "/dashboard" });
     } catch (e: unknown) {
-      getRequestLogger(req).error({ err: e }, "auth/telegram/bootstrap failed");
-      res.status(500).json({ message: "Internal server error" });
+      // Best-effort identity for dev-only diagnostics when validation already
+      // succeeded before the throw, or when we can still parse initData.
+      const initData = (req.headers.authorization ?? "").replace(/^tma\s+/i, "");
+      const maybeUser =
+        initData && config.BOT_TOKEN
+          ? validateTelegramInitData(initData, config.BOT_TOKEN)
+          : null;
+      const telegramId = maybeUser ? String(maybeUser.id) : null;
+
+      // Access-mode gate on brand-new Telegram users (REG_BLOCKED / INVITED
+      // without invite) returns 403 from rezeis-admin. Product codes are
+      // public; raw upstream dumps go only to BOT_DEV_ID via `debug`.
+      if (isUpstreamStatus(e, 403)) {
+        const { message: body } = describeUpstreamError(e);
+        let code: string | undefined;
+        let message = "Access denied";
+        try {
+          const parsed = JSON.parse(body) as {
+            code?: string;
+            message?: string;
+            // Nest often wraps as { statusCode, message: { code, message } }
+            // or { message: string | string[] }.
+          };
+          const nested =
+            parsed && typeof parsed === "object" && "message" in parsed
+              ? parsed.message
+              : null;
+          if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+            const n = nested as { code?: string; message?: string };
+            code = n.code ?? parsed.code;
+            message = n.message ?? parsed.message ?? message;
+          } else if (typeof nested === "string") {
+            code = parsed.code;
+            message = nested;
+          } else if (typeof parsed.message === "string") {
+            code = parsed.code;
+            message = parsed.message;
+          } else if (parsed.code) {
+            code = parsed.code;
+          }
+        } catch {
+          // body wasn't JSON — keep defaults
+        }
+        getRequestLogger(req).warn(
+          { err: body, code, telegramId },
+          "auth/telegram/bootstrap: upstream forbidden",
+        );
+        const productCodes = new Set([
+          "REGISTRATION_DISABLED",
+          "INVITE_REQUIRED",
+          "SERVICE_RESTRICTED",
+        ]);
+        // Product gates: everyone sees the stable code + message.
+        // Misc 403: public message only; debug only for BOT_DEV_ID.
+        if (code && productCodes.has(code)) {
+          res.status(403).json({ code, message });
+          return;
+        }
+        res.status(403).json(
+          bootstrapClientError({
+            code,
+            message: "Access denied",
+            telegramId,
+            config,
+            debug: `upstream 403: ${body.slice(0, 500)}`,
+          }),
+        );
+        return;
+      }
+      if (isUpstreamStatus(e, 503)) {
+        res.status(503).json({
+          code: "SERVICE_RESTRICTED",
+          message: "Service is temporarily unavailable",
+        });
+        return;
+      }
+      getRequestLogger(req).error({ err: e, telegramId }, "auth/telegram/bootstrap failed");
+      res.status(500).json(
+        bootstrapClientError({
+          message: "Internal server error",
+          telegramId,
+          config,
+          debug: describeUpstreamError(e).message.slice(0, 500),
+        }),
+      );
     }
   });
 

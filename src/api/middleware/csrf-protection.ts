@@ -77,10 +77,17 @@ export function createCsrfProtection(options: CsrfOptions) {
     const selfOrigin =
       hostHeader && hostHeader.length > 0 ? `${forwardedProto}://${hostHeader}` : null;
 
+    // Allow either the configured public origin (REIWA_DOMAIN / CORS) OR the
+    // actual request host. Same-origin SPA+API traffic is never CSRF by
+    // definition; requiring only REIWA_DOMAIN previously 403'd legitimate
+    // Mini App POSTs when the operator opened the app via a Host that
+    // slightly differs from REIWA_DOMAIN (www, alternate domain, raw Host
+    // behind a proxy that rewrites differently than env).
     const isAllowed = (candidate: string | null): boolean => {
       if (candidate === null) return false;
-      if (allowedOrigin !== null) return candidate === allowedOrigin;
-      return selfOrigin !== null && candidate === selfOrigin;
+      if (allowedOrigin !== null && candidate === allowedOrigin) return true;
+      if (selfOrigin !== null && candidate === selfOrigin) return true;
+      return false;
     };
 
     // If Origin header is present, validate it

@@ -122,6 +122,15 @@ export interface ActionPolicy {
   canUpgrade: boolean;
   canTrial: boolean;
   requiresNewSubscription?: boolean;
+  /** Non-DELETED subscriptions the user currently holds. */
+  activeSubscriptionCount?: number;
+  /**
+   * Effective cap (per-user `maxSubscriptions` raised by the global multi-sub
+   * default when that policy is enabled).
+   */
+  maxSubscriptions?: number;
+  /** True when activeSubscriptionCount >= maxSubscriptions. */
+  limitReached?: boolean;
 }
 
 // ─── Quote ───────────────────────────────────────────────────────────────────

@@ -68,8 +68,7 @@ export default function BootstrapPage() {
         setPhase('ready')
         navigate(nextDestination ?? result.redirectUrl ?? '/dashboard', { replace: true })
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : t('bootstrap.loginErrorFallback')
-        setErrorMsg(msg)
+        setErrorMsg(resolveBootstrapError(err, t))
         setPhase('error')
         telegram?.HapticFeedback?.notificationOccurred('error')
       }
@@ -121,7 +120,7 @@ export default function BootstrapPage() {
           {phase === 'error' ? (
             <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-6 py-4 text-sm text-red-400">
               <p className="font-medium">{t('bootstrap.loginError')}</p>
-              <p className="mt-1 text-xs text-red-500/80">{errorMsg}</p>
+              <p className="mt-1 text-xs text-red-500/80 whitespace-pre-line">{errorMsg}</p>
               <button
                 onClick={() => {
                   calledRef.current = false
@@ -145,4 +144,77 @@ export default function BootstrapPage() {
       </div>
     </div>
   )
+}
+
+// ── Error mapping ────────────────────────────────────────────────────────────
+// Public users only ever see product-level copy (access mode gates) or a
+// generic "could not sign in". Operator/env diagnostics (Origin/CSRF,
+// BOT_TOKEN, REIWA_DOMAIN, token-null reasons) are never inferred client-side:
+// the BFF attaches them as `debug` only when the caller's Telegram id equals
+// `BOT_DEV_ID` (server-side check).
+
+interface BootstrapErrorBody {
+  code?: string
+  message?: string
+  /** Present only for BOT_DEV_ID — never rely on this for regular UX. */
+  debug?: string
+}
+
+interface AxiosErrorLike {
+  response?: {
+    status: number
+    data?: BootstrapErrorBody | string
+  }
+  message?: string
+}
+
+function isAxiosErrorLike(err: unknown): err is AxiosErrorLike {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'response' in err &&
+    typeof (err as AxiosErrorLike).response?.status === 'number'
+  )
+}
+
+function resolveBootstrapError(
+  err: unknown,
+  t: (key: string) => string,
+): string {
+  if (isAxiosErrorLike(err)) {
+    const data = err.response?.data
+    const body: BootstrapErrorBody =
+      typeof data === 'string'
+        ? { message: data }
+        : data && typeof data === 'object'
+          ? data
+          : {}
+
+    let userMsg: string
+    switch (body.code) {
+      case 'REGISTRATION_DISABLED':
+        userMsg = t('bootstrap.registrationDisabled')
+        break
+      case 'INVITE_REQUIRED':
+        userMsg = t('bootstrap.inviteRequired')
+        break
+      case 'SERVICE_RESTRICTED':
+        userMsg = t('bootstrap.serviceRestricted')
+        break
+      default:
+        // Do not forward raw server strings (Origin/CSRF, Access denied, …)
+        // — they leak deployment internals to every Mini App user.
+        userMsg = t('bootstrap.accessDenied')
+        break
+    }
+
+    // Server only sets `debug` after verifying BOT_DEV_ID against initData.
+    const debug = typeof body.debug === 'string' ? body.debug.trim() : ''
+    if (debug) {
+      return `${userMsg}\n\n[dev] ${debug}`
+    }
+    return userMsg
+  }
+
+  return t('bootstrap.loginErrorFallback')
 }

@@ -119,6 +119,13 @@ export const ru = {
     connectingViaTelegram: 'Входим через Telegram…',
     connecting: 'Подключение…',
     tagline: 'VPN-сервис',
+    // Product gates (AccessMode) — safe for every user.
+    registrationDisabled: 'Регистрация временно отключена. Обратитесь в поддержку.',
+    inviteRequired: 'Регистрация только по приглашению. Откройте бота по реферальной ссылке.',
+    serviceRestricted: 'Сервис временно недоступен. Попробуйте позже.',
+    // Generic refusal — no operator/env diagnostics (those only arrive as
+    // `debug` for BOT_DEV_ID from the server).
+    accessDenied: 'Не удалось войти. Попробуйте позже или напишите в поддержку.',
   },
   dashboard: {
     title: 'Главная',
@@ -186,6 +193,9 @@ export const ru = {
     buyNew: 'Купить новую подписку',
     upgradePlan: 'Улучшить план',
     manageDevices: 'Управление устройствами',
+    limitReached: 'Достигнут лимит подписок. Удалите одну из существующих или обратитесь в поддержку.',
+    limitReachedDetail:
+      'Достигнут лимит подписок ({{current}} из {{max}}). Удалите одну из существующих или обратитесь в поддержку, если нужен больший лимит.',
   },
   plans: {
     title: 'Тарифы',

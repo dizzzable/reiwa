@@ -121,6 +121,13 @@ export const en: RuDict = {
     connectingViaTelegram: 'Signing in via Telegram…',
     connecting: 'Connecting…',
     tagline: 'VPN Service',
+    // Product gates (AccessMode) — safe for every user.
+    registrationDisabled: 'Registration is currently disabled. Contact support.',
+    inviteRequired: 'Invite-only registration. Open the bot via a referral link.',
+    serviceRestricted: 'Service is temporarily unavailable. Try again later.',
+    // Generic refusal — no operator/env diagnostics (those only arrive as
+    // `debug` for BOT_DEV_ID from the server).
+    accessDenied: 'Could not sign in. Try again later or contact support.',
   },
   dashboard: {
     title: 'Dashboard',
@@ -188,6 +195,10 @@ export const en: RuDict = {
     buyNew: 'Buy a new subscription',
     upgradePlan: 'Upgrade plan',
     manageDevices: 'Manage devices',
+    limitReached:
+      'Subscription limit reached. Delete one of your existing subscriptions or contact support.',
+    limitReachedDetail:
+      'Subscription limit reached ({{current}} of {{max}}). Delete one of your existing subscriptions or contact support if you need a higher limit.',
   },
   plans: {
     title: 'Plans',

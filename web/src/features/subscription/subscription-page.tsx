@@ -8,6 +8,10 @@ import { StadiumButton } from '@/components/ui/stadium-button'
 import { BackButton } from '@/components/ui/back-button'
 import { SubscriptionStatusBadge } from '@/components/ui/subscription-status-badge'
 import { TipCard } from '@/components/ui/tip-card'
+import {
+  isSubscriptionLimitReached,
+  notifySubscriptionLimitReached,
+} from '@/lib/subscription-limit'
 import { formatDate, getDaysLeft } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -24,7 +28,9 @@ export default function SubscriptionPage() {
   const { data: policy } = useQuery({
     queryKey: ['action-policy'],
     queryFn: () => getActionPolicy(),
-    enabled: !!sub,
+    // Always load capacity — needed even when there is no "current" sub row
+    // (empty account / multi-sub portfolio edge cases).
+    staleTime: 30_000,
   })
 
   const daysLeft = sub?.expireAt ? getDaysLeft(sub.expireAt) : null
@@ -58,9 +64,15 @@ export default function SubscriptionPage() {
           </TipCard>
           <StadiumButton
             fullWidth size="lg"
-            onClick={() => navigate('/plans')}
+            onClick={() => {
+              if (isSubscriptionLimitReached(policy)) {
+                notifySubscriptionLimitReached(t, policy)
+                return
+              }
+              navigate('/plans')
+            }}
             icon={<ShoppingCart className="h-5 w-5" />}
-            glow
+            glow={!isSubscriptionLimitReached(policy)}
           >
             {t('subscription.choosePlan')}
           </StadiumButton>
@@ -153,6 +165,19 @@ export default function SubscriptionPage() {
               >
                 {t('subscription.buyNew')}
               </StadiumButton>
+            )}
+            {/* Capacity full: no Buy CTA, only an explanation. Server also
+                rejects NEW/ADDITIONAL checkout with SUBSCRIPTION_LIMIT_REACHED. */}
+            {isSubscriptionLimitReached(policy) && (
+              <TipCard tone="warning">
+                {typeof policy?.activeSubscriptionCount === 'number' &&
+                typeof policy?.maxSubscriptions === 'number'
+                  ? t('subscription.limitReachedDetail', {
+                      current: policy.activeSubscriptionCount,
+                      max: policy.maxSubscriptions,
+                    })
+                  : t('subscription.limitReached')}
+              </TipCard>
             )}
             {policy?.canUpgrade && (
               <StadiumButton

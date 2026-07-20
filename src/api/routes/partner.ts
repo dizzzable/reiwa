@@ -5,6 +5,8 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
+import { extractSubscriptionLimitCode } from "./payments-errors.js";
 
 export function createPartnerRouter(deps: {
   adminClient: AdminClient | null;
@@ -46,6 +48,19 @@ export function createPartnerRouter(deps: {
       });
       res.json(result ?? {});
     } catch (e: unknown) {
+      // Same capacity gate as gateway checkout (createDraft NEW/ADDITIONAL).
+      // Surface the typed code so the SPA shows "limit reached", not a generic
+      // balance failure.
+      if (isUpstreamStatus(e, 400)) {
+        const code = extractSubscriptionLimitCode(describeUpstreamError(e).message);
+        if (code === "SUBSCRIPTION_LIMIT_REACHED") {
+          res.status(400).json({
+            code: "SUBSCRIPTION_LIMIT_REACHED",
+            message: "Subscription limit reached",
+          });
+          return;
+        }
+      }
       sendSafeError(req, res, e, 400, "Partner balance payment failed", "partner/pay");
     }
   });

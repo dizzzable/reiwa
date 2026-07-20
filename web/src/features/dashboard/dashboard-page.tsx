@@ -18,11 +18,15 @@ import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
 import { ShoppingCart, TicketPercent } from "lucide-react";
 
-import { getAllSubscriptions, getSubscriptionDevices } from "@/lib/api-client";
+import { getActionPolicy, getAllSubscriptions, getSubscriptionDevices } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBanner } from "@/components/access-mode-banner";
+import {
+  isSubscriptionLimitReached,
+  notifySubscriptionLimitReached,
+} from "@/lib/subscription-limit";
 import { openExternalUrl, cn } from "@/lib/utils";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
@@ -57,8 +61,28 @@ export default function DashboardPage() {
     refetchInterval: 30_000,
   });
 
+  // Capacity for multi-sub Buy gating (effective max folds per-user + global).
+  const { data: actionPolicy } = useQuery({
+    queryKey: ["action-policy"],
+    queryFn: () => getActionPolicy(),
+    staleTime: 30_000,
+  });
+
   const subscriptions = (allSubsData as any)?.subscriptions ?? [];
   const hasSubscriptions = subscriptions.length > 0;
+
+  const buyLimitReached = isSubscriptionLimitReached(actionPolicy);
+
+  const handleBuy = () => {
+    if (purchasesBlocked) return;
+    // Hard stop: never open the plan catalog when capacity is full.
+    // Server also rejects NEW/ADDITIONAL drafts with SUBSCRIPTION_LIMIT_REACHED.
+    if (buyLimitReached) {
+      notifySubscriptionLimitReached(t, actionPolicy);
+      return;
+    }
+    navigate("/plans");
+  };
 
   // The device list follows the currently selected subscription card.
   const [activeIndex, setActiveIndex] = useState(0);
@@ -114,7 +138,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <div className="relative shrink-0">
-            {!purchasesBlocked && !reduceMotion && (
+            {!purchasesBlocked && !buyLimitReached && !reduceMotion && (
               <motion.span
                 aria-hidden
                 className="pointer-events-none absolute inset-0 rounded-full"
@@ -125,15 +149,26 @@ export default function DashboardPage() {
               />
             )}
             <button
-              onClick={() => navigate("/plans")}
+              onClick={handleBuy}
               disabled={purchasesBlocked}
               className={cn(
                 "relative flex h-9 w-9 items-center justify-center rounded-full border transition-all disabled:opacity-40 disabled:pointer-events-none",
-                purchasesBlocked
+                purchasesBlocked || buyLimitReached
                   ? "border-white/6 bg-white/3 text-zinc-400"
                   : "border-(--brand-primary)/40 bg-(--brand-primary)/15 text-(--brand-primary) hover:bg-(--brand-primary)/25",
               )}
               aria-label={t("card.actions.buy")}
+              title={
+                buyLimitReached
+                  ? typeof actionPolicy?.activeSubscriptionCount === "number" &&
+                    typeof actionPolicy?.maxSubscriptions === "number"
+                    ? t("subscription.limitReachedDetail", {
+                        current: actionPolicy.activeSubscriptionCount,
+                        max: actionPolicy.maxSubscriptions,
+                      })
+                    : t("subscription.limitReached")
+                  : undefined
+              }
             >
               <ShoppingCart className="h-4 w-4" />
             </button>
@@ -209,7 +244,7 @@ export default function DashboardPage() {
       ) : (
         <>
           <TrialCta />
-          <EmptySubscriptionCta onBuy={() => navigate("/plans")} />
+          <EmptySubscriptionCta onBuy={handleBuy} />
         </>
       )}
     </div>

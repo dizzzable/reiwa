@@ -64,24 +64,57 @@ function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
  * canUpgrade, canTrial }` contract the SPA's `ActionPolicy` type expects.
  * Without this the SPA reads every `can*` flag as `undefined`, so the
  * subscription page never renders its Renew / Buy / Upgrade buttons.
+ *
+ * Also surfaces the multi-subscription capacity snapshot so the SPA can
+ * toast "limit reached" on Buy (effective max = max(user.maxSubscriptions,
+ * global defaultMaxSubscriptions when multi-sub is enabled)).
  */
 function flattenActionPolicy(raw: unknown): {
   canBuy: boolean;
   canRenew: boolean;
   canUpgrade: boolean;
   canTrial: boolean;
+  activeSubscriptionCount: number;
+  maxSubscriptions: number;
+  limitReached: boolean;
 } {
+  const obj =
+    raw !== null && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const actions =
-    raw !== null && typeof raw === "object" && "actions" in raw
-      ? ((raw as { actions?: Record<string, unknown> }).actions ?? {})
+    obj.actions !== null && typeof obj.actions === "object"
+      ? ((obj.actions as Record<string, unknown>) ?? {})
       : {};
   const flag = (key: string): boolean => actions[key] === true;
+  const canBuy = flag("NEW") || flag("ADDITIONAL");
+  const activeSubscriptionCount =
+    typeof obj.activeSubscriptionCount === "number" &&
+    Number.isFinite(obj.activeSubscriptionCount)
+      ? Math.max(0, Math.floor(obj.activeSubscriptionCount))
+      : 0;
+  const maxSubscriptions =
+    typeof obj.maxSubscriptions === "number" && Number.isFinite(obj.maxSubscriptions)
+      ? Math.max(1, Math.floor(obj.maxSubscriptions))
+      : 1;
+  const warnings = Array.isArray(obj.warnings) ? obj.warnings : [];
+  const warnedLimit = warnings.some(
+    (w) =>
+      w !== null &&
+      typeof w === "object" &&
+      (w as { code?: string }).code === "SUBSCRIPTION_LIMIT_REACHED",
+  );
+  // Capacity exhausted: effective max already folds per-user maxSubscriptions
+  // and global multi-sub defaultMaxSubscriptions on the admin side.
+  const limitReached =
+    warnedLimit || activeSubscriptionCount >= maxSubscriptions;
   return {
     // A "buy" is any purchase that creates a new subscription.
-    canBuy: flag("NEW") || flag("ADDITIONAL"),
+    canBuy,
     canRenew: flag("RENEW"),
     canUpgrade: flag("UPGRADE"),
     canTrial: flag("TRIAL"),
+    activeSubscriptionCount,
+    maxSubscriptions,
+    limitReached,
   };
 }
 

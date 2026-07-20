@@ -9,8 +9,13 @@ import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 import { UpstreamError } from "../../core/errors/upstream-error.js";
-import { normalizeWireDecimal, resolveRenewalCheckoutError } from "./payments-errors.js";
+import {
+  extractSubscriptionLimitCode,
+  normalizeWireDecimal,
+  resolveRenewalCheckoutError,
+} from "./payments-errors.js";
 
 /**
  * Maps a request body's `purchaseType` field to the matching access-mode
@@ -118,6 +123,19 @@ export function createPaymentsRouter(deps: {
         );
         res.json(checkout ?? {});
       } catch (e: unknown) {
+        // Capacity guard on NEW/ADDITIONAL drafts returns 400 +
+        // SUBSCRIPTION_LIMIT_REACHED — surface as a typed 400 so the SPA can
+        // toast "limit reached" instead of a generic 500.
+        if (isUpstreamStatus(e, 400)) {
+          const code = extractSubscriptionLimitCode(describeUpstreamError(e).message);
+          if (code === "SUBSCRIPTION_LIMIT_REACHED") {
+            res.status(400).json({
+              code: "SUBSCRIPTION_LIMIT_REACHED",
+              message: "Subscription limit reached",
+            });
+            return;
+          }
+        }
         sendSafeError(req, res, e, 500, "Failed to create checkout", "payments/checkout");
       }
     },

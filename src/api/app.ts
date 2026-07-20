@@ -476,6 +476,29 @@ export function createApp(deps: CreateAppDeps) {
     // already carries the request-id binding so the error line is
     // correlated with the access log.
     const reqLogger = (req as { log?: Logger }).log;
+
+    // Client closed the connection (navigated away / Mini App closed /
+    // flaky mobile network). Express surfaces this as "Request aborted"
+    // when writing the SPA index or a slow response. It is not a product
+    // failure — log at warn and never page the operator (BOT_DEV_ID).
+    const aborted =
+      err?.message === "Request aborted" ||
+      (err as { code?: string }).code === "ECONNABORTED" ||
+      (err as { code?: string }).code === "ECONNRESET" ||
+      req.aborted === true;
+
+    if (aborted) {
+      if (reqLogger) {
+        reqLogger.warn({ err }, "Client aborted request");
+      } else if (logger) {
+        logger.warn({ err }, "Client aborted request");
+      }
+      if (!res.headersSent) {
+        res.status(499).end();
+      }
+      return;
+    }
+
     if (reqLogger) {
       reqLogger.error({ err }, "Unhandled API error");
     } else if (logger) {
@@ -488,7 +511,9 @@ export function createApp(deps: CreateAppDeps) {
       stack: err.stack,
       context: { scope: 'api.error-handler', path: (req.path ?? '').split('?')[0] },
     });
-    res.status(500).json({ message: "Internal server error" });
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Internal server error" });
+    }
   });
 
   return app;

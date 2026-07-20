@@ -39,6 +39,50 @@ export interface RenewalCheckoutErrorResponse {
   body: { code: string; message: string };
 }
 
+/**
+ * Detect SUBSCRIPTION_LIMIT_REACHED in an upstream (admin) error body.
+ * Handles:
+ *   - `{ code: "SUBSCRIPTION_LIMIT_REACHED", message: "..." }`
+ *   - `{ errorCode: "SUBSCRIPTION_LIMIT_REACHED", ... }` (AdminSafeExceptionFilter)
+ *   - Nest nested `{ message: { code, message } }`
+ *   - Plain English message from createDraft capacity guard
+ */
+export function extractSubscriptionLimitCode(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as {
+      code?: string;
+      errorCode?: string;
+      message?: string | { code?: string; message?: string };
+    };
+    if (parsed.code === "SUBSCRIPTION_LIMIT_REACHED") return "SUBSCRIPTION_LIMIT_REACHED";
+    if (parsed.errorCode === "SUBSCRIPTION_LIMIT_REACHED") return "SUBSCRIPTION_LIMIT_REACHED";
+    if (
+      parsed.message &&
+      typeof parsed.message === "object" &&
+      parsed.message.code === "SUBSCRIPTION_LIMIT_REACHED"
+    ) {
+      return "SUBSCRIPTION_LIMIT_REACHED";
+    }
+    const msg =
+      typeof parsed.message === "string"
+        ? parsed.message
+        : typeof parsed.message === "object" && parsed.message
+          ? parsed.message.message
+          : undefined;
+    if (
+      typeof msg === "string" &&
+      /maximum number of active subscriptions|subscription limit reached/i.test(msg)
+    ) {
+      return "SUBSCRIPTION_LIMIT_REACHED";
+    }
+  } catch {
+    if (/maximum number of active subscriptions|subscription limit reached/i.test(body)) {
+      return "SUBSCRIPTION_LIMIT_REACHED";
+    }
+  }
+  return undefined;
+}
+
 const RENEWAL_ERROR_MESSAGES: Record<string, { status: number; message: string }> = {
   QUOTE_CHANGED: {
     status: 409,

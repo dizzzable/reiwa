@@ -4,7 +4,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, Check, CreditCard } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { getQuote, createCheckout, getEnabledGateways, activatePromocode, getPaymentMethods } from "@/lib/api-client";
+import {
+  getActionPolicy,
+  getQuote,
+  createCheckout,
+  getEnabledGateways,
+  activatePromocode,
+  getPaymentMethods,
+} from "@/lib/api-client";
 import { getPartnerInfo, payWithPartnerBalance } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
@@ -25,6 +32,11 @@ import {
   formatSavedPaymentMethodTitle,
 } from "@/lib/saved-payment-method-display";
 import { toast } from "sonner";
+import {
+  isSubscriptionLimitError,
+  isSubscriptionLimitReached,
+  notifySubscriptionLimitReached,
+} from "@/lib/subscription-limit";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -406,10 +418,18 @@ function QuoteView() {
     onSuccess: () => {
       toast.success(t("purchase.quote.balancePaid"));
       void queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+      void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
       void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
       navigate("/dashboard", { replace: true });
     },
-    onError: () => toast.error(t("purchase.quote.balanceError")),
+    onError: (err) => {
+      if (isSubscriptionLimitError(err)) {
+        notifySubscriptionLimitReached(t);
+        navigate("/dashboard", { replace: true });
+        return;
+      }
+      toast.error(t("purchase.quote.balanceError"));
+    },
   });
 
   if (isLoading) {
@@ -585,7 +605,14 @@ function CheckoutStep() {
         replace: true,
       });
     },
-    onError: () => toast.error(t("purchase.checkout.error")),
+    onError: (err) => {
+      if (isSubscriptionLimitError(err)) {
+        notifySubscriptionLimitReached(t);
+        navigate("/dashboard", { replace: true });
+        return;
+      }
+      toast.error(t("purchase.checkout.error"));
+    },
   });
 
   useEffect(() => {
@@ -618,10 +645,26 @@ export default function PurchasePage() {
     reset,
   } = usePurchaseStore();
 
+  // Hard capacity gate: never let the wizard complete a NEW/ADDITIONAL buy
+  // when the effective multi-sub limit is full (deep-link / stale store).
+  const { data: actionPolicy, isFetched: policyFetched } = useQuery({
+    queryKey: ["action-policy"],
+    queryFn: () => getActionPolicy(),
+    staleTime: 15_000,
+  });
+  const limitReached = isSubscriptionLimitReached(actionPolicy);
+
   // If no plan selected, go back
   useEffect(() => {
     if (!selectedPlan) navigate("/plans", { replace: true });
   }, [selectedPlan, navigate]);
+
+  useEffect(() => {
+    if (!policyFetched || !limitReached) return;
+    notifySubscriptionLimitReached(t, actionPolicy);
+    reset();
+    navigate("/dashboard", { replace: true });
+  }, [policyFetched, limitReached, actionPolicy, t, reset, navigate]);
 
   // Access-mode gate: NEW / UPGRADE / ADDITIONAL purchases are blocked
   // under PURCHASE_BLOCKED and RESTRICTED.
@@ -634,7 +677,10 @@ export default function PurchasePage() {
     );
   }
 
-  if (!selectedPlan) return null;
+  // Block the entire purchase wizard at capacity (server also rejects checkout).
+  if (limitReached || !selectedPlan) {
+    return null;
+  }
 
   const steps = ["duration", "device", "gateway", "quote", "checkout"] as const;
   const activeIndex = steps.indexOf(step as (typeof steps)[number]);
