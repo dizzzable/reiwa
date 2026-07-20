@@ -833,19 +833,14 @@ function SelectGateway() {
           >
             <GatewayIcon type="YOOKASSA" currency="RUB" className="h-7 w-7" />
             <div className="text-left">
-              <p className="font-medium text-white">{t("purchase.gateway.newCard")}</p>
-              <p className="text-xs text-zinc-500">YooKassa</p>
+              <p className="font-medium text-white">
+                {gatewayLabel(
+                  "YOOKASSA",
+                  gateways.find((gw) => gw.type === "YOOKASSA")?.displayName,
+                )}
+              </p>
             </div>
           </button>
-          {selectedGateway?.id === "YOOKASSA" && selectedSavedPaymentMethodId === null && (
-            <div className="flex items-center justify-between rounded-xl bg-zinc-800/40 px-4 py-3">
-              <div>
-                <p className="text-sm text-zinc-200">{t("purchase.gateway.saveCard")}</p>
-                <p className="text-[11px] text-zinc-500">{t("purchase.gateway.saveCardHint")}</p>
-              </div>
-              <Switch checked={savePaymentMethod} onCheckedChange={setSavePaymentMethod} />
-            </div>
-          )}
         </div>
       )}
       <div className="px-5 space-y-2">
@@ -887,6 +882,9 @@ function RenewalReview() {
     selectedPlans,
     selectedAddOns,
     selectedGateway,
+    selectedSavedPaymentMethodId,
+    savePaymentMethod,
+    setSavePaymentMethod,
     setReviewQuote,
     setStep,
     goBack,
@@ -1064,6 +1062,20 @@ function RenewalReview() {
             </span>
           </div>
         ))}
+        {selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId && (
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm text-zinc-200">{t("purchase.quote.saveCard")}</p>
+              <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
+                {t("purchase.quote.saveCardHint")}
+              </p>
+            </div>
+            <Switch
+              checked={savePaymentMethod}
+              onCheckedChange={setSavePaymentMethod}
+            />
+          </div>
+        )}
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("renewal.total")}</span>
           <span className="text-lg font-bold text-(--brand-primary)">

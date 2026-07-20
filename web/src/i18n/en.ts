@@ -253,6 +253,8 @@ export const en: RuDict = {
       duration: 'Duration',
       device: 'Device',
       method: 'Method',
+      saveCard: "Link card",
+      saveCardHint: "Save this payment method for future payments",
       savedMethod: 'Card',
       discount: 'Discount',
       total: 'Total',

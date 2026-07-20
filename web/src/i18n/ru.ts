@@ -251,6 +251,8 @@ export const ru = {
       duration: 'Срок',
       device: 'Устройство',
       method: 'Метод',
+      saveCard: "Привязать карту",
+      saveCardHint: "Сохранить способ оплаты для следующих платежей",
       savedMethod: 'Карта',
       discount: 'Скидка',
       total: 'Итого',
