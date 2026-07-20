@@ -96,11 +96,21 @@ export const botSignin = (token: string) =>
 export const getAuthStatus = () =>
   apiClient.get<AuthStatusResponse>("/auth/status").then((r) => r.data);
 
+export type RegisterUtm = {
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  content?: string;
+  term?: string;
+  raw?: string;
+};
+
 export const registerUser = (
   username: string,
   passwordHash: string,
   checkOnly?: boolean,
   referralCode?: string,
+  utm?: RegisterUtm,
 ) =>
   apiClient
     .post<RegisterResponse>("/auth/register", {
@@ -108,6 +118,7 @@ export const registerUser = (
       passwordHash,
       ...(checkOnly ? { checkOnly: true } : {}),
       ...(referralCode ? { referralCode } : {}),
+      ...(utm ? { utm } : {}),
     })
     .then((r) => r.data);
 
