@@ -1,6 +1,6 @@
 /**
  * Advertising namespace — Mini-App / web click ingest + partner self-service
- * (submit requests, list own requests, per-placement stats).
+ * (submit requests, accept counters, list own requests, per-placement stats).
  */
 import { apiClient } from "./transport.js";
 
@@ -26,11 +26,20 @@ export interface PartnerAdRequest {
   createdAt: string;
 }
 
+export interface AdDeepLinks {
+  botStart: string;
+  miniAppStart: string | null;
+  miniAppWeb: string | null;
+}
+
 export interface PartnerAdPlacementStat {
   placementId: string;
   platform: AdPlatform;
   channel: string | null;
   status: string;
+  trackingCode: string;
+  payload: string;
+  links: AdDeepLinks;
   opens: number;
   registrations: number;
   conversions: number;
@@ -46,8 +55,10 @@ export interface CreatePartnerAdRequestInput {
 }
 
 /** Best-effort: records a Mini-App / web open carrying an `ad_<code>` param. */
-export const recordAdClick = (code: string) =>
-  apiClient.post<{ ok: boolean }>("/advertising/click", { code }).then((r) => r.data);
+export const recordAdClick = (code: string, surface?: "BOT" | "MINIAPP" | "WEB") =>
+  apiClient
+    .post<{ ok: boolean }>("/advertising/click", { code, surface })
+    .then((r) => r.data);
 
 export const getPartnerAdRequests = () =>
   apiClient
@@ -56,6 +67,11 @@ export const getPartnerAdRequests = () =>
 
 export const createPartnerAdRequest = (input: CreatePartnerAdRequestInput) =>
   apiClient.post<PartnerAdRequest>("/advertising/requests", input).then((r) => r.data);
+
+export const acceptPartnerAdRequest = (requestId: string) =>
+  apiClient
+    .post<unknown>(`/advertising/requests/${encodeURIComponent(requestId)}/accept`, {})
+    .then((r) => r.data);
 
 export const getPartnerAdStats = () =>
   apiClient

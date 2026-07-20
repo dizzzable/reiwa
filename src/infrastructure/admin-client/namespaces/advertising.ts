@@ -11,6 +11,10 @@ export interface RecordAdClickInput {
   /** The `<code>` from an `ad_<code>` deep-link payload (without the prefix). */
   readonly code: string;
   readonly telegramId?: string | null;
+  /** Web-only users: rezeis User.id when telegramId is absent. */
+  readonly userId?: string | null;
+  /** BOT | MINIAPP | WEB */
+  readonly surface?: string | null;
   readonly isNewUser?: boolean;
 }
 
@@ -33,11 +37,20 @@ export interface CreatePartnerAdRequestInput {
   readonly selfFundedBudgetNote?: string;
 }
 
+export interface AdDeepLinks {
+  readonly botStart: string;
+  readonly miniAppStart: string | null;
+  readonly miniAppWeb: string | null;
+}
+
 export interface PartnerAdPlacementStat {
   readonly placementId: string;
   readonly platform: AdPlatform;
   readonly channel: string | null;
   readonly status: string;
+  readonly trackingCode: string;
+  readonly payload: string;
+  readonly links: AdDeepLinks;
   readonly opens: number;
   readonly registrations: number;
   readonly conversions: number;
@@ -51,6 +64,8 @@ export class AdvertisingNamespace {
     return this.transport.request<{ ok: boolean }>('POST', '/api/internal/advertising/click', {
       code: input.code,
       telegramId: input.telegramId ?? undefined,
+      userId: input.userId ?? undefined,
+      surface: input.surface ?? undefined,
       isNewUser: input.isNewUser ?? undefined,
     });
   }
@@ -72,7 +87,15 @@ export class AdvertisingNamespace {
     );
   }
 
-  /** Per-placement stats for the partner's campaigns. */
+  /** Partner accepts operator counter-terms on a COUNTERED request. */
+  acceptPartnerRequest(telegramId: string, requestId: string): Promise<unknown> {
+    return this.transport.request<unknown>(
+      'POST',
+      `/api/internal/user/${encodeURIComponent(telegramId)}/advertising/requests/${encodeURIComponent(requestId)}/accept`,
+    );
+  }
+
+  /** Per-placement stats for the partner's campaigns (includes tracking links). */
   getPartnerStats(telegramId: string): Promise<{ placements: PartnerAdPlacementStat[] }> {
     return this.transport.request<{ placements: PartnerAdPlacementStat[] }>(
       'GET',

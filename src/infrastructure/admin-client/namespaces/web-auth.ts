@@ -7,11 +7,28 @@
  */
 import type { AdminTransport } from '../transport.js';
 
+export interface RegistrationSnapshotOptions {
+  readonly channel?: string;
+  readonly ip?: string | null;
+  readonly userAgent?: string | null;
+  readonly referer?: string | null;
+  readonly utm?: {
+    readonly source?: string;
+    readonly medium?: string;
+    readonly campaign?: string;
+    readonly content?: string;
+    readonly term?: string;
+    readonly raw?: string;
+  } | null;
+}
+
 export interface WebAuthRegisterOptions {
   readonly email?: string;
   readonly telegramIdToLink?: string;
   /** Referral code from the invite link (`/register?ref=<code>`). */
   readonly referralCode?: string;
+  /** Write-once network snapshot filled by the BFF (IP/UA/Referer/UTM). */
+  readonly registrationSnapshot?: RegistrationSnapshotOptions;
 }
 
 export interface WebAuthRegisterResult {
@@ -68,6 +85,7 @@ export class WebAuthNamespace {
         email: options?.email,
         telegramIdToLink: options?.telegramIdToLink,
         referralCode: options?.referralCode,
+        registrationSnapshot: options?.registrationSnapshot,
       },
     );
   }

@@ -68,12 +68,37 @@ export default function RegisterPage() {
   // Read once on mount so it survives input changes; passed to registration so
   // the new user is attributed to the inviter.
   const referralCodeRef = useRef<string | null>(null)
+  // Classic UTM from the register landing URL — write-once registration snapshot.
+  const utmRef = useRef<{
+    source?: string
+    medium?: string
+    campaign?: string
+    content?: string
+    term?: string
+    raw?: string
+  } | null>(null)
   if (referralCodeRef.current === null) {
     try {
-      const ref = new URLSearchParams(window.location.search).get('ref')
+      const params = new URLSearchParams(window.location.search)
+      const ref = params.get('ref')
       referralCodeRef.current = ref && ref.trim().length > 0 ? ref.trim().slice(0, 64) : ''
+      const pick = (k: string) => {
+        const v = params.get(k)
+        return v && v.trim() ? v.trim().slice(0, 128) : undefined
+      }
+      const utm = {
+        source: pick('utm_source'),
+        medium: pick('utm_medium'),
+        campaign: pick('utm_campaign'),
+        content: pick('utm_content'),
+        term: pick('utm_term'),
+        raw: window.location.search ? window.location.search.slice(0, 512) : undefined,
+      }
+      utmRef.current =
+        utm.source || utm.medium || utm.campaign || utm.content || utm.term ? utm : null
     } catch {
       referralCodeRef.current = ''
+      utmRef.current = null
     }
   }
 
@@ -204,6 +229,7 @@ export default function RegisterPage() {
         passwordHash,
         false,
         effectiveReferral,
+        utmRef.current ?? undefined,
       )
 
       // Registration succeeded — backend confirmed both Web_Account and User creation

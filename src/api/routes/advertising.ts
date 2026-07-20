@@ -22,8 +22,8 @@ const PLATFORMS: readonly AdPlatform[] = [
  * Cabinet-facing advertising routes:
  *   - `POST /advertising/click` records a Mini-App / web open carrying an
  *     `ad_<code>` campaign param (best-effort, fire-and-forget).
- *   - partner self-service: list own requests, submit a request, read per-
- *     placement stats. All proxy to the rezeis internal advertising API.
+ *   - partner self-service: list own requests, submit a request, accept
+ *     counter-terms, read per-placement stats (+ tracking links).
  */
 export function createAdvertisingRouter(deps: {
   adminClient: AdminClient | null;
@@ -38,19 +38,35 @@ export function createAdvertisingRouter(deps: {
     return identity.telegramId ?? identity.userId ?? null;
   }
 
-  // POST /api/v1/advertising/click — Mini-App / web open via ad_<code>.
+  // POST /api/v1/advertising/click — Mini App / web open via ad_<code>.
   router.post("/advertising/click", requireSession, async (req: AuthRequest, res) => {
-    const body = (req.body ?? {}) as { code?: unknown };
+    const body = (req.body ?? {}) as { code?: unknown; surface?: unknown };
     const raw = typeof body.code === "string" ? body.code.trim() : "";
     const code = raw.startsWith("ad_") ? raw.slice(3) : raw;
     const identity = resolveUserIdentity(req);
-    if (!/^[A-Za-z0-9_-]{3,32}$/.test(code) || identity.telegramId === undefined) {
-      // Nothing to attribute (no code or no Telegram id) — succeed quietly.
+    if (!/^[A-Za-z0-9_-]{3,32}$/.test(code)) {
       res.json({ ok: true });
       return;
     }
+    // Prefer telegramId; fall back to userId so pure web accounts can attribute.
+    if (identity.telegramId === undefined && identity.userId === undefined) {
+      res.json({ ok: true });
+      return;
+    }
+    const surfaceRaw = typeof body.surface === "string" ? body.surface.toUpperCase() : "";
+    const surface =
+      surfaceRaw === "MINIAPP" || surfaceRaw === "WEB" || surfaceRaw === "BOT"
+        ? surfaceRaw
+        : identity.telegramId !== undefined
+          ? "MINIAPP"
+          : "WEB";
     try {
-      await adminClient?.advertising.recordClick({ code, telegramId: identity.telegramId });
+      await adminClient?.advertising.recordClick({
+        code,
+        telegramId: identity.telegramId ?? null,
+        userId: identity.userId ?? null,
+        surface,
+      });
     } catch {
       /* best-effort */
     }
@@ -108,7 +124,27 @@ export function createAdvertisingRouter(deps: {
     }
   });
 
-  // GET /api/v1/advertising/stats — partner per-placement stats.
+  // POST /api/v1/advertising/requests/:id/accept — accept operator counter-terms.
+  router.post("/advertising/requests/:id/accept", requireSession, async (req: AuthRequest, res) => {
+    const ref = userRef(req);
+    if (ref === null) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const requestId = typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (requestId.length === 0) {
+      res.status(400).json({ message: "request id is required" });
+      return;
+    }
+    try {
+      const result = await adminClient?.advertising.acceptPartnerRequest(ref, requestId);
+      res.json(result ?? null);
+    } catch (err) {
+      sendSafeError(req, res, err, 502, "Failed to accept advertising request", "advertising/accept");
+    }
+  });
+
+  // GET /api/v1/advertising/stats — partner per-placement stats (+ links).
   router.get("/advertising/stats", requireSession, async (req: AuthRequest, res) => {
     const ref = userRef(req);
     if (ref === null) {

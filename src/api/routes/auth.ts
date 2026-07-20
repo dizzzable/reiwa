@@ -16,6 +16,17 @@ import type { AuthRequest } from "../middleware/session.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
 
+const utmSchema = z
+  .object({
+    source: z.string().max(128).optional(),
+    medium: z.string().max(128).optional(),
+    campaign: z.string().max(128).optional(),
+    content: z.string().max(128).optional(),
+    term: z.string().max(128).optional(),
+    raw: z.string().max(512).optional(),
+  })
+  .optional();
+
 const registerSchema = z.object({
   username: z
     .string()
@@ -31,6 +42,8 @@ const registerSchema = z.object({
     .regex(/^[a-f0-9]+$/i, "Password hash must be a valid hex string"),
   // Optional referral code from the invite link (`/register?ref=<code>`).
   referralCode: z.string().min(1).max(64).optional(),
+  // Optional client-side UTM (server still stamps IP/UA/Referer from the request).
+  utm: utmSchema,
 });
 
 // Claim: mandatory first-entry onboarding for an authenticated Telegram-first
@@ -207,16 +220,28 @@ export function createAuthRouter(deps: {
         return;
       }
 
-      const { username, passwordHash, referralCode } = parsed.data;
+      const { username, passwordHash, referralCode, utm } = parsed.data;
 
       if (!adminClient) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
         return;
       }
 
+      const ip = req.ip ?? req.socket.remoteAddress ?? null;
+      const userAgent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null;
+      const refererHeader = req.headers.referer ?? req.headers.referrer;
+      const referer = typeof refererHeader === "string" ? refererHeader : null;
+
       // Proxy to Rezeis_Admin
       const result = await adminClient.webAuth.register(username, passwordHash, {
         ...(referralCode ? { referralCode } : {}),
+        registrationSnapshot: {
+          channel: "web",
+          ip,
+          userAgent,
+          referer,
+          utm: utm ?? null,
+        },
       });
 
       // Create web session — isolated so a session-store failure after a
