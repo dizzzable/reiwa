@@ -1,6 +1,6 @@
 {
   "name": "reiwa",
-  "version": "0.9.6.37",
+  "version": "0.9.6.38",
   "private": true,
   "type": "module",
   "scripts": {
@@ -47,5 +47,8 @@
     "tsx": "4.22.0",
     "typescript": "6.0.3",
     "vitest": "4.1.7"
+  },
+  "overrides": {
+    "body-parser": "2.3.0"
   }
 }

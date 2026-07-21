@@ -1,3 +1,19 @@
+# Reiwa v0.9.6.38
+
+🔒 **Security hardening** — axios/body-parser/brace-expansion patches + strip npm from runtime image (parity with rezeis Trivy cleanup). Парный admin: **rezeis v0.9.6.56**.
+
+### Fixes
+- **web axios** → `1.18.1` (HIGH GHSA batch).
+- **body-parser** → `2.3.0` (override, root + web).
+- **brace-expansion** → `5.0.7` (web override).
+- **Runtime Docker:** remove global npm/npx tree.
+
+### ✅
+- `npm audit` root + web (omit=dev): **0 vulnerabilities**.
+
+**Полный список изменений:** https://github.com/dizzzable/reiwa/compare/v0.9.6.37...v0.9.6.38
+
+---
 # Reiwa v0.9.6.37
 
 🔧 **Задания: полное описание** — текст description в модалке заданий больше не обрезается `truncate`. Парный admin: **rezeis v0.9.6.55**.

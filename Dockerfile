@@ -44,6 +44,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 # Point the API at the bundled SPA so it serves the front-end too.
 ENV REIWA_WEB_DIST=/app/web
+
+# Runtime only runs Node (no package manager). Strip global npm/npx and their
+# bundled dependency tree so Trivy does not report npm-shipped tar/undici CVEs.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+ && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/assets ./assets
