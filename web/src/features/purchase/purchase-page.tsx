@@ -365,9 +365,13 @@ function QuoteView() {
     selectedGateway,
     selectedDevice,
     selectedSavedPaymentMethodId,
+    savePaymentMethodConsent,
+    setSavePaymentMethodConsent,
     setQuote,
     goBack,
   } = usePurchaseStore();
+  const showSaveCardConsent =
+    selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -514,6 +518,23 @@ function QuoteView() {
         }}
       />
 
+      {showSaveCardConsent && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-transparent accent-(--brand-primary)"
+            checked={savePaymentMethodConsent}
+            onChange={(e) => setSavePaymentMethodConsent(e.target.checked)}
+          />
+          <span className="text-zinc-300 leading-snug">
+            <span className="font-medium text-zinc-100">{t("purchase.quote.saveCardTitle")}</span>
+            <span className="mt-0.5 block text-xs text-zinc-400">
+              {t("purchase.quote.saveCardHint")}
+            </span>
+          </span>
+        </label>
+      )}
+
       <StadiumButton
         fullWidth
         size="lg"
@@ -577,19 +598,25 @@ function CheckoutStep() {
     selectedGateway,
     selectedDevice,
     selectedSavedPaymentMethodId,
+    savePaymentMethodConsent,
     setCheckoutResult,
   } = usePurchaseStore();
   const navigate = useNavigate();
 
   const mutation = useMutation({
-    mutationFn: () =>
-      createCheckout(
+    mutationFn: () => {
+      const interactiveYookassa =
+        selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
+      return createCheckout(
         selectedPlan!.id,
         selectedDuration!.days,
         selectedGateway!.id,
         selectedDevice ?? undefined,
         selectedSavedPaymentMethodId,
-      ),
+        interactiveYookassa ? savePaymentMethodConsent : undefined,
+        interactiveYookassa ? savePaymentMethodConsent : undefined,
+      );
+    },
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
       // Stash the URL so the return page can offer a manual "open payment"

@@ -271,6 +271,9 @@ export const en: RuDict = {
       payWithBalance: 'Pay with balance ({{amount}} {{currency}})',
       balancePaid: 'Paid from partner balance',
       balanceError: 'Failed to pay with balance',
+      saveCardTitle: 'Save card for autopay',
+      saveCardHint:
+        'Consent to store this payment method. You can disable autopay in settings later.',
     },
     checkout: {
       creating: 'Creating payment…',

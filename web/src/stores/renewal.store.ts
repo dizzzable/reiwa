@@ -23,6 +23,11 @@ interface RenewalState {
   selectedGateway: GatewayOption | null;
   /** Saved card/SBP method for off-session YooKassa charge; null = hosted page. */
   selectedSavedPaymentMethodId: string | null;
+  /**
+   * Consent to bind a new YooKassa method for future autopay (interactive
+   * YOOKASSA only — not used when a saved method is selected).
+   */
+  savePaymentMethodConsent: boolean;
   /** Exact all-in quote confirmed on the review step. */
   reviewQuote: { amount: string; currency: string } | null;
   paymentId: string | null;
@@ -48,6 +53,7 @@ interface RenewalState {
   reconcileReoffer: (key: string, allowedAddOns: Record<string, string[]>) => void;
   selectGateway: (gateway: GatewayOption) => void;
   selectSavedPaymentMethod: (methodId: string | null) => void;
+  setSavePaymentMethodConsent: (consent: boolean) => void;
   setReviewQuote: (quote: { amount: string; currency: string }) => void;
   setCheckoutResult: (paymentId: string, paymentUrl: string | null) => void;
   reset: () => void;
@@ -64,6 +70,7 @@ const INITIAL: Pick<
   | "explicitlyDeselectedAddOns"
   | "selectedGateway"
   | "selectedSavedPaymentMethodId"
+  | "savePaymentMethodConsent"
   | "reviewQuote"
   | "paymentId"
   | "paymentUrl"
@@ -78,6 +85,7 @@ const INITIAL: Pick<
   explicitlyDeselectedAddOns: {},
   selectedGateway: null,
   selectedSavedPaymentMethodId: null,
+  savePaymentMethodConsent: false,
   reviewQuote: null,
   paymentId: null,
   paymentUrl: null,
@@ -178,8 +186,15 @@ export const useRenewalStore = create<RenewalState>((set) => ({
       return { selectedAddOns };
     }),
   selectGateway: (gateway) =>
-    set({ selectedGateway: gateway, selectedSavedPaymentMethodId: null, navDirection: "forward", reviewQuote: null }),
+    set({
+      selectedGateway: gateway,
+      selectedSavedPaymentMethodId: null,
+      savePaymentMethodConsent: false,
+      navDirection: "forward",
+      reviewQuote: null,
+    }),
   selectSavedPaymentMethod: (methodId) => set({ selectedSavedPaymentMethodId: methodId }),
+  setSavePaymentMethodConsent: (consent) => set({ savePaymentMethodConsent: consent }),
   setReviewQuote: (quote) => set({ reviewQuote: { ...quote } }),
   setCheckoutResult: (paymentId, paymentUrl) =>
     set({ paymentId, paymentUrl, step: "polling" }),

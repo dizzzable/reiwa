@@ -268,6 +268,9 @@ export const ru = {
       payWithBalance: 'Оплатить балансом ({{amount}} {{currency}})',
       balancePaid: 'Оплачено с партнёрского баланса',
       balanceError: 'Не удалось оплатить балансом',
+      saveCardTitle: 'Сохранить карту для автоплатежей',
+      saveCardHint:
+        'Согласие на привязку способа оплаты. Автосписания можно отключить в настройках.',
     },
     checkout: {
       creating: 'Создаём платёж…',

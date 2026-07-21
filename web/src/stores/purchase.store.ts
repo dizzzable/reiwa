@@ -34,6 +34,11 @@ interface PurchaseState {
   selectedGateway: GatewayOption | null;
   /** Saved card/SBP method for off-session YooKassa charge; null = hosted page. */
   selectedSavedPaymentMethodId: string | null;
+  /**
+   * Consent to bind a new YooKassa payment method for future autopay.
+   * Only relevant for interactive YOOKASSA checkout (no saved method selected).
+   */
+  savePaymentMethodConsent: boolean;
   quote: SubscriptionQuote | null;
   paymentId: string | null;
   paymentUrl: string | null;
@@ -44,6 +49,7 @@ interface PurchaseState {
   selectDevice: (device: DeviceTypeOption) => void;
   selectGateway: (gateway: GatewayOption) => void;
   selectSavedPaymentMethod: (methodId: string | null) => void;
+  setSavePaymentMethodConsent: (consent: boolean) => void;
   setQuote: (quote: SubscriptionQuote) => void;
   setCheckoutResult: (paymentId: string, paymentUrl: string | null) => void;
   goBack: () => void;
@@ -68,6 +74,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
   selectedDevice: null,
   selectedGateway: null,
   selectedSavedPaymentMethodId: null,
+  savePaymentMethodConsent: false,
   quote: null,
   paymentId: null,
   paymentUrl: null,
@@ -80,10 +87,12 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
     set({
       selectedGateway: gateway,
       selectedSavedPaymentMethodId: null,
+      savePaymentMethodConsent: false,
       step: "quote",
       lastNav: "forward",
     }),
   selectSavedPaymentMethod: (methodId) => set({ selectedSavedPaymentMethodId: methodId }),
+  setSavePaymentMethodConsent: (consent) => set({ savePaymentMethodConsent: consent }),
   setQuote: (quote) => set({ quote, step: "checkout", lastNav: "forward" }),
   setCheckoutResult: (paymentId, paymentUrl) =>
     set({ paymentId, paymentUrl, step: "polling", lastNav: "forward" }),
@@ -113,6 +122,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
       selectedDevice: null,
       selectedGateway: null,
       selectedSavedPaymentMethodId: null,
+      savePaymentMethodConsent: false,
       quote: null,
       paymentId: null,
       paymentUrl: null,

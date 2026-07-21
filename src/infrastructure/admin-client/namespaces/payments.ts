@@ -12,6 +12,10 @@ export interface CreateCheckoutOptions {
   readonly deviceType?: string | null;
   /** Local SavedPaymentMethod.id for off-session YooKassa charge. */
   readonly savedPaymentMethodId?: string | null;
+  /** Per-request YooKassa bind-card intent (interactive only). */
+  readonly savePaymentMethod?: boolean;
+  /** Explicit consent to save card for autopay (required when save is true). */
+  readonly savePaymentMethodConsent?: boolean;
 }
 
 export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
@@ -55,6 +59,12 @@ export class PaymentsNamespace {
       options.savedPaymentMethodId.length > 0
     ) {
       payload['savedPaymentMethodId'] = options.savedPaymentMethodId;
+    }
+    if (typeof options.savePaymentMethod === 'boolean') {
+      payload['savePaymentMethod'] = options.savePaymentMethod;
+    }
+    if (typeof options.savePaymentMethodConsent === 'boolean') {
+      payload['savePaymentMethodConsent'] = options.savePaymentMethodConsent;
     }
     return this.transport.request('POST', '/api/internal/payments/checkout', payload);
   }
@@ -141,6 +151,8 @@ export class PaymentsNamespace {
       readonly expectedCurrency?: string;
       readonly idempotencyKey?: string;
       readonly savedPaymentMethodId?: string;
+      readonly savePaymentMethod?: boolean;
+      readonly savePaymentMethodConsent?: boolean;
     },
   ): Promise<unknown> {
     const payload: Record<string, unknown> = {
@@ -174,6 +186,12 @@ export class PaymentsNamespace {
     }
     if (typeof input.savedPaymentMethodId === 'string' && input.savedPaymentMethodId.length > 0) {
       payload['savedPaymentMethodId'] = input.savedPaymentMethodId;
+    }
+    if (typeof input.savePaymentMethod === 'boolean') {
+      payload['savePaymentMethod'] = input.savePaymentMethod;
+    }
+    if (typeof input.savePaymentMethodConsent === 'boolean') {
+      payload['savePaymentMethodConsent'] = input.savePaymentMethodConsent;
     }
     return this.transport.request('POST', '/api/internal/payments/renewal-checkout', payload);
   }

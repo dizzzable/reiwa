@@ -875,10 +875,15 @@ function RenewalReview() {
     selectedPlans,
     selectedAddOns,
     selectedGateway,
+    selectedSavedPaymentMethodId,
+    savePaymentMethodConsent,
+    setSavePaymentMethodConsent,
     setReviewQuote,
     setStep,
     goBack,
   } = useRenewalStore();
+  const showSaveCardConsent =
+    selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
 
   const durationsPayload = selectedSubscriptionIds
     .filter((id) => selectedDurations[id] !== undefined)
@@ -1076,6 +1081,23 @@ function RenewalReview() {
         }}
       />
 
+      {showSaveCardConsent && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-transparent accent-(--brand-primary)"
+            checked={savePaymentMethodConsent}
+            onChange={(e) => setSavePaymentMethodConsent(e.target.checked)}
+          />
+          <span className="text-zinc-300 leading-snug">
+            <span className="font-medium text-zinc-100">{t("purchase.quote.saveCardTitle")}</span>
+            <span className="mt-0.5 block text-xs text-zinc-400">
+              {t("purchase.quote.saveCardHint")}
+            </span>
+          </span>
+        </label>
+      )}
+
       <StadiumButton
         fullWidth
         size="lg"
@@ -1118,6 +1140,7 @@ function CheckoutStep() {
     selectedAddOns,
     selectedGateway,
     selectedSavedPaymentMethodId,
+    savePaymentMethodConsent,
     reviewQuote,
     setCheckoutResult,
     goBack,
@@ -1167,6 +1190,8 @@ function CheckoutStep() {
       if (!selectedGateway || !reviewQuote) {
         throw new Error("RENEWAL_QUOTE_MISSING");
       }
+      const interactiveYookassa =
+        selectedGateway.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
       return createRenewalCheckout(
         selectedSubscriptionIds,
         selectedGateway.id,
@@ -1176,6 +1201,8 @@ function CheckoutStep() {
         addOnsPayload.length > 0 ? addOnsPayload : undefined,
         idempotencyKey,
         selectedSavedPaymentMethodId,
+        interactiveYookassa ? savePaymentMethodConsent : undefined,
+        interactiveYookassa ? savePaymentMethodConsent : undefined,
       );
     },
     onSuccess: (result) => {
