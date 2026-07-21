@@ -1,3 +1,19 @@
+# Reiwa v0.9.6.39
+
+💳 **Согласие на сохранение карты при оплате и продлении** — галочка перед YooKassa; без согласия карта не привязывается. Панель: **rezeis v0.9.6.58**.
+
+### ✨ Что нового
+- **Покупка** — чекбокс «Сохранить карту для автоплатежей» на шаге подтверждения.
+- **Продление** — тот же consent на review перед checkout.
+- **API** — `savePaymentMethod` + `savePaymentMethodConsent` через BFF → rezeis.
+
+### ✅
+- typecheck green
+- pairs with rezeis fail-closed resolver
+
+**Diff:** https://github.com/dizzzable/reiwa/compare/v0.9.6.38...v0.9.6.39
+
+---
 # Reiwa v0.9.6.38
 
 🔒 **Security hardening** — axios/body-parser/brace-expansion patches + strip npm from runtime image (parity with rezeis Trivy cleanup). Парный admin: **rezeis v0.9.6.56**.
