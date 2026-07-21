@@ -1,3 +1,16 @@
+# Reiwa v0.9.6.37
+
+🔧 **Задания: полное описание** — текст description в модалке заданий больше не обрезается `truncate`. Парный admin: **rezeis v0.9.6.55**.
+
+### 🐛
+- **quests-icon:** description `whitespace-pre-wrap break-words`; title `line-clamp-2`.
+
+### ✅
+- Codex pre-release batch: **PASS** (с admin-патчем).
+
+**Полный список изменений:** https://github.com/dizzzable/reiwa/compare/v0.9.6.36...v0.9.6.37
+
+---
 # Reiwa v0.9.6.36
 
 🤖 **AI-Support в кабинете + ключ только из панели** — «Быстрая помощь», full-screen chat, баннер на новом тикете; credentials panel-only (encrypted в rezeis). Парный admin: **rezeis v0.9.6.54**.

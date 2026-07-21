@@ -183,9 +183,15 @@ function QuestRow({
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-white">{loc(quest.title, i18n.language)}</p>
-        <p className="truncate text-xs text-zinc-400">{loc(quest.description, i18n.language)}</p>
-        <p className="mt-0.5 text-[11px] font-medium text-(--brand-primary)">
+        {/* Title: at most 2 lines; description wraps fully so operators' copy
+            is not cut mid-word (cabinet quests dialog regression). */}
+        <p className="line-clamp-2 break-words text-sm font-medium text-white">
+          {loc(quest.title, i18n.language)}
+        </p>
+        <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-snug text-zinc-400">
+          {loc(quest.description, i18n.language)}
+        </p>
+        <p className="mt-1 text-[11px] font-medium text-(--brand-primary)">
           {rewardSummary(t, quest)}
           {quest.type === "INVITE_FRIENDS" && quest.requiredFriends
             ? ` · ${t("quests.progress", { current: quest.progress, required: quest.requiredFriends })}`
