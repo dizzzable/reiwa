@@ -129,7 +129,7 @@ export default function ClaimPage() {
     } catch (err: unknown) {
       setSubmitting(false)
       if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status?: number; data?: { message?: string; code?: string } } }
+        const axiosErr = err as { response?: { status?: number; data?: { message?: string; code?: string; retryAfter?: number } } }
         const status = axiosErr.response?.status
         const code = axiosErr.response?.data?.code
         if (mode === 'login') {

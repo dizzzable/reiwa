@@ -109,7 +109,7 @@ export default function FinishSetupPage() {
     } catch (err: unknown) {
       setSubmitting(false)
       if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status?: number } }
+        const axiosErr = err as { response?: { status?: number; data?: { retryAfter?: number } } }
         const status = axiosErr.response?.status
         if (status === 409) {
           // Login already taken — almost always by the user's own existing

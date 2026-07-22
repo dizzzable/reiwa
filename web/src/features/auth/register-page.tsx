@@ -249,7 +249,7 @@ export default function RegisterPage() {
       setSubmitting(false)
 
       if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status?: number; data?: { code?: string; message?: string } } }
+        const axiosErr = err as { response?: { status?: number; data?: { code?: string; message?: string; retryAfter?: number } } }
         const status = axiosErr.response?.status
         const code = axiosErr.response?.data?.code
 

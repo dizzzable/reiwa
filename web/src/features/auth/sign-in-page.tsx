@@ -272,7 +272,10 @@ interface AxiosErrorLike {
   response?: {
     status: number
     headers?: Record<string, string>
-    data?: unknown
+    data?: {
+      retryAfter?: number
+      [key: string]: unknown
+    }
   }
 }
 
