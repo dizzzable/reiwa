@@ -116,7 +116,9 @@ export default function FinishSetupPage() {
           // account. Guide them to sign in instead of a dead-end field error.
           setServerError(t('finishSetup.errorUsernameTaken'))
         } else if (status === 429) {
-          setServerError(t('finishSetup.errorRateLimit'))
+          const retryAfter = axiosErr.response?.data?.retryAfter
+          const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+          setServerError(t('finishSetup.errorRateLimit', { seconds }))
         } else {
           setServerError(t('finishSetup.errorGeneric'))
         }

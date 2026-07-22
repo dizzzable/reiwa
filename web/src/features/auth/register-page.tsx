@@ -260,7 +260,9 @@ export default function RegisterPage() {
         } else if (status === 403) {
           setServerError(t('register.errorDisabled'))
         } else if (status === 429) {
-          setServerError(t('register.errorRateLimit'))
+          const retryAfter = axiosErr.response?.data?.retryAfter
+          const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+          setServerError(t('register.errorRateLimit', { seconds }))
         } else if (status === 502 || status === 503) {
           setServerError(t('register.errorServiceUnavailable'))
         } else {

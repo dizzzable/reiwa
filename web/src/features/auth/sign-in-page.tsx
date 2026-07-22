@@ -104,11 +104,11 @@ export default function SignInPage() {
         }
       } catch (err: unknown) {
         if (isAxiosError(err) && err.response?.status === 429) {
-          // Rate limited — extract Retry-After header
-          const retryAfter = err.response.headers?.['retry-after']
-          const seconds = retryAfter ? parseInt(retryAfter, 10) : 60
-          setRateLimitSeconds(isNaN(seconds) ? 60 : seconds)
-          setError(t('auth.rateLimited', { seconds: isNaN(seconds) ? 60 : seconds }))
+          // Rate limited — extract retryAfter from response body
+          const retryAfter = err.response.data?.retryAfter
+          const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+          setRateLimitSeconds(seconds)
+          setError(t('auth.rateLimited', { seconds }))
         } else {
           // Generic error — never reveal which field is wrong
           setError(t('auth.invalidCredentials'))

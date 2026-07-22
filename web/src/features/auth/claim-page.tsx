@@ -141,7 +141,9 @@ export default function ClaimPage() {
           } else if (status === 401) {
             setServerError(t('claim.linkExisting.errorInvalid'))
           } else if (status === 429) {
-            setServerError(t('claim.errorRateLimit'))
+            const retryAfter = axiosErr.response?.data?.retryAfter
+            const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+            setServerError(t('claim.errorRateLimit', { seconds }))
           } else if (status === 502 || status === 503) {
             setServerError(t('claim.errorServiceUnavailable'))
           } else {
@@ -155,7 +157,9 @@ export default function ClaimPage() {
         } else if (status === 400) {
           setServerError(t('claim.errorGeneric'))
         } else if (status === 429) {
-          setServerError(t('claim.errorRateLimit'))
+          const retryAfter = axiosErr.response?.data?.retryAfter
+          const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+          setServerError(t('claim.errorRateLimit', { seconds }))
         } else if (status === 502 || status === 503) {
           setServerError(t('claim.errorServiceUnavailable'))
         } else {
