@@ -249,7 +249,7 @@ export default function RegisterPage() {
       setSubmitting(false)
 
       if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status?: number; data?: { code?: string; message?: string } } }
+        const axiosErr = err as { response?: { status?: number; data?: { code?: string; message?: string; retryAfter?: number } } }
         const status = axiosErr.response?.status
         const code = axiosErr.response?.data?.code
 
@@ -260,7 +260,9 @@ export default function RegisterPage() {
         } else if (status === 403) {
           setServerError(t('register.errorDisabled'))
         } else if (status === 429) {
-          setServerError(t('register.errorRateLimit'))
+          const retryAfter = axiosErr.response?.data?.retryAfter
+          const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+          setServerError(t('register.errorRateLimit', { seconds }))
         } else if (status === 502 || status === 503) {
           setServerError(t('register.errorServiceUnavailable'))
         } else {

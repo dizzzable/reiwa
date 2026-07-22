@@ -109,14 +109,16 @@ export default function FinishSetupPage() {
     } catch (err: unknown) {
       setSubmitting(false)
       if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status?: number } }
+        const axiosErr = err as { response?: { status?: number; data?: { retryAfter?: number } } }
         const status = axiosErr.response?.status
         if (status === 409) {
           // Login already taken — almost always by the user's own existing
           // account. Guide them to sign in instead of a dead-end field error.
           setServerError(t('finishSetup.errorUsernameTaken'))
         } else if (status === 429) {
-          setServerError(t('finishSetup.errorRateLimit'))
+          const retryAfter = axiosErr.response?.data?.retryAfter
+          const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+          setServerError(t('finishSetup.errorRateLimit', { seconds }))
         } else {
           setServerError(t('finishSetup.errorGeneric'))
         }

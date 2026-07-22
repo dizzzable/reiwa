@@ -129,7 +129,7 @@ export default function ClaimPage() {
     } catch (err: unknown) {
       setSubmitting(false)
       if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status?: number; data?: { message?: string; code?: string } } }
+        const axiosErr = err as { response?: { status?: number; data?: { message?: string; code?: string; retryAfter?: number } } }
         const status = axiosErr.response?.status
         const code = axiosErr.response?.data?.code
         if (mode === 'login') {
@@ -141,7 +141,9 @@ export default function ClaimPage() {
           } else if (status === 401) {
             setServerError(t('claim.linkExisting.errorInvalid'))
           } else if (status === 429) {
-            setServerError(t('claim.errorRateLimit'))
+            const retryAfter = axiosErr.response?.data?.retryAfter
+            const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+            setServerError(t('claim.errorRateLimit', { seconds }))
           } else if (status === 502 || status === 503) {
             setServerError(t('claim.errorServiceUnavailable'))
           } else {
@@ -155,7 +157,9 @@ export default function ClaimPage() {
         } else if (status === 400) {
           setServerError(t('claim.errorGeneric'))
         } else if (status === 429) {
-          setServerError(t('claim.errorRateLimit'))
+          const retryAfter = axiosErr.response?.data?.retryAfter
+          const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
+          setServerError(t('claim.errorRateLimit', { seconds }))
         } else if (status === 502 || status === 503) {
           setServerError(t('claim.errorServiceUnavailable'))
         } else {
