@@ -12,3 +12,6 @@ Thumbs.db
 # Editor
 .idea/
 .vscode/
+
+# Local agent planning and verification artifacts
+.omx/
