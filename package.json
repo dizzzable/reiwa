@@ -1,8 +1,11 @@
 {
   "name": "reiwa",
-  "version": "0.9.6.42",
+  "version": "0.9.6.43",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^24.0.0"
+  },
   "scripts": {
     "start:api": "node dist/api/main.js",
     "start:bot": "node dist/bot/main.js",
@@ -41,7 +44,7 @@
     "@types/cookie-parser": "1.4.10",
     "@types/cors": "2.8.19",
     "@types/express": "5.0.6",
-    "@types/node": "25.7.0",
+    "@types/node": "24.13.3",
     "@types/uuid": "11.0.0",
     "fast-check": "4.8.0",
     "tsx": "4.22.0",
