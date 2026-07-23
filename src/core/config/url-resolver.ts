@@ -36,6 +36,10 @@ export function resolveReiwaPublicUrl(config: ReiwaConfig): string | null {
   if (/^https?:\/\//i.test(noTrailing)) {
     return noTrailing;
   }
-  const isLocal = /^localhost(:\d+)?$/i.test(noTrailing) || !noTrailing.includes('.');
+  const isLoopbackIp = /^127(?:\.\d{1,3}){3}(?::\d+)?$/.test(noTrailing);
+  const isLocal =
+    /^localhost(?::\d+)?$/i.test(noTrailing) ||
+    isLoopbackIp ||
+    !noTrailing.includes('.');
   return isLocal ? `http://${noTrailing}` : `https://${noTrailing}`;
 }

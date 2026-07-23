@@ -21,6 +21,7 @@ import { PromoHistory } from "@/features/promo/promo-history";
 import { SESSION_QUERY_KEY } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
 export default function PromocodesPage() {
   const { t } = useTranslation();
@@ -39,9 +40,8 @@ export default function PromocodesPage() {
           queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
           // Refresh every subscription view so a granted reward (e.g. +days)
           // updates remaining days in the web cabinet immediately.
-          queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
-          queryClient.invalidateQueries({ queryKey: ["subscriptions-all"] });
-          queryClient.invalidateQueries({ queryKey: ["subscription"] });
+          queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.detail });
           queryClient.invalidateQueries({ queryKey: ["devices"] });
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
           break;

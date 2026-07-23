@@ -18,13 +18,17 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Wifi, WifiOff } from "lucide-react";
 
-import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
-import { CardWatermark } from "@/components/ui/card-watermark";
 import { useBranding } from "@/lib/branding-provider";
-import { brandAuroraStops, cn, formatDate, getDaysLeft } from "@/lib/utils";
+import { cn, formatDate, getDaysLeft } from "@/lib/utils";
 import type { Subscription } from "@/types/api";
 
-interface SubscriptionCardProps {
+import { SubscriptionCardFrame } from "./subscription-card-frame";
+import {
+  resolveSubscriptionCardVisual,
+  type ResolvedSubscriptionCardVisual,
+} from "./subscription-card-visual";
+
+export interface SubscriptionCardProps {
   subscription: Subscription;
   /**
    * Position of this card in the user's subscription list (creation order).
@@ -40,24 +44,57 @@ interface SubscriptionCardProps {
    * live effect instantly instead of after a WebGL-init delay.
    */
   effectActive?: boolean;
+  /** Frozen visual snapshot used by creation/deletion lifecycle animations. */
+  visual?: ResolvedSubscriptionCardVisual;
 }
 
-export function SubscriptionCard({ subscription, index, firstDevice, effectActive }: SubscriptionCardProps) {
-  const { t } = useTranslation();
+export function SubscriptionCard({
+  subscription,
+  index,
+  firstDevice,
+  effectActive,
+  visual,
+}: SubscriptionCardProps) {
   const { branding } = useBranding();
-  const sub = subscription;
+  const resolvedVisual = useMemo(
+    () => visual ?? resolveSubscriptionCardVisual(branding, index),
+    [branding, index, visual],
+  );
 
+  return (
+    <SubscriptionCardFrame
+      visual={resolvedVisual}
+      effectActive={effectActive}
+    >
+      <SubscriptionCardContent
+        subscription={subscription}
+        firstDevice={firstDevice}
+      />
+    </SubscriptionCardFrame>
+  );
+}
+
+export interface SubscriptionCardContentProps {
+  readonly subscription: Subscription;
+  readonly firstDevice?: string | null;
+}
+
+/**
+ * Production card face as a Fragment. This keeps its nodes as direct children
+ * of SubscriptionCardFrame while allowing a creation handoff to reuse them.
+ */
+export function SubscriptionCardContent({
+  subscription,
+  firstDevice,
+}: SubscriptionCardContentProps) {
+  const { t } = useTranslation();
+  const sub = subscription;
   const isActive = sub.status === "ACTIVE" || sub.status === "LIMITED";
   const statusLabel = isActive
     ? t("card.activeStatus")
     : sub.status === "EXPIRED"
       ? t("card.expiredStatus")
       : t("card.pendingStatus");
-
-  const auroraStops = useMemo(
-    () => brandAuroraStops(branding.primary),
-    [branding.primary],
-  );
 
   // Traffic progress (0–1). When unlimited, show full bar.
   const trafficUsedGb = sub.trafficUsed ?? null;
@@ -92,66 +129,8 @@ export function SubscriptionCard({ subscription, index, firstDevice, effectActiv
           ? "#fbbf24"
           : undefined;
 
-  // Resolve the card background effect by POSITION. The operator assigns a
-  // background to each card slot (slot N → Nth subscription) globally in the
-  // WEB Reiwa configurator; cards beyond the configured slots fall back to the
-  // global branding choice. `aurora` (the default) is auto-tinted to the brand
-  // colour when no explicit colorStops are pinned, preserving the stock look.
-  const slot =
-    index !== undefined ? branding.cardEffectsByIndex?.[index] : undefined;
-  const effect = slot?.cardEffect ?? branding.cardEffect;
-  const slotProps = slot?.cardEffectProps;
-  const effectProps = useMemo<Record<string, unknown>>(() => {
-    const base = slotProps ?? branding.cardEffectProps ?? {};
-    if (effect === "aurora" && base["colorStops"] === undefined) {
-      return { colorStops: auroraStops, amplitude: 1.1, blend: 0.55, speed: 0.8, ...base };
-    }
-    return base;
-  }, [effect, slotProps, branding.cardEffectProps, auroraStops]);
-  const effectOpacity = slot?.cardEffectOpacity ?? branding.cardEffectOpacity ?? 1;
-  // Per-slot static gradient overrides the global one for this card position.
-  const cardGradient =
-    (slot?.cardGradient ?? "").trim().length > 0
-      ? (slot!.cardGradient as string)
-      : branding.cardGradient;
-
   return (
-    <div
-      className={cn(
-        // `@container/card` makes the card a container-query context so its
-        // contents scale to the CARD's width, not the viewport — it looks
-        // right both in a 320px phone column and a 440px desktop column.
-        "@container/card relative flex h-[190px] w-full flex-col justify-between overflow-hidden rounded-card p-4 text-white select-none",
-        "@sm:h-[210px] @sm:p-5",
-        "shadow-2xl shadow-black/40 ring-1 ring-white/10",
-      )}
-    >
-      {/* Dark base + operator gradient as the static foundation / fallback */}
-      <div className="absolute inset-0 -z-30 bg-zinc-950" />
-      <div
-        className="absolute inset-0 -z-25"
-        style={{ backgroundImage: cardGradient }}
-      />
-      {/* Animated effect layer (operator-configurable; NONE = gradient only) */}
-      {effect !== "NONE" && (
-        <CardEffectLayer
-          effect={effect}
-          props={effectProps}
-          opacity={effectOpacity}
-          active={effectActive}
-          className="absolute inset-0 -z-20"
-        />
-      )}
-      {/* Depth: top/bottom vignette so text stays legible over any effect */}
-      <div className="absolute inset-0 -z-10 bg-linear-to-b from-black/55 via-black/15 to-black/65" />
-
-      {/* Brand watermark — operator-configurable glyph or custom image */}
-      <CardWatermark
-        preset={branding.cardLogo}
-        customUrl={branding.cardLogoUrl}
-        className="absolute -right-6 -bottom-8 h-40 w-40 @sm:h-44 @sm:w-44"
-      />
-
+    <>
       {/* Top row: plan name + status */}
       <div className="relative flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -161,7 +140,7 @@ export function SubscriptionCard({ subscription, index, firstDevice, effectActiv
             <WifiOff className="h-4 w-4 shrink-0 opacity-60" />
           )}
           <span className="truncate text-[13px] font-semibold tracking-wide opacity-95 @sm:text-sm">
-            {sub.plan?.name ?? "Subscription"}
+            {sub.plan?.name ?? t("subscription.planFallback")}
           </span>
         </div>
         <span
@@ -183,7 +162,7 @@ export function SubscriptionCard({ subscription, index, firstDevice, effectActiv
       {/* Center: profile name (like card number) */}
       <div className="relative flex min-w-0 flex-1 items-center">
         <p className="w-full truncate font-mono text-[13px] tracking-[0.12em] text-white/90 drop-shadow @sm:text-[15px]">
-          {sub.profileName || sub.userRemnaId || sub.id}
+          {sub.profileName || sub.userRemnaId || t("card.pendingStatus")}
         </p>
       </div>
 
@@ -252,6 +231,6 @@ export function SubscriptionCard({ subscription, index, firstDevice, effectActiv
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

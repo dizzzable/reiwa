@@ -38,6 +38,7 @@ import { EmojiText } from "@/components/ui/emoji-text";
 import { useAddOnStore } from "@/stores/addons.store";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -143,7 +144,7 @@ function SelectSubscription() {
   const { selectedSubscriptionId, selectSubscription } = useAddOnStore();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["subscriptions-all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
@@ -441,7 +442,7 @@ function ReviewStep() {
   const { selectedSubscriptionId, selectedAddOn, selectedGateway, confirm, setStep } = useAddOnStore();
 
   const { data: subsData } = useQuery({
-    queryKey: ["subscriptions-all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
@@ -543,7 +544,7 @@ function CheckoutStep() {
       } else {
         // Free add-on: applied instantly server-side, no redirect.
         toast.success(t("addons.freeApplied"));
-        void queryClient.invalidateQueries({ queryKey: ["subscriptions-all"] });
+        void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
         void queryClient.invalidateQueries({ queryKey: ["devices"] });
         navigate("/dashboard", { replace: true });
       }

@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
 interface DevicesListProps {
   devices: HwidDevice[];
@@ -80,7 +81,7 @@ export function DevicesList({
     onSuccess: () => {
       // The link + device list both change — refresh subscriptions and devices.
       queryClient.invalidateQueries({ queryKey: ["devices", subscriptionId] });
-      queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+      queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
       toast.success(t("devices.regenerated"));
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
     },

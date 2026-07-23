@@ -21,6 +21,7 @@ import { TourTooltip } from "./components/tour-tooltip";
 import { DemoTutorial } from "./demo-tutorial";
 import { useOnboardingTour } from "@/hooks/use-onboarding-tour";
 import { getAllSubscriptions } from "@/lib/api-client";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
 interface OnboardingContextValue {
   /** Programmatically start (or restart) the spotlight tour (real mode). */
@@ -54,7 +55,7 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   // The real spotlight tour must never target a non-existent subscription
   // (Property 8). It only auto-starts once an active subscription exists.
   const { data: subsData } = useQuery<AllSubscriptionsShape>({
-    queryKey: ["subscriptions", "all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions as () => Promise<AllSubscriptionsShape>,
     staleTime: 30_000,
   });

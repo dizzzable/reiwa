@@ -24,18 +24,25 @@ import { useTranslation } from "react-i18next";
 import { ExternalLink } from "lucide-react";
 
 import { getPaymentStatus } from "@/lib/api-client";
-import type { PaymentStatus } from "@/types/api";
 import { resolvePaymentResult } from "./payment-result-policy";
 import { Button } from "@/components/ui/button";
 import { useBranding } from "@/lib/branding-provider";
 import { openExternalUrl } from "@/lib/utils";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import { readPendingCheckout, readPendingCheckoutReturnTo, readPendingCheckoutLabel, clearPendingCheckout } from "@/lib/pending-checkout";
+import {
+  clearSubscriptionProvisioningReceipt,
+  ensureSubscriptionProvisioningReceipt,
+  readSubscriptionProvisioningReceipt,
+  shouldTrackSubscriptionProvisioningReceipt,
+} from "@/lib/subscription-provisioning-receipt";
 
 type PaymentState = "processing" | "success" | "failed" | "timeout";
 
 const MAX_POLLS = 30;
 const POLL_INTERVAL_MS = 2000;
 const AUTO_REDIRECT_MS = 3500;
+const PROVISIONING_REDIRECT_MS = 900;
 
 export default function PaymentReturnPage() {
   const navigate = useNavigate();
@@ -47,6 +54,7 @@ export default function PaymentReturnPage() {
   const paymentId = searchParams.get("paymentId") ?? "";
   const [state, setState] = useState<PaymentState>("processing");
   const pollCountRef = useRef(0);
+  const provisioningSuccessRef = useRef(false);
 
   // The provider URL stashed by the flow that created this checkout. On
   // Telegram Desktop the auto-open (fired from an async mutation callback) is
@@ -85,24 +93,56 @@ export default function PaymentReturnPage() {
         const result = resolvePaymentResult({
           status: status.status,
           checkoutUrl,
-          errorCode: (status as PaymentStatus & { errorCode?: string }).errorCode,
+          errorCode: status.failureReason ?? undefined,
         });
+        const existingProvisioningReceipt =
+          readSubscriptionProvisioningReceipt(paymentId);
+        const provisioningCandidate = {
+          purchaseType: status.purchaseType,
+          subscriptionProvisioningStatus:
+            status.subscriptionProvisioningStatus,
+          hasExistingReceipt: existingProvisioningReceipt !== null,
+          returnTo: retryTo,
+        };
+        const isSubscriptionCreation =
+          shouldTrackSubscriptionProvisioningReceipt(provisioningCandidate);
+        if (
+          isSubscriptionCreation &&
+          status.status !== "FAILED" &&
+          status.status !== "CANCELED"
+        ) {
+          ensureSubscriptionProvisioningReceipt({
+            paymentId: status.paymentId,
+            purchaseType: provisioningCandidate.purchaseType,
+            // A payment return can open in another tab, where the original
+            // subscription count is unavailable. The source marker tells the
+            // dashboard to append using its current real-item count.
+            slotIndex: 0,
+            slotIndexSource: "PAYMENT_STATUS",
+            phase:
+              status.status === "COMPLETED"
+                ? "PROVISIONING"
+                : "AWAITING_PAYMENT",
+          });
+        }
         if (result === "success") {
           clearPendingCheckout(paymentId);
+          provisioningSuccessRef.current = isSubscriptionCreation;
           setState("success");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-          queryClient.invalidateQueries({ queryKey: ["subscription"] });
-          queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
-          // The `['subscriptions-all']` (hyphenated) key used by renewal/
-          // upgrade/addons pages isn't a prefix of `['subscriptions']`, so
-          // invalidate it explicitly too.
-          queryClient.invalidateQueries({ queryKey: ["subscriptions-all"] });
+          queryClient.invalidateQueries({
+            queryKey: subscriptionQueryKeys.detail,
+          });
+          queryClient.invalidateQueries({
+            queryKey: subscriptionQueryKeys.all,
+          });
           queryClient.invalidateQueries({ queryKey: ["devices"] });
           queryClient.invalidateQueries({ queryKey: ["session"] });
           return;
         }
         if (status.status === "FAILED" || status.status === "CANCELED") {
           clearPendingCheckout(paymentId);
+          clearSubscriptionProvisioningReceipt(paymentId);
           setState("failed");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
           return;
@@ -122,14 +162,16 @@ export default function PaymentReturnPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [paymentId, navigate, queryClient]);
+  }, [paymentId, navigate, queryClient, checkoutUrl, retryTo]);
 
   // ── Auto-redirect on success ──────────────────────────────────────────────
   useEffect(() => {
     if (state !== "success") return;
     const timer = setTimeout(() => {
       navigate("/dashboard", { replace: true });
-    }, AUTO_REDIRECT_MS);
+    }, provisioningSuccessRef.current
+      ? PROVISIONING_REDIRECT_MS
+      : AUTO_REDIRECT_MS);
     return () => clearTimeout(timer);
   }, [state, navigate]);
 

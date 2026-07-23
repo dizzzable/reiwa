@@ -11,6 +11,7 @@ import {
   getEnabledGateways,
   activatePromocode,
   getPaymentMethods,
+  type CreationPurchaseType,
 } from "@/lib/api-client";
 import { getPartnerInfo, payWithPartnerBalance } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
@@ -20,6 +21,11 @@ import { usePurchaseStore } from "@/stores/purchase.store";
 import { useBranding } from "@/lib/branding-provider";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { savePendingCheckout } from "@/lib/pending-checkout";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
+import {
+  saveSubscriptionProvisioningReceipt,
+  type SubscriptionProvisioningSlotIndexSource,
+} from "@/lib/subscription-provisioning-receipt";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { PromoInput } from "./components/promo-input";
 import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
@@ -357,7 +363,15 @@ function SelectGateway({
   );
 }
 
-function QuoteView() {
+function QuoteView({
+  purchaseType,
+  slotIndex,
+  slotIndexSource,
+}: {
+  purchaseType: CreationPurchaseType;
+  slotIndex: number;
+  slotIndexSource: SubscriptionProvisioningSlotIndexSource;
+}) {
   const { t } = useTranslation();
   const {
     selectedPlan,
@@ -412,16 +426,30 @@ function QuoteView() {
   });
 
   const balanceMutation = useMutation({
-    mutationFn: () =>
-      payWithPartnerBalance({
-        purchaseType: "NEW",
+    mutationFn: async () => {
+      const result = await payWithPartnerBalance({
+        purchaseType,
         planId: String(selectedPlan!.id),
         durationDays: selectedDuration!.days,
         deviceType: selectedDevice ?? undefined,
-      }),
-    onSuccess: () => {
+      });
+      if (!result.paymentId) {
+        throw new Error("Partner balance payment did not return a paymentId");
+      }
+      return { ...result, paymentId: result.paymentId };
+    },
+    onSuccess: (result) => {
+      saveSubscriptionProvisioningReceipt({
+        paymentId: result.paymentId,
+        purchaseType,
+        slotIndex,
+        slotIndexSource,
+        phase: "PROVISIONING",
+      });
       toast.success(t("purchase.quote.balancePaid"));
-      void queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+      void queryClient.invalidateQueries({
+        queryKey: subscriptionQueryKeys.all,
+      });
       void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
       void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
       navigate("/dashboard", { replace: true });
@@ -590,7 +618,15 @@ function Row({
   );
 }
 
-function CheckoutStep() {
+function CheckoutStep({
+  purchaseType,
+  slotIndex,
+  slotIndexSource,
+}: {
+  purchaseType: CreationPurchaseType;
+  slotIndex: number;
+  slotIndexSource: SubscriptionProvisioningSlotIndexSource;
+}) {
   const { t } = useTranslation();
   const {
     selectedPlan,
@@ -615,6 +651,7 @@ function CheckoutStep() {
         selectedSavedPaymentMethodId,
         interactiveYookassa ? savePaymentMethodConsent : undefined,
         interactiveYookassa ? savePaymentMethodConsent : undefined,
+        purchaseType,
       );
     },
     onSuccess: (result) => {
@@ -626,6 +663,13 @@ function CheckoutStep() {
       // inside a user gesture, which this async onSuccess has already lost), so
       // the return-page button is the reliable path there.
       savePendingCheckout(result.paymentId, result.checkoutUrl ?? null);
+      saveSubscriptionProvisioningReceipt({
+        paymentId: result.paymentId,
+        purchaseType,
+        slotIndex,
+        slotIndexSource,
+        phase: "AWAITING_PAYMENT",
+      });
       if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
       // Navigate to payment return to poll status
       navigate(`/payment-return?paymentId=${result.paymentId}`, {
@@ -680,6 +724,13 @@ export default function PurchasePage() {
     staleTime: 15_000,
   });
   const limitReached = isSubscriptionLimitReached(actionPolicy);
+  const provisioningSlotIndex = actionPolicy?.activeSubscriptionCount ?? 0;
+  const provisioningSlotIndexSource: SubscriptionProvisioningSlotIndexSource =
+    typeof actionPolicy?.activeSubscriptionCount === "number"
+      ? "CHECKOUT"
+      : "PAYMENT_STATUS";
+  const purchaseType: CreationPurchaseType =
+    provisioningSlotIndex > 0 ? "ADDITIONAL" : "NEW";
 
   // If no plan selected, go back
   useEffect(() => {
@@ -767,8 +818,20 @@ export default function PurchasePage() {
             <SelectDevice onSelect={selectDevice} />
           )}
           {step === "gateway" && <SelectGateway onSelect={selectGateway} />}
-          {step === "quote" && <QuoteView />}
-          {step === "checkout" && <CheckoutStep />}
+          {step === "quote" && (
+            <QuoteView
+              purchaseType={purchaseType}
+              slotIndex={provisioningSlotIndex}
+              slotIndexSource={provisioningSlotIndexSource}
+            />
+          )}
+          {step === "checkout" && (
+            <CheckoutStep
+              purchaseType={purchaseType}
+              slotIndex={provisioningSlotIndex}
+              slotIndexSource={provisioningSlotIndexSource}
+            />
+          )}
         </motion.div>
       </AnimatePresence>
     </div>

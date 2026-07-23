@@ -10,8 +10,8 @@
  * When the user has no subscriptions, the card area shows a CTA to purchase.
  */
 
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -36,6 +36,15 @@ import { NotificationBell } from "./components/notification-bell";
 import { QuestsIcon } from "./components/quests-icon";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
 import { TrialCta } from "./components/trial-cta";
+import {
+  buildSubscriptionCarouselItems,
+  resolveActiveCarouselItemKey,
+  selectNewestUnfocusedProvisioningKey,
+  subscriptionCarouselItemKey,
+} from "./subscription-lifecycle-policy";
+import { useSubscriptionProvisioning } from "./use-subscription-provisioning";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
+import type { Subscription } from "@/types/api";
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -44,6 +53,7 @@ export default function DashboardPage() {
   const { branding } = useBranding();
   const { purchasesBlocked, restricted } = useAccessMode();
   const reduceMotion = useReducedMotion();
+  const queryClient = useQueryClient();
 
   // Active-discount glow for the promo shortcut: violet for the permanent
   // personal discount, amber for the one-time next-purchase discount, split
@@ -55,10 +65,9 @@ export default function DashboardPage() {
 
   // Fetch all subscriptions for the carousel
   const { data: allSubsData, isLoading: subsLoading } = useQuery({
-    queryKey: ["subscriptions", "all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 30_000,
-    refetchInterval: 30_000,
   });
 
   // Capacity for multi-sub Buy gating (effective max folds per-user + global).
@@ -68,8 +77,62 @@ export default function DashboardPage() {
     staleTime: 30_000,
   });
 
-  const subscriptions = (allSubsData as any)?.subscriptions ?? [];
-  const hasSubscriptions = subscriptions.length > 0;
+  const subscriptions = allSubsData?.subscriptions ?? [];
+  const { runtimes: provisioningRuntimes, completeHandoff } =
+    useSubscriptionProvisioning();
+  const focusedProvisioningPaymentIds = useRef(
+    new Set(provisioningRuntimes.map((runtime) => runtime.receipt.paymentId)),
+  );
+  const carouselItems = useMemo(
+    () =>
+      buildSubscriptionCarouselItems(
+        subscriptions,
+        provisioningRuntimes,
+      ),
+    [provisioningRuntimes, subscriptions],
+  );
+  const carouselItemKeys = carouselItems.map((item) => item.key);
+  const carouselItemKeySignature = carouselItemKeys.join("|");
+  const [activeItemKey, setActiveItemKey] = useState<string | null>(() =>
+    selectNewestUnfocusedProvisioningKey(
+      provisioningRuntimes,
+      new Set<string>(),
+    ),
+  );
+  const resolvedActiveItemKey = resolveActiveCarouselItemKey(
+    carouselItemKeys,
+    activeItemKey,
+  );
+  const activeItem =
+    carouselItems.find((item) => item.key === resolvedActiveItemKey) ?? null;
+  const activeSubscription =
+    activeItem?.kind === "subscription" ? activeItem.subscription : null;
+  const activeSubscriptionId: string | null =
+    activeSubscription?.id ?? null;
+  const hasCarouselItems = carouselItems.length > 0;
+
+  useEffect(() => {
+    if (resolvedActiveItemKey !== activeItemKey) {
+      setActiveItemKey(resolvedActiveItemKey);
+    }
+  }, [
+    activeItemKey,
+    carouselItemKeySignature,
+    resolvedActiveItemKey,
+  ]);
+
+  useEffect(() => {
+    const focusKey = selectNewestUnfocusedProvisioningKey(
+      provisioningRuntimes,
+      focusedProvisioningPaymentIds.current,
+    );
+    for (const runtime of provisioningRuntimes) {
+      focusedProvisioningPaymentIds.current.add(runtime.receipt.paymentId);
+    }
+    if (focusKey !== null) {
+      setActiveItemKey(focusKey);
+    }
+  }, [provisioningRuntimes]);
 
   const buyLimitReached = isSubscriptionLimitReached(actionPolicy);
 
@@ -85,10 +148,6 @@ export default function DashboardPage() {
   };
 
   // The device list follows the currently selected subscription card.
-  const [activeIndex, setActiveIndex] = useState(0);
-  const activeSubscription = subscriptions[activeIndex] ?? subscriptions[0] ?? null;
-  const activeSubscriptionId: string | null = activeSubscription?.id ?? null;
-
   // Devices — scoped to the active subscription so switching cards swaps the
   // device list (each subscription has its own Remnawave profile).
   const { data: devicesData, isLoading: devicesLoading } = useQuery({
@@ -98,7 +157,7 @@ export default function DashboardPage() {
     staleTime: 30_000,
   });
 
-  const devices = (devicesData as any)?.devices ?? [];
+  const devices = devicesData?.devices ?? [];
   const firstDeviceById: Record<string, string | null> =
     activeSubscriptionId !== null
       ? {
@@ -109,8 +168,18 @@ export default function DashboardPage() {
         }
       : {};
 
+  const handleProvisioningComplete = useCallback(
+    (paymentId: string, subscription: Subscription) => {
+      completeHandoff(paymentId);
+      setActiveItemKey(subscriptionCarouselItemKey(subscription.id));
+      void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
+      void queryClient.invalidateQueries({ queryKey: ["session"] });
+    },
+    [completeHandoff, queryClient],
+  );
+
   return (
-    <div className="min-h-full pb-6">
+    <div className="min-h-full pb-8">
       {/* Header — brand + welcome on the left, quick-action icons on the right */}
       <div className="flex items-center justify-between px-5 pt-[calc(2.5rem+env(safe-area-inset-top))] pb-4">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -191,32 +260,34 @@ export default function DashboardPage() {
         <AccessModeBanner modes={["PURCHASE_BLOCKED", "REG_BLOCKED", "INVITED", "RESTRICTED"]} />
       </div>
 
-      {subsLoading ? (
+      {subsLoading && !hasCarouselItems ? (
         <div className="flex h-48 items-center justify-center">
           <div
             className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
             style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
           />
         </div>
-      ) : hasSubscriptions ? (
+      ) : hasCarouselItems ? (
         <>
           {/* Subscription card carousel */}
           <div data-tour="subscription-card">
             <SubscriptionCarousel
-              subscriptions={subscriptions}
+              items={carouselItems}
               firstDeviceById={firstDeviceById}
-              onActiveIndexChange={setActiveIndex}
+              activeItemKey={resolvedActiveItemKey}
+              onActiveItemKeyChange={setActiveItemKey}
+              onProvisioningComplete={handleProvisioningComplete}
             />
           </div>
 
           {/* Action buttons — actions on the current subscription */}
           <div data-tour="subscription-actions">
             <SubscriptionActions
-              subscription={activeSubscription ?? subscriptions[0]}
+              subscription={activeSubscription}
               purchasesBlocked={purchasesBlocked}
               restricted={restricted}
               onConnect={() => {
-                const url = activeSubscription?.url ?? subscriptions[0]?.url;
+                const url = activeSubscription?.url;
                 if (url) {
                   openExternalUrl(url);
                   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");

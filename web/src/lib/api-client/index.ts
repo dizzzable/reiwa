@@ -90,6 +90,7 @@ export {
   createUpgradeCheckout,
   getEnabledGateways,
   getPaymentStatus,
+  type CreationPurchaseType,
   type GatewayOption,
 } from "./payments.js";
 

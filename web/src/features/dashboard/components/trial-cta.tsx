@@ -29,6 +29,7 @@ import { usePurchaseStore } from "@/stores/purchase.store";
 import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
 import { writeOnboardingPrefs } from "@/lib/onboarding-prefs";
 import type { Plan } from "@/types/api";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -143,7 +144,7 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
     }, 2200);
     try {
       await activateTrial();
-      await queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+      await queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
       onActivated?.();
     } catch {
       setActivating(false);

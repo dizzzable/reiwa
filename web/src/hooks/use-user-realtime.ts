@@ -26,6 +26,10 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useSession } from "./use-session";
+import {
+  userRealtimeQueryKeysByType,
+  type UserRealtimeQueryKey,
+} from "@/lib/user-realtime-query-keys";
 
 export type UserRealtimeCategory =
   | "SUBSCRIPTION"
@@ -50,27 +54,8 @@ interface UseUserRealtimeOptions {
   readonly showToasts?: boolean;
 }
 
-/**
- * Map of `event.type` → React Query keys to invalidate. Keep in sync
- * with the user-facing query keys used elsewhere in the PWA. The list
- * stays in JS (not the server-side whitelist) so pages can rename their
- * keys without backend changes.
- */
-const TYPE_TO_KEYS: Record<string, readonly string[][]> = {
-  "subscription.created": [["session"], ["subscription"], ["all-subscriptions"]],
-  "subscription.renewed": [["subscription"], ["all-subscriptions"]],
-  "subscription.expired": [["subscription"], ["all-subscriptions"], ["activity", "notifications"]],
-  "subscription.upgraded": [["subscription"], ["all-subscriptions"]],
-  "subscription.trial_granted": [["subscription"], ["session"]],
-  "payment.completed": [["activity", "transactions"], ["subscription"], ["session"]],
-  "payment.failed": [["activity", "transactions"]],
-  "promocode.activated": [["activity", "transactions"], ["subscription"]],
-  "referral.qualified": [["referrals"]],
-  "referral.reward_issued": [["referrals"], ["session"]],
-};
-
 /** Always invalidate notifications — every event also gets persisted there. */
-const ALWAYS_INVALIDATE: readonly string[][] = [
+const ALWAYS_INVALIDATE: readonly UserRealtimeQueryKey[] = [
   ["activity", "notifications"],
   ["activity", "notifications-unread-count"],
   // Cabinet feed + dashboard bell query keys.
@@ -96,7 +81,7 @@ export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
     });
 
     const pending = new Map<string, ReturnType<typeof setTimeout>>();
-    function scheduleInvalidate(key: readonly string[]): void {
+    function scheduleInvalidate(key: UserRealtimeQueryKey): void {
       const cacheKey = key.join("::");
       const existing = pending.get(cacheKey);
       if (existing) clearTimeout(existing);
@@ -104,13 +89,13 @@ export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
         cacheKey,
         setTimeout(() => {
           pending.delete(cacheKey);
-          queryClient.invalidateQueries({ queryKey: key as unknown as string[] });
+          queryClient.invalidateQueries({ queryKey: key });
         }, DEBOUNCE_MS),
       );
     }
 
     function handle(event: UserRealtimeEvent): void {
-      const keys = TYPE_TO_KEYS[event.type];
+      const keys = userRealtimeQueryKeysByType[event.type];
       if (keys) for (const key of keys) scheduleInvalidate(key);
       for (const key of ALWAYS_INVALIDATE) scheduleInvalidate(key);
 
@@ -156,7 +141,7 @@ export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
     // not invoked for typed events.
     const knownTypes = [
       "realtime.ready",
-      ...Object.keys(TYPE_TO_KEYS),
+      ...Object.keys(userRealtimeQueryKeysByType),
     ];
     for (const type of knownTypes) {
       eventSource.addEventListener(type, onMessage as EventListener);

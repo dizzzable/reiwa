@@ -25,6 +25,33 @@ const optionalString = z
   .optional()
   .transform((value) => (value && value.length > 0 ? value : null));
 
+function isHttpOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      !url.username &&
+      !url.password &&
+      url.pathname === '/' &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+const optionalCorsOrigin = z
+  .string()
+  .trim()
+  .optional()
+  .transform((value) => (value && value.length > 0 ? value : null))
+  .refine(
+    (value) => value === null || isHttpOrigin(value),
+    'REIWA_CORS_ORIGIN must be an HTTP(S) origin without credentials, path, query, or hash',
+  )
+  .transform((value) => (value === null ? null : new URL(value).origin));
+
 const schema = z.object({
   NODE_ENV: z.string().default('development'),
 
@@ -215,7 +242,7 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
-  REIWA_CORS_ORIGIN: z.string().trim().optional(),
+  REIWA_CORS_ORIGIN: optionalCorsOrigin,
 
   /**
    * Shared secret used to verify inbound webhooks FROM rezeis-admin
@@ -254,7 +281,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ReiwaConfig {
 
   if (cfg.NODE_ENV === 'production') {
     const missing: string[] = [];
-    if (!cfg.REIWA_CORS_ORIGIN) missing.push('REIWA_CORS_ORIGIN');
+    if (!cfg.REIWA_CORS_ORIGIN && !cfg.REIWA_DOMAIN && !cfg.REIWA_PUBLIC_WEB_URL) {
+      missing.push('REIWA_CORS_ORIGIN or REIWA_DOMAIN');
+    }
     if (!cfg.REZEIS_INTERNAL_SHARED_SECRET) missing.push('REZEIS_INTERNAL_SHARED_SECRET');
     if (missing.length > 0) {
       throw new Error(`Missing required production configuration: ${missing.join(', ')}`);

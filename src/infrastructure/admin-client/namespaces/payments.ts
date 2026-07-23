@@ -20,6 +20,34 @@ export interface CreateCheckoutOptions {
 
 export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
 
+export type PaymentTransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED' | 'FAILED';
+
+export type SubscriptionProvisioningStatus =
+  | 'NOT_APPLICABLE'
+  | 'FULFILLING'
+  | 'PROFILE_PENDING'
+  | 'READY'
+  | 'FAILED';
+
+/**
+ * Exact wire shape returned by the Rezeis internal payment-status endpoint.
+ * Keep decimal amounts as strings so the Reiwa proxy never loses precision.
+ */
+export interface PaymentStatusResponse {
+  readonly paymentId: string;
+  readonly status: PaymentTransactionStatus;
+  readonly gatewayType: string;
+  readonly purchaseType: PurchaseType;
+  readonly amount: string;
+  readonly currency: string;
+  readonly checkoutUrl: string | null;
+  readonly failureReason: string | null;
+  readonly subscriptionId: string | null;
+  readonly subscriptionProvisioningStatus: SubscriptionProvisioningStatus;
+  readonly subscriptionProvisioningFailureCode: 'PROFILE_SYNC_FAILED' | null;
+  readonly updatedAt: string;
+}
+
 export class PaymentsNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
@@ -106,7 +134,7 @@ export class PaymentsNamespace {
     );
   }
 
-  getStatus(paymentId: string, identity: UserIdentity = {}): Promise<unknown> {
+  getStatus(paymentId: string, identity: UserIdentity = {}): Promise<PaymentStatusResponse> {
     const query: string[] = [];
     if (typeof identity.userId === 'string' && identity.userId.length > 0) {
       query.push(`userId=${encodeURIComponent(identity.userId)}`);
@@ -115,7 +143,7 @@ export class PaymentsNamespace {
       query.push(`telegramId=${encodeURIComponent(identity.telegramId)}`);
     }
     const qs = query.length > 0 ? `?${query.join('&')}` : '';
-    return this.transport.request(
+    return this.transport.request<PaymentStatusResponse>(
       'GET',
       `/api/internal/payments/${encodeURIComponent(paymentId)}${qs}`,
     );

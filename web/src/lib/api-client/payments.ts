@@ -9,7 +9,9 @@
  */
 import { apiClient } from "./transport.js";
 import { getClientSource } from "@/lib/client-source";
-import type { CheckoutResult, PaymentStatus } from "@/types/api";
+import type { CheckoutResult, PaymentPurchaseType, PaymentStatus } from "@/types/api";
+
+export type CreationPurchaseType = Extract<PaymentPurchaseType, "NEW" | "ADDITIONAL">;
 
 export interface GatewayOption {
   type: string;
@@ -29,13 +31,14 @@ export const createCheckout = (
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
+  purchaseType: CreationPurchaseType = "NEW",
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
       planId,
       durationDays,
       gatewayType,
-      purchaseType: "NEW",
+      purchaseType,
       deviceType,
       source: getClientSource(),
       ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
@@ -103,7 +106,9 @@ export const createUpgradeCheckout = (
     .then((r) => r.data);
 
 export const getPaymentStatus = (paymentId: string) =>
-  apiClient.get<PaymentStatus>(`/payments/${paymentId}`).then((r) => r.data);
+  apiClient
+    .get<PaymentStatus>(`/payments/${encodeURIComponent(paymentId)}`)
+    .then((r) => r.data);
 
 /**
  * Combined multi-subscription renewal: one provider checkout for the summed

@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/dialog";
 import { useBranding } from "@/lib/branding-provider";
 import { cn } from "@/lib/utils";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
 const PRESET_ICONS: Record<string, LucideIcon> = {
   telegram: Send,
@@ -160,7 +161,7 @@ function QuestRow({
     mutationFn: () => claimQuest(quest.id),
     onSuccess: (result: QuestClaimResult) => {
       void queryClient.invalidateQueries({ queryKey: ["quests"] });
-      void queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
+      void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
       void queryClient.invalidateQueries({ queryKey: ["session"] });
       toast.success(
         result.promoCode

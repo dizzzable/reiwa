@@ -6,10 +6,11 @@
  * non-refundable; the copy makes that explicit. Confirm is disabled while the
  * request is in flight to prevent double submission.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
+import axios from "axios";
 
 import { deleteSubscription } from "@/lib/api-client";
 import type { Subscription } from "@/types/api";
@@ -20,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { executeSubscriptionDeleteWithAmbiguousRetry } from "../subscription-delete-policy";
 
 function subscriptionTitle(sub: Subscription): string {
   return sub.profileName || sub.plan?.name || sub.id;
@@ -29,22 +31,33 @@ export function DeleteSubscriptionDialog({
   subscription,
   open,
   onOpenChange,
+  onServerCommitted,
 }: {
   subscription: Subscription | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onServerCommitted: (subscriptionId: string) => void;
 }) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: () => deleteSubscription(subscription!.id),
+    mutationFn: async () => {
+      const subscriptionId = subscription?.id;
+      if (!subscriptionId) {
+        throw new Error("Subscription is required");
+      }
+      return executeSubscriptionDeleteWithAmbiguousRetry(
+        () => deleteSubscription(subscriptionId),
+        (error) =>
+          axios.isAxiosError(error) && error.response === undefined,
+      );
+    },
     onSuccess: () => {
+      const subscriptionId = subscription?.id;
+      if (!subscriptionId) return;
       toast.success(t("deleteSubscription.success"));
-      void queryClient.invalidateQueries({ queryKey: ["subscriptions-all"] });
-      void queryClient.invalidateQueries({ queryKey: ["subscription"] });
-      void queryClient.invalidateQueries({ queryKey: ["devices"] });
       onOpenChange(false);
+      onServerCommitted(subscriptionId);
     },
     onError: () => toast.error(t("deleteSubscription.error")),
   });

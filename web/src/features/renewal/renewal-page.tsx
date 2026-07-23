@@ -47,6 +47,7 @@ import {
   formatCurrencyAmount,
   resolveRenewalAddOnReview,
 } from "./renewal-review-policy";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -113,7 +114,7 @@ export default function RenewalPage() {
     staleTime: 60_000,
   });
   const { data: subsData, isLoading: subsLoading } = useQuery({
-    queryKey: ["subscriptions-all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
@@ -200,7 +201,7 @@ function SelectSubscriptions() {
     staleTime: 60_000,
   });
   const { data: subsData, isLoading: subsLoading } = useQuery({
-    queryKey: ["subscriptions-all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
@@ -385,7 +386,7 @@ function SelectPlan() {
     staleTime: 60_000,
   });
   const { data: subsData } = useQuery({
-    queryKey: ["subscriptions-all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
@@ -507,7 +508,7 @@ function SelectRenewalAddOns() {
   const multi = selectedSubscriptionIds.length > 1;
 
   const { data: subsData } = useQuery({
-    queryKey: ["subscriptions-all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
@@ -909,7 +910,7 @@ function RenewalReview() {
     enabled: selectedSubscriptionIds.length > 0 && !!selectedGateway,
   });
   const { data: subsData } = useQuery({
-    queryKey: ["subscriptions-all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
@@ -952,8 +953,7 @@ function RenewalReview() {
       }),
     onSuccess: () => {
       toast.success(t("renewal.balancePaid"));
-      void queryClient.invalidateQueries({ queryKey: ["subscriptions", "all"] });
-      void queryClient.invalidateQueries({ queryKey: ["subscriptions-all"] });
+      void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
       void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
       navigate("/dashboard", { replace: true });
     },

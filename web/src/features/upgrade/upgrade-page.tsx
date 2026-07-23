@@ -26,6 +26,7 @@ import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { openExternalUrl } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
+import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -91,7 +92,7 @@ function SelectSubscription() {
   const { selectedSubscriptionId, selectSubscription } = useUpgradeStore();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["subscriptions-all"],
+    queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });

@@ -187,13 +187,29 @@ export interface CheckoutResult {
 }
 
 // ─── Payment status ──────────────────────────────────────────────────────────
+export type PaymentPurchaseType = "NEW" | "ADDITIONAL" | "RENEW" | "UPGRADE";
+
+export type SubscriptionProvisioningStatus =
+  | "NOT_APPLICABLE"
+  | "FULFILLING"
+  | "PROFILE_PENDING"
+  | "READY"
+  | "FAILED";
+
 export interface PaymentStatus {
   paymentId: string;
-  status: "PENDING" | "COMPLETED" | "CANCELED" | "REFUNDED" | "FAILED";
-  amount: number;
-  currency: string;
+  status: "PENDING" | "COMPLETED" | "CANCELED" | "FAILED";
   gatewayType: string;
-  createdAt: string;
+  purchaseType: PaymentPurchaseType;
+  /** Decimal wire value. Kept as a string to avoid monetary precision loss. */
+  amount: string;
+  currency: string;
+  checkoutUrl: string | null;
+  failureReason: string | null;
+  subscriptionId: string | null;
+  subscriptionProvisioningStatus: SubscriptionProvisioningStatus;
+  subscriptionProvisioningFailureCode: "PROFILE_SYNC_FAILED" | null;
+  updatedAt: string;
 }
 
 // ─── Transaction ─────────────────────────────────────────────────────────────
