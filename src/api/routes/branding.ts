@@ -134,11 +134,26 @@ export function createBrandingRouter(deps: {
    * otherwise. `null` when unset → the cabinet hides the affordance.
    */
   supportUsername?: string | null;
+  /**
+   * Reiwa-owned public deep-link values. They are included in the existing
+   * public-config response so rezeis-admin never has to guess them from its
+   * own (admin) domain.
+   */
+  botUsername?: string | null;
+  webBaseUrl?: string | null;
 }) {
   const { adminClient, logger } = deps;
   const supportUsername =
     typeof deps.supportUsername === 'string' && deps.supportUsername.trim().length > 0
       ? deps.supportUsername.replace(/^@+/, '').trim()
+      : null;
+  const botUsername =
+    typeof deps.botUsername === 'string' && deps.botUsername.trim().length > 0
+      ? deps.botUsername.replace(/^@+/, '').trim()
+      : null;
+  const webBaseUrl =
+    typeof deps.webBaseUrl === 'string' && deps.webBaseUrl.trim().length > 0
+      ? deps.webBaseUrl.replace(/\/+$/, '').trim()
       : null;
   const router = Router();
 
@@ -173,8 +188,13 @@ export function createBrandingRouter(deps: {
       // the Support page can deep-link to the Telegram support account. Done
       // per-response (not in the cached body) since it's a static env value.
       const body =
-        supportUsername !== null && payload.body !== null && typeof payload.body === "object"
-          ? { ...(payload.body as Record<string, unknown>), supportUsername }
+        payload.body !== null && typeof payload.body === "object"
+          ? {
+              ...(payload.body as Record<string, unknown>),
+              supportUsername,
+              botUsername,
+              webBaseUrl,
+            }
           : payload.body;
       res.json(body);
     } catch (e: unknown) {
