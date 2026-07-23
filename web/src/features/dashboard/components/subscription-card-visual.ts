@@ -1,4 +1,4 @@
-import { brandAuroraStops } from "../../../lib/utils";
+import { brandAuroraStops } from "../../../lib/brand-colors";
 import type {
   Branding,
   CardEffect,

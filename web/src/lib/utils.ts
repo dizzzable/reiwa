@@ -1,6 +1,8 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+export { brandAuroraStops } from "./brand-colors";
+
 /**
  * shadcn/ui-canonical class merger.
  * Combines `clsx` (conditional className composition) with `tailwind-merge`
@@ -58,59 +60,6 @@ function getActiveLocale(): string {
   const htmlLang = document.documentElement.lang;
   if (htmlLang && htmlLang.length > 0) return htmlLang;
   return "ru";
-}
-
-/**
- * Parses a hex colour (`#rgb` / `#rrggbb`) into an `[r, g, b]` triple of
- * 0–255 integers. Returns the brand emerald as a safe fallback.
- */
-function hexToRgb(hex: string): [number, number, number] {
-  let h = hex.trim().replace(/^#/, "");
-  if (h.length === 3) {
-    h = h
-      .split("")
-      .map((c) => c + c)
-      .join("");
-  }
-  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return [34, 197, 94];
-  return [
-    parseInt(h.slice(0, 2), 16),
-    parseInt(h.slice(2, 4), 16),
-    parseInt(h.slice(4, 6), 16),
-  ];
-}
-
-function rgbToHex(r: number, g: number, b: number): string {
-  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
-  return `#${[clamp(r), clamp(g), clamp(b)]
-    .map((n) => n.toString(16).padStart(2, "0"))
-    .join("")}`;
-}
-
-/**
- * Lightens (positive amount) or darkens (negative amount) a hex colour by
- * mixing it toward white/black. `amount` is 0–1.
- */
-function shadeHex(hex: string, amount: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  if (amount >= 0) {
-    return rgbToHex(
-      r + (255 - r) * amount,
-      g + (255 - g) * amount,
-      b + (255 - b) * amount,
-    );
-  }
-  const k = 1 + amount;
-  return rgbToHex(r * k, g * k, b * k);
-}
-
-/**
- * Derives a 3-stop aurora ramp from a single brand colour: a darker shade,
- * a lighter accent, and back to the darker shade for a symmetric flow.
- * Feeds the `<Aurora colorStops>` prop so the card background tracks branding.
- */
-export function brandAuroraStops(primary: string): [string, string, string] {
-  return [shadeHex(primary, -0.25), shadeHex(primary, 0.35), shadeHex(primary, -0.1)];
 }
 
 /**
