@@ -327,7 +327,7 @@ describe("POST /api/v1/push/subscribe", () => {
       body: {
         subscription: {
           endpoint: "https://fcm.googleapis.com/fcm/send/abc123",
-          keys: { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8p8REfWRs", auth: "tBHItJI5svbpC7htfNfQjA" },
+          keys: { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8p8REfWRs", auth: "AAAAAAAAAAAAAAAAAAAAAA" },
         },
       },
     });

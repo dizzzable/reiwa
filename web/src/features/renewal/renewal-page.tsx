@@ -21,6 +21,7 @@ import {
 import type { EligibleAddOn } from "@/lib/api-client";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
+import { Switch } from "@/components/ui/switch";
 import { PromoInput } from "@/features/purchase/components/promo-input";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
@@ -1082,20 +1083,21 @@ function RenewalReview() {
       />
 
       {showSaveCardConsent && (
-        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-transparent accent-(--brand-primary)"
-            checked={savePaymentMethodConsent}
-            onChange={(e) => setSavePaymentMethodConsent(e.target.checked)}
-          />
-          <span className="text-zinc-300 leading-snug">
-            <span className="font-medium text-zinc-100">{t("purchase.quote.saveCardTitle")}</span>
-            <span className="mt-0.5 block text-xs text-zinc-400">
+        <div className="flex items-start justify-between gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm">
+          <div className="min-w-0 text-zinc-300 leading-snug">
+            <p className="font-medium text-zinc-100">{t("purchase.quote.saveCardTitle")}</p>
+            <p id="renewal-save-card-hint" className="mt-0.5 text-xs text-zinc-400">
               {t("purchase.quote.saveCardHint")}
-            </span>
-          </span>
-        </label>
+            </p>
+          </div>
+          <Switch
+            className="mt-0.5"
+            checked={savePaymentMethodConsent}
+            onCheckedChange={setSavePaymentMethodConsent}
+            aria-label={t("purchase.quote.saveCardTitle")}
+            aria-describedby="renewal-save-card-hint"
+          />
+        </div>
       )}
 
       <StadiumButton
