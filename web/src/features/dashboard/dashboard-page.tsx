@@ -78,8 +78,11 @@ export default function DashboardPage() {
   });
 
   const subscriptions = allSubsData?.subscriptions ?? [];
-  const { runtimes: provisioningRuntimes, completeHandoff } =
-    useSubscriptionProvisioning();
+  const {
+    runtimes: provisioningRuntimes,
+    completeHandoff,
+    startTrialProvisioning,
+  } = useSubscriptionProvisioning();
   const focusedProvisioningPaymentIds = useRef(
     new Set(provisioningRuntimes.map((runtime) => runtime.receipt.paymentId)),
   );
@@ -176,6 +179,16 @@ export default function DashboardPage() {
       void queryClient.invalidateQueries({ queryKey: ["session"] });
     },
     [completeHandoff, queryClient],
+  );
+
+  const handleTrialActivated = useCallback(
+    (subscriptionId: string) => {
+      startTrialProvisioning({
+        subscriptionId,
+        slotIndex: subscriptions.length,
+      });
+    },
+    [startTrialProvisioning, subscriptions.length],
   );
 
   return (
@@ -314,7 +327,7 @@ export default function DashboardPage() {
         </>
       ) : (
         <>
-          <TrialCta />
+          <TrialCta onActivated={handleTrialActivated} />
           <EmptySubscriptionCta onBuy={handleBuy} />
         </>
       )}

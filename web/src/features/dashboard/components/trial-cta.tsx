@@ -61,8 +61,8 @@ function lowestPrice(
 }
 
 interface TrialCtaProps {
-  /** Called after a successful free-trial activation (→ real tutorial). */
-  onActivated?: () => void;
+  /** Starts the dashboard handoff for the exact subscription just created. */
+  onActivated: (subscriptionId: string) => void;
 }
 
 export function TrialCta({ onActivated }: TrialCtaProps) {
@@ -143,9 +143,15 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
       setActivationStep((step) => Math.min(step + 1, TRIAL_ACTIVATION_STEP_COUNT - 1));
     }, 2200);
     try {
-      await activateTrial();
+      const result = await activateTrial();
+      const subscriptionId = result.subscriptionId?.trim();
+      if (!result.activated || !subscriptionId) {
+        throw new Error("Trial activation did not return a subscription ID");
+      }
+      // Register the transient card before the canonical list refetch can
+      // render the local `Ожидает` row.
+      onActivated(subscriptionId);
       await queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
-      onActivated?.();
     } catch {
       setActivating(false);
       setError(t("trialCta.errorGeneric"));

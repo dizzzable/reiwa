@@ -1,6 +1,7 @@
-import type {
-  SubscriptionProvisioningReceipt,
-} from "@/lib/subscription-provisioning-receipt";
+import {
+  isTrialSubscriptionProvisioningReceipt,
+  type SubscriptionProvisioningReceipt,
+} from "../../lib/subscription-provisioning-receipt.js";
 import type { PaymentStatus, Subscription } from "@/types/api";
 
 export interface SubscriptionProvisioningRuntime {
@@ -54,6 +55,36 @@ export function isRemnawaveSubscriptionReady(
     typeof subscription.url === "string" &&
     subscription.url.trim().length > 0
   );
+}
+
+/**
+ * Free trials do not create a payment resource. Convert their exact local
+ * subscription target into the same runtime contract as paid provisioning so
+ * the carousel can keep one animation and handoff path.
+ */
+export function resolveTrialProvisioningPaymentStatus(
+  receipt: SubscriptionProvisioningReceipt,
+  subscriptions: readonly Subscription[],
+): PaymentStatus | null {
+  if (!isTrialSubscriptionProvisioningReceipt(receipt)) return null;
+
+  const ready = hasAllReadySubscriptionTargets(subscriptions, [
+    receipt.subscriptionId,
+  ]);
+  return {
+    paymentId: receipt.paymentId,
+    status: "COMPLETED",
+    gatewayType: "TRIAL",
+    purchaseType: "NEW",
+    amount: "0",
+    currency: "",
+    checkoutUrl: null,
+    failureReason: null,
+    subscriptionId: receipt.subscriptionId,
+    subscriptionProvisioningStatus: ready ? "READY" : "PROFILE_PENDING",
+    subscriptionProvisioningFailureCode: null,
+    updatedAt: new Date(receipt.createdAt).toISOString(),
+  };
 }
 
 /**

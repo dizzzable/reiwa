@@ -5,9 +5,11 @@ import {
   SUBSCRIPTION_PROVISIONING_RECEIPT_TTL_MS,
   clearSubscriptionProvisioningReceipt,
   ensureSubscriptionProvisioningReceipt,
+  isTrialSubscriptionProvisioningReceipt,
   listSubscriptionProvisioningReceipts,
   readSubscriptionProvisioningReceipt,
   saveSubscriptionProvisioningReceipt,
+  saveTrialSubscriptionProvisioningReceipt,
   shouldTrackSubscriptionProvisioningReceipt,
   type SubscriptionProvisioningReceiptStorage,
 } from "../../web/src/lib/subscription-provisioning-receipt.js";
@@ -98,6 +100,39 @@ describe("subscription provisioning receipt store", () => {
     expect(readSubscriptionProvisioningReceipt("payment-2", { storage, now: NOW + 20 })?.phase).toBe(
       "PROVISIONING",
     );
+  });
+
+  it("persists a free trial as a direct provisioning target", () => {
+    const storage = new MemoryStorage();
+    const receipt = saveTrialSubscriptionProvisioningReceipt(
+      {
+        subscriptionId: "trial-subscription",
+        slotIndex: 0,
+      },
+      { storage, now: NOW },
+    );
+
+    expect(receipt).toMatchObject({
+      paymentId: "trial:trial-subscription",
+      source: "TRIAL",
+      subscriptionId: "trial-subscription",
+      purchaseType: "NEW",
+      phase: "PROVISIONING",
+    });
+    expect(
+      receipt === null
+        ? false
+        : isTrialSubscriptionProvisioningReceipt(receipt),
+    ).toBe(true);
+    expect(
+      readSubscriptionProvisioningReceipt("trial:trial-subscription", {
+        storage,
+        now: NOW + 1,
+      }),
+    ).toMatchObject({
+      source: "TRIAL",
+      subscriptionId: "trial-subscription",
+    });
   });
 
   it("recovers a missing new-tab receipt and never regresses its phase", () => {

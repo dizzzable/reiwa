@@ -17,14 +17,17 @@ import {
 import {
   clearSubscriptionProvisioningReceipt,
   ensureSubscriptionProvisioningReceipt,
+  isTrialSubscriptionProvisioningReceipt,
   listSubscriptionProvisioningReceipts,
+  saveTrialSubscriptionProvisioningReceipt,
   type SubscriptionProvisioningReceipt,
 } from "@/lib/subscription-provisioning-receipt";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
-import type { PaymentStatus } from "@/types/api";
+import type { AllSubscriptionsResponse, PaymentStatus } from "@/types/api";
 
 import {
   hasAllReadySubscriptionTargets,
+  resolveTrialProvisioningPaymentStatus,
   type SubscriptionProvisioningRuntime,
 } from "./subscription-lifecycle-policy";
 
@@ -39,6 +42,10 @@ function provisioningPaymentQueryKey(paymentId: string) {
 export interface SubscriptionProvisioningState {
   readonly runtimes: readonly SubscriptionProvisioningRuntime[];
   readonly completeHandoff: (paymentId: string) => void;
+  readonly startTrialProvisioning: (input: {
+    readonly subscriptionId: string;
+    readonly slotIndex: number;
+  }) => void;
 }
 
 /**
@@ -53,41 +60,73 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
     SubscriptionProvisioningReceipt[]
   >(() => listSubscriptionProvisioningReceipts());
   const profilePendingRefreshes = useRef(new Set<string>());
+  const trialSubscriptionIds = useMemo(
+    () =>
+      receipts.flatMap((receipt) =>
+        isTrialSubscriptionProvisioningReceipt(receipt)
+          ? [receipt.subscriptionId]
+          : [],
+      ),
+    [receipts],
+  );
+  const trialSubscriptionSignature = trialSubscriptionIds.join("|");
 
   const paymentQueries = useQueries({
-    queries: receipts.map((receipt) => ({
-      queryKey: provisioningPaymentQueryKey(receipt.paymentId),
-      queryFn: () => getPaymentStatus(receipt.paymentId),
-      staleTime: 0,
-      retry: 2,
-      refetchInterval: (query: {
-        state: { data: PaymentStatus | undefined };
-      }) => {
-        const status = query.state.data;
-        if (status === undefined) {
-          return receipt.phase === "PROVISIONING"
-            ? PROFILE_POLL_INTERVAL_MS
-            : PAYMENT_POLL_INTERVAL_MS;
-        }
-        if (
-          status.status === "FAILED" ||
-          status.status === "CANCELED" ||
-          status.subscriptionProvisioningStatus === "READY" ||
-          status.subscriptionProvisioningStatus === "FAILED" ||
-          (status.status === "COMPLETED" &&
-            status.subscriptionProvisioningStatus === "NOT_APPLICABLE")
-        ) {
-          return false;
-        }
-        return receipt.phase === "PROVISIONING"
-          ? PROFILE_POLL_INTERVAL_MS
-          : PAYMENT_POLL_INTERVAL_MS;
-      },
-    })),
+    queries: receipts.map((receipt) => {
+      const isTrial = isTrialSubscriptionProvisioningReceipt(receipt);
+      return {
+        queryKey: provisioningPaymentQueryKey(receipt.paymentId),
+        queryFn: () => getPaymentStatus(receipt.paymentId),
+        enabled: !isTrial,
+        staleTime: 0,
+        retry: 2,
+        refetchInterval: isTrial
+          ? false
+          : (query: {
+              state: { data: PaymentStatus | undefined };
+            }) => {
+              const status = query.state.data;
+              if (status === undefined) {
+                return receipt.phase === "PROVISIONING"
+                  ? PROFILE_POLL_INTERVAL_MS
+                  : PAYMENT_POLL_INTERVAL_MS;
+              }
+              if (
+                status.status === "FAILED" ||
+                status.status === "CANCELED" ||
+                status.subscriptionProvisioningStatus === "READY" ||
+                status.subscriptionProvisioningStatus === "FAILED" ||
+                (status.status === "COMPLETED" &&
+                  status.subscriptionProvisioningStatus === "NOT_APPLICABLE")
+              ) {
+                return false;
+              }
+              return receipt.phase === "PROVISIONING"
+                ? PROFILE_POLL_INTERVAL_MS
+                : PAYMENT_POLL_INTERVAL_MS;
+            },
+      };
+    }),
   });
 
+  const cachedSubscriptions =
+    queryClient.getQueryData<AllSubscriptionsResponse>(
+      subscriptionQueryKeys.all,
+    )?.subscriptions ?? [];
   const statuses = paymentQueries.map(
-    (query) => (query.data as PaymentStatus | undefined) ?? null,
+    (query, index) => {
+      const receipt = receipts[index];
+      return (
+        (receipt === undefined
+          ? null
+          : resolveTrialProvisioningPaymentStatus(
+              receipt,
+              cachedSubscriptions,
+            )) ??
+        (query.data as PaymentStatus | undefined) ??
+        null
+      );
+    },
   );
   const statusSignature = statuses
     .map((status) =>
@@ -110,6 +149,45 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
       : [],
   );
   const readySubscriptionSignature = readySubscriptionIds.join("|");
+
+  useEffect(() => {
+    if (trialSubscriptionIds.length === 0) return;
+
+    let cancelled = false;
+    let retryTimer: number | undefined;
+
+    const refreshUntilTrialProfilesArrive = async (): Promise<void> => {
+      let allTargetsReady = false;
+      try {
+        const response = await queryClient.fetchQuery({
+          queryKey: subscriptionQueryKeys.all,
+          queryFn: getAllSubscriptions,
+          staleTime: 0,
+          retry: 2,
+        });
+        allTargetsReady = hasAllReadySubscriptionTargets(
+          response.subscriptions,
+          trialSubscriptionIds,
+        );
+      } catch {
+        // Retain the creation state across a transient BFF error. The next
+        // bounded refresh retries the same exact local subscription IDs.
+      }
+
+      if (!cancelled && !allTargetsReady) {
+        retryTimer = window.setTimeout(
+          () => void refreshUntilTrialProfilesArrive(),
+          PROFILE_POLL_INTERVAL_MS,
+        );
+      }
+    };
+
+    void refreshUntilTrialProfilesArrive();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [queryClient, trialSubscriptionIds, trialSubscriptionSignature]);
 
   useEffect(() => {
     const receiptsToRemove = new Set<string>();
@@ -234,6 +312,34 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
     [queryClient],
   );
 
+  const startTrialProvisioning = useCallback(
+    ({
+      subscriptionId,
+      slotIndex,
+    }: {
+      subscriptionId: string;
+      slotIndex: number;
+    }) => {
+      const receipt = saveTrialSubscriptionProvisioningReceipt({
+        subscriptionId,
+        slotIndex,
+      });
+      if (receipt === null) return;
+
+      setReceipts((current) =>
+        [
+          ...current.filter((item) => item.paymentId !== receipt.paymentId),
+          receipt,
+        ].sort(
+          (left, right) =>
+            left.createdAt - right.createdAt ||
+            left.paymentId.localeCompare(right.paymentId),
+        ),
+      );
+    },
+    [],
+  );
+
   const runtimes = useMemo<SubscriptionProvisioningRuntime[]>(
     () =>
       receipts.flatMap((receipt, index) =>
@@ -249,5 +355,5 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
     [receipts, statusSignature], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  return { runtimes, completeHandoff };
+  return { runtimes, completeHandoff, startTrialProvisioning };
 }

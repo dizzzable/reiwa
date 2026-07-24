@@ -5,6 +5,7 @@ import {
   hasAllReadySubscriptionTargets,
   isRemnawaveSubscriptionReady,
   provisioningCarouselItemKey,
+  resolveTrialProvisioningPaymentStatus,
   resolveActiveCarouselItemKey,
   selectCarouselItemAfterRemoval,
   selectNewestUnfocusedProvisioningKey,
@@ -44,6 +45,20 @@ function receipt(
     slotIndex,
     slotIndexSource,
     createdAt,
+    phase: "PROVISIONING",
+  };
+}
+
+function trialReceipt(subscriptionId: string): SubscriptionProvisioningReceipt {
+  return {
+    version: 1,
+    paymentId: `trial:${subscriptionId}`,
+    source: "TRIAL",
+    subscriptionId,
+    purchaseType: "NEW",
+    slotIndex: 0,
+    slotIndexSource: "CHECKOUT",
+    createdAt: 0,
     phase: "PROVISIONING",
   };
 }
@@ -143,6 +158,40 @@ describe("subscription lifecycle policy", () => {
       kind: "provisioning",
       backendReady: true,
       readySubscription: real,
+    });
+  });
+
+  it("keeps a free trial in the same creation flow until its Remnawave profile is ready", () => {
+    const pendingTrial = trialReceipt("trial");
+    const localTrial = subscription("trial", false);
+    const pendingStatus = resolveTrialProvisioningPaymentStatus(
+      pendingTrial,
+      [localTrial],
+    );
+
+    expect(pendingStatus).toMatchObject({
+      subscriptionId: "trial",
+      subscriptionProvisioningStatus: "PROFILE_PENDING",
+    });
+    expect(
+      buildSubscriptionCarouselItems([localTrial], [
+        { receipt: pendingTrial, paymentStatus: pendingStatus },
+      ]).map((item) => item.key),
+    ).toEqual([provisioningCarouselItemKey("trial:trial")]);
+
+    const readyTrial = subscription("trial");
+    const readyStatus = resolveTrialProvisioningPaymentStatus(pendingTrial, [
+      readyTrial,
+    ]);
+    const readyItems = buildSubscriptionCarouselItems([readyTrial], [
+      { receipt: pendingTrial, paymentStatus: readyStatus },
+    ]);
+
+    expect(readyStatus?.subscriptionProvisioningStatus).toBe("READY");
+    expect(readyItems[0]).toMatchObject({
+      kind: "provisioning",
+      backendReady: true,
+      readySubscription: readyTrial,
     });
   });
 

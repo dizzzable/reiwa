@@ -23,10 +23,19 @@ export type SubscriptionProvisioningReceiptPhase =
 export type SubscriptionProvisioningSlotIndexSource =
   | "CHECKOUT"
   | "PAYMENT_STATUS";
+export type SubscriptionProvisioningReceiptSource = "PAYMENT" | "TRIAL";
 
 export interface SubscriptionProvisioningReceipt {
   readonly version: 1;
   readonly paymentId: string;
+  /**
+   * Missing means PAYMENT for receipts written before trial provisioning was
+   * introduced. Keeping the field optional preserves an in-flight checkout
+   * across a deploy.
+   */
+  readonly source?: SubscriptionProvisioningReceiptSource;
+  /** Exact local subscription created by the free-trial endpoint. */
+  readonly subscriptionId?: string;
   readonly purchaseType: SubscriptionCreationPurchaseType;
   readonly slotIndex: number;
   /**
@@ -61,6 +70,12 @@ interface StoredReceiptEnvelope {
 type SaveReceiptInput = Omit<SubscriptionProvisioningReceipt, "version" | "createdAt"> & {
   readonly createdAt?: number;
 };
+
+export interface SaveTrialSubscriptionProvisioningReceiptInput {
+  readonly subscriptionId: string;
+  readonly slotIndex: number;
+  readonly createdAt?: number;
+}
 
 interface LoadedReceiptMap {
   readonly receipts: ReceiptMap;
@@ -103,6 +118,10 @@ export function saveSubscriptionProvisioningReceipt(
   const receipt: SubscriptionProvisioningReceipt = {
     version: STORAGE_VERSION,
     paymentId: input.paymentId,
+    ...(input.source === undefined ? {} : { source: input.source }),
+    ...(input.subscriptionId === undefined
+      ? {}
+      : { subscriptionId: input.subscriptionId }),
     purchaseType: input.purchaseType,
     slotIndex: input.slotIndex,
     slotIndexSource: input.slotIndexSource,
@@ -118,6 +137,43 @@ export function saveSubscriptionProvisioningReceipt(
   const receipts = { ...loaded.receipts, [receipt.paymentId]: receipt };
   writeReceiptMap(storage, boundReceiptMap(receipts));
   return receipt;
+}
+
+/**
+ * A free trial has no payment-status resource to poll. Its receipt therefore
+ * carries the authoritative local subscription ID and uses a namespaced key
+ * only for session-storage bookkeeping.
+ */
+export function saveTrialSubscriptionProvisioningReceipt(
+  input: SaveTrialSubscriptionProvisioningReceiptInput,
+  options: SubscriptionProvisioningReceiptStoreOptions = {},
+): SubscriptionProvisioningReceipt | null {
+  return saveSubscriptionProvisioningReceipt(
+    {
+      paymentId: `trial:${input.subscriptionId}`,
+      source: "TRIAL",
+      subscriptionId: input.subscriptionId,
+      purchaseType: "NEW",
+      slotIndex: input.slotIndex,
+      slotIndexSource: "CHECKOUT",
+      phase: "PROVISIONING",
+      createdAt: input.createdAt,
+    },
+    options,
+  );
+}
+
+export function isTrialSubscriptionProvisioningReceipt(
+  receipt: SubscriptionProvisioningReceipt,
+): receipt is SubscriptionProvisioningReceipt & {
+  readonly source: "TRIAL";
+  readonly subscriptionId: string;
+} {
+  return (
+    receipt.source === "TRIAL" &&
+    typeof receipt.subscriptionId === "string" &&
+    receipt.subscriptionId.length > 0
+  );
 }
 
 /**
@@ -273,6 +329,18 @@ function isValidReceipt(
   if (!isRecord(value)) return false;
   if (value["version"] !== STORAGE_VERSION) return false;
   if (value["paymentId"] !== mapKey || !isValidPaymentId(mapKey)) return false;
+  if (
+    value["source"] !== undefined &&
+    value["source"] !== "PAYMENT" &&
+    value["source"] !== "TRIAL"
+  ) {
+    return false;
+  }
+  if (value["source"] === "TRIAL") {
+    if (!isValidPaymentId(value["subscriptionId"])) return false;
+  } else if (value["subscriptionId"] !== undefined) {
+    return false;
+  }
   if (!isSubscriptionCreationPurchaseType(value["purchaseType"])) return false;
   if (
     typeof value["slotIndex"] !== "number" ||
@@ -308,7 +376,7 @@ function isValidReceipt(
   );
 }
 
-function isValidPaymentId(paymentId: string): boolean {
+function isValidPaymentId(paymentId: unknown): paymentId is string {
   return (
     typeof paymentId === "string" &&
     paymentId.length > 0 &&

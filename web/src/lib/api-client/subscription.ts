@@ -101,5 +101,13 @@ export const getUpgradeOptions = (subscriptionId: string, gatewayType?: string) 
 export const getTrialEligibility = () =>
   apiClient.get("/subscription/trial/eligibility").then((r) => r.data);
 
+export interface TrialActivationResult {
+  activated: boolean;
+  subscriptionId?: string;
+  reason?: string;
+}
+
 export const activateTrial = () =>
-  apiClient.post("/subscription/trial").then((r) => r.data);
+  apiClient
+    .post<TrialActivationResult>("/subscription/trial")
+    .then((r) => r.data);
