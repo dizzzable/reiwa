@@ -220,9 +220,9 @@ export function resolveNextSubscriptionCreationWake({
 }
 
 export const SUBSCRIPTION_DELETION_TIMING = {
-  minimum: 1_100,
-  default: 1_250,
-  maximum: 1_400,
+  minimum: 1_500,
+  default: 1_800,
+  maximum: 2_100,
   reduced: 160,
 } as const;
 

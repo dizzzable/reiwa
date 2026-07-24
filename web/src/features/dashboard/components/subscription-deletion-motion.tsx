@@ -95,6 +95,11 @@ export function SubscriptionDeletionMotion({
     durationMs,
   );
   const completedRef = useRef(false);
+  const onExitCompleteRef = useRef(onExitComplete);
+
+  useEffect(() => {
+    onExitCompleteRef.current = onExitComplete;
+  }, [onExitComplete]);
 
   useEffect(() => {
     if (!active) completedRef.current = false;
@@ -103,8 +108,18 @@ export function SubscriptionDeletionMotion({
   const completeOnce = (): void => {
     if (!active || completedRef.current) return;
     completedRef.current = true;
-    onExitComplete();
+    onExitCompleteRef.current();
   };
+
+  // Do not let Motion decide when to remove the card. A deletion wrapper is
+  // mounted only after the server confirms the request, and Motion may treat
+  // its first target as already complete. The deterministic timer guarantees
+  // that the user sees the full laser sweep before the canonical row leaves.
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setTimeout(completeOnce, duration);
+    return () => window.clearTimeout(timer);
+  }, [active, duration]);
 
   return (
     <div
@@ -117,10 +132,8 @@ export function SubscriptionDeletionMotion({
       data-deletion-active={active ? "true" : "false"}
     >
       <motion.div
-        // The wrapper is mounted only after the deletion request succeeds.
-        // Give Motion an explicit visible source frame; `initial={false}`
-        // made it mount directly in the final clipped state, so there was no
-        // wipe to perceive on either desktop or mobile.
+        // The wrapper is mounted only after the deletion request succeeds, so
+        // it needs an explicit visible source frame before the laser starts.
         initial={
           active
             ? { clipPath: "inset(0 0 0 0%)", opacity: 1 }
@@ -131,7 +144,11 @@ export function SubscriptionDeletionMotion({
             ? reducedMotion
               ? { opacity: 0 }
               : {
-                  clipPath: "inset(0 0 0 100%)",
+                  clipPath: [
+                    "inset(0 0 0 0%)",
+                    "inset(0 0 0 0%)",
+                    "inset(0 0 0 100%)",
+                  ],
                   opacity: [1, 1, 0.72],
                 }
             : {
@@ -150,6 +167,7 @@ export function SubscriptionDeletionMotion({
                   clipPath: {
                     duration: duration / 1_000,
                     ease: [0.65, 0, 0.35, 1],
+                    times: [0, 0.12, 1],
                   },
                   opacity: {
                     duration: duration / 1_000,
@@ -160,13 +178,28 @@ export function SubscriptionDeletionMotion({
             : { duration: 0 }
         }
         style={active ? { willChange: "clip-path, opacity" } : undefined}
-        onAnimationComplete={completeOnce}
       >
         {children}
       </motion.div>
 
       {active && !reducedMotion && (
         <div aria-hidden className="pointer-events-none absolute inset-0">
+          <motion.div
+            className="subscription-card-deletion__laser"
+            initial={{ left: "-10%", opacity: 0, scaleX: 0.35 }}
+            animate={{
+              left: "110%",
+              opacity: [0, 1, 1, 0],
+              scaleX: [0.35, 1, 1, 0.55],
+            }}
+            transition={{
+              delay: (duration / 1_000) * 0.12,
+              duration: (duration / 1_000) * 0.88,
+              ease: [0.65, 0, 0.35, 1],
+              times: [0, 0.06, 0.9, 1],
+            }}
+          />
+
           <motion.div
             className="subscription-card-deletion__glyph-trail"
             initial={{ left: "-42%", opacity: 0 }}
@@ -203,7 +236,8 @@ export function SubscriptionDeletionMotion({
               opacity: [0, 1, 1, 0],
             }}
             transition={{
-              duration: duration / 1_000,
+              delay: (duration / 1_000) * 0.12,
+              duration: (duration / 1_000) * 0.88,
               ease: [0.65, 0, 0.35, 1],
               times: [0, 0.04, 0.9, 1],
             }}

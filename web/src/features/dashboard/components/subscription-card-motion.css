@@ -93,6 +93,39 @@
     -9px 0 24px color-mix(in oklab, var(--motion-accent), transparent 45%);
 }
 
+.subscription-card-deletion__laser {
+  position: absolute;
+  z-index: 44;
+  top: -10%;
+  bottom: -10%;
+  width: clamp(34px, 9%, 68px);
+  pointer-events: none;
+  transform: translateX(-50%);
+  transform-origin: center;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in oklab, var(--motion-accent), transparent 78%) 24%,
+      color-mix(in oklab, var(--motion-accent), white 12%) 43%,
+      color-mix(in oklab, white, var(--motion-accent) 18%) 50%,
+      color-mix(in oklab, var(--motion-accent), white 12%) 57%,
+      color-mix(in oklab, var(--motion-accent), transparent 78%) 76%,
+      transparent 100%
+    );
+  filter: drop-shadow(0 0 7px var(--motion-accent))
+    drop-shadow(0 0 22px color-mix(in oklab, var(--motion-accent), white 12%));
+  mix-blend-mode: screen;
+}
+
+.subscription-card-deletion__laser::after {
+  position: absolute;
+  inset: 0 47%;
+  content: "";
+  background: white;
+  box-shadow: 0 0 8px white, 0 0 22px var(--motion-accent);
+}
+
 .subscription-card-deletion__glyph-trail {
   position: absolute;
   z-index: 41;
