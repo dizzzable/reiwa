@@ -1,15 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ComponentType, SVGProps } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { Coins, Calendar, Zap, Tag, HardDrive, Loader2, Check, Copy, ArrowLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { getPointsExchangeOptions, exchangePoints } from '@/lib/api-client'
+import { getAllSubscriptions, getPointsExchangeOptions, exchangePoints } from '@/lib/api-client'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
 import { useSafeBack } from '@/hooks/use-safe-back'
+import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -29,6 +30,8 @@ export default function PointsExchangePage() {
   const [points, setPoints] = useState('')
   const [giftCode, setGiftCode] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [targetSubscriptionId, setTargetSubscriptionId] = useState<string | null>(null)
+  const [exchangeIntentKey, setExchangeIntentKey] = useState(() => createIdempotencyKey())
 
   const typeLabel = (type: string) => t(`pointsExchange.types.${type}.label`, { defaultValue: type })
   const typeUnit = (type: string) => t(`pointsExchange.types.${type}.unit`, { defaultValue: '' })
@@ -37,25 +40,52 @@ export default function PointsExchangePage() {
     queryKey: ['points-exchange-options'],
     queryFn: getPointsExchangeOptions,
   })
+  const { data: allSubscriptions } = useQuery({
+    queryKey: subscriptionQueryKeys.all,
+    queryFn: getAllSubscriptions,
+    staleTime: 30_000,
+  })
+  const activeSubscriptions = useMemo(
+    () => (allSubscriptions?.subscriptions ?? []).filter((subscription) => subscription.status === 'ACTIVE'),
+    [allSubscriptions?.subscriptions],
+  )
+  const targetSignature = activeSubscriptions.map((subscription) => subscription.id).join('|')
+  const needsSubscriptionTarget = selectedType === 'SUBSCRIPTION_DAYS' || selectedType === 'TRAFFIC'
+
+  useEffect(() => {
+    if (targetSubscriptionId && activeSubscriptions.some((subscription) => subscription.id === targetSubscriptionId)) return
+    setTargetSubscriptionId(activeSubscriptions[0]?.id ?? null)
+  }, [activeSubscriptions, targetSignature, targetSubscriptionId])
+
+  useEffect(() => {
+    setExchangeIntentKey(createIdempotencyKey())
+  }, [selectedType, points, targetSubscriptionId])
 
   const mutation = useMutation({
-    mutationFn: () => exchangePoints(selectedType!, parseInt(points)),
+    mutationFn: () => exchangePoints(
+      selectedType!,
+      parseInt(points, 10),
+      needsSubscriptionTarget ? targetSubscriptionId ?? undefined : undefined,
+      exchangeIntentKey,
+    ),
     onSuccess: (result) => {
       if (result.success === false) {
-        toast.error(t('pointsExchange.error'))
+        toast.error(result.error ? t(result.error, { defaultValue: result.error }) : t('pointsExchange.error'))
         return
       }
       queryClient.invalidateQueries({ queryKey: ['points-exchange-options'] })
       queryClient.invalidateQueries({ queryKey: ['session'] })
+      queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all })
       if (result.code) {
         // GIFT_SUBSCRIPTION — show the minted promo code so the user can pass
         // it on. Without surfacing it the reward would be invisible.
         setGiftCode(result.code)
       } else {
-        toast.success(t('pointsExchange.success'))
+        toast.success(t(result.syncPending ? 'pointsExchange.syncPending' : 'pointsExchange.success'))
       }
       setSelectedType(null)
       setPoints('')
+      setExchangeIntentKey(createIdempotencyKey())
     },
     onError: () => toast.error(t('pointsExchange.error')),
   })
@@ -233,6 +263,30 @@ export default function PointsExchangePage() {
               )}
             </div>
 
+            {needsSubscriptionTarget && activeSubscriptions.length > 1 && (
+              <div className="space-y-1.5">
+                <label className="text-xs text-zinc-500" htmlFor="points-exchange-subscription">
+                  {t('pointsExchange.subscription')}
+                </label>
+                <select
+                  id="points-exchange-subscription"
+                  value={targetSubscriptionId ?? ''}
+                  onChange={(event) => setTargetSubscriptionId(event.target.value || null)}
+                  className="glass-input w-full rounded-xl px-4 py-3 text-sm text-white"
+                >
+                  {activeSubscriptions.map((subscription) => (
+                    <option key={subscription.id} value={subscription.id} className="bg-zinc-900">
+                      {subscription.plan?.name ?? subscription.profileName ?? subscription.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {needsSubscriptionTarget && activeSubscriptions.length === 0 && (
+              <TipCard tone="info">{t('pointsExchange.noActiveSubscriptions')}</TipCard>
+            )}
+
             {/* Preview */}
             <div className="rounded-xl bg-zinc-800/50 p-4 text-center">
               <p className="text-xs text-zinc-500 mb-1">{t('pointsExchange.youReceive')}</p>
@@ -247,7 +301,12 @@ export default function PointsExchangePage() {
             size="lg"
             glow
             onClick={() => mutation.mutate()}
-            disabled={numPoints < (selectedOption?.minPoints ?? 1) || numPoints > options.pointsBalance || mutation.isPending}
+            disabled={
+              numPoints < (selectedOption?.minPoints ?? 1) ||
+              numPoints > options.pointsBalance ||
+              mutation.isPending ||
+              (needsSubscriptionTarget && targetSubscriptionId === null)
+            }
             icon={mutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
           >
             {mutation.isPending ? t('pointsExchange.exchanging') : t('pointsExchange.exchange')}
@@ -256,4 +315,11 @@ export default function PointsExchangePage() {
       )}
     </div>
   )
+}
+
+function createIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `points-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }

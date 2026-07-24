@@ -114,7 +114,7 @@ export function createReferralsRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       try {
-        const { type, points, subscriptionId } = (req.body ?? {}) as Record<
+        const { type, points, subscriptionId, idempotencyKey } = (req.body ?? {}) as Record<
           string,
           unknown
         >;
@@ -132,7 +132,22 @@ export function createReferralsRouter(deps: {
           ...(typeof subscriptionId === "string" && subscriptionId.length > 0
             ? { subscriptionId }
             : {}),
+          ...(typeof idempotencyKey === "string" && idempotencyKey.length > 0
+            ? { idempotencyKey }
+            : {}),
         });
+        if (
+          result &&
+          typeof result === "object" &&
+          !Array.isArray(result) &&
+          typeof (result as { error?: unknown }).error === "string"
+        ) {
+          res.json({
+            success: false,
+            error: (result as { error: string }).error,
+          });
+          return;
+        }
         res.json(result ?? {});
       } catch (e: unknown) {
         sendSafeError(req, res, e, 400, "Points exchange failed", "referrals/exchange");

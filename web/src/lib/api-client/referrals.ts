@@ -81,14 +81,22 @@ export interface ExchangePointsResult {
   readonly value?: number;
   /** Single-use promo code minted by a GIFT_SUBSCRIPTION exchange. */
   readonly code?: string;
+  /** Reward is committed locally and its Remnawave sync job is pending. */
+  readonly syncPending?: boolean;
   readonly error?: string;
 }
 
 export const exchangePoints = (
   type: string,
   points: number,
-  subscriptionId?: number,
+  subscriptionId?: string,
+  idempotencyKey?: string,
 ) =>
   apiClient
-    .post<ExchangePointsResult>("/referrals/exchange", { type, points, subscriptionId })
+    .post<ExchangePointsResult>("/referrals/exchange", {
+      type,
+      points,
+      ...(subscriptionId ? { subscriptionId } : {}),
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+    })
     .then((r) => r.data);

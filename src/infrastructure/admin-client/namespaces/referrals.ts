@@ -25,6 +25,7 @@ export interface ExchangePointsInput {
   readonly type: PointsExchangeType;
   readonly points: number;
   readonly subscriptionId?: string;
+  readonly idempotencyKey?: string;
 }
 
 function reference(identity: UserIdentity): string {
@@ -115,6 +116,9 @@ export class ReferralsNamespace {
         points: data.points,
         ...(data.subscriptionId !== undefined
           ? { subscriptionId: data.subscriptionId }
+          : {}),
+        ...(data.idempotencyKey !== undefined
+          ? { idempotencyKey: data.idempotencyKey }
           : {}),
       },
     );
