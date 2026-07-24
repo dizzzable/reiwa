@@ -15,6 +15,8 @@ const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export const SUBSCRIPTION_PROVISIONING_RECEIPT_TTL_MS = 24 * 60 * 60 * 1000;
 export const SUBSCRIPTION_PROVISIONING_RECEIPT_MAX_ENTRIES = 8;
+export const SUBSCRIPTION_PROVISIONING_RECEIPTS_CHANGED_EVENT =
+  "reiwa:subscription-provisioning-receipts-changed";
 
 export type SubscriptionCreationPurchaseType = "NEW" | "ADDITIONAL";
 export type SubscriptionProvisioningReceiptPhase =
@@ -131,7 +133,10 @@ export function saveSubscriptionProvisioningReceipt(
   if (!isValidReceipt(receipt, receipt.paymentId, now, false)) return null;
 
   const storage = resolveStorage(options.storage);
-  if (storage === null) return receipt;
+  if (storage === null) {
+    notifyReceiptChange(true);
+    return receipt;
+  }
 
   const loaded = loadReceiptMap(storage, now);
   const receipts = { ...loaded.receipts, [receipt.paymentId]: receipt };
@@ -241,7 +246,10 @@ export function clearSubscriptionProvisioningReceipt(
   options: SubscriptionProvisioningReceiptStoreOptions = {},
 ): void {
   const storage = resolveStorage(options.storage);
-  if (storage === null) return;
+  if (storage === null) {
+    notifyReceiptChange(false);
+    return;
+  }
 
   if (paymentId === undefined) {
     safeRemove(storage);
@@ -418,6 +426,7 @@ function writeReceiptMap(
   };
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify(envelope));
+    notifyReceiptChange(Object.keys(receipts).length > 0);
   } catch {
     // Storage can be blocked or over quota. Provisioning remains server-driven;
     // losing the local animation handoff must never fail a payment request.
@@ -427,9 +436,20 @@ function writeReceiptMap(
 function safeRemove(storage: SubscriptionProvisioningReceiptStorage): void {
   try {
     storage.removeItem(STORAGE_KEY);
+    notifyReceiptChange(false);
   } catch {
     // Best-effort cleanup only.
   }
+}
+
+function notifyReceiptChange(hasPendingProvisioning: boolean): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<{ readonly hasPendingProvisioning: boolean }>(
+      SUBSCRIPTION_PROVISIONING_RECEIPTS_CHANGED_EVENT,
+      { detail: { hasPendingProvisioning } },
+    ),
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

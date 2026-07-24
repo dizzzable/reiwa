@@ -22,6 +22,11 @@ import { DemoTutorial } from "./demo-tutorial";
 import { useOnboardingTour } from "@/hooks/use-onboarding-tour";
 import { getAllSubscriptions } from "@/lib/api-client";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
+import {
+  listSubscriptionProvisioningReceipts,
+  SUBSCRIPTION_PROVISIONING_RECEIPTS_CHANGED_EVENT,
+} from "@/lib/subscription-provisioning-receipt";
+import { shouldAutoStartOnboardingTour } from "./onboarding-tour-policy";
 
 interface OnboardingContextValue {
   /** Programmatically start (or restart) the spotlight tour (real mode). */
@@ -51,6 +56,9 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   const location = useLocation();
   const tour = useOnboardingTour();
   const [demoOpen, setDemoOpen] = useState(false);
+  const [hasPendingProvisioning, setHasPendingProvisioning] = useState(
+    () => listSubscriptionProvisioningReceipts().length > 0,
+  );
 
   // The real spotlight tour must never target a non-existent subscription
   // (Property 8). It only auto-starts once an active subscription exists.
@@ -62,9 +70,46 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   const hasActiveSubscription =
     subsData?.subscriptions?.some((s) => s.status === "ACTIVE" || s.status === "LIMITED") ?? false;
 
-  // Auto-start the real tour on the dashboard only when a subscription exists.
+  // Provisioning lives in session storage because it bridges purchase and
+  // dashboard routes. This notification keeps the tour's visible state in
+  // sync with that external store without polling.
   useEffect(() => {
-    if (tour.shouldAutoStart && hasActiveSubscription && location.pathname === "/dashboard") {
+    const updateFromReceiptChange = (event: Event) => {
+      const detail = event as CustomEvent<{
+        readonly hasPendingProvisioning?: unknown;
+      }>;
+      if (typeof detail.detail?.hasPendingProvisioning === "boolean") {
+        setHasPendingProvisioning(detail.detail.hasPendingProvisioning);
+        return;
+      }
+      setHasPendingProvisioning(
+        listSubscriptionProvisioningReceipts().length > 0,
+      );
+    };
+
+    window.addEventListener(
+      SUBSCRIPTION_PROVISIONING_RECEIPTS_CHANGED_EVENT,
+      updateFromReceiptChange,
+    );
+    return () => {
+      window.removeEventListener(
+        SUBSCRIPTION_PROVISIONING_RECEIPTS_CHANGED_EVENT,
+        updateFromReceiptChange,
+      );
+    };
+  }, []);
+
+  // Auto-start only after the real card exists; a transient creation card must
+  // finish its own sequence before the spotlight may target this area.
+  useEffect(() => {
+    if (
+      shouldAutoStartOnboardingTour({
+        pathname: location.pathname,
+        shouldAutoStart: tour.shouldAutoStart,
+        hasActiveSubscription,
+        hasPendingProvisioning,
+      })
+    ) {
       // Small delay so the DOM elements are rendered before we try to measure them
       const timer = setTimeout(() => {
         tour.start();
@@ -75,7 +120,12 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
       }, 600);
       return () => clearTimeout(timer);
     }
-  }, [location.pathname, tour.shouldAutoStart, hasActiveSubscription]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    hasActiveSubscription,
+    hasPendingProvisioning,
+    location.pathname,
+    tour.shouldAutoStart,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const replayTour = () => {
     tour.resetOnboarding();
