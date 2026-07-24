@@ -293,6 +293,24 @@ body {
   to   { transform: rotate(360deg); }
 }
 
+/* GPU-safe visual endpoint for branded card effects. The static card gradient
+   is already present below this layer; these soft color fields keep an
+   operator's chosen palette alive when iOS cannot provide a WebGL context. */
+@keyframes card-effect-fallback-drift {
+  0%, 100% { background-position: 0% 50%, 100% 50%, 0% 50%; }
+  50%      { background-position: 28% 42%, 72% 58%, 100% 50%; }
+}
+
+.card-effect-layer__css-fallback {
+  background-size: 170% 170%, 165% 165%, 190% 190%;
+  animation: card-effect-fallback-drift 18s ease-in-out infinite;
+  opacity: 0.46;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-effect-layer__css-fallback { animation: none; }
+}
+
 /* Subtle game-like "glint" sheen — a diagonal highlight sweeps across the
    element periodically (with a long idle gap), used to draw the eye to the
    quests entry icon without the aggressiveness of the purchase-icon ring. */

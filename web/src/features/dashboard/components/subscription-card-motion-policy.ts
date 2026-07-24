@@ -6,7 +6,14 @@ export const SUBSCRIPTION_CREATION_TIMING = {
   docking: 4_800,
   waiting: 5_600,
   lateReadyHandoff: 900,
-  reducedHandoff: 160,
+  // Reduced Motion keeps the status transition understandable through brief
+  // opacity-only layers. It deliberately has no position, scale, scan, or
+  // rail movement, but must not collapse into an invisible 160 ms handoff.
+  reducedSurface: 80,
+  reducedIdentity: 180,
+  reducedModules: 300,
+  reducedIgnition: 420,
+  reducedHandoff: 480,
 } as const;
 
 export type SubscriptionCreationStage =
@@ -59,6 +66,21 @@ function stageAt(elapsedMs: number): SubscriptionCreationStage {
   return "waiting";
 }
 
+function reducedStageAt(elapsedMs: number): SubscriptionCreationStage {
+  if (elapsedMs < SUBSCRIPTION_CREATION_TIMING.reducedSurface) return "frame";
+  if (elapsedMs < SUBSCRIPTION_CREATION_TIMING.reducedIdentity) return "surface";
+  if (elapsedMs < SUBSCRIPTION_CREATION_TIMING.reducedModules) return "identity";
+  if (elapsedMs < SUBSCRIPTION_CREATION_TIMING.reducedIgnition) return "modules";
+  return "ignition";
+}
+
+const REDUCED_STAGE_BOUNDARIES = [
+  SUBSCRIPTION_CREATION_TIMING.reducedSurface,
+  SUBSCRIPTION_CREATION_TIMING.reducedIdentity,
+  SUBSCRIPTION_CREATION_TIMING.reducedModules,
+  SUBSCRIPTION_CREATION_TIMING.reducedIgnition,
+] as const;
+
 /**
  * Data-driven creation timeline. A ready backend alone is insufficient: the
  * real list item must also be present before the handoff can complete.
@@ -86,6 +108,13 @@ export function resolveSubscriptionCreationState({
   }
 
   if (reducedMotion) {
+    if (elapsed < SUBSCRIPTION_CREATION_TIMING.reducedIgnition) {
+      return {
+        stage: reducedStageAt(elapsed),
+        virtualElapsedMs: elapsed,
+        complete: false,
+      };
+    }
     if (!canHandoff) {
       return {
         stage: "waiting",
@@ -93,7 +122,10 @@ export function resolveSubscriptionCreationState({
         complete: false,
       };
     }
-    const readyAt = Math.max(0, readySinceMs ?? elapsed);
+    const readyAt = Math.max(
+      SUBSCRIPTION_CREATION_TIMING.reducedIgnition,
+      Math.min(readySinceMs ?? elapsed, elapsed),
+    );
     const complete =
       elapsed - readyAt >= SUBSCRIPTION_CREATION_TIMING.reducedHandoff;
     return {
@@ -184,6 +216,12 @@ export function resolveNextSubscriptionCreationWake({
   if (state.complete) return null;
 
   if (!canHandoff) {
+    if (reducedMotion) {
+      const reduced = [...REDUCED_STAGE_BOUNDARIES, longWaitAfterMs]
+        .filter((boundary) => boundary > elapsed + 0.5)
+        .sort((left, right) => left - right)[0];
+      return reduced ?? null;
+    }
     const standard = [...CREATION_STAGE_BOUNDARIES, longWaitAfterMs]
       .filter((boundary) => boundary > elapsed + 0.5)
       .sort((left, right) => left - right)[0];
@@ -192,8 +230,16 @@ export function resolveNextSubscriptionCreationWake({
 
   const readyAt = Math.max(0, Math.min(readySinceMs ?? elapsed, elapsed));
   if (reducedMotion) {
+    if (elapsed < SUBSCRIPTION_CREATION_TIMING.reducedIgnition) {
+      return REDUCED_STAGE_BOUNDARIES.find(
+        (boundary) => boundary > elapsed + 0.5,
+      ) ?? null;
+    }
     const completion =
-      readyAt + SUBSCRIPTION_CREATION_TIMING.reducedHandoff;
+      Math.max(
+        SUBSCRIPTION_CREATION_TIMING.reducedIgnition,
+        readyAt,
+      ) + SUBSCRIPTION_CREATION_TIMING.reducedHandoff;
     return completion > elapsed + 0.5 ? completion : null;
   }
 

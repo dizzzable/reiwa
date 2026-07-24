@@ -211,7 +211,25 @@ describe("subscription creation timeline", () => {
     ).toBe(true);
   });
 
-  it("short-circuits motion in reduced mode but still requires real data", () => {
+  it("uses a short opacity-only sequence in reduced mode but still requires real data", () => {
+    expect(
+      resolveSubscriptionCreationState({
+        elapsedMs: SUBSCRIPTION_CREATION_TIMING.reducedSurface,
+        backendReady: false,
+        readySubscriptionAvailable: false,
+        reducedMotion: true,
+      }).stage,
+    ).toBe("surface");
+
+    expect(
+      resolveSubscriptionCreationState({
+        elapsedMs: SUBSCRIPTION_CREATION_TIMING.reducedModules,
+        backendReady: false,
+        readySubscriptionAvailable: false,
+        reducedMotion: true,
+      }).stage,
+    ).toBe("modules");
+
     expect(
       resolveSubscriptionCreationState({
         elapsedMs: 10_000,
@@ -223,7 +241,9 @@ describe("subscription creation timeline", () => {
 
     expect(
       resolveSubscriptionCreationState({
-        elapsedMs: SUBSCRIPTION_CREATION_TIMING.reducedHandoff,
+        elapsedMs:
+          SUBSCRIPTION_CREATION_TIMING.reducedIgnition +
+          SUBSCRIPTION_CREATION_TIMING.reducedHandoff,
         backendReady: true,
         readySubscriptionAvailable: true,
         readySinceMs: 0,
@@ -273,6 +293,38 @@ describe("subscription creation timeline", () => {
         longWaitAfterMs: 15_000,
       }),
     ).toBeNull();
+  });
+
+  it("keeps reduced-motion wake-ups on its compact opacity checkpoints", () => {
+    expect(
+      resolveNextSubscriptionCreationWake({
+        elapsedMs: 0,
+        ...pending,
+        reducedMotion: true,
+        longWaitAfterMs: 15_000,
+      }),
+    ).toBe(SUBSCRIPTION_CREATION_TIMING.reducedSurface);
+    expect(
+      resolveNextSubscriptionCreationWake({
+        elapsedMs: SUBSCRIPTION_CREATION_TIMING.reducedSurface,
+        ...pending,
+        reducedMotion: true,
+        longWaitAfterMs: 15_000,
+      }),
+    ).toBe(SUBSCRIPTION_CREATION_TIMING.reducedIdentity);
+    expect(
+      resolveNextSubscriptionCreationWake({
+        elapsedMs: SUBSCRIPTION_CREATION_TIMING.reducedIgnition,
+        backendReady: true,
+        readySubscriptionAvailable: true,
+        readySinceMs: 0,
+        reducedMotion: true,
+        longWaitAfterMs: 15_000,
+      }),
+    ).toBe(
+      SUBSCRIPTION_CREATION_TIMING.reducedIgnition +
+        SUBSCRIPTION_CREATION_TIMING.reducedHandoff,
+    );
   });
 
   it("keeps early READY wake-ups on the natural assembly checkpoints", () => {

@@ -7,7 +7,7 @@
  *
  * Safety:
  *  - Lazy-loads the effect so the WebGL/canvas code only downloads when used.
- *  - Error boundary falls back to nothing (the card keeps its gradient base).
+ *  - Degrades GPU failures through Aurora/WebGL1 to a themed CSS layer.
  *  - Only renders while on-screen (IntersectionObserver) so off-screen carousel
  *    slides and scrolled-away cards pause their GPU work.
  *
@@ -32,6 +32,11 @@ import {
   CARD_EFFECT_DEFAULTS,
   type CardEffectId,
 } from "./registry";
+import {
+  detectCardEffectCapabilities,
+  requiresWebGL,
+  resolveCardEffectRuntime,
+} from "./card-effect-runtime";
 
 interface CardEffectLayerProps {
   readonly effect: string;
@@ -51,10 +56,17 @@ interface CardEffectLayerProps {
   readonly active?: boolean;
 }
 
-class EffectErrorBoundary extends Component<{ children: ReactNode; resetKey: string }, { hasError: boolean }> {
+class EffectErrorBoundary extends Component<{
+  children: ReactNode;
+  resetKey: string;
+  onError: () => void;
+}, { hasError: boolean }> {
   state = { hasError: false };
   static getDerivedStateFromError() {
     return { hasError: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
   }
   componentDidUpdate(prev: { resetKey: string }) {
     if (prev.resetKey !== this.props.resetKey && this.state.hasError) {
@@ -66,10 +78,31 @@ class EffectErrorBoundary extends Component<{ children: ReactNode; resetKey: str
   }
 }
 
+function CssEffectFallback({ colors }: { readonly colors: readonly string[] }) {
+  const first = colors[0] ?? "#5227FF";
+  const middle = colors[Math.floor((colors.length - 1) / 2)] ?? first;
+  const last = colors.at(-1) ?? middle;
+
+  return (
+    <div
+      aria-hidden
+      className="card-effect-layer__css-fallback absolute inset-0"
+      style={{
+        backgroundImage: `radial-gradient(95% 135% at 4% 100%, ${first} 0%, transparent 64%), radial-gradient(85% 120% at 100% 2%, ${last} 0%, transparent 60%), linear-gradient(135deg, ${first}, ${middle}, ${last})`,
+      }}
+    />
+  );
+}
+
 export function CardEffectLayer({ effect, props, opacity = 1, className, active }: CardEffectLayerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [faded, setFaded] = useState(false);
+  const [capabilitySnapshot, setCapabilitySnapshot] = useState<{
+    readonly effect: string;
+    readonly capabilities: ReturnType<typeof detectCardEffectCapabilities>;
+  } | null>(null);
+  const [effectFailed, setEffectFailed] = useState(false);
 
   // Mount the effect while the card is on screen (standalone usage). In the
   // carousel the parent passes an explicit `active` boolean: in that mode it
@@ -89,6 +122,26 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
   }, []);
 
   const shouldMount = active === undefined ? visible : active;
+  const isValid = effect !== "NONE" && effect in CARD_EFFECT_COMPONENTS;
+
+  useEffect(() => {
+    setEffectFailed(false);
+  }, [effect]);
+
+  useEffect(() => {
+    if (!shouldMount || !isValid || !requiresWebGL(effect)) {
+      setCapabilitySnapshot(null);
+      return;
+    }
+    const capabilities = detectCardEffectCapabilities();
+    // `WEBGL_lose_context` releases the short-lived probe asynchronously in
+    // WebKit. Wait one frame before mounting the real renderer so the probe
+    // cannot momentarily consume the iOS context budget.
+    const frame = window.requestAnimationFrame(() => {
+      setCapabilitySnapshot({ effect, capabilities });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [effect, isValid, shouldMount]);
 
   // Fade the effect in over the always-present static gradient base so it
   // appears smoothly instead of popping after WebGL init. Reset when unmounted
@@ -102,27 +155,89 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
     return () => cancelAnimationFrame(id);
   }, [shouldMount]);
 
-  const isValid = effect !== "NONE" && effect in CARD_EFFECT_COMPONENTS;
-  if (!isValid) return null;
+  const sourceProps = props ?? {};
+  const capabilities =
+    capabilitySnapshot?.effect === effect
+      ? capabilitySnapshot.capabilities
+      : null;
+  const runtime =
+    !isValid || (requiresWebGL(effect) && capabilities === null)
+      ? null
+      : resolveCardEffectRuntime({
+          effect,
+          props: sourceProps,
+          capabilities: capabilities ?? { webgl: false, webgl2: false },
+          failed: effectFailed,
+        });
+  const runtimeId = runtime?.effect as CardEffectId | "NONE" | undefined;
+  const Effect =
+    runtimeId === undefined || runtimeId === "NONE"
+      ? null
+      : CARD_EFFECT_COMPONENTS[runtimeId];
+  const mergedProps =
+    runtimeId === undefined || runtimeId === "NONE"
+      ? {}
+      : { ...CARD_EFFECT_DEFAULTS[runtimeId], ...(runtime?.props ?? {}) };
 
-  const id = effect as CardEffectId;
-  const Effect = CARD_EFFECT_COMPONENTS[id];
-  const mergedProps = { ...CARD_EFFECT_DEFAULTS[id], ...(props ?? {}) };
+  useEffect(() => {
+    if (
+      !isValid ||
+      !shouldMount ||
+      runtimeId === undefined ||
+      runtimeId === "NONE"
+    ) {
+      return;
+    }
+    const root = ref.current;
+    if (root === null) return;
+
+    const listeners = new Map<HTMLCanvasElement, () => void>();
+    const markFailed = () => setEffectFailed(true);
+    const observeCanvas = () => {
+      root.querySelectorAll("canvas").forEach((canvas) => {
+        if (listeners.has(canvas)) return;
+        canvas.addEventListener("webglcontextlost", markFailed);
+        canvas.addEventListener("webglcontextcreationerror", markFailed);
+        listeners.set(canvas, () => {
+          canvas.removeEventListener("webglcontextlost", markFailed);
+          canvas.removeEventListener("webglcontextcreationerror", markFailed);
+        });
+      });
+    };
+    const observer = new MutationObserver(observeCanvas);
+    observer.observe(root, { childList: true, subtree: true });
+    observeCanvas();
+
+    return () => {
+      observer.disconnect();
+      listeners.forEach((remove) => remove());
+    };
+  }, [isValid, runtimeId, shouldMount]);
+
+  if (!isValid) return null;
 
   return (
     <div
       ref={ref}
       aria-hidden
       className={className}
+      data-card-effect-source={effect}
+      data-card-effect-runtime={runtime?.mode ?? "probing"}
       style={{
         opacity: faded ? Math.min(Math.max(opacity, 0.05), 1) : 0,
         transition: "opacity 450ms ease",
       }}
     >
-      {shouldMount && (
-        <EffectErrorBoundary resetKey={id}>
+      {runtime?.mode === "css-fallback" && (
+        <CssEffectFallback colors={runtime.cssColors} />
+      )}
+      {shouldMount && Effect !== null && runtimeId !== undefined && runtimeId !== "NONE" && (
+        <EffectErrorBoundary
+          resetKey={`${effect}:${runtimeId}:${effectFailed ? "fallback" : "native"}`}
+          onError={() => setEffectFailed(true)}
+        >
           <Suspense fallback={null}>
-            <Effect key={id} {...mergedProps} />
+            <Effect key={runtimeId} {...mergedProps} />
           </Suspense>
         </EffectErrorBoundary>
       )}

@@ -189,14 +189,10 @@ export function SubscriptionCreationMotion({
     onSequenceComplete?.(readySubscription);
   }, [onSequenceComplete, readySubscription, state.complete]);
 
-  const surfaceVisible =
-    reducedMotion || stageVisible(state.stage, "surface");
-  const identityVisible =
-    reducedMotion || stageVisible(state.stage, "identity");
-  const modulesVisible =
-    reducedMotion || stageVisible(state.stage, "modules");
-  const effectVisible =
-    reducedMotion || stageVisible(state.stage, "ignition");
+  const surfaceVisible = stageVisible(state.stage, "surface");
+  const identityVisible = stageVisible(state.stage, "identity");
+  const modulesVisible = stageVisible(state.stage, "modules");
+  const effectVisible = stageVisible(state.stage, "ignition");
   const showReadyContent =
     !failed && canHandoff && stageVisible(state.stage, "docking");
   const isLongWait = elapsedMs >= longWaitAfterMs;
@@ -227,9 +223,9 @@ export function SubscriptionCreationMotion({
         initial={false}
         animate={{
           opacity: identityVisible ? 1 : 0,
-          y: identityVisible ? 0 : -8,
+          y: reducedMotion ? 0 : identityVisible ? 0 : -8,
         }}
-        transition={{ duration: reducedMotion ? 0.08 : 0.38 }}
+        transition={{ duration: reducedMotion ? 0.16 : 0.38 }}
       >
         <div className="min-w-0">
           <p className="truncate text-[13px] font-semibold tracking-wide @sm:text-sm">
@@ -247,9 +243,9 @@ export function SubscriptionCreationMotion({
         initial={false}
         animate={{
           opacity: modulesVisible ? 1 : 0,
-          x: modulesVisible ? 0 : -14,
+          x: reducedMotion ? 0 : modulesVisible ? 0 : -14,
         }}
-        transition={{ duration: reducedMotion ? 0.08 : 0.42 }}
+        transition={{ duration: reducedMotion ? 0.16 : 0.42 }}
       >
         <p className="font-mono text-[11px] tracking-[0.16em] text-white/72 uppercase">
           {failed ? labels.failedHint : statusLabel}
@@ -262,10 +258,10 @@ export function SubscriptionCreationMotion({
         initial={false}
         animate={{
           opacity: modulesVisible ? 1 : 0,
-          y: modulesVisible ? 0 : 12,
+          y: reducedMotion ? 0 : modulesVisible ? 0 : 12,
         }}
         transition={{
-          duration: reducedMotion ? 0.08 : 0.42,
+          duration: reducedMotion ? 0.16 : 0.42,
           delay: reducedMotion ? 0 : 0.06,
         }}
       >
@@ -303,7 +299,7 @@ export function SubscriptionCreationMotion({
       data-creation-stage={state.stage}
       initial={reducedMotion ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}
-      transition={{ duration: reducedMotion ? 0.16 : 0 }}
+      transition={{ duration: reducedMotion ? 0.22 : 0 }}
     >
       <SubscriptionCardFrame
         visual={visual}
