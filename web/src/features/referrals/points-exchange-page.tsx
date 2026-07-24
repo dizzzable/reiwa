@@ -70,7 +70,9 @@ export default function PointsExchangePage() {
     ),
     onSuccess: (result) => {
       if (result.success === false) {
-        toast.error(result.error ? t(result.error, { defaultValue: result.error }) : t('pointsExchange.error'))
+        // The internal service can return technical error codes or messages.
+        // Never expose them as untranslated user-facing copy.
+        toast.error(t('pointsExchange.error'))
         return
       }
       queryClient.invalidateQueries({ queryKey: ['points-exchange-options'] })
