@@ -61,11 +61,16 @@ function lowestPrice(
 }
 
 interface TrialCtaProps {
-  /** Starts the dashboard handoff for the exact subscription just created. */
-  onActivated: (subscriptionId: string) => void;
+  /** IDs that existed before this Trial request starts. */
+  readonly knownSubscriptionIds: readonly string[];
+  /** Starts the dashboard handoff, even when a legacy response omits its ID. */
+  onActivated: (
+    subscriptionId: string | undefined,
+    knownSubscriptionIds: readonly string[],
+  ) => void;
 }
 
-export function TrialCta({ onActivated }: TrialCtaProps) {
+export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -145,12 +150,13 @@ export function TrialCta({ onActivated }: TrialCtaProps) {
     try {
       const result = await activateTrial();
       const subscriptionId = result.subscriptionId?.trim();
-      if (!result.activated || !subscriptionId) {
-        throw new Error("Trial activation did not return a subscription ID");
+      if (!result.activated) {
+        throw new Error("Trial activation failed");
       }
-      // Register the transient card before the canonical list refetch can
-      // render the local `Ожидает` row.
-      onActivated(subscriptionId);
+      // Some deployed Rezeis versions acknowledge the grant before they
+      // include the ID. The receipt resolves the newly appeared trial row on
+      // the next canonical list fetch instead of ever showing `Ожидает`.
+      onActivated(subscriptionId || undefined, knownSubscriptionIds);
       await queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
     } catch {
       setActivating(false);

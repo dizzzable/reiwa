@@ -17,12 +17,13 @@ import type { PaymentStatus, Subscription } from "../../web/src/types/api.js";
 function subscription(
   id: string,
   ready = true,
+  isTrial = false,
 ): Subscription {
   return {
     id,
     userRemnaId: ready ? `remna-${id}` : null,
     status: "ACTIVE",
-    isTrial: false,
+    isTrial,
     trafficLimit: null,
     deviceLimit: null,
     expiresAt: null,
@@ -59,6 +60,22 @@ function trialReceipt(subscriptionId: string): SubscriptionProvisioningReceipt {
     slotIndex: 0,
     slotIndexSource: "CHECKOUT",
     createdAt: 0,
+    phase: "PROVISIONING",
+  };
+}
+
+function unboundTrialReceipt(
+  knownSubscriptionIds: readonly string[],
+): SubscriptionProvisioningReceipt {
+  return {
+    version: 1,
+    paymentId: "trial:pending:1",
+    source: "TRIAL",
+    knownSubscriptionIds,
+    purchaseType: "NEW",
+    slotIndex: knownSubscriptionIds.length,
+    slotIndexSource: "CHECKOUT",
+    createdAt: 1,
     phase: "PROVISIONING",
   };
 }
@@ -118,6 +135,30 @@ describe("subscription lifecycle policy", () => {
       backendReady: false,
       readySubscription: null,
     });
+  });
+
+  it("binds a legacy Trial response to the newly appeared trial row", () => {
+    const existing = subscription("existing");
+    const localTrial = subscription("trial-created", false, true);
+    const receipt = unboundTrialReceipt([existing.id]);
+    const paymentStatus = resolveTrialProvisioningPaymentStatus(receipt, [
+      existing,
+      localTrial,
+    ]);
+
+    expect(paymentStatus).toMatchObject({
+      subscriptionId: localTrial.id,
+      subscriptionProvisioningStatus: "PROFILE_PENDING",
+    });
+    expect(
+      buildSubscriptionCarouselItems(
+        [existing, localTrial],
+        [{ receipt, paymentStatus }],
+      ).map((item) => item.key),
+    ).toEqual([
+      subscriptionCarouselItemKey(existing.id),
+      provisioningCarouselItemKey(receipt.paymentId),
+    ]);
   });
 
   it("does not duplicate a ready checkout row before the first status poll", () => {

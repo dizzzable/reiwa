@@ -117,7 +117,15 @@ export function SubscriptionDeletionMotion({
       data-deletion-active={active ? "true" : "false"}
     >
       <motion.div
-        initial={false}
+        // The wrapper is mounted only after the deletion request succeeds.
+        // Give Motion an explicit visible source frame; `initial={false}`
+        // made it mount directly in the final clipped state, so there was no
+        // wipe to perceive on either desktop or mobile.
+        initial={
+          active
+            ? { clipPath: "inset(0 0 0 0%)", opacity: 1 }
+            : false
+        }
         animate={
           active
             ? reducedMotion

@@ -11,6 +11,7 @@ const STORAGE_KEY = "reiwa:subscription-provisioning-receipts";
 const STORAGE_VERSION = 1;
 const MAX_PAYMENT_ID_LENGTH = 256;
 const MAX_SLOT_INDEX = 10_000;
+const MAX_TRIAL_KNOWN_SUBSCRIPTIONS = 64;
 const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export const SUBSCRIPTION_PROVISIONING_RECEIPT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -38,6 +39,13 @@ export interface SubscriptionProvisioningReceipt {
   readonly source?: SubscriptionProvisioningReceiptSource;
   /** Exact local subscription created by the free-trial endpoint. */
   readonly subscriptionId?: string;
+  /**
+   * Subscription IDs already present when Trial was requested. A legacy
+   * Rezeis response can omit the newly created ID; the next canonical list
+   * then resolves the only newly appeared trial row without guessing among
+   * existing subscriptions.
+   */
+  readonly knownSubscriptionIds?: readonly string[];
   readonly purchaseType: SubscriptionCreationPurchaseType;
   readonly slotIndex: number;
   /**
@@ -74,7 +82,8 @@ type SaveReceiptInput = Omit<SubscriptionProvisioningReceipt, "version" | "creat
 };
 
 export interface SaveTrialSubscriptionProvisioningReceiptInput {
-  readonly subscriptionId: string;
+  readonly subscriptionId?: string;
+  readonly knownSubscriptionIds?: readonly string[];
   readonly slotIndex: number;
   readonly createdAt?: number;
 }
@@ -124,6 +133,9 @@ export function saveSubscriptionProvisioningReceipt(
     ...(input.subscriptionId === undefined
       ? {}
       : { subscriptionId: input.subscriptionId }),
+    ...(input.knownSubscriptionIds === undefined
+      ? {}
+      : { knownSubscriptionIds: [...input.knownSubscriptionIds] }),
     purchaseType: input.purchaseType,
     slotIndex: input.slotIndex,
     slotIndexSource: input.slotIndexSource,
@@ -153,16 +165,25 @@ export function saveTrialSubscriptionProvisioningReceipt(
   input: SaveTrialSubscriptionProvisioningReceiptInput,
   options: SubscriptionProvisioningReceiptStoreOptions = {},
 ): SubscriptionProvisioningReceipt | null {
+  const createdAt = input.createdAt ?? resolveNow(options.now);
   return saveSubscriptionProvisioningReceipt(
     {
-      paymentId: `trial:${input.subscriptionId}`,
+      paymentId:
+        input.subscriptionId === undefined
+          ? `trial:pending:${createdAt}`
+          : `trial:${input.subscriptionId}`,
       source: "TRIAL",
-      subscriptionId: input.subscriptionId,
+      ...(input.subscriptionId === undefined
+        ? {}
+        : { subscriptionId: input.subscriptionId }),
+      ...(input.knownSubscriptionIds === undefined
+        ? {}
+        : { knownSubscriptionIds: input.knownSubscriptionIds }),
       purchaseType: "NEW",
       slotIndex: input.slotIndex,
       slotIndexSource: "CHECKOUT",
       phase: "PROVISIONING",
-      createdAt: input.createdAt,
+      createdAt,
     },
     options,
   );
@@ -170,15 +191,8 @@ export function saveTrialSubscriptionProvisioningReceipt(
 
 export function isTrialSubscriptionProvisioningReceipt(
   receipt: SubscriptionProvisioningReceipt,
-): receipt is SubscriptionProvisioningReceipt & {
-  readonly source: "TRIAL";
-  readonly subscriptionId: string;
-} {
-  return (
-    receipt.source === "TRIAL" &&
-    typeof receipt.subscriptionId === "string" &&
-    receipt.subscriptionId.length > 0
-  );
+): receipt is SubscriptionProvisioningReceipt & { readonly source: "TRIAL" } {
+  return receipt.source === "TRIAL";
 }
 
 /**
@@ -345,8 +359,19 @@ function isValidReceipt(
     return false;
   }
   if (value["source"] === "TRIAL") {
-    if (!isValidPaymentId(value["subscriptionId"])) return false;
-  } else if (value["subscriptionId"] !== undefined) {
+    if (
+      value["subscriptionId"] !== undefined &&
+      !isValidPaymentId(value["subscriptionId"])
+    ) {
+      return false;
+    }
+    if (!isValidKnownSubscriptionIds(value["knownSubscriptionIds"])) {
+      return false;
+    }
+  } else if (
+    value["subscriptionId"] !== undefined ||
+    value["knownSubscriptionIds"] !== undefined
+  ) {
     return false;
   }
   if (!isSubscriptionCreationPurchaseType(value["purchaseType"])) return false;
@@ -389,6 +414,15 @@ function isValidPaymentId(paymentId: unknown): paymentId is string {
     typeof paymentId === "string" &&
     paymentId.length > 0 &&
     paymentId.length <= MAX_PAYMENT_ID_LENGTH
+  );
+}
+
+function isValidKnownSubscriptionIds(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.length <= MAX_TRIAL_KNOWN_SUBSCRIPTIONS &&
+      value.every((id) => isValidPaymentId(id)))
   );
 }
 

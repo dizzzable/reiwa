@@ -5,7 +5,6 @@ export const SUBSCRIPTION_CREATION_TIMING = {
   ignition: 3_600,
   docking: 4_800,
   waiting: 5_600,
-  earlyReadyHandoff: 1_100,
   lateReadyHandoff: 900,
   reducedHandoff: 160,
 } as const;
@@ -118,14 +117,26 @@ export function resolveSubscriptionCreationState({
   }
 
   const readyAt = Math.max(0, Math.min(readySinceMs ?? elapsed, elapsed));
-  const virtualStart = Math.min(
-    readyAt,
-    SUBSCRIPTION_CREATION_TIMING.docking,
-  );
-  const handoffDuration =
-    readyAt < SUBSCRIPTION_CREATION_TIMING.docking
-      ? SUBSCRIPTION_CREATION_TIMING.earlyReadyHandoff
-      : SUBSCRIPTION_CREATION_TIMING.lateReadyHandoff;
+
+  // A fast API response must not collapse the visual sequence into a single
+  // skeleton frame. The card is assembled on its natural 5.6 s conveyor
+  // timeline and only hands the real card off once that sequence reaches its
+  // docking point. When the backend is genuinely slow, keep the short final
+  // handoff so a ready profile still lands deliberately rather than popping in.
+  if (readyAt < SUBSCRIPTION_CREATION_TIMING.waiting) {
+    const complete = elapsed >= SUBSCRIPTION_CREATION_TIMING.waiting;
+    return {
+      stage: complete ? "complete" : stageAt(elapsed),
+      virtualElapsedMs: Math.min(
+        elapsed,
+        SUBSCRIPTION_CREATION_TIMING.waiting,
+      ),
+      complete,
+    };
+  }
+
+  const virtualStart = SUBSCRIPTION_CREATION_TIMING.docking;
+  const handoffDuration = SUBSCRIPTION_CREATION_TIMING.lateReadyHandoff;
   const readinessElapsed = elapsed - readyAt;
   const virtualElapsed =
     virtualStart +
@@ -186,14 +197,15 @@ export function resolveNextSubscriptionCreationWake({
     return completion > elapsed + 0.5 ? completion : null;
   }
 
-  const virtualStart = Math.min(
-    readyAt,
-    SUBSCRIPTION_CREATION_TIMING.docking,
-  );
-  const handoffDuration =
-    readyAt < SUBSCRIPTION_CREATION_TIMING.docking
-      ? SUBSCRIPTION_CREATION_TIMING.earlyReadyHandoff
-      : SUBSCRIPTION_CREATION_TIMING.lateReadyHandoff;
+  if (readyAt < SUBSCRIPTION_CREATION_TIMING.waiting) {
+    const nextBoundary = CREATION_STAGE_BOUNDARIES.find(
+      (boundary) => boundary > elapsed + 0.5,
+    );
+    return nextBoundary ?? null;
+  }
+
+  const virtualStart = SUBSCRIPTION_CREATION_TIMING.docking;
+  const handoffDuration = SUBSCRIPTION_CREATION_TIMING.lateReadyHandoff;
   const virtualSpan =
     SUBSCRIPTION_CREATION_TIMING.waiting - virtualStart;
 
@@ -208,9 +220,9 @@ export function resolveNextSubscriptionCreationWake({
 }
 
 export const SUBSCRIPTION_DELETION_TIMING = {
-  minimum: 800,
-  default: 900,
-  maximum: 1_000,
+  minimum: 1_100,
+  default: 1_250,
+  maximum: 1_400,
   reduced: 160,
 } as const;
 

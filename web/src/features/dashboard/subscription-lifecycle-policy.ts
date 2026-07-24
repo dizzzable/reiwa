@@ -68,9 +68,10 @@ export function resolveTrialProvisioningPaymentStatus(
 ): PaymentStatus | null {
   if (!isTrialSubscriptionProvisioningReceipt(receipt)) return null;
 
-  const ready = hasAllReadySubscriptionTargets(subscriptions, [
-    receipt.subscriptionId,
-  ]);
+  const subscriptionId = resolveTrialSubscriptionId(receipt, subscriptions);
+  const ready =
+    subscriptionId !== null &&
+    hasAllReadySubscriptionTargets(subscriptions, [subscriptionId]);
   return {
     paymentId: receipt.paymentId,
     status: "COMPLETED",
@@ -80,11 +81,31 @@ export function resolveTrialProvisioningPaymentStatus(
     currency: "",
     checkoutUrl: null,
     failureReason: null,
-    subscriptionId: receipt.subscriptionId,
+    subscriptionId,
     subscriptionProvisioningStatus: ready ? "READY" : "PROFILE_PENDING",
     subscriptionProvisioningFailureCode: null,
     updatedAt: new Date(receipt.createdAt).toISOString(),
   };
+}
+
+function resolveTrialSubscriptionId(
+  receipt: SubscriptionProvisioningReceipt,
+  subscriptions: readonly Subscription[],
+): string | null {
+  if (
+    typeof receipt.subscriptionId === "string" &&
+    receipt.subscriptionId.length > 0
+  ) {
+    return receipt.subscriptionId;
+  }
+
+  const knownSubscriptionIds = new Set(receipt.knownSubscriptionIds ?? []);
+  return (
+    subscriptions.find(
+      (subscription) =>
+        subscription.isTrial && !knownSubscriptionIds.has(subscription.id),
+    )?.id ?? null
+  );
 }
 
 /**

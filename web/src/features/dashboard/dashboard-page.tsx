@@ -182,9 +182,13 @@ export default function DashboardPage() {
   );
 
   const handleTrialActivated = useCallback(
-    (subscriptionId: string) => {
+    (
+      subscriptionId: string | undefined,
+      knownSubscriptionIds: readonly string[],
+    ) => {
       startTrialProvisioning({
         subscriptionId,
+        knownSubscriptionIds,
         slotIndex: subscriptions.length,
       });
     },
@@ -327,7 +331,10 @@ export default function DashboardPage() {
         </>
       ) : (
         <>
-          <TrialCta onActivated={handleTrialActivated} />
+          <TrialCta
+            knownSubscriptionIds={subscriptions.map((subscription) => subscription.id)}
+            onActivated={handleTrialActivated}
+          />
           <EmptySubscriptionCta onBuy={handleBuy} />
         </>
       )}

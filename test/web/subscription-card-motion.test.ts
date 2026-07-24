@@ -168,21 +168,21 @@ describe("subscription creation timeline", () => {
     expect(state).toMatchObject({ stage: "waiting", complete: false });
   });
 
-  it("compresses an early READY handoff to 1.1 seconds", () => {
+  it("keeps the full assembly sequence visible when READY arrives early", () => {
     const before = resolveSubscriptionCreationState({
-      elapsedMs: 1_099,
+      elapsedMs: SUBSCRIPTION_CREATION_TIMING.waiting - 1,
       backendReady: true,
       readySubscriptionAvailable: true,
       readySinceMs: 0,
     });
     const complete = resolveSubscriptionCreationState({
-      elapsedMs: SUBSCRIPTION_CREATION_TIMING.earlyReadyHandoff,
+      elapsedMs: SUBSCRIPTION_CREATION_TIMING.waiting,
       backendReady: true,
       readySubscriptionAvailable: true,
       readySinceMs: 0,
     });
 
-    expect(before.complete).toBe(false);
+    expect(before).toMatchObject({ stage: "docking", complete: false });
     expect(complete).toMatchObject({ stage: "complete", complete: true });
   });
 
@@ -275,7 +275,7 @@ describe("subscription creation timeline", () => {
     ).toBeNull();
   });
 
-  it("maps compressed READY stages to one-shot real-time checkpoints", () => {
+  it("keeps early READY wake-ups on the natural assembly checkpoints", () => {
     expect(
       resolveNextSubscriptionCreationWake({
         elapsedMs: 0,
@@ -284,11 +284,7 @@ describe("subscription creation timeline", () => {
         readySinceMs: 0,
         longWaitAfterMs: 15_000,
       }),
-    ).toBeCloseTo(
-      (SUBSCRIPTION_CREATION_TIMING.surface /
-        SUBSCRIPTION_CREATION_TIMING.waiting) *
-        SUBSCRIPTION_CREATION_TIMING.earlyReadyHandoff,
-    );
+    ).toBe(SUBSCRIPTION_CREATION_TIMING.surface);
     expect(
       resolveNextSubscriptionCreationWake({
         elapsedMs: 2_000,
@@ -297,7 +293,7 @@ describe("subscription creation timeline", () => {
         readySinceMs: 0,
         longWaitAfterMs: 15_000,
       }),
-    ).toBeNull();
+    ).toBe(SUBSCRIPTION_CREATION_TIMING.modules);
     expect(
       resolveNextSubscriptionCreationWake({
         elapsedMs: 100,
@@ -312,7 +308,7 @@ describe("subscription creation timeline", () => {
 });
 
 describe("subscription deletion duration", () => {
-  it("clamps the full digital exit to 0.8-1.0 seconds", () => {
+  it("clamps the full digital exit to a perceptible 1.1-1.4 seconds", () => {
     expect(resolveSubscriptionDeletionDuration(false, 100)).toBe(
       SUBSCRIPTION_DELETION_TIMING.minimum,
     );

@@ -43,7 +43,8 @@ export interface SubscriptionProvisioningState {
   readonly runtimes: readonly SubscriptionProvisioningRuntime[];
   readonly completeHandoff: (paymentId: string) => void;
   readonly startTrialProvisioning: (input: {
-    readonly subscriptionId: string;
+    readonly subscriptionId?: string;
+    readonly knownSubscriptionIds: readonly string[];
     readonly slotIndex: number;
   }) => void;
 }
@@ -60,16 +61,21 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
     SubscriptionProvisioningReceipt[]
   >(() => listSubscriptionProvisioningReceipts());
   const profilePendingRefreshes = useRef(new Set<string>());
-  const trialSubscriptionIds = useMemo(
+  const trialReceipts = useMemo(
     () =>
-      receipts.flatMap((receipt) =>
-        isTrialSubscriptionProvisioningReceipt(receipt)
-          ? [receipt.subscriptionId]
-          : [],
-      ),
+      receipts.filter(isTrialSubscriptionProvisioningReceipt),
     [receipts],
   );
-  const trialSubscriptionSignature = trialSubscriptionIds.join("|");
+  const trialReceiptSignature = trialReceipts
+    .map(
+      (receipt) =>
+        [
+          receipt.paymentId,
+          receipt.subscriptionId ?? "",
+          ...(receipt.knownSubscriptionIds ?? []),
+        ].join(":"),
+    )
+    .join("|");
 
   const paymentQueries = useQueries({
     queries: receipts.map((receipt) => {
@@ -151,7 +157,7 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
   const readySubscriptionSignature = readySubscriptionIds.join("|");
 
   useEffect(() => {
-    if (trialSubscriptionIds.length === 0) return;
+    if (trialReceipts.length === 0) return;
 
     let cancelled = false;
     let retryTimer: number | undefined;
@@ -165,9 +171,12 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
           staleTime: 0,
           retry: 2,
         });
-        allTargetsReady = hasAllReadySubscriptionTargets(
-          response.subscriptions,
-          trialSubscriptionIds,
+        allTargetsReady = trialReceipts.every(
+          (receipt) =>
+            resolveTrialProvisioningPaymentStatus(
+              receipt,
+              response.subscriptions,
+            )?.subscriptionProvisioningStatus === "READY",
         );
       } catch {
         // Retain the creation state across a transient BFF error. The next
@@ -187,7 +196,7 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
       cancelled = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [queryClient, trialSubscriptionIds, trialSubscriptionSignature]);
+  }, [queryClient, trialReceiptSignature, trialReceipts]);
 
   useEffect(() => {
     const receiptsToRemove = new Set<string>();
@@ -315,13 +324,16 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
   const startTrialProvisioning = useCallback(
     ({
       subscriptionId,
+      knownSubscriptionIds,
       slotIndex,
     }: {
-      subscriptionId: string;
+      subscriptionId?: string;
+      knownSubscriptionIds: readonly string[];
       slotIndex: number;
     }) => {
       const receipt = saveTrialSubscriptionProvisioningReceipt({
         subscriptionId,
+        knownSubscriptionIds,
         slotIndex,
       });
       if (receipt === null) return;

@@ -135,6 +135,26 @@ describe("subscription provisioning receipt store", () => {
     });
   });
 
+  it("persists an unbound free trial until a legacy response can be resolved", () => {
+    const storage = new MemoryStorage();
+    const receipt = saveTrialSubscriptionProvisioningReceipt(
+      {
+        knownSubscriptionIds: ["subscription-before-trial"],
+        slotIndex: 1,
+      },
+      { storage, now: NOW },
+    );
+
+    expect(receipt).toMatchObject({
+      paymentId: `trial:pending:${NOW}`,
+      source: "TRIAL",
+      knownSubscriptionIds: ["subscription-before-trial"],
+      phase: "PROVISIONING",
+    });
+    expect(receipt?.subscriptionId).toBeUndefined();
+    expect(receipt === null ? false : isTrialSubscriptionProvisioningReceipt(receipt)).toBe(true);
+  });
+
   it("recovers a missing new-tab receipt and never regresses its phase", () => {
     const storage = new MemoryStorage();
     const recovered = ensureSubscriptionProvisioningReceipt(
