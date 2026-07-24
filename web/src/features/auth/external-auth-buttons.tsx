@@ -98,6 +98,9 @@ function TelegramLoginWidget({ botUsername }: { botUsername: string }) {
     container.replaceChildren()
     const script = document.createElement('script')
     script.async = true
+    // Telegram serves this SDK with permissive CORS. Opting in preserves the
+    // actual source/stack in window.error instead of a masked "Script error.".
+    script.crossOrigin = 'anonymous'
     script.src = 'https://telegram.org/js/telegram-widget.js?22'
     script.setAttribute('data-telegram-login', botUsername.replace(/^@/, ''))
     script.setAttribute('data-size', 'large')

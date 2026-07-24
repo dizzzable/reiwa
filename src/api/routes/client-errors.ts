@@ -41,6 +41,10 @@ export function createClientErrorsRouter(deps: { adminClient: AdminClient | null
     const kind = str("kind") ?? "client.error";
     const stack = str("stack");
     const componentStack = str("componentStack");
+    const filename = str("filename");
+    const errorName = str("errorName");
+    const lineno = positiveInteger(body["lineno"]);
+    const colno = positiveInteger(body["colno"]);
 
     const context: Record<string, unknown> = {
       scope: `web.${kind}`,
@@ -51,9 +55,22 @@ export function createClientErrorsRouter(deps: { adminClient: AdminClient | null
     const userAgent = str("userAgent") ?? (typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined);
     if (userAgent !== undefined) context["userAgent"] = userAgent.slice(0, 512);
     if (componentStack !== undefined) context["componentStack"] = componentStack.slice(0, 4000);
+    if (filename !== undefined) context["filename"] = filename.slice(0, 2000);
+    if (lineno !== undefined) context["lineno"] = lineno;
+    if (colno !== undefined) context["colno"] = colno;
+    if (errorName !== undefined) context["errorName"] = errorName.slice(0, 128);
 
     getRequestLogger(req).warn(
-      { kind, surface, url, msg: message.slice(0, 200) },
+      {
+        kind,
+        surface,
+        url,
+        filename,
+        lineno,
+        colno,
+        errorName,
+        msg: message.slice(0, 200),
+      },
       "Client (cabinet) error reported",
     );
 
@@ -68,4 +85,10 @@ export function createClientErrorsRouter(deps: { adminClient: AdminClient | null
   });
 
   return router;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
 }

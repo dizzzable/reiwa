@@ -57,6 +57,10 @@ describe('client-errors route', () => {
       kind: 'react.errorBoundary',
       surface: 'tma',
       componentStack: 'at Dashboard',
+      filename: 'https://telegram.org/js/telegram-web-app.js',
+      lineno: 314,
+      colno: 12,
+      errorName: 'TypeError',
     });
     expect(status).toBe(204);
     await new Promise((r) => setTimeout(r, 0));
@@ -66,7 +70,14 @@ describe('client-errors route', () => {
       message: 'Cannot read properties of undefined',
     });
     const ctx = (report.mock.calls[0][0] as { context: Record<string, unknown> }).context;
-    expect(ctx).toMatchObject({ surface: 'tma', scope: 'web.react.errorBoundary' });
+    expect(ctx).toMatchObject({
+      surface: 'tma',
+      scope: 'web.react.errorBoundary',
+      filename: 'https://telegram.org/js/telegram-web-app.js',
+      lineno: 314,
+      colno: 12,
+      errorName: 'TypeError',
+    });
   });
 
   it('rejects an empty message with 400 and does not report', async () => {

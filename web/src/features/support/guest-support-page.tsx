@@ -510,6 +510,9 @@ function TurnstileWidget({
     if (script === null) {
       script = document.createElement('script')
       script.id = SCRIPT_ID
+      // Turnstile supports anonymous CORS; retain actionable diagnostics if
+      // its third-party script fails inside an embedded browser.
+      script.crossOrigin = 'anonymous'
       script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
       script.async = true
       document.head.appendChild(script)

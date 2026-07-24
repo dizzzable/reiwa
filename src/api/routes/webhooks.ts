@@ -49,6 +49,7 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  *   - `reiwa.bot.invalidate`    → POST bot `/invalidate`        { reason }
  *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
  *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
+ *   - `reiwa.channel.broadcast.document` → POST bot `/notify-broadcast-document` { eventId, chatId, content, filename?, caption?, topicThreadId?, parseMode? }
  * Unknown event types are ack'd (204) so the admin dispatcher doesn't retry.
  */
 export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
@@ -152,6 +153,19 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
             ...(parsed.buttons ? { buttons: parsed.buttons } : {}),
+          });
+          break;
+        }
+        case "reiwa.channel.broadcast.document": {
+          const parsed = parseRelayMetadata(z.object({ eventId: eventIdSchema, chatId: chatIdSchema, content: documentContentSchema, filename: filenameSchema.optional(), caption: captionSchema.optional(), topicThreadId: topicThreadIdSchema.optional(), parseMode: parseModeSchema.optional() }).strict(), meta);
+          await relayToBot("/notify-broadcast-document", {
+            eventId: parsed.eventId,
+            chatId: parsed.chatId,
+            content: parsed.content,
+            ...(parsed.filename ? { filename: parsed.filename } : {}),
+            ...(parsed.caption ? { caption: parsed.caption } : {}),
+            ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
+            ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
           });
           break;
         }

@@ -49,6 +49,10 @@
  *         buttons?: Array<{ text, url?, callbackData? }>,
  *       }
  *
+ *   POST /notify-broadcast-document
+ *     Deliver a text document with an optional HTML/Markdown caption to a
+ *     chat / topic. Used for full error reports on split deployments.
+ *
  * Bound to `0.0.0.0`. When split across VPS, expose it ONLY through a
  * TLS reverse proxy (443) with an IP allow-list for the admin host — never
  * publish the raw port. The HMAC auth above protects the secret even if
@@ -131,6 +135,16 @@ interface BroadcastPayload {
   readonly text?: unknown;
   readonly parseMode?: unknown;
   readonly buttons?: unknown;
+}
+
+interface BroadcastDocumentPayload {
+  readonly eventId?: unknown;
+  readonly chatId?: unknown;
+  readonly filename?: unknown;
+  readonly content?: unknown;
+  readonly caption?: unknown;
+  readonly topicThreadId?: unknown;
+  readonly parseMode?: unknown;
 }
 
 interface DevNotifyPayload {
@@ -466,6 +480,10 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
         await handleBroadcast({ bot, logger, raw, res, keyboardUrls, cache });
         return;
       }
+      if (url === '/notify-broadcast-document') {
+        await handleNotifyBroadcastDocument({ bot, logger, raw, res });
+        return;
+      }
       res.statusCode = 404;
       res.end();
     } catch (err: unknown) {
@@ -666,6 +684,85 @@ async function handleNotifyDevDocument(opts: DevNotifyHandlerOptions): Promise<v
     logger.warn({ err, devId }, 'Notify-dev-document: send failed');
     // Soft-success: the firehose is best-effort; don't make admin retry.
     res.statusCode = 204;
+    res.end();
+  }
+}
+
+/**
+ * `/notify-broadcast-document` — deliver an error-report document to the
+ * configured operator chat/topic while preserving the sectioned card as its
+ * caption. This is the split-deployment counterpart of `/notify-dev-document`.
+ */
+async function handleNotifyBroadcastDocument(opts: {
+  readonly bot: Bot<Context> | null;
+  readonly logger: ReturnType<typeof createLogger>;
+  readonly raw: string;
+  readonly res: http.ServerResponse;
+}): Promise<void> {
+  const { bot, logger, raw, res } = opts;
+  if (bot === null) {
+    res.statusCode = 503;
+    res.end();
+    return;
+  }
+  let payload: BroadcastDocumentPayload;
+  try {
+    payload = JSON.parse(raw) as BroadcastDocumentPayload;
+  } catch {
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
+  const eventId = typeof payload.eventId === 'string' ? payload.eventId : null;
+  const chatId = typeof payload.chatId === 'string' ? payload.chatId : null;
+  const content = typeof payload.content === 'string' ? payload.content : null;
+  if (eventId === null || chatId === null || content === null || content.length === 0) {
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
+  if (!IDEMPOTENCY_CACHE.claim(eventId)) {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+  const filename =
+    typeof payload.filename === 'string' && payload.filename.trim().length > 0
+      ? payload.filename.trim()
+      : 'error.txt';
+  const captionRaw = typeof payload.caption === 'string' ? payload.caption : undefined;
+  const caption =
+    captionRaw !== undefined && captionRaw.length > TG_CAPTION_LIMIT
+      ? captionRaw.slice(0, TG_CAPTION_LIMIT)
+      : captionRaw;
+  const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
+  const topicThreadId =
+    typeof payload.topicThreadId === 'number' && Number.isInteger(payload.topicThreadId)
+      ? payload.topicThreadId
+      : undefined;
+  const keyboard = new InlineKeyboard().text('❌ Закрыть', 'close');
+  try {
+    const document = new InputFile(Buffer.from(content, 'utf8'), filename);
+    await bot.api.sendDocument(chatId, document, {
+      ...(caption !== undefined ? { caption } : {}),
+      ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
+      ...(topicThreadId !== undefined ? { message_thread_id: topicThreadId } : {}),
+      reply_markup: keyboard,
+    });
+    res.statusCode = 204;
+    res.end();
+  } catch (err: unknown) {
+    if (err instanceof GrammyError && err.error_code >= 400 && err.error_code < 500) {
+      logger.warn(
+        { eventId, chatId, code: err.error_code, description: err.description },
+        'Broadcast document: permanent delivery failure — check Chat ID / topic id / bot membership',
+      );
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    logger.error({ err, eventId, chatId }, 'Broadcast document: sendDocument failed');
+    res.statusCode = 502;
     res.end();
   }
 }

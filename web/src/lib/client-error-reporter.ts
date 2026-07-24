@@ -51,6 +51,11 @@ export interface ClientErrorInput {
   readonly componentStack?: string;
   /** Origin of the report: window.onerror / unhandledrejection / react.errorBoundary. */
   readonly kind?: string;
+  /** Script location exposed by ErrorEvent for same-origin/CORS-enabled code. */
+  readonly filename?: string;
+  readonly lineno?: number;
+  readonly colno?: number;
+  readonly errorName?: string;
 }
 
 export function reportClientError(input: ClientErrorInput): void {
@@ -76,12 +81,21 @@ export function reportClientError(input: ClientErrorInput): void {
     if (windowCount >= MAX_PER_MIN) return;
     windowCount += 1;
 
+    const filename = normalizeString(input.filename, 2_000);
+    const errorName = normalizeString(input.errorName, 128);
+    const lineno = normalizePosition(input.lineno);
+    const colno = normalizePosition(input.colno);
+
     const payload = JSON.stringify({
       message,
       ...(input.stack ? { stack: input.stack.slice(0, 8000) } : {}),
       ...(input.componentStack ? { componentStack: input.componentStack.slice(0, 8000) } : {}),
       kind: input.kind ?? 'client.error',
       surface: getClientSource(),
+      ...(filename ? { filename } : {}),
+      ...(lineno !== undefined ? { lineno } : {}),
+      ...(colno !== undefined ? { colno } : {}),
+      ...(errorName ? { errorName } : {}),
       url:
         typeof location !== 'undefined'
           ? `${location.pathname}${location.search}`
@@ -105,6 +119,26 @@ export function reportClientError(input: ClientErrorInput): void {
   }
 }
 
+function normalizeString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed.slice(0, maxLength) : undefined
+}
+
+function normalizePosition(value: unknown): number | undefined {
+  // ErrorEvent uses zero when a location is unavailable; JavaScript source
+  // positions are 1-based, so keep zero out of operator reports.
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined
+}
+
+function getErrorName(value: unknown): string | undefined {
+  if (value instanceof Error) return normalizeString(value.name, 128)
+  if (typeof value !== 'object' || value === null) return undefined
+  return normalizeString((value as { name?: unknown }).name, 128)
+}
+
 let installed = false;
 
 /**
@@ -116,10 +150,15 @@ export function installGlobalErrorReporting(): void {
   installed = true;
 
   window.addEventListener('error', (event: ErrorEvent) => {
+    const error = event.error
     reportClientError({
-      message: event.message || (event.error instanceof Error ? event.error.message : 'window.onerror'),
-      stack: event.error instanceof Error ? event.error.stack : undefined,
+      message: event.message || (error instanceof Error ? error.message : 'window.onerror'),
+      stack: error instanceof Error ? error.stack : undefined,
       kind: 'window.onerror',
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+      errorName: getErrorName(error),
     });
   });
 
