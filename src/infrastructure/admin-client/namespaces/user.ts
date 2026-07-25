@@ -14,6 +14,11 @@ export interface BootstrapUserInput {
   readonly username?: string;
   readonly name: string;
   readonly language?: string;
+  /**
+   * Referral token from a `t.me/<bot>?start=ref_<token>` deep-link.
+   * rezeis binds it to the inviter only on a brand-new bootstrap.
+   */
+  readonly referralCode?: string;
 }
 
 /**

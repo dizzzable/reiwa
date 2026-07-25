@@ -44,6 +44,14 @@ export const TTL = {
   BRUTE_FORCE: 60 * 60,
   /** Recovery queue (queued password generation) — 24 hours */
   RECOVERY_QUEUE: 24 * 60 * 60,
+  /**
+   * Banned-IP block duration — 24 hours. Bans MUST expire: shared NATs,
+   * carrier-grade CGNAT and mobile IPs rotate between real users, so a
+   * permanent ban would lock out innocent clients forever with no operator
+   * recourse. 24h is long enough to shed an automated attack but short enough
+   * to self-heal; an operator can also unban early via `clearBannedIp`.
+   */
+  BANNED_IP: 24 * 60 * 60,
 } as const;
 
 // ── Key Builders ────────────────────────────────────────────────────────────
@@ -199,8 +207,10 @@ export function bruteForceKey(username: string): string {
 }
 
 /**
- * Build a Redis key for permanently banned IPs.
- * Value: JSON `{reason, bannedAt, username}`
+ * Build a Redis key for banned IPs. Written with `TTL.BANNED_IP` so bans
+ * self-expire (see the TTL note) rather than locking out rotating/shared IPs
+ * forever.
+ * Value: JSON `{reason, bannedAt, username?}`
  */
 export function bannedIpKey(ip: string): string {
   return `banned_ip:${ip}`;

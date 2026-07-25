@@ -337,12 +337,15 @@ export function createRedisRateLimiter(
         // For "at_limit" behavior: the request that hits the limit is also blocked
         // If this endpoint bans on exceed, ban the IP
         if (config.onExceed === "ban") {
+          // TTL so the ban self-expires (shared/rotating IPs) — see TTL.BANNED_IP.
           await redis.set(
             bannedIpKey(ip),
             JSON.stringify({
               reason: `Rate limit exceeded on ${endpoint}`,
               bannedAt: new Date().toISOString(),
             }),
+            "EX",
+            TTL.BANNED_IP,
           );
         }
 
@@ -353,12 +356,15 @@ export function createRedisRateLimiter(
       // For "after_limit" behavior: check if we just exceeded after increment
       if (nowExceeded && config.blockBehavior === "after_limit") {
         if (config.onExceed === "ban") {
+          // TTL so the ban self-expires (shared/rotating IPs) — see TTL.BANNED_IP.
           await redis.set(
             bannedIpKey(ip),
             JSON.stringify({
               reason: `Rate limit exceeded on ${endpoint}`,
               bannedAt: new Date().toISOString(),
             }),
+            "EX",
+            TTL.BANNED_IP,
           );
         }
 

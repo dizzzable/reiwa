@@ -36,6 +36,7 @@ import { pickScreenText, buildScreenKeyboard } from './screen-renderer.js';
 import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial-button.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 
+import { parseDeeplink } from '../../core/types/deeplink.type.js';
 import { coerceLocale } from './coerce-locale.js';
 import { resolveBannerSource, type BannerPhotoSource } from './banner-resolver.js';
 import { renderViewWithBanner, resolveWelcomeBannerRef } from './screen-banner.js';
@@ -618,6 +619,13 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       }
     }
 
+    // Referral deep-link: `t.me/<bot>?start=ref_<token>`. Parsed here and
+    // forwarded to bootstrap so rezeis can bind the inviter on a brand-new
+    // sign-up. Previously `ref_` was never handled — the bot's referral links
+    // silently failed to attribute the referrer (no reward was ever granted).
+    const deeplink = parseDeeplink(startPayload);
+    const referralCode = deeplink.kind === 'referral' ? deeplink.token : undefined;
+
     // Phase 1: bootstrap user. Failures non-fatal.
     if (deps.adminClient !== null) {
       try {
@@ -629,6 +637,7 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
           username: tgUser.username,
           name: fullName,
           language: tgUser.language_code?.toUpperCase() ?? 'RU',
+          ...(referralCode !== undefined ? { referralCode } : {}),
         })) as BootstrapSessionShape | null;
         if (session?.language) {
           deps.userLocale.setSync(tgUser.id, session.language.toLowerCase());

@@ -182,7 +182,10 @@ export function createBruteForceDetection(
 
         const pipeline = redis.pipeline();
         for (const offendingIp of record.ips) {
-          pipeline.set(bannedIpKey(offendingIp), banPayload);
+          // Ban with a TTL so a shared/rotating IP caught in a coordinated
+          // attack self-unbans after TTL.BANNED_IP instead of being blocked
+          // forever (operators can also unban early — see clearBannedIp).
+          pipeline.set(bannedIpKey(offendingIp), banPayload, "EX", TTL.BANNED_IP);
         }
         await pipeline.exec();
 

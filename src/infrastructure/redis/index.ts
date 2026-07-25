@@ -20,6 +20,14 @@ export {
 } from "./keys.js";
 
 export {
+  getBannedIp,
+  isIpBanned,
+  banIp,
+  clearBannedIp,
+  type BannedIpRecord,
+} from "./ban-management.js";
+
+export {
   WebSessionStore,
   createWebSessionMiddleware,
   type WebSession,

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildInternalSignature,
+  timingSafeStringEqual,
   verifyInternalSignature,
 } from '../../src/lib/internal-hmac.js';
 
@@ -165,5 +166,28 @@ describe('internal HMAC sign/verify', () => {
     expect(
       verifyInternalSignature({ ...common, timestamp: '123', signature: undefined }),
     ).toBe(false);
+  });
+});
+
+describe('timingSafeStringEqual (legacy X-Auth-Token compare)', () => {
+  it('accepts an exact match', () => {
+    expect(timingSafeStringEqual(SECRET, SECRET)).toBe(true);
+  });
+
+  it('rejects a mismatch of equal length', () => {
+    const other = SECRET.slice(0, -1) + (SECRET.endsWith('g') ? 'h' : 'g');
+    expect(other).toHaveLength(SECRET.length);
+    expect(timingSafeStringEqual(SECRET, other)).toBe(false);
+  });
+
+  it('rejects on length mismatch without throwing', () => {
+    expect(timingSafeStringEqual(SECRET, SECRET + 'x')).toBe(false);
+    expect(timingSafeStringEqual(SECRET, SECRET.slice(0, -1))).toBe(false);
+  });
+
+  it('never matches on empty inputs', () => {
+    expect(timingSafeStringEqual('', '')).toBe(false);
+    expect(timingSafeStringEqual('', SECRET)).toBe(false);
+    expect(timingSafeStringEqual(SECRET, '')).toBe(false);
   });
 });

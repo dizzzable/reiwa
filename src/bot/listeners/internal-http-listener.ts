@@ -77,6 +77,7 @@ import { resolveBannerSource } from '../pages/banner-resolver.js';
 import {
   REQUEST_SIGNATURE_HEADER,
   REQUEST_TIMESTAMP_HEADER,
+  timingSafeStringEqual,
   verifyInternalSignature,
 } from '../../lib/internal-hmac.js';
 
@@ -525,9 +526,11 @@ function isAuthorized(
       signature,
     });
   }
-  // Legacy fallback: shared secret in the X-Auth-Token header.
+  // Legacy fallback: shared secret in the X-Auth-Token header. Constant-time
+  // compare so the transitional token path can't be brute-forced via a timing
+  // side-channel on the `===` string comparison.
   const token = req.headers['x-auth-token'];
-  return typeof token === 'string' && token === secret;
+  return typeof token === 'string' && timingSafeStringEqual(token, secret);
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {

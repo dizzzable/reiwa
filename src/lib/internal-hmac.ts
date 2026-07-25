@@ -95,3 +95,16 @@ export function verifyInternalSignature(input: InternalVerificationInput): boole
   if (expectedBuf.length === 0 || expectedBuf.length !== providedBuf.length) return false;
   return timingSafeEqual(expectedBuf, providedBuf);
 }
+
+/**
+ * Constant-time equality for shared-secret string comparison. Returns `false`
+ * on length mismatch (without leaking timing) instead of throwing, so callers
+ * can compare a caller-supplied token against the configured secret without a
+ * `===` timing side-channel. Empty inputs never match.
+ */
+export function timingSafeStringEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length === 0 || bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}

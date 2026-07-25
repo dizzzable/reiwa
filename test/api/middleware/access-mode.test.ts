@@ -272,4 +272,21 @@ describe('requireMode', () => {
     });
     expect(ctx.nextCalled).toBe(true);
   });
+
+  it('fails CLOSED (503) when gate evaluation throws after the policy resolves', async () => {
+    // Policy cache resolves fine; the *gate derivation* throws (stand-in for an
+    // unexpected/validation error inside evaluateAccessMode). The gate must NOT
+    // silently open — this is exactly when the operator blocked access.
+    stubMode('REG_BLOCKED');
+    const throwingGate = (): AccessModeGate => {
+      throw new Error('unexpected gate resolution failure');
+    };
+    const ctx = buildCtx();
+    await requireMode(throwingGate)(ctx.req as Request, ctx.res as Response, () => {
+      ctx.nextCalled = true;
+    });
+    expect(ctx.nextCalled).toBe(false);
+    expect(ctx.res.statusCode).toBe(503);
+    expect(ctx.res.jsonBody).toMatchObject({ code: 'SERVICE_RESTRICTED' });
+  });
 });

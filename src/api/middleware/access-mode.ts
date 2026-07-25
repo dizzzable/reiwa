@@ -18,6 +18,7 @@ import type { NextFunction, Request, Response } from 'express';
 import type { AccessMode } from '../../infrastructure/admin-client/namespaces/system.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import type { AdminClient } from '../../lib/admin-client.js';
+import { getRequestLogger } from './logger-accessor.js';
 
 export type AccessModeGate =
   | 'register'
@@ -97,10 +98,27 @@ export function requireMode(
   options: RequireModeOptions = {},
 ): (req: Request, res: Response, next: NextFunction) => Promise<void> {
   return async function requireModeMiddleware(req, res, next) {
+    // Reading the cached policy is the ONLY step allowed to fail open: a
+    // transient cache miss / admin-network blip must not lock users out. The
+    // gate evaluation below is deliberately OUTSIDE this catch so an
+    // unexpected/validation error there fails CLOSED — otherwise a bug in
+    // `evaluateAccessMode` would silently disable every gate exactly when the
+    // operator has blocked registration/purchases (e.g. fraud incident).
+    let policy: { readonly accessMode: AccessMode };
     try {
       const adminClient = (req.app.locals['adminClient'] ?? null) as AdminClient | null;
       const cache = getPolicyCache(adminClient);
-      const policy = await cache.get();
+      policy = await cache.get();
+    } catch (error) {
+      getRequestLogger(req).warn(
+        { err: error },
+        'access-mode: policy cache unavailable, failing open for this request',
+      );
+      next();
+      return;
+    }
+
+    try {
       const resolvedGate = typeof gate === 'function' ? gate(req) : gate;
       const rejection = evaluateAccessMode({
         gate: resolvedGate,
@@ -115,9 +133,18 @@ export function requireMode(
         return;
       }
       next();
-    } catch {
-      // Fail open: never lock users out on a transient cache miss.
-      next();
+    } catch (error) {
+      // Fail CLOSED: an unexpected evaluation error (e.g. an unhandled gate)
+      // must not open the gate. Surface it as 503 and log at ERROR so the
+      // incident is visible rather than silently swallowed.
+      getRequestLogger(req).error(
+        { err: error },
+        'access-mode: gate evaluation failed, rejecting request (fail-closed)',
+      );
+      res.status(503).json({
+        code: 'SERVICE_RESTRICTED',
+        message: 'Service is temporarily unavailable',
+      });
     }
   };
 }
