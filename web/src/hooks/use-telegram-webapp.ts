@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { reportClientError } from '@/lib/client-error-reporter'
 
 // Types for Telegram WebApp SDK
 interface TelegramUser {
@@ -21,10 +22,10 @@ interface TelegramWebApp {
   isExpanded: boolean
   viewportHeight: number
   viewportStableHeight: number
-  ready: () => void
-  expand: () => void
+  ready?: () => void
+  expand?: () => void
   close: () => void
-  isVersionAtLeast: (version: string) => boolean
+  isVersionAtLeast?: (version: string) => boolean
   /** Bot API 7.7+ — stop the swipe-down-to-minimise gesture that lets the
    *  whole Mini App be dragged (reads as "content out of bounds" on iOS). */
   disableVerticalSwipes?: () => void
@@ -92,8 +93,65 @@ interface UseTelegramWebAppResult {
 
 const POLL_INTERVAL_MS = 80
 const POLL_TIMEOUT_MS  = 2000
+const activatedApps = new WeakSet<object>()
 
-export function useTelegramWebApp(): UseTelegramWebAppResult {
+interface UseTelegramWebAppOptions {
+  /** Enable the one-time native `ready()` / `expand()` handshake. */
+  readonly activate?: boolean
+}
+
+/**
+ * A Telegram bridge can be exposed before it is fully usable. Never let a
+ * host-side exception escape a React effect as an opaque `Script error.`.
+ */
+function callTelegramWebAppMethod(
+  stage: 'ready' | 'expand' | 'disableVerticalSwipes' | 'isVersionAtLeast',
+  callback: () => void,
+): boolean {
+  try {
+    callback()
+    return true
+  } catch (error) {
+    const detail = error instanceof Error && error.message.trim().length > 0
+      ? `: ${error.message.slice(0, 500)}`
+      : ''
+    reportClientError({
+      message: `Telegram WebApp ${stage}() failed${detail}`,
+      stack: error instanceof Error ? error.stack : undefined,
+      kind: 'telegram.webapp.initialization',
+      errorName: error instanceof Error ? error.name : undefined,
+    })
+    return false
+  }
+}
+
+/** Activate the Telegram host once per bridge object across all hook users. */
+function activateTelegramWebApp(tg: TelegramWebApp): void {
+  if (activatedApps.has(tg)) return
+  activatedApps.add(tg)
+
+  if (typeof tg.ready === 'function') {
+    callTelegramWebAppMethod('ready', () => tg.ready?.())
+  }
+  if (typeof tg.expand === 'function') {
+    callTelegramWebAppMethod('expand', () => tg.expand?.())
+  }
+
+  if (typeof tg.disableVerticalSwipes !== 'function' || typeof tg.isVersionAtLeast !== 'function') {
+    return
+  }
+  let supportsVerticalSwipeControl = false
+  const inspectedVersion = callTelegramWebAppMethod('isVersionAtLeast', () => {
+    supportsVerticalSwipeControl = tg.isVersionAtLeast?.('7.7') === true
+  })
+  if (inspectedVersion && supportsVerticalSwipeControl) {
+    callTelegramWebAppMethod('disableVerticalSwipes', () => tg.disableVerticalSwipes?.())
+  }
+}
+
+export function useTelegramWebApp(
+  { activate = true }: UseTelegramWebAppOptions = {},
+): UseTelegramWebAppResult {
   const [result, setResult] = useState<UseTelegramWebAppResult>({
     telegram: null,
     initData: null,
@@ -115,16 +173,7 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
 
       initializedRef.current = true
 
-      // Signal to Telegram that we're ready
-      tg.ready()
-      tg.expand()
-
-      // Stop the vertical swipe-to-minimise drag (Bot API 7.7+) so the Mini
-      // App can't be pulled around — on iOS that drag is what makes content
-      // look like it slips out of bounds. Guarded: older clients lack it.
-      if (typeof tg.disableVerticalSwipes === 'function' && tg.isVersionAtLeast('7.7')) {
-        tg.disableVerticalSwipes()
-      }
+      if (activate) activateTelegramWebApp(tg)
 
       const platform = tg.platform
       const isMobile  = platform === 'ios' || platform === 'android'
@@ -165,7 +214,7 @@ export function useTelegramWebApp(): UseTelegramWebAppResult {
       clearInterval(poll)
       clearTimeout(timeout)
     }
-  }, [])
+  }, [activate])
 
   return result
 }

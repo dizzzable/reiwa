@@ -16,7 +16,9 @@ export default function BootstrapPage() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
   const { t } = useTranslation()
-  const { initData, isReady, telegram } = useTelegramWebApp()
+  // The root app owns the one-time Telegram host activation. This page only
+  // consumes auth data, avoiding duplicate bridge calls on `/tma`.
+  const { initData, isReady, telegram } = useTelegramWebApp({ activate: false })
   const { branding } = useBranding()
   const [phase, setPhase]     = useState<BootstrapPhase>('detecting')
   const [errorMsg, setErrorMsg] = useState('')

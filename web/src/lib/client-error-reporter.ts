@@ -139,6 +139,22 @@ function getErrorName(value: unknown): string | undefined {
   return normalizeString((value as { name?: unknown }).name, 128)
 }
 
+/**
+ * Browsers intentionally redact a cross-origin script exception to this bare
+ * shape. With no stack, URL or source position it is not actionable; a
+ * same-origin/CORS-enabled error keeps at least one of those details and is
+ * still reported normally.
+ */
+function isOpaqueCrossOriginScriptError(event: ErrorEvent): boolean {
+  return (
+    /^script error\.?$/i.test(event.message.trim()) &&
+    event.error == null &&
+    !normalizeString(event.filename, 2_000) &&
+    normalizePosition(event.lineno) === undefined &&
+    normalizePosition(event.colno) === undefined
+  )
+}
+
 let installed = false;
 
 /**
@@ -150,6 +166,7 @@ export function installGlobalErrorReporting(): void {
   installed = true;
 
   window.addEventListener('error', (event: ErrorEvent) => {
+    if (isOpaqueCrossOriginScriptError(event)) return
     const error = event.error
     reportClientError({
       message: event.message || (error instanceof Error ? error.message : 'window.onerror'),

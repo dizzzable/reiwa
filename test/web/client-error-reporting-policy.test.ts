@@ -16,7 +16,7 @@ const turnstile = readFileSync(
 describe('client error reporting policy', () => {
   it('loads third-party scripts anonymously so their runtime errors retain diagnostics', () => {
     expect(indexHtml).toContain(
-      '<script async src="https://telegram.org/js/telegram-web-app.js" crossorigin="anonymous"></script>',
+      '<script defer src="https://telegram.org/js/telegram-web-app.js" crossorigin="anonymous"></script>',
     );
     expect(telegramWidget.indexOf("script.crossOrigin = 'anonymous'")).toBeLessThan(
       telegramWidget.indexOf("script.src = 'https://telegram.org/js/telegram-widget.js?22'"),
@@ -31,5 +31,11 @@ describe('client error reporting policy', () => {
     expect(reporter).toContain('lineno: event.lineno');
     expect(reporter).toContain('colno: event.colno');
     expect(reporter).toContain('errorName: getErrorName(error)');
+  });
+
+  it('drops only opaque cross-origin Script error noise', () => {
+    expect(reporter).toContain('function isOpaqueCrossOriginScriptError(event: ErrorEvent): boolean');
+    expect(reporter).toContain('if (isOpaqueCrossOriginScriptError(event)) return');
+    expect(reporter).toContain('!normalizeString(event.filename, 2_000)');
   });
 });

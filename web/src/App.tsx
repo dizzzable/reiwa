@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
 import { useAdAttribution } from "@/hooks/use-ad-attribution";
+import { useTelegramWebApp } from "@/hooks/use-telegram-webapp";
 
 /**@/features/auth/tma-bootstrap-page
  * Reiwa SPA — root router.
@@ -78,6 +79,8 @@ function PageLoader() {
 }
 
 export default function App() {
+  // Covers every Mini App entry path, including a direct /dashboard launch.
+  useTelegramWebApp();
   useAdAttribution();
   return (
     <Suspense fallback={<PageLoader />}>

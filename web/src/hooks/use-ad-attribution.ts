@@ -22,7 +22,9 @@ function parseAdCode(raw: string | null | undefined): string | null {
  * within the session never double-counts.
  */
 export function useAdAttribution(): void {
-  const { startParam } = useTelegramWebApp()
+  // Attribution only reads a launch parameter. Native activation belongs to
+  // the root lifecycle, not to every dashboard mount.
+  const { startParam } = useTelegramWebApp({ activate: false })
   const { session, isAuthenticated } = useSession()
   const firedRef = useRef(false)
 
