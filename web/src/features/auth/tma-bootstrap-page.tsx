@@ -10,7 +10,7 @@ import { bootstrapTelegram, getSession } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { useTelegramWebApp } from '@/hooks/use-telegram-webapp'
 
-type BootstrapPhase = 'detecting' | 'authenticating' | 'ready' | 'error'
+type BootstrapPhase = 'detecting' | 'authenticating' | 'ready' | 'error' | 'rate_limited'
 
 export default function BootstrapPage() {
   const navigate    = useNavigate()
@@ -22,6 +22,7 @@ export default function BootstrapPage() {
   const { branding } = useBranding()
   const [phase, setPhase]     = useState<BootstrapPhase>('detecting')
   const [errorMsg, setErrorMsg] = useState('')
+  const [retryAfter, setRetryAfter] = useState(0)
   const calledRef = useRef(false)
 
   // Intended deep-link destination forwarded by the context router / Mini App
@@ -70,6 +71,12 @@ export default function BootstrapPage() {
         setPhase('ready')
         navigate(nextDestination ?? result.redirectUrl ?? '/dashboard', { replace: true })
       } catch (err: unknown) {
+        const waitSeconds = getRetryAfter(err)
+        if (waitSeconds !== null) {
+          setRetryAfter(waitSeconds)
+          setPhase('rate_limited')
+          return
+        }
         setErrorMsg(resolveBootstrapError(err, t))
         setPhase('error')
         telegram?.HapticFeedback?.notificationOccurred('error')
@@ -78,6 +85,22 @@ export default function BootstrapPage() {
 
     void run()
   }, [isReady, initData, navigate, queryClient, telegram, t, nextDestination])
+
+  useEffect(() => {
+    if (phase !== 'rate_limited' || retryAfter <= 0) return
+    const timer = window.setInterval(() => {
+      setRetryAfter((current) => {
+        if (current <= 1) {
+          window.clearInterval(timer)
+          calledRef.current = false
+          setPhase('detecting')
+          return 0
+        }
+        return current - 1
+      })
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [phase, retryAfter])
 
   return (
     <div className="relative flex h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden">
@@ -119,7 +142,12 @@ export default function BootstrapPage() {
           transition={{ delay: 0.4 }}
           className="flex flex-col items-center gap-3"
         >
-          {phase === 'error' ? (
+          {phase === 'rate_limited' ? (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-6 py-4 text-sm text-amber-200">
+              <p className="font-medium">{t('bootstrap.rateLimitedTitle')}</p>
+              <p className="mt-1 text-xs text-amber-100/80">{t('bootstrap.rateLimited', { seconds: retryAfter })}</p>
+            </div>
+          ) : phase === 'error' ? (
             <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-6 py-4 text-sm text-red-400">
               <p className="font-medium">{t('bootstrap.loginError')}</p>
               <p className="mt-1 text-xs text-red-500/80 whitespace-pre-line">{errorMsg}</p>
@@ -158,8 +186,21 @@ export default function BootstrapPage() {
 interface BootstrapErrorBody {
   code?: string
   message?: string
+  retryAfter?: number
   /** Present only for BOT_DEV_ID — never rely on this for regular UX. */
   debug?: string
+}
+
+function getRetryAfter(err: unknown): number | null {
+  if (!isAxiosErrorLike(err) || err.response?.status !== 429) return null
+  const data = err.response.data
+  const retryAfter =
+    data && typeof data === 'object' && 'retryAfter' in data
+      ? (data as BootstrapErrorBody).retryAfter
+      : undefined
+  return typeof retryAfter === 'number' && Number.isSafeInteger(retryAfter) && retryAfter > 0
+    ? retryAfter
+    : 60
 }
 
 interface AxiosErrorLike {

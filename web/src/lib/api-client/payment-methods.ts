@@ -28,6 +28,20 @@ export interface SavedPaymentMethod {
 export interface SavedPaymentMethodsResponse {
   methods: SavedPaymentMethod[];
   total: number;
+  capabilities?: {
+    yookassaStandaloneSetup: boolean;
+  };
+}
+
+export interface PaymentMethodSetup {
+  setupId: string;
+  checkoutUrl: string;
+  expiresAt: string;
+}
+
+export interface PaymentMethodSetupStatus {
+  status: 'PENDING' | 'ACTIVE' | 'INACTIVE' | 'FAILED' | 'EXPIRED';
+  expiresAt: string;
 }
 
 export const getPaymentMethods = () =>
@@ -44,3 +58,13 @@ export const setPaymentMethodAutopay = (methodId: string, autopayEnabled: boolea
   apiClient
     .patch(`/payment-methods/${encodeURIComponent(methodId)}`, { autopayEnabled })
     .then((r) => r.data as { id: string; autopayEnabled: boolean });
+
+export const startPaymentMethodSetup = () =>
+  apiClient
+    .post('/payment-methods/setup', { consent: true })
+    .then((r) => r.data as PaymentMethodSetup);
+
+export const getPaymentMethodSetupStatus = (setupId: string) =>
+  apiClient
+    .get(`/payment-methods/setup/${encodeURIComponent(setupId)}`)
+    .then((r) => r.data as PaymentMethodSetupStatus);

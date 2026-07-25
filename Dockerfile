@@ -41,7 +41,16 @@ RUN npm ci --omit=dev
 # ── Runtime — slim image: prod node_modules + compiled dist + assets + SPA ───
 FROM node:24-alpine AS runtime
 WORKDIR /app
+# No default on purpose: an unset build-arg leaves REIWA_VERSION empty, which
+# version.ts intentionally treats as "fall back to package.json". SHA/branch
+# default to `unknown` since they have no code-level fallback.
+ARG REIWA_VERSION
+ARG REIWA_GIT_SHA=unknown
+ARG REIWA_GIT_BRANCH=unknown
 ENV NODE_ENV=production
+ENV REIWA_VERSION=${REIWA_VERSION}
+ENV REIWA_GIT_SHA=${REIWA_GIT_SHA}
+ENV REIWA_GIT_BRANCH=${REIWA_GIT_BRANCH}
 # Point the API at the bundled SPA so it serves the front-end too.
 ENV REIWA_WEB_DIST=/app/web
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createErrorReporter } from '../../src/infrastructure/error-reporter/index.js';
+import { REIWA_BUILD_INFO } from '../../src/core/version.js';
 
 interface Recorded {
   calls: Array<Record<string, unknown>>;
@@ -35,6 +36,9 @@ describe('createErrorReporter', () => {
     await vi.runAllTimersAsync();
     expect(recorded.calls).toHaveLength(1);
     expect(recorded.calls[0]).toMatchObject({ source: 'bot', message: 'boom' });
+    expect((recorded.calls[0]?.['context'] as Record<string, unknown>)).toMatchObject(
+      REIWA_BUILD_INFO,
+    );
   });
 
   it('is a no-op when no admin client is configured', async () => {

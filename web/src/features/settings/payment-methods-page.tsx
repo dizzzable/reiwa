@@ -11,15 +11,18 @@
  * Autopay can also be disabled without unbinding: the card stays listed and
  * can be re-enabled later; off-session charge is blocked while disabled.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { CreditCard, Trash2, Unlink } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { CreditCard, Plus, ShieldCheck, Trash2, Unlink } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
 import {
   getPaymentMethods,
+  getPaymentMethodSetupStatus,
+  startPaymentMethodSetup,
   setPaymentMethodAutopay,
   unbindPaymentMethod,
   type SavedPaymentMethod,
@@ -39,7 +42,11 @@ import {
 export default function PaymentMethodsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [unbindId, setUnbindId] = useState<string | null>(null);
+  const [setupDialogOpen, setSetupDialogOpen] = useState(false);
+  const [setupConsent, setSetupConsent] = useState(false);
+  const completedSetupRef = useRef<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['payment-methods'],
@@ -49,6 +56,57 @@ export default function PaymentMethodsPage() {
   });
 
   const methods = data?.methods ?? [];
+  const setupId = searchParams.get('setupId');
+  const canAddCard = data?.capabilities?.yookassaStandaloneSetup === true;
+
+  const setupStatusQuery = useQuery({
+    queryKey: ['payment-method-setup', setupId],
+    queryFn: () => getPaymentMethodSetupStatus(setupId!),
+    enabled: Boolean(setupId),
+    retry: false,
+    // Poll while the binding is pending. 3s pairs with the server-side refresh
+    // throttle so we don't hammer YooKassa; the webhook/cron resolve it anyway
+    // if the user leaves the page.
+    refetchInterval: (query) =>
+      query.state.data?.status === 'PENDING' ? 3_000 : false,
+  });
+
+  useEffect(() => {
+    const status = setupStatusQuery.data?.status;
+    if (!setupId || !status || status === 'PENDING' || completedSetupRef.current === setupId) return;
+    completedSetupRef.current = setupId;
+    if (status === 'ACTIVE') {
+      void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+      toast.success(t('paymentMethods.setupSuccess'));
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+    } else {
+      toast.error(t('paymentMethods.setupFailed'));
+    }
+    searchParams.delete('setupId');
+    setSearchParams(searchParams, { replace: true });
+  }, [queryClient, searchParams, setSearchParams, setupId, setupStatusQuery.data?.status, t]);
+
+  // Surface a failed status poll instead of leaving the "verifying" banner
+  // hanging silently. React Query v5 has no `onError` on useQuery, so watch the
+  // error and clear the param — the card may in fact be bound (webhook/cron will
+  // reconcile it), so we tell the user to check back rather than claim failure.
+  useEffect(() => {
+    if (!setupId || !setupStatusQuery.isError || completedSetupRef.current === setupId) return;
+    completedSetupRef.current = setupId;
+    toast.error(t('paymentMethods.setupStatusUnavailable'));
+    void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+    searchParams.delete('setupId');
+    setSearchParams(searchParams, { replace: true });
+  }, [queryClient, searchParams, setSearchParams, setupId, setupStatusQuery.isError, t]);
+
+  const setupMutation = useMutation({
+    mutationFn: startPaymentMethodSetup,
+    onSuccess: (setup) => {
+      // Hosted YooKassa page keeps raw card data outside our PCI scope.
+      window.location.assign(setup.checkoutUrl);
+    },
+    onError: () => toast.error(t('paymentMethods.setupError')),
+  });
 
   const unbindMutation = useMutation({
     mutationFn: (methodId: string) => unbindPaymentMethod(methodId),
@@ -110,6 +168,38 @@ export default function PaymentMethodsPage() {
           {t('paymentMethods.hint')}
         </p>
       </div>
+
+      {canAddCard && (
+        <div className="mx-5 mb-4 rounded-2xl border border-violet-400/15 bg-violet-500/5 p-3.5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/15">
+              <ShieldCheck className="h-4 w-4 text-violet-300" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-zinc-100">{t('paymentMethods.setupTitle')}</p>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-400">{t('paymentMethods.setupHint')}</p>
+            </div>
+          </div>
+          <StadiumButton
+            className="mt-3 w-full"
+            size="sm"
+            disabled={setupMutation.isPending}
+            onClick={() => {
+              setSetupConsent(false);
+              setSetupDialogOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            {t('paymentMethods.addCard')}
+          </StadiumButton>
+        </div>
+      )}
+
+      {setupId && setupStatusQuery.data?.status === 'PENDING' && (
+        <div className="mx-5 mb-4 rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-center text-xs text-amber-100">
+          {t('paymentMethods.setupPending')}
+        </div>
+      )}
 
       <div className="mx-5">
         {isLoading ? (
@@ -215,6 +305,37 @@ export default function PaymentMethodsPage() {
               {unbindMutation.isPending
                 ? t('paymentMethods.unbinding')
                 : t('paymentMethods.unbind')}
+            </StadiumButton>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
+        <DialogContent className="max-w-sm border-white/10 bg-zinc-900">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <CreditCard className="h-4 w-4 text-violet-300" />
+              {t('paymentMethods.setupConfirmTitle')}
+            </DialogTitle>
+            <DialogDescription className="text-sm leading-relaxed text-zinc-400">
+              {t('paymentMethods.setupConfirmBody')}
+            </DialogDescription>
+          </DialogHeader>
+          <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-white/8 bg-white/3 p-3 text-sm text-zinc-300">
+            <Switch checked={setupConsent} onCheckedChange={setSetupConsent} />
+            <span className="leading-relaxed">{t('paymentMethods.setupConsent')}</span>
+          </label>
+          <div className="mt-2 flex gap-2">
+            <StadiumButton variant="ghost" className="flex-1" onClick={() => setSetupDialogOpen(false)}>
+              {t('common.cancel')}
+            </StadiumButton>
+            <StadiumButton
+              className="flex-1"
+              disabled={!setupConsent || setupMutation.isPending}
+              loading={setupMutation.isPending}
+              onClick={() => setupMutation.mutate()}
+            >
+              {t('paymentMethods.continueToYookassa')}
             </StadiumButton>
           </div>
         </DialogContent>

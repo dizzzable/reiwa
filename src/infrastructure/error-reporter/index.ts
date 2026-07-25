@@ -11,6 +11,7 @@
  *   - fire-and-forget: never awaited, never throws.
  */
 import type { AdminClient } from '../../lib/admin-client.js';
+import { withReiwaBuildInfo } from '../../core/version.js';
 
 export type ErrorSource = 'api' | 'bot' | 'worker' | 'web';
 
@@ -60,7 +61,7 @@ export function createErrorReporter(opts: {
           source,
           message: input.message.slice(0, 2000),
           ...(input.level !== undefined ? { level: input.level } : {}),
-          ...(input.context !== undefined ? { context: input.context } : {}),
+          context: withReiwaBuildInfo(input.context),
           ...(input.stack !== undefined ? { stack: input.stack.slice(0, 8000) } : {}),
         })
         .catch(() => {

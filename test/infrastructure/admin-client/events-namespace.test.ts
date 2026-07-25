@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EventsNamespace } from '../../../src/infrastructure/admin-client/namespaces/events.js';
 import { EventReporter, REIWA_EVENTS } from '../../../src/lib/event-reporter.js';
+import { REIWA_BUILD_INFO } from '../../../src/core/version.js';
 import type { AdminClient } from '../../../src/infrastructure/admin-client/index.js';
 import type { AdminTransport } from '../../../src/infrastructure/admin-client/transport.js';
 
@@ -68,13 +69,13 @@ describe('EventReporter', () => {
     reporter.info(REIWA_EVENTS.USER_REGISTERED_WEB, 'USER', 'created', { id: 1 });
     // emit() is called synchronously inside emit(); just await its tick.
     await Promise.resolve();
-    expect(emit).toHaveBeenCalledWith({
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({
       type: REIWA_EVENTS.USER_REGISTERED_WEB,
       category: 'USER',
       severity: 'INFO',
       message: 'created',
-      metadata: { id: 1 },
-    });
+      metadata: expect.objectContaining({ id: 1, ...REIWA_BUILD_INFO }),
+    }));
   });
 
   it('forwards `error` calls with severity ERROR', async () => {

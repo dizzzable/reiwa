@@ -11,26 +11,95 @@ import {
   rateGuestReplyKey,
   rateGuestUploadKey,
   rateAiChatKey,
+  ratePaymentMethodSetupKey,
   bannedIpKey,
   TTL,
 } from "../../infrastructure/redis/keys.js";
 
+// ── Shared 429 presentation helpers ─────────────────────────────────────────
+
+// OAuth start/callback are always opened as *top-level browser documents*, so a
+// 429 there must route people back into the localized sign-in UI instead of
+// dumping raw JSON into Telegram's in-app browser. `Accept: text/html` alone is
+// an unreliable signal for that browser (it frequently sends `*/*`), so treat a
+// GET as a navigation when any of these hold: the modern `Sec-Fetch-Dest:
+// document` hint, the request path is an OAuth start/callback (which can only be
+// reached via navigation), or the classic `Accept: text/html`.
+const OAUTH_NAVIGATION_PATH = /^\/api\/v1\/auth\/ext\/[^/]+\/(start|callback)\b/;
+
+export function isBrowserNavigation(req: Request): boolean {
+  if (req.method !== "GET") {
+    return false;
+  }
+  const secFetchDest = req.headers?.["sec-fetch-dest"];
+  if (secFetchDest === "document") {
+    return true;
+  }
+  const originalUrl = typeof req.originalUrl === "string" ? req.originalUrl : "";
+  if (OAUTH_NAVIGATION_PATH.test(originalUrl)) {
+    return true;
+  }
+  const accept = req.headers?.accept ?? "";
+  return typeof accept === "string" && accept.includes("text/html");
+}
+
+function redirectToSignIn(res: Response, retryAfter: number): void {
+  res.redirect(
+    303,
+    `/sign-in?rate_limited=1&retry_after=${encodeURIComponent(String(retryAfter))}`,
+  );
+}
+
+/**
+ * Handler for the generic in-memory limiters. Mirrors the Redis limiter's
+ * contract: real `Retry-After`, a localized redirect for browser navigations,
+ * and a structured `{ message, retryAfter }` body (fetch/XHR consumers, e.g.
+ * the TMA bootstrap countdown, depend on `retryAfter` — without it they fall
+ * back to a hardcoded guess that no longer matches the real window).
+ */
+function createGenericLimitHandler(fallbackWindowMs: number) {
+  const fallbackSeconds = Math.ceil(fallbackWindowMs / 1000);
+  return (req: Request, res: Response, _next: NextFunction, options: { statusCode: number; message: unknown }): void => {
+    const resetTime = (req as Request & { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime;
+    const retryAfter =
+      resetTime instanceof Date
+        ? Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000))
+        : fallbackSeconds;
+    res.setHeader("Retry-After", String(retryAfter));
+    if (isBrowserNavigation(req)) {
+      redirectToSignIn(res, retryAfter);
+      return;
+    }
+    const rawMessage = options.message;
+    const message =
+      typeof rawMessage === "object" && rawMessage !== null && "message" in rawMessage
+        ? String((rawMessage as { message: unknown }).message)
+        : "Too many requests, please try again later";
+    res.status(options.statusCode).json({ message, retryAfter });
+  };
+}
+
 // ── Generic in-memory rate limiter (express-rate-limit) ─────────────────────
 
+const AUTH_LIMITER_WINDOW_MS = 15 * 60 * 1000;
+const API_LIMITER_WINDOW_MS = 60 * 1000;
+
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: AUTH_LIMITER_WINDOW_MS,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many requests, please try again later" },
+  handler: createGenericLimitHandler(AUTH_LIMITER_WINDOW_MS),
 });
 
 export const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
+  windowMs: API_LIMITER_WINDOW_MS,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Rate limit exceeded" },
+  handler: createGenericLimitHandler(API_LIMITER_WINDOW_MS),
   // The realtime SSE endpoint holds a single long-lived connection per
   // tab and auto-reconnects via `EventSource`. Counting each reconnect
   // against the generic 120/min budget lets a flaky network lock the
@@ -41,9 +110,14 @@ export const apiLimiter = rateLimit({
   // - SSE stream: long-lived, auto-reconnect would burn the budget.
   // - rezeis webhook receiver: server-to-server delivery (signature-authed,
   //   not IP/browser traffic); a 429 here would drop operator events.
+  // - OAuth start/callback (GET): top-level navigations that are already gated
+  //   by the per-route Redis `loginRateLimiter`, which renders the localized
+  //   waiting screen. Letting the generic limiter fire first would race it and
+  //   could still surface raw JSON, so defer entirely to the per-route gate.
   skip: (req) =>
     req.originalUrl.startsWith("/api/v1/realtime/stream") ||
-    req.originalUrl.startsWith("/api/v1/webhooks/rezeis"),
+    req.originalUrl.startsWith("/api/v1/webhooks/rezeis") ||
+    (req.method === "GET" && OAUTH_NAVIGATION_PATH.test(req.originalUrl)),
 });
 
 // ── Redis-based endpoint-specific rate limiters ─────────────────────────────
@@ -143,6 +217,17 @@ export const RATE_LIMITS = {
     onExceed: "block",
     blockBehavior: "after_limit",
   } satisfies RateLimitConfig,
+
+  // Card binding: each attempt opens a real zero-amount request against
+  // YooKassa, so keep a tight 5/10min/IP budget on top of the required
+  // session auth to prevent spamming provider bind requests.
+  paymentMethodSetup: {
+    maxAttempts: 5,
+    windowSeconds: TTL.RATE_PAYMENT_METHOD_SETUP,
+    keyBuilder: ratePaymentMethodSetupKey,
+    onExceed: "block",
+    blockBehavior: "after_limit",
+  } satisfies RateLimitConfig,
 } as const;
 
 export type RateLimitEndpoint = keyof typeof RATE_LIMITS;
@@ -176,6 +261,35 @@ export function createRedisRateLimiter(
 ) {
   const config: RateLimitConfig = RATE_LIMITS[endpoint];
 
+  const reject = (req: Request, res: Response, retryAfter: number, message: string): void => {
+    // `originalUrl` is always populated by Express. Keeping this guard also
+    // lets isolated middleware tests use a minimal request double without
+    // producing hundreds of fallback console logs.
+    if (typeof req.originalUrl === 'string') {
+      getRequestLogger(req).warn(
+        {
+          component: 'rate-limit',
+          endpoint,
+          originalUrl: req.originalUrl,
+          method: req.method,
+          ip: req.ip ?? req.socket.remoteAddress ?? 'unknown',
+          retryAfter,
+        },
+        'Rate limit request rejected',
+      );
+    }
+    res.setHeader('Retry-After', String(retryAfter));
+
+    // OAuth starts/callbacks are opened as top-level browser documents. Keep
+    // fetch/XHR on the structured 429 contract, but route people back into the
+    // localized sign-in UI instead of showing raw JSON in Telegram's browser.
+    if (isBrowserNavigation(req)) {
+      redirectToSignIn(res, retryAfter);
+      return;
+    }
+    res.status(429).json({ message, retryAfter });
+  };
+
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
 
@@ -192,11 +306,7 @@ export function createRedisRateLimiter(
       const banned = await redis.get(bannedIpKey(ip));
       if (banned) {
         // Banned IPs always get 429 — this is an actual rate limit violation
-        res.setHeader("Retry-After", String(config.windowSeconds));
-        res.status(429).json({
-          message: "Too many requests. Your IP has been temporarily blocked.",
-          retryAfter: config.windowSeconds,
-        });
+        reject(req, res, config.windowSeconds, 'Too many requests. Your IP has been temporarily blocked.');
         return;
       }
 
@@ -236,11 +346,7 @@ export function createRedisRateLimiter(
           );
         }
 
-        res.setHeader("Retry-After", String(retryAfter));
-        res.status(429).json({
-          message: "Too many requests, please try again later",
-          retryAfter,
-        });
+        reject(req, res, retryAfter, 'Too many requests, please try again later');
         return;
       }
 
@@ -256,11 +362,7 @@ export function createRedisRateLimiter(
           );
         }
 
-        res.setHeader("Retry-After", String(retryAfter));
-        res.status(429).json({
-          message: "Too many requests, please try again later",
-          retryAfter,
-        });
+        reject(req, res, retryAfter, 'Too many requests, please try again later');
         return;
       }
 

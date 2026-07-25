@@ -34,6 +34,8 @@ export const TTL = {
   RATE_GUEST_UPLOAD: 60,
   /** AI chat message rate limit window — 1 minute */
   RATE_AI_CHAT: 60,
+  /** Payment-method (card) setup rate limit window — 10 minutes */
+  RATE_PAYMENT_METHOD_SETUP: 10 * 60,
   /** AI chat conversation memory — 7 days (sliding, refreshed on each turn) */
   AI_CHAT_MEMORY: 7 * 24 * 60 * 60,
   /** AI chat long-term per-user memory summary — 90 days (sliding) */
@@ -135,6 +137,15 @@ export function rateGuestUploadKey(ip: string): string {
  */
 export function rateAiChatKey(ip: string): string {
   return `rate:ai_chat:${ip}`;
+}
+
+/**
+ * Build a Redis key for the payment-method (card) setup rate limit.
+ * Keyed by IP — bounds how many real YooKassa bind requests one source can
+ * trigger per window. Value: Counter (integer)
+ */
+export function ratePaymentMethodSetupKey(ip: string): string {
+  return `rate:pm_setup:${ip}`;
 }
 
 /**

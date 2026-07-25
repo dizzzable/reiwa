@@ -53,5 +53,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            REIWA_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '' }}
+            REIWA_GIT_SHA=${{ github.sha }}
+            REIWA_GIT_BRANCH=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

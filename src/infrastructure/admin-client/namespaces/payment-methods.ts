@@ -50,4 +50,33 @@ export class PaymentMethodsNamespace {
       { autopayEnabled },
     );
   }
+
+  startSetup(
+    identity: UserIdentity,
+    input: { readonly returnUrl: string; readonly consent: boolean },
+    clientContext?: { readonly clientIp?: string | null; readonly userAgent?: string | null },
+  ): Promise<unknown> {
+    // Forward the end-user's client hints so rezeis can audit the consent
+    // context (the socket IP it sees is reiwa's, not the user's).
+    const extraHeaders: Record<string, string> = {};
+    if (clientContext?.clientIp) {
+      extraHeaders['x-forwarded-for'] = clientContext.clientIp;
+    }
+    if (clientContext?.userAgent) {
+      extraHeaders['x-client-user-agent'] = clientContext.userAgent;
+    }
+    return this.transport.request(
+      'POST',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/payment-methods/setup`,
+      input,
+      Object.keys(extraHeaders).length > 0 ? extraHeaders : undefined,
+    );
+  }
+
+  getSetupStatus(identity: UserIdentity, setupId: string): Promise<unknown> {
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/payment-methods/setup/${encodeURIComponent(setupId)}`,
+    );
+  }
 }

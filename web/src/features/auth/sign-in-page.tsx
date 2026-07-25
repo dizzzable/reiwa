@@ -25,6 +25,21 @@ export default function SignInPage() {
   const [rateLimitSeconds, setRateLimitSeconds] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // A document-navigation auth flow (for example, OAuth in Telegram's
+  // browser) is redirected here by the server on 429. Preserve the same
+  // countdown UX as the regular XHR sign-in flow.
+  useEffect(() => {
+    const rawRetryAfter = searchParams.get('retry_after')
+    if (searchParams.get('rate_limited') !== '1' || !rawRetryAfter) return
+    const seconds = Number.parseInt(rawRetryAfter, 10)
+    if (!Number.isSafeInteger(seconds) || seconds <= 0) return
+    setRateLimitSeconds(seconds)
+    setError(t('auth.rateLimited', { seconds }))
+    searchParams.delete('rate_limited')
+    searchParams.delete('retry_after')
+    setSearchParams(searchParams, { replace: true })
+  }, [searchParams, setSearchParams, t])
+
   // Surface an external-auth failure passed back by the BFF as `?error=...`
   // (denied / ext_state / ext_failed / ext_unavailable), then strip the param
   // so a refresh doesn't re-show it.

@@ -3,6 +3,7 @@ import express from 'express';
 import http from 'node:http';
 
 import { createClientErrorsRouter } from '../../src/api/routes/client-errors.js';
+import { REIWA_BUILD_INFO } from '../../src/core/version.js';
 
 /**
  * POST /api/v1/client-errors — the web/TMA cabinet's runtime errors must be
@@ -77,6 +78,7 @@ describe('client-errors route', () => {
       lineno: 314,
       colno: 12,
       errorName: 'TypeError',
+      ...REIWA_BUILD_INFO,
     });
   });
 

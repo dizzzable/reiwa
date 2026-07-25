@@ -15,6 +15,7 @@
  */
 
 import type { AdminClient } from "./admin-client.js";
+import { withReiwaBuildInfo } from "../core/version.js";
 
 export type EventSeverity = "INFO" | "WARNING" | "ERROR";
 export type EventCategory = "USER" | "AUTH" | "SYSTEM" | "SUBSCRIPTION" | "PAYMENT";
@@ -74,7 +75,7 @@ export class EventReporter {
         category: event.category,
         severity: event.severity,
         message: event.message,
-        metadata: event.metadata,
+        metadata: withReiwaBuildInfo(event.metadata),
       })
       .catch((err: unknown) => {
         // Silent fail — we don't want event reporting to break the app.

@@ -89,10 +89,19 @@ class InMemoryRedis {
 
 // ── Test Helpers ────────────────────────────────────────────────────────────
 
-function createMockRequest(ip: string): Request {
+function createMockRequest(
+  ip: string,
+  accept?: string,
+  method = 'POST',
+  extra?: { headers?: Record<string, string>; originalUrl?: string },
+): Request {
+  const headers: Record<string, string> = { ...(accept ? { accept } : {}), ...(extra?.headers ?? {}) };
   return {
     ip,
     socket: { remoteAddress: ip },
+    headers,
+    method,
+    originalUrl: extra?.originalUrl ?? '',
   } as unknown as Request;
 }
 
@@ -115,6 +124,11 @@ function createMockResponse(): Response & {
     },
     json(data: unknown) {
       res.body = data;
+      return res;
+    },
+    redirect(status: number, location: string) {
+      res.statusCode = status;
+      res.headers['Location'] = location;
       return res;
     },
   };
@@ -346,6 +360,72 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
         { numRuns: 100 },
       );
     });
+  });
+
+  it('redirects document navigations to the localized sign-in countdown instead of raw JSON', async () => {
+    const middleware = createRedisRateLimiter(redis as unknown as any, 'login');
+    for (let i = 0; i < RATE_LIMITS.login.maxAttempts; i += 1) {
+      await middleware(createMockRequest('203.0.113.55'), createMockResponse(), () => undefined);
+    }
+    const response = createMockResponse();
+    await middleware(
+      createMockRequest('203.0.113.55', 'text/html,application/xhtml+xml', 'GET'),
+      response,
+      () => undefined,
+    );
+    assert.equal(response.statusCode, 303);
+    assert.match(response.headers['Location'] ?? '', /^\/sign-in\?rate_limited=1&retry_after=\d+$/);
+    assert.ok(response.headers['Retry-After']);
+  });
+
+  it('redirects a Telegram webview navigation (Sec-Fetch-Dest: document, no text/html Accept) instead of raw JSON', async () => {
+    const middleware = createRedisRateLimiter(redis as unknown as any, 'login');
+    for (let i = 0; i < RATE_LIMITS.login.maxAttempts; i += 1) {
+      await middleware(createMockRequest('203.0.113.56'), createMockResponse(), () => undefined);
+    }
+    const response = createMockResponse();
+    // Some in-app browsers send `Accept: */*` on top-level navigations; the fix
+    // must still redirect them rather than fall through to the JSON branch.
+    await middleware(
+      createMockRequest('203.0.113.56', '*/*', 'GET', {
+        headers: { 'sec-fetch-dest': 'document' },
+      }),
+      response,
+      () => undefined,
+    );
+    assert.equal(response.statusCode, 303);
+    assert.match(response.headers['Location'] ?? '', /^\/sign-in\?rate_limited=1&retry_after=\d+$/);
+  });
+
+  it('redirects an OAuth start/callback navigation by path even without navigation hints', async () => {
+    const middleware = createRedisRateLimiter(redis as unknown as any, 'login');
+    for (let i = 0; i < RATE_LIMITS.login.maxAttempts; i += 1) {
+      await middleware(createMockRequest('203.0.113.57'), createMockResponse(), () => undefined);
+    }
+    const response = createMockResponse();
+    await middleware(
+      createMockRequest('203.0.113.57', '*/*', 'GET', {
+        originalUrl: '/api/v1/auth/ext/google/callback?code=abc&state=xyz',
+      }),
+      response,
+      () => undefined,
+    );
+    assert.equal(response.statusCode, 303);
+    assert.match(response.headers['Location'] ?? '', /^\/sign-in\?rate_limited=1&retry_after=\d+$/);
+  });
+
+  it('keeps fetch/XHR 429s as structured JSON with retryAfter (no redirect)', async () => {
+    const middleware = createRedisRateLimiter(redis as unknown as any, 'login');
+    for (let i = 0; i < RATE_LIMITS.login.maxAttempts; i += 1) {
+      await middleware(createMockRequest('203.0.113.58'), createMockResponse(), () => undefined);
+    }
+    const response = createMockResponse();
+    // A POST XHR (e.g. the sign-in form) must not be redirected.
+    await middleware(createMockRequest('203.0.113.58'), response, () => undefined);
+    assert.equal(response.statusCode, 429);
+    assert.equal(response.headers['Location'], undefined);
+    const body = response.body as { message: string; retryAfter: number };
+    assert.ok(body.retryAfter > 0, 'JSON 429 must carry retryAfter for the countdown');
   });
 
   describe("Redis unavailability returns 503", () => {

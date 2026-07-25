@@ -145,10 +145,14 @@ export {
 // Payment methods (saved cards / wallets for autopay)
 export {
   getPaymentMethods,
+  getPaymentMethodSetupStatus,
+  startPaymentMethodSetup,
   unbindPaymentMethod,
   setPaymentMethodAutopay,
   type SavedPaymentMethod,
   type SavedPaymentMethodsResponse,
+  type PaymentMethodSetup,
+  type PaymentMethodSetupStatus,
 } from "./payment-methods.js";
 
 // Partner
