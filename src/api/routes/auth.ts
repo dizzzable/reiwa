@@ -261,7 +261,7 @@ export function createAuthRouter(deps: {
   // ── POST /api/v1/auth/check-username ────────────────────────────────────────
   // Non-mutating availability probe used by the register form for live
   // feedback. Deliberately NOT behind the register rate limiter (that
-  // limiter exists to throttle real account creation, 3/h). This is a
+  // limiter exists to throttle real account creation, 5/h). This is a
   // read-only lookup, so it only carries the generic /api limiter.
   router.post("/auth/check-username", async (req: Request, res: Response) => {
     try {

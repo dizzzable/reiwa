@@ -135,7 +135,9 @@ export interface RateLimitConfig {
   /**
    * Behavior when the limit is exceeded:
    * - "block": continue blocking subsequent requests within the window
-   * - "ban": permanently ban the IP address (stored in banned_ip:{ip})
+   * - "ban": block every endpoint for this IP for `TTL.BANNED_IP` (stored in
+   *   banned_ip:{ip}); self-expiring rather than permanent, because IPv4 is
+   *   shared — a carrier NAT pool would otherwise be locked out by one abuser
    */
   onExceed: "block" | "ban";
   /**
@@ -145,14 +147,48 @@ export interface RateLimitConfig {
    *   (e.g., 5th request proceeds, 6th is blocked)
    */
   blockBehavior: "at_limit" | "after_limit";
+  /**
+   * When true, an attempt that plainly created nothing is given back to the
+   * budget once the response is known (see `isRefundableOutcome`).
+   *
+   * This matters because the limiter is middleware: it counts before the handler
+   * can tell whether anything happened. A budget meant to cap *accounts* was
+   * being spent on rejected form submissions, so a fumbled password or a server
+   * hiccup cost the caller — and everyone else sharing their IP — the same as a
+   * real signup.
+   */
+  refundFailedAttempts?: boolean;
+}
+
+/**
+ * Whether a finished response should give its attempt back.
+ *
+ * An explicit allowlist of the statuses the register route can produce *before*
+ * an account can exist: 400 from schema validation, 403 from the registration
+ * mode gate, 409 for a login that is already taken.
+ *
+ * 5xx is deliberately absent. The handler answers `500 Account created but
+ * session setup failed` after the upstream account was created, so refunding
+ * 5xx would hand a slot back for a real account and uncap the limit precisely
+ * during an incident — the opposite of what the budget is for.
+ *
+ * 409 is refunded even though it reveals that a login exists, because
+ * `POST /auth/check-username` already answers that question and is outside this
+ * limiter entirely: charging a real user for "that name is taken" buys no
+ * enumeration protection while costing everyone behind their IP a slot. Meter
+ * enumeration on that endpoint, not here.
+ */
+function isRefundableOutcome(statusCode: number): boolean {
+  return statusCode === 400 || statusCode === 403 || statusCode === 409;
 }
 
 /**
  * Predefined rate limit configurations per endpoint.
  *
- * Sign-in: 5 requests/15min/IP — hardcoded, block starting from 5th failed attempt
- * Registration: 3 requests/hour/IP — block when 3rd attempt is made (count reaches 3)
- * Recovery: 3 requests/hour/IP — ban IP when rate limit is exceeded
+ * Sign-in: 5 requests/15min/IP — 5 attempts pass, the 6th is blocked
+ * Registration: 5 signups/hour/IP — the 6th is blocked; attempts that created
+ *   nothing (400/422/5xx) are refunded, so the budget caps accounts, not typos
+ * Recovery: 3 requests/hour/IP — the 3rd is blocked for the remaining window
  */
 export const RATE_LIMITS = {
   login: {
@@ -164,18 +200,26 @@ export const RATE_LIMITS = {
   } satisfies RateLimitConfig,
 
   register: {
-    maxAttempts: 3,
+    // Five real signups per hour per IP. It used to read 3 with "at_limit",
+    // which refused the 3rd request — an advertised 3 that behaved like 2, and
+    // every rejected form submission counted, so two typos exhausted the hour
+    // for an entire carrier NAT pool.
+    maxAttempts: 5,
     windowSeconds: TTL.RATE_REGISTER,
     keyBuilder: rateRegisterKey,
     onExceed: "block",
-    blockBehavior: "at_limit",
+    blockBehavior: "after_limit",
+    refundFailedAttempts: true,
   } satisfies RateLimitConfig,
 
   recover: {
     maxAttempts: 3,
     windowSeconds: TTL.RATE_RECOVER,
     keyBuilder: rateRecoverKey,
-    onExceed: "ban",
+    // Blocks recovery for the window instead of locking the IP out of every
+    // endpoint for a day: three recovery attempts is a person who forgot which
+    // login they used, and behind CGNAT the day-long ban lands on bystanders.
+    onExceed: "block",
     blockBehavior: "at_limit",
   } satisfies RateLimitConfig,
 
@@ -240,6 +284,29 @@ if ttl < 0 then
   ttl = redis.call("TTL", KEYS[1])
 end
 return { count, ttl }
+`;
+
+/**
+ * Give one attempt back without resurrecting an expired window, crossing into
+ * the next one, or going negative.
+ *
+ * `EXISTS` keeps an expired window absent rather than recreating it with a fresh
+ * hour. The TTL comparison against the value observed at increment time is what
+ * keeps a late refund out of the *next* window: within one window the TTL only
+ * counts down, so a larger TTL than we saw means the key we are looking at is a
+ * new window and the attempt we are refunding no longer exists. Without it, a
+ * response finishing just after the hour rolled over would decrement a fresh
+ * counter and let more accounts through than the cap allows.
+ *
+ * DECR leaves the TTL alone, so refunding never moves the window's end.
+ */
+const REFUND_SCRIPT = `
+if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end
+local ttl = redis.call("TTL", KEYS[1])
+if ttl > tonumber(ARGV[1]) then return 0 end
+local count = tonumber(redis.call("GET", KEYS[1]) or "0")
+if count <= 0 then return 0 end
+return redis.call("DECR", KEYS[1])
 `;
 
 /**
@@ -370,6 +437,20 @@ export function createRedisRateLimiter(
 
         reject(req, res, retryAfter, 'Too many requests, please try again later');
         return;
+      }
+
+      // Registered only on the path that actually consumed an attempt, so a
+      // rejected request never refunds a budget it did not spend.
+      if (config.refundFailedAttempts === true) {
+        res.on("finish", () => {
+          if (!isRefundableOutcome(res.statusCode)) return;
+          void redis.eval(REFUND_SCRIPT, 1, key, String(ttl)).catch((error: unknown) => {
+            getRequestLogger(req).warn(
+              { err: error, component: "rate-limit", endpoint },
+              "Failed to refund rate-limit attempt",
+            );
+          });
+        });
       }
 
       // Request is within limits — proceed

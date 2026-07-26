@@ -14,7 +14,7 @@ import http from 'node:http';
 // vitest, which reports a `node:test` module as "no tests" and still exits 0 —
 // so assertions written against that runner never gate CI (14 of the
 // auth-route tests are red today for exactly this reason).
-import { describe, it } from 'vitest';
+import { afterAll, beforeAll, describe, it } from 'vitest';
 
 import cookieParser from 'cookie-parser';
 import express from 'express';
@@ -59,58 +59,101 @@ function buildApp(adminClient: AdminClient | null): express.Express {
   return app;
 }
 
+/**
+ * ONE listening server for the whole file, dispatching to whichever app the
+ * current test installed.
+ *
+ * A server per request churned through ephemeral ports and left sockets closing
+ * behind each test; under a full-suite run that intermittently killed the vitest
+ * fork and took unrelated files down with it (the files were always green in
+ * isolation). Keep-alive is off so every socket ends deterministically.
+ */
+let sharedServer: http.Server | undefined;
+let sharedPort = 0;
+let currentApp: express.Express | undefined;
+
+beforeAll(async () => {
+  sharedServer = http.createServer((req, res) => {
+    if (currentApp === undefined) {
+      res.statusCode = 500;
+      res.end('no app installed');
+      return;
+    }
+    currentApp(req, res);
+  });
+
+  sharedServer.on('clientError', (_err, socket) => socket.destroy());
+  // Note this does NOT shorten anything: 0 *disables* the keep-alive timeout.
+  // What actually ends every socket here is the client's `Connection: close`
+  // below; this line only keeps Node from reaping a socket mid-assertion.
+  sharedServer.keepAliveTimeout = 0;
+  // A listen failure must surface as itself. Swallowing it left the promise
+  // below unsettled, so an EMFILE — the very exhaustion this shared server
+  // exists to relieve — reported as "beforeAll timed out" with no errno.
+  await new Promise<void>((resolve, reject) => {
+    sharedServer!.once('error', reject);
+    sharedServer!.listen(0, '127.0.0.1', () => {
+      sharedServer!.removeListener('error', reject);
+      sharedServer!.on('error', () => undefined);
+      resolve();
+    });
+  });
+  sharedPort = (sharedServer!.address() as { port: number }).port;
+});
+
+afterAll(async () => {
+  const server = sharedServer;
+  sharedServer = undefined;
+  if (server === undefined) return;
+  server.closeAllConnections();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
 async function request(
   app: express.Express,
   path: string,
   options: { method?: string; cookie?: string; headers?: Record<string, string> } = {},
 ): Promise<Response> {
-  const server = http.createServer(app);
+  currentApp = app;
   return new Promise<Response>((resolve, reject) => {
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address() as { port: number };
-      const req = http.request(
-        {
-          host: '127.0.0.1',
-          port,
-          path,
-          method: options.method ?? 'GET',
-          headers: {
-            ...(options.cookie === undefined ? {} : { Cookie: options.cookie }),
-            ...(options.headers ?? {}),
-          },
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port: sharedPort,
+        path,
+        method: options.method ?? 'GET',
+        agent: false,
+        headers: {
+          ...(options.cookie === undefined ? {} : { Cookie: options.cookie }),
+          ...(options.headers ?? {}),
+          // Last, so a caller cannot clobber it: this header — not
+          // `keepAliveTimeout` — is what ends each socket, and the shared
+          // server depends on that.
+          Connection: 'close',
         },
-        (response) => {
-          const chunks: Buffer[] = [];
-          response.on('data', (chunk: Buffer) => chunks.push(chunk));
-          response.on('end', () => {
-            const raw = response.headers['set-cookie'];
-            const result: Response = {
-              status: response.statusCode ?? 500,
-              location:
-                typeof response.headers.location === 'string'
-                  ? response.headers.location
-                  : undefined,
-              setCookie: Array.isArray(raw) ? raw : raw === undefined ? [] : [raw],
-              cacheControl:
-                typeof response.headers['cache-control'] === 'string'
-                  ? response.headers['cache-control']
-                  : undefined,
-              body: Buffer.concat(chunks).toString('utf8'),
-            };
-            // Drop keep-alive sockets and wait for the close to land before
-            // resolving: a server left half-closed outlives its test and
-            // surfaces as an unhandled teardown error in the shared run.
-            server.closeAllConnections();
-            server.close(() => resolve(result));
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('error', () => undefined);
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          const raw = response.headers['set-cookie'];
+          resolve({
+            status: response.statusCode ?? 500,
+            location:
+              typeof response.headers.location === 'string' ? response.headers.location : undefined,
+            setCookie: Array.isArray(raw) ? raw : raw === undefined ? [] : [raw],
+            cacheControl:
+              typeof response.headers['cache-control'] === 'string'
+                ? response.headers['cache-control']
+                : undefined,
+            body: Buffer.concat(chunks).toString('utf8'),
           });
-        },
-      );
-      req.on('error', (error) => {
-        server.close();
-        reject(error);
-      });
-      req.end();
-    });
+        });
+      },
+    );
+    req.on('error', reject);
+    req.end();
   });
 }
 

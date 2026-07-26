@@ -53,6 +53,18 @@ interface SubscriptionCarouselProps {
     paymentId: string,
     subscription: Subscription,
   ) => void;
+  /**
+   * Reports whether a deletion animation is in flight.
+   *
+   * The parent decides between this carousel and the empty state from the
+   * subscription list, and the deleted row disappears from that list ~400ms
+   * after the request (the realtime `subscription.deleted` invalidation).
+   * That unmounted the whole carousel — together with the `protectedItem`
+   * mechanism meant to keep the card alive — roughly 460ms into a 5s animation,
+   * so the card appeared to simply vanish. The parent has to keep us mounted
+   * until the animation finishes.
+   */
+  readonly onDeletionActiveChange?: (active: boolean) => void;
 }
 
 interface DeleteTarget {
@@ -70,6 +82,7 @@ export function SubscriptionCarousel({
   activeItemKey,
   onActiveItemKeyChange,
   onProvisioningComplete,
+  onDeletionActiveChange,
 }: SubscriptionCarouselProps) {
   const { t } = useTranslation();
   const { branding } = useBranding();
@@ -83,6 +96,25 @@ export function SubscriptionCarousel({
   // DELETE response reaches this tab. Keep the explicitly targeted snapshot
   // mounted until the dialog closes or the local dissolve completes.
   const protectedItem = deleting?.item ?? deleteTarget?.item ?? null;
+  // Reported to the parent for the whole protection window, not just the
+  // animation: the confirm dialog lives in this subtree too, so if the list
+  // empties while it is open (deleted from the bot or another tab) an unmount
+  // would take the dialog out from under the user and the DELETE already in
+  // flight would land on a gone component with no animation at all.
+  const holdsProtectedItem = protectedItem !== null;
+  useEffect(() => {
+    onDeletionActiveChange?.(holdsProtectedItem);
+  }, [holdsProtectedItem, onDeletionActiveChange]);
+  // Safety net: the parent holds its branch open on our word, so if we go away
+  // for any other reason (route change, remount) we must take that word back —
+  // otherwise the dashboard would sit on an empty carousel indefinitely.
+  useEffect(
+    () => () => {
+      onDeletionActiveChange?.(false);
+    },
+    [onDeletionActiveChange],
+  );
+
   const renderedItems = useMemo(() => {
     if (
       protectedItem === null ||
@@ -100,7 +132,15 @@ export function SubscriptionCarousel({
   }, [items, protectedItem]);
 
   const itemKeys = renderedItems.map((item) => item.key);
-  const activeKey = resolveActiveCarouselItemKey(itemKeys, activeItemKey);
+  // While the dissolve plays, stay on the dissolving card. The parent's list has
+  // already dropped it, so resolving from the prop returns a surviving sibling —
+  // `activeIndex` moves, the scroll-sync effect fires, and the animation is
+  // carried off-screen ~400ms in. Keeping the branch mounted is not enough on
+  // its own; with two or more subscriptions that scroll was still hiding it.
+  const activeKey =
+    deleting === null
+      ? resolveActiveCarouselItemKey(itemKeys, activeItemKey)
+      : deleting.item.key;
   const activeIndex = Math.max(
     0,
     renderedItems.findIndex((item) => item.key === activeKey),
@@ -109,10 +149,17 @@ export function SubscriptionCarousel({
   const itemKeySignature = itemKeys.join("|");
 
   useEffect(() => {
+    // The protected slide is one we re-inserted locally; the parent's list does
+    // not contain it, so pushing its key up would ping-pong — the parent
+    // resolves it back to a key from its own list, we resolve to the protected
+    // one again, and the two update each other for the whole animation.
+    // `finishCommittedDeletion` hands the final key over explicitly, so nothing
+    // is lost by staying quiet for exactly this case.
+    if (protectedItem !== null && activeKey === protectedItem.key) return;
     if (activeKey !== activeItemKey) {
       onActiveItemKeyChange(activeKey);
     }
-  }, [activeItemKey, activeKey, onActiveItemKeyChange]);
+  }, [activeItemKey, activeKey, onActiveItemKeyChange, protectedItem]);
 
   const commitActiveItem = useCallback(() => {
     const element = trackRef.current;
@@ -233,6 +280,13 @@ export function SubscriptionCarousel({
     });
     void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
     void queryClient.invalidateQueries({ queryKey: ["devices"] });
+    // Eligibility answers `ALREADY_HAS_SUBSCRIPTION` while a subscription
+    // exists and is cached for a minute. Without this the user lands on the
+    // empty state right after deleting and the trial offer stays hidden — or,
+    // the other way round, a stale `eligible: true` keeps offering a trial that
+    // was already spent. That stale read is the likeliest cause of the reported
+    // "offer shown after deleting the trial".
+    void queryClient.invalidateQueries({ queryKey: ["trial", "eligibility"] });
   }, [
     activeKey,
     deleting,

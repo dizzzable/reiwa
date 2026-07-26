@@ -21,6 +21,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
+import { toast } from "sonner";
 import { Gift, Loader2 } from "lucide-react";
 
 import { activateTrial, getPlans, getTrialEligibility } from "@/lib/api-client";
@@ -40,6 +41,31 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 
 /** Number of staged reassurance messages shown while the trial provisions. */
 const TRIAL_ACTIVATION_STEP_COUNT = 4;
+
+/**
+ * Server reasons that mean "this user will never get a free trial from here".
+ * On these the offer is withdrawn instead of showing a retry: the block used to
+ * stay up with one generic error, so a user whose trial was already used kept
+ * pressing a button that could not succeed — and, worse, was shown an offer they
+ * were never entitled to.
+ */
+const INELIGIBLE_REASONS = new Set([
+  'TRIAL_ALREADY_USED',
+  'ALREADY_HAS_SUBSCRIPTION',
+  'TRIAL_NOT_CONFIGURED',
+  'TRIAL_REQUIRES_PAYMENT',
+  'TRIAL_INVITED_ONLY',
+  'INELIGIBLE',
+]);
+
+/** Reason → message key, so the cause is named instead of hidden. */
+const REASON_MESSAGE_KEYS: Record<string, string> = {
+  TRIAL_ALREADY_USED: 'trialCta.errorAlreadyUsed',
+  ALREADY_HAS_SUBSCRIPTION: 'trialCta.errorHasSubscription',
+  TRIAL_NOT_CONFIGURED: 'trialCta.errorNotConfigured',
+  TRIAL_REQUIRES_PAYMENT: 'trialCta.errorRequiresPayment',
+  TRIAL_INVITED_ONLY: 'trialCta.errorInvitedOnly',
+};
 
 interface TrialEligibility {
   eligible: boolean;
@@ -81,6 +107,8 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
   const [activating, setActivating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  // Set when the server refuses on a ground that a retry cannot change.
+  const [ineligible, setIneligible] = useState(false);
   // Staged progress messages during activation. Provisioning a Remnawave
   // profile can take several seconds; a rotating status keeps the user informed
   // (and reassured it isn't stuck) instead of a bare, ambiguous "Activating…".
@@ -108,6 +136,15 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
     retry: false,
   });
 
+  // `ineligible` is a local shortcut so the offer disappears immediately on a
+  // refusal, ahead of the refetch. It must not outlive the server's answer: when
+  // eligibility says yes again (the operator configured the missing duration, a
+  // blocking subscription is gone), the shortcut has to step aside or the offer
+  // stays hidden until a full reload.
+  useEffect(() => {
+    if (eligibility?.eligible === true) setIneligible(false);
+  }, [eligibility?.eligible]);
+
   const trialPlan = useMemo(() => plans.find((p) => p.isTrial), [plans]);
   const freeEligible = eligibility?.eligible === true;
   const paidTrial = trialPlan !== undefined && trialPlan.trialFree === false;
@@ -121,7 +158,8 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
   // user is eligible, mirroring the always-visible bot trial button. (We do not
   // throttle here: throttling left subscription-less users with only a "Buy"
   // button while the bot still offered the trial.)
-  const visible = !dismissed && (freeEligible || paidTrial || needsTelegramLink);
+  const visible =
+    !dismissed && !ineligible && (freeEligible || paidTrial || needsTelegramLink);
 
   if (!visible) return null;
 
@@ -151,13 +189,39 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
       const result = await activateTrial();
       const subscriptionId = result.subscriptionId?.trim();
       if (!result.activated) {
-        throw new Error("Trial activation failed");
+        const reason = result.reason ?? '';
+        if (INELIGIBLE_REASONS.has(reason)) {
+          // Withdraw the offer and re-read eligibility: the server has just told
+          // us this user is not entitled, so keeping a retry button on screen
+          // would only reproduce the same failure.
+          //
+          // The reason goes to a toast rather than into `error`, because this
+          // block is about to unmount itself — an in-card message would be
+          // painted for one frame and then vanish along with it, which reads as
+          // the offer silently disappearing mid-spinner.
+          setActivating(false);
+          toast.error(t(REASON_MESSAGE_KEYS[reason] ?? "trialCta.errorGeneric"));
+          setIneligible(true);
+          await queryClient.invalidateQueries({ queryKey: ["trial", "eligibility"] });
+          return;
+        }
+        setActivating(false);
+        setError(t(REASON_MESSAGE_KEYS[reason] ?? "trialCta.errorGeneric"));
+        // A reason we do not recognise is treated as retryable, so the cached
+        // eligibility must still be refreshed — otherwise the block keeps
+        // offering a trial the server has just refused for up to a minute.
+        await queryClient.invalidateQueries({ queryKey: ["trial", "eligibility"] });
+        return;
       }
       // Some deployed Rezeis versions acknowledge the grant before they
       // include the ID. The receipt resolves the newly appeared trial row on
       // the next canonical list fetch instead of ever showing `Ожидает`.
       onActivated(subscriptionId || undefined, knownSubscriptionIds);
       await queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
+      // The claim has just been spent. Nothing else in the app refreshes this
+      // key, and it is cached for a minute — leaving it means a user who
+      // activates and then deletes the trial is offered it again.
+      await queryClient.invalidateQueries({ queryKey: ["trial", "eligibility"] });
     } catch {
       setActivating(false);
       setError(t("trialCta.errorGeneric"));

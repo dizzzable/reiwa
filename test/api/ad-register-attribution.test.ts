@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 
-import { describe, it } from 'vitest';
+import { afterAll, beforeAll, describe, it } from 'vitest';
 import cookieParser from 'cookie-parser';
 import express from 'express';
 
@@ -82,50 +82,93 @@ const VALID_BODY = {
   passwordHash: 'a'.repeat(64),
 };
 
-async function register(app: express.Express, cookie?: string): Promise<Result> {
-  const server = http.createServer(app);
-  return new Promise<Result>((resolve, reject) => {
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address() as { port: number };
-      const payload = JSON.stringify(VALID_BODY);
-      const req = http.request(
-        {
-          host: '127.0.0.1',
-          port,
-          path: '/api/v1/auth/register',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(payload),
-            ...(cookie === undefined ? {} : { Cookie: cookie }),
-          },
-        },
-        (response) => {
-          const chunks: Buffer[] = [];
-          response.on('data', (chunk: Buffer) => chunks.push(chunk));
-          response.on('end', () => {
-            const raw = response.headers['set-cookie'];
-            const result: Result = {
-              status: response.statusCode ?? 500,
-              setCookie: Array.isArray(raw) ? raw : raw === undefined ? [] : [raw],
-              body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<
-                string,
-                unknown
-              >,
-            };
-            server.closeAllConnections();
-            server.close(() => resolve(result));
-          });
-        },
-      );
-      req.on('error', (error) => {
-        server.closeAllConnections();
-        server.close();
-        reject(error);
-      });
-      req.write(payload);
-      req.end();
+/**
+ * One listening server for the whole file — see the note in ad-capture.test.ts:
+ * a server per request churned ephemeral ports and intermittently killed the
+ * vitest fork under a full-suite run.
+ */
+let sharedServer: http.Server | undefined;
+let sharedPort = 0;
+let currentApp: express.Express | undefined;
+
+beforeAll(async () => {
+  sharedServer = http.createServer((req, res) => {
+    if (currentApp === undefined) {
+      res.statusCode = 500;
+      res.end('no app installed');
+      return;
+    }
+    currentApp(req, res);
+  });
+
+  sharedServer.on('clientError', (_err, socket) => socket.destroy());
+  // Note this does NOT shorten anything: 0 *disables* the keep-alive timeout.
+  // What actually ends every socket here is the client's `Connection: close`
+  // below; this line only keeps Node from reaping a socket mid-assertion.
+  sharedServer.keepAliveTimeout = 0;
+  // A listen failure must surface as itself. Swallowing it left the promise
+  // below unsettled, so an EMFILE — the very exhaustion this shared server
+  // exists to relieve — reported as "beforeAll timed out" with no errno.
+  await new Promise<void>((resolve, reject) => {
+    sharedServer!.once('error', reject);
+    sharedServer!.listen(0, '127.0.0.1', () => {
+      sharedServer!.removeListener('error', reject);
+      sharedServer!.on('error', () => undefined);
+      resolve();
     });
+  });
+  sharedPort = (sharedServer!.address() as { port: number }).port;
+});
+
+afterAll(async () => {
+  const server = sharedServer;
+  sharedServer = undefined;
+  if (server === undefined) return;
+  server.closeAllConnections();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+async function register(app: express.Express, cookie?: string): Promise<Result> {
+  currentApp = app;
+  const payload = JSON.stringify(VALID_BODY);
+  return new Promise<Result>((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port: sharedPort,
+        path: '/api/v1/auth/register',
+        method: 'POST',
+        agent: false,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+          ...(cookie === undefined ? {} : { Cookie: cookie }),
+          // Last, so a caller cannot clobber it: this header — not
+          // `keepAliveTimeout` — is what ends each socket, and the shared
+          // server depends on that.
+          Connection: 'close',
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('error', () => undefined);
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          const raw = response.headers['set-cookie'];
+          resolve({
+            status: response.statusCode ?? 500,
+            setCookie: Array.isArray(raw) ? raw : raw === undefined ? [] : [raw],
+            body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<
+              string,
+              unknown
+            >,
+          });
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
   });
 }
 

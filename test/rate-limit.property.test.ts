@@ -7,8 +7,10 @@
  * threshold SHALL receive HTTP 429 with a Retry-After header containing a positive
  * integer. The system SHALL:
  * - Allow the 5th sign-in attempt to proceed then block subsequent attempts
- * - Block when the 3rd registration attempt is made (count reaches 3)
- * - Ban the IP address when password recovery rate limits are exceeded
+ * - Allow 5 registrations per hour and block from the 6th
+ * - Refund a registration attempt that created nothing, so the budget caps
+ *   accounts rather than rejected form submissions
+ * - Block password recovery for the window without banning the IP
  * - Continue to block on all subsequent attempts within the window
  *
  * When the rate limiting system is unavailable, the system SHALL return HTTP 503.
@@ -72,14 +74,46 @@ class InMemoryRedis {
   }
 
   async eval(
-    _script: string,
+    script: string,
     _numberOfKeys: number,
     key: string,
-    windowSeconds: number,
-  ): Promise<[number, number]> {
+    windowSeconds?: number,
+  ): Promise<[number, number] | number> {
+    // Two scripts share this entry point now; dispatching on the body keeps the
+    // double honest instead of counting a refund as another attempt.
+    if (script.includes("DECR")) {
+      // Mirrors REFUND_SCRIPT: absent key, a TTL larger than the one observed at
+      // increment time (i.e. a window that started after ours), and a floored
+      // counter all refuse the refund.
+      const entry = this.store.get(key);
+      if (!entry) return 0;
+      if (entry.expiresAt !== null && Date.now() > entry.expiresAt) {
+        this.store.delete(key);
+        return 0;
+      }
+      const ttlAtIncrement = Number(windowSeconds ?? 0);
+      if ((await this.ttl(key)) > ttlAtIncrement) return 0;
+      const count = parseInt(entry.value, 10);
+      if (count <= 0) return 0;
+      entry.value = String(count - 1);
+      return count - 1;
+    }
     const count = await this.incr(key);
-    if (count === 1) await this.expire(key, windowSeconds);
+    if (count === 1) await this.expire(key, windowSeconds ?? 0);
     return [count, await this.ttl(key)];
+  }
+
+  /** Pretend `seconds` of the window have elapsed, so TTLs are comparable. */
+  advance(seconds: number): void {
+    for (const entry of this.store.values()) {
+      if (entry.expiresAt !== null) entry.expiresAt -= seconds * 1000;
+    }
+  }
+
+  /** Current attempt count, for asserting refunds. */
+  async count(key: string): Promise<number> {
+    const value = await this.get(key);
+    return value === null ? 0 : parseInt(value, 10);
   }
 
   clear(): void {
@@ -131,11 +165,23 @@ function createMockResponse(): Response & {
       res.headers['Location'] = location;
       return res;
     },
+    finishListeners: [] as Array<() => void>,
+    on(event: string, listener: () => void) {
+      if (event === 'finish') res.finishListeners.push(listener);
+      return res;
+    },
+    /** Express fires this once the response is flushed. */
+    finish(statusCode: number) {
+      res.statusCode = statusCode;
+      for (const listener of res.finishListeners) listener();
+      return res;
+    },
   };
   return res as unknown as Response & {
     statusCode: number;
     headers: Record<string, string>;
     body: unknown;
+    finish: (statusCode: number) => void;
   };
 }
 
@@ -251,10 +297,11 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
       await fc.assert(
         fc.asyncProperty(arbitraryIpv4, async (ip) => {
           redis.clear();
-          const results = await simulateRequests(redis, "register", ip, 6);
+          const results = await simulateRequests(redis, "register", ip, 7);
 
-          // First 2 requests should pass (at_limit behavior: block when count reaches maxAttempts)
-          for (let i = 0; i < 2; i++) {
+          // First 5 requests should pass (after_limit: the advertised number is
+          // the number that actually gets through)
+          for (let i = 0; i < 5; i++) {
             assert.equal(
               results[i].passed,
               true,
@@ -262,8 +309,8 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
             );
           }
 
-          // 3rd request and beyond should be blocked with 429
-          for (let i = 2; i < results.length; i++) {
+          // 6th request and beyond should be blocked with 429
+          for (let i = 5; i < results.length; i++) {
             assert.equal(
               results[i].statusCode,
               429,
@@ -285,8 +332,8 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
     });
   });
 
-  describe("Recovery rate limit: 3 requests/hour, bans IP", () => {
-    it("blocks from 3rd recovery request and bans the IP", async () => {
+  describe("Recovery rate limit: 3 requests/hour, blocks without banning", () => {
+    it("blocks from 3rd recovery request and leaves the IP unbanned", async () => {
       await fc.assert(
         fc.asyncProperty(arbitraryIpv4, async (ip) => {
           redis.clear();
@@ -314,15 +361,160 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
             );
           }
 
-          // Verify IP was banned in Redis
+          // Recovery must not lock the IP out of every other endpoint for a
+          // day: forgetting which login you used is not abuse, and behind a
+          // carrier NAT the ban lands on everyone sharing the address.
           const bannedData = await redis.get(`banned_ip:${ip}`);
-          assert.ok(bannedData, `IP ${ip} should be banned after exceeding recovery limit`);
-          const parsed = JSON.parse(bannedData);
-          assert.ok(parsed.reason, "Ban record should include a reason");
-          assert.ok(parsed.bannedAt, "Ban record should include a timestamp");
+          assert.equal(
+            bannedData,
+            null,
+            `IP ${ip} must not be banned by the recovery limit`,
+          );
         }),
         { numRuns: 100 },
       );
+    });
+  });
+
+  describe("Registration budget counts accounts, not rejected submissions", () => {
+    /** One registration attempt, flushed with the status the handler produced. */
+    async function attempt(
+      ip: string,
+      finishStatus: number,
+    ): Promise<{ passed: boolean; statusCode: number }> {
+      const middleware = createRedisRateLimiter(
+        redis as unknown as never,
+        "register",
+      );
+      const req = createMockRequest(ip);
+      const res = createMockResponse();
+      let passed = false;
+      await middleware(req, res, () => {
+        passed = true;
+      });
+      if (passed) res.finish(finishStatus);
+      return { passed, statusCode: res.statusCode };
+    }
+
+    it("refunds a malformed attempt, so five real signups still fit in the hour", async () => {
+      await fc.assert(
+        fc.asyncProperty(arbitraryIpv4, async (ip) => {
+          redis.clear();
+          // Five rejected submissions: short password, bad characters, whatever.
+          for (let i = 0; i < 5; i += 1) {
+            const result = await attempt(ip, 400);
+            assert.equal(result.passed, true, "a validation failure must reach the handler");
+          }
+          assert.equal(
+            await redis.count(`rate:register:${ip}`),
+            0,
+            "attempts that created nothing must not hold the budget",
+          );
+
+          // The hour is still fully available for actual signups.
+          for (let i = 0; i < 5; i += 1) {
+            const result = await attempt(ip, 200);
+            assert.equal(result.passed, true, `signup ${i + 1} should pass for IP ${ip}`);
+          }
+          const sixth = await attempt(ip, 200);
+          assert.equal(sixth.statusCode, 429, "the 6th signup is still blocked");
+        }),
+        { numRuns: 50 },
+      );
+    });
+
+    it("refunds a taken-username 409 — no account was created", async () => {
+      await fc.assert(
+        fc.asyncProperty(arbitraryIpv4, async (ip) => {
+          redis.clear();
+          // Picking a name that turns out to be taken is the most ordinary way
+          // to fail a signup. `POST /auth/check-username` already answers the
+          // same existence question outside this limiter, so charging for the
+          // 409 protects nothing and costs everyone behind the IP a slot.
+          for (let i = 0; i < 5; i += 1) {
+            await attempt(ip, 409);
+          }
+          assert.equal(await redis.count(`rate:register:${ip}`), 0);
+          const stillOpen = await attempt(ip, 200);
+          assert.equal(stillOpen.passed, true);
+        }),
+        { numRuns: 50 },
+      );
+    });
+
+    it("does NOT refund a 5xx, because the account may already exist", async () => {
+      // `POST /auth/register` answers 500 "Account created but session setup
+      // failed" after the upstream account was created. Refunding that would
+      // hand the slot back for a real account and remove the cap entirely
+      // during exactly the incident that produced the 500.
+      const ip = "203.0.113.9";
+      redis.clear();
+      for (let i = 0; i < 5; i += 1) {
+        const result = await attempt(ip, 500);
+        assert.equal(result.passed, true);
+      }
+      assert.equal(await redis.count(`rate:register:${ip}`), 5);
+      const blocked = await attempt(ip, 500);
+      assert.equal(blocked.statusCode, 429, "five 5xx attempts still spend the hour");
+    });
+
+    it("a refund landing after the window rolled over does not credit the new window", async () => {
+      const ip = "203.0.113.10";
+      redis.clear();
+      await attempt(ip, 200); // opens the window
+      redis.advance(100); // 100s of it elapse
+      // Admitted, but its response is still in flight when the hour ends.
+      const middleware = createRedisRateLimiter(
+        redis as unknown as never,
+        "register",
+      );
+      const straggler = createMockResponse();
+      let passed = false;
+      await middleware(createMockRequest(ip), straggler, () => {
+        passed = true;
+      });
+      assert.equal(passed, true);
+
+      // The window ends and a fresh one fills up with real signups.
+      redis.clear();
+      for (let i = 0; i < 5; i += 1) await attempt(ip, 200);
+      assert.equal(await redis.count(`rate:register:${ip}`), 5);
+
+      straggler.finish(400); // …and only now does the straggler answer
+      assert.equal(
+        await redis.count(`rate:register:${ip}`),
+        5,
+        "a stale refund must not buy an extra signup in the next window",
+      );
+      const blocked = await attempt(ip, 200);
+      assert.equal(blocked.statusCode, 429);
+    });
+
+    it("refunds an administratively blocked attempt without moving the window", async () => {
+      const ip = "203.0.113.7";
+      redis.clear();
+      await attempt(ip, 200);
+      const ttlAfterSignup = await redis.ttl(`rate:register:${ip}`);
+      // 403 comes from the registration-mode gate, which runs after this
+      // limiter — nothing was created, so the slot goes back.
+      await attempt(ip, 403);
+      assert.equal(
+        await redis.count(`rate:register:${ip}`),
+        1,
+        "a request the mode gate refused must not spend a slot",
+      );
+      assert.equal(
+        await redis.ttl(`rate:register:${ip}`),
+        ttlAfterSignup,
+        "refunding must leave the window ending when it would have",
+      );
+    });
+
+    it("never drives the counter below zero", async () => {
+      const ip = "203.0.113.8";
+      redis.clear();
+      for (let i = 0; i < 3; i += 1) await attempt(ip, 400);
+      assert.equal(await redis.count(`rate:register:${ip}`), 0);
     });
   });
 

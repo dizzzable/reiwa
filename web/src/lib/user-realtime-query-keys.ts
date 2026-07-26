@@ -16,6 +16,7 @@ export const userRealtimeQueryKeysByType: Readonly<
     subscriptionQueryKeys.all,
   ],
   "subscription.deleted": [
+    ["trial", "eligibility"],
     subscriptionQueryKeys.detail,
     subscriptionQueryKeys.all,
     ["action-policy"],
@@ -34,7 +35,15 @@ export const userRealtimeQueryKeysByType: Readonly<
     subscriptionQueryKeys.detail,
     subscriptionQueryKeys.all,
   ],
-  "subscription.trial_granted": [subscriptionQueryKeys.detail, ["session"]],
+  // `all` is the list the dashboard carousel actually reads, so without it a
+  // trial granted outside the cabinet (bot, admin, quest reward) never showed up
+  // until a reload. Eligibility is cached for a minute and flips on a grant.
+  "subscription.trial_granted": [
+    subscriptionQueryKeys.detail,
+    subscriptionQueryKeys.all,
+    ["trial", "eligibility"],
+    ["session"],
+  ],
   "payment.completed": [
     ["activity", "transactions"],
     subscriptionQueryKeys.detail,
