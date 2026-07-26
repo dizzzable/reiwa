@@ -18,10 +18,13 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Wifi, WifiOff } from "lucide-react";
 
+import { CustomIconView } from "@/components/ui/custom-icon-view";
+import { EmojiText } from "@/components/ui/emoji-text";
 import { useBranding } from "@/lib/branding-provider";
 import { cn, formatDate, getDaysLeft } from "@/lib/utils";
 import type { Subscription } from "@/types/api";
 
+import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { SubscriptionCardFrame } from "./subscription-card-frame";
 import {
   resolveSubscriptionCardVisual,
@@ -88,6 +91,7 @@ export function SubscriptionCardContent({
   firstDevice,
 }: SubscriptionCardContentProps) {
   const { t } = useTranslation();
+  const { customIcons } = useBranding();
   const sub = subscription;
   const isActive = sub.status === "ACTIVE" || sub.status === "LIMITED";
   const statusLabel = isActive
@@ -129,16 +133,42 @@ export function SubscriptionCardContent({
           ? "#fbbf24"
           : undefined;
 
+  // Plan's own icon (frozen in the subscription snapshot) beside the name, so a
+  // customer recognises their plan at a glance. Mirrors the tariff-card renderer:
+  // emoji shortcode → EmojiText (may be a Lottie), custom upload → CustomIconView,
+  // built-in key → lucide glyph. When no icon was set on the plan, fall back to
+  // the connectivity (Wifi/WifiOff) status glyph — the card's prior behaviour.
+  const planIcon = sub.plan?.icon ?? null;
+  const planCustomId = customIconId(planIcon);
+  const planCustom = planCustomId
+    ? customIcons.find((c) => c.id === planCustomId)
+    : undefined;
+  const PlanBuiltInIcon = resolveBuiltInIcon(planIcon);
+  const nameIcon = isEmojiIcon(planIcon) ? (
+    <EmojiText
+      text={planIcon}
+      className={cn("shrink-0 text-base leading-none", !isActive && "opacity-60")}
+    />
+  ) : planCustom ? (
+    <CustomIconView
+      url={planCustom.url}
+      color={planCustom.color}
+      className={cn("h-4 w-4 shrink-0", !isActive && "opacity-60")}
+    />
+  ) : PlanBuiltInIcon ? (
+    <PlanBuiltInIcon className={cn("h-4 w-4 shrink-0", !isActive && "opacity-60")} />
+  ) : isActive ? (
+    <Wifi className="h-4 w-4 shrink-0 opacity-90" />
+  ) : (
+    <WifiOff className="h-4 w-4 shrink-0 opacity-60" />
+  );
+
   return (
     <>
       {/* Top row: plan name + status */}
       <div className="relative flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          {isActive ? (
-            <Wifi className="h-4 w-4 shrink-0 opacity-90" />
-          ) : (
-            <WifiOff className="h-4 w-4 shrink-0 opacity-60" />
-          )}
+          {nameIcon}
           <span className="truncate text-[13px] font-semibold tracking-wide opacity-95 @sm:text-sm">
             {sub.plan?.name ?? t("subscription.planFallback")}
           </span>

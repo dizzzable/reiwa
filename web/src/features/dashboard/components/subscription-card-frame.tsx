@@ -73,6 +73,11 @@ export const SubscriptionCardFrame = forwardRef<
     <div
       ref={ref}
       className={cn(
+        // Background layers below use z-0 (NOT negative z-index): iOS Safari
+        // fails to paint negative-z children inside this `@container`
+        // (layout-containment stacking context) + overflow-hidden + rounded box,
+        // so the card renders with no background on iPhone. z-0 + DOM order keeps
+        // the same visual layering on every platform without the WebKit bug.
         "@container/card relative flex h-[190px] w-full flex-col justify-between overflow-hidden rounded-card p-4 text-white select-none",
         "@sm:h-[210px] @sm:p-5",
         "shadow-2xl shadow-black/40 ring-1 ring-white/10",
@@ -82,12 +87,12 @@ export const SubscriptionCardFrame = forwardRef<
     >
       <div
         data-subscription-card-layer="foundation"
-        className="absolute inset-0 -z-30 bg-zinc-950"
+        className="absolute inset-0 z-0 bg-zinc-950"
         style={opacityStyle(layerOpacity?.foundation, 420)}
       />
       <div
         data-subscription-card-layer="gradient"
-        className="absolute inset-0 -z-25"
+        className="absolute inset-0 z-0"
         style={{
           backgroundImage: visual.cardGradient,
           ...opacityStyle(layerOpacity?.gradient, 560),
@@ -99,12 +104,12 @@ export const SubscriptionCardFrame = forwardRef<
           props={visual.cardEffectProps}
           opacity={visual.cardEffectOpacity}
           active={effectActive}
-          className="absolute inset-0 -z-20"
+          className="absolute inset-0 z-0"
         />
       )}
       <div
         data-subscription-card-layer="vignette"
-        className="absolute inset-0 -z-10 bg-linear-to-b from-black/55 via-black/15 to-black/65"
+        className="absolute inset-0 z-0 bg-linear-to-b from-black/55 via-black/15 to-black/65"
         style={opacityStyle(layerOpacity?.vignette, 480)}
       />
 

@@ -135,6 +135,8 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'referral.qualified': 'Квалифицировано: {{count}}',
   'referral.link_label': '🔗 Ваша реферальная ссылка:',
   'referral.link_unavailable': 'Ссылка временно недоступна',
+  'referral.invited_only':
+    '🔒 Реферальная программа доступна только тем, кто сам пришёл по приглашению.\n\nПопросите пригласительную ссылку у друга, который уже пользуется сервисом.',
   'referral.error': 'Не удалось загрузить реферальные данные.',
 
   // ── Referral / Partner hub (invite button) ───────────────────────────────────

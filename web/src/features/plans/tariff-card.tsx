@@ -138,34 +138,39 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
         selected ? "ring-2 ring-(--brand-primary)" : "ring-1 ring-white/10",
       )}
     >
-      {/* Static foundation: dark base + per-plan gradient */}
-      <div className="absolute inset-0 -z-30 bg-zinc-950" />
-      <div className="absolute inset-0 -z-25" style={{ backgroundImage: visual.gradient }} />
+      {/* Static foundation: dark base + per-plan gradient.
+          All background layers use z-0 (NOT negative z): iOS Safari won't paint
+          negative-z children inside this @container + overflow-hidden + rounded
+          motion.button, so the background vanishes on iPhone. DOM order preserves
+          the visual stack on every platform. (transform-gpu can't help here —
+          Framer Motion owns this element's inline transform.) */}
+      <div className="absolute inset-0 z-0 bg-zinc-950" />
+      <div className="absolute inset-0 z-0" style={{ backgroundImage: visual.gradient }} />
       {/* Animated effect layer (per-plan, opt-in; NONE = gradient only).
           Suppressed when the plan has a custom uploaded image so the two never
-          clash. Sits above the gradient, below the per-plan texture + vignette
-          so those keep text legible. */}
+          clash. DOM order keeps it above the gradient, below the per-plan
+          texture + vignette so those keep text legible. */}
       {showEffect && (
         <CardEffectLayer
           effect={effect}
           props={effectProps}
           opacity={effectOpacity}
-          className="absolute inset-0 -z-[22]"
+          className="absolute inset-0 z-0"
         />
       )}
       {/* Texture overlay: uploaded image (cover) wins over a preset pattern. */}
       {visual.textureUrl ? (
         <div
-          className="absolute inset-0 -z-20 bg-cover bg-center opacity-25"
+          className="absolute inset-0 z-0 bg-cover bg-center opacity-25"
           style={{ backgroundImage: `url(${visual.textureUrl})` }}
         />
       ) : visual.textureImage ? (
         <div
-          className="absolute inset-0 -z-20"
+          className="absolute inset-0 z-0"
           style={{ backgroundImage: visual.textureImage, backgroundSize: visual.textureSize ?? undefined }}
         />
       ) : null}
-      <div className="absolute inset-0 -z-10 bg-linear-to-br from-black/35 via-black/10 to-black/55" />
+      <div className="absolute inset-0 z-0 bg-linear-to-br from-black/35 via-black/10 to-black/55" />
 
       <CardWatermark
         preset={branding.cardLogo}

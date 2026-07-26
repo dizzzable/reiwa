@@ -23,6 +23,9 @@ import { Check, Wifi, WifiOff } from "lucide-react";
 import type { Subscription } from "@/types/api";
 import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { CardWatermark } from "@/components/ui/card-watermark";
+import { CustomIconView } from "@/components/ui/custom-icon-view";
+import { EmojiText } from "@/components/ui/emoji-text";
+import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { useBranding } from "@/lib/branding-provider";
 import { brandAuroraStops, cn, formatDate } from "@/lib/utils";
 
@@ -54,7 +57,7 @@ export function SubscriptionSelectCard({
   index?: number;
 }) {
   const { t } = useTranslation();
-  const { branding } = useBranding();
+  const { branding, customIcons } = useBranding();
   const sub = subscription;
 
   const isActive = sub.status === "ACTIVE" || sub.status === "LIMITED";
@@ -69,6 +72,35 @@ export function SubscriptionSelectCard({
     const hue = Math.round(145 * (1 - progress));
     return `hsl(${hue} 85% 55%)`;
   }, [progress]);
+
+  // Plan's own icon (frozen in the subscription snapshot), same 3-way resolution
+  // and same fallback as the dashboard card — this tile advertises itself as a
+  // mirror of it, so the picker must not show Wi-Fi where the dashboard shows
+  // the plan glyph. No icon on the plan → the connectivity status glyph.
+  const planIcon = sub.plan?.icon ?? null;
+  const planCustomId = customIconId(planIcon);
+  const planCustom = planCustomId
+    ? customIcons.find((c) => c.id === planCustomId)
+    : undefined;
+  const PlanBuiltInIcon = resolveBuiltInIcon(planIcon);
+  const nameIcon = isEmojiIcon(planIcon) ? (
+    <EmojiText
+      text={planIcon}
+      className={cn("shrink-0 text-xs leading-none", !isActive && "opacity-60")}
+    />
+  ) : planCustom ? (
+    <CustomIconView
+      url={planCustom.url}
+      color={planCustom.color}
+      className={cn("h-3 w-3 shrink-0", !isActive && "opacity-60")}
+    />
+  ) : PlanBuiltInIcon ? (
+    <PlanBuiltInIcon className={cn("h-3 w-3 shrink-0", !isActive && "opacity-60")} />
+  ) : isActive ? (
+    <Wifi className="h-3 w-3 shrink-0 opacity-90" />
+  ) : (
+    <WifiOff className="h-3 w-3 shrink-0 opacity-60" />
+  );
 
   // Resolve the live animated background exactly like the dashboard card:
   // per-position slot → else the global operator effect; aurora is auto-tinted
@@ -103,21 +135,23 @@ export function SubscriptionSelectCard({
       )}
     >
       {/* Static foundation: dark base + operator brand gradient */}
-      <div className="absolute inset-0 -z-30 bg-zinc-950" />
+      <div className="absolute inset-0 z-0 bg-zinc-950" />
       <div
-        className="absolute inset-0 -z-25"
+        className="absolute inset-0 z-0"
         style={{ backgroundImage: cardGradient, opacity: 0.9 }}
       />
-      {/* Live animated effect (lazy, pauses off-screen). NONE = gradient only. */}
+      {/* Live animated effect (lazy, pauses off-screen). NONE = gradient only.
+          z-0 (not negative z): iOS Safari won't paint negative-z children inside
+          this @container + overflow-hidden + rounded box. */}
       {effect !== "NONE" && (
         <CardEffectLayer
           effect={effect}
           props={effectProps}
           opacity={effectOpacity}
-          className="absolute inset-0 -z-20"
+          className="absolute inset-0 z-0"
         />
       )}
-      <div className="absolute inset-0 -z-10 bg-linear-to-b from-black/45 via-black/15 to-black/65" />
+      <div className="absolute inset-0 z-0 bg-linear-to-b from-black/45 via-black/15 to-black/65" />
 
       {/* Brand watermark — operator glyph or custom image, faint */}
       <CardWatermark
@@ -148,11 +182,7 @@ export function SubscriptionSelectCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            {isActive ? (
-              <Wifi className="h-3 w-3 shrink-0 opacity-90" />
-            ) : (
-              <WifiOff className="h-3 w-3 shrink-0 opacity-60" />
-            )}
+            {nameIcon}
             <p className="truncate text-[13px] font-semibold tracking-wide drop-shadow">
               {subscriptionTitle(sub)}
             </p>

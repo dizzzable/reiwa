@@ -109,7 +109,17 @@ export interface Subscription {
   expiresAt: string | null; // ISO date (canonical)
   url: string | null;
   configUrl?: string | null;
-  plan: { id: string | null; name: string | null; type: string | null } | null;
+  plan: {
+    id: string | null;
+    name: string | null;
+    type: string | null;
+    /**
+     * Plan icon frozen in the subscription snapshot (lucide key, `custom:<id>`,
+     * or a `:emoji:` shortcode). Rendered beside the plan name on the card;
+     * null → fall back to the connectivity (Wifi/WifiOff) status glyph.
+     */
+    icon?: string | null;
+  } | null;
   createdAt: string;
   startedAt?: string | null;
   updatedAt?: string;

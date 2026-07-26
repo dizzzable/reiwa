@@ -62,6 +62,12 @@ interface ReferralSummaryShape {
   readonly totalReferrals?: number;
   readonly qualifiedReferrals?: number;
   readonly pointsBalance?: number;
+  /** Permanent, reusable referral code (the user's reiwa_id). */
+  readonly referralCode?: string | null;
+  /** False when "invited users only" is on and this user wasn't invited. */
+  readonly programAvailable?: boolean;
+  /** True under platform INVITED mode — share a minted token, not the code. */
+  readonly admissionRequiresInvite?: boolean;
 }
 interface PartnerInfoShape {
   readonly balance?: number;
@@ -73,32 +79,35 @@ function num(value: unknown): number | null {
 }
 
 /**
- * Resolve the user's share link via the admin invite endpoint. Returns `null`
- * when no token is available; falls back to a bot deep-link when no public web
- * URL is configured so the share button still works in dev.
+ * Build the user's share link from their permanent referral code.
+ *
+ * This screen advertises "invite your friends — for every one who subscribes
+ * you earn points", and the share button pushes the link into chats, groups and
+ * channels. It therefore has to be a REUSABLE link. It used to mint a fresh
+ * single-use `ReferralInvite` on every screen open, which meant the first
+ * friend to tap it consumed it and everyone else silently got nothing — while
+ * each open also rotated the link and (with slots enabled) burned capacity.
+ *
+ * The permanent code is the same reiwa_id the cabinet already shares, so both
+ * surfaces now hand out one identical, never-expiring link. Single-use invite
+ * tokens remain in place for the INVITED access mode, where admitting exactly
+ * one new sign-up is the intended behaviour.
+ *
+ * Applies to the partner hub too: partner attribution is a long-lived chain, so
+ * a one-shot link was doubly wrong there.
  */
-async function resolveInviteLink(
+function buildReferralLink(
   deps: PageDeps,
-  telegramId: string,
+  code: string,
   botUsername: string | undefined,
-): Promise<string | null> {
-  const { adminClient, urls } = deps;
-  if (!adminClient) return null;
-  try {
-    const response = (await adminClient.referrals
-      ?.createInvite?.({ telegramId })
-      ?.catch(() => null)) as ReferralInviteShape | null | undefined;
-    const token = response?.invite?.token ?? response?.token ?? null;
-    if (token === null) return null;
-    // Prefer the Telegram deep-link in the bot — a friend who taps it opens the
-    // bot directly (and `/start ref_<token>` attributes the referral). Fall back
-    // to the public web `/ref/<token>` URL only when no bot username is set.
-    if (botUsername) return `https://t.me/${botUsername}?start=ref_${token}`;
-    if (urls.publicWebUrl !== null) return `${urls.publicWebUrl}/ref/${token}`;
-    return null;
-  } catch {
-    return null;
-  }
+): string | null {
+  const { urls } = deps;
+  // Prefer the Telegram deep-link — a friend who taps it opens the bot directly
+  // and `/start ref_<code>` attributes the referral. Fall back to the public web
+  // URL when no bot username is available (dev).
+  if (botUsername) return `https://t.me/${botUsername}?start=ref_${code}`;
+  if (urls.publicWebUrl !== null) return `${urls.publicWebUrl}/ref/${code}`;
+  return null;
 }
 
 export const registerInvitePage: PageRegistrar = (bot, deps) => {
@@ -129,17 +138,51 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
       return;
     }
 
-    const inviteLink = await resolveInviteLink(deps, telegramId, ctx.me.username);
+    // One summary fetch serves both the link and the referral stats below.
+    const summary = (await adminClient?.referrals
+      ?.getSummary?.({ telegramId })
+      ?.catch(() => null)) as ReferralSummaryShape | null | undefined;
+    // Under "invite only" the platform admits a new sign-up ONLY through a
+    // single-use invite token, so the permanent code would hand the friend a
+    // link that gets rejected at registration. Mint a token in that mode; this
+    // is also where the operator's TTL and slot limits are meant to bite.
+    let code = typeof summary?.referralCode === 'string' ? summary.referralCode : '';
+    if (summary?.admissionRequiresInvite === true) {
+      const minted = (await adminClient?.referrals
+        ?.createInvite?.({ telegramId })
+        ?.catch(() => null)) as ReferralInviteShape | null | undefined;
+      code = minted?.invite?.token ?? minted?.token ?? '';
+    }
+    // No telegramId fallback: a share link is pasted into chats and channels
+    // and lives there forever, so publishing a raw Telegram ID because the
+    // admin API blipped is not an acceptable degradation.
+    const inviteLink = code.length > 0 ? buildReferralLink(deps, code, ctx.me.username) : null;
 
     if (isPartner) {
       await renderPartnerHub(ctx, deps, lang, telegramId, inviteLink, backLabel, botCfg);
       return;
     }
 
+    // "Invited users only" mode: the referral program is open exclusively to
+    // users who were themselves invited. Previously this was enforced only
+    // because the hub had to mint an invite (which the admin refused), and the
+    // refusal surfaced as the generic "link temporarily unavailable" — a
+    // permanent state dressed up as a glitch. The link no longer requires an
+    // invite, so check the flag the summary already reports and say plainly why.
+    if (summary?.programAvailable === false) {
+      const kb = new InlineKeyboard().text(backLabel, 'menu:main');
+      await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+        overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
+        text: translator.t('referral.invited_only', lang),
+        replyMarkup: kb,
+      });
+      return;
+    }
+
     if (inviteLink === null) {
       deps.logger?.warn(
         { telegramId, hasPublicUrl: urls.publicWebUrl !== null },
-        'invite: link unavailable — admin returned no token or public URL missing',
+        'invite: link unavailable — no bot username and no public web URL configured',
       );
       const kb = new InlineKeyboard().text(backLabel, 'menu:main');
       await renderScreenOrEdit(ctx, deps, botCfg.visual, {
@@ -150,7 +193,7 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
       return;
     }
 
-    await renderReferralHub(ctx, deps, lang, telegramId, inviteLink, backLabel, botCfg);
+    await renderReferralHub(ctx, deps, lang, summary, inviteLink, backLabel, botCfg);
   });
 };
 
@@ -158,17 +201,13 @@ async function renderReferralHub(
   ctx: BotContext,
   deps: PageDeps,
   lang: SupportedLocale,
-  telegramId: string,
+  summary: ReferralSummaryShape | null | undefined,
   inviteLink: string,
   backLabel: string,
   botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
 ): Promise<void> {
-  const { adminClient, translator, urls } = deps;
+  const { translator, urls } = deps;
   const t = (key: string, vars?: Record<string, string | number>) => translator.t(key, lang, vars);
-
-  const summary = (await adminClient?.referrals
-    ?.getSummary?.({ telegramId })
-    ?.catch(() => null)) as ReferralSummaryShape | null | undefined;
 
   const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
   const parts: string[] = [];

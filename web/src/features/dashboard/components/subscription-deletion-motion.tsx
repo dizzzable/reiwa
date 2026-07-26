@@ -264,7 +264,10 @@ export function SubscriptionDeletionMotion({
                 }}
                 transition={{
                   delay,
-                  duration: 0.24,
+                  // Scale with the pass, like `delay` does. A fixed 0.24s read as
+                  // ~13% of the old 1.8s sweep; against the current 5s it would
+                  // shrink to ~5% and the trail would break into stray dots.
+                  duration: (duration / 1_000) * 0.13,
                   ease: "easeOut",
                 }}
               />

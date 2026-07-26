@@ -360,11 +360,11 @@ describe("subscription creation timeline", () => {
 });
 
 describe("subscription deletion duration", () => {
-  it("clamps the laser erase to a perceptible 1.5-2.1 seconds", () => {
+  it("clamps the laser erase to a slow, clearly-visible 3-6 seconds", () => {
     expect(resolveSubscriptionDeletionDuration(false, 100)).toBe(
       SUBSCRIPTION_DELETION_TIMING.minimum,
     );
-    expect(resolveSubscriptionDeletionDuration(false, 3_000)).toBe(
+    expect(resolveSubscriptionDeletionDuration(false, 9_000)).toBe(
       SUBSCRIPTION_DELETION_TIMING.maximum,
     );
     expect(resolveSubscriptionDeletionDuration(false, Number.NaN)).toBe(

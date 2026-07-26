@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
 import { useAdAttribution } from "@/hooks/use-ad-attribution";
@@ -20,6 +20,26 @@ import { useTelegramWebApp } from "@/hooks/use-telegram-webapp";
  * just inspects `Telegram.WebApp.initData` and forwards to the right
  * entry above.
  */
+
+/**
+ * `/ref/<token>` — the share URL the bot hands out when no bot username is
+ * configured. The register form reads the code from `?ref=`, so translate the
+ * path segment into that query param instead of falling through to the
+ * catch-all (which dropped the referral silently).
+ */
+function ReferralLinkRedirect() {
+  const { token } = useParams<{ token: string }>();
+  const { search } = useLocation();
+  const code = (token ?? "").trim().slice(0, 64);
+  // Carry the original query across. The register page reads UTM tags and the
+  // ad-campaign marker straight off `window.location.search`, so rebuilding the
+  // URL from scratch would silently drop campaign attribution for everyone who
+  // arrives through a referral link — the opposite of what this route is for.
+  const params = new URLSearchParams(search);
+  if (code) params.set("ref", code);
+  const query = params.toString();
+  return <Navigate to={query ? `/register?${query}` : "/register"} replace />;
+}
 
 const ContextRouter = lazy(() => import("@/features/auth/context-router"));
 const WebHomePage = lazy(() => import("@/features/auth/web-home-page"));
@@ -94,6 +114,7 @@ export default function App() {
         <Route path="/welcome" element={<LandingPage />} />
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/ref/:token" element={<ReferralLinkRedirect />} />
         <Route path="/recover" element={<RecoverPage />} />
         <Route path="/change-password" element={<ChangePasswordPage />} />
         <Route path="/claim" element={<ClaimPage />} />

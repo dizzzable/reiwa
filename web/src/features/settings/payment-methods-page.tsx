@@ -183,13 +183,13 @@ export default function PaymentMethodsPage() {
           <StadiumButton
             className="mt-3 w-full"
             size="sm"
+            icon={<Plus className="h-4 w-4" />}
             disabled={setupMutation.isPending}
             onClick={() => {
               setSetupConsent(false);
               setSetupDialogOpen(true);
             }}
           >
-            <Plus className="h-4 w-4" />
             {t('paymentMethods.addCard')}
           </StadiumButton>
         </div>

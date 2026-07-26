@@ -133,6 +133,8 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'referral.qualified': 'Qualified: {{count}}',
   'referral.link_label': '🔗 Your referral link:',
   'referral.link_unavailable': 'Link temporarily unavailable',
+  'referral.invited_only':
+    '🔒 The referral program is open only to users who joined through an invitation.\n\nAsk a friend who already uses the service for their invite link.',
   'referral.error': 'Failed to load referral data.',
 
   // ── Referral / Partner hub (invite button) ───────────────────────────────────

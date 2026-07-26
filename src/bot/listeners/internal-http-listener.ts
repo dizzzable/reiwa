@@ -436,10 +436,14 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
     const url = req.url ?? '';
 
     // Read the body up front (capped) so the HMAC can be verified over it
-    // before we dispatch. 16 KiB covers the largest endpoint (broadcast).
+    // before we dispatch. The cap must cover the largest endpoint: the document
+    // relays (`/notify-*-document`) carry a full `.txt` report as `content`,
+    // which reiwa admits up to ~1 MB — a 16 KiB cap here silently 413'd big
+    // error reports (relayed as a permanent drop). 2 MiB leaves headroom for
+    // JSON overhead on top of the 1 MB payload.
     let raw: string;
     try {
-      raw = await readBody(req, 16 * 1024);
+      raw = await readBody(req, 2 * 1024 * 1024);
     } catch {
       res.statusCode = 413;
       res.end();

@@ -56,8 +56,10 @@ export default function PartnerPage() {
   const referralCode = session?.id ?? session?.telegramId ?? session?.username ?? "";
   const reiwaDomain = window.location.origin;
   const webLink = `${reiwaDomain}/register?ref=${referralCode}`;
+  // `ref_` prefix is required for the bot to attribute the referrer — a bare
+  // `?start=<code>` is read as the plain menu entry (see `parseDeeplink`).
   const telegramLink = botUsername
-    ? `https://t.me/${botUsername}?start=${referralCode}`
+    ? `https://t.me/${botUsername}?start=ref_${referralCode}`
     : webLink;
 
   // Format balance in rubles (stored in kopecks)

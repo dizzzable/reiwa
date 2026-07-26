@@ -50,10 +50,13 @@ describe('registerInvitePage (hub)', () => {
   });
 
   it('renders the referral hub with link, summary, and cabinet deep-links', async () => {
-    const createInvite = vi.fn().mockResolvedValue({ token: 'tok-1' });
-    const getSummary = vi
-      .fn()
-      .mockResolvedValue({ totalReferrals: 3, qualifiedReferrals: 1, pointsBalance: 50 });
+    const createInvite = vi.fn();
+    const getSummary = vi.fn().mockResolvedValue({
+      totalReferrals: 3,
+      qualifiedReferrals: 1,
+      pointsBalance: 50,
+      referralCode: 'reiwa-id-1',
+    });
     const exchange = vi.fn();
     const adminClient = {
       referrals: { createInvite, getSummary, exchange },
@@ -70,7 +73,7 @@ describe('registerInvitePage (hub)', () => {
 
     const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
     expect(text).toContain('ru:referral.hub.title');
-    expect(text).toContain('https://t.me/reiwa_test_bot?start=ref_tok-1');
+    expect(text).toContain('https://t.me/reiwa_test_bot?start=ref_reiwa-id-1');
     expect(text).toContain('ru:referral.hub.stat_invited(count=3)');
     expect(text).toContain('ru:referral.hub.stat_qualified(count=1)');
     expect(text).toContain('ru:referral.hub.stat_pending(count=2)');
@@ -81,7 +84,11 @@ describe('registerInvitePage (hub)', () => {
     expect(buttons.some((b) => b.web_app?.url === 'https://reiwa.example/referrals/exchange')).toBe(true);
     // Read-only money path — the hub never performs an exchange.
     expect(exchange).not.toHaveBeenCalled();
-    expect(createInvite).toHaveBeenCalledWith({ telegramId: '5' });
+    // The share link is the user's PERMANENT referral code, so opening the hub
+    // must not mint a single-use invite (which would rotate the link, consume a
+    // slot, and stop working after the first friend used it).
+    expect(createInvite).not.toHaveBeenCalled();
+    expect(getSummary).toHaveBeenCalledWith({ telegramId: '5' });
   });
 
   it('omits cabinet deep-links when no public web URL is configured', async () => {
@@ -100,9 +107,12 @@ describe('registerInvitePage (hub)', () => {
     expect(buttons.some((b) => b.web_app !== undefined)).toBe(false);
   });
 
-  it('falls back to referral.link_unavailable when no token is returned', async () => {
-    const createInvite = vi.fn().mockResolvedValue(null);
-    const adminClient = { referrals: { createInvite } } as unknown as PageDeps['adminClient'];
+  it('explains the invited-only restriction instead of "link unavailable"', async () => {
+    // A permanent restriction used to surface as a temporary-sounding glitch.
+    const getSummary = vi
+      .fn()
+      .mockResolvedValue({ referralCode: 'reiwa-id-1', programAvailable: false });
+    const adminClient = { referrals: { getSummary } } as unknown as PageDeps['adminClient'];
     const bot = buildFakeBot();
     const { deps } = buildDeps({
       adminOverrides: adminClient as unknown as Record<string, unknown>,
@@ -110,6 +120,67 @@ describe('registerInvitePage (hub)', () => {
     });
     register(bot, deps);
     const ctx = buildFakeCtx();
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    expect(ctx.editMessageText).toHaveBeenCalledWith(
+      'ru:referral.invited_only',
+      expect.anything(),
+    );
+  });
+
+  it('never falls back to the raw telegramId when the summary lookup fails', async () => {
+    // A share link is pasted into chats and channels and stays there forever,
+    // so leaking the user's Telegram ID because the admin API blipped is not an
+    // acceptable degradation — show "unavailable" instead.
+    const getSummary = vi.fn().mockRejectedValue(new Error('admin down'));
+    const adminClient = { referrals: { getSummary } } as unknown as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: 'https://reiwa.example',
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx();
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
+    expect(text).not.toContain('ref_42');
+    expect(text).toBe('ru:referral.link_unavailable');
+  });
+
+  it('mints a single-use token under invite-only admission', async () => {
+    // The permanent code does not open the INVITED gate, so sharing it would
+    // hand the friend a link that is rejected at registration.
+    const createInvite = vi.fn().mockResolvedValue({ invite: { token: 'tok-9' } });
+    const getSummary = vi.fn().mockResolvedValue({
+      referralCode: 'reiwa-id-1',
+      admissionRequiresInvite: true,
+    });
+    const adminClient = {
+      referrals: { createInvite, getSummary },
+    } as unknown as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: 'https://reiwa.example',
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx();
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    expect(createInvite).toHaveBeenCalledWith({ telegramId: '42' });
+    const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
+    expect(text).toContain('https://t.me/reiwa_test_bot?start=ref_tok-9');
+    expect(text).not.toContain('reiwa-id-1');
+  });
+
+  it('falls back to referral.link_unavailable with no bot username and no public URL', async () => {
+    const getSummary = vi.fn().mockResolvedValue({ referralCode: 'reiwa-id-1' });
+    const adminClient = { referrals: { getSummary } } as unknown as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: null,
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx({ me: { username: '' } });
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
     expect(ctx.editMessageText).toHaveBeenCalledWith(
       'ru:referral.link_unavailable',

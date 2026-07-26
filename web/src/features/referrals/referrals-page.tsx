@@ -59,8 +59,12 @@ export default function ReferralsPage() {
   const referralCode = session?.id ?? session?.telegramId ?? session?.username ?? "";
   const reiwaDomain = window.location.origin;
   const webLink = `${reiwaDomain}/register?ref=${referralCode}`;
+  // The bot only attributes a referrer when the deep-link payload carries the
+  // `ref_` prefix (see `parseDeeplink`); a bare `?start=<code>` is read as the
+  // plain menu entry and the referrer is silently lost. rezeis resolves the
+  // reiwa_id / telegramId / username that follows the prefix.
   const telegramLink = botUsername
-    ? `https://t.me/${botUsername}?start=${referralCode}`
+    ? `https://t.me/${botUsername}?start=ref_${referralCode}`
     : webLink;
 
   const totalInvited = (summary as any)?.totalReferrals ?? 0;
