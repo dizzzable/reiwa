@@ -17,7 +17,12 @@ export interface PublicExternalProvider {
 
 export type ExternalAuthResolution =
   | { readonly action: 'login'; readonly userId: string }
-  | { readonly action: 'finish_setup'; readonly userId: string }
+  /**
+   * `created` is true only when rezeis actually minted a new account. The action
+   * alone is not a signal of novelty — an account that has existed for months but
+   * never finished setup resolves to `finish_setup` too.
+   */
+  | { readonly action: 'finish_setup'; readonly userId: string; readonly created?: boolean }
   | { readonly action: 'denied' };
 
 export class ExtAuthNamespace {

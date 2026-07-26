@@ -22,6 +22,8 @@ export interface PartnerAdRequest {
   notes: string | null;
   proposedWindowDays: number;
   approvedWindowDays: number | null;
+  /** The operator's decision note. Without it a rejection is a status and nothing more. */
+  reviewNotes: string | null;
   status: string;
   createdAt: string;
 }
@@ -54,10 +56,22 @@ export interface CreatePartnerAdRequestInput {
   selfFundedBudgetNote?: string;
 }
 
-/** Best-effort: records a Mini-App / web open carrying an `ad_<code>` param. */
-export const recordAdClick = (code: string, surface?: "BOT" | "MINIAPP" | "WEB") =>
+/**
+ * Best-effort: records a Mini-App / web open carrying an `ad_<code>` param.
+ * `recorded` reports whether the click actually reached rezeis — the call always
+ * answers 200 so attribution can never surface as an error to the visitor.
+ */
+export const recordAdClick = (
+  code: string,
+  surface?: "BOT" | "MINIAPP" | "WEB",
+  utm?: Record<string, string>,
+) =>
   apiClient
-    .post<{ ok: boolean }>("/advertising/click", { code, surface })
+    .post<{ ok: boolean; recorded?: boolean; reason?: string }>("/advertising/click", {
+      code,
+      surface,
+      utm,
+    })
     .then((r) => r.data);
 
 export const getPartnerAdRequests = () =>

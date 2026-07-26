@@ -456,6 +456,15 @@ export const en: RuDict = {
   },
   partnerAds: {
     title: 'Advertising',
+    reviewNote: 'Operator comment: {{note}}',
+    trackingOff:
+      'This placement is "{{status}}": visits through these links are not counted. Ask the operator to activate it again.',
+    placementStatus: {
+      DRAFT: 'draft',
+      ACTIVE: 'active',
+      PAUSED: 'paused',
+      ARCHIVED: 'archived',
+    },
     subtitle: 'Promote the service on your channels and earn from the customers you bring.',
     noPlacements: 'No active placements yet. Submit a request below.',
     opens: 'Opens',

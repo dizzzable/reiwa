@@ -16,6 +16,18 @@ export interface RecordAdClickInput {
   /** BOT | MINIAPP | WEB */
   readonly surface?: string | null;
   readonly isNewUser?: boolean;
+  /**
+   * Claims first-touch attribution for `userId` without recording another open.
+   * Used by the web funnel, where the open was already counted anonymously when
+   * the browser landed on the ad link — one landing must stay one open.
+   */
+  readonly attributeOnly?: boolean;
+  /** UTM tags from the landing URL — the cabinet groups its breakdown by these. */
+  readonly utmSource?: string;
+  readonly utmMedium?: string;
+  readonly utmCampaign?: string;
+  readonly utmContent?: string;
+  readonly utmCreative?: string;
 }
 
 export type AdPlatform =
@@ -67,6 +79,12 @@ export class AdvertisingNamespace {
       userId: input.userId ?? undefined,
       surface: input.surface ?? undefined,
       isNewUser: input.isNewUser ?? undefined,
+      attributeOnly: input.attributeOnly ?? undefined,
+      utmSource: input.utmSource,
+      utmMedium: input.utmMedium,
+      utmCampaign: input.utmCampaign,
+      utmContent: input.utmContent,
+      utmCreative: input.utmCreative,
     });
   }
 

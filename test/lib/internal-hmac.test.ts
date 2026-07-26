@@ -13,6 +13,25 @@ import {
 const SECRET = 'internal-shared-secret-at-least-32-chars-long';
 
 describe('internal HMAC sign/verify', () => {
+  /**
+   * Known-answer vector, pinned identically in
+   * `rezeis-admin/test/internal-signature.util.spec.ts`. rezeis verifies what this
+   * file signs, so the two implementations must agree byte-for-byte: a silent
+   * divergence would make rezeis reject every internal call once signature
+   * enforcement is strict, taking the whole cabinet down with it.
+   */
+  it('matches the cross-service known-answer vector', () => {
+    const { signature } = buildInternalSignature({
+      secret: 'known-answer-secret',
+      method: 'POST',
+      path: '/api/internal/advertising/click',
+      body: '{"code":"ABC123"}',
+      timestamp: '1700000000000',
+    });
+    expect(signature).toBe('a0bf2b2aa02d53db176c8274b6fe4c7646c57521c5fa4b79be10da1744dadcb6');
+  });
+
+
   it('round-trips a freshly signed request', () => {
     const body = JSON.stringify({ eventId: 'evt_1', telegramId: '42', text: 'hi' });
     const { timestamp, signature } = buildInternalSignature({

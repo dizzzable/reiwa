@@ -18,6 +18,7 @@ import { requestIdMiddleware } from "./middleware/request-id.js";
 import { apiLimiter } from "./middleware/rate-limit.js";
 import { createCsrfProtection } from "./middleware/csrf-protection.js";
 import { createContextDetectionMiddleware } from "./middleware/context-detection.js";
+import { createAdCaptureMiddleware } from "./middleware/ad-capture.js";
 import { createAuthRouter } from "./routes/auth.js";
 import { createBrandingRouter, getPublicConfigPayload } from "./routes/branding.js";
 import {
@@ -201,6 +202,11 @@ export function createApp(deps: CreateAppDeps) {
   );
 
   // ── Web Session Middleware (Redis-backed, httpOnly, sameSite=lax) ──────────
+  // Shared by the session cookie and the advertising-capture cookie so the two
+  // can never disagree about `Secure` on the same deployment.
+  const webCookieSecure =
+    config.REIWA_COOKIE_SECURE ||
+    (config.NODE_ENV === "production" && !config.REIWA_ALLOW_INSECURE_COOKIES);
   if (deps.webSessionStore) {
     const sessionConfig: SessionConfig = {
       redisUrl: config.REDIS_URL ?? "",
@@ -210,9 +216,7 @@ export function createApp(deps: CreateAppDeps) {
       // for trusted/no-TLS deployments and local HTTP testing of the
       // unified image — otherwise the browser silently drops the `Secure`
       // session cookie on http:// and the user can never stay logged in.
-      cookieSecure:
-        config.REIWA_COOKIE_SECURE ||
-        (config.NODE_ENV === "production" && !config.REIWA_ALLOW_INSECURE_COOKIES),
+      cookieSecure: webCookieSecure,
       isProduction: config.NODE_ENV === "production",
       allowInsecureCookies: config.REIWA_ALLOW_INSECURE_COOKIES,
     };
@@ -404,6 +408,17 @@ export function createApp(deps: CreateAppDeps) {
       res.json(buildWebManifest(null));
     }
   });
+
+  // ── Advertising capture (web surface) ─────────────────────────────────────
+  // Ad links land on a document request as `?campaign=ad_<code>`, before any
+  // session exists. Capture it here — cookie + anonymous open — and strip the
+  // param, so the SPA can no longer lose the code on its entry redirect.
+  // Mounted after `cookieParser()` and before the static/SPA handlers, and
+  // outside the `webDist` block so it also applies when the SPA is hosted
+  // elsewhere but proxies documents through the API.
+  app.use(
+    createAdCaptureMiddleware({ adminClient: deps.adminClient, cookieSecure: webCookieSecure }),
+  );
 
   // ── Static SPA (single-image mode) ────────────────────────────────────────
   // When `REIWA_WEB_DIST` points at a built SPA (the unified Docker image

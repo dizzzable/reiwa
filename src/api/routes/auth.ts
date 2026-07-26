@@ -11,8 +11,68 @@ import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js
 import { createSessionMiddleware } from "../middleware/session.js";
 import { createAuthBruteForceDetection } from "../middleware/brute-force-detection.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
+import { clearAdCodeCookie, readAdCodeCookie } from "../middleware/ad-capture.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 import type { AuthRequest } from "../middleware/session.js";
+
+/** Ceiling on the advertising attribution call made during registration. */
+const AD_ATTRIBUTION_TIMEOUT_MS = 2_000;
+
+/**
+ * Binds a freshly created account to the advertising placement the browser
+ * arrived from, using the code parked by the capture middleware.
+ *
+ * Shared by every path that creates an account. The password form was the only
+ * one wired up, so a visitor who clicked an ad and then signed up with the
+ * Google / Yandex / Telegram button counted as an open and never as a
+ * registration — half the funnel, silently missing.
+ *
+ * The cookie is cleared only once rezeis confirms, so a restart or a
+ * reiwa-ahead-of-rezeis deploy leaves something to retry from. Never throws:
+ * the account already exists and the session is already issued.
+ */
+async function claimAdAttribution(
+  req: Request,
+  res: Response,
+  adminClient: AdminClient,
+  userId: string,
+): Promise<void> {
+  const adCode = readAdCodeCookie(req);
+  if (adCode === null) {
+    return;
+  }
+  const ingest = adminClient.advertising
+    .recordClick({
+      code: adCode,
+      userId,
+      surface: "WEB",
+      isNewUser: true,
+      attributeOnly: true,
+    })
+    .then(() => true)
+    .catch((err: unknown) => {
+      getRequestLogger(req).warn(
+        { err: describeUpstreamError(err).message, adCode },
+        "ad attribution failed",
+      );
+      return false;
+    });
+  let timer: NodeJS.Timeout | undefined;
+  const attributed = await Promise.race([
+    ingest,
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), AD_ATTRIBUTION_TIMEOUT_MS);
+    }),
+  ]);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+  }
+  if (attributed) {
+    clearAdCodeCookie(res);
+  } else {
+    getRequestLogger(req).warn({ adCode }, "ad attribution unconfirmed; cookie kept for retry");
+  }
+}
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
 
@@ -285,6 +345,13 @@ export function createAuthRouter(deps: {
         res.status(500).json({ message: "Account created but session setup failed. Please sign in." });
         return;
       }
+
+      // Advertising first-touch. The open was already counted anonymously when
+      // the browser landed on `?campaign=ad_<code>` (see `ad-capture`), so this
+      // only binds the fresh account to the placement — `attributeOnly` keeps
+      // one landing worth one open. Same helper as the social-login path, so the
+      // two cannot drift.
+      await claimAdAttribution(req, res, adminClient, result.userId);
 
       res.json({
         success: true,
@@ -1071,6 +1138,24 @@ export function createAuthRouter(deps: {
         return;
       }
       await req.createWebSession(resolution.userId);
+      // Only when rezeis actually minted the account. Keying this on
+      // `action === 'finish_setup'` would also catch accounts that have existed
+      // for months without finishing setup, and a PARTNER placement would then
+      // start paying commission on a long-standing customer. rezeis independently
+      // refuses to attribute an account that is not new, so the two agree.
+      if (resolution.action === "finish_setup" && resolution.created === true) {
+        // Inside its own try/catch and before the redirect: an exception escaping
+        // here would hit the outer catch and bounce an already-authenticated user
+        // to /sign-in?error=ext_failed, and the Set-Cookie would never be sent.
+        try {
+          await claimAdAttribution(req, res, adminClient, resolution.userId);
+        } catch (err: unknown) {
+          getRequestLogger(req).warn(
+            { err: describeUpstreamError(err).message },
+            "auth/ext/callback ad attribution failed",
+          );
+        }
+      }
       res.redirect(resolution.action === "finish_setup" ? "/finish-setup" : "/dashboard");
     } catch (e: unknown) {
       getRequestLogger(req).warn({ err: describeUpstreamError(e).message }, "auth/ext/callback failed");

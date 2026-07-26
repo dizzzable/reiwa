@@ -55,6 +55,38 @@ async function detectTelegramInitData(maxMs: number): Promise<string | null> {
   }
 }
 
+/**
+ * Params worth carrying across an entry redirect: marketing attribution and the
+ * post-auth destination. An allowlist, not a copy of the whole query — the entry
+ * URL can also hold the single-use `?signin=` magic-link token, and forwarding
+ * that into /tma or /sign-in (neither of which consumes it) would leak it into
+ * browser history and proxy logs. A denylist would leak the next one-shot param
+ * somebody adds.
+ */
+const CARRIED_PARAMS = ['ref', 'next'] as const
+
+/**
+ * Appends the carried query params to a client-side navigation target.
+ *
+ * Every hand-off out of this page used to pass a bare path, so react-router
+ * replaced the URL without its query — dropping the `utm_*` tags the register
+ * form reads off `window.location.search`, and (before the server started
+ * capturing it) the `?campaign=ad_<code>` advertising marker with them. Targets
+ * that carry their own query are left untouched.
+ */
+function keepQuery(target: string): string {
+  if (target.includes('?')) return target
+  const carried = new URLSearchParams()
+  const current = new URLSearchParams(window.location.search)
+  for (const [key, value] of current) {
+    if (key.startsWith('utm_') || (CARRIED_PARAMS as readonly string[]).includes(key)) {
+      carried.set(key, value)
+    }
+  }
+  const query = carried.toString()
+  return query.length > 0 ? `${target}?${query}` : target
+}
+
 export default function WebHomePage() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
@@ -83,7 +115,7 @@ export default function WebHomePage() {
       // loads we fall through to the web flow after ~1.5s instead of hanging.
       const tgInitData = await detectTelegramInitData(1500)
       if (typeof tgInitData === 'string' && tgInitData.length > 0) {
-        navigate('/tma', { replace: true })
+        navigate(keepQuery('/tma'), { replace: true })
         return
       }
 
@@ -106,7 +138,7 @@ export default function WebHomePage() {
             // Pre-warm the session cache so /dashboard doesn't show a
             // skeleton on first paint.
             queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
-            navigate(result.redirectUrl ?? '/dashboard', { replace: true })
+            navigate(keepQuery(result.redirectUrl ?? '/dashboard'), { replace: true })
             return
           }
         } catch {
@@ -126,7 +158,7 @@ export default function WebHomePage() {
         const session = await getSession()
         if (session) {
           queryClient.setQueryData(SESSION_QUERY_KEY, session)
-          navigate('/dashboard', { replace: true })
+          navigate(keepQuery('/dashboard'), { replace: true })
           return
         }
       } catch {
@@ -146,13 +178,13 @@ export default function WebHomePage() {
         })
         const parsed = parseLandingPayload(landing)
         if (parsed.enabled === true && parsed.sections.length > 0) {
-          navigate('/welcome', { replace: true })
+          navigate(keepQuery('/welcome'), { replace: true })
           return
         }
       } catch {
         // Landing unavailable — fail closed to /sign-in (current behavior).
       }
-      navigate('/sign-in', { replace: true })
+      navigate(keepQuery('/sign-in'), { replace: true })
     })()
   }, [navigate, queryClient])
 

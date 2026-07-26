@@ -3,7 +3,10 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { getRequestLogger } from "../middleware/logger-accessor.js";
+import { parseAdUtmTags } from "../middleware/ad-capture.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { describeUpstreamError } from "../lib/upstream-error.js";
 import type { AdPlatform } from "../../infrastructure/admin-client/namespaces/advertising.js";
 
 const PLATFORMS: readonly AdPlatform[] = [
@@ -39,18 +42,29 @@ export function createAdvertisingRouter(deps: {
   }
 
   // POST /api/v1/advertising/click — Mini App / web open via ad_<code>.
+  //
+  // Every outcome is logged and reported back as `recorded`. This used to answer
+  // a bare `{ ok: true }` on all four failure paths (bad code, no identity, no
+  // adminClient, upstream error) with an empty `catch`, so a completely dead
+  // funnel was indistinguishable from an idle one — which is how the web surface
+  // reached production without ever recording a single click.
   router.post("/advertising/click", requireSession, async (req: AuthRequest, res) => {
-    const body = (req.body ?? {}) as { code?: unknown; surface?: unknown };
+    const body = (req.body ?? {}) as { code?: unknown; surface?: unknown; utm?: unknown };
     const raw = typeof body.code === "string" ? body.code.trim() : "";
     const code = raw.startsWith("ad_") ? raw.slice(3) : raw;
     const identity = resolveUserIdentity(req);
     if (!/^[A-Za-z0-9_-]{3,32}$/.test(code)) {
-      res.json({ ok: true });
+      getRequestLogger(req).warn(
+        { code: raw.slice(0, 64) },
+        "advertising/click ignored: malformed tracking code",
+      );
+      res.json({ ok: true, recorded: false, reason: "invalid_code" });
       return;
     }
     // Prefer telegramId; fall back to userId so pure web accounts can attribute.
     if (identity.telegramId === undefined && identity.userId === undefined) {
-      res.json({ ok: true });
+      getRequestLogger(req).warn({ code }, "advertising/click ignored: no resolvable identity");
+      res.json({ ok: true, recorded: false, reason: "no_identity" });
       return;
     }
     const surfaceRaw = typeof body.surface === "string" ? body.surface.toUpperCase() : "";
@@ -60,17 +74,34 @@ export function createAdvertisingRouter(deps: {
         : identity.telegramId !== undefined
           ? "MINIAPP"
           : "WEB";
+    if (adminClient === null) {
+      getRequestLogger(req).warn({ code }, "advertising/click dropped: adminClient unavailable");
+      res.json({ ok: true, recorded: false, reason: "upstream_unavailable" });
+      return;
+    }
+    // The Mini App reaches us with the tags in the body: its launch parameters
+    // travel inside Telegram's `initData`, so the server never sees a URL to read
+    // them from the way the web capture middleware does.
+    const utm = parseAdUtmTags(
+      typeof body.utm === "object" && body.utm !== null ? (body.utm as Record<string, unknown>) : {},
+    );
     try {
-      await adminClient?.advertising.recordClick({
+      await adminClient.advertising.recordClick({
         code,
         telegramId: identity.telegramId ?? null,
         userId: identity.userId ?? null,
         surface,
+        ...utm,
       });
-    } catch {
-      /* best-effort */
+    } catch (err: unknown) {
+      getRequestLogger(req).warn(
+        { err: describeUpstreamError(err).message, code, surface },
+        "advertising/click upstream ingest failed",
+      );
+      res.json({ ok: true, recorded: false, reason: "upstream_error" });
+      return;
     }
-    res.json({ ok: true });
+    res.json({ ok: true, recorded: true });
   });
 
   // GET /api/v1/advertising/requests — partner's own requests.

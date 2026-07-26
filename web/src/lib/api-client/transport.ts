@@ -73,7 +73,11 @@ const PUBLIC_PATHS = [
   "/support/guest",
 ];
 
-const BENIGN_401_PATHS = ["/session", "/auth/"];
+// `/advertising/click` is fire-and-forget analytics behind a session guard: a
+// stale session must not turn it into a hard bounce to /sign-in out from under a
+// user who is reading their dashboard. Only the click path — a 401 on the other
+// /advertising/* endpoints is a real signed-out state worth redirecting on.
+const BENIGN_401_PATHS = ["/session", "/auth/", "/advertising/click"];
 
 let redirectingToSignIn = false;
 

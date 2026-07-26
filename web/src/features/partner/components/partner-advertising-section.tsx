@@ -178,6 +178,16 @@ function PlacementCard({ placement: p }: { placement: PartnerAdPlacementStat }) 
         <span className="text-xs font-medium">{t(`partnerAds.platforms.${p.platform}`)}</span>
         <span className="text-[10px] text-muted-foreground">{p.channel ?? ""}</span>
       </div>
+      {/* The card handed out links and QR codes for a PAUSED placement while the
+          ingest silently dropped every click, so a partner could post an ad and
+          never understand why their stats stayed at zero. */}
+      {p.status !== "ACTIVE" && (
+        <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[10px] text-amber-500">
+          {t("partnerAds.trackingOff", {
+            status: t(`partnerAds.placementStatus.${p.status}`, p.status),
+          })}
+        </p>
+      )}
       <div className="mt-2 grid grid-cols-4 gap-1 text-center">
         <Stat label={t("partnerAds.opens")} value={p.opens} />
         <Stat label={t("partnerAds.regs")} value={p.registrations} />
@@ -225,6 +235,13 @@ function RequestRow({
               proposed: r.proposedWindowDays,
               approved: r.approvedWindowDays,
             })}
+          </p>
+        )}
+        {/* Why the operator decided what they decided. A rejection used to arrive
+            as a bare status, leaving the partner with nothing to act on. */}
+        {r.reviewNotes && (
+          <p className="mt-0.5 text-[10px] text-amber-500">
+            {t("partnerAds.reviewNote", { note: r.reviewNotes })}
           </p>
         )}
       </div>
