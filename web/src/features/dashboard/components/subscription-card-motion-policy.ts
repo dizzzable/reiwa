@@ -289,6 +289,16 @@ export const SUBSCRIPTION_DELETION_REDUCED_PRESENTATION = {
   cueTimes: [0, 0.035, 0.24, 0.82, 1],
 } as const;
 
+export function resolveSubscriptionDeletionVisualMode(
+  reducedMotionOverride?: boolean,
+): "full" | "reduced" {
+  // The deletion sweep is an intentional, time-boxed acknowledgement of a
+  // committed destructive action. Ambient browser motion preferences must not
+  // silently suppress it; only an explicit caller override may request the
+  // static reduced fallback.
+  return reducedMotionOverride ? "reduced" : "full";
+}
+
 export function resolveSubscriptionDeletionDuration(
   _reducedMotion: boolean,
   requestedMs: number = SUBSCRIPTION_DELETION_TIMING.default,

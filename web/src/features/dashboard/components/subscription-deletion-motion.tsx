@@ -4,7 +4,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ import {
   SUBSCRIPTION_DELETION_REDUCED_PRESENTATION,
   SUBSCRIPTION_DELETION_TIMING,
   resolveSubscriptionDeletionDuration,
+  resolveSubscriptionDeletionVisualMode,
 } from "./subscription-card-motion-policy";
 import type { ResolvedSubscriptionCardVisual } from "./subscription-card-visual";
 import "./subscription-card-motion.css";
@@ -88,9 +89,9 @@ export function SubscriptionDeletionMotion({
   className,
   onExitComplete,
 }: SubscriptionDeletionMotionProps) {
-  const prefersReducedMotion = useReducedMotion();
   const reducedMotion =
-    reducedMotionOverride ?? prefersReducedMotion ?? false;
+    resolveSubscriptionDeletionVisualMode(reducedMotionOverride) ===
+    "reduced";
   const duration = resolveSubscriptionDeletionDuration(
     reducedMotion,
     durationMs,

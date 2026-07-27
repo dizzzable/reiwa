@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   SUBSCRIPTION_CREATION_TIMING,
@@ -7,6 +8,7 @@ import {
   resolveNextSubscriptionCreationWake,
   resolveSubscriptionCreationState,
   resolveSubscriptionDeletionDuration,
+  resolveSubscriptionDeletionVisualMode,
 } from "../../web/src/features/dashboard/components/subscription-card-motion-policy.js";
 import {
   resolveSubscriptionCardVisual,
@@ -361,6 +363,30 @@ describe("subscription creation timeline", () => {
 });
 
 describe("subscription deletion duration", () => {
+  it("defaults deletion visuals to the full laser sweep unless a caller explicitly requests reduced mode", () => {
+    expect(resolveSubscriptionDeletionVisualMode()).toBe("full");
+    expect(resolveSubscriptionDeletionVisualMode(false)).toBe("full");
+    expect(resolveSubscriptionDeletionVisualMode(true)).toBe(
+      "reduced",
+    );
+  });
+
+  it("does not inherit the browser motion preference inside the deletion component", () => {
+    const source = readFileSync(
+      new URL(
+        "../../web/src/features/dashboard/components/subscription-deletion-motion.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain("subscription-card-deletion__laser");
+    expect(source).toContain(
+      "resolveSubscriptionDeletionVisualMode(reducedMotionOverride)",
+    );
+    expect(source).not.toContain("useReducedMotion");
+  });
+
   it("clamps the laser erase to a slow, clearly-visible 3-6 seconds", () => {
     expect(resolveSubscriptionDeletionDuration(false, 100)).toBe(
       SUBSCRIPTION_DELETION_TIMING.minimum,
