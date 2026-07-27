@@ -30,6 +30,10 @@ WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
+# The browser snapshot validator is deliberately shared with the API. Keep its
+# source path intact so Vite can resolve the relative import during this
+# isolated web build, without bringing backend dependencies into the stage.
+COPY src/application/ports/public-config-persistence.port.ts /app/src/application/ports/public-config-persistence.port.ts
 RUN npm run build
 
 # ── Production deps only — no tsx / vitest / typescript in the runtime image ─
