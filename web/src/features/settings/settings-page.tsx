@@ -17,7 +17,7 @@
  */
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";

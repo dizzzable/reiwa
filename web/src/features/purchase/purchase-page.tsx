@@ -1,5 +1,5 @@
 import { useEffect, type ComponentType, type SVGProps } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, Check, CreditCard } from "lucide-react";

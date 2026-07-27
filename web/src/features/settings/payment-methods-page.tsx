@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { CreditCard, Plus, ShieldCheck, Trash2, Unlink } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';

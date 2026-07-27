@@ -6,8 +6,9 @@
  * rezeis-admin (`/api/v1/public-config`).
  *
  * Behaviour:
- *  - Mounts the SPA immediately with `DEFAULT_BRANDING` so the first paint
- *    has a deterministic look (no flash of unstyled content).
+ *  - Mounts the SPA immediately with a validated local snapshot when one is
+ *    available, otherwise `DEFAULT_PUBLIC_CONFIG`, so the first paint is
+ *    deterministic even offline.
  *  - Fetches `/public-config` via React Query in the background. On success,
  *    it patches CSS custom properties on `<html>`, switches the i18n language
  *    according to `defaultLocale` (only if the user hasn't already chosen one
@@ -23,11 +24,16 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
   type PropsWithChildren,
 } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getReiwaPublicConfig } from "@/lib/api-client";
+import {
+  readPublicConfigSnapshot,
+  writePublicConfigSnapshot,
+} from "@/lib/public-config-snapshot";
 import {
   DEFAULT_BRANDING,
   DEFAULT_PUBLIC_CONFIG,
@@ -62,17 +68,50 @@ const BrandingContext = createContext<BrandingContextValue>({
 
 const LOCALE_STORAGE_KEY = "reiwa_locale";
 
+/**
+ * Select the value exposed by BrandingProvider. Keeping this separate makes a
+ * failed offline fetch retain the validated snapshot instead of briefly
+ * regressing the UI to the hard-coded theme.
+ */
+export function selectBrandingProviderConfig(
+  data: PublicConfig | undefined,
+  snapshot: PublicConfig | null,
+): PublicConfig {
+  return data ?? snapshot ?? DEFAULT_PUBLIC_CONFIG;
+}
+
+/** Only successful, non-placeholder query data may replace the durable snapshot. */
+export function shouldPersistPublicConfig(
+  data: PublicConfig | undefined,
+  dataUpdatedAt: number,
+  isPlaceholderData: boolean,
+  isSuccess: boolean,
+): data is PublicConfig {
+  return isSuccess && !isPlaceholderData && data !== undefined && dataUpdatedAt > 0;
+}
+
 export function BrandingProvider({ children }: PropsWithChildren) {
   const { i18n } = useTranslation();
+  const [snapshot] = useState(readPublicConfigSnapshot);
 
-  const { data, isLoading, refetch } = useQuery<PublicConfig>({
+  const {
+    data,
+    dataUpdatedAt,
+    isLoading,
+    isPlaceholderData,
+    isSuccess,
+    refetch,
+  } = useQuery<PublicConfig>({
     queryKey: ["public-config"],
     queryFn: getReiwaPublicConfig,
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     retry: 2,
     refetchOnWindowFocus: false,
-    placeholderData: DEFAULT_PUBLIC_CONFIG,
+    // A valid browser snapshot is used only until the request resolves. With
+    // no snapshot (or unavailable storage), this preserves the built-in first
+    // paint defaults exactly as before.
+    placeholderData: selectBrandingProviderConfig(undefined, snapshot),
   });
 
   // Refetch branding when the tab / Mini App regains visibility so an open
@@ -93,12 +132,20 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refetch]);
 
-  const config = data ?? DEFAULT_PUBLIC_CONFIG;
+  const config = selectBrandingProviderConfig(data, snapshot);
 
   // Apply branding tokens to :root whenever the payload changes.
   useEffect(() => {
     applyBrandingToDocument(config.branding);
   }, [config.branding]);
+
+  // Persist only data confirmed by React Query as a real (non-placeholder)
+  // successful result. A failed refresh leaves the last known-good snapshot
+  // untouched for the next cold SPA boot.
+  useEffect(() => {
+    if (!shouldPersistPublicConfig(data, dataUpdatedAt, isPlaceholderData, isSuccess)) return;
+    writePublicConfigSnapshot(data);
+  }, [data, dataUpdatedAt, isPlaceholderData, isSuccess]);
 
   // Set the document (browser tab) title from the operator's webTitle,
   // falling back to projectName, then the brand name.

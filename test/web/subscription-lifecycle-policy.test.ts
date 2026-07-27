@@ -5,6 +5,8 @@ import {
   hasAllReadySubscriptionTargets,
   isRemnawaveSubscriptionReady,
   provisioningCarouselItemKey,
+  retainCarouselItemDuringDeletion,
+  resolveActiveCarouselItemKeyDuringDeletion,
   resolveTrialProvisioningPaymentStatus,
   resolveActiveCarouselItemKey,
   selectCarouselItemAfterRemoval,
@@ -100,6 +102,26 @@ function status(
       provisioning === "FAILED" ? "PROFILE_SYNC_FAILED" : null,
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
+}
+
+function publishActiveKeyAsCarouselEffect(
+  protectedItemKey: string | null,
+  resolvedActiveKey: string | null,
+  requestedActiveKey: string | null,
+  changes: Array<string | null>,
+): void {
+  // Mirrors the render/effect boundary in SubscriptionCarousel. The protected
+  // snapshot is locally retained while the canonical query has already lost it,
+  // so publishing its key would make a controlled parent immediately replace it.
+  if (
+    protectedItemKey !== null &&
+    resolvedActiveKey === protectedItemKey
+  ) {
+    return;
+  }
+  if (resolvedActiveKey !== requestedActiveKey) {
+    changes.push(resolvedActiveKey);
+  }
 }
 
 describe("subscription lifecycle policy", () => {
@@ -356,5 +378,129 @@ describe("subscription lifecycle policy", () => {
     expect(resolveActiveCarouselItemKey(["a", "b"], "missing")).toBe("a");
     expect(resolveActiveCarouselItemKey(["a", "b"], "b")).toBe("b");
     expect(resolveActiveCarouselItemKey([], "b")).toBeNull();
+  });
+
+  it("retains a disappearing active middle card and defers its neighbour handoff until exit completes", () => {
+    const deleting = { key: "b", slotIndex: 1 };
+    const rendered = retainCarouselItemDuringDeletion(
+      [
+        { key: "a", slotIndex: 0 },
+        { key: "c", slotIndex: 2 },
+      ],
+      deleting,
+    );
+
+    expect(rendered).toEqual([
+      { key: "a", slotIndex: 0 },
+      { key: "b", slotIndex: 1 },
+      { key: "c", slotIndex: 2 },
+    ]);
+    const activeKey = resolveActiveCarouselItemKeyDuringDeletion(
+      rendered.map((item) => item.key),
+      deleting.key,
+      deleting.key,
+    );
+    const activeKeyChanges: Array<string | null> = [];
+
+    // This is the render/effect boundary in SubscriptionCarousel: a protected
+    // active slide must not publish an intermediate key while its exit is live.
+    publishActiveKeyAsCarouselEffect(
+      deleting.key,
+      activeKey,
+      deleting.key,
+      activeKeyChanges,
+    );
+    expect(activeKey).toBe(deleting.key);
+    expect(activeKeyChanges).toEqual([]);
+
+    // finishCommittedDeletion is the first point at which a neighbour may be
+    // selected. With a three-card carousel, the middle item hands off right.
+    activeKeyChanges.push(
+      selectCarouselItemAfterRemoval(
+        rendered.map((item) => item.key),
+        deleting.key,
+        activeKey,
+      ),
+    );
+    expect(activeKeyChanges).toEqual(["c"]);
+  });
+
+  it("keeps a delete target renderable if realtime wins before server commit", () => {
+    const deleteTarget = { key: "b", slotIndex: 1 };
+    const rendered = retainCarouselItemDuringDeletion(
+      [
+        { key: "a", slotIndex: 0 },
+        { key: "c", slotIndex: 2 },
+      ],
+      deleteTarget,
+    );
+    const activeKey = resolveActiveCarouselItemKeyDuringDeletion(
+      rendered.map((item) => item.key),
+      deleteTarget.key,
+      null,
+    );
+
+    expect(rendered.map((item) => item.key)).toEqual(["a", "b", "c"]);
+    expect(activeKey).toBe(deleteTarget.key);
+    // The same protected-item guard keeps the parent callback silent while
+    // the confirmation dialog still owns the target snapshot.
+    const activeKeyChanges: Array<string | null> = [];
+    publishActiveKeyAsCarouselEffect(
+      deleteTarget.key,
+      activeKey,
+      deleteTarget.key,
+      activeKeyChanges,
+    );
+    expect(activeKeyChanges).toEqual([]);
+  });
+
+  it("keeps first and last deletion snapshots anchored without duplicating them", () => {
+    const first = retainCarouselItemDuringDeletion(
+      [
+        { key: "b", slotIndex: 1 },
+        { key: "c", slotIndex: 2 },
+      ],
+      { key: "a", slotIndex: 0 },
+    );
+    const last = retainCarouselItemDuringDeletion(
+      [
+        { key: "a", slotIndex: 0 },
+        { key: "b", slotIndex: 1 },
+      ],
+      { key: "c", slotIndex: 2 },
+    );
+    const unchanged = retainCarouselItemDuringDeletion(
+      [
+        { key: "a", slotIndex: 0 },
+        { key: "b", slotIndex: 1 },
+      ],
+      { key: "b", slotIndex: 1 },
+    );
+
+    expect(first).toEqual([
+      { key: "a", slotIndex: 0 },
+      { key: "b", slotIndex: 1 },
+      { key: "c", slotIndex: 2 },
+    ]);
+    expect(last).toEqual([
+      { key: "a", slotIndex: 0 },
+      { key: "b", slotIndex: 1 },
+      { key: "c", slotIndex: 2 },
+    ]);
+    expect(unchanged.map((item) => item.key)).toEqual(["a", "b"]);
+    expect(
+      selectCarouselItemAfterRemoval(
+        first.map((item) => item.key),
+        "a",
+        "a",
+      ),
+    ).toBe("b");
+    expect(
+      selectCarouselItemAfterRemoval(
+        last.map((item) => item.key),
+        "c",
+        "c",
+      ),
+    ).toBe("b");
   });
 });

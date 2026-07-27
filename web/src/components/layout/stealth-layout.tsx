@@ -13,7 +13,7 @@
  */
 
 import { useEffect } from "react";
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { BottomNav } from "@/components/layout/bottom-nav";

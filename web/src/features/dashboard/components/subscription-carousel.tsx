@@ -28,7 +28,8 @@ import type {
 
 import {
   provisioningCarouselItemKey,
-  resolveActiveCarouselItemKey,
+  resolveActiveCarouselItemKeyDuringDeletion,
+  retainCarouselItemDuringDeletion,
   selectCarouselItemAfterRemoval,
   subscriptionCarouselItemKey,
   type SubscriptionCarouselItem,
@@ -115,21 +116,10 @@ export function SubscriptionCarousel({
     [onDeletionActiveChange],
   );
 
-  const renderedItems = useMemo(() => {
-    if (
-      protectedItem === null ||
-      items.some((item) => item.key === protectedItem.key)
-    ) {
-      return [...items];
-    }
-    const next = [...items];
-    next.splice(
-      Math.min(protectedItem.slotIndex, next.length),
-      0,
-      protectedItem,
-    );
-    return next.map((item, slotIndex) => ({ ...item, slotIndex }));
-  }, [items, protectedItem]);
+  const renderedItems = useMemo(
+    () => retainCarouselItemDuringDeletion(items, protectedItem),
+    [items, protectedItem],
+  );
 
   const itemKeys = renderedItems.map((item) => item.key);
   // While the dissolve plays, stay on the dissolving card. The parent's list has
@@ -137,10 +127,11 @@ export function SubscriptionCarousel({
   // `activeIndex` moves, the scroll-sync effect fires, and the animation is
   // carried off-screen ~400ms in. Keeping the branch mounted is not enough on
   // its own; with two or more subscriptions that scroll was still hiding it.
-  const activeKey =
-    deleting === null
-      ? resolveActiveCarouselItemKey(itemKeys, activeItemKey)
-      : deleting.item.key;
+  const activeKey = resolveActiveCarouselItemKeyDuringDeletion(
+    itemKeys,
+    activeItemKey,
+    deleting?.item.key ?? null,
+  );
   const activeIndex = Math.max(
     0,
     renderedItems.findIndex((item) => item.key === activeKey),

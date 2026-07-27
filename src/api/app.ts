@@ -9,6 +9,7 @@ import type { Logger } from "pino";
 import type { AdminClient } from "../lib/admin-client.js";
 import type { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore, createWebSessionMiddleware } from "../infrastructure/redis/session.js";
+import { RedisPublicConfigPersistence } from "../infrastructure/public-config/redis-public-config-persistence.js";
 import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
@@ -70,6 +71,14 @@ export interface CreateAppDeps {
 
 export function createApp(deps: CreateAppDeps) {
   const { config, logger } = deps;
+  // Share the composition root's Redis connection. The snapshot adapter does
+  // not own connection lifecycle, so web-session shutdown remains unchanged.
+  const publicConfigPersistence = deps.webSessionStore
+    ? new RedisPublicConfigPersistence({
+        redis: deps.webSessionStore.getRedis(),
+        logger,
+      })
+    : undefined;
   const errorReporter = createErrorReporter({ adminClient: deps.adminClient, source: 'api' });
   const reiwaPublicUrl = resolveReiwaPublicUrl(config);
   const app = express();
@@ -256,6 +265,7 @@ export function createApp(deps: CreateAppDeps) {
       supportUsername: config.BOT_SUPPORT_USERNAME ?? null,
       botUsername: config.BOT_USERNAME ?? null,
       webBaseUrl: reiwaPublicUrl,
+      publicConfigPersistence,
     }),
   );
   app.use("/api/v1", createLandingRouter({ adminClient: deps.adminClient, logger }));
@@ -398,8 +408,10 @@ export function createApp(deps: CreateAppDeps) {
     res.setHeader("Content-Type", "application/manifest+json");
     res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
     try {
-      const payload = await getPublicConfigPayload(deps.adminClient, (err) =>
-        logger?.debug?.({ err }, "manifest branding refresh failed"),
+      const payload = await getPublicConfigPayload(
+        deps.adminClient,
+        (err) => logger?.debug?.({ err }, "manifest branding refresh failed"),
+        publicConfigPersistence,
       );
       const branding = (payload.body as { branding?: unknown }).branding;
       res.json(buildWebManifest(branding as Parameters<typeof buildWebManifest>[0]));
@@ -477,6 +489,13 @@ export function createApp(deps: CreateAppDeps) {
           });
         }
       })();
+    });
+    // A stale entry document can request a hashed chunk that a new release has
+    // removed. Never hand that request the SPA document: Workbox and browsers
+    // can otherwise cache the 200 HTML response as JavaScript, which prevents
+    // the normal stale-chunk recovery from loading the new build.
+    app.get(/^\/assets\/.*/, (_req: Request, res: Response) => {
+      res.status(404).end();
     });
     // SPA fallback for non-API GETs — hand any unmatched route to the
     // client router. API 404s are left to the routers above.

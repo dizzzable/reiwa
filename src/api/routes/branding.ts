@@ -17,6 +17,11 @@ import { Router } from "express";
 import { createHash } from "node:crypto";
 import type { Logger } from "pino";
 
+import {
+  isPublicConfigSnapshot,
+  type PublicConfigPersistencePort,
+  type PublicConfigSnapshot,
+} from "../../application/ports/public-config-persistence.port.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 
@@ -45,12 +50,16 @@ export function resetBrandingCache(): void {
   packsCache = null;
 }
 
-/** Minimal default payload (no admin client) so the SPA / manifest can still
- *  bootstrap. Locales fall back to Russian-only. */
-function defaultPublicConfig(): unknown {
+/**
+ * First-boot payload when no operator snapshot exists. Keep this exactly in
+ * sync with `web/src/types/branding.ts#DEFAULT_PUBLIC_CONFIG`: unlike a
+ * response fetched after mount, this value can be the very first paint.
+ */
+function defaultPublicConfig(): PublicConfigSnapshot {
   return {
     branding: {
-      brandName: "Rezeis",
+      brandName: "Reiwa",
+      tagline: null,
       logoUrl: null,
       pwaIconUrl: null,
       primary: "#22c55e",
@@ -59,22 +68,113 @@ function defaultPublicConfig(): unknown {
       bgSecondary: "#171717",
       cardGradient: "linear-gradient(135deg, #064e3b 0%, #22c55e 100%)",
       cardPattern: null,
+      cardLogo: "DEFAULT",
+      cardLogoUrl: null,
+      cardEffect: "aurora",
+      cardEffectProps: {},
+      cardEffectOpacity: 1,
+      cardEffectsByIndex: [],
       bgEffect: "NONE",
+      iconColorMode: "default",
+      iconColors: {},
       borderRadius: "rounded-2xl",
-      fontFamily: "Inter, system-ui, sans-serif",
+      fontFamily: "Geist Variable, system-ui, sans-serif",
+      appBackground: {
+        kind: "none",
+        effect: "NONE",
+        props: {},
+        opacity: 1,
+        gradient: "linear-gradient(135deg, #0a0a0a 0%, #171717 100%)",
+        texture: {
+          pattern: "dots",
+          color: "#22c55e",
+          background: "#0a0a0a",
+          scale: 24,
+          opacity: 0.15,
+        },
+      },
+      planCardStyles: {},
+      navItems: [
+        { id: "subscriptions", visible: true },
+        { id: "referrals", visible: true },
+        { id: "settings", visible: true },
+        { id: "plans", visible: false },
+        { id: "devices", visible: false },
+        { id: "activity", visible: false },
+        { id: "promo", visible: false },
+        { id: "support", visible: false },
+      ],
+      navGap: 2,
     },
-    locales: ["ru"],
+    locales: ["ru", "en"],
     defaultLocale: "ru",
+    defaultCurrency: "USD",
+    customIcons: [],
+    botUsername: null,
+    platformBranding: { projectName: null, webTitle: null },
+    emailEnabled: false,
   };
 }
 
-async function fetchFreshPayload(adminClient: AdminClient | null): Promise<CachedPayload> {
-  if (!adminClient) {
-    const body = defaultPublicConfig();
-    return { body, etag: computeEtag(body), fetchedAt: Date.now() };
-  }
-  const body = await adminClient.branding.getReiwaPublicConfig();
+function toCachedPayload(body: PublicConfigSnapshot): CachedPayload {
   return { body, etag: computeEtag(body), fetchedAt: Date.now() };
+}
+
+async function fetchFreshPayload(
+  adminClient: AdminClient,
+  persistence: PublicConfigPersistencePort | undefined,
+): Promise<CachedPayload> {
+  const body: unknown = await adminClient.branding.getReiwaPublicConfig();
+  if (!isPublicConfigSnapshot(body)) {
+    throw new Error("rezeis-admin returned an invalid public-config payload");
+  }
+
+  // This is the only save path: the body was received from a successful
+  // upstream call and passed the runtime schema guard. A persistence failure
+  // is intentionally non-fatal; the fresh response is still safe to serve.
+  try {
+    await persistence?.save(body);
+  } catch {
+    // Port implementations are best-effort, but do not let a faulty test or
+    // third-party adapter turn a valid upstream response into an outage.
+  }
+  return toCachedPayload(body);
+}
+
+async function loadPersistedPayload(
+  persistence: PublicConfigPersistencePort | undefined,
+): Promise<CachedPayload | null> {
+  if (persistence === undefined) return null;
+  try {
+    const snapshot = await persistence.load();
+    // Revalidate at the route boundary even though the Redis adapter also
+    // validates. This keeps injected adapters from poisoning a public route.
+    return snapshot !== null && isPublicConfigSnapshot(snapshot)
+      ? toCachedPayload(snapshot)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshPayload(
+  adminClient: AdminClient | null,
+  persistence: PublicConfigPersistencePort | undefined,
+  onBgFailure: ((err: unknown) => void) | undefined,
+): Promise<CachedPayload> {
+  // A deployment without upstream credentials can still serve an existing
+  // snapshot. The hard defaults are used only when no snapshot has ever been
+  // recorded (or durable storage itself is unavailable).
+  if (adminClient === null) {
+    return (await loadPersistedPayload(persistence)) ?? toCachedPayload(defaultPublicConfig());
+  }
+
+  try {
+    return await fetchFreshPayload(adminClient, persistence);
+  } catch (err: unknown) {
+    onBgFailure?.(err);
+    return (await loadPersistedPayload(persistence)) ?? toCachedPayload(defaultPublicConfig());
+  }
 }
 
 /**
@@ -86,6 +186,7 @@ async function fetchFreshPayload(adminClient: AdminClient | null): Promise<Cache
 export async function getPublicConfigPayload(
   adminClient: AdminClient | null,
   onBgFailure?: (err: unknown) => void,
+  persistence?: PublicConfigPersistencePort,
 ): Promise<CachedPayload> {
   const now = Date.now();
   if (cached !== null && now - cached.fetchedAt < CACHE_TTL_MS) {
@@ -94,31 +195,26 @@ export async function getPublicConfigPayload(
   // Stale-while-revalidate: serve stale immediately, refresh in background.
   if (cached !== null && now - cached.fetchedAt < STALE_WHILE_REVALIDATE_MS) {
     if (inflight === null) {
-      inflight = fetchFreshPayload(adminClient)
+      inflight = refreshPayload(adminClient, persistence, onBgFailure)
         .then((fresh) => {
           cached = fresh;
-          inflight = null;
           return fresh;
         })
-        .catch((err) => {
+        .finally(() => {
           inflight = null;
-          onBgFailure?.(err);
-          return cached as CachedPayload;
         });
     }
     return cached;
   }
   // Cache fully expired — wait for fresh fetch (deduplicated across requests).
   if (inflight === null) {
-    inflight = fetchFreshPayload(adminClient)
+    inflight = refreshPayload(adminClient, persistence, onBgFailure)
       .then((fresh) => {
         cached = fresh;
-        inflight = null;
         return fresh;
       })
-      .catch((err) => {
+      .finally(() => {
         inflight = null;
-        throw err;
       });
   }
   return inflight;
@@ -127,6 +223,8 @@ export async function getPublicConfigPayload(
 export function createBrandingRouter(deps: {
   adminClient: AdminClient | null;
   logger?: Logger;
+  /** Durable last-known-good snapshot for admin-outage / restart fallback. */
+  publicConfigPersistence?: PublicConfigPersistencePort;
   /**
    * Operator support handle (`BOT_SUPPORT_USERNAME`), merged into the cabinet
    * public-config so the Support page can render a "contact support on
@@ -142,7 +240,7 @@ export function createBrandingRouter(deps: {
   botUsername?: string | null;
   webBaseUrl?: string | null;
 }) {
-  const { adminClient, logger } = deps;
+  const { adminClient, logger, publicConfigPersistence } = deps;
   const supportUsername =
     typeof deps.supportUsername === 'string' && deps.supportUsername.trim().length > 0
       ? deps.supportUsername.replace(/^@+/, '').trim()
@@ -171,7 +269,7 @@ export function createBrandingRouter(deps: {
   };
 
   const getPayload = (): Promise<CachedPayload> =>
-    getPublicConfigPayload(adminClient, logBgFailure);
+    getPublicConfigPayload(adminClient, logBgFailure, publicConfigPersistence);
 
   // GET /api/v1/public-config — full payload (branding + locales)
   router.get("/public-config", async (req, res) => {

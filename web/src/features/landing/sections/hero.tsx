@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
 import { pickLocalized, safeUrl, type LandingSection } from '../landing-schema';
 

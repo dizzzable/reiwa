@@ -372,10 +372,17 @@ describe("subscription deletion duration", () => {
     );
   });
 
-  it("uses a <=200ms reduced-motion exit", () => {
-    expect(resolveSubscriptionDeletionDuration(true, 1_000)).toBe(
-      SUBSCRIPTION_DELETION_TIMING.reduced,
+  it("keeps the deleting card present for its designed lifecycle when the browser prefers reduced motion", () => {
+    const designedLifecycleMs = 4_500;
+
+    // This value drives both the visible transition and the wrapper's
+    // deterministic removal timer. A browser media preference must not turn
+    // an explicit successful deletion into the former ~160 ms handoff.
+    expect(
+      resolveSubscriptionDeletionDuration(true, designedLifecycleMs),
+    ).toBe(designedLifecycleMs);
+    expect(resolveSubscriptionDeletionDuration(true)).toBe(
+      SUBSCRIPTION_DELETION_TIMING.default,
     );
-    expect(SUBSCRIPTION_DELETION_TIMING.reduced).toBeLessThanOrEqual(200);
   });
 });

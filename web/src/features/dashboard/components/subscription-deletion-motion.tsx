@@ -142,7 +142,7 @@ export function SubscriptionDeletionMotion({
         animate={
           active
             ? reducedMotion
-              ? { opacity: 0 }
+              ? { opacity: [1, 1, 0] }
               : {
                   clipPath: [
                     "inset(0 0 0 0%)",
@@ -162,6 +162,7 @@ export function SubscriptionDeletionMotion({
               ? {
                   duration: duration / 1_000,
                   ease: "easeOut",
+                  times: [0, 0.8, 1],
                 }
               : {
                   clipPath: {
@@ -181,6 +182,20 @@ export function SubscriptionDeletionMotion({
       >
         {children}
       </motion.div>
+
+      {active && reducedMotion && (
+        <motion.div
+          aria-hidden
+          className="subscription-card-deletion__reduced-cue pointer-events-none absolute inset-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 1, 1, 0] }}
+          transition={{
+            duration: duration / 1_000,
+            ease: "easeOut",
+            times: [0, 0.06, 0.8, 1],
+          }}
+        />
+      )}
 
       {active && !reducedMotion && (
         <div aria-hidden className="pointer-events-none absolute inset-0">

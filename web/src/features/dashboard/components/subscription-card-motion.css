@@ -162,6 +162,29 @@
   box-shadow: 0 0 6px var(--motion-accent);
 }
 
+/* A still, high-contrast deletion state for people who ask the browser to
+ * reduce motion. It carries the same destructive meaning as the sweep without
+ * moving the card, beam, glyphs, or particles across the viewport. */
+.subscription-card-deletion__reduced-cue {
+  z-index: 44;
+  border: 1px solid color-mix(in oklab, var(--motion-accent), white 22%);
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--motion-accent), transparent 87%),
+      color-mix(in oklab, #080b12, transparent 14%)
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0 9px,
+      color-mix(in oklab, var(--motion-accent), transparent 82%) 9px 10px
+    );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--motion-accent), transparent 76%),
+    0 0 24px color-mix(in oklab, var(--motion-accent), transparent 72%);
+}
+
 @keyframes subscription-card-rail-drift {
   from {
     transform: translateX(0);

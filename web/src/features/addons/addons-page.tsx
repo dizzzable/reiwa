@@ -10,7 +10,7 @@
  */
 import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 import { Gauge, Plus, Smartphone } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";

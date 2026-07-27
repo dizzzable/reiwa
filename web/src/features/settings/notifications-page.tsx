@@ -6,7 +6,7 @@
  *   • Настройка уведомлений → /settings/notifications/settings
  */
 
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { Bell, BellRing } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";

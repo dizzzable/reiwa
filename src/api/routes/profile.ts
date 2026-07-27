@@ -6,6 +6,7 @@ import { createFlexibleSessionMiddleware, createOptionalSessionMiddleware } from
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity, hasUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { invalidateStaleUserSession } from "../lib/stale-user-session.js";
 
 export function createProfileRouter(deps: {
   adminClient: AdminClient | null;
@@ -38,7 +39,14 @@ export function createProfileRouter(deps: {
     try {
       const session = await adminClient?.user.getSession(resolveUserIdentity(req));
       res.json(session ?? req.session ?? null);
-    } catch {
+    } catch (error: unknown) {
+      // Preserve the probe's deliberate 200 -> null contract, but first
+      // remove the stale CUID so later protected requests cannot keep using
+      // an authenticated cookie for an account that has been deleted.
+      if (await invalidateStaleUserSession(req, error)) {
+        res.json(null);
+        return;
+      }
       res.json(req.session ?? null);
     }
   });
@@ -131,7 +139,11 @@ export function createProfileRouter(deps: {
     try {
       const session = await adminClient?.user.getSession(resolveUserIdentity(req));
       res.json(session ?? req.session ?? null);
-    } catch {
+    } catch (error: unknown) {
+      if (await invalidateStaleUserSession(req, error)) {
+        res.json(null);
+        return;
+      }
       res.json(req.session ?? null);
     }
   });

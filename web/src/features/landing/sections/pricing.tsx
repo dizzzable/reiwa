@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
 import { getPlans } from '@/lib/api-client';
 import { pickLocalized, safeUrl, type LandingSection } from '../landing-schema';

@@ -1,7 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-import { i18n } from '@/i18n/i18n';
-import { reportClientError } from '@/lib/client-error-reporter';
+import { i18n } from '../i18n/i18n';
+import { reportClientError } from '../lib/client-error-reporter';
+import { recoverFromDynamicImportFailure } from '../lib/dynamic-import-recovery';
 
 interface Props {
   readonly children: ReactNode;
@@ -28,6 +29,14 @@ export class AppErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: unknown, info: ErrorInfo): void {
+    // A stale iPhone Safari tab can retain the prior entry document after a
+    // release, then request a now-missing hashed lazy chunk. One reload gets
+    // the new entry; the recovery helper records the failing signature so a
+    // persistent network/CDN problem falls through to this boundary instead
+    // of looping forever. A recovered deploy mismatch is expected cache churn,
+    // so do not page it as an application crash.
+    if (recoverFromDynamicImportFailure(error)) return;
+
     reportClientError({
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,

@@ -43,3 +43,16 @@ export function isUpstreamStatus(e: unknown, status: number): boolean {
   const message = e instanceof Error ? e.message : String(e ?? '');
   return message.includes(String(status));
 }
+
+/**
+ * True only for the typed rezeis-admin response that says the authenticated
+ * user no longer exists. Do not use a status-only 404 check for this: other
+ * missing upstream resources must keep their own error behaviour.
+ */
+export function isUpstreamUserNotFound(e: unknown): boolean {
+  return (
+    e instanceof UpstreamError &&
+    e.status === 404 &&
+    /\buser not found\b/i.test(e.body)
+  );
+}

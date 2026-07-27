@@ -15,7 +15,7 @@
  * In that case we navigate to a sensible parent route instead.
  */
 import { useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 export function useSafeBack(fallback = "/dashboard"): () => void {
   const navigate = useNavigate();

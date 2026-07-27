@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'

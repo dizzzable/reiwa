@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react'

@@ -12,7 +12,7 @@ declare let self: ServiceWorkerGlobalScope
 // `activate` cleanup purges the previous generation's caches. v2 fixes the
 // stale-app bug where navigations were served CacheFirst (see below).
 const STATIC_CACHE = 'static-assets-v2'
-const API_CACHE = 'api-responses-v2'
+const API_CACHE = 'api-responses-v3'
 const NAV_CACHE = 'navigations-v2'
 
 // ─── Strategy Configuration ────────────────────────────────────────────────────
@@ -163,7 +163,6 @@ registerRoute(staticAssetsRoute)
 //
 // Cached (safe, public/config, GET):
 //   /api/v1/branding         — operator branding
-//   /api/v1/public-config    — branding + locales bundle
 //   /api/v1/plans            — public plan catalog
 //   /api/v1/gateways         — enabled payment gateways (catalog, not user)
 //   /api/v1/faq              — operator FAQ content
@@ -174,12 +173,17 @@ registerRoute(staticAssetsRoute)
 // navigation, and an outage now surfaces an explicit error state rather than a
 // masked/stale list.
 //
+// `/api/v1/public-config` is also deliberately NOT SW-cached. A stale Workbox
+// response could otherwise hide a `reiwa.branding.invalidate` webhook update
+// even after the server cache has been cleared. Offline and cold-start support
+// comes from the validated localStorage snapshot used by BrandingProvider; it
+// never wins over an available network response.
+//
 // NOT cached (account-scoped / sensitive): /auth/*, /profile, /subscription,
 //   /payments/*, /activity, /promo, /referrals, /devices, /partner,
 //   /support, /linking/*, /push/*, /realtime/*.
 const CACHEABLE_API_EXACT = new Set<string>([
   '/api/v1/branding',
-  '/api/v1/public-config',
   '/api/v1/plans',
   '/api/v1/gateways',
   '/api/v1/faq',

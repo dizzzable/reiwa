@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Star, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 import { getReferralSummary, getInviteCapacity } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";

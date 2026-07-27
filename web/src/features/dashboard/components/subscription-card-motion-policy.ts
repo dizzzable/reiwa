@@ -269,14 +269,16 @@ export const SUBSCRIPTION_DELETION_TIMING = {
   minimum: 3_000,
   default: 5_000,
   maximum: 6_000,
-  reduced: 160,
 } as const;
 
 export function resolveSubscriptionDeletionDuration(
-  reducedMotion: boolean,
+  _reducedMotion: boolean,
   requestedMs: number = SUBSCRIPTION_DELETION_TIMING.default,
 ): number {
-  if (reducedMotion) return SUBSCRIPTION_DELETION_TIMING.reduced;
+  // Reduced motion changes *how* the state transition is drawn, not how long
+  // its committed deletion guard stays mounted. A short 160 ms exit made a
+  // successful delete look like an abrupt unmount and bypassed the feedback
+  // users need before the empty state replaces the card.
   if (!Number.isFinite(requestedMs)) {
     return SUBSCRIPTION_DELETION_TIMING.default;
   }

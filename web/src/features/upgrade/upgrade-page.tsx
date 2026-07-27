@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { ArrowUpCircle, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";

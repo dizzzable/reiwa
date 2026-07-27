@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef, useState, type JSX } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useReducedMotion } from "motion/react";
 import { toast } from "sonner";

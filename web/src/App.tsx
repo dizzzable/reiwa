@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useParams } from "react-router";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
 import { useAdAttribution } from "@/hooks/use-ad-attribution";

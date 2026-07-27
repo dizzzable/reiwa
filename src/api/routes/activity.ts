@@ -5,6 +5,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { invalidateStaleUserSession } from "../lib/stale-user-session.js";
 
 export function createActivityRouter(deps: {
   adminClient: AdminClient | null;
@@ -40,8 +41,16 @@ export function createActivityRouter(deps: {
     "/activity/notifications",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.activity.getNotifications(resolveUserIdentity(req));
-      res.json(result ?? { notifications: [] });
+      try {
+        const result = await adminClient?.activity.getNotifications(resolveUserIdentity(req));
+        res.json(result ?? { notifications: [] });
+      } catch (error: unknown) {
+        if (await invalidateStaleUserSession(req, error)) {
+          res.status(401).json({ message: "Session expired" });
+          return;
+        }
+        throw error;
+      }
     },
   );
 
@@ -51,7 +60,16 @@ export function createActivityRouter(deps: {
     "/activity/notifications/unread-count",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.activity.getUnreadCount(resolveUserIdentity(req));
+      let result: unknown;
+      try {
+        result = await adminClient?.activity.getUnreadCount(resolveUserIdentity(req));
+      } catch (error: unknown) {
+        if (await invalidateStaleUserSession(req, error)) {
+          res.status(401).json({ message: "Session expired" });
+          return;
+        }
+        throw error;
+      }
       // rezeis returns `{ unread: number }`; the SPA bell expects `{ count }`.
       // Normalise here (accept either) so a freshly-delivered notification
       // actually lights up the bell instead of always reading 0.

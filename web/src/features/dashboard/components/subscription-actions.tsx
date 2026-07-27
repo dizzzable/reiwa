@@ -14,7 +14,7 @@
 
 import { ArrowUpCircle, Link2, Plus, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import type { Subscription } from "@/types/api";
