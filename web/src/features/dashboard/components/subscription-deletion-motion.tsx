@@ -9,6 +9,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 import {
+  SUBSCRIPTION_DELETION_REDUCED_PRESENTATION,
   SUBSCRIPTION_DELETION_TIMING,
   resolveSubscriptionDeletionDuration,
 } from "./subscription-card-motion-policy";
@@ -94,6 +95,7 @@ export function SubscriptionDeletionMotion({
     reducedMotion,
     durationMs,
   );
+  const reducedPresentation = SUBSCRIPTION_DELETION_REDUCED_PRESENTATION;
   const completedRef = useRef(false);
   const onExitCompleteRef = useRef(onExitComplete);
 
@@ -130,6 +132,7 @@ export function SubscriptionDeletionMotion({
       )}
       style={accentStyle(visual.primary)}
       data-deletion-active={active ? "true" : "false"}
+      data-deletion-motion={reducedMotion ? "reduced" : "full"}
     >
       <motion.div
         // The wrapper is mounted only after the deletion request succeeds, so
@@ -142,7 +145,10 @@ export function SubscriptionDeletionMotion({
         animate={
           active
             ? reducedMotion
-              ? { opacity: [1, 1, 0] }
+              ? {
+                  opacity: [...reducedPresentation.cardOpacity],
+                  filter: [...reducedPresentation.cardFilter],
+                }
               : {
                   clipPath: [
                     "inset(0 0 0 0%)",
@@ -162,7 +168,7 @@ export function SubscriptionDeletionMotion({
               ? {
                   duration: duration / 1_000,
                   ease: "easeOut",
-                  times: [0, 0.8, 1],
+                  times: [...reducedPresentation.cardTimes],
                 }
               : {
                   clipPath: {
@@ -178,7 +184,15 @@ export function SubscriptionDeletionMotion({
                 }
             : { duration: 0 }
         }
-        style={active ? { willChange: "clip-path, opacity" } : undefined}
+        style={
+          active
+            ? {
+                willChange: reducedMotion
+                  ? "filter, opacity"
+                  : "clip-path, opacity",
+              }
+            : undefined
+        }
       >
         {children}
       </motion.div>
@@ -188,11 +202,11 @@ export function SubscriptionDeletionMotion({
           aria-hidden
           className="subscription-card-deletion__reduced-cue pointer-events-none absolute inset-0"
           initial={{ opacity: 0 }}
-          animate={{ opacity: [0, 1, 1, 0] }}
+          animate={{ opacity: [...reducedPresentation.cueOpacity] }}
           transition={{
             duration: duration / 1_000,
             ease: "easeOut",
-            times: [0, 0.06, 0.8, 1],
+            times: [...reducedPresentation.cueTimes],
           }}
         />
       )}

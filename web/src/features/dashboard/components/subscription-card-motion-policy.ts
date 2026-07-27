@@ -271,6 +271,24 @@ export const SUBSCRIPTION_DELETION_TIMING = {
   maximum: 6_000,
 } as const;
 
+/**
+ * A visible, non-spatial fallback for browsers that prefer reduced motion.
+ * Feedback starts near the beginning of the deletion lifecycle instead of
+ * holding an unchanged card until the final fade.
+ */
+export const SUBSCRIPTION_DELETION_REDUCED_PRESENTATION = {
+  cardOpacity: [1, 0.82, 0.48, 0],
+  cardFilter: [
+    "saturate(1) brightness(1)",
+    "saturate(0.72) brightness(0.86)",
+    "saturate(0.28) brightness(0.62)",
+    "saturate(0) brightness(0.34)",
+  ],
+  cardTimes: [0, 0.08, 0.68, 1],
+  cueOpacity: [0, 1, 0.9, 0.66, 0],
+  cueTimes: [0, 0.035, 0.24, 0.82, 1],
+} as const;
+
 export function resolveSubscriptionDeletionDuration(
   _reducedMotion: boolean,
   requestedMs: number = SUBSCRIPTION_DELETION_TIMING.default,

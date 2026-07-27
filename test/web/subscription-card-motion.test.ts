@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   SUBSCRIPTION_CREATION_TIMING,
+  SUBSCRIPTION_DELETION_REDUCED_PRESENTATION,
   SUBSCRIPTION_DELETION_TIMING,
   resolveNextSubscriptionCreationWake,
   resolveSubscriptionCreationState,
@@ -384,5 +385,16 @@ describe("subscription deletion duration", () => {
     expect(resolveSubscriptionDeletionDuration(true)).toBe(
       SUBSCRIPTION_DELETION_TIMING.default,
     );
+  });
+
+  it("starts visible reduced-motion deletion feedback immediately instead of holding a static card", () => {
+    const presentation = SUBSCRIPTION_DELETION_REDUCED_PRESENTATION;
+
+    expect(presentation.cardTimes[1]).toBeLessThanOrEqual(0.1);
+    expect(presentation.cardOpacity[1]).toBeLessThan(1);
+    expect(presentation.cardOpacity.at(-1)).toBe(0);
+    expect(presentation.cueTimes[1]).toBeLessThanOrEqual(0.05);
+    expect(presentation.cueOpacity[1]).toBe(1);
+    expect(presentation.cueOpacity.at(-1)).toBe(0);
   });
 });
