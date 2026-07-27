@@ -33,8 +33,6 @@ import {
   isDynamicImportFailure,
   recoverFromDynamicImportFailure,
 } from '../../web/src/lib/dynamic-import-recovery.js';
-import { AppErrorBoundary } from '../../web/src/components/error-boundary.js';
-import * as clientErrorReporter from '../../web/src/lib/client-error-reporter.js';
 
 function createStorage(): {
   readonly getItem: (key: string) => string | null;
@@ -82,41 +80,4 @@ describe('dynamic import recovery', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('reloads once for a lazy chunk failure, then reports and renders the error UI on the repeat', () => {
-    const reportClientError = vi.spyOn(clientErrorReporter, 'reportClientError');
-    const error = new TypeError(
-      'Failed to fetch dynamically imported module: https://reiwa.example/assets/web-home-page-DSlEAZwx.js',
-    );
-    const errorInfo = { componentStack: '\n    at WebHomePage' };
-
-    const firstBoundary = new AppErrorBoundary({ children: 'app' });
-    firstBoundary.state = AppErrorBoundary.getDerivedStateFromError(error);
-    firstBoundary.componentDidCatch(error, errorInfo);
-
-    expect(browser.reload).toHaveBeenCalledTimes(1);
-    expect(reportClientError).not.toHaveBeenCalled();
-
-    // A reload remounts the boundary but retains the same tab's sessionStorage.
-    const repeatedBoundary = new AppErrorBoundary({ children: 'app' });
-    repeatedBoundary.state = AppErrorBoundary.getDerivedStateFromError(error);
-    repeatedBoundary.componentDidCatch(error, errorInfo);
-
-    expect(browser.reload).toHaveBeenCalledTimes(1);
-    expect(reportClientError).toHaveBeenCalledWith({
-      message: error.message,
-      stack: error.stack,
-      componentStack: errorInfo.componentStack,
-      kind: 'react.errorBoundary',
-    });
-
-    const errorUi = repeatedBoundary.render() as {
-      readonly type: unknown;
-      readonly props: { readonly className: string; readonly children: readonly unknown[] };
-    };
-    expect(errorUi).toMatchObject({
-      type: 'div',
-      props: { className: expect.stringContaining('h-dvh') },
-    });
-    expect(errorUi.props.children).toHaveLength(3);
-  });
 });

@@ -35,6 +35,10 @@ import {
   writePublicConfigSnapshot,
 } from "@/lib/public-config-snapshot";
 import {
+  selectBrandingProviderConfig,
+  shouldPersistPublicConfig,
+} from "@/lib/branding-provider-policy";
+import {
   DEFAULT_BRANDING,
   DEFAULT_PUBLIC_CONFIG,
   type Branding,
@@ -67,28 +71,6 @@ const BrandingContext = createContext<BrandingContextValue>({
 });
 
 const LOCALE_STORAGE_KEY = "reiwa_locale";
-
-/**
- * Select the value exposed by BrandingProvider. Keeping this separate makes a
- * failed offline fetch retain the validated snapshot instead of briefly
- * regressing the UI to the hard-coded theme.
- */
-export function selectBrandingProviderConfig(
-  data: PublicConfig | undefined,
-  snapshot: PublicConfig | null,
-): PublicConfig {
-  return data ?? snapshot ?? DEFAULT_PUBLIC_CONFIG;
-}
-
-/** Only successful, non-placeholder query data may replace the durable snapshot. */
-export function shouldPersistPublicConfig(
-  data: PublicConfig | undefined,
-  dataUpdatedAt: number,
-  isPlaceholderData: boolean,
-  isSuccess: boolean,
-): data is PublicConfig {
-  return isSuccess && !isPlaceholderData && data !== undefined && dataUpdatedAt > 0;
-}
 
 export function BrandingProvider({ children }: PropsWithChildren) {
   const { i18n } = useTranslation();

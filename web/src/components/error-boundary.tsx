@@ -1,8 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-import { i18n } from '../i18n/i18n';
-import { reportClientError } from '../lib/client-error-reporter';
-import { recoverFromDynamicImportFailure } from '../lib/dynamic-import-recovery';
+import { i18n } from '@/i18n/i18n';
+import { reportClientError } from '@/lib/client-error-reporter';
+import { recoverFromDynamicImportFailure } from '@/lib/dynamic-import-recovery';
 
 interface Props {
   readonly children: ReactNode;

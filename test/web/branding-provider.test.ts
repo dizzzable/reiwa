@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   selectBrandingProviderConfig,
   shouldPersistPublicConfig,
-} from "../../web/src/lib/branding-provider.js";
+} from "../../web/src/lib/branding-provider-policy.js";
 import {
   DEFAULT_PUBLIC_CONFIG,
   type PublicConfig,
