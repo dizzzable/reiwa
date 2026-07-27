@@ -12,7 +12,8 @@
 ### 🧪 Проверка
 
 - Прод на момент диагностики отвечал версией `0.9.6.62`, а Chrome в живом профиле сообщал `matchMedia('(prefers-reduced-motion: reduce)').matches === true`.
-- `596/596` Vitest, `29/29` property-based tests, root typecheck и web production build прошли успешно.
+- `597/597` Vitest, `29/29` property-based tests, root/web typecheck и обе production-сборки прошли успешно.
+- Реальный компонент прогнан в Chrome с `prefers-reduced-motion: reduce`: `mode=full`, 16 glyphs, 15 частиц, лазер остаётся в DOM на 4,2 секунде и завершает стирание после полного 5-секундного цикла.
 
 **Полный список изменений:** https://github.com/dizzzable/reiwa/compare/v0.9.6.62...v0.9.6.63
 
