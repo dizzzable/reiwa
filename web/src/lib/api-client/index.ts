@@ -68,9 +68,11 @@ export { getPlans } from "./plans.js";
 export {
   getTariffConstructorManifest,
   getTariffConstructorQuote,
+  createTariffConstructorCheckout,
   type TariffConstructorManifest,
   type TariffConstructorQuote,
   type TariffConstructorQuoteRequest,
+  type TariffConstructorCheckoutRequest,
   type TariffModuleType,
 } from './tariff-constructor.js';
 

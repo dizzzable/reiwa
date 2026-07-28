@@ -194,6 +194,7 @@ export interface CheckoutResult {
   currency: string;
   amount: string;
   providerMode?: string;
+  purchaseType?: "NEW" | "ADDITIONAL" | "RENEW" | "UPGRADE";
 }
 
 // ─── Payment status ──────────────────────────────────────────────────────────

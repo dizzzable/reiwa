@@ -26,6 +26,8 @@ export {
   type LinkTelegramGenerateResult,
   type PublicConfigPayload,
   type TariffConstructorManifest,
+  type TariffConstructorCheckout,
+  type TariffConstructorCheckoutInput,
   type TariffConstructorQuote,
   type TariffConstructorQuoteInput,
   type WebAuthLoginResult,

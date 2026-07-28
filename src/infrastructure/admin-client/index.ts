@@ -19,6 +19,8 @@ export type {
   LinkTelegramGenerateResult,
   PublicConfigPayload,
   TariffConstructorManifest,
+  TariffConstructorCheckout,
+  TariffConstructorCheckoutInput,
   TariffConstructorQuote,
   TariffConstructorQuoteInput,
   WebAuthLoginResult,

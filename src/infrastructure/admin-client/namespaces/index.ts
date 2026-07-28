@@ -57,6 +57,8 @@ export type { CreateTicketInput } from './support.js';
 export { TariffConstructorNamespace } from './tariff-constructor.js';
 export type {
   TariffConstructorManifest,
+  TariffConstructorCheckout,
+  TariffConstructorCheckoutInput,
   TariffConstructorQuote,
   TariffConstructorQuoteInput,
 } from './tariff-constructor.js';
