@@ -46,18 +46,17 @@ export function DeleteSubscriptionDialog({
       if (!subscriptionId) {
         throw new Error("Subscription is required");
       }
-      return executeSubscriptionDeleteWithAmbiguousRetry(
+      await executeSubscriptionDeleteWithAmbiguousRetry(
         () => deleteSubscription(subscriptionId),
         (error) =>
           axios.isAxiosError(error) && error.response === undefined,
       );
+      return subscriptionId;
     },
-    onSuccess: () => {
-      const subscriptionId = subscription?.id;
-      if (!subscriptionId) return;
+    onSuccess: (subscriptionId) => {
       toast.success(t("deleteSubscription.success"));
-      onOpenChange(false);
       onServerCommitted(subscriptionId);
+      onOpenChange(false);
     },
     onError: () => toast.error(t("deleteSubscription.error")),
   });

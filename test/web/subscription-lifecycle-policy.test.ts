@@ -425,6 +425,12 @@ describe("subscription lifecycle policy", () => {
     expect(activeKeyChanges).toEqual(["c"]);
   });
 
+  it("retains the sole deletion snapshot when realtime empties the canonical list", () => {
+    const deleting = { key: "only", slotIndex: 0 };
+
+    expect(retainCarouselItemDuringDeletion([], deleting)).toEqual([deleting]);
+  });
+
   it("keeps a delete target renderable if realtime wins before server commit", () => {
     const deleteTarget = { key: "b", slotIndex: 1 };
     const rendered = retainCarouselItemDuringDeletion(

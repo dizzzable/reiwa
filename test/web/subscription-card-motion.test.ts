@@ -27,6 +27,28 @@ function branding(overrides: Partial<Branding> = {}): Branding {
   };
 }
 
+function sourceBlock(source: string, marker: string): string {
+  const markerStart = source.indexOf(marker);
+  if (markerStart < 0) {
+    throw new Error(`Expected source marker: ${marker}`);
+  }
+
+  const blockStart = source.indexOf("{", markerStart);
+  if (blockStart < 0) {
+    throw new Error(`Expected block after source marker: ${marker}`);
+  }
+
+  let depth = 0;
+  for (let index = blockStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] !== "}") continue;
+    depth -= 1;
+    if (depth === 0) return source.slice(markerStart, index + 1);
+  }
+
+  throw new Error(`Expected balanced block after source marker: ${marker}`);
+}
+
 describe("subscription card visual resolver", () => {
   it("resolves a positional slot without parsing operator props or gradients", () => {
     const colorStops = [
@@ -371,20 +393,139 @@ describe("subscription deletion duration", () => {
     );
   });
 
-  it("does not inherit the browser motion preference inside the deletion component", () => {
-    const source = readFileSync(
+  it("keeps deletion mode explicit and leaves creation preference-aware", () => {
+    const deletionSource = readFileSync(
       new URL(
         "../../web/src/features/dashboard/components/subscription-deletion-motion.tsx",
         import.meta.url,
       ),
       "utf8",
     );
+    const creationSource = readFileSync(
+      new URL(
+        "../../web/src/features/dashboard/components/subscription-creation-motion.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
 
-    expect(source).toContain("subscription-card-deletion__laser");
-    expect(source).toContain(
+    expect(deletionSource).toContain(
       "resolveSubscriptionDeletionVisualMode(reducedMotionOverride)",
     );
-    expect(source).not.toContain("useReducedMotion");
+    expect(deletionSource).not.toContain("useReducedMotion");
+
+    expect(creationSource).toContain("useReducedMotion();");
+    expect(creationSource).toMatch(
+      /reducedMotionOverride\s*\?\?\s*prefersReducedMotion\s*\?\?\s*false/,
+    );
+  });
+
+  it("renders the full card, laser, glyph, boundary, and dust path as plain DOM", () => {
+    const deletionSource = readFileSync(
+      new URL(
+        "../../web/src/features/dashboard/components/subscription-deletion-motion.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const fullEffectsBranch = sourceBlock(
+      deletionSource,
+      "{active && !reducedMotion && (",
+    );
+
+    expect(deletionSource).toMatch(
+      /\) : \(\s*<div\s+className=\{cn\(active && "subscription-card-deletion__card"\)\}/,
+    );
+    expect(fullEffectsBranch).not.toContain("<motion.");
+    expect(fullEffectsBranch).toContain(
+      'className="subscription-card-deletion__laser"',
+    );
+    expect(fullEffectsBranch).toContain(
+      'className="subscription-card-deletion__glyph-trail"',
+    );
+    expect(fullEffectsBranch).toContain(
+      'className="subscription-card-deletion__boundary"',
+    );
+    expect(fullEffectsBranch).toContain(
+      'className="subscription-card-deletion__dust"',
+    );
+  });
+
+  it("wires deterministic CSS timing and keeps deletion keyframes enabled for reduced OS motion", () => {
+    const deletionSource = readFileSync(
+      new URL(
+        "../../web/src/features/dashboard/components/subscription-deletion-motion.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const cssSource = readFileSync(
+      new URL(
+        "../../web/src/features/dashboard/components/subscription-card-motion.css",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const cssVariableContracts = [
+      ["--deletion-duration", "`${duration}ms`"],
+      ["--deletion-sweep-delay", "`${duration * 0.12}ms`"],
+      ["--deletion-sweep-duration", "`${duration * 0.88}ms`"],
+      ["--dust-delay", "`${delay}ms`"],
+      ["--dust-duration", "`${duration * 0.13}ms`"],
+      ["--dust-drift-x", "`${particle.drift}px`"],
+      ["--dust-drift-y", "`${index % 2 === 0 ? -5 : 5}px`"],
+    ] as const;
+    const animationContracts = [
+      [
+        ".subscription-card-deletion__card",
+        "subscription-card-deletion-card-erase",
+      ],
+      [
+        ".subscription-card-deletion__laser",
+        "subscription-card-deletion-laser",
+      ],
+      [
+        ".subscription-card-deletion__boundary",
+        "subscription-card-deletion-boundary",
+      ],
+      [
+        ".subscription-card-deletion__glyph-trail",
+        "subscription-card-deletion-glyph-trail",
+      ],
+      [
+        ".subscription-card-deletion__dust",
+        "subscription-card-deletion-dust",
+      ],
+    ] as const;
+
+    for (const [variable, value] of cssVariableContracts) {
+      expect(deletionSource).toContain(`"${variable}": ${value}`);
+      expect(cssSource).toContain(`var(${variable})`);
+    }
+    for (const [selector, keyframes] of animationContracts) {
+      expect(sourceBlock(cssSource, selector)).toContain(
+        `animation: ${keyframes}`,
+      );
+      expect(cssSource).toContain(`@keyframes ${keyframes}`);
+    }
+
+    const reducedMotionMedia = sourceBlock(
+      cssSource,
+      "@media (prefers-reduced-motion: reduce)",
+    );
+    const reducedRailRule = sourceBlock(
+      reducedMotionMedia,
+      ".subscription-card-motion__rail::before",
+    );
+
+    expect(reducedRailRule).toContain(
+      ".subscription-card-motion__rail::after",
+    );
+    expect(reducedRailRule).toContain("animation: none");
+    expect(reducedMotionMedia).not.toContain("subscription-card-deletion");
+    expect(reducedMotionMedia.replace(reducedRailRule, "")).not.toMatch(
+      /animation(?:-[\w-]+)?\s*:/,
+    );
   });
 
   it("clamps the laser erase to a slow, clearly-visible 3-6 seconds", () => {
@@ -405,12 +546,12 @@ describe("subscription deletion duration", () => {
     // This value drives both the visible transition and the wrapper's
     // deterministic removal timer. A browser media preference must not turn
     // an explicit successful deletion into the former ~160 ms handoff.
+    expect(SUBSCRIPTION_DELETION_TIMING.default).toBe(5_000);
+    expect(resolveSubscriptionDeletionDuration(false)).toBe(5_000);
+    expect(resolveSubscriptionDeletionDuration(true)).toBe(5_000);
     expect(
       resolveSubscriptionDeletionDuration(true, designedLifecycleMs),
     ).toBe(designedLifecycleMs);
-    expect(resolveSubscriptionDeletionDuration(true)).toBe(
-      SUBSCRIPTION_DELETION_TIMING.default,
-    );
   });
 
   it("starts visible reduced-motion deletion feedback immediately instead of holding a static card", () => {

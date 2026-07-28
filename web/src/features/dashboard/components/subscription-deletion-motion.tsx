@@ -70,9 +70,12 @@ const DUST = [
   { left: 93, top: 68, size: 2, drift: 7 },
 ] as const;
 
-function accentStyle(primary: string): CSSProperties {
+function deletionStyle(primary: string, duration: number): CSSProperties {
   return {
     "--motion-accent": primary.trim() || "var(--brand-primary)",
+    "--deletion-duration": `${duration}ms`,
+    "--deletion-sweep-delay": `${duration * 0.12}ms`,
+    "--deletion-sweep-duration": `${duration * 0.88}ms`,
   } as CSSProperties;
 }
 
@@ -114,10 +117,9 @@ export function SubscriptionDeletionMotion({
     onExitCompleteRef.current();
   };
 
-  // Do not let Motion decide when to remove the card. A deletion wrapper is
-  // mounted only after the server confirms the request, and Motion may treat
-  // its first target as already complete. The deterministic timer guarantees
-  // that the user sees the full laser sweep before the canonical row leaves.
+  // Do not let the visual animation decide when to remove the card. The
+  // deterministic timer guarantees that the snapshot stays mounted for the
+  // complete deletion presentation before the canonical row leaves.
   useEffect(() => {
     if (!active) return;
     const timer = window.setTimeout(completeOnce, duration);
@@ -129,74 +131,44 @@ export function SubscriptionDeletionMotion({
       className={cn(
         "subscription-card-motion relative overflow-visible",
         active && "pointer-events-none",
+        active && !reducedMotion && "subscription-card-motion--deleting",
         className,
       )}
-      style={accentStyle(visual.primary)}
+      style={deletionStyle(visual.primary, duration)}
       data-deletion-active={active ? "true" : "false"}
       data-deletion-motion={reducedMotion ? "reduced" : "full"}
     >
-      <motion.div
-        // The wrapper is mounted only after the deletion request succeeds, so
-        // it needs an explicit visible source frame before the laser starts.
-        initial={
-          active
-            ? { clipPath: "inset(0 0 0 0%)", opacity: 1 }
-            : false
-        }
-        animate={
-          active
-            ? reducedMotion
+      {reducedMotion ? (
+        <motion.div
+          initial={active ? { opacity: 1, filter: "brightness(1)" } : false}
+          animate={
+            active
               ? {
                   opacity: [...reducedPresentation.cardOpacity],
                   filter: [...reducedPresentation.cardFilter],
                 }
-              : {
-                  clipPath: [
-                    "inset(0 0 0 0%)",
-                    "inset(0 0 0 0%)",
-                    "inset(0 0 0 100%)",
-                  ],
-                  opacity: [1, 1, 0.72],
-                }
-            : {
-                clipPath: "inset(0 0 0 0%)",
-                opacity: 1,
-              }
-        }
-        transition={
-          active
-            ? reducedMotion
+              : { opacity: 1, filter: "brightness(1)" }
+          }
+          transition={
+            active
               ? {
                   duration: duration / 1_000,
                   ease: "easeOut",
                   times: [...reducedPresentation.cardTimes],
                 }
-              : {
-                  clipPath: {
-                    duration: duration / 1_000,
-                    ease: [0.65, 0, 0.35, 1],
-                    times: [0, 0.12, 1],
-                  },
-                  opacity: {
-                    duration: duration / 1_000,
-                    ease: [0.65, 0, 0.35, 1],
-                    times: [0, 0.84, 1],
-                  },
-                }
-            : { duration: 0 }
-        }
-        style={
-          active
-            ? {
-                willChange: reducedMotion
-                  ? "filter, opacity"
-                  : "clip-path, opacity",
-              }
-            : undefined
-        }
-      >
-        {children}
-      </motion.div>
+              : { duration: 0 }
+          }
+          style={active ? { willChange: "filter, opacity" } : undefined}
+        >
+          {children}
+        </motion.div>
+      ) : (
+        <div
+          className={cn(active && "subscription-card-deletion__card")}
+        >
+          {children}
+        </div>
+      )}
 
       {active && reducedMotion && (
         <motion.div
@@ -214,35 +186,9 @@ export function SubscriptionDeletionMotion({
 
       {active && !reducedMotion && (
         <div aria-hidden className="pointer-events-none absolute inset-0">
-          <motion.div
-            className="subscription-card-deletion__laser"
-            initial={{ left: "-10%", opacity: 0, scaleX: 0.35 }}
-            animate={{
-              left: "110%",
-              opacity: [0, 1, 1, 0],
-              scaleX: [0.35, 1, 1, 0.55],
-            }}
-            transition={{
-              delay: (duration / 1_000) * 0.12,
-              duration: (duration / 1_000) * 0.88,
-              ease: [0.65, 0, 0.35, 1],
-              times: [0, 0.06, 0.9, 1],
-            }}
-          />
+          <div className="subscription-card-deletion__laser" />
 
-          <motion.div
-            className="subscription-card-deletion__glyph-trail"
-            initial={{ left: "-42%", opacity: 0 }}
-            animate={{
-              left: "58%",
-              opacity: [0, 0.82, 0.62, 0],
-            }}
-            transition={{
-              duration: duration / 1_000,
-              ease: [0.65, 0, 0.35, 1],
-              times: [0, 0.08, 0.78, 1],
-            }}
-          >
+          <div className="subscription-card-deletion__glyph-trail">
             {GLYPHS.map((glyph) => (
               <span
                 key={`${glyph.value}-${glyph.top}`}
@@ -256,50 +202,25 @@ export function SubscriptionDeletionMotion({
                 {glyph.value}
               </span>
             ))}
-          </motion.div>
+          </div>
 
-          <motion.div
-            className="subscription-card-deletion__boundary"
-            initial={{ left: "-1%", opacity: 0 }}
-            animate={{
-              left: "101%",
-              opacity: [0, 1, 1, 0],
-            }}
-            transition={{
-              delay: (duration / 1_000) * 0.12,
-              duration: (duration / 1_000) * 0.88,
-              ease: [0.65, 0, 0.35, 1],
-              times: [0, 0.04, 0.9, 1],
-            }}
-          />
+          <div className="subscription-card-deletion__boundary" />
 
           {DUST.map((particle, index) => {
-            const delay =
-              (particle.left / 100) * (duration / 1_000) * 0.78;
+            const delay = (particle.left / 100) * duration * 0.78;
             return (
-              <motion.span
+              <span
                 key={`${particle.left}-${particle.top}`}
                 className="subscription-card-deletion__dust"
                 style={{
                   left: `${particle.left}%`,
                   top: `${particle.top}%`,
                   "--dust-size": `${particle.size}px`,
+                  "--dust-delay": `${delay}ms`,
+                  "--dust-duration": `${duration * 0.13}ms`,
+                  "--dust-drift-x": `${particle.drift}px`,
+                  "--dust-drift-y": `${index % 2 === 0 ? -5 : 5}px`,
                 } as CSSProperties}
-                initial={{ opacity: 0, x: 0, scale: 0.4 }}
-                animate={{
-                  opacity: [0, 0.9, 0],
-                  x: particle.drift,
-                  y: index % 2 === 0 ? -5 : 5,
-                  scale: [0.4, 1, 0.2],
-                }}
-                transition={{
-                  delay,
-                  // Scale with the pass, like `delay` does. A fixed 0.24s read as
-                  // ~13% of the old 1.8s sweep; against the current 5s it would
-                  // shrink to ~5% and the trail would break into stray dots.
-                  duration: (duration / 1_000) * 0.13,
-                  ease: "easeOut",
-                }}
               />
             );
           })}

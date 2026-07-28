@@ -3,6 +3,10 @@
   position: relative;
 }
 
+.subscription-card-motion--deleting {
+  isolation: isolate;
+}
+
 .subscription-card-motion__rail {
   position: absolute;
   z-index: 30;
@@ -79,18 +83,30 @@
     color-mix(in oklab, var(--motion-accent), transparent 68%);
 }
 
+.subscription-card-deletion__card {
+  will-change: clip-path, opacity;
+  animation: subscription-card-deletion-card-erase
+    var(--deletion-duration) cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
 .subscription-card-deletion__boundary {
   position: absolute;
   z-index: 42;
   top: -4%;
   bottom: -4%;
+  left: -1%;
   width: 2px;
+  opacity: 0;
   pointer-events: none;
   background: color-mix(in oklab, var(--motion-accent), white 38%);
   box-shadow:
     0 0 5px color-mix(in oklab, var(--motion-accent), white 10%),
     0 0 18px var(--motion-accent),
     -9px 0 24px color-mix(in oklab, var(--motion-accent), transparent 45%);
+  will-change: left, opacity;
+  animation: subscription-card-deletion-boundary
+    var(--deletion-sweep-duration) cubic-bezier(0.65, 0, 0.35, 1)
+    var(--deletion-sweep-delay) both;
 }
 
 .subscription-card-deletion__laser {
@@ -98,9 +114,11 @@
   z-index: 44;
   top: -10%;
   bottom: -10%;
+  left: -10%;
   width: clamp(34px, 9%, 68px);
+  opacity: 0;
   pointer-events: none;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scaleX(0.35);
   transform-origin: center;
   background:
     linear-gradient(
@@ -116,6 +134,10 @@
   filter: drop-shadow(0 0 7px var(--motion-accent))
     drop-shadow(0 0 22px color-mix(in oklab, var(--motion-accent), white 12%));
   mix-blend-mode: screen;
+  will-change: left, opacity, transform;
+  animation: subscription-card-deletion-laser
+    var(--deletion-sweep-duration) cubic-bezier(0.65, 0, 0.35, 1)
+    var(--deletion-sweep-delay) both;
 }
 
 .subscription-card-deletion__laser::after {
@@ -131,8 +153,10 @@
   z-index: 41;
   top: 0;
   bottom: 0;
+  left: -42%;
   width: 42%;
   overflow: hidden;
+  opacity: 0;
   pointer-events: none;
   color: color-mix(in oklab, var(--motion-accent), white 28%);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -143,6 +167,9 @@
     transparent 0 7px,
     color-mix(in oklab, var(--motion-accent), transparent 90%) 7px 8px
   );
+  will-change: left, opacity;
+  animation: subscription-card-deletion-glyph-trail
+    var(--deletion-duration) cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 
 .subscription-card-deletion__glyph {
@@ -156,10 +183,15 @@
   z-index: 43;
   width: var(--dust-size);
   height: var(--dust-size);
+  opacity: 0;
   pointer-events: none;
   border-radius: 1px;
   background: color-mix(in oklab, var(--motion-accent), white 30%);
   box-shadow: 0 0 6px var(--motion-accent);
+  transform: translate(0, 0) scale(0.4);
+  will-change: opacity, transform;
+  animation: subscription-card-deletion-dust var(--dust-duration) ease-out
+    var(--dust-delay) both;
 }
 
 /* A still, high-contrast deletion state for people who ask the browser to
@@ -221,6 +253,89 @@
   to {
     transform: translateX(240%);
     opacity: 1;
+  }
+}
+
+@keyframes subscription-card-deletion-card-erase {
+  0%,
+  12% {
+    clip-path: inset(0 0 0 0%);
+    opacity: 1;
+  }
+  84% {
+    opacity: 1;
+  }
+  100% {
+    clip-path: inset(0 0 0 100%);
+    opacity: 0.72;
+  }
+}
+
+@keyframes subscription-card-deletion-laser {
+  0% {
+    left: -10%;
+    opacity: 0;
+    transform: translateX(-50%) scaleX(0.35);
+  }
+  6% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1);
+  }
+  90% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1);
+  }
+  100% {
+    left: 110%;
+    opacity: 0;
+    transform: translateX(-50%) scaleX(0.55);
+  }
+}
+
+@keyframes subscription-card-deletion-boundary {
+  0% {
+    left: -1%;
+    opacity: 0;
+  }
+  4%,
+  90% {
+    opacity: 1;
+  }
+  100% {
+    left: 101%;
+    opacity: 0;
+  }
+}
+
+@keyframes subscription-card-deletion-glyph-trail {
+  0% {
+    left: -42%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.82;
+  }
+  78% {
+    opacity: 0.62;
+  }
+  100% {
+    left: 58%;
+    opacity: 0;
+  }
+}
+
+@keyframes subscription-card-deletion-dust {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4);
+  }
+  45% {
+    opacity: 0.9;
+    transform: translate(var(--dust-drift-x), var(--dust-drift-y)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dust-drift-x), var(--dust-drift-y)) scale(0.2);
   }
 }
 
