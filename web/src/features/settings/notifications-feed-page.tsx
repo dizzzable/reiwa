@@ -47,7 +47,7 @@ export default function NotificationsFeedPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["notifications"],
-    queryFn: () => getNotifications(),
+    queryFn: ({ signal }) => getNotifications(1, 20, { signal }),
   });
 
   const invalidate = () => {

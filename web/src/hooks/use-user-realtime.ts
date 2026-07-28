@@ -26,6 +26,8 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useSession } from "./use-session";
+import { terminateDeletedUserSession } from "./user-realtime-session-policy";
+import { signOut } from "@/lib/api-client";
 import {
   userRealtimeQueryKeysByType,
   type UserRealtimeQueryKey,
@@ -81,7 +83,14 @@ export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
     });
 
     const pending = new Map<string, ReturnType<typeof setTimeout>>();
+    let terminal = false;
+    function clearPendingInvalidations(): void {
+      pending.forEach((handle) => clearTimeout(handle));
+      pending.clear();
+    }
+
     function scheduleInvalidate(key: UserRealtimeQueryKey): void {
+      if (terminal) return;
       const cacheKey = key.join("::");
       const existing = pending.get(cacheKey);
       if (existing) clearTimeout(existing);
@@ -134,7 +143,22 @@ export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
       if (event) handle(event);
     }
 
+    function onUserDeleted(): void {
+      if (terminal) return;
+      terminal = true;
+      void terminateDeletedUserSession({
+        closeRealtime: () => eventSource.close(),
+        clearPendingInvalidations,
+        cancelQueries: () =>
+          queryClient.cancelQueries(undefined, { silent: true }),
+        clearQueryCache: () => queryClient.clear(),
+        signOut,
+        redirectToSignIn: () => window.location.replace("/sign-in"),
+      });
+    }
+
     eventSource.addEventListener("message", onMessage);
+    eventSource.addEventListener("user.deleted", onUserDeleted);
     // Server sends each event with a `event: <type>` line; register the
     // wildcard listeners for all whitelisted types. Browser dispatches
     // them on the matching listener, the generic `message` handler is
@@ -154,9 +178,9 @@ export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
     };
 
     return () => {
+      terminal = true;
       eventSource.close();
-      pending.forEach((handle) => clearTimeout(handle));
-      pending.clear();
+      clearPendingInvalidations();
     };
   }, [isAuthenticated, queryClient, showToasts]);
 }

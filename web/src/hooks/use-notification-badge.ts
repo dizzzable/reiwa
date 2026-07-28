@@ -7,7 +7,7 @@ export function useNotificationBadge(): number {
 
   const { data } = useQuery({
     queryKey: ['notifications', 'unread-count'],
-    queryFn: () => getUnreadCount(),
+    queryFn: ({ signal }) => getUnreadCount({ signal }),
     enabled: isAuthenticated,
     staleTime: 30_000,
     refetchInterval: 60_000,

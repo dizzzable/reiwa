@@ -21,7 +21,7 @@ export default function TransactionsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["transactions"],
-    queryFn: () => getTransactions(1, 50),
+    queryFn: ({ signal }) => getTransactions(1, 50, { signal }),
     staleTime: 30_000,
   });
 

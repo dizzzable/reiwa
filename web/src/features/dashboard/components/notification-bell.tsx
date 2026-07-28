@@ -35,14 +35,14 @@ export function NotificationBell() {
 
   const { data: unread } = useQuery({
     queryKey: ["notifications", "unread-count"],
-    queryFn: getUnreadCount,
+    queryFn: ({ signal }) => getUnreadCount({ signal }),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
 
   const { data: feed } = useQuery({
     queryKey: ["notifications"],
-    queryFn: () => getNotifications(1, RECENT_LIMIT),
+    queryFn: ({ signal }) => getNotifications(1, RECENT_LIMIT, { signal }),
     enabled: open,
     staleTime: 30_000,
   });

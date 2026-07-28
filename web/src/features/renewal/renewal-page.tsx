@@ -523,7 +523,7 @@ function SelectRenewalAddOns() {
     isError: historyError,
   } = useQuery({
     queryKey: ["add-on-entitlements"],
-    queryFn: getAddOnEntitlements,
+    queryFn: ({ signal }) => getAddOnEntitlements({ signal }),
     staleTime: 60_000,
   });
 

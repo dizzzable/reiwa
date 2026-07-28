@@ -15,7 +15,7 @@ export function useSupportUnread(): number {
 
   const { data } = useQuery({
     queryKey: ['notifications'],
-    queryFn: () => getNotifications(),
+    queryFn: ({ signal }) => getNotifications(1, 20, { signal }),
     enabled: isAuthenticated,
     staleTime: 30_000,
     refetchInterval: 60_000,

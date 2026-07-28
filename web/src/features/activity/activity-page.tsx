@@ -27,13 +27,13 @@ export default function ActivityPage() {
 
   const { data: txData, isLoading: txLoading } = useQuery({
     queryKey: ['transactions'],
-    queryFn: () => getTransactions(),
+    queryFn: ({ signal }) => getTransactions(1, 20, { signal }),
     enabled: tab === 'transactions',
   })
 
   const { data: notifData, isLoading: notifLoading } = useQuery({
     queryKey: ['notifications'],
-    queryFn: () => getNotifications(),
+    queryFn: ({ signal }) => getNotifications(1, 20, { signal }),
     enabled: tab === 'notifications',
   })
 

@@ -46,7 +46,7 @@ export default function MyAddOnsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["add-on-entitlements"],
-    queryFn: getAddOnEntitlements,
+    queryFn: ({ signal }) => getAddOnEntitlements({ signal }),
     staleTime: 30_000,
   });
   const entitlements = data?.entitlements ?? [];

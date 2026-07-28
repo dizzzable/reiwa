@@ -70,7 +70,7 @@ export default function SettingsPage() {
   // invalidates this key), instead of lingering until the user replies.
   const { data: notifData } = useQuery({
     queryKey: ["notifications"],
-    queryFn: () => getNotifications(),
+    queryFn: ({ signal }) => getNotifications(1, 20, { signal }),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
