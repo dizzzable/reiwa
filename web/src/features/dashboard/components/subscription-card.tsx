@@ -26,10 +26,7 @@ import type { Subscription } from "@/types/api";
 
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { SubscriptionCardFrame } from "./subscription-card-frame";
-import {
-  resolveSubscriptionCardVisual,
-  type ResolvedSubscriptionCardVisual,
-} from "./subscription-card-visual";
+import { resolveSubscriptionCardVisual } from "./subscription-card-visual";
 
 export interface SubscriptionCardProps {
   subscription: Subscription;
@@ -47,8 +44,6 @@ export interface SubscriptionCardProps {
    * live effect instantly instead of after a WebGL-init delay.
    */
   effectActive?: boolean;
-  /** Frozen visual snapshot used by creation/deletion lifecycle animations. */
-  visual?: ResolvedSubscriptionCardVisual;
 }
 
 export function SubscriptionCard({
@@ -56,12 +51,11 @@ export function SubscriptionCard({
   index,
   firstDevice,
   effectActive,
-  visual,
 }: SubscriptionCardProps) {
   const { branding } = useBranding();
   const resolvedVisual = useMemo(
-    () => visual ?? resolveSubscriptionCardVisual(branding, index),
-    [branding, index, visual],
+    () => resolveSubscriptionCardVisual(branding, index),
+    [branding, index],
   );
 
   return (

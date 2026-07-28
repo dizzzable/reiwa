@@ -267,9 +267,10 @@ export function resolveActiveCarouselItemKey(
 }
 
 /**
- * Re-inserts the committed deletion snapshot when realtime has already
- * removed that exact row from the canonical list. Slot indexes are rebuilt so
- * scroll-snap and card visuals still describe the same physical slide.
+ * Re-inserts the confirmation dialog's subscription snapshot when realtime
+ * has already removed that exact row from the canonical list. Slot indexes are
+ * rebuilt so the dialog and carousel keep referring to the same physical
+ * slide until the request settles.
  */
 export function retainCarouselItemDuringDeletion<
   T extends Pick<SubscriptionCarouselItem, "key" | "slotIndex">,
@@ -294,16 +295,17 @@ export function retainCarouselItemDuringDeletion<
 }
 
 /**
- * A deleting card must remain the active slide even after realtime removes it
- * from the upstream list. Otherwise the carousel scroll-sync would move the
- * animation to a neighbouring subscription before its exit completes.
+ * Keeps the confirmation dialog's target selected if realtime has already
+ * made the parent repair its canonical active key to a surviving sibling.
+ * This is a request-lifecycle guard only; successful deletion still removes
+ * the card immediately.
  */
-export function resolveActiveCarouselItemKeyDuringDeletion(
+export function resolveActiveCarouselItemKeyWithDeleteTarget(
   itemKeys: readonly string[],
   preferredKey: string | null,
-  deletingKey: string | null,
+  deleteTargetKey: string | null,
 ): string | null {
-  return deletingKey ?? resolveActiveCarouselItemKey(itemKeys, preferredKey);
+  return deleteTargetKey ?? resolveActiveCarouselItemKey(itemKeys, preferredKey);
 }
 
 export function selectCarouselItemAfterRemoval(

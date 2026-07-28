@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
@@ -13,6 +13,21 @@ const deleteDialogSource = ts.createSourceFile(
     ),
     "utf8",
   ),
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TSX,
+);
+
+const carouselSourceText = readFileSync(
+  new URL(
+    "../../web/src/features/dashboard/components/subscription-carousel.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const carouselSource = ts.createSourceFile(
+  "subscription-carousel.tsx",
+  carouselSourceText,
   ts.ScriptTarget.Latest,
   true,
   ts.ScriptKind.TSX,
@@ -186,5 +201,91 @@ describe("subscription delete ambiguity policy", () => {
     expect(serverCommit.getStart(deleteDialogSource)).toBeLessThan(
       closeDialog.getStart(deleteDialogSource),
     );
+  });
+
+  it("removes the subscription immediately after success without an exit animation", () => {
+    const declaration = findNodes(
+      carouselSource,
+      (node): node is ts.VariableDeclaration =>
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === "commitSubscriptionDeletion",
+    )[0];
+    const useCallbackCall = declaration?.initializer;
+    const callback =
+      useCallbackCall &&
+      ts.isCallExpression(useCallbackCall) &&
+      useCallbackCall.arguments[0];
+    if (!callback || !ts.isArrowFunction(callback)) {
+      throw new Error(
+        "SubscriptionCarousel must commit deletion in one useCallback",
+      );
+    }
+
+    const calls = findNodes(
+      callback.body,
+      (node): node is ts.CallExpression => ts.isCallExpression(node),
+    );
+    const setQueryData = calls.find(
+      (call) =>
+        ts.isPropertyAccessExpression(call.expression) &&
+        call.expression.name.text === "setQueryData",
+    );
+    const clearTarget = calls.find(
+      (call) =>
+        ts.isIdentifier(call.expression) &&
+        call.expression.text === "setDeleteTarget" &&
+        call.arguments[0]?.kind === ts.SyntaxKind.NullKeyword,
+    );
+    const publishActiveKey = calls.find(
+      (call) =>
+        ts.isIdentifier(call.expression) &&
+        call.expression.text === "onActiveItemKeyChange",
+    );
+
+    expect(setQueryData).toBeDefined();
+    expect(clearTarget).toBeDefined();
+    expect(publishActiveKey).toBeDefined();
+    expect(
+      calls.some(
+        (call) =>
+          ts.isIdentifier(call.expression) &&
+          call.expression.text === "setTimeout",
+      ),
+    ).toBe(false);
+    expect(callback.getText(carouselSource)).toContain(
+      "selectCarouselItemAfterRemoval",
+    );
+    expect(callback.getText(carouselSource)).toContain(
+      'queryKey: ["trial", "eligibility"]',
+    );
+
+    expect(carouselSourceText).not.toContain("SubscriptionDeletionMotion");
+    expect(carouselSourceText).not.toContain("setDeleting");
+    expect(
+      existsSync(
+        new URL(
+          "../../web/src/features/dashboard/components/subscription-deletion-motion.tsx",
+          import.meta.url,
+        ),
+      ),
+    ).toBe(false);
+
+    const motionCss = readFileSync(
+      new URL(
+        "../../web/src/features/dashboard/components/subscription-card-motion.css",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const motionPolicy = readFileSync(
+      new URL(
+        "../../web/src/features/dashboard/components/subscription-card-motion-policy.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(motionCss).not.toContain("subscription-card-deletion");
+    expect(motionPolicy).not.toContain("SUBSCRIPTION_DELETION");
   });
 });

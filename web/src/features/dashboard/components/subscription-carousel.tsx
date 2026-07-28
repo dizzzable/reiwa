@@ -28,7 +28,7 @@ import type {
 
 import {
   provisioningCarouselItemKey,
-  resolveActiveCarouselItemKeyDuringDeletion,
+  resolveActiveCarouselItemKeyWithDeleteTarget,
   retainCarouselItemDuringDeletion,
   selectCarouselItemAfterRemoval,
   subscriptionCarouselItemKey,
@@ -39,11 +39,7 @@ import {
 import { DeleteSubscriptionDialog } from "./delete-subscription-dialog";
 import { SubscriptionCard } from "./subscription-card";
 import { SubscriptionCreationMotion } from "./subscription-creation-motion";
-import { SubscriptionDeletionMotion } from "./subscription-deletion-motion";
-import {
-  resolveSubscriptionCardVisual,
-  type ResolvedSubscriptionCardVisual,
-} from "./subscription-card-visual";
+import { resolveSubscriptionCardVisual } from "./subscription-card-visual";
 
 interface SubscriptionCarouselProps {
   readonly items: readonly SubscriptionCarouselItem[];
@@ -55,26 +51,15 @@ interface SubscriptionCarouselProps {
     subscription: Subscription,
   ) => void;
   /**
-   * Reports whether a deletion animation is in flight.
-   *
-   * The parent decides between this carousel and the empty state from the
-   * subscription list, and the deleted row disappears from that list ~400ms
-   * after the request (the realtime `subscription.deleted` invalidation).
-   * That unmounted the whole carousel — together with the `protectedItem`
-   * mechanism meant to keep the card alive — roughly 460ms into a 5s animation,
-   * so the card appeared to simply vanish. The parent has to keep us mounted
-   * until the animation finishes.
+   * Keeps the carousel subtree mounted while its confirmation dialog owns a
+   * subscription snapshot. Realtime may remove the canonical row before the
+   * local request settles, but the dialog must still finish cleanly.
    */
-  readonly onDeletionActiveChange?: (active: boolean) => void;
+  readonly onDeleteGuardActiveChange?: (active: boolean) => void;
 }
 
 interface DeleteTarget {
   readonly item: SubscriptionCarouselSubscriptionItem;
-}
-
-interface DeletingSubscription {
-  readonly item: SubscriptionCarouselSubscriptionItem;
-  readonly visual: ResolvedSubscriptionCardVisual;
 }
 
 export function SubscriptionCarousel({
@@ -83,37 +68,33 @@ export function SubscriptionCarousel({
   activeItemKey,
   onActiveItemKeyChange,
   onProvisioningComplete,
-  onDeletionActiveChange,
+  onDeleteGuardActiveChange,
 }: SubscriptionCarouselProps) {
   const { t } = useTranslation();
-  const { branding } = useBranding();
   const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
-  const [deleting, setDeleting] = useState<DeletingSubscription | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A realtime invalidation can remove the committed row before the local
   // DELETE response reaches this tab. Keep the explicitly targeted snapshot
-  // mounted until the dialog closes or the local dissolve completes.
-  const protectedItem = deleting?.item ?? deleteTarget?.item ?? null;
-  // Reported to the parent for the whole protection window, not just the
-  // animation: the confirm dialog lives in this subtree too, so if the list
-  // empties while it is open (deleted from the bot or another tab) an unmount
-  // would take the dialog out from under the user and the DELETE already in
-  // flight would land on a gone component with no animation at all.
+  // mounted until the confirmation dialog closes.
+  const protectedItem = deleteTarget?.item ?? null;
+  // The confirm dialog lives in this subtree. If the list empties while it is
+  // open (deleted from the bot or another tab), an unmount would take the
+  // dialog out from under the user and strand the in-flight request.
   const holdsProtectedItem = protectedItem !== null;
   useEffect(() => {
-    onDeletionActiveChange?.(holdsProtectedItem);
-  }, [holdsProtectedItem, onDeletionActiveChange]);
+    onDeleteGuardActiveChange?.(holdsProtectedItem);
+  }, [holdsProtectedItem, onDeleteGuardActiveChange]);
   // Safety net: the parent holds its branch open on our word, so if we go away
   // for any other reason (route change, remount) we must take that word back —
   // otherwise the dashboard would sit on an empty carousel indefinitely.
   useEffect(
     () => () => {
-      onDeletionActiveChange?.(false);
+      onDeleteGuardActiveChange?.(false);
     },
-    [onDeletionActiveChange],
+    [onDeleteGuardActiveChange],
   );
 
   const renderedItems = useMemo(
@@ -122,15 +103,10 @@ export function SubscriptionCarousel({
   );
 
   const itemKeys = renderedItems.map((item) => item.key);
-  // While the dissolve plays, stay on the dissolving card. The parent's list has
-  // already dropped it, so resolving from the prop returns a surviving sibling —
-  // `activeIndex` moves, the scroll-sync effect fires, and the animation is
-  // carried off-screen ~400ms in. Keeping the branch mounted is not enough on
-  // its own; with two or more subscriptions that scroll was still hiding it.
-  const activeKey = resolveActiveCarouselItemKeyDuringDeletion(
+  const activeKey = resolveActiveCarouselItemKeyWithDeleteTarget(
     itemKeys,
     activeItemKey,
-    deleting?.item.key ?? null,
+    protectedItem?.key ?? null,
   );
   const activeIndex = Math.max(
     0,
@@ -143,9 +119,9 @@ export function SubscriptionCarousel({
     // The protected slide is one we re-inserted locally; the parent's list does
     // not contain it, so pushing its key up would ping-pong — the parent
     // resolves it back to a key from its own list, we resolve to the protected
-    // one again, and the two update each other for the whole animation.
-    // `finishCommittedDeletion` hands the final key over explicitly, so nothing
-    // is lost by staying quiet for exactly this case.
+    // one again, and the two update each other while the dialog is open.
+    // The successful delete callback hands the final key over explicitly, so
+    // nothing is lost by staying quiet while the dialog owns this snapshot.
     if (protectedItem !== null && activeKey === protectedItem.key) return;
     if (activeKey !== activeItemKey) {
       onActiveItemKeyChange(activeKey);
@@ -215,76 +191,55 @@ export function SubscriptionCarousel({
     }
   }, [activeIndex, count, goTo, itemKeySignature]);
 
-  const beginCommittedDeletion = useCallback(
+  const commitSubscriptionDeletion = useCallback(
     (subscriptionId: string) => {
-      const item =
-        renderedItems.find(
-          (
-            candidate,
-          ): candidate is SubscriptionCarouselSubscriptionItem =>
-            candidate.kind === "subscription" &&
-            candidate.subscription.id === subscriptionId,
-        ) ??
-        (deleteTarget?.item.subscription.id === subscriptionId
-          ? deleteTarget.item
-          : null);
-      if (item === null) return;
-      setDeleting({
-        item,
-        visual: resolveSubscriptionCardVisual(branding, item.slotIndex),
+      const removedKey = subscriptionCarouselItemKey(subscriptionId);
+      const nextActiveKey = selectCarouselItemAfterRemoval(
+        renderedItems.map((item) => item.key),
+        removedKey,
+        activeKey,
+      );
+
+      queryClient.setQueryData<AllSubscriptionsResponse>(
+        subscriptionQueryKeys.all,
+        (current) =>
+          current === undefined
+            ? current
+            : {
+                ...current,
+                subscriptions: current.subscriptions.filter(
+                  (subscription) => subscription.id !== subscriptionId,
+                ),
+              },
+      );
+      setDeleteTarget(null);
+      onActiveItemKeyChange(nextActiveKey);
+
+      void queryClient.invalidateQueries({
+        queryKey: subscriptionQueryKeys.all,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: subscriptionQueryKeys.detail,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
+      void queryClient.invalidateQueries({ queryKey: ["devices"] });
+      // Eligibility answers `ALREADY_HAS_SUBSCRIPTION` while a subscription
+      // exists and is cached for a minute. Without this the user lands on the
+      // empty state right after deleting and the trial offer stays hidden — or,
+      // the other way round, a stale `eligible: true` keeps offering a trial that
+      // was already spent. That stale read is the likeliest cause of the reported
+      // "offer shown after deleting the trial".
+      void queryClient.invalidateQueries({
+        queryKey: ["trial", "eligibility"],
       });
     },
-    [branding, deleteTarget, renderedItems],
-  );
-
-  const finishCommittedDeletion = useCallback(() => {
-    if (deleting === null) return;
-    const removedKey = deleting.item.key;
-    const nextActiveKey = selectCarouselItemAfterRemoval(
-      renderedItems.map((item) => item.key),
-      removedKey,
+    [
       activeKey,
-    );
-    const subscriptionId = deleting.item.subscription.id;
-
-    queryClient.setQueryData<AllSubscriptionsResponse>(
-      subscriptionQueryKeys.all,
-      (current) =>
-        current === undefined
-          ? current
-          : {
-              ...current,
-              subscriptions: current.subscriptions.filter(
-                (subscription) => subscription.id !== subscriptionId,
-              ),
-            },
-    );
-    setDeleting(null);
-    setDeleteTarget(null);
-    onActiveItemKeyChange(nextActiveKey);
-
-    void queryClient.invalidateQueries({
-      queryKey: subscriptionQueryKeys.all,
-    });
-    void queryClient.invalidateQueries({
-      queryKey: subscriptionQueryKeys.detail,
-    });
-    void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
-    void queryClient.invalidateQueries({ queryKey: ["devices"] });
-    // Eligibility answers `ALREADY_HAS_SUBSCRIPTION` while a subscription
-    // exists and is cached for a minute. Without this the user lands on the
-    // empty state right after deleting and the trial offer stays hidden — or,
-    // the other way round, a stale `eligible: true` keeps offering a trial that
-    // was already spent. That stale read is the likeliest cause of the reported
-    // "offer shown after deleting the trial".
-    void queryClient.invalidateQueries({ queryKey: ["trial", "eligibility"] });
-  }, [
-    activeKey,
-    deleting,
-    onActiveItemKeyChange,
-    queryClient,
-    renderedItems,
-  ]);
+      onActiveItemKeyChange,
+      queryClient,
+      renderedItems,
+    ],
+  );
 
   if (count === 0) return null;
 
@@ -304,11 +259,9 @@ export function SubscriptionCarousel({
                 firstDeviceById?.[item.subscription.id] ?? null
               }
               effectActive={index === activeIndex}
-              deleting={deleting?.item.key === item.key ? deleting : null}
               onLongPress={() => {
-                if (deleting === null) setDeleteTarget({ item });
+                if (deleteTarget === null) setDeleteTarget({ item });
               }}
-              onDeleteExitComplete={finishCommittedDeletion}
             />
           ) : (
             <ProvisioningSlide
@@ -384,7 +337,7 @@ export function SubscriptionCarousel({
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        onServerCommitted={beginCommittedDeletion}
+        onServerCommitted={commitSubscriptionDeletion}
       />
     </div>
   );
@@ -418,40 +371,21 @@ function RealSubscriptionSlide({
   item,
   firstDevice,
   effectActive,
-  deleting,
   onLongPress,
-  onDeleteExitComplete,
 }: {
   readonly item: SubscriptionCarouselSubscriptionItem;
   readonly firstDevice: string | null;
   readonly effectActive: boolean;
-  readonly deleting: DeletingSubscription | null;
   readonly onLongPress: () => void;
-  readonly onDeleteExitComplete: () => void;
 }) {
-  const card = (
-    <SubscriptionCard
-      subscription={item.subscription}
-      index={item.slotIndex}
-      firstDevice={firstDevice}
-      effectActive={effectActive}
-      visual={deleting?.visual}
-    />
-  );
-
   return (
-    <SlideShell onLongPress={deleting === null ? onLongPress : undefined}>
-      {deleting === null ? (
-        card
-      ) : (
-        <SubscriptionDeletionMotion
-          active
-          visual={deleting.visual}
-          onExitComplete={onDeleteExitComplete}
-        >
-          {card}
-        </SubscriptionDeletionMotion>
-      )}
+    <SlideShell onLongPress={onLongPress}>
+      <SubscriptionCard
+        subscription={item.subscription}
+        index={item.slotIndex}
+        firstDevice={firstDevice}
+        effectActive={effectActive}
+      />
     </SlideShell>
   );
 }

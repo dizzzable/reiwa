@@ -6,7 +6,7 @@ import {
   isRemnawaveSubscriptionReady,
   provisioningCarouselItemKey,
   retainCarouselItemDuringDeletion,
-  resolveActiveCarouselItemKeyDuringDeletion,
+  resolveActiveCarouselItemKeyWithDeleteTarget,
   resolveTrialProvisioningPaymentStatus,
   resolveActiveCarouselItemKey,
   selectCarouselItemAfterRemoval,
@@ -380,14 +380,14 @@ describe("subscription lifecycle policy", () => {
     expect(resolveActiveCarouselItemKey([], "b")).toBeNull();
   });
 
-  it("retains a disappearing active middle card and defers its neighbour handoff until exit completes", () => {
-    const deleting = { key: "b", slotIndex: 1 };
+  it("retains an active middle target while confirmation is pending and selects its neighbour on success", () => {
+    const deleteTarget = { key: "b", slotIndex: 1 };
     const rendered = retainCarouselItemDuringDeletion(
       [
         { key: "a", slotIndex: 0 },
         { key: "c", slotIndex: 2 },
       ],
-      deleting,
+      deleteTarget,
     );
 
     expect(rendered).toEqual([
@@ -395,30 +395,30 @@ describe("subscription lifecycle policy", () => {
       { key: "b", slotIndex: 1 },
       { key: "c", slotIndex: 2 },
     ]);
-    const activeKey = resolveActiveCarouselItemKeyDuringDeletion(
+    const activeKey = resolveActiveCarouselItemKeyWithDeleteTarget(
       rendered.map((item) => item.key),
-      deleting.key,
-      deleting.key,
+      "a",
+      deleteTarget.key,
     );
     const activeKeyChanges: Array<string | null> = [];
 
-    // This is the render/effect boundary in SubscriptionCarousel: a protected
-    // active slide must not publish an intermediate key while its exit is live.
+    // The protected dialog target is not present in the canonical parent list,
+    // so the carousel must not publish it back while the request is pending.
     publishActiveKeyAsCarouselEffect(
-      deleting.key,
+      deleteTarget.key,
       activeKey,
-      deleting.key,
+      deleteTarget.key,
       activeKeyChanges,
     );
-    expect(activeKey).toBe(deleting.key);
+    expect(activeKey).toBe(deleteTarget.key);
     expect(activeKeyChanges).toEqual([]);
 
-    // finishCommittedDeletion is the first point at which a neighbour may be
-    // selected. With a three-card carousel, the middle item hands off right.
+    // A successful ordinary delete removes the target immediately and hands a
+    // three-card carousel to the nearest surviving card on the right.
     activeKeyChanges.push(
       selectCarouselItemAfterRemoval(
         rendered.map((item) => item.key),
-        deleting.key,
+        deleteTarget.key,
         activeKey,
       ),
     );
@@ -426,9 +426,11 @@ describe("subscription lifecycle policy", () => {
   });
 
   it("retains the sole deletion snapshot when realtime empties the canonical list", () => {
-    const deleting = { key: "only", slotIndex: 0 };
+    const deleteTarget = { key: "only", slotIndex: 0 };
 
-    expect(retainCarouselItemDuringDeletion([], deleting)).toEqual([deleting]);
+    expect(retainCarouselItemDuringDeletion([], deleteTarget)).toEqual([
+      deleteTarget,
+    ]);
   });
 
   it("keeps a delete target renderable if realtime wins before server commit", () => {
@@ -440,10 +442,10 @@ describe("subscription lifecycle policy", () => {
       ],
       deleteTarget,
     );
-    const activeKey = resolveActiveCarouselItemKeyDuringDeletion(
+    const activeKey = resolveActiveCarouselItemKeyWithDeleteTarget(
       rendered.map((item) => item.key),
+      "a",
       deleteTarget.key,
-      null,
     );
 
     expect(rendered.map((item) => item.key)).toEqual(["a", "b", "c"]);

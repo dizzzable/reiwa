@@ -181,12 +181,11 @@ export default function DashboardPage() {
     [completeHandoff, queryClient],
   );
 
-  // True while the carousel is playing its deletion animation. The deleted row
-  // leaves `carouselItems` about 400ms after the request (realtime invalidation),
-  // which used to flip this branch to the empty state and unmount the carousel
-  // ~460ms into a 5s animation — measured, not guessed. Holding the branch keeps
-  // the card on screen until the animation reports it is done.
-  const [deletionActive, setDeletionActive] = useState(false);
+  // Keep the carousel subtree mounted only while its confirmation dialog owns
+  // a subscription snapshot. Realtime can remove the canonical row before the
+  // local request settles; the guard lets the ordinary delete flow finish and
+  // is cleared immediately on success, cancellation, or unmount.
+  const [deleteGuardActive, setDeleteGuardActive] = useState(false);
 
   const handleTrialActivated = useCallback(
     (
@@ -291,7 +290,7 @@ export default function DashboardPage() {
             style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
           />
         </div>
-      ) : hasCarouselItems || deletionActive ? (
+      ) : hasCarouselItems || deleteGuardActive ? (
         <>
           {/* Subscription card carousel */}
           <div data-tour="subscription-card">
@@ -301,7 +300,7 @@ export default function DashboardPage() {
               activeItemKey={resolvedActiveItemKey}
               onActiveItemKeyChange={setActiveItemKey}
               onProvisioningComplete={handleProvisioningComplete}
-              onDeletionActiveChange={setDeletionActive}
+              onDeleteGuardActiveChange={setDeleteGuardActive}
             />
           </div>
 
