@@ -40,6 +40,7 @@ import {
   SubscriptionNamespace,
   SupportNamespace,
   SystemNamespace,
+  TariffConstructorNamespace,
   TrialNamespace,
   UserNamespace,
   WebAuthNamespace,
@@ -71,6 +72,7 @@ export class AdminClient {
   readonly quests: QuestsNamespace;
   readonly events: EventsNamespace;
   readonly support: SupportNamespace;
+  readonly tariffConstructor: TariffConstructorNamespace;
   readonly faq: FaqNamespace;
   readonly addOns: AddOnsNamespace;
   readonly advertising: AdvertisingNamespace;
@@ -99,6 +101,7 @@ export class AdminClient {
     this.quests = new QuestsNamespace(this.transport);
     this.events = new EventsNamespace(this.transport);
     this.support = new SupportNamespace(this.transport);
+    this.tariffConstructor = new TariffConstructorNamespace(this.transport);
     this.faq = new FaqNamespace(this.transport);
     this.addOns = new AddOnsNamespace(this.transport);
     this.advertising = new AdvertisingNamespace(this.transport);

@@ -54,6 +54,7 @@ import { createRezeisWebhookRouter } from "./routes/webhooks.js";
 import { createInternalMetricsRouter } from "./routes/internal-metrics.js";
 import { createClientErrorsRouter } from "./routes/client-errors.js";
 import { createAiChatRouter } from "./routes/ai-chat.js";
+import { createTariffConstructorRouter } from "./routes/tariff-constructor.js";
 
 export interface CreateAppDeps {
   adminClient: AdminClient | null;
@@ -272,6 +273,7 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createAuthRouter(deps));
   app.use("/api/v1", createProfileRouter(deps));
   app.use("/api/v1", createPlansRouter(deps));
+  app.use("/api/v1", createTariffConstructorRouter(deps));
   app.use("/api/v1", createSubscriptionRouter(deps));
   app.use("/api/v1", createPaymentsRouter(deps));
   app.use("/api/v1", createActivityRouter(deps));
