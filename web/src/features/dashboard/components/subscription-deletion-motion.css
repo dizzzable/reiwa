@@ -1,0 +1,468 @@
+.subscription-deletion-motion__surface {
+  position: relative;
+}
+
+.subscription-deletion-motion--active {
+  pointer-events: none;
+}
+
+.subscription-deletion-motion--active
+  .subscription-deletion-motion__surface {
+  will-change: clip-path, opacity;
+}
+
+.subscription-deletion-motion__effects {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.subscription-deletion-motion__beam,
+.subscription-deletion-motion__particle-field {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+}
+
+.subscription-deletion-motion__beam {
+  z-index: 3;
+  background: var(--deletion-core);
+  box-shadow:
+    0 0 4px 1px var(--deletion-core),
+    0 0 10px 3px
+      color-mix(in oklab, var(--deletion-accent), white 20%),
+    0 0 24px 8px
+      color-mix(in oklab, var(--deletion-accent), transparent 42%);
+}
+
+.subscription-deletion-motion__beam::before,
+.subscription-deletion-motion__beam::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  content: "";
+}
+
+.subscription-deletion-motion__beam::before {
+  right: 1px;
+  width: clamp(18px, 7vw, 34px);
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0 3px,
+      color-mix(in oklab, var(--deletion-accent), transparent 58%) 3px 4px
+    ),
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--deletion-accent), transparent 52%)
+    );
+  filter: saturate(1.35);
+}
+
+.subscription-deletion-motion__beam::after {
+  left: 1px;
+  width: clamp(10px, 3vw, 18px);
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--deletion-accent), transparent 48%),
+    transparent
+  );
+}
+
+.subscription-deletion-motion__trail {
+  position: absolute;
+  z-index: 1;
+  top: 16%;
+  left: 0;
+  display: grid;
+  width: 27%;
+  gap: 0.35rem;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(6px, 1.8vw, 9px);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: color-mix(in oklab, var(--deletion-accent), white 16%);
+  opacity: 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 58%, black);
+  mask-image: linear-gradient(90deg, transparent, black 58%, black);
+  text-shadow: 0 0 7px
+    color-mix(in oklab, var(--deletion-accent), transparent 42%);
+}
+
+.subscription-deletion-motion__trail span:nth-child(2n) {
+  translate: 13% 0;
+}
+
+.subscription-deletion-motion__particle-field {
+  z-index: 4;
+}
+
+.subscription-deletion-motion__particle {
+  position: absolute;
+  top: var(--particle-top);
+  left: 0;
+  width: var(--particle-size);
+  height: var(--particle-size);
+  background: var(--particle-tone);
+  box-shadow: 0 0 7px
+    color-mix(in oklab, var(--particle-tone), transparent 22%);
+  animation: subscription-deletion-particle var(--particle-duration)
+    steps(4, end) var(--particle-delay) infinite;
+}
+
+.subscription-deletion-motion__holding-label {
+  position: absolute;
+  z-index: 50;
+  right: 12px;
+  bottom: 10px;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  border: 1px solid
+    color-mix(in oklab, var(--deletion-accent), transparent 58%);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  background: color-mix(in oklab, #09090b, transparent 12%);
+  box-shadow: 0 0 18px
+    color-mix(in oklab, var(--deletion-accent), transparent 78%);
+  color: color-mix(in oklab, var(--deletion-accent), white 34%);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+  animation: subscription-deletion-hold-pulse 1.1s ease-in-out infinite
+    alternate;
+}
+
+.subscription-deletion-motion__reduced-cue {
+  display: none;
+}
+
+[data-deletion-phase="sweeping"]
+  .subscription-deletion-motion__surface {
+  animation: subscription-deletion-surface-sweep var(--deletion-sweep-ms)
+    linear both;
+}
+
+[data-deletion-phase="sweeping"]
+  .subscription-deletion-motion__beam,
+[data-deletion-phase="sweeping"]
+  .subscription-deletion-motion__particle-field {
+  animation: subscription-deletion-front-sweep var(--deletion-sweep-ms)
+    linear both;
+}
+
+[data-deletion-phase="sweeping"]
+  .subscription-deletion-motion__trail {
+  animation: subscription-deletion-trail-sweep var(--deletion-sweep-ms)
+    linear both;
+}
+
+[data-deletion-phase="holding"]
+  .subscription-deletion-motion__surface {
+  clip-path: inset(0 0 0 92%);
+}
+
+[data-deletion-phase="holding"]
+  .subscription-deletion-motion__beam,
+[data-deletion-phase="holding"]
+  .subscription-deletion-motion__particle-field {
+  left: 92%;
+}
+
+[data-deletion-phase="holding"]
+  .subscription-deletion-motion__beam {
+  animation: subscription-deletion-beam-pulse 650ms ease-in-out infinite
+    alternate;
+}
+
+[data-deletion-phase="holding"]
+  .subscription-deletion-motion__trail {
+  left: 65%;
+  opacity: 0.72;
+}
+
+[data-deletion-phase="finishing"]
+  .subscription-deletion-motion__surface {
+  animation: subscription-deletion-surface-finish var(--deletion-finish-ms)
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+[data-deletion-phase="finishing"]
+  .subscription-deletion-motion__beam,
+[data-deletion-phase="finishing"]
+  .subscription-deletion-motion__particle-field {
+  animation: subscription-deletion-front-finish var(--deletion-finish-ms)
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+[data-deletion-phase="finishing"]
+  .subscription-deletion-motion__trail {
+  animation: subscription-deletion-trail-finish var(--deletion-finish-ms)
+    ease-out both;
+}
+
+[data-deletion-phase="rolling-back"]
+  .subscription-deletion-motion__surface {
+  animation: subscription-deletion-surface-rollback
+    var(--deletion-rollback-ms) ease-out both;
+}
+
+[data-deletion-phase="rolling-back"]
+  .subscription-deletion-motion__effects {
+  animation: subscription-deletion-effects-rollback
+    var(--deletion-rollback-ms) ease-out both;
+}
+
+[data-deletion-phase="rolling-back"]
+  .subscription-deletion-motion__beam,
+[data-deletion-phase="rolling-back"]
+  .subscription-deletion-motion__particle-field {
+  left: var(--deletion-rollback-from);
+}
+
+[data-deletion-phase="complete"]
+  .subscription-deletion-motion__surface {
+  clip-path: inset(0 0 0 100%);
+  opacity: 0;
+}
+
+[data-deletion-phase="complete"]
+  .subscription-deletion-motion__effects,
+[data-deletion-phase="restored"]
+  .subscription-deletion-motion__effects {
+  opacity: 0;
+}
+
+[data-deletion-phase="restored"]
+  .subscription-deletion-motion__surface {
+  clip-path: inset(0 0 0 0%);
+  opacity: 1;
+}
+
+[data-deletion-phase="reduced-pending"]
+  .subscription-deletion-motion__reduced-cue,
+[data-deletion-phase="reduced-finishing"]
+  .subscription-deletion-motion__reduced-cue,
+[data-deletion-phase="reduced-rolling-back"]
+  .subscription-deletion-motion__reduced-cue {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border: 1px solid
+    color-mix(in oklab, var(--deletion-accent), transparent 36%);
+  border-radius: inherit;
+  box-shadow:
+    inset 3px 0 0 color-mix(in oklab, var(--deletion-accent), white 30%),
+    inset 0 0 18px
+      color-mix(in oklab, var(--deletion-accent), transparent 82%);
+}
+
+[data-deletion-mode="reduced"]
+  .subscription-deletion-motion__beam,
+[data-deletion-mode="reduced"]
+  .subscription-deletion-motion__particle-field,
+[data-deletion-mode="reduced"]
+  .subscription-deletion-motion__trail {
+  display: none;
+}
+
+[data-deletion-phase="reduced-finishing"]
+  .subscription-deletion-motion__surface {
+  animation: subscription-deletion-reduced-finish
+    var(--deletion-reduced-finish-ms) ease-out both;
+}
+
+[data-deletion-phase="reduced-rolling-back"]
+  .subscription-deletion-motion__reduced-cue {
+  animation: subscription-deletion-reduced-rollback
+    var(--deletion-reduced-rollback-ms) ease-out both;
+}
+
+.subscription-deletion-motion--handoff {
+  animation: subscription-deletion-handoff
+    calc(var(--deletion-handoff-ms, 250ms)) cubic-bezier(0.22, 1, 0.36, 1)
+    both;
+}
+
+@keyframes subscription-deletion-surface-sweep {
+  0%,
+  7.94% {
+    clip-path: inset(0 0 0 0%);
+  }
+  100% {
+    clip-path: inset(0 0 0 92%);
+  }
+}
+
+@keyframes subscription-deletion-front-sweep {
+  0%,
+  7.94% {
+    left: 0%;
+    opacity: 0;
+  }
+  3% {
+    opacity: 1;
+  }
+  100% {
+    left: 92%;
+    opacity: 1;
+  }
+}
+
+@keyframes subscription-deletion-trail-sweep {
+  0%,
+  12% {
+    left: -27%;
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.78;
+  }
+  100% {
+    left: 65%;
+    opacity: 0.72;
+  }
+}
+
+@keyframes subscription-deletion-surface-finish {
+  from {
+    clip-path: inset(0 0 0 92%);
+  }
+  to {
+    clip-path: inset(0 0 0 100%);
+  }
+}
+
+@keyframes subscription-deletion-front-finish {
+  from {
+    left: 92%;
+    opacity: 1;
+  }
+  to {
+    left: 104%;
+    opacity: 0;
+  }
+}
+
+@keyframes subscription-deletion-trail-finish {
+  from {
+    left: 65%;
+    opacity: 0.72;
+  }
+  to {
+    left: 77%;
+    opacity: 0;
+  }
+}
+
+@keyframes subscription-deletion-surface-rollback {
+  from {
+    clip-path: inset(0 0 0 var(--deletion-rollback-from));
+  }
+  to {
+    clip-path: inset(0 0 0 0%);
+  }
+}
+
+@keyframes subscription-deletion-effects-rollback {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes subscription-deletion-particle {
+  0% {
+    translate: 4px 0;
+    scale: 0.45;
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    translate: var(--particle-drift-x) var(--particle-drift-y);
+    scale: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes subscription-deletion-beam-pulse {
+  from {
+    opacity: 0.68;
+    filter: brightness(0.85);
+  }
+  to {
+    opacity: 1;
+    filter: brightness(1.35);
+  }
+}
+
+@keyframes subscription-deletion-hold-pulse {
+  from {
+    opacity: 0.72;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes subscription-deletion-reduced-finish {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes subscription-deletion-reduced-rollback {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes subscription-deletion-handoff {
+  from {
+    translate: 16px 0;
+    opacity: 0;
+  }
+  to {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+
+@keyframes subscription-deletion-handoff-reduced {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subscription-deletion-motion--handoff {
+    animation-name: subscription-deletion-handoff-reduced;
+    animation-duration: 180ms;
+    translate: none;
+  }
+
+  .subscription-deletion-motion__particle,
+  .subscription-deletion-motion__holding-label {
+    animation: none;
+  }
+}

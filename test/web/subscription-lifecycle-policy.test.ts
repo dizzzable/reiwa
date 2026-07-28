@@ -433,6 +433,81 @@ describe("subscription lifecycle policy", () => {
     ]);
   });
 
+  it("keeps post-success presentation pinned until first, middle, last, and sole handoffs", () => {
+    const cases = [
+      {
+        canonical: [
+          { key: "b", slotIndex: 1 },
+          { key: "c", slotIndex: 2 },
+        ],
+        target: { key: "a", slotIndex: 0 },
+        expected: "b",
+      },
+      {
+        canonical: [
+          { key: "a", slotIndex: 0 },
+          { key: "c", slotIndex: 2 },
+        ],
+        target: { key: "b", slotIndex: 1 },
+        expected: "c",
+      },
+      {
+        canonical: [
+          { key: "a", slotIndex: 0 },
+          { key: "b", slotIndex: 1 },
+        ],
+        target: { key: "c", slotIndex: 2 },
+        expected: "b",
+      },
+      {
+        canonical: [],
+        target: { key: "only", slotIndex: 0 },
+        expected: null,
+      },
+    ] as const;
+
+    for (const { canonical, target, expected } of cases) {
+      const rendered = retainCarouselItemDuringDeletion(
+        canonical,
+        target,
+      );
+      const keys = rendered.map((item) => item.key);
+      expect(keys).toContain(target.key);
+      expect(
+        resolveActiveCarouselItemKeyWithDeleteTarget(
+          keys,
+          canonical[0]?.key ?? null,
+          target.key,
+        ),
+      ).toBe(target.key);
+      expect(
+        selectCarouselItemAfterRemoval(
+          keys,
+          target.key,
+          target.key,
+        ),
+      ).toBe(expected);
+    }
+  });
+
+  it("preserves an unrelated active card after a visual deletion handoff", () => {
+    const rendered = retainCarouselItemDuringDeletion(
+      [
+        { key: "a", slotIndex: 0 },
+        { key: "c", slotIndex: 2 },
+      ],
+      { key: "b", slotIndex: 1 },
+    );
+
+    expect(
+      selectCarouselItemAfterRemoval(
+        rendered.map((item) => item.key),
+        "b",
+        "a",
+      ),
+    ).toBe("a");
+  });
+
   it("keeps a delete target renderable if realtime wins before server commit", () => {
     const deleteTarget = { key: "b", slotIndex: 1 };
     const rendered = retainCarouselItemDuringDeletion(

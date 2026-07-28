@@ -108,11 +108,57 @@ export default function DashboardPage() {
   );
   const activeItem =
     carouselItems.find((item) => item.key === resolvedActiveItemKey) ?? null;
-  const activeSubscription =
+  const canonicalActiveSubscription =
     activeItem?.kind === "subscription" ? activeItem.subscription : null;
+
+  // Keep actions and devices aligned with the card that is visibly being
+  // erased. Canonical data may already point to its neighbour after success,
+  // but the dashboard must not show controls for one subscription beneath the
+  // frozen visual of another.
+  const [deleteGuardActive, setDeleteGuardActive] = useState(false);
+  const [
+    deleteGuardSubscription,
+    setDeleteGuardSubscription,
+  ] = useState<Subscription | null>(null);
+  const canonicalActiveSubscriptionRef = useRef(
+    canonicalActiveSubscription,
+  );
+  canonicalActiveSubscriptionRef.current = canonicalActiveSubscription;
+  const handleDeleteGuardActiveChange = useCallback(
+    (active: boolean) => {
+      setDeleteGuardActive(active);
+      if (active) {
+        setDeleteGuardSubscription(
+          (current) =>
+            current ?? canonicalActiveSubscriptionRef.current,
+        );
+      } else {
+        setDeleteGuardSubscription(null);
+      }
+    },
+    [],
+  );
+  const activeSubscription =
+    deleteGuardActive && deleteGuardSubscription !== null
+      ? deleteGuardSubscription
+      : canonicalActiveSubscription;
   const activeSubscriptionId: string | null =
     activeSubscription?.id ?? null;
   const hasCarouselItems = carouselItems.length > 0;
+  const deleteGuardWasActive = useRef(false);
+
+  useEffect(() => {
+    const wasActive = deleteGuardWasActive.current;
+    deleteGuardWasActive.current = deleteGuardActive;
+    if (!wasActive || deleteGuardActive || hasCarouselItems) return;
+    const frame = window.requestAnimationFrame(() => {
+      const buyButton = document.querySelector<HTMLElement>(
+        "[data-empty-subscription-buy]",
+      );
+      buyButton?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [deleteGuardActive, hasCarouselItems]);
 
   useEffect(() => {
     if (resolvedActiveItemKey !== activeItemKey) {
@@ -180,12 +226,6 @@ export default function DashboardPage() {
     },
     [completeHandoff, queryClient],
   );
-
-  // Keep the carousel subtree mounted only while its confirmation dialog owns
-  // a subscription snapshot. Realtime can remove the canonical row before the
-  // local request settles; the guard lets the ordinary delete flow finish and
-  // is cleared immediately on success, cancellation, or unmount.
-  const [deleteGuardActive, setDeleteGuardActive] = useState(false);
 
   const handleTrialActivated = useCallback(
     (
@@ -300,7 +340,7 @@ export default function DashboardPage() {
               activeItemKey={resolvedActiveItemKey}
               onActiveItemKeyChange={setActiveItemKey}
               onProvisioningComplete={handleProvisioningComplete}
-              onDeleteGuardActiveChange={setDeleteGuardActive}
+              onDeleteGuardActiveChange={handleDeleteGuardActiveChange}
             />
           </div>
 
@@ -308,6 +348,7 @@ export default function DashboardPage() {
           <div data-tour="subscription-actions">
             <SubscriptionActions
               subscription={activeSubscription}
+              disabled={deleteGuardActive}
               purchasesBlocked={purchasesBlocked}
               restricted={restricted}
               onConnect={() => {
@@ -328,6 +369,7 @@ export default function DashboardPage() {
               <DevicesList
                 devices={devices}
                 isLoading={devicesLoading}
+                disabled={deleteGuardActive}
                 subscriptionId={activeSubscriptionId}
                 subscriptionUrl={activeSubscription?.url ?? null}
                 deviceLimit={activeSubscription?.deviceLimit ?? null}

@@ -940,6 +940,7 @@ export const en: RuDict = {
     yes: 'Yes, delete',
     no: 'No',
     success: 'Subscription deleted',
+    finishing: 'Finishing deletion…',
     error: 'Failed to delete the subscription. Please try again later.',
   },
   onboarding: {

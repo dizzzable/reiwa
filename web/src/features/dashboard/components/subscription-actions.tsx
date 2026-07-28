@@ -30,6 +30,8 @@ interface SubscriptionActionsProps {
   purchasesBlocked?: boolean;
   /** RESTRICTED freezes the whole money path, including renewal. */
   restricted?: boolean;
+  /** A transient presentation (for example deletion) owns the card. */
+  disabled?: boolean;
 }
 
 export function SubscriptionActions({
@@ -39,6 +41,7 @@ export function SubscriptionActions({
   onRenew,
   purchasesBlocked = false,
   restricted = false,
+  disabled = false,
 }: SubscriptionActionsProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -77,7 +80,7 @@ export function SubscriptionActions({
       <ActionButton
         icon={<Link2 className="h-5 w-5" />}
         label={t("card.actions.connect")}
-        disabled={!hasUrl}
+        disabled={disabled || !hasUrl}
         onClick={() => {
           if (sub?.url) {
             openExternalUrl(sub.url);
@@ -89,19 +92,23 @@ export function SubscriptionActions({
       <ActionButton
         icon={<ArrowUpCircle className="h-5 w-5" />}
         label={t("card.actions.upgrade")}
-        disabled={!canRenewOrUpgrade || purchasesBlocked}
+        disabled={disabled || !canRenewOrUpgrade || purchasesBlocked}
         onClick={onUpgrade}
       />
       <ActionButton
         icon={<RotateCcw className="h-5 w-5" />}
         label={t("card.actions.renew")}
-        disabled={!canRenewOrUpgrade || restricted || isFreeTrial}
+        disabled={
+          disabled || !canRenewOrUpgrade || restricted || isFreeTrial
+        }
         onClick={onRenew}
       />
       <ActionButton
         icon={<Plus className="h-5 w-5" />}
         label={t("card.actions.topUp")}
-        disabled={!isActive || purchasesBlocked || noAddOnsAvailable}
+        disabled={
+          disabled || !isActive || purchasesBlocked || noAddOnsAvailable
+        }
         onClick={() =>
           navigate(sub?.id ? `/addons?subscriptionId=${encodeURIComponent(sub.id)}` : "/addons")
         }

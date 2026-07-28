@@ -31,21 +31,21 @@ export function DeleteSubscriptionDialog({
   subscription,
   open,
   onOpenChange,
+  onDeleteStarted,
   onServerCommitted,
+  onServerRejected,
 }: {
   subscription: Subscription | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDeleteStarted: (subscriptionId: string) => void;
   onServerCommitted: (subscriptionId: string) => void;
+  onServerRejected: (subscriptionId: string) => void;
 }) {
   const { t } = useTranslation();
 
   const mutation = useMutation({
-    mutationFn: async () => {
-      const subscriptionId = subscription?.id;
-      if (!subscriptionId) {
-        throw new Error("Subscription is required");
-      }
+    mutationFn: async (subscriptionId: string) => {
       await executeSubscriptionDeleteWithAmbiguousRetry(
         () => deleteSubscription(subscriptionId),
         (error) =>
@@ -56,10 +56,22 @@ export function DeleteSubscriptionDialog({
     onSuccess: (subscriptionId) => {
       toast.success(t("deleteSubscription.success"));
       onServerCommitted(subscriptionId);
-      onOpenChange(false);
     },
-    onError: () => toast.error(t("deleteSubscription.error")),
+    onError: (_error, subscriptionId) => {
+      toast.error(t("deleteSubscription.error"));
+      onServerRejected(subscriptionId);
+    },
   });
+
+  const confirmDeletion = () => {
+    const subscriptionId = subscription?.id;
+    if (!subscriptionId || mutation.isPending) return;
+    // Start the presentation before the request. Closing the modal immediately
+    // reveals the card underneath while the DELETE continues independently.
+    onDeleteStarted(subscriptionId);
+    onOpenChange(false);
+    mutation.mutate(subscriptionId);
+  };
 
   return (
     <Dialog
@@ -93,7 +105,7 @@ export function DeleteSubscriptionDialog({
             {t("deleteSubscription.no")}
           </button>
           <button
-            onClick={() => mutation.mutate()}
+            onClick={confirmDeletion}
             disabled={mutation.isPending || !subscription}
             className="flex items-center justify-center gap-2 rounded-2xl bg-red-500/90 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-500 active:scale-[0.98] disabled:opacity-50"
           >

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
@@ -47,7 +47,7 @@ function findNodes<T extends ts.Node>(
 }
 
 function getMutationCallback(
-  name: "mutationFn" | "onSuccess",
+  name: "mutationFn" | "onSuccess" | "onError",
 ): ts.ArrowFunction | ts.FunctionExpression {
   const useMutation = findNodes(
     deleteDialogSource,
@@ -119,9 +119,10 @@ describe("subscription delete ambiguity policy", () => {
     expect(operation).toHaveBeenCalledTimes(1);
   });
 
-  it("hands the awaited deletion id to the server-commit callback before closing", () => {
+  it("starts the presentation and closes the dialog before the DELETE request", () => {
     const mutationFn = getMutationCallback("mutationFn");
     const onSuccess = getMutationCallback("onSuccess");
+    const onError = getMutationCallback("onError");
 
     const awaitedDelete = findNodes(
       mutationFn.body,
@@ -148,24 +149,11 @@ describe("subscription delete ambiguity policy", () => {
       throw new Error("mutationFn must await deletion and return its captured id");
     }
     const returnedIdName = returnedExpression.text;
-
-    const capturedId = findNodes(
-      mutationFn.body,
-      (node): node is ts.VariableDeclaration =>
-        ts.isVariableDeclaration(node) &&
-        ts.isIdentifier(node.name) &&
-        node.name.text === returnedIdName &&
-        !!node.initializer &&
-        ts.isPropertyAccessExpression(node.initializer) &&
-        node.initializer.name.text === "id",
-    )[0];
-    if (!capturedId) {
-      throw new Error("mutationFn must capture the subscription id before deletion");
+    const mutationId = mutationFn.parameters[0]?.name;
+    if (!mutationId || !ts.isIdentifier(mutationId)) {
+      throw new Error("mutationFn must receive the captured subscription id");
     }
-
-    expect(capturedId.getStart(deleteDialogSource)).toBeLessThan(
-      awaitedDelete.getStart(deleteDialogSource),
-    );
+    expect(mutationId.text).toBe(returnedIdName);
     expect(awaitedDelete.getStart(deleteDialogSource)).toBeLessThan(
       returnedId.getStart(deleteDialogSource),
     );
@@ -186,106 +174,164 @@ describe("subscription delete ambiguity policy", () => {
         ts.isIdentifier(call.arguments[0]) &&
         call.arguments[0].text === successId.text,
     );
-    const closeDialog = successCalls.find(
+    expect(serverCommit).toBeDefined();
+
+    const errorId = onError.parameters[1]?.name;
+    if (!errorId || !ts.isIdentifier(errorId)) {
+      throw new Error("onError must receive the rejected subscription id");
+    }
+    const rejected = findNodes(
+      onError.body,
+      (node): node is ts.CallExpression =>
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "onServerRejected" &&
+        ts.isIdentifier(node.arguments[0]) &&
+        node.arguments[0].text === errorId.text,
+    )[0];
+    expect(rejected).toBeDefined();
+
+    const confirmDeclaration = findNodes(
+      deleteDialogSource,
+      (node): node is ts.VariableDeclaration =>
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === "confirmDeletion",
+    )[0];
+    const confirm = confirmDeclaration?.initializer;
+    if (!confirm || !ts.isArrowFunction(confirm)) {
+      throw new Error("DeleteSubscriptionDialog must define confirmDeletion");
+    }
+    const confirmCalls = findNodes(
+      confirm.body,
+      (node): node is ts.CallExpression => ts.isCallExpression(node),
+    );
+    const startPresentation = confirmCalls.find(
+      (call) =>
+        ts.isIdentifier(call.expression) &&
+        call.expression.text === "onDeleteStarted",
+    );
+    const closeDialog = confirmCalls.find(
       (call) =>
         ts.isIdentifier(call.expression) &&
         call.expression.text === "onOpenChange" &&
         call.arguments[0]?.kind === ts.SyntaxKind.FalseKeyword,
     );
-    if (!serverCommit || !closeDialog) {
+    const mutate = confirmCalls.find(
+      (call) =>
+        ts.isPropertyAccessExpression(call.expression) &&
+        ts.isIdentifier(call.expression.expression) &&
+        call.expression.expression.text === "mutation" &&
+        call.expression.name.text === "mutate",
+    );
+    if (!startPresentation || !closeDialog || !mutate) {
       throw new Error(
-        "onSuccess must commit its subscription id and then close the dialog",
+        "confirm must start presentation, close, and then mutate",
       );
     }
-
-    expect(serverCommit.getStart(deleteDialogSource)).toBeLessThan(
+    expect(startPresentation.getStart(deleteDialogSource)).toBeLessThan(
       closeDialog.getStart(deleteDialogSource),
+    );
+    expect(closeDialog.getStart(deleteDialogSource)).toBeLessThan(
+      mutate.getStart(deleteDialogSource),
     );
   });
 
-  it("removes the subscription immediately after success without an exit animation", () => {
-    const declaration = findNodes(
+  it("updates canonical cache on success but publishes the neighbour only after the visual exit", () => {
+    const commitDeclaration = findNodes(
       carouselSource,
       (node): node is ts.VariableDeclaration =>
         ts.isVariableDeclaration(node) &&
         ts.isIdentifier(node.name) &&
         node.name.text === "commitSubscriptionDeletion",
     )[0];
-    const useCallbackCall = declaration?.initializer;
-    const callback =
-      useCallbackCall &&
-      ts.isCallExpression(useCallbackCall) &&
-      useCallbackCall.arguments[0];
-    if (!callback || !ts.isArrowFunction(callback)) {
+    const commitUseCallback = commitDeclaration?.initializer;
+    const commitCallback =
+      commitUseCallback &&
+      ts.isCallExpression(commitUseCallback) &&
+      commitUseCallback.arguments[0];
+    if (!commitCallback || !ts.isArrowFunction(commitCallback)) {
       throw new Error(
         "SubscriptionCarousel must commit deletion in one useCallback",
       );
     }
 
-    const calls = findNodes(
-      callback.body,
+    const finishDeclaration = findNodes(
+      carouselSource,
+      (node): node is ts.VariableDeclaration =>
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === "finishDeletionPresentation",
+    )[0];
+    const finishUseCallback = finishDeclaration?.initializer;
+    const finishCallback =
+      finishUseCallback &&
+      ts.isCallExpression(finishUseCallback) &&
+      finishUseCallback.arguments[0];
+    if (!finishCallback || !ts.isArrowFunction(finishCallback)) {
+      throw new Error(
+        "SubscriptionCarousel must finish presentation in one useCallback",
+      );
+    }
+
+    const commitCalls = findNodes(
+      commitCallback.body,
       (node): node is ts.CallExpression => ts.isCallExpression(node),
     );
-    const setQueryData = calls.find(
+    const finishCalls = findNodes(
+      finishCallback.body,
+      (node): node is ts.CallExpression => ts.isCallExpression(node),
+    );
+    const setQueryData = commitCalls.find(
       (call) =>
         ts.isPropertyAccessExpression(call.expression) &&
         call.expression.name.text === "setQueryData",
     );
-    const clearTarget = calls.find(
+    const publishDuringCommit = commitCalls.find(
       (call) =>
         ts.isIdentifier(call.expression) &&
-        call.expression.text === "setDeleteTarget" &&
-        call.arguments[0]?.kind === ts.SyntaxKind.NullKeyword,
+        call.expression.text === "onActiveItemKeyChange",
     );
-    const publishActiveKey = calls.find(
+    const publishAtExit = finishCalls.find(
       (call) =>
         ts.isIdentifier(call.expression) &&
         call.expression.text === "onActiveItemKeyChange",
     );
 
     expect(setQueryData).toBeDefined();
-    expect(clearTarget).toBeDefined();
-    expect(publishActiveKey).toBeDefined();
+    expect(publishDuringCommit).toBeUndefined();
+    expect(publishAtExit).toBeDefined();
     expect(
-      calls.some(
+      commitCalls.some(
         (call) =>
           ts.isIdentifier(call.expression) &&
           call.expression.text === "setTimeout",
       ),
     ).toBe(false);
-    expect(callback.getText(carouselSource)).toContain(
-      "selectCarouselItemAfterRemoval",
-    );
-    expect(callback.getText(carouselSource)).toContain(
+    expect(commitCallback.getText(carouselSource)).toContain(
       'queryKey: ["trial", "eligibility"]',
     );
-
-    expect(carouselSourceText).not.toContain("SubscriptionDeletionMotion");
-    expect(carouselSourceText).not.toContain("setDeleting");
-    expect(
-      existsSync(
-        new URL(
-          "../../web/src/features/dashboard/components/subscription-deletion-motion.tsx",
-          import.meta.url,
-        ),
-      ),
-    ).toBe(false);
+    expect(carouselSourceText).toContain("SubscriptionDeletionMotion");
+    expect(carouselSourceText).toContain("deletionRef");
+    expect(carouselSourceText).toContain(
+      "resolveSubscriptionCardVisual(",
+    );
 
     const motionCss = readFileSync(
       new URL(
-        "../../web/src/features/dashboard/components/subscription-card-motion.css",
+        "../../web/src/features/dashboard/components/subscription-deletion-motion.css",
         import.meta.url,
       ),
       "utf8",
     );
     const motionPolicy = readFileSync(
       new URL(
-        "../../web/src/features/dashboard/components/subscription-card-motion-policy.ts",
+        "../../web/src/features/dashboard/components/subscription-deletion-motion-policy.ts",
         import.meta.url,
       ),
       "utf8",
     );
-    expect(motionCss).not.toContain("subscription-card-deletion");
-    expect(motionPolicy).not.toContain("SUBSCRIPTION_DELETION");
+    expect(motionCss).toContain("subscription-deletion-surface-sweep");
+    expect(motionPolicy).toContain("SUBSCRIPTION_DELETION_TIMING");
   });
 });

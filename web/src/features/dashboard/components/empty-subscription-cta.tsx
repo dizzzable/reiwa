@@ -39,6 +39,7 @@ export function EmptySubscriptionCta({ onBuy }: EmptySubscriptionCtaProps) {
       </p>
       <Button
         onClick={onBuy}
+        data-empty-subscription-buy
         className="mt-6 w-full"
         size="lg"
         style={{

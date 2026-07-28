@@ -13,7 +13,7 @@
  * Revoke acts on a single device of this subscription.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { Copy, Globe, Info, RefreshCw, Smartphone, Trash2 } from "lucide-react";
@@ -47,6 +47,8 @@ interface DevicesListProps {
   /** Active subscription limits, shown in the multi-subscription info modal. */
   deviceLimit?: number | null;
   trafficLimit?: number | null;
+  /** Prevents actions while a destructive card presentation owns this row. */
+  disabled?: boolean;
 }
 
 export function DevicesList({
@@ -56,6 +58,7 @@ export function DevicesList({
   subscriptionUrl,
   deviceLimit,
   trafficLimit,
+  disabled = false,
 }: DevicesListProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -64,6 +67,12 @@ export function DevicesList({
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [revokeHwid, setRevokeHwid] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!disabled) return;
+    setRegenerateOpen(false);
+    setRevokeHwid(null);
+  }, [disabled]);
 
   const revokeMutation = useMutation({
     mutationFn: (hwid: string) => deleteSubscriptionDevice(subscriptionId, hwid),
@@ -90,6 +99,7 @@ export function DevicesList({
   });
 
   const handleCopy = async () => {
+    if (disabled) return;
     if (!subscriptionUrl) {
       toast.error(t("devices.error"));
       return;
@@ -130,7 +140,7 @@ export function DevicesList({
           </button>
           <button
             onClick={handleCopy}
-            disabled={!subscriptionUrl}
+            disabled={disabled || !subscriptionUrl}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
             aria-label={t("devices.copyLink")}
           >
@@ -139,7 +149,7 @@ export function DevicesList({
           </button>
           <button
             onClick={() => setRegenerateOpen(true)}
-            disabled={regenerateMutation.isPending}
+            disabled={disabled || regenerateMutation.isPending}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
             aria-label={t("devices.regenerate")}
           >
@@ -183,7 +193,7 @@ export function DevicesList({
               </div>
               <button
                 onClick={() => setRevokeHwid(device.hwid)}
-                disabled={revokeMutation.isPending}
+                disabled={disabled || revokeMutation.isPending}
                 className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full text-zinc-600 hover:text-(--brand-primary) hover:bg-(--brand-primary)/10 transition-colors"
                 aria-label={t("devices.revoke")}
               >
@@ -195,7 +205,10 @@ export function DevicesList({
       )}
 
       {/* ── Regenerate-link confirmation ── */}
-      <Dialog open={regenerateOpen} onOpenChange={setRegenerateOpen}>
+      <Dialog
+        open={!disabled && regenerateOpen}
+        onOpenChange={setRegenerateOpen}
+      >
         <DialogContent className="max-w-xs">
           <DialogHeader>
             <DialogTitle>{t("devices.regenerate")}</DialogTitle>
@@ -206,6 +219,7 @@ export function DevicesList({
               variant="danger"
               size="lg"
               fullWidth
+              disabled={disabled}
               loading={regenerateMutation.isPending}
               icon={<RefreshCw className="h-5 w-5" />}
               onClick={() => regenerateMutation.mutate()}
@@ -226,7 +240,7 @@ export function DevicesList({
 
       {/* ── Revoke-device confirmation ── */}
       <Dialog
-        open={revokeHwid !== null}
+        open={!disabled && revokeHwid !== null}
         onOpenChange={(open) => {
           if (!open) setRevokeHwid(null);
         }}
@@ -241,6 +255,7 @@ export function DevicesList({
               variant="danger"
               size="lg"
               fullWidth
+              disabled={disabled}
               loading={revokeMutation.isPending}
               icon={<Trash2 className="h-5 w-5" />}
               onClick={() => {

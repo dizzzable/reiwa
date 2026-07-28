@@ -26,7 +26,10 @@ import type { Subscription } from "@/types/api";
 
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { SubscriptionCardFrame } from "./subscription-card-frame";
-import { resolveSubscriptionCardVisual } from "./subscription-card-visual";
+import {
+  resolveSubscriptionCardVisual,
+  type ResolvedSubscriptionCardVisual,
+} from "./subscription-card-visual";
 
 export interface SubscriptionCardProps {
   subscription: Subscription;
@@ -44,6 +47,11 @@ export interface SubscriptionCardProps {
    * live effect instantly instead of after a WebGL-init delay.
    */
   effectActive?: boolean;
+  /**
+   * Frozen visual supplied by a presentation lifecycle such as deletion.
+   * Normal cards continue to resolve the live operator branding themselves.
+   */
+  visual?: ResolvedSubscriptionCardVisual;
 }
 
 export function SubscriptionCard({
@@ -51,12 +59,14 @@ export function SubscriptionCard({
   index,
   firstDevice,
   effectActive,
+  visual,
 }: SubscriptionCardProps) {
   const { branding } = useBranding();
-  const resolvedVisual = useMemo(
+  const brandingVisual = useMemo(
     () => resolveSubscriptionCardVisual(branding, index),
     [branding, index],
   );
+  const resolvedVisual = visual ?? brandingVisual;
 
   return (
     <SubscriptionCardFrame
