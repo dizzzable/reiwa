@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { FaqMediaElement } from "./faq-media-element";
+import { FaqMediaElement } from "../src/features/settings/faq-media-element";
 
 describe("FaqMediaElement markup", () => {
   it("renders an asynchronously decoded lazy image with its source and alt text", () => {
