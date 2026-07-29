@@ -48,6 +48,26 @@ export interface AdminTransportOptions {
   readonly sharedSecret?: string | null;
 }
 
+export interface BinaryFetchResult {
+  readonly status: number;
+  readonly contentType: string | null;
+  readonly contentLength: number | null;
+  readonly contentRange: string | null;
+  readonly acceptRanges: string | null;
+  readonly etag: string | null;
+  readonly lastModified: string | null;
+  readonly body: NodeJS.ReadableStream;
+}
+
+export interface BinaryFetchOptions {
+  /**
+   * Return 4xx/5xx responses to the caller instead of collapsing them to
+   * `null`. This is useful for byte-range proxies, which must preserve 416
+   * and distinguish a missing immutable asset from an upstream outage.
+   */
+  readonly includeErrorResponses?: boolean;
+}
+
 export class AdminTransport {
   private readonly baseUrl: string;
   private readonly basePath: string;
@@ -167,17 +187,14 @@ export class AdminTransport {
    * Issues a GET and returns the raw response body as a Node `Readable`
    * together with the upstream `Content-Type` and `Content-Length`. Used to
    * proxy permissioned binary downloads (e.g. support attachments) straight
-   * back to the browser without buffering. Returns `null` on a 4xx/5xx.
+   * back to the browser without buffering. Returns `null` on a 4xx/5xx by
+   * default; byte-range proxies can opt into inspecting error responses.
    */
   async fetchBinary(
     path: string,
     extraHeaders: Record<string, string> = {},
-  ): Promise<{
-    status: number;
-    contentType: string | null;
-    contentLength: number | null;
-    body: NodeJS.ReadableStream;
-  } | null> {
+    options: BinaryFetchOptions = {},
+  ): Promise<BinaryFetchResult | null> {
     const fullPath = `${this.basePath}${path}`;
     const signingHeaders = this.buildSigningHeaders('GET', path);
     const traceHeaders = this.buildTraceHeaders();
@@ -191,7 +208,7 @@ export class AdminTransport {
         ...extraHeaders,
       },
     });
-    if (response.statusCode >= 400) {
+    if (response.statusCode >= 400 && options.includeErrorResponses !== true) {
       await response.body.text().catch(() => undefined);
       return null;
     }
@@ -202,6 +219,10 @@ export class AdminTransport {
       status: response.statusCode,
       contentType,
       contentLength: Number.isFinite(contentLength as number) ? contentLength : null,
+      contentRange: headerValue(response.headers['content-range']),
+      acceptRanges: headerValue(response.headers['accept-ranges']),
+      etag: headerValue(response.headers.etag),
+      lastModified: headerValue(response.headers['last-modified']),
       body: response.body,
     };
   }

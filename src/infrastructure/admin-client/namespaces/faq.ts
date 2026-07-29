@@ -3,7 +3,7 @@
  * settings → FAQ page. Items are locale-filtered upstream; `null`
  * locale entries are global fallbacks.
  */
-import type { AdminTransport } from '../transport.js';
+import type { AdminTransport, BinaryFetchResult } from '../transport.js';
 
 export interface FaqItem {
   readonly id: string;
@@ -29,6 +29,22 @@ export class FaqNamespace {
     return this.transport.request<readonly FaqItem[]>(
       'GET',
       `/api/internal/faq${query}`,
+    );
+  }
+
+  /**
+   * Streams one immutable FAQ upload from the rezeis host. The filename is
+   * supplied by the BFF only after strict path validation; encoding it here
+   * keeps the request confined to the public `/uploads/faq/` directory.
+   *
+   * Error responses are returned to the route so it can preserve 416 for an
+   * unsatisfiable byte range while mapping upstream outages to a safe 502.
+   */
+  downloadMedia(fileName: string, range?: string): Promise<BinaryFetchResult | null> {
+    return this.transport.fetchBinary(
+      `/uploads/faq/${encodeURIComponent(fileName)}`,
+      range ? { Range: range } : {},
+      { includeErrorResponses: true },
     );
   }
 }

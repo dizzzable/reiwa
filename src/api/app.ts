@@ -117,6 +117,10 @@ export function createApp(deps: CreateAppDeps) {
           // a blob/data URI — otherwise external logos render as a broken
           // image in the Mini App. Mirrors the rezeis-admin img-src policy.
           "img-src": ["'self'", "data:", "blob:", "https:"],
+          // FAQ uploads are proxied same-origin; HTTPS also keeps legacy
+          // externally hosted operator videos usable. Unsafe schemes remain
+          // blocked and are independently rejected by the FAQ URL normalizer.
+          "media-src": ["'self'", "blob:", "https:"],
         },
       },
       // Telegram embeds the Mini App in an iframe; the legacy

@@ -21,7 +21,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
+    include: ['test/**/*.test.ts', 'src/**/*.test.ts', 'web/src/**/*.test.tsx'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.property.test.ts'],
     passWithNoTests: true,
     environment: 'node',

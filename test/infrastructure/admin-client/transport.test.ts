@@ -357,3 +357,70 @@ describe('AdminTransport — openStream', () => {
     await t.close();
   });
 });
+
+describe('AdminTransport - fetchBinary ranges', () => {
+  let h: Harness;
+  let transport: AdminTransport;
+
+  beforeEach(async () => {
+    h = await startTestServer();
+    transport = new AdminTransport({ baseUrl: h.baseUrl, apiKey: 'k' });
+  });
+
+  afterEach(async () => {
+    await transport.close();
+    await h.close();
+  });
+
+  it('forwards Range and exposes the metadata required by a 206 proxy', async () => {
+    h.respond = (_req, res) => {
+      res.statusCode = 206;
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Content-Length', '4');
+      res.setHeader('Content-Range', 'bytes 10-13/100');
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('ETag', '"range-etag"');
+      res.setHeader('Last-Modified', 'Wed, 29 Jul 2026 12:00:00 GMT');
+      res.end('data');
+    };
+
+    const result = await transport.fetchBinary(
+      '/uploads/faq/guide.mp4',
+      { Range: 'bytes=10-13' },
+      { includeErrorResponses: true },
+    );
+
+    expect(h.captured[0]?.headers.range).toBe('bytes=10-13');
+    expect(result).toMatchObject({
+      status: 206,
+      contentType: 'video/mp4',
+      contentLength: 4,
+      contentRange: 'bytes 10-13/100',
+      acceptRanges: 'bytes',
+      etag: '"range-etag"',
+      lastModified: 'Wed, 29 Jul 2026 12:00:00 GMT',
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of result!.body as AsyncIterable<Buffer>) {
+      chunks.push(Buffer.from(chunk));
+    }
+    expect(Buffer.concat(chunks).toString('utf8')).toBe('data');
+  });
+
+  it('lets a byte-range proxy inspect an upstream 416 response', async () => {
+    h.respond = (_req, res) => {
+      res.statusCode = 416;
+      res.setHeader('Content-Range', 'bytes */100');
+      res.end();
+    };
+
+    const result = await transport.fetchBinary(
+      '/uploads/faq/guide.mp4',
+      { Range: 'bytes=100-200' },
+      { includeErrorResponses: true },
+    );
+    expect(result?.status).toBe(416);
+    expect(result?.contentRange).toBe('bytes */100');
+    result?.body.resume();
+  });
+});

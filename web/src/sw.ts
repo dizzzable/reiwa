@@ -4,6 +4,7 @@ import { registerRoute, Route, setCatchHandler } from 'workbox-routing'
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 import { CacheableResponsePlugin } from 'workbox-cacheable-response'
+import { isCacheableApiPath } from './sw-cache-policy'
 
 declare let self: ServiceWorkerGlobalScope
 
@@ -12,7 +13,12 @@ declare let self: ServiceWorkerGlobalScope
 // `activate` cleanup purges the previous generation's caches. v2 fixes the
 // stale-app bug where navigations were served CacheFirst (see below).
 const STATIC_CACHE = 'static-assets-v2'
-const API_CACHE = 'api-responses-v3'
+// v4 drops FAQ responses from the service-worker cache. FAQ is edited live in
+// the operator panel; a stale-while-revalidate hit could otherwise hide a new
+// answer or attachment for the rest of the session (React Query would accept
+// the stale 200 as fresh data). The page has its own built-in offline fallback,
+// so caching this endpoint adds staleness without improving resilience.
+const API_CACHE = 'api-responses-v4'
 const NAV_CACHE = 'navigations-v2'
 
 // ─── Strategy Configuration ────────────────────────────────────────────────────
@@ -165,7 +171,6 @@ registerRoute(staticAssetsRoute)
 //   /api/v1/branding         — operator branding
 //   /api/v1/plans            — public plan catalog
 //   /api/v1/gateways         — enabled payment gateways (catalog, not user)
-//   /api/v1/faq              — operator FAQ content
 //
 // The add-on catalog (/api/v1/add-ons/plan/...) is deliberately NOT SW-cached:
 // it is money-facing (price/availability) and must not be served stale across
@@ -182,21 +187,6 @@ registerRoute(staticAssetsRoute)
 // NOT cached (account-scoped / sensitive): /auth/*, /profile, /subscription,
 //   /payments/*, /activity, /promo, /referrals, /devices, /partner,
 //   /support, /linking/*, /push/*, /realtime/*.
-const CACHEABLE_API_EXACT = new Set<string>([
-  '/api/v1/branding',
-  '/api/v1/plans',
-  '/api/v1/gateways',
-  '/api/v1/faq',
-  '/api/v1/landing',
-])
-
-const CACHEABLE_API_PREFIXES: readonly string[] = []
-
-function isCacheableApiPath(pathname: string): boolean {
-  if (CACHEABLE_API_EXACT.has(pathname)) return true
-  return CACHEABLE_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))
-}
-
 const apiRoute = new Route(
   ({ url, request }) => {
     // Only ever cache idempotent reads; never POST/PUT/PATCH/DELETE.
