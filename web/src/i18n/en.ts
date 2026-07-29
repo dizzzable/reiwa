@@ -1087,6 +1087,8 @@ export const en: RuDict = {
     a4: 'Try regenerating the connection link. If that doesn\'t help, create a ticket in the "Support" section.',
     loadFailedTitle: 'Help is temporarily unavailable',
     loadFailedBody: 'We could not load the latest FAQ from the service. Showing the built-in answers for now.',
+    emptyTitle: 'Help is empty for now',
+    emptyBody: 'The administrator has not added any active answers yet.',
     mediaGroupLabel: 'Materials for the answer “{{question}}”',
     mediaImageAlt: 'Illustration for the answer “{{question}}”',
     mediaVideoLabel: 'Video for the answer “{{question}}”',

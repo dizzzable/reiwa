@@ -5,6 +5,7 @@ import type { FaqItem } from "@/lib/api-client";
 export interface FaqViewState {
   readonly items: FaqItem[];
   readonly showLoadError: boolean;
+  readonly showEmptyState: boolean;
 }
 
 /**
@@ -17,9 +18,12 @@ export function resolveFaqViewState(
   isError: boolean,
   t: TFunction,
 ): FaqViewState {
+  const resolvedItems = items ?? getDefaultFaq(t);
+
   return {
-    items: items && items.length > 0 ? items : getDefaultFaq(t),
+    items: resolvedItems,
     showLoadError: isError,
+    showEmptyState: !isError && items !== undefined && items.length === 0,
   };
 }
 

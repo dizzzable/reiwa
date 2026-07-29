@@ -70,6 +70,11 @@ export default function FaqPage() {
           Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-14 w-full rounded-2xl" />
           ))
+        ) : viewState.showEmptyState ? (
+          <div className="rounded-2xl border border-white/6 bg-white/2 px-5 py-8 text-center">
+            <p className="text-sm font-medium text-zinc-300">{t("faq.emptyTitle")}</p>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("faq.emptyBody")}</p>
+          </div>
         ) : (
           viewState.items.map((item) => (
             <FaqAccordionItem key={item.id} item={item} />

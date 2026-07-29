@@ -12,6 +12,15 @@ describe("FAQ view state", () => {
     expect(resolveFaqViewState(items, false, t)).toEqual({
       items,
       showLoadError: false,
+      showEmptyState: false,
+    });
+  });
+
+  it("respects an intentionally empty operator-managed FAQ", () => {
+    expect(resolveFaqViewState([], false, t)).toEqual({
+      items: [],
+      showLoadError: false,
+      showEmptyState: true,
     });
   });
 
@@ -19,6 +28,7 @@ describe("FAQ view state", () => {
     const state = resolveFaqViewState(undefined, true, t);
 
     expect(state.showLoadError).toBe(true);
+    expect(state.showEmptyState).toBe(false);
     expect(state.items).toEqual([
       { id: "1", question: "faq.q1", answer: "faq.a1" },
       { id: "2", question: "faq.q2", answer: "faq.a2" },
