@@ -1,6 +1,6 @@
 {
   "name": "reiwa",
-  "version": "0.9.6.70",
+  "version": "0.9.6.71",
   "private": true,
   "type": "module",
   "engines": {
@@ -47,6 +47,8 @@
     "@types/node": "24.13.3",
     "@types/uuid": "11.0.0",
     "fast-check": "4.8.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "tsx": "4.22.0",
     "typescript": "6.0.3",
     "vitest": "4.1.7"
