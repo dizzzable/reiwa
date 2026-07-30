@@ -16,11 +16,12 @@ import { useTranslation } from "react-i18next";
 import { usePartnerStatus } from "@/hooks/use-partner-status";
 import { useSupportUnread } from "@/hooks/use-support-unread";
 import { useBranding } from "@/lib/branding-provider";
+import { type NavDestinationId } from "@/types/branding";
 import {
-  NAV_DESTINATIONS,
-  type NavDestinationId,
-  type NavItemSetting,
-} from "@/types/branding";
+  DEFAULT_NAV,
+  DEVICE_NAV_ROUTE,
+  normalizeNavItems,
+} from "@/components/layout/nav-config";
 
 export interface NavTab {
   readonly to: string;
@@ -32,15 +33,6 @@ export interface NavTab {
   /** Optional unread-count badge (e.g. support replies on the Support tab). */
   readonly badge?: number;
 }
-
-/** Fallback nav when the operator config is absent (legacy payloads). */
-const DEFAULT_NAV: readonly NavItemSetting[] = [
-  { id: "subscriptions", visible: true },
-  { id: "referrals", visible: true },
-  { id: "settings", visible: true },
-];
-
-export const DEVICE_NAV_ROUTE = "/subscription/devices";
 
 /**
  * Primary cabinet destinations, shared by the mobile `BottomNav` and the
@@ -183,57 +175,6 @@ export function useSupportInNav(): boolean {
     branding.navItems && branding.navItems.length > 0 ? branding.navItems : DEFAULT_NAV,
   );
   return items.some((i) => i.id === "support" && i.visible);
-}
-
-/**
- * Runtime defence for persisted/forward-versioned navigation payloads.
- * Unknown ids and duplicates are ignored, essentials are restored, and the
- * bottom bar is capped at five visible destinations.
- */
-export function normalizeNavItems(
-  input: readonly NavItemSetting[],
-): readonly NavItemSetting[] {
-  const allowed = new Set<string>(NAV_DESTINATIONS);
-  const seen = new Set<NavDestinationId>();
-  const normalized: NavItemSetting[] = [];
-
-  for (const candidate of input as ReadonlyArray<{
-    readonly id: string;
-    readonly visible: boolean;
-  }>) {
-    if (!allowed.has(candidate.id) || seen.has(candidate.id as NavDestinationId)) continue;
-    const id = candidate.id as NavDestinationId;
-    seen.add(id);
-    normalized.push({ id, visible: candidate.visible === true });
-  }
-
-  if (!seen.has("subscriptions")) {
-    normalized.unshift({ id: "subscriptions", visible: true });
-  }
-  if (!seen.has("settings")) {
-    normalized.push({ id: "settings", visible: true });
-  }
-
-  const visibleOptional = normalized
-    .filter(
-      (item) =>
-        item.visible && item.id !== "subscriptions" && item.id !== "settings",
-    )
-    .slice(0, 3)
-    .map((item) => item.id);
-  const allowedVisible = new Set<NavDestinationId>([
-    "subscriptions",
-    ...visibleOptional,
-    "settings",
-  ]);
-
-  return normalized.map((item) => ({
-    ...item,
-    visible:
-      item.id === "subscriptions" ||
-      item.id === "settings" ||
-      (item.visible && allowedVisible.has(item.id)),
-  }));
 }
 
 /**

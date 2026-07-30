@@ -17,10 +17,8 @@ import { useLayoutEffect } from "react";
 
 import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { buildTextureCss } from "@/lib/app-texture";
-import {
-  clearBootstrapAppBackground,
-  useBranding,
-} from "@/lib/branding-provider";
+import { clearBootstrapAppBackground } from "@/lib/branding-document";
+import { useBranding } from "@/lib/branding-provider";
 
 export function AppBackground() {
   const { branding } = useBranding();

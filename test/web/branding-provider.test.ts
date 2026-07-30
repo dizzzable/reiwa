@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { applyBrandingToDocument } from "../../web/src/lib/branding-provider.js";
+import { applyBrandingToDocument } from "../../web/src/lib/branding-document.js";
 import {
   selectBrandingProviderConfig,
   shouldPersistPublicConfig,

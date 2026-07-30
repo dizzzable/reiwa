@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEVICE_NAV_ROUTE,
   normalizeNavItems,
-} from "../../web/src/components/layout/use-nav-tabs.js";
+} from "../../web/src/components/layout/nav-config.js";
 import type { NavItemSetting } from "../../web/src/types/branding.js";
 
 describe("WEB Reiwa navigation contract", () => {
