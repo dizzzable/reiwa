@@ -25,7 +25,11 @@
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in oklab, var(--motion-accent), white 24%),
+    color-mix(
+      in oklab,
+      var(--motion-accent),
+      var(--card-foreground, white) 24%
+    ),
     transparent
   );
   animation: subscription-card-rail-drift 1.45s ease-in-out infinite alternate;
@@ -53,7 +57,11 @@
     90deg,
     transparent,
     color-mix(in oklab, var(--motion-accent), transparent 74%),
-    color-mix(in oklab, var(--motion-accent), white 32%),
+    color-mix(
+      in oklab,
+      var(--motion-accent),
+      var(--card-foreground, white) 32%
+    ),
     transparent
   );
   filter: drop-shadow(
@@ -72,7 +80,11 @@
 .subscription-card-motion__module-line {
   background: linear-gradient(
     90deg,
-    color-mix(in oklab, var(--motion-accent), white 18%),
+    color-mix(
+      in oklab,
+      var(--motion-accent),
+      var(--card-foreground, white) 18%
+    ),
     color-mix(in oklab, var(--motion-accent), transparent 34%)
   );
   box-shadow: 0 0 9px

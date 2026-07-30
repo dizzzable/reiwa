@@ -136,9 +136,19 @@ export default function StealthLayout() {
 
   if (isLoading) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
+      <div
+        className="relative flex h-dvh items-center justify-center overflow-hidden"
+        style={{
+          backgroundColor:
+            "var(--bootstrap-app-background-color, var(--brand-bg-primary))",
+          backgroundImage: "var(--bootstrap-app-background-image, none)",
+          backgroundSize: "var(--bootstrap-app-background-size, auto)",
+          backgroundPosition: "center",
+          backgroundRepeat: "repeat",
+        }}
+      >
         <div
-          className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+          className="relative z-10 h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
           style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
         />
       </div>

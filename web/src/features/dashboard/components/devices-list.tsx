@@ -118,7 +118,7 @@ export function DevicesList({
       <div className="space-y-3">
         <Skeleton className="h-5 w-40" />
         {[1, 2].map((i) => (
-          <Skeleton key={i} className="h-14 w-full rounded-2xl" />
+          <Skeleton key={i} className="h-14 w-full rounded-[var(--radius-item)]" />
         ))}
       </div>
     );
@@ -127,13 +127,13 @@ export function DevicesList({
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="min-w-0 text-sm font-semibold text-zinc-300">
+        <h3 className="min-w-0 text-sm font-semibold text-[color:var(--brand-foreground)]">
           {t("devices.title")}
         </h3>
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             onClick={() => setInfoOpen(true)}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+            className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-pill)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
             aria-label={t("devices.multiInfoAria")}
           >
             <Info className="h-3.5 w-3.5" />
@@ -141,7 +141,7 @@ export function DevicesList({
           <button
             onClick={handleCopy}
             disabled={disabled || !subscriptionUrl}
-            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-[var(--radius-pill)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)] disabled:opacity-40"
             aria-label={t("devices.copyLink")}
           >
             <Copy className="h-3 w-3" />
@@ -150,7 +150,7 @@ export function DevicesList({
           <button
             onClick={() => setRegenerateOpen(true)}
             disabled={disabled || regenerateMutation.isPending}
-            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-[var(--radius-pill)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)] disabled:opacity-50"
             aria-label={t("devices.regenerate")}
           >
             <RefreshCw
@@ -162,9 +162,11 @@ export function DevicesList({
       </div>
 
       {devices.length === 0 ? (
-        <div className="rounded-2xl border border-white/6 bg-white/2 p-6 text-center">
-          <Smartphone className="mx-auto h-8 w-8 text-zinc-600" />
-          <p className="mt-2 text-xs text-zinc-500">{t("devices.empty")}</p>
+        <div className="rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-6 text-center">
+          <Smartphone className="mx-auto h-8 w-8 text-[color:var(--brand-muted-foreground)] opacity-60" />
+          <p className="mt-2 text-xs text-[color:var(--brand-muted-foreground)]">
+            {t("devices.empty")}
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -174,17 +176,17 @@ export function DevicesList({
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
-              className="flex items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-3"
+              className="flex items-center gap-3 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-3"
             >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-800/60">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-item)] bg-[color:var(--color-surface-high)]">
                 {platformIcon(device.platform)}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-zinc-200 truncate">
+                <p className="truncate text-sm font-medium text-[color:var(--brand-foreground)]">
                   {device.deviceModel ?? device.platform ?? "Device"}
                 </p>
                 {device.lastSeenAt && (
-                  <p className="text-[11px] text-zinc-500">
+                  <p className="text-[11px] text-[color:var(--brand-muted-foreground)]">
                     {t("devices.lastSeen", {
                       when: new Date(device.lastSeenAt).toLocaleDateString(),
                     })}
@@ -194,7 +196,7 @@ export function DevicesList({
               <button
                 onClick={() => setRevokeHwid(device.hwid)}
                 disabled={disabled || revokeMutation.isPending}
-                className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full text-zinc-600 hover:text-(--brand-primary) hover:bg-(--brand-primary)/10 transition-colors"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-pill)] text-[color:var(--brand-muted-foreground)] opacity-70 transition-colors hover:bg-(--brand-primary)/10 hover:text-(--brand-primary) hover:opacity-100"
                 aria-label={t("devices.revoke")}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -283,23 +285,23 @@ export function DevicesList({
             <DialogTitle>{t("devices.multiInfoTitle")}</DialogTitle>
             <DialogDescription>{t("devices.multiInfoBody")}</DialogDescription>
           </DialogHeader>
-          <div className="mt-1 space-y-2 rounded-2xl border border-white/6 bg-white/2 p-3 text-sm">
+          <div className="mt-1 space-y-2 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-3 text-sm">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-zinc-400">{t("devices.multiInfoDeviceLimit")}</span>
-              <span className="font-medium text-zinc-100">
+              <span className="text-[color:var(--brand-muted-foreground)]">{t("devices.multiInfoDeviceLimit")}</span>
+              <span className="font-medium text-[color:var(--brand-foreground)]">
                 {deviceLimit && deviceLimit > 0 ? deviceLimit : t("devices.unlimited")}
               </span>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <span className="text-zinc-400">{t("devices.multiInfoTrafficLimit")}</span>
-              <span className="font-medium text-zinc-100">
+              <span className="text-[color:var(--brand-muted-foreground)]">{t("devices.multiInfoTrafficLimit")}</span>
+              <span className="font-medium text-[color:var(--brand-foreground)]">
                 {trafficLimit && trafficLimit > 0
                   ? t("devices.multiInfoTrafficValue", { value: trafficLimit })
                   : t("devices.unlimited")}
               </span>
             </div>
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+          <p className="mt-1 text-[11px] leading-relaxed text-[color:var(--brand-muted-foreground)]">
             {t("devices.multiInfoHint")}
           </p>
         </DialogContent>
@@ -309,14 +311,14 @@ export function DevicesList({
 }
 
 function platformIcon(platform: string | null) {
-  if (!platform) return <Smartphone className="h-4 w-4 text-zinc-400" />;
+  if (!platform) return <Smartphone className="h-4 w-4 text-[color:var(--brand-muted-foreground)]" />;
   const p = platform.toLowerCase();
   if (p.includes("android")) return <AndroidGlyph className="h-4 w-4 text-emerald-400" />;
   if (p.includes("ios") || p.includes("iphone") || p.includes("ipad"))
-    return <AppleGlyph className="h-4 w-4 text-zinc-200" />;
+    return <AppleGlyph className="h-4 w-4 text-[color:var(--brand-foreground)]" />;
   if (p.includes("mac") || p.includes("darwin") || p.includes("osx"))
-    return <MacosGlyph className="h-4 w-4 text-zinc-200" />;
+    return <MacosGlyph className="h-4 w-4 text-[color:var(--brand-foreground)]" />;
   if (p.includes("windows") || p.includes("win")) return <WindowsGlyph className="h-4 w-4 text-sky-400" />;
   if (p.includes("linux")) return <LinuxGlyph className="h-4 w-4 text-amber-400" />;
-  return <Globe className="h-4 w-4 text-zinc-400" />;
+  return <Globe className="h-4 w-4 text-[color:var(--brand-muted-foreground)]" />;
 }

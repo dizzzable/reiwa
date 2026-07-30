@@ -118,16 +118,16 @@ export default function PointsExchangePage() {
           <Zap className="h-10 w-10 text-violet-400" />
         </div>
         <div>
-          <h2 className="text-xl font-semibold text-white">{t('pointsExchange.giftCodeTitle')}</h2>
-          <p className="mt-1 text-sm text-zinc-400">{t('pointsExchange.giftCodeHint')}</p>
+          <h2 className="text-xl font-semibold text-[var(--brand-foreground)]">{t('pointsExchange.giftCodeTitle')}</h2>
+          <p className="mt-1 text-sm text-[var(--brand-muted-foreground)]">{t('pointsExchange.giftCodeHint')}</p>
         </div>
         <button
           type="button"
           onClick={copyGiftCode}
-          className="flex w-full max-w-xs items-center justify-between gap-3 rounded-2xl border border-white/10 bg-zinc-800/60 px-5 py-4 transition-colors hover:border-(--brand-primary)/50"
+          className="flex w-full max-w-xs items-center justify-between gap-3 rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-surface-high)] px-5 py-4 transition-colors hover:border-(--brand-primary)/50"
         >
-          <span className="font-mono text-lg font-bold tracking-widest text-white">{giftCode}</span>
-          {copied ? <Check className="h-5 w-5 text-emerald-400" /> : <Copy className="h-5 w-5 text-zinc-400" />}
+          <span className="font-mono text-lg font-bold tracking-widest text-[var(--brand-foreground)]">{giftCode}</span>
+          {copied ? <Check className="h-5 w-5 text-emerald-400" /> : <Copy className="h-5 w-5 text-[var(--brand-muted-foreground)]" />}
         </button>
         <StadiumButton fullWidth size="lg" glow onClick={() => { setGiftCode(null); navigate('/referrals') }}>
           {t('pointsExchange.done')}
@@ -169,7 +169,7 @@ export default function PointsExchangePage() {
           type="button"
           onClick={() => (selectedType ? setSelectedType(null) : safeBack())}
           aria-label={t('pointsExchange.title')}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn"
+          className="glass-icon-btn flex h-9 w-9 items-center justify-center rounded-full text-[var(--brand-muted-foreground)] hover:text-[var(--brand-foreground)]"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -187,8 +187,8 @@ export default function PointsExchangePage() {
             <Coins className="h-6 w-6 text-amber-400" />
           </div>
           <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wide">{t('pointsExchange.yourPoints')}</p>
-            <p className="text-2xl font-bold text-white">{options.pointsBalance}</p>
+            <p className="text-xs text-[var(--brand-muted-foreground)] uppercase tracking-wide">{t('pointsExchange.yourPoints')}</p>
+            <p className="text-2xl font-bold text-[var(--brand-foreground)]">{options.pointsBalance}</p>
           </div>
         </motion.div>
       </div>
@@ -196,9 +196,9 @@ export default function PointsExchangePage() {
       {!selectedType ? (
         /* Type selection */
         <div className="px-5 space-y-3">
-          <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">{t('pointsExchange.chooseType')}</p>
+          <p className="text-xs text-[var(--brand-muted-foreground)] uppercase tracking-wide mb-2">{t('pointsExchange.chooseType')}</p>
           {options.types.filter((t) => t.enabled).map((type) => {
-            const meta = TYPE_META[type.type] ?? { icon: Coins, color: 'text-zinc-400' }
+            const meta = TYPE_META[type.type] ?? { icon: Coins, color: 'text-[var(--brand-muted-foreground)]' }
             const Icon: ComponentType<SVGProps<SVGSVGElement>> = meta.icon
             return (
               <button
@@ -210,14 +210,14 @@ export default function PointsExchangePage() {
                   !type.available && 'opacity-50'
                 )}
               >
-                <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800', meta.color)}>
+                <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-surface-high)]', meta.color)}>
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="flex-1 text-left">
                   <p className="font-medium text-sm">{typeLabel(type.type)}</p>
-                  <p className="text-xs text-zinc-500">{t('pointsExchange.rate', { cost: type.pointsCost, unit: typeUnit(type.type) })}</p>
+                  <p className="text-xs text-[var(--brand-muted-foreground)]">{t('pointsExchange.rate', { cost: type.pointsCost, unit: typeUnit(type.type) })}</p>
                 </div>
-                {!type.available && <span className="text-[10px] text-zinc-600">{t('pointsExchange.unavailableShort')}</span>}
+                {!type.available && <span className="text-[10px] text-[var(--brand-muted-foreground)]">{t('pointsExchange.unavailableShort')}</span>}
               </button>
             )
           })}
@@ -228,11 +228,11 @@ export default function PointsExchangePage() {
           <div className="glass-card p-5 space-y-4">
             <div className="flex items-center gap-3">
               {(() => {
-                const meta = TYPE_META[selectedType] ?? { icon: Coins, color: 'text-zinc-400' }
+                const meta = TYPE_META[selectedType] ?? { icon: Coins, color: 'text-[var(--brand-muted-foreground)]' }
                 const Icon: ComponentType<SVGProps<SVGSVGElement>> = meta.icon
                 return (
                   <>
-                    <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800', meta.color)}>
+                    <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-surface-high)]', meta.color)}>
                       <Icon className="h-5 w-5" />
                     </div>
                     <p className="font-medium">{typeLabel(selectedType)}</p>
@@ -242,7 +242,7 @@ export default function PointsExchangePage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs text-zinc-500">{t('pointsExchange.pointsAmount')}</label>
+              <label className="text-xs text-[var(--brand-muted-foreground)]">{t('pointsExchange.pointsAmount')}</label>
               <input
                 type="number"
                 value={points}
@@ -251,14 +251,14 @@ export default function PointsExchangePage() {
                 min={selectedOption?.minPoints ?? 1}
                 max={selectedOption?.maxPoints === -1 ? options.pointsBalance : Math.min(selectedOption?.maxPoints ?? 999, options.pointsBalance)}
                 className={cn(
-                  'glass-input w-full rounded-xl px-4 py-3 text-lg font-bold text-white text-center',
+                  'glass-input w-full rounded-xl px-4 py-3 text-lg font-bold text-[var(--brand-foreground)] text-center',
                   isGift && 'opacity-70',
                 )}
               />
               {isGift ? (
-                <p className="text-[10px] text-zinc-500">{t('pointsExchange.giftFixedHint', { cost: selectedOption?.pointsCost })}</p>
+                <p className="text-[10px] text-[var(--brand-muted-foreground)]">{t('pointsExchange.giftFixedHint', { cost: selectedOption?.pointsCost })}</p>
               ) : (
-                <div className="flex justify-between text-[10px] text-zinc-600">
+                <div className="flex justify-between text-[10px] text-[var(--brand-muted-foreground)]">
                   <span>{t('pointsExchange.min', { value: selectedOption?.minPoints })}</span>
                   <span>{t('pointsExchange.max', { value: selectedOption?.maxPoints === -1 ? options.pointsBalance : selectedOption?.maxPoints })}</span>
                 </div>
@@ -267,17 +267,17 @@ export default function PointsExchangePage() {
 
             {needsSubscriptionTarget && activeSubscriptions.length > 1 && (
               <div className="space-y-1.5">
-                <label className="text-xs text-zinc-500" htmlFor="points-exchange-subscription">
+                <label className="text-xs text-[var(--brand-muted-foreground)]" htmlFor="points-exchange-subscription">
                   {t('pointsExchange.subscription')}
                 </label>
                 <select
                   id="points-exchange-subscription"
                   value={targetSubscriptionId ?? ''}
                   onChange={(event) => setTargetSubscriptionId(event.target.value || null)}
-                  className="glass-input w-full rounded-xl px-4 py-3 text-sm text-white"
+                  className="glass-input w-full rounded-xl px-4 py-3 text-sm text-[var(--brand-foreground)]"
                 >
                   {activeSubscriptions.map((subscription) => (
-                    <option key={subscription.id} value={subscription.id} className="bg-zinc-900">
+                    <option key={subscription.id} value={subscription.id} className="bg-[var(--color-surface-high)] text-[var(--brand-foreground)]">
                       {subscription.plan?.name ?? subscription.profileName ?? subscription.id}
                     </option>
                   ))}
@@ -290,8 +290,8 @@ export default function PointsExchangePage() {
             )}
 
             {/* Preview */}
-            <div className="rounded-xl bg-zinc-800/50 p-4 text-center">
-              <p className="text-xs text-zinc-500 mb-1">{t('pointsExchange.youReceive')}</p>
+            <div className="rounded-xl bg-[var(--color-surface-high)] p-4 text-center">
+              <p className="text-xs text-[var(--brand-muted-foreground)] mb-1">{t('pointsExchange.youReceive')}</p>
               <p className="text-2xl font-bold text-(--brand-primary)">
                 {computedValue} {selectedType ? typeUnit(selectedType) : ''}
               </p>

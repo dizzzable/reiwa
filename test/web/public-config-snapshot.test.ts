@@ -52,6 +52,31 @@ describe("public config snapshot", () => {
     expect(readPublicConfigSnapshot()).toEqual(DEFAULT_PUBLIC_CONFIG);
   });
 
+  it("round-trips valid plan card accent and texture URLs through local storage", () => {
+    const storage = new FakeStorage();
+    installWindow(storage);
+
+    const config = {
+      ...DEFAULT_PUBLIC_CONFIG,
+      branding: {
+        ...DEFAULT_PUBLIC_CONFIG.branding,
+        planCardStyles: {
+          starter: {
+            accent: "#ff8844",
+            textureUrl: "/uploads/branding/starter-texture.webp",
+          },
+          premium: {
+            textureUrl: "https://cdn.example.com/branding/premium-texture.webp",
+          },
+        },
+      },
+    };
+
+    writePublicConfigSnapshot(config);
+
+    expect(readPublicConfigSnapshot()).toEqual(config);
+  });
+
   it("ignores malformed stored data", () => {
     const storage = new FakeStorage();
     storage.setItem(STORAGE_KEY, "{ this is not JSON");
@@ -107,6 +132,86 @@ describe("public config snapshot", () => {
         branding: {
           ...DEFAULT_PUBLIC_CONFIG.branding,
           navItems: [{ id: "plans", visible: "yes" }],
+        },
+      },
+    ],
+    [
+      "a malformed plan card accent",
+      {
+        ...DEFAULT_PUBLIC_CONFIG,
+        branding: {
+          ...DEFAULT_PUBLIC_CONFIG.branding,
+          planCardStyles: {
+            starter: { accent: "rgb(255, 0, 0)" },
+          },
+        },
+      },
+    ],
+    [
+      "an unsafe plan card texture URL",
+      {
+        ...DEFAULT_PUBLIC_CONFIG,
+        branding: {
+          ...DEFAULT_PUBLIC_CONFIG.branding,
+          planCardStyles: {
+            starter: { textureUrl: "javascript:alert(1)" },
+          },
+        },
+      },
+    ],
+    [
+      "an external card CSS image",
+      {
+        ...DEFAULT_PUBLIC_CONFIG,
+        branding: {
+          ...DEFAULT_PUBLIC_CONFIG.branding,
+          cardGradient: 'url("https://attacker.invalid/card.png")',
+        },
+      },
+    ],
+    [
+      "an external card pattern CSS image",
+      {
+        ...DEFAULT_PUBLIC_CONFIG,
+        branding: {
+          ...DEFAULT_PUBLIC_CONFIG.branding,
+          cardPattern:
+            'linear-gradient(#fff, #000), url("https://attacker.invalid/pattern.png")',
+        },
+      },
+    ],
+    [
+      "an external app background CSS image",
+      {
+        ...DEFAULT_PUBLIC_CONFIG,
+        branding: {
+          ...DEFAULT_PUBLIC_CONFIG.branding,
+          appBackground: {
+            ...DEFAULT_PUBLIC_CONFIG.branding.appBackground!,
+            gradient: 'url("https://attacker.invalid/background.png")',
+          },
+        },
+      },
+    ],
+    [
+      "an external plan card CSS image",
+      {
+        ...DEFAULT_PUBLIC_CONFIG,
+        branding: {
+          ...DEFAULT_PUBLIC_CONFIG.branding,
+          planCardStyles: {
+            starter: { gradient: 'url("https://attacker.invalid/plan.png")' },
+          },
+        },
+      },
+    ],
+    [
+      "malformed exact corner geometry",
+      {
+        ...DEFAULT_PUBLIC_CONFIG,
+        branding: {
+          ...DEFAULT_PUBLIC_CONFIG.branding,
+          cornerRadii: { cardPx: 49, itemPx: 12, pillPx: 9999 },
         },
       },
     ],

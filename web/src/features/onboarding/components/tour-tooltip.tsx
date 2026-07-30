@@ -46,7 +46,7 @@ export function TourTooltip({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: position === "below" ? -8 : 8 }}
       transition={{ duration: 0.2 }}
-      className="fixed left-4 right-4 z-[9999] mx-auto max-w-sm rounded-2xl border border-white/10 bg-zinc-900/95 p-5 shadow-2xl backdrop-blur-xl"
+      className="fixed left-4 right-4 z-[9999] mx-auto max-w-sm rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] p-5 shadow-2xl backdrop-blur-xl"
       style={{
         [position === "below" ? "top" : "bottom"]: "auto",
         ...(position === "below"
@@ -65,20 +65,20 @@ export function TourTooltip({
                 ? "w-4 bg-(--brand-primary)"
                 : i < step
                   ? "w-1.5 bg-(--brand-primary)/50"
-                  : "w-1.5 bg-white/15"
+                  : "w-1.5 bg-[color:var(--color-border-strong)]"
             }`}
           />
         ))}
       </div>
 
-      <h3 className="text-base font-semibold text-white">{title}</h3>
-      <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">{body}</p>
+      <h3 className="text-base font-semibold text-[color:var(--brand-foreground)]">{title}</h3>
+      <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">{body}</p>
 
       {/* Navigation */}
       <div className="mt-4 flex items-center justify-between">
         <button
           onClick={onSkip}
-          className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="text-xs text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)]"
         >
           {t("onboarding.skip")}
         </button>
@@ -88,7 +88,7 @@ export function TourTooltip({
               variant="ghost"
               size="sm"
               onClick={onPrev}
-              className="text-zinc-400"
+              className="text-[color:var(--brand-muted-foreground)]"
             >
               {t("onboarding.prev")}
             </Button>

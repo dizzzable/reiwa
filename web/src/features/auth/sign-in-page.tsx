@@ -149,7 +149,7 @@ export default function SignInPage() {
           transition={{ type: 'spring', damping: 20, stiffness: 200 }}
         >
           <div
-            className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 backdrop-blur-xl"
+            className="flex h-20 w-20 items-center justify-center rounded-3xl bg-[color:var(--color-surface)] ring-1 ring-[color:var(--color-border-soft)] backdrop-blur-xl"
             style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
           >
             <BrandLogo className="h-11 w-11" />
@@ -163,10 +163,10 @@ export default function SignInPage() {
           transition={{ delay: 0.15 }}
           className="text-center"
         >
-          <h1 className="text-2xl font-bold tracking-wide text-white">
+          <h1 className="text-2xl font-bold tracking-wide text-[color:var(--brand-foreground)]">
             {t('auth.signInTitle')}
           </h1>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">
             {t('auth.signInDescription')}
           </p>
         </motion.div>
@@ -182,7 +182,7 @@ export default function SignInPage() {
         >
           {/* Username field */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="signin-username" className="text-sm font-medium text-zinc-400">
+            <label htmlFor="signin-username" className="text-sm font-medium text-[color:var(--brand-muted-foreground)]">
               {t('auth.username')}
             </label>
             <input
@@ -194,13 +194,13 @@ export default function SignInPage() {
               onChange={(e) => setUsername(e.target.value)}
               disabled={isFormDisabled}
               placeholder={t('auth.usernamePlaceholder')}
-              className="h-11 w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-(--brand-primary)/50 focus:ring-1 focus:ring-(--brand-primary)/30 disabled:opacity-50"
+              className="glass-input h-11 w-full rounded-xl px-4 text-sm disabled:opacity-50"
             />
           </div>
 
           {/* Password field */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="signin-password" className="text-sm font-medium text-zinc-400">
+            <label htmlFor="signin-password" className="text-sm font-medium text-[color:var(--brand-muted-foreground)]">
               {t('auth.password')}
             </label>
             <input
@@ -211,7 +211,7 @@ export default function SignInPage() {
               onChange={(e) => setPassword(e.target.value)}
               disabled={isFormDisabled}
               placeholder={t('auth.passwordPlaceholder')}
-              className="h-11 w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-(--brand-primary)/50 focus:ring-1 focus:ring-(--brand-primary)/30 disabled:opacity-50"
+              className="glass-input h-11 w-full rounded-xl px-4 text-sm disabled:opacity-50"
             />
           </div>
 
@@ -261,11 +261,11 @@ export default function SignInPage() {
         >
           <Link
             to="/recover"
-            className="text-zinc-500 transition-colors hover:text-(--brand-primary)"
+            className="text-[color:var(--brand-muted-foreground)] transition-colors hover:text-(--brand-primary)"
           >
             {t('auth.forgotPassword')}
           </Link>
-          <span className="text-zinc-600">
+          <span className="text-[color:var(--brand-muted-foreground)]">
             {t('auth.noAccount')}{' '}
             <Link
               to="/register"

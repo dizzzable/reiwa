@@ -67,7 +67,7 @@ export default function FeaturesGridSection({ section, locale, defaultLocale }: 
   return (
     <section className="px-6 py-16">
       {heading.length > 0 && (
-        <h2 className="mb-10 text-center text-3xl font-semibold text-white sm:text-4xl">{heading}</h2>
+        <h2 className="ls-title mb-10 text-center text-3xl font-semibold sm:text-4xl">{heading}</h2>
       )}
       <ul className={`mx-auto grid max-w-6xl gap-4 ${cols}`}>
         {items.map((item, index) => {
@@ -77,13 +77,13 @@ export default function FeaturesGridSection({ section, locale, defaultLocale }: 
           return (
             <li
               key={index}
-              className="ls-surface flex flex-col gap-3 p-6 text-white"
+              className="ls-surface ls-title flex flex-col gap-3 p-6"
             >
               <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-(--brand-primary)/15 text-(--brand-primary)">
                 <Icon name={item.icon} />
               </span>
               <h3 className="text-lg font-semibold">{title}</h3>
-              {body.length > 0 && <p className="text-sm text-zinc-300">{body}</p>}
+              {body.length > 0 && <p className="ls-muted text-sm">{body}</p>}
             </li>
           );
         })}

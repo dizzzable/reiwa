@@ -19,7 +19,7 @@ export default function HowItWorksSection({ section, locale, defaultLocale }: Pr
   return (
     <section className="px-6 py-16">
       {heading.length > 0 && (
-        <h2 className="mb-10 text-center text-3xl font-semibold text-white sm:text-4xl">{heading}</h2>
+        <h2 className="ls-title mb-10 text-center text-3xl font-semibold sm:text-4xl">{heading}</h2>
       )}
       <ol className="mx-auto grid max-w-5xl gap-6 sm:grid-cols-3">
         {steps.map((step, index) => {
@@ -31,20 +31,20 @@ export default function HowItWorksSection({ section, locale, defaultLocale }: Pr
           return (
             <li
               key={index}
-              className="ls-surface p-6 text-white"
+              className="ls-surface ls-title p-6"
             >
               <span className="mb-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-(--brand-primary) font-semibold text-(--brand-primary-fg)">
                 {index + 1}
               </span>
               <h3 className="text-lg font-semibold">{title}</h3>
-              {body.length > 0 && <p className="mt-2 text-sm text-zinc-300">{body}</p>}
+              {body.length > 0 && <p className="ls-muted mt-2 text-sm">{body}</p>}
               {mediaSrc && (
                 <img
                   src={mediaSrc}
                   alt={mediaAlt}
                   loading="lazy"
                   decoding="async"
-                  className="mt-4 rounded-xl border border-white/10"
+                  className="mt-4 rounded-xl border border-[color:var(--ls-border)]"
                 />
               )}
             </li>

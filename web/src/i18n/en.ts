@@ -884,7 +884,7 @@ export const en: RuDict = {
     choosePlanCta: 'Choose plan',
     noneRenewable: 'No subscriptions are available to renew.',
     reason: {
-      trial: "A free trial can't be renewed — upgrade to a paid plan instead.",
+      trial: "A trial can't be renewed — upgrade to a regular plan instead.",
       noPlan: 'This subscription has no plan — pick a plan when renewing.',
       noGateway: 'No payment method is available right now. Contact support.',
       archived: 'The plan is archived — renewing moves it to an available plan.',

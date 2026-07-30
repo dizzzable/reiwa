@@ -20,6 +20,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Subscription } from "@/types/api";
 import { getSubscriptionAddOns } from "@/lib/api-client";
 import { openExternalUrl } from "@/lib/utils";
+import { canRenewSubscription } from "./subscription-action-policy";
 
 interface SubscriptionActionsProps {
   subscription: Subscription | null;
@@ -55,10 +56,7 @@ export function SubscriptionActions({
   // LIVE Remnawave profile, which the backend rejects outright once expired.
   const canRenewOrUpgrade =
     sub?.status === "ACTIVE" || sub?.status === "LIMITED" || sub?.status === "EXPIRED";
-  // A FREE trial can't be renewed — only upgraded to a paid plan — so the
-  // Renew action is disabled for it (the user is steered to Upgrade instead).
-  // Paid trials stay renewable.
-  const isFreeTrial = sub?.isTrial === true && sub?.trialFree === true;
+  const canRenew = canRenewSubscription(sub, restricted);
 
   // Top-up (докупка) is only meaningful when the subscription actually has
   // eligible add-on options. Query the SAME v2 subscription-scoped eligibility
@@ -98,9 +96,7 @@ export function SubscriptionActions({
       <ActionButton
         icon={<RotateCcw className="h-5 w-5" />}
         label={t("card.actions.renew")}
-        disabled={
-          disabled || !canRenewOrUpgrade || restricted || isFreeTrial
-        }
+        disabled={disabled || !canRenew}
         onClick={onRenew}
       />
       <ActionButton
@@ -132,10 +128,10 @@ function ActionButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="flex flex-col items-center gap-1.5 rounded-2xl border border-white/6 bg-white/3 px-1 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none hover:bg-white/6"
+      className="flex flex-col items-center gap-1.5 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-1 py-3 transition-all duration-150 hover:bg-[color:var(--color-surface-high)] active:scale-95 disabled:pointer-events-none disabled:opacity-40"
     >
       <span className="text-(--brand-primary)">{icon}</span>
-      <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-zinc-300">{label}</span>
+      <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-[color:var(--brand-foreground)]">{label}</span>
     </button>
   );
 }

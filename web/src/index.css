@@ -1,7 +1,19 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/funnel-sans/wght.css";
+@import "@fontsource-variable/archivo/wght.css";
+@import "@fontsource-variable/archivo-narrow/wght.css";
+@import "@fontsource-variable/nunito/wght.css";
+@import "@fontsource-variable/newsreader/wght.css";
+@import "@fontsource-variable/playfair-display/wght.css";
+@import "@fontsource-variable/source-sans-3/wght.css";
+@import "@fontsource-variable/space-grotesk/wght.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+@import "@fontsource/ibm-plex-mono/700.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -20,7 +32,12 @@
   --brand-bg-secondary: #171717;
   --brand-card-gradient: linear-gradient(135deg, #064e3b 0%, #22c55e 100%);
   --brand-card-pattern: none;
+  --brand-foreground: #fafafa;
+  --brand-muted-foreground: #a1a1a1;
+  --brand-surface: #18181b;
+  --brand-surface-high: #27272a;
   --brand-font: 'Geist Variable', system-ui, sans-serif;
+  --glass-blur: 16px;
 }
 
 /* ─── Custom design tokens (radii / glows / surfaces) ──────────────────────── */
@@ -85,22 +102,22 @@
 
 :root {
   --background: var(--brand-bg-primary);
-  --foreground: oklch(0.985 0 0);
-  --card: var(--brand-bg-secondary);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: var(--brand-bg-secondary);
-  --popover-foreground: oklch(0.985 0 0);
+  --foreground: var(--brand-foreground);
+  --card: var(--color-surface);
+  --card-foreground: var(--brand-foreground);
+  --popover: var(--color-surface-high);
+  --popover-foreground: var(--brand-foreground);
   --primary: var(--brand-primary);
   --primary-foreground: var(--brand-primary-fg);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --secondary: var(--color-surface-high);
+  --secondary-foreground: var(--brand-foreground);
+  --muted: var(--color-surface);
+  --muted-foreground: var(--brand-muted-foreground);
+  --accent: var(--color-surface-high);
+  --accent-foreground: var(--brand-foreground);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --border: var(--color-border-soft);
+  --input: var(--color-border-strong);
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
@@ -108,13 +125,13 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar: var(--color-surface-high);
+  --sidebar-foreground: var(--brand-foreground);
   --sidebar-primary: var(--brand-primary);
   --sidebar-primary-foreground: var(--brand-primary-fg);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-accent: var(--color-surface);
+  --sidebar-accent-foreground: var(--brand-foreground);
+  --sidebar-border: var(--color-border-soft);
   --sidebar-ring: oklch(0.556 0 0);
 }
 
@@ -143,8 +160,12 @@ html, body, #root {
 }
 
 body {
-  background-color: var(--brand-bg-primary);
-  color: oklch(0.985 0 0);
+  background-color: var(--bootstrap-app-background-color, var(--brand-bg-primary));
+  background-image: var(--bootstrap-app-background-image, none);
+  background-size: var(--bootstrap-app-background-size, auto);
+  background-position: center;
+  background-repeat: repeat;
+  color: var(--brand-foreground);
   font-family: var(--brand-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -187,8 +208,8 @@ body {
   background: var(--color-surface);
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
 }
 
 /* ─── Glass input / textarea ───────────────────────────────────────────────────
@@ -198,12 +219,14 @@ body {
 .glass-input {
   background: var(--color-surface);
   border: 1px solid var(--color-border-soft);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  color: oklch(0.985 0 0);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  color: var(--brand-foreground);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
-.glass-input::placeholder { color: rgba(161, 161, 170, 0.55); }
+.glass-input::placeholder {
+  color: color-mix(in oklab, var(--brand-muted-foreground) 55%, transparent);
+}
 .glass-input:focus,
 .glass-input:focus-visible {
   outline: none;
@@ -215,12 +238,48 @@ body {
 .glass-icon-btn {
   background: var(--color-surface);
   border: 1px solid var(--color-border-soft);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  color: var(--brand-muted-foreground);
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.1s ease;
 }
-.glass-icon-btn:hover { border-color: var(--color-border-strong); }
+.glass-icon-btn:hover {
+  border-color: var(--color-border-strong);
+  color: var(--brand-foreground);
+}
 .glass-icon-btn:active { transform: scale(0.94); }
+
+.theme-title { color: var(--brand-foreground); }
+.theme-muted { color: var(--brand-muted-foreground); }
+.theme-subtle {
+  color: color-mix(in oklab, var(--brand-muted-foreground) 82%, transparent);
+}
+.theme-skeleton {
+  background: color-mix(in oklab, var(--brand-surface-high) 72%, transparent);
+}
+.theme-surface {
+  background: var(--color-surface);
+  border-color: var(--color-border-soft);
+}
+.theme-surface-high {
+  background: var(--color-surface-high);
+  border-color: var(--color-border-soft);
+}
+.theme-outline {
+  border-color: var(--color-border-soft);
+}
+.theme-outline-strong {
+  border-color: var(--color-border-strong);
+}
+
+/* `rounded-full` is intentionally retained for true circles (avatars,
+   spinners, unread dots). Interactive stadium controls and padded chips,
+   however, follow the independently editable concept pill radius so angular
+   presets do not silently become round again. */
+:is(button, a, [role="button"], [role="tab"]).rounded-full,
+.rounded-full[class*="px-"] {
+  border-radius: var(--radius-pill);
+}
 
 /* ─── Brand card (subscription) ────────────────────────────────────────────── */
 .brand-card {

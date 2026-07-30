@@ -61,12 +61,12 @@ export function DemoTutorial({ open, onClose }: DemoTutorialProps) {
           initial={{ opacity: 0, y: 20, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ type: "spring", damping: 22 }}
-          className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-(--brand-bg-primary) p-5 shadow-2xl"
+          className="relative w-full max-w-sm rounded-3xl border border-[color:var(--color-border-soft)] bg-(--brand-bg-primary) p-5 shadow-2xl"
         >
           <button
             onClick={onClose}
             aria-label={t("onboarding.skip")}
-            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-400 hover:text-white transition-colors"
+            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -74,39 +74,39 @@ export function DemoTutorial({ open, onClose }: DemoTutorialProps) {
           <p className="text-xs font-semibold uppercase tracking-wider text-(--brand-primary)">
             {t("onboarding.demo.title")}
           </p>
-          <p className="mt-1 text-sm text-zinc-400">{t("onboarding.demo.intro")}</p>
+          <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t("onboarding.demo.intro")}</p>
 
           {/* Sample subscription card — clearly labeled as an example. */}
-          <div className="relative mt-4 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-4">
+          <div className="relative mt-4 overflow-hidden rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-4">
             <span className="absolute right-3 top-3 rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-medium text-violet-300">
               {t("onboarding.demo.badge")}
             </span>
-            <p className="text-base font-semibold text-white">{t("onboarding.demo.samplePlan")}</p>
+            <p className="text-base font-semibold text-[color:var(--brand-foreground)]">{t("onboarding.demo.samplePlan")}</p>
             <p className="mt-0.5 text-xs text-emerald-400">{t("onboarding.demo.sampleStatus")}</p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-zinc-400">
-              <div className="rounded-lg bg-white/5 px-2 py-1.5">{t("onboarding.demo.sampleExpiry")}</div>
-              <div className="rounded-lg bg-white/5 px-2 py-1.5">{t("onboarding.demo.sampleTraffic")}</div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[color:var(--brand-muted-foreground)]">
+              <div className="rounded-lg bg-[color:var(--color-surface-high)] px-2 py-1.5">{t("onboarding.demo.sampleExpiry")}</div>
+              <div className="rounded-lg bg-[color:var(--color-surface-high)] px-2 py-1.5">{t("onboarding.demo.sampleTraffic")}</div>
             </div>
             <div className="mt-2 flex gap-2">
               <span className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-(--brand-primary)/15 py-1.5 text-[11px] text-(--brand-primary)">
                 <Wifi className="h-3 w-3" /> VPN
               </span>
-              <span className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-white/5 py-1.5 text-[11px] text-zinc-300">
+              <span className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-[color:var(--color-surface-high)] py-1.5 text-[11px] text-[color:var(--brand-foreground)]">
                 <ShoppingCart className="h-3 w-3" />
               </span>
-              <span className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-white/5 py-1.5 text-[11px] text-zinc-300">
+              <span className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-[color:var(--color-surface-high)] py-1.5 text-[11px] text-[color:var(--brand-foreground)]">
                 <ArrowUpCircle className="h-3 w-3" />
               </span>
             </div>
-            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-zinc-500">
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-[color:var(--brand-muted-foreground)]">
               <Smartphone className="h-3 w-3" /> {t("onboarding.demo.sampleDevices")}
             </div>
           </div>
 
           {/* Step caption */}
           <div className="mt-4 min-h-[4.5rem]">
-            <h3 className="text-base font-semibold text-white">{t(`${stepKey}.title`)}</h3>
-            <p className="mt-1 text-sm text-zinc-400">{t(`${stepKey}.body`)}</p>
+            <h3 className="text-base font-semibold text-[color:var(--brand-foreground)]">{t(`${stepKey}.title`)}</h3>
+            <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t(`${stepKey}.body`)}</p>
           </div>
 
           {/* Progress dots */}
@@ -115,7 +115,7 @@ export function DemoTutorial({ open, onClose }: DemoTutorialProps) {
               <span
                 key={k}
                 className={`h-1.5 rounded-full transition-all ${
-                  i === step ? "w-5 bg-(--brand-primary)" : "w-1.5 bg-white/15"
+                  i === step ? "w-5 bg-(--brand-primary)" : "w-1.5 bg-[color:var(--color-border-strong)]"
                 }`}
               />
             ))}
@@ -126,7 +126,7 @@ export function DemoTutorial({ open, onClose }: DemoTutorialProps) {
             {step > 0 && (
               <button
                 onClick={() => setStep((s) => Math.max(0, s - 1))}
-                className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-300 hover:text-white transition-colors"
+                className="rounded-xl border border-[color:var(--color-border-soft)] px-4 py-2.5 text-sm text-[color:var(--brand-foreground)] transition-colors hover:bg-[color:var(--color-surface)]"
               >
                 {t("onboarding.prev")}
               </button>

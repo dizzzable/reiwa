@@ -49,7 +49,7 @@ export function BottomNav() {
     >
       {/* Outer glass capsule — hugs its content (width grows with the number
           of tabs) and stays centered, instead of stretching full-width. */}
-      <div className="mx-auto mb-3 w-fit max-w-[calc(100%-1.5rem)] rounded-3xl border border-white/6 bg-zinc-900/85 px-1 py-1.5 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+      <div className="mx-auto mb-3 w-fit max-w-[calc(100%-1.5rem)] rounded-3xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-1 py-1.5 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.18)]">
         <ul className="relative flex" style={{ gap: `${navGap}px` }}>
           {tabs.map((tab) => {
             const isActive = tab.to === activeTo;
@@ -65,7 +65,7 @@ export function BottomNav() {
                     "relative z-10 flex min-h-[52px] w-16 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 font-medium transition-colors duration-200 select-none",
                     isActive
                       ? "text-(--brand-primary-fg)"
-                      : "text-zinc-400 hover:text-zinc-200",
+                      : "text-[var(--brand-muted-foreground)] hover:text-[var(--brand-foreground)]",
                   )}
                 >
                   {/* Animated active-tab pill — slides between tabs via layoutId. */}
@@ -89,7 +89,7 @@ export function BottomNav() {
                     {badge > 0 && (
                       <span
                         aria-hidden
-                        className="absolute -right-2 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-zinc-900"
+                        className="absolute -right-2 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[var(--color-surface-high)]"
                       >
                         {badge > 99 ? "99+" : badge}
                       </span>

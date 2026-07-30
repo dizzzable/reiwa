@@ -138,14 +138,14 @@ function PrivacyItem({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-4 transition-all hover:bg-white/4 active:scale-[0.98]"
+      className="flex w-full items-center gap-3 rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 transition-all hover:bg-[var(--color-surface-high)] active:scale-[0.98]"
     >
       <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
         {icon}
       </div>
       <div className="flex-1 text-left">
-        <p className="text-sm font-medium text-white">{label}</p>
-        <p className="text-xs text-zinc-500">{sublabel}</p>
+        <p className="text-sm font-medium text-[var(--brand-foreground)]">{label}</p>
+        <p className="text-xs text-[var(--brand-muted-foreground)]">{sublabel}</p>
       </div>
       {linked && (
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
@@ -189,7 +189,7 @@ function LinkTelegramForm({ linked }: { linked: boolean }) {
           <Check className="h-4 w-4 shrink-0" />
           <p className="text-sm">{t("privacy.telegramLinkedHint")}</p>
         </div>
-        <p className="text-xs text-zinc-500">{t("privacy.telegramRelinkHint")}</p>
+        <p className="text-xs text-[var(--brand-muted-foreground)]">{t("privacy.telegramRelinkHint")}</p>
         <Button
           variant="outline"
           className="w-full"
@@ -226,14 +226,14 @@ function LinkTelegramForm({ linked }: { linked: boolean }) {
                 void navigator.clipboard.writeText(code);
                 toast.success(t("common.copied"));
               }}
-              className="flex w-full items-center justify-between rounded-xl border border-white/8 bg-white/3 px-4 py-3 transition-colors hover:bg-white/5"
+              className="flex w-full items-center justify-between rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:bg-[var(--color-surface-high)]"
             >
-              <span className="font-mono text-2xl tracking-[0.3em] text-white">{code}</span>
-              <Copy className="h-4 w-4 text-zinc-400" />
+              <span className="font-mono text-2xl tracking-[0.3em] text-[var(--brand-foreground)]">{code}</span>
+              <Copy className="h-4 w-4 text-[var(--brand-muted-foreground)]" />
             </button>
           </div>
 
-          <p className="text-xs text-zinc-500">{t("privacy.telegramCodeInstructions")}</p>
+          <p className="text-xs text-[var(--brand-muted-foreground)]">{t("privacy.telegramCodeInstructions")}</p>
 
           {deepLink && (
             <Button asChild className="w-full" style={{ backgroundColor: "var(--brand-primary)", color: "var(--brand-primary-fg)" }}>
@@ -322,7 +322,7 @@ function LinkEmailForm({
           <Check className="h-4 w-4 shrink-0" />
           <p className="text-sm">{t("privacy.emailVerifiedHint", { email: currentEmail ?? "" })}</p>
         </div>
-        <p className="text-xs text-zinc-500">{t("privacy.emailRelinkHint")}</p>
+        <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t("privacy.emailRelinkHint")}</p>
         <div className="space-y-2">
           <Label>Email</Label>
           <Input

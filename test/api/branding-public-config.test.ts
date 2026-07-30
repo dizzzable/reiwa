@@ -12,10 +12,11 @@ import {
   createBrandingRouter,
   resetBrandingCache,
 } from '../../src/api/routes/branding.js';
-import { DEFAULT_PUBLIC_CONFIG } from '../../web/src/types/branding.js';
 
 const OPERATOR_PUBLIC_CONFIG: PublicConfigSnapshot = {
   branding: {
+    themePresetId: 'concept-cz',
+    themePresetVersion: 1,
     brandName: 'Northern Lights VPN',
     logoUrl: '/uploads/branding/northern-lights.svg',
     pwaIconUrl: '/uploads/branding/northern-lights.png',
@@ -36,6 +37,19 @@ const OPERATOR_PUBLIC_CONFIG: PublicConfigSnapshot = {
     iconColors: {},
     borderRadius: 'rounded-xl',
     fontFamily: 'Manrope, sans-serif',
+    surfaceTheme: {
+      foreground: '#fefefe',
+      mutedForeground: '#a8b2bd',
+      surface: '#101820',
+      surfaceHigh: '#182630',
+      borderSoft: '#ffffff',
+      borderStrong: '#63f0e0',
+      surfaceOpacity: 0.64,
+      surfaceHighOpacity: 0.78,
+      borderSoftOpacity: 0.08,
+      borderStrongOpacity: 0.18,
+      glassBlurPx: 22,
+    },
   },
   locales: ['en', 'ru'],
   defaultLocale: 'en',
@@ -169,7 +183,7 @@ describe('public branding configuration routes', () => {
     });
   });
 
-  it('uses Reiwa defaults only when Rezeis fails before any snapshot exists', async () => {
+  it('returns 503 when Rezeis fails before any durable snapshot exists', async () => {
     const persistence = createMemoryPersistence();
     const app = makeApp(
       vi.fn(async () => {
@@ -180,12 +194,95 @@ describe('public branding configuration routes', () => {
 
     const response = await request(app, '/api/v1/public-config');
 
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      ...DEFAULT_PUBLIC_CONFIG,
-      ...REIWA_OWNED_TARGETS,
-    });
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ message: 'Configuration unavailable' });
     expect(persistence.save).not.toHaveBeenCalled();
+  });
+
+  it('accepts non-texture and legacy app backgrounds without an unused texture block', () => {
+    const nonTextureBackground = {
+      kind: 'gradient',
+      effect: 'NONE',
+      props: {},
+      opacity: 1,
+      gradient: 'linear-gradient(135deg, #121212, #242424)',
+    };
+    const modern = {
+      ...OPERATOR_PUBLIC_CONFIG,
+      branding: {
+        ...OPERATOR_PUBLIC_CONFIG.branding,
+        appBackground: {
+          ...nonTextureBackground,
+        },
+      },
+    };
+    const legacy = {
+      ...OPERATOR_PUBLIC_CONFIG,
+      branding: {
+        ...OPERATOR_PUBLIC_CONFIG.branding,
+        appBackground: {
+          effect: 'aurora',
+          props: {},
+          opacity: 0.8,
+          gradient: 'linear-gradient(135deg, #121212, #242424)',
+        },
+      },
+    };
+
+    expect(isPublicConfigSnapshot(modern)).toBe(true);
+    expect(isPublicConfigSnapshot(legacy)).toBe(true);
+  });
+
+  it('accepts safe plan card accent and texture URLs in persisted snapshots', () => {
+    const withPlanCardStyles = {
+      ...OPERATOR_PUBLIC_CONFIG,
+      branding: {
+        ...OPERATOR_PUBLIC_CONFIG.branding,
+        planCardStyles: {
+          starter: {
+            accent: '#ff8844',
+            textureUrl: '/uploads/branding/starter-texture.webp',
+            cardEffect: 'aurora',
+            cardEffectProps: {},
+            cardEffectOpacity: 0.75,
+          },
+          premium: {
+            textureUrl: 'https://cdn.example.com/branding/premium-texture.webp',
+          },
+        },
+      },
+    };
+
+    expect(isPublicConfigSnapshot(withPlanCardStyles)).toBe(true);
+  });
+
+  it('keeps legacy HTTP asset snapshots readable during the admin write migration', () => {
+    const legacy = {
+      ...OPERATOR_PUBLIC_CONFIG,
+      branding: {
+        ...OPERATOR_PUBLIC_CONFIG.branding,
+        logoUrl: 'http://legacy-cdn.example.com/operator-logo.png',
+      },
+    };
+
+    expect(isPublicConfigSnapshot(legacy)).toBe(true);
+  });
+
+  it.each([
+    '/uploads/branding/.hidden.svg',
+    '/uploads/branding/a..png',
+    '/uploads/branding/nested/logo.png',
+    '/uploads/branding/logo.png?version=2',
+  ])('rejects branding upload paths the disk mirror cannot serve: %s', (logoUrl) => {
+    const unsafe = {
+      ...OPERATOR_PUBLIC_CONFIG,
+      branding: {
+        ...OPERATOR_PUBLIC_CONFIG.branding,
+        logoUrl,
+      },
+    };
+
+    expect(isPublicConfigSnapshot(unsafe)).toBe(false);
   });
 
   it.each([
@@ -242,12 +339,55 @@ describe('public branding configuration routes', () => {
       },
     ],
     [
+      'invalid plan card accent',
+      {
+        ...OPERATOR_PUBLIC_CONFIG,
+        branding: {
+          ...OPERATOR_PUBLIC_CONFIG.branding,
+          planCardStyles: { starter: { accent: 'rgb(255, 0, 0)' } },
+        },
+      },
+    ],
+    [
+      'unsafe plan card texture URL',
+      {
+        ...OPERATOR_PUBLIC_CONFIG,
+        branding: {
+          ...OPERATOR_PUBLIC_CONFIG.branding,
+          planCardStyles: { starter: { textureUrl: 'javascript:alert(1)' } },
+        },
+      },
+    ],
+    [
       'invalid navigation entry',
       {
         ...OPERATOR_PUBLIC_CONFIG,
         branding: {
           ...OPERATOR_PUBLIC_CONFIG.branding,
           navItems: [{ id: 'plans', visible: 'yes' }],
+        },
+      },
+    ],
+    [
+      'unknown navigation destination',
+      {
+        ...OPERATOR_PUBLIC_CONFIG,
+        branding: {
+          ...OPERATOR_PUBLIC_CONFIG.branding,
+          navItems: [{ id: 'unknown', visible: true }],
+        },
+      },
+    ],
+    [
+      'invalid semantic surface token',
+      {
+        ...OPERATOR_PUBLIC_CONFIG,
+        branding: {
+          ...OPERATOR_PUBLIC_CONFIG.branding,
+          surfaceTheme: {
+            ...(OPERATOR_PUBLIC_CONFIG.branding['surfaceTheme'] as Record<string, unknown>),
+            glassBlurPx: 41,
+          },
         },
       },
     ],
@@ -276,10 +416,7 @@ describe('public branding configuration routes', () => {
 
     const response = await request(app, '/api/v1/public-config');
 
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      ...DEFAULT_PUBLIC_CONFIG,
-      ...REIWA_OWNED_TARGETS,
-    });
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ message: 'Configuration unavailable' });
   });
 });

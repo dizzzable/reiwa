@@ -35,7 +35,7 @@ export function StatCard({
       whileTap={{ scale: 0.96 }}
       onClick={onClick}
       className={cn(
-        "flex min-w-0 flex-col items-start gap-2 rounded-2xl border border-white/6 bg-white/3 p-3.5 text-left transition-colors hover:bg-white/6",
+        "flex min-w-0 flex-col items-start gap-2 rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3.5 text-left transition-colors hover:bg-[var(--color-surface-high)]",
         className,
       )}
     >
@@ -46,10 +46,14 @@ export function StatCard({
         <Icon className="h-4 w-4" style={{ color: iconColor }} />
       </div>
       <div className="w-full min-w-0">
-        <p className="truncate text-lg font-bold text-white">{value}</p>
-        <p className="text-[11px] leading-tight text-zinc-400">{label}</p>
+        <p className="truncate text-lg font-bold text-[var(--brand-foreground)]">{value}</p>
+        <p className="text-[11px] leading-tight text-[var(--brand-muted-foreground)]">
+          {label}
+        </p>
         {sublabel && (
-          <p className="mt-0.5 text-[10px] leading-tight text-zinc-500">{sublabel}</p>
+          <p className="mt-0.5 text-[10px] leading-tight text-[var(--brand-muted-foreground)]">
+            {sublabel}
+          </p>
         )}
       </div>
     </motion.button>

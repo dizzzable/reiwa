@@ -68,7 +68,7 @@ function SheetContent({
           // every sheet across the app matches the cabinet's glass cards
           // instead of the flat opaque `bg-popover`. Consumers can still
           // override via className (tailwind-merge keeps the last value).
-          "fixed z-50 flex flex-col gap-4 border-white/10 bg-zinc-950/95 text-sm text-popover-foreground shadow-2xl backdrop-blur-2xl transition duration-200 ease-in-out",
+          "fixed z-50 flex flex-col gap-4 border-[var(--color-border-soft)] bg-[var(--color-surface-high)] text-sm text-popover-foreground shadow-2xl backdrop-blur-2xl transition duration-200 ease-in-out",
           // Bottom sheet: rounded top, safe-area padding, scrollable.
           "data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:max-h-[85dvh] data-[side=bottom]:overflow-y-auto data-[side=bottom]:rounded-t-3xl data-[side=bottom]:border-t data-[side=bottom]:px-5 data-[side=bottom]:pt-2 data-[side=bottom]:pb-[calc(1.5rem+env(safe-area-inset-bottom))]",
           // Desktop (≥sm): a bottom sheet becomes a centred modal card —
@@ -83,7 +83,7 @@ function SheetContent({
         {isBottom && (
           <div
             aria-hidden
-            className="mx-auto -mb-1 h-1.5 w-10 shrink-0 rounded-full bg-white/15 sm:hidden"
+            className="mx-auto -mb-1 h-1.5 w-10 shrink-0 rounded-full bg-[var(--color-border-strong)] sm:hidden"
           />
         )}
         {children}

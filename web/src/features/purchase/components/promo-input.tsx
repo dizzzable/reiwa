@@ -59,7 +59,7 @@ export function PromoInput({ onPromoApplied, validatePromo }: PromoInputProps) {
       <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
         <Check className="h-4 w-4 text-emerald-400" />
         <span className="flex-1 text-sm font-mono text-emerald-300">{appliedCode}</span>
-        <button onClick={handleClear} className="text-zinc-500 hover:text-zinc-300">
+        <button onClick={handleClear} className="text-muted-foreground transition-colors hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -70,7 +70,7 @@ export function PromoInput({ onPromoApplied, validatePromo }: PromoInputProps) {
     <div className="space-y-1.5">
       <div className="flex gap-2">
         <div className="relative flex-1">
-          <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+          <Tag className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}

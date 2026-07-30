@@ -115,7 +115,7 @@ function SelectSubscription() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2].map((i) => (
-          <div key={i} className="h-20 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-20 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -131,7 +131,7 @@ function SelectSubscription() {
 
   return (
     <div className="space-y-3">
-      <p className="px-5 text-sm text-zinc-400">{t("upgrade.selectSubtitle")}</p>
+      <p className="px-5 text-sm text-[color:var(--brand-muted-foreground)]">{t("upgrade.selectSubtitle")}</p>
       <div className="px-5 space-y-2">
         {active.map((sub, index) => (
           <SubscriptionSelectCard
@@ -163,7 +163,7 @@ function SelectPlan() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -192,15 +192,15 @@ function SelectPlan() {
             className="w-full glass-card flex items-center justify-between gap-3 p-4 text-left transition-all hover:border-(--brand-primary)/30 active:scale-[0.98]"
           >
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-white">{plan.name}</p>
-              <p className="text-xs text-zinc-500">
+              <p className="truncate text-sm font-medium text-[color:var(--brand-foreground)]">{plan.name}</p>
+              <p className="text-xs text-[color:var(--brand-muted-foreground)]">
                 {plan.deviceLimit} {t("upgrade.devices")} ·{" "}
                 {plan.trafficLimit === null
                   ? t("upgrade.unlimited")
                   : `${plan.trafficLimit} ${t("upgrade.gb")}`}
               </p>
             </div>
-            <Check className="h-4 w-4 shrink-0 text-zinc-600" />
+            <Check className="h-4 w-4 shrink-0 text-[color:var(--brand-muted-foreground)]" />
           </button>
         ))}
       </div>
@@ -245,7 +245,7 @@ function SelectDuration() {
             onClick={() => selectDuration(d.days)}
             className="glass-card p-4 text-center transition-all hover:border-(--brand-primary)/30 active:scale-[0.97]"
           >
-            <span className="text-sm font-medium text-white">
+            <span className="text-sm font-medium text-[color:var(--brand-foreground)]">
               {t("purchase.duration.days", { count: d.days })}
             </span>
           </button>
@@ -285,7 +285,7 @@ function SelectGateway() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -303,13 +303,13 @@ function SelectGateway() {
           >
             <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
             <div className="text-left">
-              <p className="font-medium text-white">{gatewayLabel(gw.type, gw.displayName)}</p>
-              <p className="text-xs text-zinc-500">{gw.currency}</p>
+              <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
+              <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
             </div>
           </button>
         ))}
         {gateways.length === 0 && (
-          <div className="text-center py-8 text-zinc-500 text-sm">{t("purchase.gateway.empty")}</div>
+          <div className="py-8 text-center text-sm text-[color:var(--brand-muted-foreground)]">{t("purchase.gateway.empty")}</div>
         )}
       </div>
       <div className="px-5">
@@ -404,7 +404,7 @@ function UpgradeReview() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 text-sm">
-      <span className="text-zinc-400">{label}</span>
+      <span className="text-[color:var(--brand-muted-foreground)]">{label}</span>
       <span className="font-medium">{value}</span>
     </div>
   );
@@ -449,7 +449,7 @@ function CheckoutStep() {
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4">
       <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
-      <p className="text-sm text-zinc-400">{t("upgrade.creating")}</p>
+      <p className="text-sm text-[color:var(--brand-muted-foreground)]">{t("upgrade.creating")}</p>
     </div>
   );
 }

@@ -1,4 +1,8 @@
 import { brandAuroraStops } from "../../../lib/brand-colors";
+import {
+  resolveCardContrast,
+  type CardContrast,
+} from "../../../lib/card-contrast";
 import type {
   Branding,
   CardEffect,
@@ -17,7 +21,9 @@ export interface ResolvedSubscriptionCardVisual {
   readonly primary: string;
   readonly primaryFg: string;
   readonly bgSecondary: string;
+  readonly contrast: CardContrast;
   readonly cardGradient: string;
+  readonly cardPattern: string | null;
   readonly cardEffect: CardEffect;
   readonly cardEffectProps: Readonly<Record<string, unknown>>;
   readonly cardEffectOpacity: number;
@@ -96,6 +102,10 @@ export function resolveSubscriptionCardVisual(
     typeof slot?.cardEffect === "string"
       ? slot.cardEffect
       : globalEffect;
+  const cardEffectOpacity = finiteNumber(
+    slot?.cardEffectOpacity,
+    finiteNumber(branding.cardEffectOpacity, 1),
+  );
 
   const primary = nonEmptyString(branding.primary, "var(--brand-primary)");
   const cardEffectProps: Record<string, unknown> =
@@ -116,25 +126,40 @@ export function resolveSubscriptionCardVisual(
     typeof slot?.cardGradient === "string" && slot.cardGradient.trim().length > 0
       ? slot.cardGradient
       : null;
+  const cardGradient = slotGradient ?? globalGradient;
+  const primaryFg = nonEmptyString(
+    branding.primaryFg,
+    "var(--brand-primary-fg)",
+  );
+  const bgSecondary = nonEmptyString(
+    branding.bgSecondary,
+    "var(--brand-bg-secondary)",
+  );
 
   return {
     slotIndex,
     primary,
-    primaryFg: nonEmptyString(
-      branding.primaryFg,
-      "var(--brand-primary-fg)",
-    ),
-    bgSecondary: nonEmptyString(
-      branding.bgSecondary,
-      "var(--brand-bg-secondary)",
-    ),
-    cardGradient: slotGradient ?? globalGradient,
+    primaryFg,
+    bgSecondary,
+    contrast: resolveCardContrast(cardGradient, {
+      fallbackBackground: bgSecondary,
+      preferredForeground: primaryFg,
+      minimumVeilOpacity:
+        cardEffect === "NONE"
+          ? 0.12
+          : 0.18 +
+            Math.min(1, Math.max(0, cardEffectOpacity)) * 0.12,
+    }),
+    cardGradient,
+    cardPattern:
+      typeof branding.cardPattern === "string" &&
+      branding.cardPattern.trim().length > 0 &&
+      branding.cardPattern !== "none"
+        ? branding.cardPattern
+        : null,
     cardEffect: cardEffect as CardEffect,
     cardEffectProps,
-    cardEffectOpacity: finiteNumber(
-      slot?.cardEffectOpacity,
-      finiteNumber(branding.cardEffectOpacity, 1),
-    ),
+    cardEffectOpacity,
     cardLogo:
       typeof branding.cardLogo === "string"
         ? branding.cardLogo

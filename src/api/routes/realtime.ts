@@ -5,6 +5,7 @@ import type { SessionStore } from "../../lib/session-store.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { getRequestLogger } from "../middleware/logger-accessor.js";
 
 import { proxyStream } from "./realtime-proxy.js";
 
@@ -53,7 +54,12 @@ export function createRealtimeRouter(deps: {
       res.status(503).json({ message: "Realtime backend unavailable" });
       return;
     }
-    await proxyStream(adminClient, userRef, res);
+    await proxyStream(adminClient, userRef, res, (error) => {
+      getRequestLogger(req).warn(
+        { err: error },
+        "Realtime upstream connection failed",
+      );
+    });
   });
 
   return router;

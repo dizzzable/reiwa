@@ -52,7 +52,7 @@ export function SideNav() {
   return (
     <nav
       aria-label="Primary"
-      className="flex h-full w-64 shrink-0 flex-col gap-2 border-r border-white/6 bg-zinc-950/40 px-3 py-5 backdrop-blur-xl"
+      className="flex h-full w-64 shrink-0 flex-col gap-2 border-r border-[var(--color-border-soft)] bg-[var(--color-surface)] px-3 py-5 backdrop-blur-xl"
     >
       {/* Brand header */}
       <div className="flex items-center gap-2.5 px-3 pb-4">
@@ -65,7 +65,7 @@ export function SideNav() {
         ) : (
           <ReiwaLogo className="h-8 w-8 shrink-0 text-(--brand-primary)" title={branding.brandName} />
         )}
-        <span className="truncate text-base font-semibold text-white">{branding.brandName}</span>
+        <span className="truncate text-base font-semibold text-[var(--brand-foreground)]">{branding.brandName}</span>
       </div>
 
       {/* Primary destinations */}
@@ -85,7 +85,7 @@ export function SideNav() {
                   "relative z-10 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200 select-none",
                   isActive
                     ? "text-(--brand-primary-fg)"
-                    : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                    : "text-[var(--brand-muted-foreground)] hover:bg-[var(--color-surface-high)] hover:text-[var(--brand-foreground)]",
                 )}
               >
                 {isActive && (

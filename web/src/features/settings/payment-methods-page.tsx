@@ -163,8 +163,8 @@ export default function PaymentMethodsPage() {
         <h1 className="text-lg font-semibold">{t('settings.paymentMethods')}</h1>
       </div>
 
-      <div className="mx-5 mb-4 rounded-2xl border border-white/6 bg-white/2 p-3.5">
-        <p className="text-xs leading-relaxed text-zinc-400">
+      <div className="mx-5 mb-4 rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3.5">
+        <p className="text-xs leading-relaxed text-[var(--brand-muted-foreground)]">
           {t('paymentMethods.hint')}
         </p>
       </div>
@@ -176,8 +176,8 @@ export default function PaymentMethodsPage() {
               <ShieldCheck className="h-4 w-4 text-violet-300" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-zinc-100">{t('paymentMethods.setupTitle')}</p>
-              <p className="mt-1 text-xs leading-relaxed text-zinc-400">{t('paymentMethods.setupHint')}</p>
+              <p className="text-sm font-medium text-[var(--brand-foreground)]">{t('paymentMethods.setupTitle')}</p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--brand-muted-foreground)]">{t('paymentMethods.setupHint')}</p>
             </div>
           </div>
           <StadiumButton
@@ -209,9 +209,9 @@ export default function PaymentMethodsPage() {
             ))}
           </div>
         ) : methods.length === 0 ? (
-          <div className="rounded-2xl border border-white/6 bg-white/2 p-8 text-center">
-            <CreditCard className="mx-auto h-8 w-8 text-zinc-600" />
-            <p className="mt-2 text-sm text-zinc-400">{t('paymentMethods.empty')}</p>
+          <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-8 text-center">
+            <CreditCard className="mx-auto h-8 w-8 text-[var(--brand-muted-foreground)] opacity-60" />
+            <p className="mt-2 text-sm text-[var(--brand-muted-foreground)]">{t('paymentMethods.empty')}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -227,17 +227,17 @@ export default function PaymentMethodsPage() {
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
-                  className="rounded-2xl border border-white/6 bg-white/2 p-3.5"
+                  className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3.5"
                 >
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10">
                       <CreditCard className="h-4 w-4 text-violet-400" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-zinc-200">
+                      <p className="truncate text-sm font-medium text-[var(--brand-foreground)]">
                         {method.title || t('paymentMethods.fallbackTitle')}
                       </p>
-                      <p className="mt-0.5 text-xs text-zinc-500">
+                      <p className="mt-0.5 text-xs text-[var(--brand-muted-foreground)]">
                         {formatMethodMeta(method, t)}
                       </p>
                     </div>
@@ -246,16 +246,16 @@ export default function PaymentMethodsPage() {
                       aria-label={t('paymentMethods.unbind')}
                       disabled={busy}
                       onClick={() => setUnbindId(method.id)}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[var(--brand-muted-foreground)] transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/5 pt-3">
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--color-border-soft)] pt-3">
                     <div className="min-w-0">
-                      <p className="text-sm text-zinc-200">{t('paymentMethods.autopay')}</p>
-                      <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
+                      <p className="text-sm text-[var(--brand-foreground)]">{t('paymentMethods.autopay')}</p>
+                      <p className="mt-0.5 text-[11px] leading-snug text-[var(--brand-muted-foreground)]">
                         {autopayOn
                           ? t('paymentMethods.autopayOnHint')
                           : t('paymentMethods.autopayOffHint')}
@@ -278,13 +278,13 @@ export default function PaymentMethodsPage() {
       </div>
 
       <Dialog open={unbindId !== null} onOpenChange={(open) => !open && setUnbindId(null)}>
-        <DialogContent className="max-w-sm border-white/10 bg-zinc-900">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Unlink className="h-4 w-4 text-red-400" />
               {t('paymentMethods.unbindTitle')}
             </DialogTitle>
-            <DialogDescription className="text-sm text-zinc-400">
+            <DialogDescription className="text-sm text-[var(--brand-muted-foreground)]">
               {t('paymentMethods.unbindConfirm')}
             </DialogDescription>
           </DialogHeader>
@@ -311,17 +311,17 @@ export default function PaymentMethodsPage() {
       </Dialog>
 
       <Dialog open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
-        <DialogContent className="max-w-sm border-white/10 bg-zinc-900">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <CreditCard className="h-4 w-4 text-violet-300" />
               {t('paymentMethods.setupConfirmTitle')}
             </DialogTitle>
-            <DialogDescription className="text-sm leading-relaxed text-zinc-400">
+            <DialogDescription className="text-sm leading-relaxed text-[var(--brand-muted-foreground)]">
               {t('paymentMethods.setupConfirmBody')}
             </DialogDescription>
           </DialogHeader>
-          <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-white/8 bg-white/3 p-3 text-sm text-zinc-300">
+          <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3 text-sm text-[var(--brand-foreground)]">
             <Switch checked={setupConsent} onCheckedChange={setSetupConsent} />
             <span className="leading-relaxed">{t('paymentMethods.setupConsent')}</span>
           </label>

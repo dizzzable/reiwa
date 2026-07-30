@@ -119,10 +119,10 @@ export default function NotificationsFeedPage() {
       <div className="px-5 space-y-2">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+            <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
           ))
         ) : !items.length ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
+          <div className="theme-muted flex flex-col items-center gap-3 py-16">
             <Bell className="h-10 w-10 opacity-30" />
             <p className="text-sm">{t("activity.emptyNotifications")}</p>
           </div>
@@ -146,15 +146,15 @@ export default function NotificationsFeedPage() {
                     {!n.isRead && (
                       <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />
                     )}
-                    <p className="text-sm font-medium text-white truncate">
+                    <p className="theme-title truncate text-sm font-medium">
                       <EmojiText text={n.title} />
                     </p>
                   </div>
-                  <p className="mt-1 text-xs text-zinc-400 line-clamp-1">
+                  <p className="theme-muted mt-1 line-clamp-1 text-xs">
                     <EmojiText text={firstSentence(n.body)} />
                   </p>
                 </div>
-                <p className="shrink-0 text-xs text-zinc-600">{formatDateTime(n.createdAt)}</p>
+                <p className="theme-subtle shrink-0 text-xs">{formatDateTime(n.createdAt)}</p>
               </div>
             </motion.button>
           ))

@@ -118,8 +118,8 @@ export default function GuestSupportPage(): JSX.Element {
     <div className="min-h-dvh bg-(--brand-bg-primary) px-4 py-8">
       <div className="mx-auto w-full max-w-2xl">
         <header className="mb-6">
-          <h1 className="text-xl font-semibold text-white">{t('guestSupport.title')}</h1>
-          <p className="mt-1 text-sm text-white/60">{t('guestSupport.subtitle')}</p>
+          <h1 className="text-xl font-semibold text-foreground">{t('guestSupport.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('guestSupport.subtitle')}</p>
         </header>
 
         {conversationQuery.isLoading ? (
@@ -136,9 +136,9 @@ export default function GuestSupportPage(): JSX.Element {
             resumeCode={resumeCode}
           />
         ) : configQuery.data && configQuery.data.enabled === false ? (
-          <div className="space-y-2 rounded-2xl border border-white/10 bg-white/3 p-6 text-center">
-            <div className="text-sm font-medium text-white">{t('guestSupport.disabled.title')}</div>
-            <p className="text-xs text-white/60">{t('guestSupport.disabled.body')}</p>
+          <div className="glass-card space-y-2 p-6 text-center">
+            <div className="text-sm font-medium text-foreground">{t('guestSupport.disabled.title')}</div>
+            <p className="text-xs text-muted-foreground">{t('guestSupport.disabled.body')}</p>
           </div>
         ) : closedLocally ? (
           <ClosedNote onNew={() => setClosedLocally(false)} />
@@ -177,7 +177,7 @@ function StartForm(props: {
     !props.submitting
 
   return (
-    <div className="space-y-4 rounded-2xl border border-white/10 bg-white/3 p-5">
+    <div className="glass-card space-y-4 p-5">
       <Field label={t('guestSupport.form.subject')}>
         <input
           value={subject}
@@ -220,14 +220,14 @@ function StartForm(props: {
             captchaToken: captchaToken ?? undefined,
           })
         }
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-(--brand-primary) px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-(--brand-primary) px-5 py-2.5 text-sm font-medium text-(--brand-primary-fg) disabled:opacity-50"
       >
         {props.submitting && <Loader2 className="h-4 w-4 animate-spin" />}
         {props.submitting ? t('guestSupport.form.sending') : t('guestSupport.form.submit')}
       </button>
 
-      <div className="border-t border-white/10 pt-4">
-        <label className="block text-xs text-white/60">{t('guestSupport.resume.restoreLabel')}</label>
+      <div className="border-t border-border pt-4">
+        <label className="block text-xs text-muted-foreground">{t('guestSupport.resume.restoreLabel')}</label>
         <div className="mt-2 flex gap-2">
           <input
             value={resume}
@@ -245,7 +245,7 @@ function StartForm(props: {
                 .then(() => props.onRestore())
                 .catch(() => toast.error(t('guestSupport.errors.notFound')))
             }}
-            className="shrink-0 rounded-xl border border-white/15 px-4 py-2 text-sm text-white disabled:opacity-50"
+            className="shrink-0 rounded-xl border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50"
           >
             {t('guestSupport.resume.restoreButton')}
           </button>
@@ -282,16 +282,16 @@ function ChatView(props: {
     <div className="space-y-4">
       {props.resumeCode && <ResumeBanner code={props.resumeCode} />}
 
-      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/3 px-4 py-3">
+      <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-white">{props.ticket.subject}</div>
-          <div className="text-xs text-white/50">{statusLabel}</div>
+          <div className="truncate text-sm font-medium text-foreground">{props.ticket.subject}</div>
+          <div className="text-xs text-muted-foreground">{statusLabel}</div>
         </div>
         <button
           type="button"
           onClick={props.onClose}
           disabled={props.closing}
-          className="flex shrink-0 items-center gap-1 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/80 disabled:opacity-50"
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
         >
           <X className="h-3.5 w-3.5" />
           {t('guestSupport.chat.close')}
@@ -300,10 +300,10 @@ function ChatView(props: {
 
       <div
         ref={scrollRef}
-        className="max-h-[50vh] space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-white/2 p-4"
+        className="max-h-[50vh] space-y-3 overflow-y-auto rounded-xl border border-border bg-card p-4"
       >
         {props.ticket.messages.length === 0 ? (
-          <p className="py-6 text-center text-sm text-white/50">{t('guestSupport.chat.empty')}</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{t('guestSupport.chat.empty')}</p>
         ) : (
           props.ticket.messages.map((m) => <MessageBubble key={m.id} message={m} />)
         )}
@@ -334,7 +334,7 @@ function ChatView(props: {
             props.onReply(text.trim())
             setText('')
           }}
-          className="flex shrink-0 items-center justify-center rounded-xl bg-(--brand-primary) px-4 text-white disabled:opacity-50"
+          className="flex shrink-0 items-center justify-center rounded-xl bg-(--brand-primary) px-4 text-(--brand-primary-fg) disabled:opacity-50"
         >
           {props.replying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </button>
@@ -361,10 +361,10 @@ function MessageBubble({
       <div
         className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
           mine
-            ? 'bg-(--brand-primary) text-white'
+            ? 'bg-(--brand-primary) text-(--brand-primary-fg)'
             : isSystem
               ? 'bg-amber-500/15 text-amber-100'
-              : 'bg-white/10 text-white'
+              : 'bg-[color:var(--color-surface-high)] text-foreground'
         }`}
       >
         <div className="mb-0.5 text-[10px] opacity-60">{author}</div>
@@ -414,7 +414,7 @@ function GuestAttachmentView({
       target="_blank"
       rel="noopener noreferrer"
       className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${
-        mine ? 'bg-white/15 text-white' : 'bg-white/5 text-zinc-200'
+        mine ? 'bg-black/15 text-inherit' : 'bg-[color:var(--color-surface)] text-foreground'
       }`}
     >
       <Paperclip className="h-4 w-4 shrink-0" />
@@ -437,8 +437,8 @@ function ResumeBanner({ code }: { code: string }): JSX.Element {
   const [copied, setCopied] = useState(false)
   return (
     <div className="rounded-xl border border-(--brand-primary)/30 bg-(--brand-primary)/10 p-4">
-      <div className="text-sm font-medium text-white">{t('guestSupport.resume.title')}</div>
-      <p className="mt-1 text-xs text-white/70">{t('guestSupport.resume.body')}</p>
+      <div className="text-sm font-medium text-foreground">{t('guestSupport.resume.title')}</div>
+      <p className="mt-1 text-xs text-muted-foreground">{t('guestSupport.resume.body')}</p>
       <div className="mt-2 flex items-center gap-2">
         <code className="flex-1 truncate rounded-lg bg-black/30 px-3 py-2 text-xs text-white">{code}</code>
         <button
@@ -449,7 +449,7 @@ function ResumeBanner({ code }: { code: string }): JSX.Element {
               setTimeout(() => setCopied(false), 1500)
             })
           }}
-          className="flex shrink-0 items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-white"
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-accent"
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? t('guestSupport.resume.copied') : t('guestSupport.resume.copy')}
@@ -464,13 +464,13 @@ function ResumeBanner({ code }: { code: string }): JSX.Element {
 function ClosedNote({ onNew }: { onNew: () => void }): JSX.Element {
   const { t } = useTranslation()
   return (
-    <div className="space-y-3 rounded-2xl border border-white/10 bg-white/3 p-6 text-center">
-      <div className="text-sm font-medium text-white">{t('guestSupport.chat.closed')}</div>
-      <p className="text-xs text-white/60">{t('guestSupport.chat.closedNote')}</p>
+    <div className="glass-card space-y-3 p-6 text-center">
+      <div className="text-sm font-medium text-foreground">{t('guestSupport.chat.closed')}</div>
+      <p className="text-xs text-muted-foreground">{t('guestSupport.chat.closedNote')}</p>
       <button
         type="button"
         onClick={onNew}
-        className="rounded-xl bg-(--brand-primary) px-5 py-2.5 text-sm font-medium text-white"
+        className="rounded-xl bg-(--brand-primary) px-5 py-2.5 text-sm font-medium text-(--brand-primary-fg)"
       >
         {t('guestSupport.chat.newTicket')}
       </button>
@@ -532,7 +532,7 @@ function TurnstileWidget({
 // ── shared bits ──────────────────────────────────────────────────────────────
 
 const INPUT_CLASS =
-  'w-full rounded-xl border border-white/15 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-(--brand-primary) focus:outline-none'
+  'glass-input w-full rounded-xl px-3 py-2 text-sm text-foreground focus:border-(--brand-primary) focus:outline-none'
 
 function Field({
   label,
@@ -545,9 +545,9 @@ function Field({
 }): JSX.Element {
   return (
     <div>
-      <label className="mb-1 block text-xs text-white/70">{label}</label>
+      <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
       {children}
-      {hint && <p className="mt-1 text-[11px] text-white/40">{hint}</p>}
+      {hint && <p className="mt-1 text-[11px] text-muted-foreground opacity-70">{hint}</p>}
     </div>
   )
 }

@@ -62,7 +62,9 @@ function SupportAttachmentView({
       rel="noopener noreferrer"
       className={cn(
         'flex items-center gap-2 rounded-xl px-3 py-2 text-xs',
-        isUser ? 'bg-white/15 text-white' : 'bg-white/5 text-zinc-200',
+        isUser
+          ? 'bg-black/15 text-inherit'
+          : 'theme-surface text-[color:var(--brand-foreground)]',
       )}
     >
       <Paperclip className="h-4 w-4 shrink-0" />
@@ -110,7 +112,7 @@ function TicketList({ tickets, onSelect, onCreate, aiEnabled, onQuickHelp }: { t
               onClick={openTelegramSupport}
               aria-label={t('support.contactTelegram')}
               title={t('support.contactTelegram')}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn"
+              className="flex h-9 w-9 items-center justify-center rounded-full glass-icon-btn"
             >
               <Send className="h-4 w-4" />
             </button>
@@ -128,11 +130,11 @@ function TicketList({ tickets, onSelect, onCreate, aiEnabled, onQuickHelp }: { t
 
       {tickets.length === 0 ? (
         <div className="flex flex-col items-center gap-4 px-5 py-16 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-800/50">
-            <MessageSquare className="h-8 w-8 text-zinc-600" />
+          <div className="theme-skeleton flex h-16 w-16 items-center justify-center rounded-2xl">
+            <MessageSquare className="h-8 w-8 text-[color:var(--brand-muted-foreground)]" />
           </div>
-          <p className="text-sm text-zinc-500">{t('support.emptyTitle')}</p>
-          <p className="text-xs text-zinc-600">
+          <p className="text-sm text-[color:var(--brand-muted-foreground)]">{t('support.emptyTitle')}</p>
+          <p className="text-xs text-[color:var(--brand-muted-foreground)]">
             {aiEnabled ? t('support.emptyHintWithAi') : t('support.emptyHint')}
           </p>
           {aiEnabled && (
@@ -169,9 +171,9 @@ function TicketList({ tickets, onSelect, onCreate, aiEnabled, onQuickHelp }: { t
                 </span>
               </div>
               {ticket.messages?.[0] && (
-                <p className="text-xs text-zinc-500 mt-1.5 truncate">{ticket.messages[0].content}</p>
+                <p className="mt-1.5 truncate text-xs text-[color:var(--brand-muted-foreground)]">{ticket.messages[0].content}</p>
               )}
-              <p className="text-[10px] text-zinc-600 mt-1">{formatTime(ticket.updatedAt)}</p>
+              <p className="mt-1 text-[10px] text-[color:var(--brand-muted-foreground)]">{formatTime(ticket.updatedAt)}</p>
             </button>
           ))}
         </div>
@@ -230,13 +232,13 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-white/[0.06]">
-        <button onClick={onBack} aria-label={t('common.back')} className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn">
+      <div className="flex items-center gap-3 border-b border-[color:var(--color-border-soft)] px-5 py-4">
+        <button onClick={onBack} aria-label={t('common.back')} className="flex h-9 w-9 items-center justify-center rounded-full glass-icon-btn">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="flex-1 min-w-0">
           <p className="font-medium text-sm truncate">{ticket.subject}</p>
-          <p className="text-[10px] text-zinc-500 uppercase">
+          <p className="text-[10px] uppercase text-[color:var(--brand-muted-foreground)]">
             {ticket.status === 'open' ? `🟢 ${t('support.statusOpen')}` : ticket.status === 'waiting_reply' ? `💬 ${t('support.chatStatusWaiting')}` : `⚫ ${t('support.statusClosed')}`}
           </p>
         </div>
@@ -255,7 +257,9 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
             >
               <div className={cn(
                 'max-w-[80%] rounded-2xl px-4 py-2.5',
-                isUser ? 'bg-(--brand-primary)/90 text-white rounded-br-sm' : 'bg-zinc-800 text-zinc-200 rounded-bl-sm'
+                isUser
+                  ? 'bg-(--brand-primary)/90 text-(--brand-primary-fg) rounded-br-sm'
+                  : 'bg-[color:var(--color-surface-high)] text-[color:var(--brand-foreground)] rounded-bl-sm'
               )}>
                 {msg.content && (
                   <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
@@ -267,7 +271,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
                     ))}
                   </div>
                 )}
-                <p className={cn('text-[10px] mt-1', isUser ? 'text-white/50' : 'text-zinc-500')}>
+                <p className={cn('mt-1 text-[10px]', isUser ? 'opacity-50' : 'text-[color:var(--brand-muted-foreground)]')}>
                   {formatTime(msg.createdAt)}
                 </p>
               </div>
@@ -278,13 +282,13 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
 
       {/* Input */}
       {ticket.status !== 'closed' && (
-        <div className="px-5 py-4 border-t border-white/[0.06]">
+        <div className="border-t border-[color:var(--color-border-soft)] px-5 py-4">
           <div className="flex gap-2">
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={t('support.messagePlaceholder')}
-              className="glass-input flex-1 rounded-full px-4 py-3 text-sm text-white"
+              className="glass-input flex-1 rounded-full px-4 py-3 text-sm"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && text.trim()) {
                   e.preventDefault()
@@ -324,7 +328,7 @@ function CreateTicketForm({ onBack, onCreated, aiEnabled, onQuickHelp }: { onBac
   return (
     <div className="pb-8">
       <div className="flex items-center gap-3 px-5 py-5">
-        <button type="button" onClick={onBack} aria-label={t('common.back')} className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn">
+        <button type="button" onClick={onBack} aria-label={t('common.back')} className="flex h-9 w-9 items-center justify-center rounded-full glass-icon-btn">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="text-lg font-semibold">{t('support.newTicketTitle')}</h1>
@@ -348,30 +352,30 @@ function CreateTicketForm({ onBack, onCreated, aiEnabled, onQuickHelp }: { onBac
               type="button"
               onClick={() => setAiHintDismissed(true)}
               aria-label={t('common.close')}
-              className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-zinc-400 hover:text-white"
+              className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-[color:var(--brand-muted-foreground)] hover:text-[color:var(--brand-foreground)]"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         )}
         <div className="space-y-1.5">
-          <label className="text-xs text-zinc-500 uppercase tracking-wide">{t('support.subjectLabel')}</label>
+          <label className="text-xs uppercase tracking-wide text-[color:var(--brand-muted-foreground)]">{t('support.subjectLabel')}</label>
           <input
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder={t('support.subjectPlaceholder')}
-            className="glass-input w-full rounded-xl px-4 py-3 text-sm text-white"
+            className="glass-input w-full rounded-xl px-4 py-3 text-sm"
             maxLength={200}
           />
         </div>
         <div className="space-y-1.5">
-          <label className="text-xs text-zinc-500 uppercase tracking-wide">{t('support.messageLabel')}</label>
+          <label className="text-xs uppercase tracking-wide text-[color:var(--brand-muted-foreground)]">{t('support.messageLabel')}</label>
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder={t('support.messagePlaceholderLong')}
             rows={5}
-            className="glass-input w-full rounded-xl px-4 py-3 text-sm text-white resize-none"
+            className="glass-input w-full resize-none rounded-xl px-4 py-3 text-sm"
           />
         </div>
         <button

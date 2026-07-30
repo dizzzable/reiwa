@@ -50,72 +50,6 @@ export function resetBrandingCache(): void {
   packsCache = null;
 }
 
-/**
- * First-boot payload when no operator snapshot exists. Keep this exactly in
- * sync with `web/src/types/branding.ts#DEFAULT_PUBLIC_CONFIG`: unlike a
- * response fetched after mount, this value can be the very first paint.
- */
-function defaultPublicConfig(): PublicConfigSnapshot {
-  return {
-    branding: {
-      brandName: "Reiwa",
-      tagline: null,
-      logoUrl: null,
-      pwaIconUrl: null,
-      primary: "#22c55e",
-      primaryFg: "#0a0a0a",
-      bgPrimary: "#0a0a0a",
-      bgSecondary: "#171717",
-      cardGradient: "linear-gradient(135deg, #064e3b 0%, #22c55e 100%)",
-      cardPattern: null,
-      cardLogo: "DEFAULT",
-      cardLogoUrl: null,
-      cardEffect: "aurora",
-      cardEffectProps: {},
-      cardEffectOpacity: 1,
-      cardEffectsByIndex: [],
-      bgEffect: "NONE",
-      iconColorMode: "default",
-      iconColors: {},
-      borderRadius: "rounded-2xl",
-      fontFamily: "Geist Variable, system-ui, sans-serif",
-      appBackground: {
-        kind: "none",
-        effect: "NONE",
-        props: {},
-        opacity: 1,
-        gradient: "linear-gradient(135deg, #0a0a0a 0%, #171717 100%)",
-        texture: {
-          pattern: "dots",
-          color: "#22c55e",
-          background: "#0a0a0a",
-          scale: 24,
-          opacity: 0.15,
-        },
-      },
-      planCardStyles: {},
-      navItems: [
-        { id: "subscriptions", visible: true },
-        { id: "referrals", visible: true },
-        { id: "settings", visible: true },
-        { id: "plans", visible: false },
-        { id: "devices", visible: false },
-        { id: "activity", visible: false },
-        { id: "promo", visible: false },
-        { id: "support", visible: false },
-      ],
-      navGap: 2,
-    },
-    locales: ["ru", "en"],
-    defaultLocale: "ru",
-    defaultCurrency: "USD",
-    customIcons: [],
-    botUsername: null,
-    platformBranding: { projectName: null, webTitle: null },
-    emailEnabled: false,
-  };
-}
-
 function toCachedPayload(body: PublicConfigSnapshot): CachedPayload {
   return { body, etag: computeEtag(body), fetchedAt: Date.now() };
 }
@@ -162,18 +96,22 @@ async function refreshPayload(
   persistence: PublicConfigPersistencePort | undefined,
   onBgFailure: ((err: unknown) => void) | undefined,
 ): Promise<CachedPayload> {
-  // A deployment without upstream credentials can still serve an existing
-  // snapshot. The hard defaults are used only when no snapshot has ever been
-  // recorded (or durable storage itself is unavailable).
+  // A deployment without upstream credentials may serve only an operator
+  // snapshot. Returning built-in defaults with HTTP 200 would make the
+  // browser persist them over its last-known-good operator theme.
   if (adminClient === null) {
-    return (await loadPersistedPayload(persistence)) ?? toCachedPayload(defaultPublicConfig());
+    const persisted = await loadPersistedPayload(persistence);
+    if (persisted !== null) return persisted;
+    throw new Error("operator public-config is unavailable");
   }
 
   try {
     return await fetchFreshPayload(adminClient, persistence);
   } catch (err: unknown) {
     onBgFailure?.(err);
-    return (await loadPersistedPayload(persistence)) ?? toCachedPayload(defaultPublicConfig());
+    const persisted = await loadPersistedPayload(persistence);
+    if (persisted !== null) return persisted;
+    throw err;
   }
 }
 
@@ -195,11 +133,13 @@ export async function getPublicConfigPayload(
   // Stale-while-revalidate: serve stale immediately, refresh in background.
   if (cached !== null && now - cached.fetchedAt < STALE_WHILE_REVALIDATE_MS) {
     if (inflight === null) {
+      const stale = cached;
       inflight = refreshPayload(adminClient, persistence, onBgFailure)
         .then((fresh) => {
           cached = fresh;
           return fresh;
         })
+        .catch(() => stale)
         .finally(() => {
           inflight = null;
         });

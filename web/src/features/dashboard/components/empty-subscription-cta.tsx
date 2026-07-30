@@ -23,7 +23,7 @@ export function EmptySubscriptionCta({ onBuy }: EmptySubscriptionCtaProps) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: "spring", damping: 20 }}
-      className="mx-5 flex flex-col items-center rounded-3xl border border-white/6 bg-white/2 p-8 text-center"
+      className="mx-5 flex flex-col items-center rounded-[var(--radius-card)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-8 text-center"
     >
       <div
         className="mb-4 flex h-16 w-16 items-center justify-center rounded-full"
@@ -31,10 +31,10 @@ export function EmptySubscriptionCta({ onBuy }: EmptySubscriptionCtaProps) {
       >
         <ShoppingCart className="h-7 w-7" style={{ color: "var(--brand-primary)" }} />
       </div>
-      <h2 className="text-lg font-semibold text-zinc-100">
+      <h2 className="text-lg font-semibold text-[color:var(--brand-foreground)]">
         {t("subscription.noSubscription")}
       </h2>
-      <p className="mt-1 text-sm text-zinc-500">
+      <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">
         {t("subscription.buyFirst")}
       </p>
       <Button

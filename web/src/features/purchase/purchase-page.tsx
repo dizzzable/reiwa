@@ -90,10 +90,10 @@ function SelectDuration({
               className="w-full glass-card p-4 flex items-center justify-between hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
             >
               <div className="text-left">
-                <p className="font-medium text-white">
+                <p className="font-medium text-foreground">
                   {t("purchase.duration.days", { count: dur.days })}
                 </p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   {dur.days >= 365
                     ? t("purchase.duration.year")
                     : dur.days >= 30
@@ -115,7 +115,7 @@ function SelectDuration({
                         <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-400/30">
                           −{displayPrice.discountPercent}%
                         </span>
-                        <span className="text-[11px] text-zinc-500 line-through">
+                        <span className="text-[11px] text-muted-foreground line-through">
                           {sym}
                           {Number(displayPrice.originalPrice).toFixed(2)}
                         </span>
@@ -152,18 +152,18 @@ function SelectDevice({ onSelect }: { onSelect: (d: DeviceTypeOption) => void })
   return (
     <div className="space-y-3">
       <h2 className="px-5 text-base font-semibold">{t("purchase.device.title")}</h2>
-      <p className="px-5 -mt-2 text-xs text-zinc-500">{t("purchase.device.subtitle")}</p>
+      <p className="px-5 -mt-2 text-xs text-muted-foreground">{t("purchase.device.subtitle")}</p>
       <div className="px-5 grid grid-cols-2 gap-3">
         {DEVICE_OPTIONS.map(({ id, Icon, labelKey }) => (
           <button
             key={id}
             onClick={() => onSelect(id)}
-            className="glass-card flex flex-col items-center gap-3 p-5 ring-1 ring-white/5 hover:ring-(--brand-primary)/30 hover:bg-(--brand-primary)/4 active:scale-[0.97] transition-all"
+            className="glass-card flex flex-col items-center gap-3 p-5 ring-1 ring-border hover:ring-(--brand-primary)/30 hover:bg-(--brand-primary)/4 active:scale-[0.97] transition-all"
           >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur-sm text-(--brand-primary)">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary ring-1 ring-border backdrop-blur-sm text-(--brand-primary)">
               <Icon className="h-6 w-6" />
             </span>
-            <span className="text-sm font-medium text-white">{t(labelKey)}</span>
+            <span className="text-sm font-medium text-foreground">{t(labelKey)}</span>
           </button>
         ))}
       </div>
@@ -246,7 +246,7 @@ function SelectGateway({
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-16 animate-pulse rounded-2xl bg-zinc-800/50"
+            className="theme-skeleton h-16 animate-pulse rounded-2xl"
           />
         ))}
       </div>
@@ -257,7 +257,7 @@ function SelectGateway({
       <h2 className="px-5 text-base font-semibold">{t("purchase.gateway.title")}</h2>
       {savedYookassaMethods.length > 0 && (
         <div className="px-5 space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {t("purchase.gateway.savedTitle")}
           </p>
           {savedYookassaMethods.map((method) => {
@@ -288,10 +288,10 @@ function SelectGateway({
                   <CreditCard className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 text-left">
-                  <p className="truncate font-medium text-white">
+                  <p className="truncate font-medium text-foreground">
                     {formatSavedPaymentMethodTitle(method, t)}
                   </p>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-muted-foreground">
                     {formatSavedPaymentMethodMeta(method, t)}
                   </p>
                 </div>
@@ -323,8 +323,8 @@ function SelectGateway({
               <GatewayIcon type="YOOKASSA" currency="RUB" className="h-7 w-7" />
             </span>
             <div className="text-left">
-              <p className="font-medium text-white">{t("purchase.gateway.newCard")}</p>
-              <p className="text-xs text-zinc-500">YooKassa</p>
+              <p className="font-medium text-foreground">{t("purchase.gateway.newCard")}</p>
+              <p className="text-xs text-muted-foreground">YooKassa</p>
             </div>
           </button>
         </div>
@@ -349,13 +349,13 @@ function SelectGateway({
               <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
             </span>
             <div className="text-left">
-              <p className="font-medium text-white">{gatewayLabel(gw.type, gw.displayName)}</p>
-              <p className="text-xs text-zinc-500">{gw.currency}</p>
+              <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
+              <p className="text-xs text-muted-foreground">{gw.currency}</p>
             </div>
           </button>
         ))}
         {gateways.length === 0 && (
-          <div className="text-center py-8 text-zinc-500 text-sm">
+          <div className="py-8 text-center text-sm text-muted-foreground">
             {t("purchase.gateway.empty")}
           </div>
         )}
@@ -488,7 +488,7 @@ function QuoteView({
     <div className="px-5 space-y-4">
       <h2 className="text-base font-semibold">{t("purchase.quote.title")}</h2>
 
-      <div className="glass-card divide-y divide-white/[0.06] overflow-hidden">
+      <div className="glass-card divide-y divide-border overflow-hidden">
         <Row label={t("purchase.quote.plan")} value={quote.planName} />
         <Row
           label={t("purchase.quote.duration")}
@@ -548,10 +548,10 @@ function QuoteView({
       />
 
       {showSaveCardConsent && (
-        <div className="flex items-start justify-between gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm">
-          <div className="min-w-0 text-zinc-300 leading-snug">
-            <p className="font-medium text-zinc-100">{t("purchase.quote.saveCardTitle")}</p>
-            <p id="purchase-save-card-hint" className="mt-0.5 text-xs text-zinc-400">
+        <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-card px-4 py-3 text-sm">
+          <div className="min-w-0 leading-snug text-foreground">
+            <p className="font-medium">{t("purchase.quote.saveCardTitle")}</p>
+            <p id="purchase-save-card-hint" className="mt-0.5 text-xs text-muted-foreground">
               {t("purchase.quote.saveCardHint")}
             </p>
           </div>
@@ -611,7 +611,7 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 text-sm">
-      <span className="text-zinc-400">{label}</span>
+      <span className="text-muted-foreground">{label}</span>
       <span className={cn("font-medium flex items-center gap-1.5", accent)}>
         {icon && <span aria-hidden="true">{icon}</span>}
         {value}
@@ -697,7 +697,7 @@ function CheckoutStep({
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4">
       <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
-      <p className="text-sm text-zinc-400">{t("purchase.checkout.creating")}</p>
+      <p className="text-sm text-muted-foreground">{t("purchase.checkout.creating")}</p>
     </div>
   );
 }
@@ -780,12 +780,12 @@ export default function PurchasePage() {
             }
           }}
           aria-label={t("purchase.back")}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn"
+          className="glass-icon-btn flex h-9 w-9 items-center justify-center rounded-full"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
-          <p className="text-xs text-zinc-500 uppercase tracking-wide">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">
             {t("purchase.label")}
           </p>
           <h1 className="text-lg font-semibold">{selectedPlan.name}</h1>
@@ -799,7 +799,7 @@ export default function PurchasePage() {
             key={s}
             className={cn(
               "h-1.5 flex-1 rounded-full transition-colors",
-              i <= activeIndex ? "bg-(--brand-primary)" : "bg-zinc-800",
+              i <= activeIndex ? "bg-(--brand-primary)" : "bg-[color:var(--color-surface-high)]",
             )}
           />
         ))}

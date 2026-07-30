@@ -156,8 +156,8 @@ export default function FinishSetupPage() {
           >
             <ShieldCheck className="h-8 w-8 text-(--brand-primary)" />
           </div>
-          <h1 className="text-2xl font-bold text-white">{t('finishSetup.title')}</h1>
-          <p className="mt-2 text-center text-sm text-zinc-500">{t('finishSetup.subtitle')}</p>
+          <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">{t('finishSetup.title')}</h1>
+          <p className="mt-2 text-center text-sm text-[color:var(--brand-muted-foreground)]">{t('finishSetup.subtitle')}</p>
         </motion.div>
 
         <motion.form
@@ -169,7 +169,7 @@ export default function FinishSetupPage() {
           noValidate
         >
           <div>
-            <label htmlFor="finish-username" className="mb-1.5 block text-xs font-medium text-zinc-400">
+            <label htmlFor="finish-username" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
               {t('finishSetup.usernameLabel')}
             </label>
             <input
@@ -180,8 +180,8 @@ export default function FinishSetupPage() {
               onChange={(e) => handleUsernameChange(e.target.value)}
               placeholder={t('finishSetup.usernamePlaceholder')}
               disabled={submitting}
-              className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
-                usernameError ? 'border-red-500/50 focus:border-red-500' : 'border-zinc-800 focus:border-(--brand-primary)/50'
+              className={`glass-input w-full rounded-xl px-4 py-3 text-sm ${
+                usernameError ? 'border-red-500/50 focus:border-red-500' : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
               }`}
               aria-invalid={!!usernameError}
             />
@@ -193,7 +193,7 @@ export default function FinishSetupPage() {
           </div>
 
           <div>
-            <label htmlFor="finish-password" className="mb-1.5 block text-xs font-medium text-zinc-400">
+            <label htmlFor="finish-password" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
               {t('finishSetup.passwordLabel')}
             </label>
             <div className="relative">
@@ -205,15 +205,15 @@ export default function FinishSetupPage() {
                 onChange={(e) => handlePasswordChange(e.target.value)}
                 placeholder={t('finishSetup.passwordPlaceholder')}
                 disabled={submitting}
-                className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 pr-12 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
-                  passwordError ? 'border-red-500/50 focus:border-red-500' : 'border-zinc-800 focus:border-(--brand-primary)/50'
+                className={`glass-input w-full rounded-xl px-4 py-3 pr-12 text-sm ${
+                  passwordError ? 'border-red-500/50 focus:border-red-500' : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
                 }`}
                 aria-invalid={!!passwordError}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-zinc-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)]"
                 aria-label={showPassword ? t('finishSetup.hidePassword') : t('finishSetup.showPassword')}
                 tabIndex={-1}
               >
@@ -259,7 +259,7 @@ export default function FinishSetupPage() {
             type="button"
             onClick={handleCancel}
             disabled={submitting || cancelling}
-            className="flex w-full items-center justify-center gap-2 py-2 text-sm text-zinc-500 transition-colors hover:text-zinc-300 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 py-2 text-sm text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)] disabled:opacity-50"
           >
             {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : t('finishSetup.haveAccount')}
           </button>

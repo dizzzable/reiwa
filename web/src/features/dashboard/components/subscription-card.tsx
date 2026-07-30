@@ -132,9 +132,9 @@ export function SubscriptionCardContent({
     daysLeft === null
       ? undefined
       : daysLeft <= 3
-        ? "#f87171"
+        ? "var(--card-danger)"
         : daysLeft <= 7
-          ? "#fbbf24"
+          ? "var(--card-warning)"
           : undefined;
 
   // Plan's own icon (frozen in the subscription snapshot) beside the name, so a
@@ -179,10 +179,10 @@ export function SubscriptionCardContent({
         </div>
         <span
           className={cn(
-            "shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase backdrop-blur-md",
+            "shrink-0 rounded-full border border-[rgb(var(--card-foreground-rgb)/0.14)] px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-[color:var(--card-foreground)] uppercase backdrop-blur-md",
             isActive
-              ? "bg-white/25 text-white shadow-sm"
-              : "bg-black/40 text-white/70",
+              ? "bg-[rgb(var(--card-veil-rgb)/0.30)] shadow-sm"
+              : "bg-[rgb(var(--card-veil-rgb)/0.44)] opacity-70",
           )}
         >
           {statusLabel}
@@ -195,7 +195,7 @@ export function SubscriptionCardContent({
 
       {/* Center: profile name (like card number) */}
       <div className="relative flex min-w-0 flex-1 items-center">
-        <p className="w-full truncate font-mono text-[13px] tracking-[0.12em] text-white/90 drop-shadow @sm:text-[15px]">
+        <p className="w-full truncate font-mono text-[13px] tracking-[0.12em] text-[color:var(--card-foreground)] opacity-90 drop-shadow @sm:text-[15px]">
           {sub.profileName || sub.userRemnaId || t("card.pendingStatus")}
         </p>
       </div>
@@ -204,12 +204,14 @@ export function SubscriptionCardContent({
       <div className="relative space-y-2.5">
         {trafficProgress !== null ? (
           <div className="space-y-1">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/35 backdrop-blur-sm">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[rgb(var(--card-foreground-rgb)/0.24)] backdrop-blur-sm">
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
                   width: `${trafficProgress * 100}%`,
-                  backgroundColor: trafficColor ?? "rgba(255,255,255,0.85)",
+                  backgroundColor:
+                    trafficColor ??
+                    "rgb(var(--card-foreground-rgb) / 0.85)",
                   boxShadow:
                     trafficProgress > 0.85 && trafficColor
                       ? `0 0 10px ${trafficColor}`

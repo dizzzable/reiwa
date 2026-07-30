@@ -47,9 +47,9 @@ export function ExternalAuthButtons() {
   return (
     <div className="flex w-full flex-col gap-3">
       <div className="flex items-center gap-3">
-        <span className="h-px flex-1 bg-white/10" />
-        <span className="text-xs text-zinc-500">{t('auth.orContinueWith')}</span>
-        <span className="h-px flex-1 bg-white/10" />
+        <span className="h-px flex-1 bg-[color:var(--color-border-soft)]" />
+        <span className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.orContinueWith')}</span>
+        <span className="h-px flex-1 bg-[color:var(--color-border-soft)]" />
       </div>
 
       {/* Compact row of round brand-icon buttons under the sign-in button. */}
@@ -61,7 +61,7 @@ export function ExternalAuthButtons() {
               href={externalStartPath(p.provider)}
               title={t('auth.continueWith', { provider: p.displayName })}
               aria-label={t('auth.continueWith', { provider: p.displayName })}
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-zinc-900/80 transition-colors hover:border-(--brand-primary)/50 hover:bg-zinc-800/80"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] transition-colors hover:border-(--brand-primary)/50 hover:bg-[color:var(--color-surface)]"
             >
               <ProviderIcon provider={p.provider} className="h-5 w-5 shrink-0" />
             </a>
@@ -71,7 +71,7 @@ export function ExternalAuthButtons() {
               href={externalStartPath('TELEGRAM')}
               title={t('auth.continueWith', { provider: telegram.displayName })}
               aria-label={t('auth.continueWith', { provider: telegram.displayName })}
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-zinc-900/80 transition-colors hover:border-(--brand-primary)/50 hover:bg-zinc-800/80"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] transition-colors hover:border-(--brand-primary)/50 hover:bg-[color:var(--color-surface)]"
             >
               <ProviderIcon provider="TELEGRAM" className="h-5 w-5 shrink-0" />
             </a>

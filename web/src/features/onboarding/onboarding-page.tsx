@@ -58,10 +58,10 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-dvh bg-(--brand-bg-primary) text-white">
+    <div className="flex h-full min-h-dvh flex-col bg-(--brand-bg-primary) text-[color:var(--brand-foreground)]">
       {/* Skip button */}
       <div className="flex justify-end px-5 pt-6">
-        <button onClick={skip} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+        <button onClick={skip} className="text-xs text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)]">
           {t('intro.skip')}
         </button>
       </div>
@@ -84,7 +84,7 @@ export default function OnboardingPage() {
 
             {/* Text */}
             <h1 className="text-2xl font-bold mb-3">{t(current.titleKey)}</h1>
-            <p className="text-sm text-zinc-400 max-w-xs leading-relaxed">{t(current.descriptionKey)}</p>
+            <p className="max-w-xs text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">{t(current.descriptionKey)}</p>
           </motion.div>
         </AnimatePresence>
       </div>
@@ -97,7 +97,7 @@ export default function OnboardingPage() {
             <div
               key={i}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === step ? 'w-6 bg-(--brand-primary)' : 'w-1.5 bg-zinc-700'
+                i === step ? 'w-6 bg-(--brand-primary)' : 'w-1.5 bg-[color:var(--color-border-strong)]'
               }`}
             />
           ))}

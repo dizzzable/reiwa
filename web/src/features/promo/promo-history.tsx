@@ -113,7 +113,7 @@ export function PromoHistory() {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-zinc-300">{t('promo.history')}</p>
+      <p className="theme-title text-sm font-medium">{t('promo.history')}</p>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -122,9 +122,9 @@ export function PromoHistory() {
           ))}
         </div>
       ) : activations.length === 0 ? (
-        <div className="rounded-2xl border border-white/6 bg-white/2 p-6 text-center">
-          <Gift className="mx-auto h-8 w-8 text-zinc-600" />
-          <p className="mt-2 text-xs text-zinc-500">{t('promo.historyEmpty')}</p>
+        <div className="theme-surface rounded-2xl border p-6 text-center">
+          <Gift className="theme-subtle mx-auto h-8 w-8" />
+          <p className="theme-muted mt-2 text-xs">{t('promo.historyEmpty')}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -156,10 +156,10 @@ export function PromoHistory() {
                 transition={{ delay: Math.min(i * 0.03, 0.3) }}
                 className={`flex items-center gap-3 rounded-2xl border p-3.5 transition-colors ${
                   state === 'active'
-                    ? 'border-white/12 bg-white/4'
+                    ? 'theme-surface-high theme-outline-strong'
                     : state === 'expired'
-                      ? 'border-white/6 bg-white/2 opacity-60'
-                      : 'border-white/6 bg-white/2'
+                      ? 'theme-surface opacity-60'
+                      : 'theme-surface'
                 }`}
               >
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${meta.tile}`}>
@@ -167,12 +167,12 @@ export function PromoHistory() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="truncate font-mono text-sm font-medium text-zinc-200">{a.code || '—'}</p>
+                    <p className="theme-title truncate font-mono text-sm font-medium">{a.code || '—'}</p>
                     <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusCls}`}>
                       {statusLabel}
                     </span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-zinc-500">
+                  <p className="theme-muted mt-0.5 truncate text-xs">
                     {typeLabel}
                     {value ? ` • ${value}` : ''}
                     {a.activatedAt ? ` • ${formatDateTime(a.activatedAt)}` : ''}

@@ -71,9 +71,9 @@ export default function FaqPage() {
             <Skeleton key={i} className="h-14 w-full rounded-2xl" />
           ))
         ) : viewState.showEmptyState ? (
-          <div className="rounded-2xl border border-white/6 bg-white/2 px-5 py-8 text-center">
-            <p className="text-sm font-medium text-zinc-300">{t("faq.emptyTitle")}</p>
-            <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("faq.emptyBody")}</p>
+          <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-5 py-8 text-center">
+            <p className="text-sm font-medium text-[color:var(--brand-foreground)]">{t("faq.emptyTitle")}</p>
+            <p className="mt-1 text-xs leading-relaxed text-[color:var(--brand-muted-foreground)]">{t("faq.emptyBody")}</p>
           </div>
         ) : (
           viewState.items.map((item) => (
@@ -94,23 +94,23 @@ function FaqAccordionItem({ item }: { item: FaqItem }) {
   const mediaUrls = normalizeFaqMediaUrls(item.mediaUrls);
 
   return (
-    <div className="rounded-2xl border border-white/6 bg-white/2 overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]">
       <button
         type="button"
         id={triggerId}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-white/3"
+        className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-[color:var(--color-surface-high)]"
       >
-        <span className="text-sm font-medium text-zinc-200 pr-4">{item.question}</span>
+        <span className="pr-4 text-sm font-medium text-[color:var(--brand-foreground)]">{item.question}</span>
         <motion.span
           animate={{ rotate: open ? 180 : 0 }}
           transition={{ duration: 0.2 }}
           className="shrink-0"
           aria-hidden="true"
         >
-          <ChevronDown className="h-4 w-4 text-zinc-500" />
+          <ChevronDown className="h-4 w-4 text-[color:var(--brand-muted-foreground)]" />
         </motion.span>
       </button>
       <AnimatePresence>
@@ -126,7 +126,7 @@ function FaqAccordionItem({ item }: { item: FaqItem }) {
             className="overflow-hidden"
           >
             <div className="px-4 pb-4">
-              <div className="whitespace-pre-wrap break-words text-sm text-zinc-400 leading-relaxed">
+              <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">
                 {item.answer}
               </div>
               {mediaUrls.length > 0 && (
@@ -167,7 +167,7 @@ function FaqMedia({ url, question }: { url: string; question: string }) {
   });
 
   return (
-    <figure className="min-w-0 overflow-hidden rounded-xl border border-white/8 bg-black/20">
+    <figure className="min-w-0 overflow-hidden rounded-xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)]">
       <FaqMediaElement
         kind={kind}
         url={url}
@@ -182,14 +182,14 @@ function FaqMediaFallback({ url, message }: { url: string; message: string }) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-white/8 bg-black/20 p-4 text-center">
+    <div className="flex min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] p-4 text-center">
       <AlertTriangle className="h-5 w-5 text-amber-400" aria-hidden="true" />
-      <p className="text-xs leading-relaxed text-zinc-400">{message}</p>
+      <p className="text-xs leading-relaxed text-[color:var(--brand-muted-foreground)]">{message}</p>
       <a
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-white/5 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70"
+        className="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-[color:var(--color-surface)] hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70"
       >
         {t("faq.mediaOpen")}
         <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />

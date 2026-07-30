@@ -13,13 +13,26 @@
  * `aria-hidden`, sits at the back of the stacking context.
  */
 
+import { useLayoutEffect } from "react";
+
 import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { buildTextureCss } from "@/lib/app-texture";
-import { useBranding } from "@/lib/branding-provider";
+import {
+  clearBootstrapAppBackground,
+  useBranding,
+} from "@/lib/branding-provider";
 
 export function AppBackground() {
   const { branding } = useBranding();
   const appBg = branding.appBackground;
+
+  useLayoutEffect(() => {
+    if (!appBg || appBg.kind === "none") return;
+    // The static bootstrap layer remains visible through session loading and
+    // is removed only after this equivalent React layer exists in the DOM.
+    clearBootstrapAppBackground();
+  }, [appBg]);
+
   if (!appBg || appBg.kind === "none") return null;
 
   if (appBg.kind === "gradient") {
@@ -52,6 +65,13 @@ export function AppBackground() {
   if (appBg.effect === "NONE") return null;
   return (
     <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+      {/* Keep the exact cold-boot gradient as the permanent base. The lazy
+          shader fades in over it, so loading/probing/GPU failure never reveals
+          the plain brand colour between frames. */}
+      <div
+        className="absolute inset-0"
+        style={{ background: appBg.gradient }}
+      />
       <CardEffectLayer
         effect={appBg.effect}
         props={appBg.props}

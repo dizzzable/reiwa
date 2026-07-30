@@ -46,7 +46,7 @@ export function StealthModal({ open, onClose, title, children, className }: Stea
             key="sheet"
             className={cn(
               'fixed bottom-0 left-0 right-0 z-50',
-              'rounded-t-3xl bg-zinc-900 border-t border-white/[0.08]',
+              'rounded-t-3xl border-t border-[var(--color-border-soft)] bg-[var(--color-surface-high)]/96 backdrop-blur-2xl',
               'max-h-[90vh] overflow-y-auto scroll-area',
               className,
             )}
@@ -57,8 +57,8 @@ export function StealthModal({ open, onClose, title, children, className }: Stea
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
           >
             {/* Handle bar */}
-            <div className="sticky top-0 z-10 flex items-center justify-center bg-zinc-900 pt-3 pb-2">
-              <div className="h-1 w-10 rounded-full bg-zinc-700" />
+            <div className="sticky top-0 z-10 flex items-center justify-center bg-[var(--color-surface-high)]/98 pt-3 pb-2 backdrop-blur-2xl">
+              <div className="h-1 w-10 rounded-full bg-[var(--color-border-strong)]" />
             </div>
 
             {title && (
@@ -66,7 +66,7 @@ export function StealthModal({ open, onClose, title, children, className }: Stea
                 <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
                 <button
                   onClick={onClose}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--color-border-soft)] bg-[var(--color-surface)] text-[var(--brand-muted-foreground)] transition-colors hover:text-[var(--brand-foreground)]"
                 >
                   <X className="h-4 w-4" />
                 </button>

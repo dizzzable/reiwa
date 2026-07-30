@@ -70,7 +70,9 @@ export default function ActivityPage() {
             onClick={() => setTab(tabKey)}
             className={cn(
               'flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all',
-              tab === tabKey ? 'bg-(--brand-primary) text-(--brand-primary-fg)' : 'bg-zinc-800/80 text-zinc-400 hover:text-white',
+              tab === tabKey
+                ? 'bg-(--brand-primary) text-(--brand-primary-fg)'
+                : 'bg-[var(--color-surface-high)] text-[var(--brand-muted-foreground)] hover:text-[var(--brand-foreground)]',
             )}
           >
             {tabKey === 'notifications' ? <Bell className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
@@ -98,10 +100,10 @@ export default function ActivityPage() {
           <div className="px-5 space-y-2">
             {notifLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+                <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
               ))
             ) : !notifItems.length ? (
-              <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
+              <div className="theme-muted flex flex-col items-center gap-3 py-16">
                 <Bell className="h-10 w-10 opacity-30" />
                 <p className="text-sm">{t('activity.emptyNotifications')}</p>
               </div>
@@ -122,13 +124,13 @@ export default function ActivityPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         {!n.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />}
-                        <p className="text-sm font-medium text-white truncate">{n.title}</p>
+                        <p className="theme-title truncate text-sm font-medium">{n.title}</p>
                       </div>
-                      <p className="mt-1 text-xs text-zinc-400 line-clamp-2">
+                      <p className="theme-muted mt-1 line-clamp-2 text-xs">
                         <EmojiText text={n.body} />
                       </p>
                     </div>
-                    <p className="shrink-0 text-xs text-zinc-600">{formatDateTime(n.createdAt)}</p>
+                    <p className="theme-subtle shrink-0 text-xs">{formatDateTime(n.createdAt)}</p>
                   </div>
                 </motion.div>
               ))
@@ -142,10 +144,10 @@ export default function ActivityPage() {
         <div className="px-5 space-y-2">
           {txLoading ? (
             Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+              <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
             ))
           ) : !txData?.transactions?.length ? (
-            <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
+            <div className="theme-muted flex flex-col items-center gap-3 py-16">
               <CreditCard className="h-10 w-10 opacity-30" />
               <p className="text-sm">{t('activity.emptyTransactions')}</p>
             </div>
@@ -162,8 +164,8 @@ export default function ActivityPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-white">{tx.title ?? tx.plan?.name ?? tx.gatewayType}</p>
-                      <p className="text-xs text-zinc-500 mt-0.5">{formatDateTime(tx.createdAt)}</p>
+                      <p className="theme-title text-sm font-medium">{tx.title ?? tx.plan?.name ?? tx.gatewayType}</p>
+                      <p className="theme-subtle mt-0.5 text-xs">{formatDateTime(tx.createdAt)}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold">

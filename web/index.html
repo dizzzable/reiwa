@@ -18,13 +18,14 @@
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <link rel="icon" type="image/svg+xml" href="/Reiwa-logo.svg" />
         <title>Reiwa</title>
+        <script src="/theme-bootstrap.js"></script>
         <!--
-          `crossorigin` lets the global error reporter receive the source and
-          stack when Telegram's SDK itself throws. telegram.org serves this
-          asset with Access-Control-Allow-Origin: *, so no credentials are
-          exposed and browsers no longer collapse the report to Script error.
+          The same-origin loader requests Telegram's SDK only when Telegram
+          launch parameters are present. Plain browser sessions never depend
+          on telegram.org, while Mini App SDK errors remain diagnosable through
+          the loader's anonymous cross-origin request.
         -->
-        <script defer src="https://telegram.org/js/telegram-web-app.js" crossorigin="anonymous"></script>
+        <script defer src="/telegram-webapp-loader.js"></script>
     </head>
     <body>
         <div id="root"></div>

@@ -53,12 +53,12 @@ export class AppErrorBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children;
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-(--brand-bg-primary) px-6 text-center">
-        <div className="text-lg font-semibold text-white">{i18n.t('errorBoundary.title')}</div>
-        <p className="max-w-sm text-sm text-white/70">{i18n.t('errorBoundary.body')}</p>
+        <div className="text-lg font-semibold text-[color:var(--brand-foreground)]">{i18n.t('errorBoundary.title')}</div>
+        <p className="max-w-sm text-sm text-[color:var(--brand-muted-foreground)]">{i18n.t('errorBoundary.body')}</p>
         <button
           type="button"
           onClick={this.handleReload}
-          className="rounded-xl bg-(--brand-primary) px-5 py-2.5 text-sm font-medium text-white"
+          className="rounded-xl bg-(--brand-primary) px-5 py-2.5 text-sm font-medium text-(--brand-primary-fg)"
         >
           {i18n.t('errorBoundary.reload')}
         </button>

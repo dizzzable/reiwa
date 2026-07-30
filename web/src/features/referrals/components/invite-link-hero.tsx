@@ -105,10 +105,13 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
   const handleQr = useCallback(async () => {
     try {
       // QR always encodes the web link (scanned by camera → opens browser)
+      const foreground =
+        getComputedStyle(document.documentElement).getPropertyValue("--brand-foreground").trim() ||
+        "#ffffff";
       const dataUrl = await QRCode.toDataURL(webLink, {
         width: 280,
         margin: 2,
-        color: { dark: "#ffffff", light: "#00000000" },
+        color: { dark: foreground, light: "#00000000" },
       });
       setQrDataUrl(dataUrl);
       setQrOpen(true);
@@ -121,15 +124,15 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
     <>
       <div className="mx-5 space-y-3">
         {/* Link display — shows the context-appropriate link */}
-        <div className="rounded-2xl border border-white/6 bg-white/3 px-4 py-3">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-4 py-3">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--brand-muted-foreground)]">
             {t("referrals.yourLink")}
           </p>
-          <p className="mt-1 break-all font-mono text-xs leading-relaxed text-zinc-300">
+          <p className="mt-1 break-all font-mono text-xs leading-relaxed text-[var(--brand-foreground)]">
             {primaryLink}
           </p>
           {/* Show the other link as a secondary hint */}
-          <p className="mt-1.5 break-all text-[10px] leading-relaxed text-zinc-600">
+          <p className="mt-1.5 break-all text-[10px] leading-relaxed text-[var(--brand-muted-foreground)]">
             {isTma ? `🌐 ${webLink}` : `📱 ${telegramLink}`}
           </p>
         </div>
@@ -181,7 +184,7 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-2">
             {qrDataUrl && (
-              <div className="rounded-2xl border border-white/6 bg-white/3 p-4">
+              <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
                 <img
                   src={qrDataUrl}
                   alt="QR Code"
@@ -190,7 +193,7 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
                 />
               </div>
             )}
-            <p className="max-w-[220px] break-all text-center text-[11px] leading-relaxed text-zinc-500">
+            <p className="max-w-[220px] break-all text-center text-[11px] leading-relaxed text-[var(--brand-muted-foreground)]">
               {webLink}
             </p>
           </div>
@@ -222,11 +225,11 @@ function ActionTile({
         "flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-3 transition-all duration-150 active:scale-95",
         active
           ? "border-(--brand-primary)/30 bg-(--brand-primary)/10"
-          : "border-white/6 bg-white/3 hover:bg-white/6",
+          : "border-[var(--color-border-soft)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-high)]",
       )}
     >
       <span className="text-(--brand-primary)">{children}</span>
-      <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-zinc-300">
+      <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-[var(--brand-foreground)]">
         {label}
       </span>
     </button>

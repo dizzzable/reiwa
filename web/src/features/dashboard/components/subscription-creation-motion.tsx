@@ -233,7 +233,7 @@ export function SubscriptionCreationMotion({
           </p>
           <div className="subscription-card-motion__module-line mt-2 h-px w-14 rounded-full opacity-70" />
         </div>
-        <span className="max-w-[58%] truncate rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[9px] font-semibold tracking-[0.08em] text-white/80 uppercase backdrop-blur-md">
+        <span className="max-w-[58%] truncate rounded-full border border-[rgb(var(--card-foreground-rgb)/0.15)] bg-[rgb(var(--card-veil-rgb)/0.30)] px-2.5 py-1 text-[9px] font-semibold tracking-[0.08em] text-[color:var(--card-foreground)] uppercase opacity-80 backdrop-blur-md">
           {statusLabel}
         </span>
       </motion.div>
@@ -247,7 +247,7 @@ export function SubscriptionCreationMotion({
         }}
         transition={{ duration: reducedMotion ? 0.16 : 0.42 }}
       >
-        <p className="font-mono text-[11px] tracking-[0.16em] text-white/72 uppercase">
+        <p className="font-mono text-[11px] tracking-[0.16em] text-[color:var(--card-foreground)] uppercase opacity-[0.72]">
           {failed ? labels.failedHint : statusLabel}
         </p>
         <div className="subscription-card-motion__module-line h-1 w-[72%] rounded-full" />
@@ -267,11 +267,11 @@ export function SubscriptionCreationMotion({
       >
         <div className="subscription-card-motion__module rounded-xl p-2.5">
           <div className="subscription-card-motion__module-line h-1 w-12 rounded-full opacity-60" />
-          <div className="mt-2 h-3 w-20 rounded bg-white/12" />
+          <div className="mt-2 h-3 w-20 rounded bg-[rgb(var(--card-foreground-rgb)/0.12)]" />
         </div>
         <div className="subscription-card-motion__module rounded-xl p-2.5">
           <div className="subscription-card-motion__module-line ml-auto h-1 w-10 rounded-full opacity-60" />
-          <div className="mt-2 ml-auto h-3 w-14 rounded bg-white/12" />
+          <div className="mt-2 ml-auto h-3 w-14 rounded bg-[rgb(var(--card-foreground-rgb)/0.12)]" />
         </div>
       </motion.div>
     </motion.div>

@@ -51,11 +51,15 @@ describe("buildWebManifest", () => {
 });
 
 describe("isSafeBrandingFile", () => {
-  it("accepts a bare filename and rejects traversal", () => {
+  it("matches the safe filename contract accepted by the Rezeis admin", () => {
     expect(isSafeBrandingFile("abc123.png")).toBe(true);
+    expect(isSafeBrandingFile("operator_logo-1.2.svg")).toBe(true);
     expect(isSafeBrandingFile("../etc/passwd")).toBe(false);
     expect(isSafeBrandingFile("a/b.png")).toBe(false);
     expect(isSafeBrandingFile("..")).toBe(false);
+    expect(isSafeBrandingFile(".hidden.svg")).toBe(false);
+    expect(isSafeBrandingFile("a..png")).toBe(false);
+    expect(isSafeBrandingFile("-logo.png")).toBe(false);
   });
 });
 

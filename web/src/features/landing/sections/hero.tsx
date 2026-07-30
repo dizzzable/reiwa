@@ -50,7 +50,7 @@ function CtaLink({
   const className =
     variant === 'primary'
       ? 'inline-flex h-12 items-center justify-center rounded-full bg-(--brand-primary) px-8 text-base font-semibold text-(--brand-primary-fg) shadow-lg transition hover:opacity-90'
-      : 'inline-flex h-12 items-center justify-center rounded-full border border-white/20 bg-white/5 px-8 text-base font-medium text-white transition hover:bg-white/10';
+      : 'inline-flex h-12 items-center justify-center rounded-full border border-[color:var(--ls-border-strong)] bg-[color:var(--ls-surface)] px-8 text-base font-medium text-[color:var(--ls-fg)] transition hover:bg-[color:var(--ls-surface-high)]';
   if (target.internal) {
     return (
       <Link to={target.href} className={className}>
@@ -95,11 +95,11 @@ export default function HeroSection({ section, locale, defaultLocale }: Props) {
           {eyebrow}
         </p>
       )}
-      <h1 className="max-w-3xl text-4xl font-semibold text-white sm:text-5xl md:text-6xl">
+      <h1 className="ls-title max-w-3xl text-4xl font-semibold sm:text-5xl md:text-6xl">
         {heading}
       </h1>
       {subheading && (
-        <p className="max-w-2xl text-lg text-zinc-300 sm:text-xl">{subheading}</p>
+        <p className="ls-muted max-w-2xl text-lg sm:text-xl">{subheading}</p>
       )}
       <div
         className={`mt-4 flex flex-col gap-3 sm:flex-row ${align === 'center' ? 'justify-center' : ''}`}
@@ -113,7 +113,7 @@ export default function HeroSection({ section, locale, defaultLocale }: Props) {
           alt={mediaAlt}
           loading="eager"
           decoding="async"
-          className="mt-8 w-full max-w-4xl rounded-2xl border border-white/10 shadow-2xl"
+          className="mt-8 w-full max-w-4xl rounded-2xl border border-[color:var(--ls-border)] shadow-2xl"
         />
       )}
     </section>

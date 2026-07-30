@@ -246,7 +246,7 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: "spring", damping: 20 }}
-      className="mx-5 mb-4 flex flex-col items-center rounded-3xl border border-(--brand-primary)/25 bg-(--brand-primary)/[0.06] p-7 text-center"
+      className="mx-5 mb-4 flex flex-col items-center rounded-[var(--radius-card)] border border-(--brand-primary)/25 bg-(--brand-primary)/[0.06] p-7 text-center"
     >
       <div
         className="mb-4 flex h-16 w-16 items-center justify-center rounded-full"
@@ -254,14 +254,14 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
       >
         <Gift className="h-7 w-7" style={{ color: "var(--brand-primary)" }} />
       </div>
-      <h2 className="text-lg font-semibold text-zinc-100">
+      <h2 className="text-lg font-semibold text-[color:var(--brand-foreground)]">
         {needsTelegramLink
           ? t("trialCta.titleLinkTelegram")
           : paidTrial
             ? t("trialCta.titlePaid")
             : t("trialCta.titleFree")}
       </h2>
-      <p className="mt-1 text-sm text-zinc-400">
+      <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">
         {needsTelegramLink
           ? t("trialCta.subtitleLinkTelegram")
           : paidTrial
@@ -278,7 +278,7 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
       <button
         onClick={handleActivate}
         disabled={activating}
-        className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-(--brand-primary) py-3.5 text-sm font-semibold text-(--brand-primary-fg) transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+        className="mt-6 flex w-full items-center justify-center gap-2 rounded-[var(--radius-item)] bg-(--brand-primary) py-3.5 text-sm font-semibold text-(--brand-primary-fg) transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {activating ? (
           <>
@@ -301,7 +301,7 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
       </button>
 
       {activating && (
-        <p className="mt-3 text-xs text-zinc-400" aria-live="polite">
+        <p className="mt-3 text-xs text-[color:var(--brand-muted-foreground)]" aria-live="polite">
           {t(`trialCta.activationSteps.${activationStep}`)}
         </p>
       )}
@@ -309,7 +309,7 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
       <button
         onClick={handleDismiss}
         disabled={activating}
-        className="mt-3 text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+        className="mt-3 text-xs text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)] disabled:opacity-50"
       >
         {t("trialCta.dismiss")}
       </button>

@@ -114,7 +114,7 @@ export default function BootstrapPage() {
           transition={{ type: 'spring', damping: 20, stiffness: 200 }}
         >
           <div
-            className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-white/5 ring-1 ring-white/10 backdrop-blur-xl"
+            className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-[color:var(--color-surface)] ring-1 ring-[color:var(--color-border-soft)] backdrop-blur-xl"
             style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
           >
             <BrandLogo className="h-14 w-14" />
@@ -127,10 +127,10 @@ export default function BootstrapPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <h1 className="text-3xl font-bold tracking-[0.15em] text-white uppercase">
+          <h1 className="text-3xl font-bold tracking-[0.15em] text-[color:var(--brand-foreground)] uppercase">
             {branding.brandName}
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 tracking-widest uppercase">
+          <p className="mt-1 text-sm tracking-widest text-[color:var(--brand-muted-foreground)] uppercase">
             {branding.tagline?.trim() || t('bootstrap.tagline')}
           </p>
         </motion.div>
@@ -165,7 +165,7 @@ export default function BootstrapPage() {
           ) : phase === 'ready' ? (
             <p className="text-sm text-emerald-400">✓ {t('bootstrap.loginSuccess')}</p>
           ) : (
-            <div className="flex items-center gap-3 text-sm text-zinc-500">
+            <div className="flex items-center gap-3 text-sm text-[color:var(--brand-muted-foreground)]">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
               {phase === 'detecting' ? t('bootstrap.initializing') : t('bootstrap.signingIn')}
             </div>

@@ -74,8 +74,8 @@ export default function PromocodesPage() {
 
       <div className="mx-5 space-y-6">
         {/* Activate section */}
-        <div className="rounded-2xl border border-white/6 bg-white/2 p-4 space-y-3">
-          <p className="text-sm text-zinc-300">{t("promo.description")}</p>
+        <div className="theme-surface space-y-3 rounded-2xl border p-4">
+          <p className="theme-muted text-sm">{t("promo.description")}</p>
           <div className="flex gap-2">
             <Input
               value={code}

@@ -482,7 +482,7 @@ export function SubscriptionCarousel({
             <button
               onClick={() => goTo(activeIndex - 1)}
               disabled={deletion !== null}
-              className="absolute top-1/2 left-2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/70 sm:flex"
+              className="absolute top-1/2 left-2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface-high)] text-[color:var(--brand-foreground)] shadow-sm backdrop-blur-sm transition-colors hover:bg-[color:var(--color-surface)] sm:flex"
               aria-label={t("subscription.previousCard")}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -492,7 +492,7 @@ export function SubscriptionCarousel({
             <button
               onClick={() => goTo(activeIndex + 1)}
               disabled={deletion !== null}
-              className="absolute top-1/2 right-2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/70 sm:flex"
+              className="absolute top-1/2 right-2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface-high)] text-[color:var(--brand-foreground)] shadow-sm backdrop-blur-sm transition-colors hover:bg-[color:var(--color-surface)] sm:flex"
               aria-label={t("subscription.nextCard")}
             >
               <ChevronRight className="h-4 w-4" />
@@ -514,7 +514,7 @@ export function SubscriptionCarousel({
               className={`h-1.5 rounded-full transition-all duration-200 ${
                 index === activeIndex
                   ? "w-4 bg-(--brand-primary)"
-                  : "w-1.5 bg-white/20 hover:bg-white/40"
+                  : "w-1.5 bg-[color:var(--color-border-strong)] hover:bg-[color:var(--brand-muted-foreground)]"
               }`}
             />
           ))}

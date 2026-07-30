@@ -6,7 +6,10 @@
 import type { AdminTransport } from '../transport.js';
 
 export interface BrandingPayload {
+  readonly themePresetId?: string | null;
+  readonly themePresetVersion?: number | null;
   readonly brandName: string;
+  readonly tagline?: string | null;
   readonly logoUrl: string | null;
   /** Square PNG for PWA install (home-screen icon). Falls back to logoUrl. */
   readonly pwaIconUrl?: string | null;
@@ -28,8 +31,78 @@ export interface BrandingPayload {
     readonly cardGradient?: string | null;
   }>;
   readonly bgEffect: 'NONE' | 'MESH' | 'PARTICLES' | 'NOISE' | 'AURORA';
+  readonly appBackground?: {
+    readonly kind: 'none' | 'gradient' | 'texture' | 'effect';
+    readonly effect: string;
+    readonly props: Record<string, unknown>;
+    readonly opacity: number;
+    readonly gradient: string;
+    readonly texture: {
+      readonly pattern:
+        | 'dots'
+        | 'grid'
+        | 'diagonal'
+        | 'cross'
+        | 'waves'
+        | 'carbon'
+        | 'triangles'
+        | 'noise';
+      readonly color: string;
+      readonly background: string;
+      readonly scale: number;
+      readonly opacity: number;
+    };
+  };
+  readonly iconColorMode: 'default' | 'theme' | 'custom';
+  readonly iconColors: Readonly<Record<string, string>>;
   readonly borderRadius: string;
+  readonly cornerRadii?: {
+    readonly cardPx: number;
+    readonly itemPx: number;
+    readonly pillPx: number;
+  };
   readonly fontFamily: string;
+  readonly surfaceTheme?: {
+    readonly foreground: string;
+    readonly mutedForeground: string;
+    readonly surface: string;
+    readonly surfaceHigh: string;
+    readonly borderSoft: string;
+    readonly borderStrong: string;
+    readonly surfaceOpacity: number;
+    readonly surfaceHighOpacity: number;
+    readonly borderSoftOpacity: number;
+    readonly borderStrongOpacity: number;
+    readonly glassBlurPx: number;
+  };
+  readonly planCardStyles?: Readonly<
+    Record<
+      string,
+      {
+        readonly gradient?: string | null;
+        readonly accent?: string | null;
+        readonly texturePreset?: string | null;
+        readonly textureUrl?: string | null;
+        readonly cardEffect?: string | null;
+        readonly cardEffectProps?: Record<string, unknown>;
+        readonly cardEffectOpacity?: number | null;
+      }
+    >
+  >;
+  readonly navItems?: ReadonlyArray<{
+    readonly id:
+      | 'subscriptions'
+      | 'plans'
+      | 'referrals'
+      | 'devices'
+      | 'activity'
+      | 'promo'
+      | 'support'
+      | 'faq'
+      | 'settings';
+    readonly visible: boolean;
+  }>;
+  readonly navGap?: number;
 }
 
 export interface PublicConfigPayload {

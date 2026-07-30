@@ -30,7 +30,7 @@ export function TestimonialsSection({ section, locale, defaultLocale }: Props) {
   return (
     <section className="px-6 py-16">
       {heading.length > 0 && (
-        <h2 className="mb-10 text-center text-3xl font-semibold text-white sm:text-4xl">{heading}</h2>
+        <h2 className="ls-title mb-10 text-center text-3xl font-semibold sm:text-4xl">{heading}</h2>
       )}
       <ul className="mx-auto grid max-w-5xl gap-4 sm:grid-cols-2">
         {items.map((item, index) => {
@@ -44,9 +44,9 @@ export function TestimonialsSection({ section, locale, defaultLocale }: Props) {
           return (
             <li
               key={index}
-              className="ls-surface flex flex-col gap-4 p-6 text-white"
+              className="ls-surface ls-title flex flex-col gap-4 p-6"
             >
-              <p className="text-base text-zinc-100">“{quote}”</p>
+              <p className="text-base">“{quote}”</p>
               <div className="flex items-center gap-3">
                 {avatarSrc && (
                   <img
@@ -54,12 +54,12 @@ export function TestimonialsSection({ section, locale, defaultLocale }: Props) {
                     alt={avatarAlt}
                     loading="lazy"
                     decoding="async"
-                    className="h-10 w-10 rounded-full border border-white/10"
+                    className="h-10 w-10 rounded-full border border-[color:var(--ls-border)]"
                   />
                 )}
                 <div className="text-sm">
                   <div className="font-medium">{author}</div>
-                  {role.length > 0 && <div className="text-zinc-400">{role}</div>}
+                  {role.length > 0 && <div className="ls-muted">{role}</div>}
                 </div>
               </div>
               {rating !== null && (
@@ -91,7 +91,7 @@ export function StatsSection({ section, locale, defaultLocale }: Props) {
   return (
     <section className="px-6 py-12">
       {heading.length > 0 && (
-        <h2 className="mb-8 text-center text-3xl font-semibold text-white sm:text-4xl">{heading}</h2>
+        <h2 className="ls-title mb-8 text-center text-3xl font-semibold sm:text-4xl">{heading}</h2>
       )}
       <ul className="mx-auto grid max-w-5xl grid-cols-2 gap-6 sm:grid-cols-4">
         {items.map((item, index) => {
@@ -99,9 +99,9 @@ export function StatsSection({ section, locale, defaultLocale }: Props) {
           const label = pickLocalized(item.label, locale, defaultLocale);
           if (value.length === 0) return null;
           return (
-            <li key={index} className="text-center text-white">
+            <li key={index} className="ls-title text-center">
               <div className="text-3xl font-semibold text-(--brand-primary) sm:text-4xl">{value}</div>
-              {label.length > 0 && <div className="mt-1 text-sm text-zinc-400">{label}</div>}
+              {label.length > 0 && <div className="ls-muted mt-1 text-sm">{label}</div>}
             </li>
           );
         })}
@@ -122,7 +122,7 @@ export function TrustLogosSection({ section, locale, defaultLocale }: Props) {
   return (
     <section className="px-6 py-10">
       {heading.length > 0 && (
-        <p className="mb-6 text-center text-xs font-medium tracking-[0.2em] text-zinc-500 uppercase">
+        <p className="ls-subtle mb-6 text-center text-xs font-medium tracking-[0.2em] uppercase">
           {heading}
         </p>
       )}
@@ -179,23 +179,26 @@ export function CtaBannerSection({ section, locale, defaultLocale }: Props) {
       : action === 'url'
       ? safeUrl(data.cta?.url)
       : null;
-  const styleClass =
-    data.style === 'outline'
-      ? 'border border-white/20 bg-transparent'
-      : data.style === 'solid'
-      ? 'bg-(--brand-primary)'
-      : 'bg-gradient-to-r from-(--brand-primary) to-(--brand-primary)/60';
+  const isOutline = data.style === 'outline';
+  const styleClass = isOutline
+    ? 'border border-[color:var(--ls-border-strong)] bg-transparent text-[color:var(--ls-fg)]'
+    : data.style === 'solid'
+      ? 'bg-(--brand-primary) text-(--brand-primary-fg)'
+      : 'bg-gradient-to-r from-(--brand-primary) to-(--brand-primary)/60 text-(--brand-primary-fg)';
+  const buttonClass = isOutline
+    ? 'bg-(--brand-primary) text-(--brand-primary-fg)'
+    : 'bg-(--brand-primary-fg) text-(--brand-primary)';
   return (
     <section className="px-6 py-16">
       <div
-        className={`mx-auto flex max-w-5xl flex-col items-center gap-4 rounded-3xl p-10 text-center text-white ${styleClass}`}
+        className={`mx-auto flex max-w-5xl flex-col items-center gap-4 rounded-3xl p-10 text-center ${styleClass}`}
       >
         <h2 className="text-3xl font-semibold sm:text-4xl">{heading}</h2>
-        {body.length > 0 && <p className="max-w-2xl text-base text-white/90">{body}</p>}
+        {body.length > 0 && <p className="max-w-2xl text-base opacity-90">{body}</p>}
         {ctaLabel.length > 0 && href && (
           <a
             href={href}
-            className="inline-flex h-12 items-center justify-center rounded-full bg-white px-8 text-base font-semibold text-black transition hover:bg-white/90"
+            className={`inline-flex h-12 items-center justify-center rounded-full px-8 text-base font-semibold transition hover:opacity-90 ${buttonClass}`}
           >
             {ctaLabel}
           </a>
@@ -219,7 +222,7 @@ export function FooterSection({ section, locale, defaultLocale }: Props) {
   const legal = pickLocalized(data.legal, locale, defaultLocale);
   const socials = Array.isArray(data.socials) ? data.socials : [];
   return (
-    <footer className="border-t border-white/10 px-6 py-10 text-sm text-zinc-400">
+    <footer className="ls-muted border-t border-[color:var(--ls-border)] px-6 py-10 text-sm">
       <div className="mx-auto flex max-w-6xl flex-col gap-8 sm:flex-row sm:justify-between">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {columns.map((col, index) => {
@@ -229,7 +232,7 @@ export function FooterSection({ section, locale, defaultLocale }: Props) {
             return (
               <div key={index}>
                 {title.length > 0 && (
-                  <h3 className="mb-3 text-xs font-semibold tracking-wider text-white uppercase">
+                  <h3 className="ls-title mb-3 text-xs font-semibold tracking-wider uppercase">
                     {title}
                   </h3>
                 )}
@@ -246,12 +249,12 @@ export function FooterSection({ section, locale, defaultLocale }: Props) {
                             href={href}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="hover:text-white"
+                            className="transition-colors hover:text-[color:var(--ls-fg)]"
                           >
                             {label}
                           </a>
                         ) : (
-                          <a href={href} className="hover:text-white">
+                          <a href={href} className="transition-colors hover:text-[color:var(--ls-fg)]">
                             {label}
                           </a>
                         )}
@@ -277,7 +280,7 @@ export function FooterSection({ section, locale, defaultLocale }: Props) {
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={platform}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-xs uppercase hover:bg-white/5"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--ls-border)] text-xs uppercase transition-colors hover:bg-[color:var(--ls-surface)]"
                     >
                       {platform.slice(0, 2)}
                     </a>
@@ -286,7 +289,7 @@ export function FooterSection({ section, locale, defaultLocale }: Props) {
               })}
             </ul>
           )}
-          {legal.length > 0 && <p className="text-xs text-zinc-500">{legal}</p>}
+          {legal.length > 0 && <p className="ls-subtle text-xs">{legal}</p>}
         </div>
       </div>
     </footer>

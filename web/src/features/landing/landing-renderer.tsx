@@ -55,6 +55,35 @@ const RADIUS_PX: Record<NonNullable<LandingTheme['radius']>, string> = {
   xl: '24px',
 };
 
+function readableForeground(background: string | undefined): string | undefined {
+  if (!background) return undefined;
+  const raw = background.trim().replace(/^#/, '');
+  const expanded =
+    raw.length === 3
+      ? raw
+          .split('')
+          .map((part) => `${part}${part}`)
+          .join('')
+      : raw;
+  if (!/^[0-9a-f]{6}$/i.test(expanded)) return undefined;
+  const red = Number.parseInt(expanded.slice(0, 2), 16);
+  const green = Number.parseInt(expanded.slice(2, 4), 16);
+  const blue = Number.parseInt(expanded.slice(4, 6), 16);
+  const toLinear = (channel: number) => {
+    const value = channel / 255;
+    return value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance =
+    0.2126 * toLinear(red) +
+    0.7152 * toLinear(green) +
+    0.0722 * toLinear(blue);
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithDark = (luminance + 0.05) / 0.053;
+  return contrastWithDark >= contrastWithWhite ? '#0a0a0a' : '#ffffff';
+}
+
 /**
  * Map the config `theme` to CSS custom properties applied at the landing root.
  * `inherit: true` (default) leaves the app-wide brand tokens intact so the
@@ -65,9 +94,20 @@ function themeToCssVars(theme: LandingTheme | undefined): CSSProperties {
   const primary = theme?.colors?.primary;
   const bg = theme?.colors?.bg;
   if (theme?.inherit !== true) {
-    if (primary) style['--brand-primary'] = primary;
-    if (bg) style['--brand-bg-primary'] = bg;
-    if (theme?.colors?.fg) style['--brand-fg'] = theme.colors.fg;
+    if (primary) {
+      style['--brand-primary'] = primary;
+      style['--ls-primary'] = primary;
+      const primaryForeground = readableForeground(primary);
+      if (primaryForeground) {
+        style['--brand-primary-fg'] = primaryForeground;
+        style['--ls-primary-fg'] = primaryForeground;
+      }
+    }
+    if (bg) {
+      style['--brand-bg-primary'] = bg;
+      style['--ls-bg'] = bg;
+    }
+    if (theme?.colors?.fg) style['--ls-fg'] = theme.colors.fg;
     if (theme?.colors?.accent) style['--brand-accent'] = theme.colors.accent;
     if (theme?.font?.family) style['fontFamily'] = theme.font.family;
     if (theme?.radius) style['--ls-radius'] = RADIUS_PX[theme.radius];

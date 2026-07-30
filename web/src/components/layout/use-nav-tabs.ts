@@ -16,7 +16,11 @@ import { useTranslation } from "react-i18next";
 import { usePartnerStatus } from "@/hooks/use-partner-status";
 import { useSupportUnread } from "@/hooks/use-support-unread";
 import { useBranding } from "@/lib/branding-provider";
-import type { NavDestinationId, NavItemSetting } from "@/types/branding";
+import {
+  NAV_DESTINATIONS,
+  type NavDestinationId,
+  type NavItemSetting,
+} from "@/types/branding";
 
 export interface NavTab {
   readonly to: string;
@@ -36,6 +40,8 @@ const DEFAULT_NAV: readonly NavItemSetting[] = [
   { id: "settings", visible: true },
 ];
 
+export const DEVICE_NAV_ROUTE = "/subscription/devices";
+
 /**
  * Primary cabinet destinations, shared by the mobile `BottomNav` and the
  * desktop `SideNav`. The set + order are operator-configurable via WEB Reiwa
@@ -52,8 +58,9 @@ export function useNavTabs(): readonly NavTab[] {
   const supportUnread = useSupportUnread();
 
   return useMemo<readonly NavTab[]>(() => {
-    const items =
-      branding.navItems && branding.navItems.length > 0 ? branding.navItems : DEFAULT_NAV;
+    const items = normalizeNavItems(
+      branding.navItems && branding.navItems.length > 0 ? branding.navItems : DEFAULT_NAV,
+    );
 
     const visible = new Set<NavDestinationId>(
       items.filter((i) => i.visible).map((i) => i.id),
@@ -68,7 +75,7 @@ export function useNavTabs(): readonly NavTab[] {
     const subsPrefix = ["/dashboard", "/subscription"];
     const settingsPrefix = ["/settings"];
     if (!visible.has("plans")) subsPrefix.push("/plans", "/purchase");
-    if (!visible.has("devices")) subsPrefix.push("/devices");
+    if (!visible.has("devices")) subsPrefix.push(DEVICE_NAV_ROUTE);
     if (!visible.has("activity")) settingsPrefix.push("/activity");
     if (!visible.has("promo")) settingsPrefix.push("/promo");
     if (!visible.has("support")) settingsPrefix.push("/support");
@@ -104,11 +111,11 @@ export function useNavTabs(): readonly NavTab[] {
             matchPrefix: ["/referrals"],
           },
       devices: {
-        to: "/devices",
+        to: DEVICE_NAV_ROUTE,
         icon: MonitorSmartphone,
         label: t("bottomNav.devices"),
         testId: "tab-devices",
-        matchPrefix: ["/devices"],
+        matchPrefix: [DEVICE_NAV_ROUTE],
       },
       activity: {
         to: "/activity",
@@ -153,7 +160,8 @@ export function useNavTabs(): readonly NavTab[] {
     for (const item of items) {
       if (!visible.has(item.id) || seen.has(item.id)) continue;
       seen.add(item.id);
-      tabs.push(registry[item.id]);
+      const tab = registry[item.id];
+      if (tab) tabs.push(tab);
     }
     // Guarantee essentials are present even if the config omitted them.
     if (!seen.has("subscriptions")) tabs.unshift(registry.subscriptions);
@@ -171,9 +179,61 @@ export function useNavTabs(): readonly NavTab[] {
  */
 export function useSupportInNav(): boolean {
   const { branding } = useBranding();
-  const items =
-    branding.navItems && branding.navItems.length > 0 ? branding.navItems : DEFAULT_NAV;
+  const items = normalizeNavItems(
+    branding.navItems && branding.navItems.length > 0 ? branding.navItems : DEFAULT_NAV,
+  );
   return items.some((i) => i.id === "support" && i.visible);
+}
+
+/**
+ * Runtime defence for persisted/forward-versioned navigation payloads.
+ * Unknown ids and duplicates are ignored, essentials are restored, and the
+ * bottom bar is capped at five visible destinations.
+ */
+export function normalizeNavItems(
+  input: readonly NavItemSetting[],
+): readonly NavItemSetting[] {
+  const allowed = new Set<string>(NAV_DESTINATIONS);
+  const seen = new Set<NavDestinationId>();
+  const normalized: NavItemSetting[] = [];
+
+  for (const candidate of input as ReadonlyArray<{
+    readonly id: string;
+    readonly visible: boolean;
+  }>) {
+    if (!allowed.has(candidate.id) || seen.has(candidate.id as NavDestinationId)) continue;
+    const id = candidate.id as NavDestinationId;
+    seen.add(id);
+    normalized.push({ id, visible: candidate.visible === true });
+  }
+
+  if (!seen.has("subscriptions")) {
+    normalized.unshift({ id: "subscriptions", visible: true });
+  }
+  if (!seen.has("settings")) {
+    normalized.push({ id: "settings", visible: true });
+  }
+
+  const visibleOptional = normalized
+    .filter(
+      (item) =>
+        item.visible && item.id !== "subscriptions" && item.id !== "settings",
+    )
+    .slice(0, 3)
+    .map((item) => item.id);
+  const allowedVisible = new Set<NavDestinationId>([
+    "subscriptions",
+    ...visibleOptional,
+    "settings",
+  ]);
+
+  return normalized.map((item) => ({
+    ...item,
+    visible:
+      item.id === "subscriptions" ||
+      item.id === "settings" ||
+      (item.visible && allowedVisible.has(item.id)),
+  }));
 }
 
 /**

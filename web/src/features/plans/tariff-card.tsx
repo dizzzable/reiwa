@@ -8,7 +8,7 @@
  * by the renewal picker).
  */
 import { motion } from "motion/react";
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 
@@ -100,7 +100,21 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
   const Icon = resolvePlanIcon(plan.icon, plan.type);
   const visual = resolvePlanCardStyle(String(plan.id), branding);
   const accent = visual.accent ?? branding.primary;
-  const priceColor = readablePriceColor(accent);
+  const { contrast } = visual;
+  const readableAccent = readablePriceColor(
+    accent,
+    contrast.effectiveBackground,
+    contrast.foreground,
+  );
+  const cardStyle = {
+    "--card-foreground": contrast.foreground,
+    "--card-foreground-rgb": contrast.foregroundRgb,
+    "--card-veil-rgb": contrast.veilRgb,
+    boxShadow:
+      contrast.foregroundTone === "dark"
+        ? "0 20px 36px -12px rgb(0 0 0 / 0.20)"
+        : "0 20px 36px -12px rgb(0 0 0 / 0.38)",
+  } as CSSProperties;
 
   // Per-plan animated effect (opt-in). Tariff cards do NOT inherit the
   // subscription card's global effect anymore — an unset per-plan effect keeps
@@ -131,20 +145,26 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
       transition={{ delay: index * 0.06 }}
       onClick={onClick}
       aria-pressed={selected}
+      style={cardStyle}
       className={cn(
         "@container/card group relative flex min-h-[172px] w-full flex-col justify-between gap-3",
-        "overflow-hidden rounded-card p-5 text-left text-white select-none",
-        "shadow-xl shadow-black/40 transition-transform duration-150 active:scale-[0.98]",
-        selected ? "ring-2 ring-(--brand-primary)" : "ring-1 ring-white/10",
+        "overflow-hidden rounded-card p-5 text-left text-[color:var(--card-foreground)] select-none",
+        "transition-transform duration-150 active:scale-[0.98]",
+        selected
+          ? "ring-2 ring-(--brand-primary)"
+          : "ring-1 ring-[rgb(var(--card-foreground-rgb)/0.12)]",
       )}
     >
-      {/* Static foundation: dark base + per-plan gradient.
+      {/* Static foundation: semantic fallback canvas + per-plan gradient.
           All background layers use z-0 (NOT negative z): iOS Safari won't paint
           negative-z children inside this @container + overflow-hidden + rounded
           motion.button, so the background vanishes on iPhone. DOM order preserves
           the visual stack on every platform. (transform-gpu can't help here —
           Framer Motion owns this element's inline transform.) */}
-      <div className="absolute inset-0 z-0 bg-zinc-950" />
+      <div
+        className="absolute inset-0 z-0"
+        style={{ backgroundColor: contrast.foundation }}
+      />
       <div className="absolute inset-0 z-0" style={{ backgroundImage: visual.gradient }} />
       {/* Animated effect layer (per-plan, opt-in; NONE = gradient only).
           Suppressed when the plan has a custom uploaded image so the two never
@@ -170,12 +190,15 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
           style={{ backgroundImage: visual.textureImage, backgroundSize: visual.textureSize ?? undefined }}
         />
       ) : null}
-      <div className="absolute inset-0 z-0 bg-linear-to-br from-black/35 via-black/10 to-black/55" />
+      <div
+        className="absolute inset-0 z-0"
+        style={{ background: contrast.overlayBackground }}
+      />
 
       <CardWatermark
         preset={branding.cardLogo}
         customUrl={branding.cardLogoUrl}
-        className="absolute -right-5 -bottom-7 h-32 w-32 @sm:h-36 @sm:w-36"
+        className="absolute -right-5 -bottom-7 h-32 w-32 text-[color:var(--card-foreground)] opacity-10 @sm:h-36 @sm:w-36"
       />
 
       {/* Selection check badge */}
@@ -187,7 +210,7 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
 
       {/* Top: clean plan icon (no chip) + name + traffic/devices + description */}
       <div className="relative flex items-start gap-3.5">
-        <div className="shrink-0 leading-none drop-shadow" style={{ color: accent }}>
+        <div className="shrink-0 leading-none drop-shadow" style={{ color: readableAccent }}>
           {isEmojiIcon(plan.icon) ? (
             <EmojiText text={plan.icon} className="text-3xl leading-none" />
           ) : custom ? (
@@ -200,17 +223,17 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
           <div className="flex items-center gap-2">
             <p className="truncate text-[17px] font-semibold tracking-wide drop-shadow">{plan.name}</p>
             {plan.isTrial && (
-              <span className="shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase backdrop-blur-md">
+              <span className="shrink-0 rounded-full border border-[rgb(var(--card-foreground-rgb)/0.12)] bg-[rgb(var(--card-veil-rgb)/0.30)] px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase backdrop-blur-md">
                 {t("plans.trialBadge")}
               </span>
             )}
           </div>
-          <p className="mt-1 text-sm font-medium text-white/85">
+          <p className="mt-1 text-sm font-medium opacity-[0.85]">
             {plan.trafficLimit ? `${plan.trafficLimit} GB` : t("plans.unlimited")}
             {plan.deviceLimit ? ` · ${t("plans.devicesSuffix", { count: plan.deviceLimit })}` : ""}
           </p>
           {plan.description && (
-            <p className="mt-1.5 line-clamp-2 text-[13px] leading-snug text-white/70">
+            <p className="mt-1.5 line-clamp-2 text-[13px] leading-snug opacity-[0.70]">
               {plan.description}
             </p>
           )}
@@ -219,30 +242,41 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
 
       {/* Bottom: duration options (left) + lowest price (right) */}
       <div className="relative flex items-end justify-between gap-2">
-        <p className="min-w-0 truncate text-[11px] tracking-wider text-white/55 uppercase">
+        <p className="min-w-0 truncate text-[11px] tracking-wider uppercase opacity-[0.55]">
           {t("plans.durationOptions", { count: plan.durations.length })}
         </p>
         {price && (
           <div className="flex shrink-0 flex-col items-end gap-0.5">
             {price.discountPercent > 0 && price.discountSource !== "NONE" && (
               <div className="flex items-center gap-1.5">
-                <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-400/30">
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-bold ring-1",
+                    contrast.foregroundTone === "dark"
+                      ? "bg-emerald-500/15 text-emerald-800 ring-emerald-700/30"
+                      : "bg-emerald-500/20 text-emerald-300 ring-emerald-400/30",
+                  )}
+                >
                   −{price.discountPercent}%
                 </span>
-                <span className="text-[11px] text-white/45 line-through">
+                <span className="text-[11px] line-through opacity-[0.45]">
                   {CURRENCY_SYMBOLS[price.currency] ?? ""}
                   {price.originalAmount.toFixed(2)}
                 </span>
               </div>
             )}
             <span
-              className="rounded-full bg-black/30 px-2.5 py-0.5 text-[15px] font-bold ring-1 ring-white/10 backdrop-blur-sm drop-shadow"
-              style={{ color: priceColor }}
+              className="rounded-full border px-2.5 py-0.5 text-[15px] font-bold backdrop-blur-sm drop-shadow"
+              style={{
+                color: readableAccent,
+                backgroundColor: contrast.supportBackground,
+                borderColor: `rgb(${contrast.foregroundRgb} / 0.12)`,
+              }}
             >
               {t("plans.from")} {CURRENCY_SYMBOLS[price.currency] ?? ""}
               {price.amount.toFixed(2)}
             </span>
-            <span className="text-[11px] text-white/60">
+            <span className="text-[11px] opacity-[0.60]">
               {t("plans.fromDuration", { count: price.days })}
             </span>
           </div>

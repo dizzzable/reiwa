@@ -137,7 +137,7 @@ export default function SettingsPage() {
       >
         {/* Avatar */}
         <div
-          className="flex h-20 w-20 items-center justify-center rounded-full text-2xl font-bold text-white shadow-lg"
+          className="flex h-20 w-20 items-center justify-center rounded-full text-2xl font-bold text-(--brand-primary-fg) shadow-lg"
           style={{
             background: `linear-gradient(135deg, ${branding.primary} 0%, #8b5cf6 100%)`,
             boxShadow: `0 0 32px color-mix(in oklab, ${branding.primary} 40%, transparent)`,
@@ -146,7 +146,7 @@ export default function SettingsPage() {
           {initials}
         </div>
         {/* Username */}
-        <p className="mt-3 text-lg font-semibold text-white">
+        <p className="mt-3 text-lg font-semibold text-[color:var(--brand-foreground)]">
           {displayName}
         </p>
         {session.username && (
@@ -158,7 +158,7 @@ export default function SettingsPage() {
         {/* Status */}
         <div className="mt-1.5 flex items-center gap-1.5">
           <div className="h-2 w-2 rounded-full bg-emerald-400" />
-          <span className="text-xs text-zinc-400">{statusText}</span>
+          <span className="text-xs text-[color:var(--brand-muted-foreground)]">{statusText}</span>
         </div>
       </motion.div>
 
@@ -236,7 +236,7 @@ export default function SettingsPage() {
         />
         <MenuItem
           icon={<CircleHelp className="h-5 w-5" />}
-          iconBg="bg-zinc-500/10 text-zinc-400"
+          iconBg="theme-surface-high text-[var(--brand-muted-foreground)]"
           tint={iconTint("faq")}
           label={t("settings.faq")}
           sublabel={t("settings.faqSub")}
@@ -318,7 +318,7 @@ export default function SettingsPage() {
             <DialogTitle>{t("settings.installIosTitle", { brand: branding.brandName })}</DialogTitle>
             <DialogDescription>{t("settings.installIosIntro")}</DialogDescription>
           </DialogHeader>
-          <ol className="space-y-3 py-1 text-sm text-zinc-300">
+          <ol className="space-y-3 py-1 text-sm text-[color:var(--brand-muted-foreground)]">
             <li className="flex items-center gap-2">
               <Share className="h-4 w-4 shrink-0 text-(--brand-primary)" />
               <span>{t("settings.installIosStep1")}</span>
@@ -403,7 +403,7 @@ function MenuItem({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-4 transition-all hover:bg-white/4 active:scale-[0.98]"
+      className="flex w-full items-center gap-3 rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-4 transition-all hover:bg-[color:var(--color-surface-high)] active:scale-[0.98]"
     >
       <div
         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tinted.className}`}
@@ -412,15 +412,17 @@ function MenuItem({
         {icon}
       </div>
       <div className="flex-1 text-left min-w-0">
-        <p className="text-sm font-medium text-white">{label}</p>
-        {sublabel && <p className="text-xs text-zinc-500 truncate">{sublabel}</p>}
+        <p className="text-sm font-medium text-[color:var(--brand-foreground)]">{label}</p>
+        {sublabel && (
+          <p className="truncate text-xs text-[color:var(--brand-muted-foreground)]">{sublabel}</p>
+        )}
       </div>
       {badge !== undefined && badge > 0 && (
         <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-(--brand-primary) px-1.5 text-[10px] font-bold text-(--brand-primary-fg)">
           {badge > 99 ? "99+" : badge}
         </span>
       )}
-      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--brand-muted-foreground)]" />
     </button>
   );
 }
@@ -442,7 +444,9 @@ function LangOption({
     <button
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-xl border p-3.5 transition-all active:scale-[0.98] ${
-        active ? "border-(--brand-primary)/50 bg-(--brand-primary)/5" : "border-white/6 hover:border-white/12"
+        active
+          ? "border-(--brand-primary)/50 bg-(--brand-primary)/5"
+          : "border-[color:var(--color-border-soft)] hover:border-[color:var(--color-border-strong)]"
       }`}
     >
       <FlagIcon code={code} className="h-5 w-7" />

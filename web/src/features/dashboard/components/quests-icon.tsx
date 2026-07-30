@@ -81,7 +81,7 @@ export function QuestsIcon(): JSX.Element | null {
       <button
         onClick={() => setOpen(true)}
         aria-label={t("quests.iconAria")}
-        className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-white/6 bg-white/3 text-zinc-400 transition-colors hover:bg-white/6 hover:text-white"
+        className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
       >
         <Sparkles className="h-4 w-4" />
         {!reduceMotion && (
@@ -90,7 +90,7 @@ export function QuestsIcon(): JSX.Element | null {
             className="animate-glint pointer-events-none absolute inset-y-0 -left-1/2 w-1/2"
             style={{
               background:
-                "linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent)",
+                "linear-gradient(90deg, transparent, color-mix(in oklab, var(--brand-foreground) 55%, transparent), transparent)",
             }}
           />
         )}
@@ -110,8 +110,8 @@ export function QuestsIcon(): JSX.Element | null {
             <DialogDescription>{t("quests.subtitle")}</DialogDescription>
           </DialogHeader>
 
-          <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/3 px-3 py-2 text-sm">
-            <span className="text-zinc-300">
+          <div className="flex items-center justify-between rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-3 py-2 text-sm">
+            <span className="text-[color:var(--brand-foreground)]">
               {t("quests.pointsBalance", { count: data?.pointsBalance ?? 0 })}
             </span>
             <QuestsExchangeLink onNavigate={() => setOpen(false)} />
@@ -175,8 +175,8 @@ function QuestRow({
   const IconGlyph = PRESET_ICONS[quest.iconRef] ?? Sparkles;
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/3 p-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-(--brand-primary)/12 text-(--brand-primary)">
+    <div className="flex items-center gap-3 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-item)] bg-(--brand-primary)/12 text-(--brand-primary)">
         {quest.iconKind === "SVG" && quest.iconRef.length > 0 ? (
           <img src={questIconUrl(quest.iconRef)} alt="" className="h-5 w-5" />
         ) : (
@@ -186,10 +186,10 @@ function QuestRow({
       <div className="min-w-0 flex-1">
         {/* Title: at most 2 lines; description wraps fully so operators' copy
             is not cut mid-word (cabinet quests dialog regression). */}
-        <p className="line-clamp-2 break-words text-sm font-medium text-white">
+        <p className="line-clamp-2 break-words text-sm font-medium text-[color:var(--brand-foreground)]">
           {loc(quest.title, i18n.language)}
         </p>
-        <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-snug text-zinc-400">
+        <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-snug text-[color:var(--brand-muted-foreground)]">
           {loc(quest.description, i18n.language)}
         </p>
         <p className="mt-1 text-[11px] font-medium text-(--brand-primary)">
@@ -205,7 +205,7 @@ function QuestRow({
             type="button"
             disabled={claim.isPending}
             onClick={() => claim.mutate()}
-            className="rounded-lg bg-(--brand-primary) px-3 py-1.5 text-xs font-semibold text-(--brand-primary-fg) disabled:opacity-50"
+            className="rounded-[var(--radius-item)] bg-(--brand-primary) px-3 py-1.5 text-xs font-semibold text-(--brand-primary-fg) disabled:opacity-50"
           >
             {claim.isPending ? t("quests.claiming") : t("quests.claim")}
           </button>
@@ -216,7 +216,7 @@ function QuestRow({
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => onClose()}
-              className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white"
+              className="rounded-[var(--radius-item)] border border-[color:var(--color-border-strong)] px-3 py-1.5 text-xs text-[color:var(--brand-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)]"
             >
               {t("quests.actions.openBot")}
             </a>
@@ -231,7 +231,7 @@ function QuestRow({
                 onClose();
                 navigate(questAction(quest.type)!.route);
               }}
-              className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white"
+              className="rounded-[var(--radius-item)] border border-[color:var(--color-border-strong)] px-3 py-1.5 text-xs text-[color:var(--brand-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)]"
             >
               {t(questAction(quest.type)!.labelKey)}
             </button>
@@ -306,7 +306,8 @@ function PartnerAction({ quest }: { quest: QuestCabinetItem }): JSX.Element | nu
     },
   });
 
-  const btn = "rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white disabled:opacity-50";
+  const btn =
+    "rounded-[var(--radius-item)] border border-[color:var(--color-border-strong)] px-3 py-1.5 text-xs text-[color:var(--brand-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] disabled:opacity-50";
 
   if (quest.partnerMethod === "manual_code") {
     return (
@@ -318,7 +319,7 @@ function PartnerAction({ quest }: { quest: QuestCabinetItem }): JSX.Element | nu
           aria-label={t("quests.partner.codePlaceholder")}
           placeholder={t("quests.partner.codePlaceholder")}
           autoComplete="off"
-          className="w-24 rounded-lg border border-white/15 bg-white/5 px-2 py-1.5 text-xs text-white placeholder:text-zinc-500"
+          className="glass-input w-24 rounded-[var(--radius-item)] px-2 py-1.5 text-xs"
         />
         <button
           type="button"
@@ -348,7 +349,7 @@ function PartnerAction({ quest }: { quest: QuestCabinetItem }): JSX.Element | nu
         >
           {t("quests.partner.open")}
         </a>
-        <span className="max-w-[180px] text-right text-[10px] leading-tight text-zinc-500">
+        <span className="max-w-[180px] text-right text-[10px] leading-tight text-[color:var(--brand-muted-foreground)]">
           {t("quests.partner.pendingPostback")}
         </span>
       </div>
@@ -385,7 +386,7 @@ function PartnerAction({ quest }: { quest: QuestCabinetItem }): JSX.Element | nu
     // Counting down. `aria-live="off"` — a per-second SR announcement would be
     // noise; the Confirm button becoming enabled is the meaningful state change.
     return (
-      <span aria-live="off" className="text-xs text-zinc-400">
+      <span aria-live="off" className="text-xs text-[color:var(--brand-muted-foreground)]">
         {t("quests.partner.waitSeconds", { count: remaining })}
       </span>
     );

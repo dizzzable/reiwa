@@ -23,7 +23,7 @@ export default function FaqSection({ section, locale, defaultLocale }: Props) {
   return (
     <section className="px-6 py-16">
       {heading.length > 0 && (
-        <h2 className="mb-10 text-center text-3xl font-semibold text-white sm:text-4xl">{heading}</h2>
+        <h2 className="ls-title mb-10 text-center text-3xl font-semibold sm:text-4xl">{heading}</h2>
       )}
       <div className="mx-auto flex max-w-3xl flex-col gap-3">
         {items.map((item, index) => {
@@ -33,20 +33,20 @@ export default function FaqSection({ section, locale, defaultLocale }: Props) {
           return (
             <details
               key={index}
-              className="ls-surface group p-4 text-white open:bg-white/10"
+              className="ls-surface ls-title group p-4 open:bg-[color:var(--ls-surface-high)]"
             >
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium">
                 <span>{question}</span>
                 <span
                   aria-hidden="true"
-                  className="text-zinc-400 transition group-open:rotate-45"
+                  className="ls-muted transition group-open:rotate-45"
                 >
                   +
                 </span>
               </summary>
               {answer.length > 0 && (
                 <div
-                  className="mt-3 text-sm leading-relaxed text-zinc-300"
+                  className="ls-muted mt-3 text-sm leading-relaxed"
                   // eslint-disable-next-line react/no-danger
                   dangerouslySetInnerHTML={{ __html: sanitizeRichText(answer) }}
                 />

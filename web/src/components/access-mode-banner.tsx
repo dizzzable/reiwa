@@ -67,7 +67,7 @@ export function AccessModeBlockedScreen({
       <AccessModeBanner modes={modes} />
       <button
         onClick={onBack}
-        className="mx-auto mt-2 rounded-full bg-white/5 px-5 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/10 active:scale-95"
+        className="mx-auto mt-2 rounded-full bg-[color:var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[color:var(--brand-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] active:scale-95"
       >
         {t("common.back")}
       </button>

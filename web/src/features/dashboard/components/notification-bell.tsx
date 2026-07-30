@@ -64,7 +64,7 @@ export function NotificationBell() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 transition-colors hover:bg-white/6 hover:text-white"
+        className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
         aria-label={t("notifications.feedTitle")}
       >
         <motion.span
@@ -97,7 +97,7 @@ export function NotificationBell() {
 
           <div className="space-y-2">
             {recent.length === 0 ? (
-              <p className="py-6 text-center text-sm text-zinc-500">
+              <p className="py-6 text-center text-sm text-[color:var(--brand-muted-foreground)]">
                 {t("activity.emptyNotifications")}
               </p>
             ) : (
@@ -110,7 +110,7 @@ export function NotificationBell() {
                     navigate(`/settings/notifications/feed?n=${encodeURIComponent(n.id)}`);
                   }}
                   className={cn(
-                    "w-full rounded-2xl border border-white/6 bg-white/2 p-3 text-left transition-colors hover:bg-white/5",
+                    "w-full rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-3 text-left transition-colors hover:bg-[color:var(--color-surface-high)]",
                     !n.isRead && "border-(--brand-primary)/20 bg-(--brand-primary)/3",
                   )}
                 >
@@ -118,12 +118,12 @@ export function NotificationBell() {
                     {!n.isRead && (
                       <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />
                     )}
-                    <p className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium text-white">
+                    <p className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium text-[color:var(--brand-foreground)]">
                       <EmojiText text={n.title} />
                     </p>
                   </div>
                   {n.body && (
-                    <p className="mt-0.5 line-clamp-2 break-words text-xs text-zinc-400">
+                    <p className="mt-0.5 line-clamp-2 break-words text-xs text-[color:var(--brand-muted-foreground)]">
                       <EmojiText text={n.body} />
                     </p>
                   )}

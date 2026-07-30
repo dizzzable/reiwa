@@ -75,6 +75,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 
 /** Maps a backend renewal warning code to a localized "why not renewable" hint. */
 const RENEWAL_REASON_KEYS: Record<string, string> = {
+  TRIAL_NOT_RENEWABLE: "renewal.reason.trial",
   TRIAL_FREE_NOT_RENEWABLE: "renewal.reason.trial",
   SOURCE_PLAN_MISSING: "renewal.reason.noPlan",
   GATEWAY_NOT_AVAILABLE: "renewal.reason.noGateway",
@@ -103,9 +104,8 @@ export default function RenewalPage() {
     return () => reset();
   }, [reset]);
 
-  // A free trial can't be renewed — the user must UPGRADE. Decide this up
-  // front, using the AUTHORITATIVE per-subscription `renewable` flag (so PAID
-  // trials, which ARE renewable, still get the normal wizard) and bounce to
+  // A trial can't be renewed — the user must UPGRADE. Decide this up front,
+  // using the AUTHORITATIVE per-subscription `renewable` flag, and bounce to
   // /upgrade BEFORE rendering any renewal chrome. Without this the user sees a
   // "Продление" screen flash before being redirected to "Улучшение". Both
   // queries share their keys with the wizard steps, so this adds no network.
@@ -219,8 +219,8 @@ function SelectSubscriptions() {
         row.option !== undefined && row.option.renewable,
     );
 
-  // Free-trial subscriptions can't be renewed — the user must UPGRADE to a
-  // paid plan instead. Detect them so we can route to the upgrade flow.
+  // Trial subscriptions can't be renewed — the user must UPGRADE to a regular
+  // plan instead. Detect them so we can route to the upgrade flow.
   const trialSubs = (subsData?.subscriptions ?? []).filter((sub) => {
     const opt = optionById.get(sub.id);
     return sub.isTrial && (opt === undefined || !opt.renewable);
@@ -237,7 +237,7 @@ function SelectSubscriptions() {
     }
   }, [isLoading, renewable, selectedSubscriptionIds.length, selectedPlans, setSelectedSubscriptions, setStep]);
 
-  // Trying to renew but nothing is renewable and the user holds a free trial →
+  // Trying to renew but nothing is renewable and the user holds a trial →
   // send them to the upgrade flow (a trial is upgraded, never renewed).
   useEffect(() => {
     if (!isLoading && renewable.length === 0 && trialSubs.length > 0) {
@@ -249,7 +249,7 @@ function SelectSubscriptions() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2].map((i) => (
-          <div key={i} className="h-20 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-20 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -266,14 +266,14 @@ function SelectSubscriptions() {
     return (
       <div className="px-5 space-y-2">
         <TipCard tone="info">{t("renewal.noneRenewable")}</TipCard>
-        {reason && <p className="px-1 text-xs text-zinc-500">{reason}</p>}
+        {reason && <p className="px-1 text-xs text-[color:var(--brand-muted-foreground)]">{reason}</p>}
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      <p className="px-5 text-sm text-zinc-400">{t("renewal.selectSubtitle")}</p>
+      <p className="px-5 text-sm text-[color:var(--brand-muted-foreground)]">{t("renewal.selectSubtitle")}</p>
       <div className="px-5 space-y-2">
         {renewable.map(({ sub, option }, index) => {
           const checked = selectedSubscriptionIds.includes(sub.id);
@@ -310,7 +310,7 @@ function SelectSubscriptions() {
               />
               {showDurationPicker && (
                 <div className="px-1">
-                  <p className="mb-1.5 text-xs text-zinc-500">{t("renewal.durationLabel")}</p>
+                  <p className="mb-1.5 text-xs text-[color:var(--brand-muted-foreground)]">{t("renewal.durationLabel")}</p>
                   <div className="flex flex-wrap gap-2">
                     {option.availableDurations.map((d) => {
                       const active = currentDays === d.days;
@@ -321,8 +321,8 @@ function SelectSubscriptions() {
                           onClick={() => setSelectedDuration(sub.id, d.days)}
                           className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all active:scale-95 ${
                             active
-                              ? "bg-(--brand-primary) text-black"
-                              : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                              ? "bg-(--brand-primary) text-(--brand-primary-fg)"
+                              : "theme-surface-high text-[color:var(--brand-foreground)] hover:brightness-105"
                           }`}
                         >
                           {t("purchase.duration.days", { count: d.days })}
@@ -396,7 +396,7 @@ function SelectPlan() {
   const optionById = new Map((baseOptions?.items ?? []).map((o) => [o.subscriptionId, o]));
   const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
   // Only paid plans are valid renewal targets.
-  const catalog = plans.filter((p) => !(p.isTrial && p.trialFree));
+  const catalog = plans.filter((p) => !p.isTrial);
   const targets = selectedSubscriptionIds.filter(
     (id) => optionById.get(id)?.requiresPlanSelection ?? false,
   );
@@ -415,7 +415,7 @@ function SelectPlan() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -423,7 +423,7 @@ function SelectPlan() {
 
   return (
     <div className="space-y-4">
-      <p className="px-5 text-sm text-zinc-400">{t("renewal.choosePlanTitle")}</p>
+      <p className="px-5 text-sm text-[color:var(--brand-muted-foreground)]">{t("renewal.choosePlanTitle")}</p>
       {targets.map((subId) => {
         const sub = subById.get(subId);
         const chosenPlanId = selectedPlans[subId];
@@ -431,7 +431,7 @@ function SelectPlan() {
         return (
           <div key={subId} className="space-y-2 px-5">
             {targets.length > 1 && sub && (
-              <p className="text-xs font-medium text-zinc-500">{subscriptionTitle(sub)}</p>
+              <p className="text-xs font-medium text-[color:var(--brand-muted-foreground)]">{subscriptionTitle(sub)}</p>
             )}
             {catalog.map((plan, idx) => (
               <TariffCard
@@ -448,7 +448,7 @@ function SelectPlan() {
             ))}
             {chosenPlan && chosenPlan.durations.length > 1 && (
               <div className="pt-1">
-                <p className="mb-1.5 text-xs text-zinc-500">{t("renewal.durationLabel")}</p>
+                <p className="mb-1.5 text-xs text-[color:var(--brand-muted-foreground)]">{t("renewal.durationLabel")}</p>
                 <div className="flex flex-wrap gap-2">
                   {chosenPlan.durations.map((d) => {
                     const active = (selectedDurations[subId] ?? chosenPlan.durations[0]?.days) === d.days;
@@ -460,8 +460,8 @@ function SelectPlan() {
                         className={cn(
                           "rounded-full px-3 py-1.5 text-xs font-medium transition-all active:scale-95",
                           active
-                            ? "bg-(--brand-primary) text-black"
-                            : "bg-white/5 text-zinc-300 hover:bg-white/10",
+                            ? "bg-(--brand-primary) text-(--brand-primary-fg)"
+                            : "theme-surface-high text-[color:var(--brand-foreground)] hover:brightness-105",
                         )}
                       >
                         {t("purchase.duration.days", { count: d.days })}
@@ -588,7 +588,7 @@ function SelectRenewalAddOns() {
   if (loading) {
     return (
       <div className="px-5" role="status" aria-live="polite">
-        <div className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+        <div className="theme-skeleton h-16 animate-pulse rounded-2xl" />
       </div>
     );
   }
@@ -597,7 +597,7 @@ function SelectRenewalAddOns() {
     <div className="space-y-4">
       <div className="px-5">
         <h2 className="text-base font-semibold">{t("renewal.reofferTitle")}</h2>
-        <p className="mt-1 text-sm text-zinc-400">{t("renewal.reofferSubtitle")}</p>
+        <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t("renewal.reofferSubtitle")}</p>
       </div>
       {selectedSubscriptionIds.map((subId) => {
         const list = reofferBySub.get(subId);
@@ -642,7 +642,7 @@ function RenewalAddOnSection({
   const { t } = useTranslation();
   return (
     <div className="space-y-2 px-5">
-      {title && <p className="text-xs font-medium text-zinc-500">{title}</p>}
+      {title && <p className="text-xs font-medium text-[color:var(--brand-muted-foreground)]">{title}</p>}
       {addOns.map((addOn) => {
         const selected = selectedIds.includes(addOn.id);
         const price = currency ? addOn.prices.find((p) => p.currency === currency) : undefined;
@@ -656,26 +656,28 @@ function RenewalAddOnSection({
               "flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-all active:scale-[0.98]",
               selected
                 ? "border-(--brand-primary)/60 bg-(--brand-primary)/10"
-                : "border-white/6 bg-white/3 hover:bg-white/6",
+                : "theme-surface theme-outline hover:brightness-105",
             )}
           >
             <div
               className={cn(
                 "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border",
-                selected ? "border-(--brand-primary) bg-(--brand-primary) text-black" : "border-white/20",
+                selected
+                  ? "border-(--brand-primary) bg-(--brand-primary) text-(--brand-primary-fg)"
+                  : "border-[color:var(--color-border-strong)]",
               )}
             >
               {selected && <Check className="h-3.5 w-3.5" />}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-white">{addOn.name}</p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-sm font-medium text-[color:var(--brand-foreground)]">{addOn.name}</p>
+              <p className="text-xs text-[color:var(--brand-muted-foreground)]">
                 {addOn.type === "EXTRA_TRAFFIC"
                   ? t("addons.extraTraffic", { value: addOn.value })
                   : t("addons.extraDevices", { count: addOn.value })}
               </p>
               {addOn.description && (
-                <p className="mt-0.5 text-xs text-zinc-500/80 line-clamp-2">{addOn.description}</p>
+                <p className="mt-0.5 line-clamp-2 text-xs text-[color:var(--brand-muted-foreground)]">{addOn.description}</p>
               )}
             </div>
             {price && (
@@ -770,7 +772,7 @@ function SelectGateway() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -781,7 +783,7 @@ function SelectGateway() {
       <h2 className="px-5 text-base font-semibold">{t("purchase.gateway.title")}</h2>
       {savedYookassaMethods.length > 0 && (
         <div className="px-5 space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--brand-muted-foreground)]">
             {t("purchase.gateway.savedTitle")}
           </p>
           {savedYookassaMethods.map((method) => {
@@ -805,10 +807,10 @@ function SelectGateway() {
                   <CreditCard className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 text-left">
-                  <p className="truncate font-medium text-white">
+                  <p className="truncate font-medium text-[color:var(--brand-foreground)]">
                     {formatSavedPaymentMethodTitle(method, t)}
                   </p>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-[color:var(--brand-muted-foreground)]">
                     {formatSavedPaymentMethodMeta(method, t)}
                   </p>
                 </div>
@@ -832,8 +834,8 @@ function SelectGateway() {
           >
             <GatewayIcon type="YOOKASSA" currency="RUB" className="h-7 w-7" />
             <div className="text-left">
-              <p className="font-medium text-white">{t("purchase.gateway.newCard")}</p>
-              <p className="text-xs text-zinc-500">YooKassa</p>
+              <p className="font-medium text-[color:var(--brand-foreground)]">{t("purchase.gateway.newCard")}</p>
+              <p className="text-xs text-[color:var(--brand-muted-foreground)]">YooKassa</p>
             </div>
           </button>
         </div>
@@ -849,13 +851,13 @@ function SelectGateway() {
           >
             <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
             <div className="text-left">
-              <p className="font-medium text-white">{gatewayLabel(gw.type, gw.displayName)}</p>
-              <p className="text-xs text-zinc-500">{gw.currency}</p>
+              <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
+              <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
             </div>
           </button>
         ))}
         {gateways.length === 0 && (
-          <div className="text-center py-8 text-zinc-500 text-sm">{t("purchase.gateway.empty")}</div>
+          <div className="py-8 text-center text-sm text-[color:var(--brand-muted-foreground)]">{t("purchase.gateway.empty")}</div>
         )}
       </div>
       <div className="px-5">
@@ -1031,8 +1033,8 @@ function RenewalReview() {
               className="flex items-center justify-between px-4 py-3 text-sm"
             >
               <div className="min-w-0">
-                <p className="truncate font-mono font-medium text-white">{title}</p>
-                {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
+                <p className="truncate font-mono font-medium text-[color:var(--brand-foreground)]">{title}</p>
+                {subtitle && <p className="truncate text-xs text-[color:var(--brand-muted-foreground)]">{subtitle}</p>}
               </div>
               <span className="shrink-0 font-medium">
                 {formatPrice(item.amount, item.currency)}
@@ -1046,8 +1048,8 @@ function RenewalReview() {
             className="flex items-center justify-between px-4 py-3 text-sm"
           >
             <div className="min-w-0">
-              <p className="truncate text-white">{addOn.name}</p>
-              <p className="truncate text-xs text-zinc-500">
+              <p className="truncate text-[color:var(--brand-foreground)]">{addOn.name}</p>
+              <p className="truncate text-xs text-[color:var(--brand-muted-foreground)]">
                 {addOn.type === "EXTRA_TRAFFIC"
                   ? t("addons.extraTraffic", { value: addOn.value })
                   : t("addons.extraDevices", { count: addOn.value })}
@@ -1083,10 +1085,10 @@ function RenewalReview() {
       />
 
       {showSaveCardConsent && (
-        <div className="flex items-start justify-between gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm">
-          <div className="min-w-0 text-zinc-300 leading-snug">
-            <p className="font-medium text-zinc-100">{t("purchase.quote.saveCardTitle")}</p>
-            <p id="renewal-save-card-hint" className="mt-0.5 text-xs text-zinc-400">
+        <div className="flex items-start justify-between gap-4 rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-4 py-3 text-sm">
+          <div className="min-w-0 leading-snug text-[color:var(--brand-foreground)]">
+            <p className="font-medium text-[color:var(--brand-foreground)]">{t("purchase.quote.saveCardTitle")}</p>
+            <p id="renewal-save-card-hint" className="mt-0.5 text-xs text-[color:var(--brand-muted-foreground)]">
               {t("purchase.quote.saveCardHint")}
             </p>
           </div>
@@ -1232,7 +1234,7 @@ function CheckoutStep() {
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4" role="status" aria-live="polite">
       <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
-      <p className="text-sm text-zinc-400">{t("renewal.creating")}</p>
+      <p className="text-sm text-[color:var(--brand-muted-foreground)]">{t("renewal.creating")}</p>
     </div>
   );
 }

@@ -36,15 +36,17 @@ export function InvitedUsersList() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="rounded-2xl border border-white/6 bg-white/3 p-4">
+    <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
       {/* Header */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-(--brand-primary)" />
-          <p className="text-sm font-semibold text-white">{t("referrals.invitedList")}</p>
+          <p className="text-sm font-semibold text-[var(--brand-foreground)]">
+            {t("referrals.invitedList")}
+          </p>
         </div>
         {total > 0 && (
-          <span className="rounded-full bg-white/6 px-2 py-0.5 text-[11px] font-medium text-zinc-400">
+          <span className="rounded-full bg-[var(--color-surface-high)] px-2 py-0.5 text-[11px] font-medium text-[var(--brand-muted-foreground)]">
             {total}
           </span>
         )}
@@ -59,10 +61,12 @@ export function InvitedUsersList() {
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-8 text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/5">
-            <UserPlus className="h-5 w-5 text-zinc-500" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-surface-high)]">
+            <UserPlus className="h-5 w-5 text-[var(--brand-muted-foreground)]" />
           </div>
-          <p className="text-xs text-zinc-500">{t("referrals.invitedEmpty")}</p>
+          <p className="text-xs text-[var(--brand-muted-foreground)]">
+            {t("referrals.invitedEmpty")}
+          </p>
         </div>
       ) : (
         <div
@@ -75,20 +79,22 @@ export function InvitedUsersList() {
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.15, delay: i * 0.02 }}
-              className="flex items-center gap-3 rounded-xl border border-white/6 bg-white/2 px-3 py-2.5"
+              className="flex items-center gap-3 rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-3 py-2.5"
             >
               {/* Avatar bubble with first initial */}
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-(--brand-primary)/12 text-xs font-bold text-(--brand-primary)">
                 {u.label.replace(/^[@:]+/, "").slice(0, 1).toUpperCase() || "?"}
               </div>
-              <p className="min-w-0 flex-1 truncate text-sm text-zinc-200">{u.label}</p>
+              <p className="min-w-0 flex-1 truncate text-sm text-[var(--brand-foreground)]">
+                {u.label}
+              </p>
               {u.qualified ? (
                 <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
                   <CircleCheck className="h-3 w-3" />
                   {t("referrals.qualified")}
                 </span>
               ) : (
-                <span className="shrink-0 rounded-full bg-white/6 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
+                <span className="shrink-0 rounded-full bg-[var(--color-surface)] px-2 py-0.5 text-[10px] font-medium text-[var(--brand-muted-foreground)]">
                   {t("referrals.pending")}
                 </span>
               )}
@@ -103,18 +109,18 @@ export function InvitedUsersList() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/6 bg-white/3 text-zinc-300 transition-colors hover:bg-white/6 disabled:opacity-30 disabled:pointer-events-none"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-surface)] text-[var(--brand-muted-foreground)] transition-colors hover:bg-[var(--color-surface-high)] hover:text-[var(--brand-foreground)] disabled:pointer-events-none disabled:opacity-30"
             aria-label={t("common.back")}
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-[var(--brand-muted-foreground)]">
             {page} / {totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/6 bg-white/3 text-zinc-300 transition-colors hover:bg-white/6 disabled:opacity-30 disabled:pointer-events-none"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-surface)] text-[var(--brand-muted-foreground)] transition-colors hover:bg-[var(--color-surface-high)] hover:text-[var(--brand-foreground)] disabled:pointer-events-none disabled:opacity-30"
             aria-label={t("common.next")}
           >
             <ChevronRight className="h-4 w-4" />

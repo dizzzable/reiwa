@@ -67,12 +67,12 @@ export function AiChat() {
         aria-live="polite"
       >
         {messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-zinc-500">
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-muted-foreground">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-(--brand-primary)/25 bg-(--brand-primary)/10">
               <Bot className="h-7 w-7 text-(--brand-primary)" />
             </div>
-            <p className="text-base font-medium text-zinc-200">{t('support.aiEmptyTitle')}</p>
-            <p className="max-w-sm text-sm leading-relaxed text-zinc-500">
+            <p className="text-base font-medium text-foreground">{t('support.aiEmptyTitle')}</p>
+            <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
               {t('support.aiEmptyHint')}
             </p>
           </div>
@@ -92,8 +92,8 @@ export function AiChat() {
                 className={cn(
                   'max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
                   msg.role === 'user'
-                    ? 'rounded-br-sm bg-(--brand-primary)/90 text-white'
-                    : 'rounded-bl-sm bg-zinc-800 text-zinc-100',
+                    ? 'rounded-br-sm bg-(--brand-primary)/90 text-(--brand-primary-fg)'
+                    : 'rounded-bl-sm bg-[color:var(--color-surface-high)] text-foreground',
                 )}
               >
                 {lines.map((line, j) => (
@@ -113,18 +113,18 @@ export function AiChat() {
             className="flex justify-start"
           >
             <div
-              className="rounded-2xl rounded-bl-sm bg-zinc-800 px-4 py-2.5"
+              className="rounded-2xl rounded-bl-sm bg-[color:var(--color-surface-high)] px-4 py-2.5"
               role="status"
               aria-label={t('support.aiThinking')}
             >
-              <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
           </motion.div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="shrink-0 border-t border-white/[0.06] px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="shrink-0 border-t border-border px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}
@@ -134,7 +134,7 @@ export function AiChat() {
             placeholder={t('support.aiPlaceholder')}
             aria-label={t('support.aiInputLabel')}
             rows={1}
-            className="glass-input max-h-[120px] min-h-[42px] flex-1 resize-none rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-(--brand-primary)/40"
+            className="glass-input max-h-[120px] min-h-[42px] flex-1 resize-none rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-(--brand-primary)/40"
             disabled={loading}
           />
           <button

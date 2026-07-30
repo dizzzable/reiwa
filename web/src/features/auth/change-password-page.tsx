@@ -81,7 +81,7 @@ export default function ChangePasswordPage() {
             className="mb-5"
           >
             <div
-              className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 backdrop-blur-xl"
+              className="flex h-20 w-20 items-center justify-center rounded-3xl bg-[color:var(--color-surface)] ring-1 ring-[color:var(--color-border-soft)] backdrop-blur-xl"
               style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
             >
               {branding.logoUrl ? (
@@ -95,10 +95,10 @@ export default function ChangePasswordPage() {
               )}
             </div>
           </motion.div>
-          <h1 className="text-xl font-bold text-white">
+          <h1 className="text-xl font-bold text-[color:var(--brand-foreground)]">
             {t('changePassword.title')}
           </h1>
-          <p className="mt-2 text-sm text-zinc-400">
+          <p className="mt-2 text-sm text-[color:var(--brand-muted-foreground)]">
             {t('changePassword.description')}
           </p>
         </div>
@@ -109,7 +109,7 @@ export default function ChangePasswordPage() {
           <div>
             <label
               htmlFor="current-password"
-              className="mb-1.5 block text-xs font-medium text-zinc-400 uppercase tracking-wider"
+              className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-[color:var(--brand-muted-foreground)]"
             >
               {t('changePassword.currentPassword')}
             </label>
@@ -119,7 +119,7 @@ export default function ChangePasswordPage() {
               autoComplete="current-password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-(--brand-primary)/50 focus:ring-1 focus:ring-(--brand-primary)/30"
+              className="glass-input w-full rounded-xl px-4 py-3 text-sm"
               placeholder={t('changePassword.currentPasswordPlaceholder')}
               disabled={isSubmitting}
             />
@@ -129,7 +129,7 @@ export default function ChangePasswordPage() {
           <div>
             <label
               htmlFor="new-password"
-              className="mb-1.5 block text-xs font-medium text-zinc-400 uppercase tracking-wider"
+              className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-[color:var(--brand-muted-foreground)]"
             >
               {t('changePassword.newPassword')}
             </label>
@@ -139,7 +139,7 @@ export default function ChangePasswordPage() {
               autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-(--brand-primary)/50 focus:ring-1 focus:ring-(--brand-primary)/30"
+              className="glass-input w-full rounded-xl px-4 py-3 text-sm"
               placeholder={t('changePassword.newPasswordPlaceholder')}
               disabled={isSubmitting}
             />

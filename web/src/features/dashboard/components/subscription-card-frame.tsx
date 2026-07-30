@@ -57,15 +57,32 @@ export const SubscriptionCardFrame = forwardRef<
     effectActive,
     layerOpacity,
     className,
+    style,
     ...props
   },
   ref,
 ) {
+  const { contrast } = visual;
+  const frameStyle = {
+    "--card-foreground": contrast.foreground,
+    "--card-foreground-rgb": contrast.foregroundRgb,
+    "--card-veil-rgb": contrast.veilRgb,
+    "--card-support-background": contrast.supportBackground,
+    "--card-danger":
+      contrast.foregroundTone === "dark" ? "#b91c1c" : "#f87171",
+    "--card-warning":
+      contrast.foregroundTone === "dark" ? "#92400e" : "#fbbf24",
+    boxShadow:
+      contrast.foregroundTone === "dark"
+        ? "0 25px 50px -12px rgb(0 0 0 / 0.22), 0 0 0 1px rgb(10 10 10 / 0.12)"
+        : "0 25px 50px -12px rgb(0 0 0 / 0.40), 0 0 0 1px rgb(255 255 255 / 0.12)",
+    ...style,
+  } as CSSProperties;
   const watermark = (
     <CardWatermark
       preset={visual.cardLogo}
       customUrl={visual.cardLogoUrl}
-      className="absolute -right-6 -bottom-8 h-40 w-40 @sm:h-44 @sm:w-44"
+      className="absolute -right-6 -bottom-8 h-40 w-40 text-[color:var(--card-foreground)] opacity-10 @sm:h-44 @sm:w-44"
     />
   );
 
@@ -78,17 +95,20 @@ export const SubscriptionCardFrame = forwardRef<
         // (layout-containment stacking context) + overflow-hidden + rounded box,
         // so the card renders with no background on iPhone. z-0 + DOM order keeps
         // the same visual layering on every platform without the WebKit bug.
-        "@container/card relative flex h-[190px] w-full flex-col justify-between overflow-hidden rounded-card p-4 text-white select-none",
+        "@container/card relative flex h-[190px] w-full flex-col justify-between overflow-hidden rounded-card p-4 text-[color:var(--card-foreground)] select-none",
         "@sm:h-[210px] @sm:p-5",
-        "shadow-2xl shadow-black/40 ring-1 ring-white/10",
         className,
       )}
+      style={frameStyle}
       {...props}
     >
       <div
         data-subscription-card-layer="foundation"
-        className="absolute inset-0 z-0 bg-zinc-950"
-        style={opacityStyle(layerOpacity?.foundation, 420)}
+        className="absolute inset-0 z-0"
+        style={{
+          backgroundColor: contrast.foundation,
+          ...opacityStyle(layerOpacity?.foundation, 420),
+        }}
       />
       <div
         data-subscription-card-layer="gradient"
@@ -98,6 +118,20 @@ export const SubscriptionCardFrame = forwardRef<
           ...opacityStyle(layerOpacity?.gradient, 560),
         }}
       />
+      {visual.cardPattern && (
+        <div
+          data-subscription-card-layer="pattern"
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            backgroundImage: visual.cardPattern,
+            backgroundSize: visual.cardPattern.includes("gradient(")
+              ? "24px 24px"
+              : undefined,
+            opacity: 0.4,
+            ...opacityStyle(layerOpacity?.gradient, 560),
+          }}
+        />
+      )}
       {visual.cardEffect !== "NONE" && (
         <CardEffectLayer
           effect={visual.cardEffect}
@@ -109,8 +143,11 @@ export const SubscriptionCardFrame = forwardRef<
       )}
       <div
         data-subscription-card-layer="vignette"
-        className="absolute inset-0 z-0 bg-linear-to-b from-black/55 via-black/15 to-black/65"
-        style={opacityStyle(layerOpacity?.vignette, 480)}
+        className="absolute inset-0 z-0"
+        style={{
+          background: contrast.overlayBackground,
+          ...opacityStyle(layerOpacity?.vignette, 480),
+        }}
       />
 
       {layerOpacity?.watermark === undefined ? (

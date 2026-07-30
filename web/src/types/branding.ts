@@ -150,7 +150,44 @@ export interface NavItemSetting {
   visible: boolean;
 }
 
+export interface SurfaceTheme {
+  foreground: string;
+  mutedForeground: string;
+  surface: string;
+  surfaceHigh: string;
+  borderSoft: string;
+  borderStrong: string;
+  surfaceOpacity: number;
+  surfaceHighOpacity: number;
+  borderSoftOpacity: number;
+  borderStrongOpacity: number;
+  glassBlurPx: number;
+}
+
+export interface CornerRadii {
+  cardPx: number;
+  itemPx: number;
+  pillPx: number;
+}
+
+export const DEFAULT_SURFACE_THEME: SurfaceTheme = {
+  foreground: "#fafafa",
+  mutedForeground: "#a1a1a1",
+  surface: "#18181b",
+  surfaceHigh: "#27272a",
+  borderSoft: "#ffffff",
+  borderStrong: "#ffffff",
+  surfaceOpacity: 0.7,
+  surfaceHighOpacity: 0.8,
+  borderSoftOpacity: 0.06,
+  borderStrongOpacity: 0.12,
+  glassBlurPx: 16,
+};
+
 export interface Branding {
+  /** Stable WEB Reiwa preset identity; resolved values remain authoritative. */
+  themePresetId?: string | null;
+  themePresetVersion?: number | null;
   brandName: string;
   /** Optional short subtitle shown on the splash + in-app loader. */
   tagline?: string | null;
@@ -165,7 +202,7 @@ export interface Branding {
   cardPattern: string | null;
   /** Card watermark glyph preset (DEFAULT = Reiwa mark, NONE = hidden). */
   cardLogo: CardLogoPreset;
-  /** Custom card watermark image (data: or http(s)); overrides cardLogo. */
+  /** Custom card watermark image (same-origin upload, HTTPS, or data image); overrides cardLogo. */
   cardLogoUrl: string | null;
   /** Animated effect behind the card (NONE = plain gradient). */
   cardEffect: CardEffect;
@@ -190,7 +227,11 @@ export interface Branding {
   /** Per-icon hex colours (used when iconColorMode === "custom"). */
   iconColors: Record<string, string>;
   borderRadius: string;
+  /** Exact geometry; absent snapshots fall back to legacy borderRadius. */
+  cornerRadii?: CornerRadii;
   fontFamily: string;
+  /** Semantic text/glass tokens. Optional for older operator snapshots. */
+  surfaceTheme?: SurfaceTheme;
   /**
    * Per-plan tariff-card styles keyed by `planId`. Absent/empty → the cabinet
    * uses a deterministic auto gradient per plan. Optional so an older payload
@@ -262,6 +303,8 @@ export interface CustomIcon {
  * SPA never flickers between the hardcoded baseline and the network response.
  */
 export const DEFAULT_BRANDING: Branding = {
+  themePresetId: null,
+  themePresetVersion: null,
   brandName: "Reiwa",
   tagline: null,
   logoUrl: null,
@@ -296,7 +339,13 @@ export const DEFAULT_BRANDING: Branding = {
   iconColorMode: "default",
   iconColors: {},
   borderRadius: "rounded-2xl",
+  cornerRadii: {
+    cardPx: 24,
+    itemPx: 14,
+    pillPx: 9999,
+  },
   fontFamily: "Geist Variable, system-ui, sans-serif",
+  surfaceTheme: DEFAULT_SURFACE_THEME,
   planCardStyles: {},
   navItems: [
     { id: "subscriptions", visible: true },

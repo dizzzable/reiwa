@@ -144,13 +144,13 @@ export default function PartnerPage() {
             <SheetTitle>{t("partner.level")}</SheetTitle>
           </SheetHeader>
           <div className="space-y-4 py-4">
-            <div className="rounded-xl border border-white/6 bg-white/3 p-4 text-center">
+            <div className="rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 text-center">
               <p className="text-4xl font-bold text-amber-400">L1</p>
               <p className="mt-1 text-xs text-muted-foreground">{t("partner.levelDescription")}</p>
             </div>
             <div className="space-y-2">
               {["L1", "L2", "L3"].map((level, i) => (
-                <div key={level} className="flex items-center justify-between rounded-xl border border-white/6 bg-white/2 p-3">
+                <div key={level} className="flex items-center justify-between rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] p-3">
                   <span className="text-sm font-medium">{level}</span>
                   <span className="text-xs text-muted-foreground">
                     {t("partner.levelPercent", { level: i + 1 })}
@@ -170,15 +170,15 @@ export default function PartnerPage() {
           </SheetHeader>
           <div className="space-y-3 py-4">
             <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-white/6 bg-white/3 p-3 text-center">
+              <div className="rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3 text-center">
                 <p className="text-xl font-bold">{info?.referralsCount ?? 0}</p>
                 <p className="text-[10px] text-muted-foreground">L1</p>
               </div>
-              <div className="rounded-xl border border-white/6 bg-white/3 p-3 text-center">
+              <div className="rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3 text-center">
                 <p className="text-xl font-bold">{info?.level2Count ?? 0}</p>
                 <p className="text-[10px] text-muted-foreground">L2</p>
               </div>
-              <div className="rounded-xl border border-white/6 bg-white/3 p-3 text-center">
+              <div className="rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3 text-center">
                 <p className="text-xl font-bold">{info?.level3Count ?? 0}</p>
                 <p className="text-[10px] text-muted-foreground">L3</p>
               </div>
@@ -194,7 +194,7 @@ export default function PartnerPage() {
             <SheetTitle>{t("partner.balance")}</SheetTitle>
           </SheetHeader>
           <div className="space-y-4 py-4">
-            <div className="rounded-xl border border-white/6 bg-white/3 p-4 text-center">
+            <div className="rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 text-center">
               <p className="text-3xl font-bold text-emerald-400">{balanceRub} ₽</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {t("partner.totalEarned")}: {totalEarnedRub} ₽
@@ -213,12 +213,16 @@ export default function PartnerPage() {
             {/* Recent earnings */}
             {earnings.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-zinc-400">{t("partner.recentEarnings")}</p>
+                <p className="text-xs font-medium text-[var(--brand-muted-foreground)]">
+                  {t("partner.recentEarnings")}
+                </p>
                 {earnings.slice(0, 10).map((e: any) => (
-                  <div key={e.id} className="flex items-center justify-between rounded-lg border border-white/6 bg-white/2 p-2.5">
+                  <div key={e.id} className="flex items-center justify-between rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] p-2.5">
                     <div>
-                      <p className="text-xs text-zinc-300">L{e.level} • {e.percent}%</p>
-                      <p className="text-[10px] text-zinc-500">{new Date(e.createdAt).toLocaleDateString()}</p>
+                      <p className="text-xs text-[var(--brand-foreground)]">L{e.level} • {e.percent}%</p>
+                      <p className="text-[10px] text-[var(--brand-muted-foreground)]">
+                        {new Date(e.createdAt).toLocaleDateString()}
+                      </p>
                     </div>
                     <p className="text-sm font-medium text-emerald-400">
                       +{(e.earnedAmount / 100).toFixed(2)} ₽
@@ -238,7 +242,9 @@ export default function PartnerPage() {
             <SheetTitle>{t("partner.info")}</SheetTitle>
           </SheetHeader>
           <div className="space-y-3 py-4">
-            <p className="text-sm text-zinc-300">{t("partner.infoDescription")}</p>
+            <p className="text-sm text-[var(--brand-muted-foreground)]">
+              {t("partner.infoDescription")}
+            </p>
             <div className="space-y-2">
               {[1, 2, 3].map((step) => (
                 <div key={step} className="flex items-start gap-3">
@@ -251,7 +257,7 @@ export default function PartnerPage() {
                   >
                     {step}
                   </div>
-                  <p className="text-sm text-zinc-300">
+                  <p className="text-sm text-[var(--brand-muted-foreground)]">
                     {t(`partner.step${step}`)}
                   </p>
                 </div>

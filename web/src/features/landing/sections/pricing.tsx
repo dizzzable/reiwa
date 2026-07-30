@@ -57,16 +57,16 @@ function CatalogPricing({ heading }: { heading: string }) {
   return (
     <section className="px-6 py-16">
       {heading.length > 0 && (
-        <h2 className="mb-10 text-center text-3xl font-semibold text-white sm:text-4xl">{heading}</h2>
+        <h2 className="ls-title mb-10 text-center text-3xl font-semibold sm:text-4xl">{heading}</h2>
       )}
       <ul className="mx-auto grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cleaned.map((plan) => (
           <li
             key={plan.id}
-            className="ls-surface flex flex-col gap-4 p-6 text-white"
+            className="ls-surface ls-title flex flex-col gap-4 p-6"
           >
             <h3 className="text-lg font-semibold">{plan.name ?? '—'}</h3>
-            {plan.description && <p className="text-sm text-zinc-300">{plan.description}</p>}
+            {plan.description && <p className="ls-muted text-sm">{plan.description}</p>}
             <p className="text-3xl font-bold">
               {formatMoney(plan.priceCents ?? plan.priceMonthlyCents, plan.currency, 'ru')}
             </p>
@@ -110,7 +110,7 @@ function StaticPricing({
   return (
     <section className="px-6 py-16">
       {heading.length > 0 && (
-        <h2 className="mb-10 text-center text-3xl font-semibold text-white sm:text-4xl">{heading}</h2>
+        <h2 className="ls-title mb-10 text-center text-3xl font-semibold sm:text-4xl">{heading}</h2>
       )}
       <ul className="mx-auto grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {plans.map((plan, index) => {
@@ -133,12 +133,12 @@ function StaticPricing({
           return (
             <li
               key={index}
-              className={`ls-surface flex flex-col gap-4 p-6 text-white ${
+              className={`ls-surface ls-title flex flex-col gap-4 p-6 ${
                 plan.highlighted ? 'border-(--brand-primary) bg-(--brand-primary)/10' : ''
               }`}
             >
               {badge && (
-                <span className="inline-flex w-fit rounded-full bg-white/10 px-3 py-1 text-xs font-medium">
+                <span className="inline-flex w-fit rounded-full bg-[color:var(--ls-surface-high)] px-3 py-1 text-xs font-medium">
                   {badge}
                 </span>
               )}
@@ -146,7 +146,7 @@ function StaticPricing({
               <p className="text-3xl font-bold">
                 {priceMonthly} {currency}
               </p>
-              <ul className="mt-2 flex flex-col gap-2 text-sm text-zinc-300">
+              <ul className="ls-muted mt-2 flex flex-col gap-2 text-sm">
                 {features.map((raw, i) => {
                   const feature = pickLocalized(raw, locale, defaultLocale);
                   return feature.length > 0 ? (

@@ -114,7 +114,7 @@ export default function PromoPage() {
         </motion.div>
         <div>
           <h2 className="text-xl font-semibold text-emerald-400">{t('promo.done')}</h2>
-          <p className="mt-2 text-sm text-zinc-400">{resultMsg}</p>
+          <p className="theme-muted mt-2 text-sm">{resultMsg}</p>
         </div>
         <StadiumButton onClick={() => navigate('/dashboard', { replace: true })} glow>
           {t('promo.toHome')}
@@ -150,8 +150,8 @@ export default function PromoPage() {
         {selectIds !== null ? (
           <div className="space-y-3">
             <div>
-              <h2 className="text-sm font-semibold text-white">{t('promo.selectSubscription.title')}</h2>
-              <p className="text-xs text-zinc-400">{t('promo.selectSubscription.description')}</p>
+              <h2 className="theme-title text-sm font-semibold">{t('promo.selectSubscription.title')}</h2>
+              <p className="theme-muted text-xs">{t('promo.selectSubscription.description')}</p>
             </div>
             <div className="space-y-2">
               {selectIds.map((id) => {
@@ -164,10 +164,10 @@ export default function PromoPage() {
                     type="button"
                     disabled={mutation.isPending}
                     onClick={() => mutation.mutate({ subscriptionId: id })}
-                    className="flex w-full items-center justify-between rounded-2xl border border-white/8 bg-zinc-800/50 px-5 py-4 text-left transition-colors hover:border-(--brand-primary)/50 disabled:opacity-50"
+                    className="flex w-full items-center justify-between rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-5 py-4 text-left transition-colors hover:border-(--brand-primary)/50 disabled:opacity-50"
                   >
-                    <span className="text-sm font-medium text-white">{label}</span>
-                    <ChevronRight className="h-4 w-4 text-zinc-500" />
+                    <span className="theme-title text-sm font-medium">{label}</span>
+                    <ChevronRight className="theme-muted h-4 w-4" />
                   </button>
                 )
               })}
@@ -177,8 +177,8 @@ export default function PromoPage() {
           /* Step: confirm creating a brand-new subscription from the promo. */
           <div className="space-y-4">
             <div>
-              <h2 className="text-sm font-semibold text-white">{t('promo.createNew.title')}</h2>
-              <p className="text-xs text-zinc-400">{t('promo.createNew.description')}</p>
+              <h2 className="theme-title text-sm font-semibold">{t('promo.createNew.title')}</h2>
+              <p className="theme-muted text-xs">{t('promo.createNew.description')}</p>
             </div>
             <div className="flex gap-3">
               <StadiumButton
@@ -211,7 +211,7 @@ export default function PromoPage() {
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 placeholder={t('promo.inputPlaceholder')}
                 maxLength={32}
-                className="w-full rounded-2xl border border-white/8 bg-zinc-800/50 px-5 py-4 text-center text-lg font-mono font-bold uppercase tracking-[0.3em] text-white placeholder:text-zinc-600 focus:border-(--brand-primary)/50 focus:outline-none transition-colors"
+                className="glass-input w-full rounded-2xl px-5 py-4 text-center font-mono text-lg font-bold uppercase tracking-[0.3em]"
                 onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) mutation.mutate(undefined) }}
               />
 

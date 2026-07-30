@@ -31,7 +31,7 @@ export function GuestSupportLink() {
   return (
     <Link
       to="/support/guest"
-      className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-400 backdrop-blur-xl transition-colors hover:border-(--brand-primary)/40 hover:text-white"
+      className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-xl transition-colors hover:border-(--brand-primary)/40 hover:text-foreground"
     >
       <LifeBuoy className="h-3.5 w-3.5" />
       {t('guestSupport.entry')}

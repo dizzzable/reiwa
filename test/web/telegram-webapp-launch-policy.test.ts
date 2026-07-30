@@ -28,4 +28,14 @@ describe('Telegram Mini App launch policy', () => {
     expect(hook).toContain("callTelegramWebAppMethod('ready'");
     expect(hook).toContain("callTelegramWebAppMethod('expand'");
   });
+
+  it('never downgrades a Telegram launch because of the regular web timeout', () => {
+    expect(hook).toContain('const launchedByTelegram = hasTelegramLaunchParameters()');
+    expect(hook).toContain("window.addEventListener('reiwa:telegram-sdk-ready'");
+    expect(hook).toContain("window.addEventListener('reiwa:telegram-sdk-error'");
+    expect(hook).toContain("window.__reiwaTelegramSdkState === 'error'");
+    expect(hook).toContain("window.__reiwaTelegramSdkState === 'ready'");
+    expect(hook).toContain('let sdkReadyFallbackTimeout: number | null = null');
+    expect(hook).toContain('const timeout = launchedByTelegram');
+  });
 });

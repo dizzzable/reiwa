@@ -35,7 +35,11 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 /** Returns the raw inner SVG markup (a 40×40 tile) for a pattern id. */
-function patternSvg(pattern: AppBackgroundTexture, stroke: string): string {
+function patternSvg(
+  pattern: AppBackgroundTexture,
+  stroke: string,
+  opacity: number,
+): string {
   switch (pattern) {
     case "dots":
       return `<circle cx="20" cy="20" r="2.4" fill="${stroke}"/>`;
@@ -53,9 +57,11 @@ function patternSvg(pattern: AppBackgroundTexture, stroke: string): string {
       return `<path d="M20 8L32 30H8Z" stroke="${stroke}" stroke-width="1.2" fill="none"/>`;
     case "noise":
       return (
-        `<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>` +
-        `<feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.6 0"/></filter>` +
-        `<rect width="40" height="40" filter="url(#n)" opacity="0.5"/>`
+        `<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" result="noise"/>` +
+        `<feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.75 0" result="mask"/>` +
+        `<feFlood flood-color="${stroke}" flood-opacity="${Math.min(Math.max(opacity, 0), 1)}" result="tint"/>` +
+        `<feComposite in="tint" in2="mask" operator="in"/></filter>` +
+        `<rect width="40" height="40" filter="url(#n)"/>`
       );
     default:
       return `<circle cx="20" cy="20" r="2.4" fill="${stroke}"/>`;
@@ -72,7 +78,7 @@ export function buildTextureCss(texture: AppBackgroundTextureSettings): TextureC
     texture.pattern === "noise"
       ? texture.color // noise uses its own alpha channel
       : hexToRgba(texture.color, texture.opacity);
-  const inner = patternSvg(texture.pattern, stroke);
+  const inner = patternSvg(texture.pattern, stroke, texture.opacity);
   // For noise we still apply the operator opacity via the rect's own opacity.
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">${inner}</svg>`;

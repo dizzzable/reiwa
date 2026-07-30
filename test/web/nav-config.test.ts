@@ -1,0 +1,33 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  DEVICE_NAV_ROUTE,
+  normalizeNavItems,
+} from "../../web/src/components/layout/use-nav-tabs.js";
+import type { NavItemSetting } from "../../web/src/types/branding.js";
+
+describe("WEB Reiwa navigation contract", () => {
+  it("uses the actual nested devices route", () => {
+    expect(DEVICE_NAV_ROUTE).toBe("/subscription/devices");
+  });
+
+  it("drops unknown and duplicate destinations and keeps at most five visible", () => {
+    const normalized = normalizeNavItems(
+      [
+        { id: "plans", visible: true },
+        { id: "plans", visible: true },
+        { id: "unknown", visible: true },
+        { id: "devices", visible: true },
+        { id: "activity", visible: true },
+        { id: "promo", visible: true },
+        { id: "support", visible: true },
+      ] as unknown as readonly NavItemSetting[],
+    );
+
+    expect(normalized.filter((item) => item.id === "plans")).toHaveLength(1);
+    expect(normalized.some((item) => item.id === "unknown")).toBe(false);
+    expect(normalized.find((item) => item.id === "subscriptions")?.visible).toBe(true);
+    expect(normalized.find((item) => item.id === "settings")?.visible).toBe(true);
+    expect(normalized.filter((item) => item.visible)).toHaveLength(5);
+  });
+});

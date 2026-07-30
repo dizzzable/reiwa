@@ -186,7 +186,7 @@ export default function PaymentReturnPage() {
               ? "radial-gradient(circle at center, rgba(34,197,94,0.08) 0%, transparent 60%)"
               : state === "failed" || state === "timeout"
                 ? "radial-gradient(circle at center, rgba(239,68,68,0.08) 0%, transparent 60%)"
-                : "radial-gradient(circle at center, rgba(255,255,255,0.02) 0%, transparent 60%)",
+                : "radial-gradient(circle at center, color-mix(in oklab, var(--brand-foreground) 3%, transparent) 0%, transparent 60%)",
         }}
       />
 
@@ -237,7 +237,7 @@ function ProcessingState({
           <circle
             cx="50" cy="50" r="44"
             fill="none"
-            stroke="rgba(255,255,255,0.06)"
+            stroke="var(--color-border-strong)"
             strokeWidth="4"
           />
           <circle
@@ -289,7 +289,7 @@ function ProcessingState({
           <Button
             onClick={onOpenPayment}
             variant="outline"
-            className="gap-2 border-white/10 bg-white/5 backdrop-blur hover:bg-white/10"
+            className="gap-2 bg-card backdrop-blur hover:bg-accent"
           >
             <ExternalLink className="h-4 w-4" />
             {t("paymentAnim.openPayment")}
@@ -354,7 +354,7 @@ function SuccessState({ primary, label }: { primary: string; label?: string | nu
           {t("paymentAnim.success")}
         </h2>
         {label ? (
-          <p className="mt-2 text-sm font-medium text-white">{label}</p>
+          <p className="mt-2 text-sm font-medium text-foreground">{label}</p>
         ) : null}
         <p className="mt-2 text-sm text-muted-foreground">
           {t("paymentAnim.successHint")}
@@ -434,7 +434,7 @@ function FailedState({
           <Button
             onClick={onOpenPayment}
             variant="outline"
-            className="w-full gap-2 border-white/10 bg-white/5 backdrop-blur hover:bg-white/10"
+            className="w-full gap-2 bg-card backdrop-blur hover:bg-accent"
           >
             <ExternalLink className="h-4 w-4" />
             {t("paymentAnim.openPayment")}

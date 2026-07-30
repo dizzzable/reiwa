@@ -94,20 +94,22 @@ export function DeleteSubscriptionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <p className="text-center text-xs text-zinc-500">{t("deleteSubscription.warning")}</p>
+        <p className="text-center text-xs text-[color:var(--brand-muted-foreground)]">
+          {t("deleteSubscription.warning")}
+        </p>
 
         <div className="mt-2 grid grid-cols-2 gap-3">
           <button
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
-            className="rounded-2xl border border-white/10 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 active:scale-[0.98] disabled:opacity-50"
+            className="rounded-[var(--radius-item)] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)] py-3 text-sm font-medium text-[color:var(--brand-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] active:scale-[0.98] disabled:opacity-50"
           >
             {t("deleteSubscription.no")}
           </button>
           <button
             onClick={confirmDeletion}
             disabled={mutation.isPending || !subscription}
-            className="flex items-center justify-center gap-2 rounded-2xl bg-red-500/90 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-500 active:scale-[0.98] disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-[var(--radius-item)] bg-red-500/90 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-500 active:scale-[0.98] disabled:opacity-50"
           >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             {t("deleteSubscription.yes")}

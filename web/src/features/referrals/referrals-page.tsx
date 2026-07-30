@@ -136,24 +136,24 @@ export default function ReferralsPage() {
           </DialogHeader>
           <div className="space-y-4 py-1">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-white/6 bg-white/3 p-4 text-center">
+              <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 text-center">
                 <p className="text-2xl font-bold">{totalInvited}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{t("referrals.invited")}</p>
               </div>
-              <div className="rounded-2xl border border-white/6 bg-white/3 p-4 text-center">
+              <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 text-center">
                 <p className="text-2xl font-bold">{qualified}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{t("referrals.qualified")}</p>
               </div>
             </div>
             {capacity && capacity.totalSlots !== null && (
-              <div className="rounded-2xl border border-white/6 bg-white/3 p-4">
+              <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs text-muted-foreground">{t("referrals.inviteSlots")}</p>
                   <p className="text-sm font-semibold">
                     {capacity.usedSlots} / {capacity.totalSlots}
                   </p>
                 </div>
-                <p className="mt-1 text-[11px] text-zinc-500">
+                <p className="mt-1 text-[11px] text-[var(--brand-muted-foreground)]">
                   {capacity.remainingSlots !== null && capacity.remainingSlots > 0
                     ? t("referrals.inviteSlotsRemaining", { count: capacity.remainingSlots })
                     : t("referrals.inviteSlotsFull")}
@@ -171,7 +171,7 @@ export default function ReferralsPage() {
             <DialogDescription>{t("referrals.pointsHint")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-1">
-            <div className="rounded-2xl border border-white/6 bg-white/3 p-5 text-center">
+            <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-5 text-center">
               <p className="text-3xl font-bold">{pointsBalance}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">{t("referrals.pointsBalance")}</p>
             </div>
@@ -209,7 +209,7 @@ export default function ReferralsPage() {
                 >
                   {step}
                 </div>
-                <p className="text-sm leading-relaxed text-zinc-300">
+                <p className="text-sm leading-relaxed text-[var(--brand-muted-foreground)]">
                   {t(`referrals.step${step}`)}
                 </p>
               </div>

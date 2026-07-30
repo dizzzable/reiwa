@@ -200,10 +200,10 @@ export default function ClaimPage() {
           >
             <ShieldCheck className="h-8 w-8 text-(--brand-primary)" />
           </div>
-          <h1 className="text-2xl font-bold text-white">
+          <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">
             {t(mode === 'login' ? 'claim.linkExisting.title' : 'claim.title')}
           </h1>
-          <p className="mt-2 text-center text-sm text-zinc-500">
+          <p className="mt-2 text-center text-sm text-[color:var(--brand-muted-foreground)]">
             {t(mode === 'login' ? 'claim.linkExisting.subtitle' : 'claim.subtitle')}
           </p>
         </motion.div>
@@ -218,7 +218,7 @@ export default function ClaimPage() {
         >
           {/* Login field */}
           <div>
-            <label htmlFor="claim-username" className="block text-xs font-medium text-zinc-400 mb-1.5">
+            <label htmlFor="claim-username" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
               {t('claim.usernameLabel')}
             </label>
             <input
@@ -229,10 +229,10 @@ export default function ClaimPage() {
               onChange={(e) => handleUsernameChange(e.target.value)}
               placeholder={t('claim.usernamePlaceholder')}
               disabled={submitting}
-              className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
+              className={`glass-input w-full rounded-xl px-4 py-3 text-sm ${
                 usernameError
                   ? 'border-red-500/50 focus:border-red-500'
-                  : 'border-zinc-800 focus:border-(--brand-primary)/50'
+                  : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
               }`}
               aria-invalid={!!usernameError}
               aria-describedby="claim-username-error"
@@ -248,7 +248,7 @@ export default function ClaimPage() {
 
           {/* Password field */}
           <div>
-            <label htmlFor="claim-password" className="block text-xs font-medium text-zinc-400 mb-1.5">
+            <label htmlFor="claim-password" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
               {t('claim.passwordLabel')}
             </label>
             <div className="relative">
@@ -260,10 +260,10 @@ export default function ClaimPage() {
                 onChange={(e) => handlePasswordChange(e.target.value)}
                 placeholder={t('claim.passwordPlaceholder')}
                 disabled={submitting}
-                className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 pr-12 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
+                className={`glass-input w-full rounded-xl px-4 py-3 pr-12 text-sm ${
                   passwordError
                     ? 'border-red-500/50 focus:border-red-500'
-                    : 'border-zinc-800 focus:border-(--brand-primary)/50'
+                    : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
                 }`}
                 aria-invalid={!!passwordError}
                 aria-describedby="claim-password-error"
@@ -271,7 +271,7 @@ export default function ClaimPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)]"
                 aria-label={showPassword ? t('claim.hidePassword') : t('claim.showPassword')}
                 tabIndex={-1}
               >
@@ -335,7 +335,7 @@ export default function ClaimPage() {
                   transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
                   className="inline-flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 rounded-full border border-(--brand-primary)/30 bg-(--brand-primary)/10 px-4 py-2 text-sm"
                 >
-                  <span className="text-zinc-300">{t('claim.linkExisting.prompt')}</span>
+                  <span className="text-[color:var(--brand-foreground)]">{t('claim.linkExisting.prompt')}</span>
                   <button
                     type="button"
                     onClick={() => switchMode('login')}
@@ -349,7 +349,7 @@ export default function ClaimPage() {
               <button
                 type="button"
                 onClick={() => switchMode('claim')}
-                className="text-xs font-medium text-zinc-500 transition-colors hover:text-(--brand-primary) hover:underline"
+                className="text-xs font-medium text-[color:var(--brand-muted-foreground)] transition-colors hover:text-(--brand-primary) hover:underline"
               >
                 {t('claim.linkExisting.back')}
               </button>

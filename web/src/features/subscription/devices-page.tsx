@@ -16,14 +16,14 @@ import { TipCard } from '@/components/ui/tip-card'
 import { useSession } from '@/hooks/use-session'
 
 function platformIcon(platform: string | null) {
-  if (!platform) return <Smartphone className="h-5 w-5 text-zinc-400" />
+  if (!platform) return <Smartphone className="h-5 w-5 text-muted-foreground" />
   const p = platform.toLowerCase()
   if (p.includes('android')) return <AndroidGlyph className="h-5 w-5 text-emerald-400" />
-  if (p.includes('ios') || p.includes('iphone') || p.includes('ipad')) return <AppleGlyph className="h-5 w-5 text-zinc-200" />
-  if (p.includes('mac') || p.includes('darwin') || p.includes('osx')) return <MacosGlyph className="h-5 w-5 text-zinc-200" />
+  if (p.includes('ios') || p.includes('iphone') || p.includes('ipad')) return <AppleGlyph className="h-5 w-5 text-foreground" />
+  if (p.includes('mac') || p.includes('darwin') || p.includes('osx')) return <MacosGlyph className="h-5 w-5 text-foreground" />
   if (p.includes('windows') || p.includes('win')) return <WindowsGlyph className="h-5 w-5 text-sky-400" />
   if (p.includes('linux')) return <LinuxGlyph className="h-5 w-5 text-amber-400" />
-  return <Globe className="h-5 w-5 text-zinc-400" />
+  return <Globe className="h-5 w-5 text-muted-foreground" />
 }
 
 export default function DevicesPage() {
@@ -57,7 +57,7 @@ export default function DevicesPage() {
         <BackButton fallback="/dashboard" label={t('common.back')} />
         <div>
           <h1 className="text-lg font-semibold">{t('devices.pageTitle')}</h1>
-          <p className="text-xs text-zinc-500">{t('devices.connectedCount', { count: deviceCount })}</p>
+          <p className="text-xs text-muted-foreground">{t('devices.connectedCount', { count: deviceCount })}</p>
         </div>
       </div>
 
@@ -69,14 +69,14 @@ export default function DevicesPage() {
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+              <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
             ))}
           </div>
         ) : !devices.length ? (
           <div className="glass-card p-8 text-center">
-            <Smartphone className="h-10 w-10 mx-auto mb-3 text-zinc-600" />
-            <p className="text-sm text-zinc-400">{t('devices.emptyTitle')}</p>
-            <p className="text-xs text-zinc-600 mt-1">{t('devices.emptyHint')}</p>
+            <Smartphone className="mx-auto mb-3 h-10 w-10 text-muted-foreground opacity-60" />
+            <p className="text-sm text-muted-foreground">{t('devices.emptyTitle')}</p>
+            <p className="mt-1 text-xs text-muted-foreground opacity-70">{t('devices.emptyHint')}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -88,18 +88,18 @@ export default function DevicesPage() {
                 transition={{ delay: i * 0.05 }}
                 className="glass-card p-4 flex items-center gap-4"
               >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-800/80">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color:var(--color-surface-high)]">
                   {platformIcon(device.platform)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">
+                  <p className="truncate text-sm font-medium text-foreground">
                     {device.deviceName ?? device.platform ?? t('devices.deviceFallback')}
                   </p>
-                  <p className="text-xs text-zinc-500 truncate">
+                  <p className="truncate text-xs text-muted-foreground">
                     {device.osVersion ?? ''} {device.hwid.slice(0, 12)}…
                   </p>
                   {device.lastSeenAt && (
-                    <p className="text-xs text-zinc-600 mt-0.5">
+                    <p className="mt-0.5 text-xs text-muted-foreground opacity-70">
                       {t('devices.lastSeenLabel', { date: new Date(device.lastSeenAt).toLocaleDateString('ru-RU') })}
                     </p>
                   )}
@@ -111,7 +111,7 @@ export default function DevicesPage() {
                     }
                   }}
                   disabled={revokeMutation.isPending}
-                  className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full text-zinc-600 hover:text-(--brand-primary) hover:bg-(--brand-primary)/10 transition-colors"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-(--brand-primary)/10 hover:text-(--brand-primary)"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

@@ -9,6 +9,11 @@
  * `textureUrl` image is set (then the image wins and the effect is suppressed).
  */
 import { buildTextureCss } from "@/lib/app-texture";
+import {
+  ensureReadableCardAccent,
+  resolveCardContrast,
+  type CardContrast,
+} from "@/lib/card-contrast";
 import type { Branding } from "@/types/branding";
 
 /**
@@ -27,6 +32,8 @@ export function autoPlanGradient(planId: string): string {
 export interface ResolvedPlanCardStyle {
   /** CSS background gradient for the card. */
   readonly gradient: string;
+  /** Computed foreground + supporting veil for this exact artwork. */
+  readonly contrast: CardContrast;
   /** Accent hex for price/name, or `null` to use the brand primary. */
   readonly accent: string | null;
   /** Operator-uploaded texture image URL (cover overlay), or `null`. */
@@ -50,13 +57,27 @@ export function resolvePlanCardStyle(planId: string, branding: Branding): Resolv
     style?.gradient && style.gradient.length > 0 ? style.gradient : autoPlanGradient(planId);
   const accent = style?.accent && style.accent.length > 0 ? style.accent : null;
   const textureUrl = style?.textureUrl && style.textureUrl.length > 0 ? style.textureUrl : null;
+  // Per-plan effect is OPT-IN. Tariff cards no longer inherit the subscription
+  // card's global effect — an unset/`NONE` per-plan effect means static.
+  const effect = style?.cardEffect && style.cardEffect !== "NONE" ? style.cardEffect : "NONE";
+  const effectProps = style?.cardEffectProps ?? {};
+  const effectOpacity =
+    typeof style?.cardEffectOpacity === "number" ? style.cardEffectOpacity : 1;
+  const contrast = resolveCardContrast(gradient, {
+    fallbackBackground: branding.bgSecondary,
+    preferredForeground: branding.primaryFg,
+    minimumVeilOpacity:
+      effect === "NONE"
+        ? 0.12
+        : 0.18 + Math.min(1, Math.max(0, effectOpacity)) * 0.12,
+  });
 
   let textureImage: string | null = null;
   let textureSize: string | null = null;
   if (!textureUrl && style?.texturePreset) {
     const css = buildTextureCss({
       pattern: style.texturePreset,
-      color: accent ?? "#ffffff",
+      color: accent ?? contrast.foreground,
       background: "transparent",
       scale: 18,
       opacity: 0.5,
@@ -65,68 +86,29 @@ export function resolvePlanCardStyle(planId: string, branding: Branding): Resolv
     textureSize = css.backgroundSize;
   }
 
-  // Per-plan effect is OPT-IN. Tariff cards no longer inherit the subscription
-  // card's global effect — an unset/`NONE` per-plan effect means static.
-  const effect = style?.cardEffect && style.cardEffect !== "NONE" ? style.cardEffect : "NONE";
-  const effectProps = style?.cardEffectProps ?? {};
-  const effectOpacity =
-    typeof style?.cardEffectOpacity === "number" ? style.cardEffectOpacity : 1;
-
-  return { gradient, accent, textureUrl, textureImage, textureSize, effect, effectProps, effectOpacity };
+  return {
+    gradient,
+    contrast,
+    accent,
+    textureUrl,
+    textureImage,
+    textureSize,
+    effect,
+    effectProps,
+    effectOpacity,
+  };
 }
 
 /* ── colour helpers ─────────────────────────────────────────────────────── */
 
-function parseHex(hex: string): [number, number, number] | null {
-  let h = hex.trim().replace(/^#/, "");
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-}
-
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  const rn = r / 255, gn = g / 255, bn = b / 255;
-  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
-  const d = max - min;
-  let h = 0;
-  if (d !== 0) {
-    if (max === rn) h = ((gn - bn) / d) % 6;
-    else if (max === gn) h = (bn - rn) / d + 2;
-    else h = (rn - gn) / d + 4;
-    h *= 60;
-    if (h < 0) h += 360;
-  }
-  const l = (max + min) / 2;
-  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
-  return [h, s, l];
-}
-
-function hslToHex(h: number, s: number, l: number): string {
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-  let r = 0, g = 0, b = 0;
-  if (h < 60) [r, g, b] = [c, x, 0];
-  else if (h < 120) [r, g, b] = [x, c, 0];
-  else if (h < 180) [r, g, b] = [0, c, x];
-  else if (h < 240) [r, g, b] = [0, x, c];
-  else if (h < 300) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  const to = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, "0");
-  return `#${to(r)}${to(g)}${to(b)}`;
-}
-
 /**
- * Readable price colour: keeps the accent's HUE (so it still belongs to the
- * card) but forces a bright, vivid tone so the price always stands out against
- * the (typically dark, vignetted) card and never blends into it. Non-hex input
- * falls back to white.
+ * Preserve the operator accent when it passes AA; otherwise move it toward the
+ * computed card foreground until it is readable on the post-veil artwork.
  */
-export function readablePriceColor(hex: string): string {
-  const rgb = parseHex(hex);
-  if (!rgb) return "#ffffff";
-  const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
-  const L = Math.min(Math.max(l, 0.72), 0.85);
-  const S = Math.max(s, 0.55);
-  return hslToHex(h, S, L);
+export function readablePriceColor(
+  hex: string,
+  background = "#09090b",
+  foreground = "#ffffff",
+): string {
+  return ensureReadableCardAccent(hex, background, foreground);
 }

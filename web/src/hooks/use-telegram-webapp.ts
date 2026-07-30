@@ -76,6 +76,7 @@ interface TelegramWebApp {
 declare global {
   interface Window {
     Telegram?: { WebApp?: TelegramWebApp }
+    __reiwaTelegramSdkState?: 'loading' | 'ready' | 'error'
   }
 }
 
@@ -94,6 +95,12 @@ interface UseTelegramWebAppResult {
 const POLL_INTERVAL_MS = 80
 const POLL_TIMEOUT_MS  = 2000
 const activatedApps = new WeakSet<object>()
+const TELEGRAM_LAUNCH_PARAMETER_NAMES = [
+  'tgWebAppData',
+  'tgWebAppVersion',
+  'tgWebAppPlatform',
+  'tgWebAppThemeParams',
+] as const
 
 interface UseTelegramWebAppOptions {
   /** Enable the one-time native `ready()` / `expand()` handshake. */
@@ -193,6 +200,24 @@ export function useTelegramWebApp(
       return true
     }
 
+    const hasTelegramLaunchParameters = (): boolean => {
+      const search = new URLSearchParams(window.location.search)
+      const hash = new URLSearchParams(
+        window.location.hash.startsWith('#')
+          ? window.location.hash.slice(1)
+          : window.location.hash,
+      )
+      return TELEGRAM_LAUNCH_PARAMETER_NAMES.some(
+        (name) => search.has(name) || hash.has(name),
+      )
+    }
+
+    const finishAsWeb = () => {
+      if (initializedRef.current) return
+      initializedRef.current = true
+      setResult(prev => ({ ...prev, isReady: true }))
+    }
+
     // Try immediately
     if (tryInit()) return
 
@@ -201,18 +226,57 @@ export function useTelegramWebApp(
       if (tryInit()) clearInterval(poll)
     }, POLL_INTERVAL_MS)
 
-    // Fallback after timeout — work without Telegram (web browser)
-    const timeout = setTimeout(() => {
-      clearInterval(poll)
-      if (!initializedRef.current) {
-        initializedRef.current = true
-        setResult(prev => ({ ...prev, isReady: true }))
+    const launchedByTelegram = hasTelegramLaunchParameters()
+    let sdkReadyFallbackTimeout: number | null = null
+    const handleSdkReady = () => {
+      if (tryInit()) {
+        clearInterval(poll)
+        return
       }
-    }, POLL_TIMEOUT_MS)
+      // The SDK has finished executing, so a missing usable bridge is no
+      // longer a slow-network case. Give Telegram a short bridge-init grace
+      // period, then unblock malformed/copied launch URLs as regular web.
+      if (sdkReadyFallbackTimeout === null) {
+        sdkReadyFallbackTimeout = window.setTimeout(() => {
+          clearInterval(poll)
+          finishAsWeb()
+        }, POLL_TIMEOUT_MS)
+      }
+    }
+    const handleSdkError = () => {
+      clearInterval(poll)
+      finishAsWeb()
+    }
+    window.addEventListener('reiwa:telegram-sdk-ready', handleSdkReady)
+    window.addEventListener('reiwa:telegram-sdk-error', handleSdkError)
+
+    // A regular browser session has no SDK to wait for. A real Telegram
+    // launch waits for the loader's explicit ready/error signal, so a slow
+    // network can never permanently downgrade Mini App authentication to web.
+    const timeout = launchedByTelegram
+      ? null
+      : window.setTimeout(() => {
+          clearInterval(poll)
+          finishAsWeb()
+        }, POLL_TIMEOUT_MS)
+
+    if (launchedByTelegram && window.__reiwaTelegramSdkState === 'error') {
+      handleSdkError()
+    } else if (
+      launchedByTelegram &&
+      window.__reiwaTelegramSdkState === 'ready'
+    ) {
+      handleSdkReady()
+    }
 
     return () => {
       clearInterval(poll)
-      clearTimeout(timeout)
+      if (timeout !== null) clearTimeout(timeout)
+      if (sdkReadyFallbackTimeout !== null) {
+        clearTimeout(sdkReadyFallbackTimeout)
+      }
+      window.removeEventListener('reiwa:telegram-sdk-ready', handleSdkReady)
+      window.removeEventListener('reiwa:telegram-sdk-error', handleSdkError)
     }
   }, [activate])
 

@@ -322,8 +322,8 @@ export default function RegisterPage() {
           >
             <UserPlus className="h-8 w-8 text-(--brand-primary)" />
           </div>
-          <h1 className="text-2xl font-bold text-white">{t('register.title')}</h1>
-          <p className="mt-1 text-sm text-zinc-500">{t('register.subtitle')}</p>
+          <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">{t('register.title')}</h1>
+          <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t('register.subtitle')}</p>
         </motion.div>
 
         {/* Mode-aware body: blocked banner / invite gate / registration form */}
@@ -340,7 +340,7 @@ export default function RegisterPage() {
               <div>
                 <label
                   htmlFor="invite-code"
-                  className="block text-xs font-medium text-zinc-400 mb-1.5"
+                  className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]"
                 >
                   {t('accessMode.invite.codeLabel')}
                 </label>
@@ -353,10 +353,10 @@ export default function RegisterPage() {
                     setInviteError(null)
                   }}
                   placeholder={t('accessMode.invite.codePlaceholder')}
-                  className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
+                  className={`glass-input w-full rounded-xl px-4 py-3 text-sm ${
                     inviteError
                       ? 'border-red-500/50 focus:border-red-500'
-                      : 'border-zinc-800 focus:border-(--brand-primary)/50'
+                      : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
                   }`}
                   aria-invalid={!!inviteError}
                   aria-describedby="invite-error"
@@ -392,7 +392,7 @@ export default function RegisterPage() {
             )}
             {/* Username field */}
             <div>
-              <label htmlFor="register-username" className="block text-xs font-medium text-zinc-400 mb-1.5">
+              <label htmlFor="register-username" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
                 {t('register.usernameLabel')}
               </label>
               <input
@@ -403,17 +403,17 @@ export default function RegisterPage() {
                 onChange={(e) => handleUsernameChange(e.target.value)}
                 placeholder={t('register.usernamePlaceholder')}
                 disabled={submitting}
-                className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
+                className={`glass-input w-full rounded-xl px-4 py-3 text-sm ${
                   usernameError || usernameUnavailable
                     ? 'border-red-500/50 focus:border-red-500'
-                    : 'border-zinc-800 focus:border-(--brand-primary)/50'
+                    : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
                 }`}
                 aria-invalid={!!(usernameError || usernameUnavailable)}
                 aria-describedby="username-error"
               />
               <div id="username-error" className="mt-1 min-h-[1.25rem]" aria-live="polite">
                 {checkingUsername && (
-                  <span className="text-xs text-zinc-500">{t('register.checkingUsername')}</span>
+                  <span className="text-xs text-[color:var(--brand-muted-foreground)]">{t('register.checkingUsername')}</span>
                 )}
                 {!checkingUsername && usernameUnavailable && (
                   <span className="text-xs text-red-400">{t('register.errorUsernameTaken')}</span>
@@ -428,7 +428,7 @@ export default function RegisterPage() {
 
             {/* Password field */}
             <div>
-              <label htmlFor="register-password" className="block text-xs font-medium text-zinc-400 mb-1.5">
+              <label htmlFor="register-password" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
                 {t('register.passwordLabel')}
               </label>
               <div className="relative">
@@ -440,10 +440,10 @@ export default function RegisterPage() {
                   onChange={(e) => handlePasswordChange(e.target.value)}
                   placeholder={t('register.passwordPlaceholder')}
                   disabled={submitting}
-                  className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-3 pr-12 text-sm text-white placeholder-zinc-600 outline-none transition-colors ${
+                  className={`glass-input w-full rounded-xl px-4 py-3 pr-12 text-sm ${
                     passwordError
                       ? 'border-red-500/50 focus:border-red-500'
-                      : 'border-zinc-800 focus:border-(--brand-primary)/50'
+                      : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
                   }`}
                   aria-invalid={!!passwordError}
                   aria-describedby="password-error"
@@ -451,7 +451,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)]"
                   aria-label={showPassword ? t('register.hidePassword') : t('register.showPassword')}
                   tabIndex={-1}
                 >
@@ -514,7 +514,7 @@ export default function RegisterPage() {
           transition={{ delay: 0.2 }}
           className="mt-6 text-center"
         >
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-[color:var(--brand-muted-foreground)]">
             {t('register.hasAccount')}{' '}
             <Link to="/login" className="text-(--brand-primary) hover:text-(--brand-primary) transition-colors">
               {t('register.signIn')}

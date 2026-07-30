@@ -83,7 +83,7 @@ export function PartnerAdvertisingSection() {
   const reqs = requests.data?.requests ?? [];
 
   return (
-    <div className="rounded-2xl border border-white/6 bg-white/3 p-4">
+    <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
       <div className="flex items-center gap-2">
         <Megaphone className="h-4 w-4 text-(--brand-primary)" />
         <h2 className="text-sm font-semibold">{t("partnerAds.title")}</h2>
@@ -102,7 +102,7 @@ export function PartnerAdvertisingSection() {
         <p className="mt-3 text-xs text-muted-foreground">{t("partnerAds.noPlacements")}</p>
       )}
 
-      <div className="mt-4 space-y-2 rounded-xl border border-white/6 bg-white/2 p-3">
+      <div className="mt-4 space-y-2 rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] p-3">
         <p className="text-xs font-medium">{t("partnerAds.newRequest")}</p>
         <p className="text-[11px] text-muted-foreground">{t("partnerAds.platformsHint")}</p>
         <div className="flex flex-wrap gap-1.5">
@@ -114,7 +114,7 @@ export function PartnerAdvertisingSection() {
               className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
                 selected.includes(p)
                   ? "border-(--brand-primary) bg-(--brand-primary)/15 text-foreground"
-                  : "border-white/10 text-muted-foreground"
+                  : "border-[var(--color-border-strong)] text-muted-foreground"
               }`}
             >
               {t(`partnerAds.platforms.${p}`)}
@@ -125,7 +125,7 @@ export function PartnerAdvertisingSection() {
           value={channel}
           onChange={(e) => setChannel(e.target.value)}
           placeholder={t("partnerAds.channelPlaceholder")}
-          className="w-full rounded-lg border border-white/10 bg-transparent px-3 py-2 text-sm outline-none"
+          className="w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--brand-foreground)] outline-none focus:border-(--brand-primary)"
         />
         <div>
           <label className="text-[11px] text-muted-foreground">{t("partnerAds.windowLabel")}</label>
@@ -135,7 +135,7 @@ export function PartnerAdvertisingSection() {
             max="365"
             value={windowDays}
             onChange={(e) => setWindowDays(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-white/10 bg-transparent px-3 py-2 text-sm outline-none"
+            className="mt-1 w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--brand-foreground)] outline-none focus:border-(--brand-primary)"
           />
           <p className="mt-1 text-[11px] text-muted-foreground">{t("partnerAds.windowHint")}</p>
         </div>
@@ -173,7 +173,7 @@ function PlacementCard({ placement: p }: { placement: PartnerAdPlacementStat }) 
   const runnable = p.status === "ACTIVE" || p.status === "PAUSED";
 
   return (
-    <div className="rounded-xl border border-white/6 bg-white/2 p-3">
+    <div className="rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium">{t(`partnerAds.platforms.${p.platform}`)}</span>
         <span className="text-[10px] text-muted-foreground">{p.channel ?? ""}</span>
@@ -196,7 +196,7 @@ function PlacementCard({ placement: p }: { placement: PartnerAdPlacementStat }) 
       </div>
 
       {runnable && (p.payload || botUrl || webUrl) && (
-        <div className="mt-3 space-y-2 border-t border-white/6 pt-2">
+        <div className="mt-3 space-y-2 border-t border-[var(--color-border-soft)] pt-2">
           <p className="text-[10px] font-medium text-muted-foreground">{t("partnerAds.linksTitle")}</p>
           {p.payload && <CopyRow label={t("partnerAds.payload")} value={p.payload} />}
           {botUrl && <CopyRow label={t("partnerAds.linkBot")} value={botUrl} />}
@@ -225,7 +225,7 @@ function RequestRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/6 bg-white/2 px-3 py-2 text-xs">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-3 py-2 text-xs">
       <div className="min-w-0 flex-1">
         <span>{r.platforms.map((p) => t(`partnerAds.platforms.${p}`)).join(", ")}</span>
         <span className="ml-2 text-muted-foreground">{t(`partnerAds.status.${r.status}`, r.status)}</span>
@@ -270,11 +270,11 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="w-14 shrink-0 text-[9px] text-muted-foreground">{label}</span>
-      <code className="min-w-0 flex-1 truncate rounded bg-black/20 px-1.5 py-0.5 text-[10px]">{value}</code>
+      <code className="min-w-0 flex-1 truncate rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] text-[var(--brand-foreground)]">{value}</code>
       <button
         type="button"
         onClick={copy}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-white/10 text-muted-foreground hover:text-foreground"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--color-border-strong)] text-muted-foreground transition-colors hover:bg-[var(--color-surface)] hover:text-foreground"
         aria-label={t("partnerAds.copy")}
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}

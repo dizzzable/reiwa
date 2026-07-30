@@ -12,6 +12,7 @@
  *     handshake completes even if upstream is slow.
  *   - Upstream rejection (null) emits a single `realtime.unavailable`
  *     event then ends.
+ *   - Upstream connection failures are reported as graceful SSE events.
  *   - Upstream success pipes every chunk through to res.write.
  *   - Stream `end` closes the response exactly once.
  *   - Browser `close` event tears down the upstream stream.
@@ -102,6 +103,26 @@ describe('proxyStream', () => {
     await proxyStream(client, '1', res as unknown as Response);
     expect(res.write).toHaveBeenCalledWith('event: realtime.unavailable\n');
     expect(res.write).toHaveBeenCalledWith('data: {"reason":"upstream_rejected"}\n\n');
+    expect(res.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('converts an upstream connection failure into a graceful SSE event', async () => {
+    const error = new Error('connect ECONNREFUSED');
+    const onUpstreamError = vi.fn();
+    const client: OpenStreamFn = {
+      openStream: vi.fn().mockRejectedValue(error),
+    };
+    const res = buildFakeRes();
+
+    await expect(
+      proxyStream(client, '1', res as unknown as Response, onUpstreamError),
+    ).resolves.toBeUndefined();
+
+    expect(onUpstreamError).toHaveBeenCalledWith(error);
+    expect(res.write).toHaveBeenCalledWith('event: realtime.unavailable\n');
+    expect(res.write).toHaveBeenCalledWith(
+      'data: {"reason":"upstream_connection_failed"}\n\n',
+    );
     expect(res.end).toHaveBeenCalledTimes(1);
   });
 

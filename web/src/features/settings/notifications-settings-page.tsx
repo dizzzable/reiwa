@@ -37,30 +37,30 @@ export default function NotificationsSettingsPage() {
         <BrowserPushSection />
 
         <div className="space-y-3">
-          <p className="text-sm font-medium text-zinc-300">{t("notifications.beforeExpiry")}</p>
-          <div className="rounded-2xl border border-white/6 bg-white/2 p-4 space-y-4">
+          <p className="text-sm font-medium text-[var(--brand-foreground)]">{t("notifications.beforeExpiry")}</p>
+          <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 space-y-4">
             <NotifToggle label={t("notifications.days3")} defaultChecked />
-            <Separator className="bg-white/6" />
+            <Separator className="bg-[var(--color-border-soft)]" />
             <NotifToggle label={t("notifications.days2")} defaultChecked={false} />
-            <Separator className="bg-white/6" />
+            <Separator className="bg-[var(--color-border-soft)]" />
             <NotifToggle label={t("notifications.days1")} defaultChecked />
-            <Separator className="bg-white/6" />
+            <Separator className="bg-[var(--color-border-soft)]" />
             <NotifToggle label={t("notifications.dayOf")} defaultChecked />
           </div>
         </div>
 
         <div className="space-y-3">
-          <p className="text-sm font-medium text-zinc-300">{t("notifications.afterExpiry")}</p>
-          <div className="rounded-2xl border border-white/6 bg-white/2 p-4 space-y-4">
+          <p className="text-sm font-medium text-[var(--brand-foreground)]">{t("notifications.afterExpiry")}</p>
+          <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 space-y-4">
             <NotifToggle label={t("notifications.after1")} defaultChecked />
-            <Separator className="bg-white/6" />
+            <Separator className="bg-[var(--color-border-soft)]" />
             <NotifToggle label={t("notifications.after2")} defaultChecked={false} />
-            <Separator className="bg-white/6" />
+            <Separator className="bg-[var(--color-border-soft)]" />
             <NotifToggle label={t("notifications.after3")} defaultChecked={false} />
           </div>
         </div>
 
-        <p className="text-xs text-zinc-500">{t("notifications.hint")}</p>
+        <p className="text-xs text-[var(--brand-muted-foreground)]">{t("notifications.hint")}</p>
       </div>
     </div>
   );
@@ -108,8 +108,8 @@ function BrowserPushSection() {
   if (support === null || pushConfigured === null) {
     return (
       <div className="space-y-3">
-        <p className="text-sm font-medium text-zinc-300">{t("notifications.pushSection")}</p>
-        <div className="h-24 animate-pulse rounded-2xl bg-zinc-800/50" />
+        <p className="text-sm font-medium text-[var(--brand-foreground)]">{t("notifications.pushSection")}</p>
+        <div className="theme-skeleton h-24 animate-pulse rounded-2xl" />
       </div>
     );
   }
@@ -143,17 +143,17 @@ function BrowserPushSection() {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-zinc-300">{t("notifications.pushSection")}</p>
-      <div className="rounded-2xl border border-white/6 bg-white/2 p-4 space-y-3">
+      <p className="text-sm font-medium text-[var(--brand-foreground)]">{t("notifications.pushSection")}</p>
+      <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 space-y-3">
         <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-500/15 text-blue-400">
             <Bell className="h-5 w-5" />
           </div>
           <div className="flex-1 space-y-2">
-            <p className="text-sm text-zinc-300">{t("notifications.pushDescription")}</p>
+            <p className="text-sm text-[var(--brand-foreground)]">{t("notifications.pushDescription")}</p>
             <p className="text-xs text-(--brand-primary)/90">{t("notifications.pushBroadcastsHint")}</p>
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-zinc-200 cursor-pointer">
+              <Label className="text-sm text-[var(--brand-foreground)] cursor-pointer">
                 {isSubscribed
                   ? t("notifications.pushToggleEnabled")
                   : t("notifications.pushToggleEnable")}
@@ -190,7 +190,7 @@ function BrowserPushSection() {
 function NotifToggle({ label, defaultChecked }: { label: string; defaultChecked: boolean }) {
   return (
     <div className="flex items-center justify-between">
-      <Label className="text-sm text-zinc-300 cursor-pointer">{label}</Label>
+      <Label className="text-sm text-[var(--brand-foreground)] cursor-pointer">{label}</Label>
       <Switch defaultChecked={defaultChecked} />
     </div>
   );

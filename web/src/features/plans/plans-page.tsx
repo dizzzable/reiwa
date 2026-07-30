@@ -62,14 +62,14 @@ export default function PlansPage() {
         <BackButton fallback="/dashboard" label={t('common.back')} />
         <div>
           <h1 className="text-lg font-semibold">{t('plans.title')}</h1>
-          <p className="text-xs text-zinc-500">{t('plans.subtitle')}</p>
+          <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t('plans.subtitle')}</p>
         </div>
       </div>
 
       <div className="px-5 space-y-4">
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-[150px] animate-pulse rounded-card bg-zinc-800/50" />
+            <div key={i} className="theme-skeleton h-[150px] animate-pulse rounded-card" />
           ))
         ) : limitReached ? (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-5 py-10 text-center">
@@ -85,7 +85,7 @@ export default function PlansPage() {
             </p>
           </div>
         ) : activePlans.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-zinc-500">
+          <div className="flex flex-col items-center gap-3 py-16 text-[color:var(--brand-muted-foreground)]">
             <Shield className="h-12 w-12 opacity-30" />
             <p>{t('plans.emptyAvailable')}</p>
           </div>

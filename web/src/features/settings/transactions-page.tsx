@@ -43,9 +43,9 @@ export default function TransactionsPage() {
             ))}
           </div>
         ) : transactions.length === 0 ? (
-          <div className="rounded-2xl border border-white/6 bg-white/2 p-8 text-center">
-            <CreditCard className="mx-auto h-8 w-8 text-zinc-600" />
-            <p className="mt-2 text-sm text-zinc-400">{t("activity.noTransactions")}</p>
+          <div className="theme-surface rounded-2xl border p-8 text-center">
+            <CreditCard className="theme-subtle mx-auto h-8 w-8" />
+            <p className="theme-muted mt-2 text-sm">{t("activity.noTransactions")}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -55,23 +55,23 @@ export default function TransactionsPage() {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
-                className="flex items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-3.5"
+                className="theme-surface flex items-center gap-3 rounded-2xl border p-3.5"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
                   <CreditCard className="h-4 w-4 text-amber-400" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-zinc-200 truncate">
+                    <p className="theme-title truncate text-sm font-medium">
                       {tx.title ?? tx.plan?.name ?? tx.gatewayType ?? t("activity.paymentFallback")}
                     </p>
                     <StatusBadge status={tx.status} />
                   </div>
                   <div className="flex items-center justify-between mt-0.5">
-                    <p className="text-xs text-zinc-500">
+                    <p className="theme-subtle text-xs">
                       {formatDateTime(tx.createdAt)}
                     </p>
-                    <p className="text-xs font-medium text-zinc-300">
+                    <p className="theme-title text-xs font-medium">
                       {tx.pricing?.finalPrice ?? tx.amount ?? "—"} {tx.pricing?.currency ?? tx.currency ?? ""}
                     </p>
                   </div>

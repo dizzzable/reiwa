@@ -35,7 +35,7 @@ export function StatRow({
       whileTap={{ scale: 0.99 }}
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/3 p-3.5 text-left transition-colors hover:bg-white/6",
+        "flex w-full items-center gap-3 rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3.5 text-left transition-colors hover:bg-[var(--color-surface-high)]",
         className,
       )}
     >
@@ -49,15 +49,19 @@ export function StatRow({
 
       {/* Label + sublabel */}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-white">{label}</p>
-        {sublabel && <p className="truncate text-xs text-zinc-500">{sublabel}</p>}
+        <p className="truncate text-sm font-medium text-[var(--brand-foreground)]">{label}</p>
+        {sublabel && (
+          <p className="truncate text-xs text-[var(--brand-muted-foreground)]">{sublabel}</p>
+        )}
       </div>
 
       {/* Value */}
       {value !== undefined && value !== "" && (
-        <p className="shrink-0 text-lg font-bold text-white tabular-nums">{value}</p>
+        <p className="shrink-0 text-lg font-bold text-[var(--brand-foreground)] tabular-nums">
+          {value}
+        </p>
       )}
-      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-[var(--brand-muted-foreground)]" />
     </motion.button>
   );
 }

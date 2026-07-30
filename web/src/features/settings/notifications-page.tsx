@@ -58,14 +58,14 @@ function NotificationsHubItem({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-4 transition-all hover:bg-white/4 active:scale-[0.98]"
+      className="flex w-full items-center gap-3 rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 transition-all hover:bg-[var(--color-surface-high)] active:scale-[0.98]"
     >
       <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
         {icon}
       </div>
       <div className="flex-1 text-left">
-        <p className="text-sm font-medium text-white">{label}</p>
-        <p className="text-xs text-zinc-500">{sublabel}</p>
+        <p className="text-sm font-medium text-[var(--brand-foreground)]">{label}</p>
+        <p className="text-xs text-[var(--brand-muted-foreground)]">{sublabel}</p>
       </div>
     </button>
   );

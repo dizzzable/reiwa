@@ -256,7 +256,9 @@ export default function DashboardPage() {
             <ReiwaLogo className="h-8 w-8 shrink-0 text-(--brand-primary)" title={branding.brandName} />
           )}
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-sm font-semibold text-white">{branding.brandName}</p>
+            <p className="truncate text-sm font-semibold text-[color:var(--brand-foreground)]">
+              {branding.brandName}
+            </p>
             <p className="truncate text-[11px] tracking-wide text-muted-foreground">
               {t("dashboard.welcome", {
                 name:
@@ -273,7 +275,7 @@ export default function DashboardPage() {
             {!purchasesBlocked && !buyLimitReached && !reduceMotion && (
               <motion.span
                 aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-full"
+                className="pointer-events-none absolute inset-0 rounded-[var(--radius-pill)]"
                 style={{ border: "1.5px solid var(--brand-primary)" }}
                 initial={{ opacity: 0.5, scale: 1 }}
                 animate={{ opacity: 0, scale: 1.75 }}
@@ -284,9 +286,9 @@ export default function DashboardPage() {
               onClick={handleBuy}
               disabled={purchasesBlocked}
               className={cn(
-                "relative flex h-9 w-9 items-center justify-center rounded-full border transition-all disabled:opacity-40 disabled:pointer-events-none",
+                "relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border transition-all disabled:pointer-events-none disabled:opacity-40",
                 purchasesBlocked || buyLimitReached
-                  ? "border-white/6 bg-white/3 text-zinc-400"
+                  ? "border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)]"
                   : "border-(--brand-primary)/40 bg-(--brand-primary)/15 text-(--brand-primary) hover:bg-(--brand-primary)/25",
               )}
               aria-label={t("card.actions.buy")}
@@ -308,7 +310,7 @@ export default function DashboardPage() {
           <button
             onClick={() => navigate("/promo")}
             style={promoGlowStyle}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/6 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6 transition-all"
+            className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-all hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
             aria-label={t("card.actions.promo")}
           >
             <TicketPercent className="h-4 w-4" />

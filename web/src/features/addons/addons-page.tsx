@@ -163,7 +163,7 @@ function SelectSubscription() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2].map((i) => (
-          <div key={i} className="h-20 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-20 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -179,7 +179,7 @@ function SelectSubscription() {
 
   return (
     <div className="space-y-3">
-      <p className="px-5 text-sm text-zinc-400">{t("addons.selectSubtitle")}</p>
+      <p className="px-5 text-sm text-[color:var(--brand-muted-foreground)]">{t("addons.selectSubtitle")}</p>
       <div className="px-5 space-y-2">
         {active.map((sub, index) => (
           <SubscriptionSelectCard
@@ -253,7 +253,7 @@ function SelectAddOn() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -299,9 +299,9 @@ function SelectAddOn() {
             <button
               key={addOn.id}
               onClick={() => onPick(addOn)}
-              className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-white/3 p-4 text-left transition-colors hover:bg-white/6 active:scale-[0.98]"
+              className="theme-surface theme-outline flex w-full items-center gap-3 rounded-[var(--radius-card)] p-4 text-left transition-[filter,transform] hover:brightness-105 active:scale-[0.98]"
             >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 text-(--brand-primary)">
+              <div className="theme-surface-high flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-item)] text-(--brand-primary)">
                 {isEmojiIcon(addOn.icon) ? (
                   <EmojiText text={addOn.icon} className="text-xl leading-none" />
                 ) : custom ? (
@@ -313,14 +313,14 @@ function SelectAddOn() {
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-white">{addOn.name}</p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-sm font-medium text-[color:var(--brand-foreground)]">{addOn.name}</p>
+                <p className="text-xs text-[color:var(--brand-muted-foreground)]">
                   {addOn.type === "EXTRA_TRAFFIC"
                     ? t("addons.extraTraffic", { value: addOn.value })
                     : t("addons.extraDevices", { count: addOn.value })}
                 </p>
                 {addOn.description && (
-                  <p className="mt-0.5 text-xs text-zinc-500/80 line-clamp-2">{addOn.description}</p>
+                  <p className="mt-0.5 line-clamp-2 text-xs text-[color:var(--brand-muted-foreground)]">{addOn.description}</p>
                 )}
               </div>
               {price && (
@@ -390,7 +390,7 @@ function SelectGateway() {
     return (
       <div className="px-5 space-y-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded-2xl bg-zinc-800/50" />
+          <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
         ))}
       </div>
     );
@@ -400,7 +400,7 @@ function SelectGateway() {
     <div className="space-y-3">
       <h2 className="px-5 text-base font-semibold">{t("addons.selectGateway")}</h2>
       {selectedAddOn && (
-        <p className="px-5 text-sm text-zinc-400">{selectedAddOn.name}</p>
+        <p className="px-5 text-sm text-[color:var(--brand-muted-foreground)]">{selectedAddOn.name}</p>
       )}
       <div className="px-5 space-y-2">
         {offerable.map((gw) => {
@@ -413,8 +413,8 @@ function SelectGateway() {
             >
               <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
               <div className="min-w-0 flex-1 text-left">
-                <p className="font-medium text-white">{gatewayLabel(gw.type, gw.displayName)}</p>
-                <p className="text-xs text-zinc-500">{gw.currency}</p>
+                <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
+                <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
               </div>
               {price && (
                 <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">{price}</span>
@@ -423,7 +423,7 @@ function SelectGateway() {
           );
         })}
         {offerable.length === 0 && (
-          <div className="py-8 text-center text-sm text-zinc-500">
+          <div className="py-8 text-center text-sm text-[color:var(--brand-muted-foreground)]">
             {gateways.length === 0 ? t("purchase.gateway.empty") : t("addons.noCompatibleGateway")}
           </div>
         )}
@@ -473,12 +473,12 @@ function ReviewStep() {
           <ReviewRow label={t("addons.selectSubscription")} value={sub?.plan?.name ?? sub?.id ?? "—"} />
           <ReviewRow label={selectedAddOn.name} value={valueLabel} />
           {selectedAddOn.description && (
-            <p className="text-xs text-zinc-500">{selectedAddOn.description}</p>
+            <p className="text-xs text-[color:var(--brand-muted-foreground)]">{selectedAddOn.description}</p>
           )}
           <ReviewRow label={t("addons.selectGateway")} value={selectedGateway.label} />
-          <div className="h-px bg-white/6" />
+          <div className="h-px bg-[color:var(--color-border-soft)]" />
           <div className="flex items-center justify-between">
-            <span className="text-sm text-zinc-400">{t("addons.total")}</span>
+            <span className="text-sm text-[color:var(--brand-muted-foreground)]">{t("addons.total")}</span>
             <span className="text-base font-semibold text-(--brand-primary)">{priceLabel}</span>
           </div>
         </div>
@@ -498,8 +498,8 @@ function ReviewStep() {
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="truncate text-sm text-zinc-400">{label}</span>
-      <span className="truncate text-right text-sm text-white">{value}</span>
+      <span className="truncate text-sm text-[color:var(--brand-muted-foreground)]">{label}</span>
+      <span className="truncate text-right text-sm text-[color:var(--brand-foreground)]">{value}</span>
     </div>
   );
 }
@@ -571,7 +571,7 @@ function CheckoutStep() {
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4" role="status" aria-live="polite">
       <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
-      <p className="text-sm text-zinc-400">{t("addons.creating")}</p>
+      <p className="text-sm text-[color:var(--brand-muted-foreground)]">{t("addons.creating")}</p>
     </div>
   );
 }

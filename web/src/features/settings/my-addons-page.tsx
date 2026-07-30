@@ -66,9 +66,9 @@ export default function MyAddOnsPage() {
             ))}
           </div>
         ) : entitlements.length === 0 ? (
-          <div className="rounded-2xl border border-white/6 bg-white/2 p-8 text-center">
-            <PackagePlus className="mx-auto h-8 w-8 text-zinc-600" />
-            <p className="mt-2 text-sm text-zinc-400">{t("addonsHistory.empty")}</p>
+          <div className="theme-surface rounded-2xl border p-8 text-center">
+            <PackagePlus className="theme-subtle mx-auto h-8 w-8" />
+            <p className="theme-muted mt-2 text-sm">{t("addonsHistory.empty")}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -99,27 +99,27 @@ function EntitlementRow({ entitlement, index }: { entitlement: UserAddOnEntitlem
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.03 }}
-      className="flex items-center gap-3 rounded-2xl border border-white/6 bg-white/2 p-3.5"
+      className="theme-surface flex items-center gap-3 rounded-2xl border p-3.5"
     >
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--brand-primary)/10 text-(--brand-primary)">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-medium text-zinc-200">{entitlement.receiptName}</p>
+          <p className="theme-title truncate text-sm font-medium">{entitlement.receiptName}</p>
           <Badge variant="outline" className={`shrink-0 text-[10px] ${stateCls}`}>
             {stateLabel}
           </Badge>
         </div>
-        <p className="mt-0.5 text-xs text-zinc-500">{valueLabel}</p>
+        <p className="theme-muted mt-0.5 text-xs">{valueLabel}</p>
         <div className="mt-0.5 flex items-center justify-between">
-          <p className="text-xs text-zinc-500">{formatDateTime(entitlement.purchasedAt)}</p>
-          <p className="text-xs font-medium text-zinc-300">
+          <p className="theme-subtle text-xs">{formatDateTime(entitlement.purchasedAt)}</p>
+          <p className="theme-title text-xs font-medium">
             {formatPrice(entitlement.totalAmount, entitlement.currency)}
           </p>
         </div>
         {entitlement.expiresAt && (
-          <p className="mt-0.5 text-[11px] text-zinc-600">
+          <p className="theme-subtle mt-0.5 text-[11px]">
             {t("addonsHistory.expires", { date: formatDateTime(entitlement.expiresAt) })}
           </p>
         )}

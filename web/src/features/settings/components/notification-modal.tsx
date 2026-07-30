@@ -37,13 +37,13 @@ export function NotificationModal({
             <EmojiText text={notification.title} />
           </DialogTitle>
         </DialogHeader>
-        <p className="text-[11px] text-zinc-500">
+        <p className="theme-subtle text-[11px]">
           {formatDateTime(notification.createdAt)}
         </p>
-        <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-200">
+        <div className="theme-title max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed">
           {notification.body
             ? <EmojiText text={notification.body} />
-            : <span className="text-zinc-500">{t("notifications.emptyBody")}</span>}
+            : <span className="theme-muted">{t("notifications.emptyBody")}</span>}
         </div>
       </DialogContent>
     </Dialog>

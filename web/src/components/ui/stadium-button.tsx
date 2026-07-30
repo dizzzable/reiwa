@@ -23,8 +23,8 @@ const variantClasses: Record<ButtonVariant, string> = {
   primary:
     'bg-(--brand-primary) text-(--brand-primary-fg) hover:brightness-110 active:brightness-95 shadow-[0_0_24px_var(--color-brand-glow)] hover:shadow-[0_0_36px_var(--color-brand-glow)]',
   secondary:
-    'bg-zinc-800/80 text-white border border-white/10 hover:bg-zinc-700/80 hover:border-white/20',
-  ghost: 'bg-transparent text-zinc-300 hover:bg-white/6 hover:text-white',
+    'border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] text-[var(--brand-foreground)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface)]',
+  ghost: 'bg-transparent text-[var(--brand-muted-foreground)] hover:bg-[var(--color-surface)] hover:text-[var(--brand-foreground)]',
   danger:
     'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 hover:text-red-300',
   outline:

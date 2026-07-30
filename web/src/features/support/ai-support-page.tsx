@@ -42,7 +42,7 @@ export default function AiSupportPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-4">
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
         <BackButton fallback="/support" label={t('common.back')} />
         <div className="flex min-w-0 items-center gap-2">
           <Bot className="h-5 w-5 shrink-0 text-(--brand-primary)" />

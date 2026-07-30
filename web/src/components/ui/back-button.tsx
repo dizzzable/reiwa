@@ -32,7 +32,7 @@ export function BackButton({ fallback, label, className }: BackButtonProps) {
       onClick={goBack}
       aria-label={label}
       className={cn(
-        "flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:text-white glass-icon-btn",
+        "flex h-9 w-9 items-center justify-center rounded-full glass-icon-btn",
         className,
       )}
     >

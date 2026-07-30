@@ -84,6 +84,48 @@ describe("subscription card visual resolver", () => {
     expect(visual.cardEffectProps).toEqual({ speed: 2 });
   });
 
+  it("freezes the operator card pattern into the resolved visual snapshot", () => {
+    const pattern =
+      "linear-gradient(#ffffff22 1px, transparent 1px), linear-gradient(90deg, #ffffff22 1px, transparent 1px)";
+    const visual = resolveSubscriptionCardVisual(
+      branding({ cardPattern: pattern }),
+      2,
+    );
+
+    expect(visual.cardPattern).toBe(pattern);
+    expect(resolveSubscriptionCardVisual(branding({ cardPattern: null })).cardPattern).toBeNull();
+  });
+
+  it("freezes light and dark card contrast into the visual snapshot", () => {
+    const light = resolveSubscriptionCardVisual(
+      branding({
+        primaryFg: "#0a0a0a",
+        bgSecondary: "#f8fafc",
+        cardGradient:
+          "linear-gradient(135deg, #fff7ed, #fde68a, #f8fafc)",
+      }),
+    );
+    const dark = resolveSubscriptionCardVisual(
+      branding({
+        primaryFg: "#ffffff",
+        bgSecondary: "#09090b",
+        cardGradient:
+          "linear-gradient(135deg, #020617, #172554, #1e1b4b)",
+      }),
+    );
+
+    expect(light.contrast).toMatchObject({
+      foregroundTone: "dark",
+      foreground: "#0a0a0a",
+      veilRgb: "255 255 255",
+    });
+    expect(dark.contrast).toMatchObject({
+      foregroundTone: "light",
+      foreground: "#ffffff",
+      veilRgb: "0 0 0",
+    });
+  });
+
   it("injects Aurora defaults only when colorStops are absent", () => {
     const injected = resolveSubscriptionCardVisual(
       branding({

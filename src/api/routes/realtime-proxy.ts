@@ -14,6 +14,9 @@
  *   - Upstream rejection (4xx/5xx) is rendered as a single
  *     `realtime.unavailable` event, then the response is closed. The
  *     browser's EventSource will reconnect automatically.
+ *   - Upstream connection failures are converted into the same graceful SSE
+ *     response instead of escaping after headers were flushed and making
+ *     Express reset the browser connection.
  *   - Upstream success: bytes are piped chunk-by-chunk. We do not parse
  *     SSE frames; that's the producer/consumer contract, not ours.
  *   - Browser disconnect: we tear down the upstream stream so undici
@@ -36,6 +39,7 @@ export async function proxyStream(
   client: OpenStreamFn,
   userRef: string,
   res: Response,
+  onUpstreamError?: (error: unknown) => void,
 ): Promise<void> {
   // Pre-set SSE headers on the browser side so the connection upgrades
   // cleanly even if the upstream open is slow.
@@ -45,9 +49,18 @@ export async function proxyStream(
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
-  const upstream = await client.openStream(
-    `/api/internal/user/${encodeURIComponent(userRef)}/stream`,
-  );
+  let upstream: Awaited<ReturnType<OpenStreamFn['openStream']>>;
+  try {
+    upstream = await client.openStream(
+      `/api/internal/user/${encodeURIComponent(userRef)}/stream`,
+    );
+  } catch (error) {
+    onUpstreamError?.(error);
+    res.write('event: realtime.unavailable\n');
+    res.write('data: {"reason":"upstream_connection_failed"}\n\n');
+    res.end();
+    return;
+  }
   if (upstream === null) {
     res.write('event: realtime.unavailable\n');
     res.write('data: {"reason":"upstream_rejected"}\n\n');

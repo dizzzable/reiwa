@@ -90,7 +90,7 @@ export default function RecoverPage() {
   }
 
   function getResultBorderColor() {
-    if (!result) return 'border-zinc-700/50'
+    if (!result) return 'border-[color:var(--color-border-soft)]'
     switch (result.method) {
       case 'telegram':
         return 'border-blue-500/30'
@@ -102,7 +102,7 @@ export default function RecoverPage() {
   }
 
   function getResultBgColor() {
-    if (!result) return 'bg-zinc-800/50'
+    if (!result) return 'theme-skeleton'
     switch (result.method) {
       case 'telegram':
         return 'bg-blue-500/5'
@@ -134,10 +134,10 @@ export default function RecoverPage() {
           >
             <span className="text-3xl">🔑</span>
           </div>
-          <h1 className="text-2xl font-bold text-white">
+          <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">
             {t('auth.recover.title')}
           </h1>
-          <p className="mt-2 text-sm text-zinc-400">
+          <p className="mt-2 text-sm text-[color:var(--brand-muted-foreground)]">
             {t('auth.recover.description')}
           </p>
         </div>
@@ -153,7 +153,7 @@ export default function RecoverPage() {
                 placeholder={t('auth.recover.usernamePlaceholder')}
                 autoComplete="username"
                 autoFocus
-                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-(--brand-primary)/50 focus:bg-white/[0.06]"
+                className="glass-input w-full rounded-xl px-4 py-3 text-sm"
               />
             </div>
 
@@ -191,7 +191,7 @@ export default function RecoverPage() {
           >
             <div className="flex flex-col items-center gap-4 text-center">
               {getResultIcon()}
-              <p className="text-sm leading-relaxed text-zinc-300">
+              <p className="text-sm leading-relaxed text-[color:var(--brand-foreground)]">
                 {getResultMessage()}
               </p>
             </div>
@@ -203,7 +203,7 @@ export default function RecoverPage() {
           <button
             type="button"
             onClick={() => navigate('/sign-in')}
-            className="inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+            className="inline-flex items-center gap-1.5 text-sm text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)]"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             {t('auth.recover.backToSignIn')}
