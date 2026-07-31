@@ -28,6 +28,7 @@ export function clearBootstrapAppBackground(): void {
   root.style.removeProperty("--bootstrap-app-background-color");
   root.style.removeProperty("--bootstrap-app-background-image");
   root.style.removeProperty("--bootstrap-app-background-size");
+  root.style.removeProperty("--bootstrap-app-background-blend");
   delete root.dataset["bootstrapAppBackground"];
   delete root.dataset["bootstrapAppBackgroundKind"];
 }

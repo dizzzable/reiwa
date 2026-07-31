@@ -6,6 +6,9 @@ import {
   type CardContrast,
 } from "../../web/src/lib/card-contrast.js";
 import {
+  resolveCardEffectOutputColors,
+} from "../../web/src/components/reactbits/card-effect-runtime.js";
+import {
   autoPlanGradient,
   readablePriceColor,
   resolvePlanCardStyle,
@@ -131,6 +134,154 @@ describe("artwork card contrast", () => {
     expect(result.veilOpacity).toBeLessThanOrEqual(0.75);
     expectStopsToPass(result, stops);
   });
+
+  it("includes the composited animated effect colours in the AA calculation", () => {
+    const base = "#020617";
+    const effect = "#e6ff58";
+    const effectOpacity = 0.84;
+    const result = resolveCardContrast(
+      `linear-gradient(135deg, ${base}, #111827)`,
+      {
+        fallbackBackground: base,
+        preferredForeground: "#ffffff",
+        overlayArtwork: effect,
+        overlayOpacity: effectOpacity,
+      },
+    );
+    const animatedSample = composite(
+      hexRgb(effect),
+      hexRgb(base),
+      effectOpacity,
+    );
+    const supported = composite(
+      channelsRgb(result.veilRgb),
+      animatedSample,
+      result.veilOpacity,
+    );
+
+    expect(result.veilOpacity).toBeGreaterThan(0.12);
+    expect(
+      ratio(hexRgb(result.foreground), supported),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps text AA-safe when LineWaves amplifies dark inputs into bright yellow", () => {
+    const base = "#000000";
+    const shaderOutput = "#fff755";
+    const effectOpacity = 0.84;
+    const result = resolveCardContrast(
+      "radial-gradient(ellipse 90% 58% at 64% 8%, #807158CC 0%, transparent 64%), linear-gradient(180deg, #2B2922 0%, #2B1E0A 54%, #000000 100%)",
+      {
+        fallbackBackground: "#F2ECDE",
+        preferredForeground: "#ffffff",
+        overlayArtwork: resolveCardEffectOutputColors("lineWaves", {
+          color1: "#9A6A24",
+          color2: "#553A15",
+          color3: "#000000",
+        }).join(" "),
+        overlayOpacity: effectOpacity,
+      },
+    );
+    const animatedSample = composite(
+      hexRgb(shaderOutput),
+      hexRgb(base),
+      effectOpacity,
+    );
+    const supported = composite(
+      channelsRgb(result.veilRgb),
+      animatedSample,
+      result.veilOpacity,
+    );
+
+    expect(result.foregroundTone).toBe("dark");
+    expect(
+      ratio(hexRgb(result.foreground), supported),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each([
+    {
+      name: "dark foreground over an additive black extreme",
+      gradient:
+        "radial-gradient(ellipse 90% 58% at 88% 8%, #F29B84CC 0%, transparent 64%), linear-gradient(180deg, #0B5E5A 0%, #165251 54%, #163B3B 100%)",
+      fallback: "#F1FAF8",
+      preferredForeground: "#000000",
+      effect: "lineWaves",
+      effectProps: {
+        color1: "#158C88",
+        color2: "#0B5E5A",
+        color3: "#000000",
+      },
+      effectOpacity: 0.84,
+      base: "#163B3B",
+      shaderExtreme: "#000000",
+      foregroundTone: "dark",
+    },
+    {
+      name: "light foreground over an amplified white extreme",
+      gradient:
+        "linear-gradient(170deg, #03080B 0 44%, #204B54 44% 67%, #04111A 67% 100%)",
+      fallback: "#04111A",
+      preferredForeground: "#000000",
+      effect: "rippleGrid",
+      effectProps: { gridColor: "#65E6FF" },
+      effectOpacity: 0.68,
+      base: "#204B54",
+      shaderExtreme: "#ffffff",
+      foregroundTone: "light",
+    },
+  ])(
+    "keeps the profile copy AA-safe with local support: $name",
+    ({
+      gradient,
+      fallback,
+      preferredForeground,
+      effect,
+      effectProps,
+      effectOpacity,
+      base,
+      shaderExtreme,
+      foregroundTone,
+    }) => {
+      const result = resolveCardContrast(gradient, {
+        fallbackBackground: fallback,
+        preferredForeground,
+        overlayArtwork: resolveCardEffectOutputColors(
+          effect,
+          effectProps,
+        ).join(" "),
+        overlayOpacity: effectOpacity,
+      });
+      const shaderSample = composite(
+        hexRgb(shaderExtreme),
+        hexRgb(base),
+        effectOpacity,
+      );
+      const veil = channelsRgb(result.veilRgb);
+      const artworkWindow = Math.max(
+        0.035,
+        result.veilOpacity * 0.28,
+      );
+      const globallySupported = composite(
+        veil,
+        shaderSample,
+        artworkWindow,
+      );
+      const locallySupported = composite(
+        veil,
+        globallySupported,
+        result.veilOpacity,
+      );
+
+      expect(result.foregroundTone).toBe(foregroundTone);
+      expect(
+        ratio(hexRgb(result.foreground), globallySupported),
+      ).toBeLessThan(4.5);
+      expect(
+        ratio(hexRgb(result.foreground), locallySupported),
+      ).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 
   it("understands the modern HSL syntax used by automatic tariff gradients", () => {
     const result = resolveCardContrast(autoPlanGradient("starter"));

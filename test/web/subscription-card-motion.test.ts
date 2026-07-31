@@ -84,6 +84,52 @@ describe("subscription card visual resolver", () => {
     expect(visual.cardEffectProps).toEqual({ speed: 2 });
   });
 
+  it("resolves distinct positional visuals and falls back globally after the last slot", () => {
+    const source = branding({
+      cardEffect: "silk",
+      cardEffectProps: { speed: 9 },
+      cardEffectOpacity: 0.91,
+      cardGradient: "linear-gradient(135deg, #111827, #7c3aed)",
+      cardEffectsByIndex: [
+        {
+          cardEffect: "aurora",
+          cardEffectProps: { amplitude: 1 },
+          cardEffectOpacity: 0.51,
+          cardGradient: "linear-gradient(135deg, #7f1d1d, #ef4444)",
+        },
+        {
+          cardEffect: "waves",
+          cardEffectProps: { speed: 2 },
+          cardEffectOpacity: 0.72,
+          cardGradient: "linear-gradient(135deg, #0c4a6e, #22d3ee)",
+        },
+      ],
+    });
+
+    const first = resolveSubscriptionCardVisual(source, 0);
+    const second = resolveSubscriptionCardVisual(source, 1);
+    const third = resolveSubscriptionCardVisual(source, 2);
+
+    expect(first).toMatchObject({
+      slotIndex: 0,
+      cardEffect: "aurora",
+      cardEffectOpacity: 0.51,
+      cardGradient: "linear-gradient(135deg, #7f1d1d, #ef4444)",
+    });
+    expect(second).toMatchObject({
+      slotIndex: 1,
+      cardEffect: "waves",
+      cardEffectOpacity: 0.72,
+      cardGradient: "linear-gradient(135deg, #0c4a6e, #22d3ee)",
+    });
+    expect(third).toMatchObject({
+      slotIndex: 2,
+      cardEffect: "silk",
+      cardEffectOpacity: 0.91,
+      cardGradient: "linear-gradient(135deg, #111827, #7c3aed)",
+    });
+  });
+
   it("freezes the operator card pattern into the resolved visual snapshot", () => {
     const pattern =
       "linear-gradient(#ffffff22 1px, transparent 1px), linear-gradient(90deg, #ffffff22 1px, transparent 1px)";
@@ -124,6 +170,37 @@ describe("subscription card visual resolver", () => {
       foreground: "#ffffff",
       veilRgb: "0 0 0",
     });
+  });
+
+  it("does not add a desaturating veil merely because an animated effect exists", () => {
+    const gradient =
+      "linear-gradient(135deg, #ff1744 0%, #651fff 48%, #00e5ff 100%)";
+    const colorStops = ["#ff1744", "#651fff", "#00e5ff"];
+    const staticVisual = resolveSubscriptionCardVisual(
+      branding({
+        cardGradient: gradient,
+        cardEffect: "NONE",
+        cardEffectProps: {},
+      }),
+    );
+    const animatedVisual = resolveSubscriptionCardVisual(
+      branding({
+        cardGradient: gradient,
+        cardEffect: "aurora",
+        cardEffectProps: { colorStops },
+        cardEffectOpacity: 0.84,
+      }),
+    );
+
+    expect(animatedVisual.cardGradient).toBe(gradient);
+    expect(animatedVisual.cardEffectProps["colorStops"]).toBe(colorStops);
+    expect(animatedVisual.cardEffectOpacity).toBe(0.84);
+    expect(animatedVisual.contrast.veilOpacity).toBe(
+      staticVisual.contrast.veilOpacity,
+    );
+    expect(animatedVisual.contrast.overlayBackground).toBe(
+      staticVisual.contrast.overlayBackground,
+    );
   });
 
   it("injects Aurora defaults only when colorStops are absent", () => {

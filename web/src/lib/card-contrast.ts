@@ -45,6 +45,10 @@ export interface CardContrastOptions {
   readonly fallbackBackground?: string | null;
   readonly preferredForeground?: string | null;
   readonly minimumVeilOpacity?: number;
+  /** Colours painted by an animated layer above the static artwork. */
+  readonly overlayArtwork?: string | null;
+  /** Effective opacity of that animated layer. */
+  readonly overlayOpacity?: number;
 }
 
 export function resolveCardContrast(
@@ -53,7 +57,7 @@ export function resolveCardContrast(
 ): CardContrast {
   const fallback = parseCssColor(options.fallbackBackground ?? "");
   const rawSamples = extractCssColors(artwork);
-  const samples = (
+  const baseSamples = (
     rawSamples.length > 0
       ? rawSamples
       : fallback
@@ -68,6 +72,23 @@ export function resolveCardContrast(
         )
       : sample.rgb,
   );
+  const overlaySamples = extractCssColors(options.overlayArtwork ?? "");
+  const overlayOpacity = clamp(options.overlayOpacity ?? 0, 0, 1);
+  const samples =
+    overlaySamples.length > 0 && overlayOpacity > 0
+      ? [
+          ...baseSamples,
+          ...baseSamples.flatMap((base) =>
+            overlaySamples.map((overlay) =>
+              compositeRgb(
+                overlay.rgb,
+                base,
+                overlay.alpha * overlayOpacity,
+              ),
+            ),
+          ),
+        ]
+      : baseSamples;
 
   const resolvedSamples =
     samples.length > 0

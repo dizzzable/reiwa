@@ -147,7 +147,7 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
       aria-pressed={selected}
       style={cardStyle}
       className={cn(
-        "@container/card group relative flex min-h-[172px] w-full flex-col justify-between gap-3",
+        "@container/card group relative isolate flex min-h-[172px] w-full flex-col justify-between gap-3 [contain:paint]",
         "overflow-hidden rounded-card p-5 text-left text-[color:var(--card-foreground)] select-none",
         "transition-transform duration-150 active:scale-[0.98]",
         selected

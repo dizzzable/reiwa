@@ -163,6 +163,7 @@ body {
   background-color: var(--bootstrap-app-background-color, var(--brand-bg-primary));
   background-image: var(--bootstrap-app-background-image, none);
   background-size: var(--bootstrap-app-background-size, auto);
+  background-blend-mode: var(--bootstrap-app-background-blend, normal);
   background-position: center;
   background-repeat: repeat;
   color: var(--brand-foreground);
@@ -225,7 +226,12 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 .glass-input::placeholder {
-  color: color-mix(in oklab, var(--brand-muted-foreground) 55%, transparent);
+  /*
+   * `--brand-muted-foreground` is already the operator theme's validated
+   * secondary-text token. Mixing it with transparent here compounded the
+   * translucent glass surface and made light concepts look washed out.
+   */
+  color: var(--brand-muted-foreground);
 }
 .glass-input:focus,
 .glass-input:focus-visible {
@@ -247,12 +253,22 @@ body {
   border-color: var(--color-border-strong);
   color: var(--brand-foreground);
 }
+.glass-icon-btn:focus-visible {
+  outline: 2px solid var(--brand-foreground);
+  outline-offset: 2px;
+  border-color: var(--color-border-strong);
+  color: var(--brand-foreground);
+}
 .glass-icon-btn:active { transform: scale(0.94); }
 
 .theme-title { color: var(--brand-foreground); }
 .theme-muted { color: var(--brand-muted-foreground); }
 .theme-subtle {
-  color: color-mix(in oklab, var(--brand-muted-foreground) 82%, transparent);
+  /*
+   * Subtle copy remains semantically secondary without applying a second
+   * alpha reduction over an already translucent concept surface.
+   */
+  color: var(--brand-muted-foreground);
 }
 .theme-skeleton {
   background: color-mix(in oklab, var(--brand-surface-high) 72%, transparent);
@@ -363,7 +379,12 @@ body {
 .card-effect-layer__css-fallback {
   background-size: 170% 170%, 165% 165%, 190% 190%;
   animation: card-effect-fallback-drift 18s ease-in-out infinite;
-  opacity: 0.46;
+  /*
+   * CardEffectLayer already owns the operator-configured opacity. Applying a
+   * second opacity here made the CSS fallback roughly twice as faint as the
+   * native shader and desaturated concept palettes on low-end/mobile GPUs.
+   */
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

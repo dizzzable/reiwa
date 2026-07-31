@@ -129,7 +129,7 @@ export function SubscriptionSelectCard({
       disabled={disabled}
       aria-pressed={selected}
       className={cn(
-        "@container/card group relative w-full overflow-hidden rounded-card p-3.5 text-left text-white select-none",
+        "@container/card group relative isolate w-full overflow-hidden rounded-card p-3.5 text-left text-white select-none [contain:paint]",
         "shadow-lg shadow-black/30 transition-all active:scale-[0.98] disabled:opacity-50",
         selected ? "ring-2 ring-(--brand-primary)" : "ring-1 ring-white/10",
       )}

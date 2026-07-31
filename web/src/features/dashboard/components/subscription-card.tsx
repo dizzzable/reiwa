@@ -173,7 +173,7 @@ export function SubscriptionCardContent({
       <div className="relative flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           {nameIcon}
-          <span className="truncate text-[13px] font-semibold tracking-wide opacity-95 @sm:text-sm">
+          <span className="truncate text-[13px] font-semibold tracking-wide @sm:text-sm">
             {sub.plan?.name ?? t("subscription.planFallback")}
           </span>
         </div>
@@ -182,7 +182,7 @@ export function SubscriptionCardContent({
             "shrink-0 rounded-full border border-[rgb(var(--card-foreground-rgb)/0.14)] px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-[color:var(--card-foreground)] uppercase backdrop-blur-md",
             isActive
               ? "bg-[rgb(var(--card-veil-rgb)/0.30)] shadow-sm"
-              : "bg-[rgb(var(--card-veil-rgb)/0.44)] opacity-70",
+              : "bg-[rgb(var(--card-veil-rgb)/0.44)]",
           )}
         >
           {statusLabel}
@@ -195,7 +195,14 @@ export function SubscriptionCardContent({
 
       {/* Center: profile name (like card number) */}
       <div className="relative flex min-w-0 flex-1 items-center">
-        <p className="w-full truncate font-mono text-[13px] tracking-[0.12em] text-[color:var(--card-foreground)] opacity-90 drop-shadow @sm:text-[15px]">
+        <p
+          data-subscription-card-profile-support
+          className="-mx-1 w-fit max-w-full truncate px-1 font-mono text-[13px] tracking-[0.12em] text-[color:var(--card-foreground)] drop-shadow @sm:text-[15px]"
+          style={{
+            backgroundColor:
+              "rgb(var(--card-veil-rgb) / var(--card-veil-opacity))",
+          }}
+        >
           {sub.profileName || sub.userRemnaId || t("card.pendingStatus")}
         </p>
       </div>
@@ -219,12 +226,12 @@ export function SubscriptionCardContent({
                 }}
               />
             </div>
-            <p className="text-[10px] tracking-wider uppercase opacity-70">
+            <p className="text-[10px] font-medium tracking-wider uppercase">
               {t("card.trafficUsed")}: {trafficUsedGb} / {trafficTotalGb} GB
             </p>
           </div>
         ) : trafficTotalGb === null ? (
-          <p className="text-[10px] tracking-wider uppercase opacity-70">
+          <p className="text-[10px] font-medium tracking-wider uppercase">
             {t("card.trafficUnlimited")}
           </p>
         ) : null}
@@ -233,7 +240,7 @@ export function SubscriptionCardContent({
           <div className="min-w-0">
             {daysLeft !== null ? (
               <>
-                <p className="text-[10px] tracking-wider uppercase opacity-60">
+                <p className="text-[10px] font-medium tracking-wider uppercase">
                   {t("card.remaining")}
                 </p>
                 <p
@@ -242,13 +249,13 @@ export function SubscriptionCardContent({
                 >
                   {t("card.daysLeft", { count: daysLeft })}
                 </p>
-                <p className="mt-0.5 truncate text-[10px] opacity-55">
+                <p className="mt-0.5 truncate text-[10px]">
                   {t("card.untilDate", { date: formatDate(rawExpiry) })}
                 </p>
               </>
             ) : (
               <>
-                <p className="text-[10px] tracking-wider uppercase opacity-60">
+                <p className="text-[10px] font-medium tracking-wider uppercase">
                   {t("card.expiresOn")}
                 </p>
                 <p className="truncate text-[13px] font-semibold @sm:text-sm">
@@ -258,7 +265,7 @@ export function SubscriptionCardContent({
             )}
           </div>
           <div className="min-w-0 text-right">
-            <p className="text-[10px] tracking-wider uppercase opacity-60">
+            <p className="text-[10px] font-medium tracking-wider uppercase">
               {t("card.firstDevice")}
             </p>
             <p className="truncate text-[13px] font-medium @sm:text-sm">

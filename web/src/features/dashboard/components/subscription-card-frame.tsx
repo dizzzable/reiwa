@@ -42,6 +42,20 @@ function opacityStyle(
   };
 }
 
+function vividArtworkOverlay(
+  contrast: ResolvedSubscriptionCardVisual["contrast"],
+): string {
+  const veil = Math.min(0.75, Math.max(0, contrast.veilOpacity));
+  const edge = Math.min(0.84, veil + 0.12);
+  const artworkWindow = Math.max(0.035, veil * 0.28);
+  const channels = contrast.veilRgb;
+
+  // The WCAG-calculated veil stays intact behind the top, profile and bottom
+  // copy. A narrow copy-free window exposes the shader without weakening the
+  // contrast calculation in a text-bearing band.
+  return `linear-gradient(180deg, rgb(${channels} / ${edge}) 0%, rgb(${channels} / ${veil}) 24%, rgb(${channels} / ${artworkWindow}) 30%, rgb(${channels} / ${artworkWindow}) 35%, rgb(${channels} / ${veil}) 41%, rgb(${channels} / ${veil}) 82%, rgb(${channels} / ${edge}) 100%)`;
+}
+
 /**
  * The single production card frame. It owns the exact established dimensions,
  * stacking order, watermark and (at most) one CardEffectLayer.
@@ -63,10 +77,12 @@ export const SubscriptionCardFrame = forwardRef<
   ref,
 ) {
   const { contrast } = visual;
+  const creationPresentation = layerOpacity !== undefined;
   const frameStyle = {
     "--card-foreground": contrast.foreground,
     "--card-foreground-rgb": contrast.foregroundRgb,
     "--card-veil-rgb": contrast.veilRgb,
+    "--card-veil-opacity": contrast.veilOpacity,
     "--card-support-background": contrast.supportBackground,
     "--card-danger":
       contrast.foregroundTone === "dark" ? "#b91c1c" : "#f87171",
@@ -74,8 +90,8 @@ export const SubscriptionCardFrame = forwardRef<
       contrast.foregroundTone === "dark" ? "#92400e" : "#fbbf24",
     boxShadow:
       contrast.foregroundTone === "dark"
-        ? "0 25px 50px -12px rgb(0 0 0 / 0.22), 0 0 0 1px rgb(10 10 10 / 0.12)"
-        : "0 25px 50px -12px rgb(0 0 0 / 0.40), 0 0 0 1px rgb(255 255 255 / 0.12)",
+        ? "0 18px 38px -26px rgb(0 0 0 / 0.28), 0 0 0 1px rgb(10 10 10 / 0.12)"
+        : "0 18px 38px -26px rgb(0 0 0 / 0.46), 0 0 0 1px rgb(255 255 255 / 0.12)",
     ...style,
   } as CSSProperties;
   const watermark = (
@@ -95,7 +111,7 @@ export const SubscriptionCardFrame = forwardRef<
         // (layout-containment stacking context) + overflow-hidden + rounded box,
         // so the card renders with no background on iPhone. z-0 + DOM order keeps
         // the same visual layering on every platform without the WebKit bug.
-        "@container/card relative flex h-[190px] w-full flex-col justify-between overflow-hidden rounded-card p-4 text-[color:var(--card-foreground)] select-none",
+        "@container/card relative isolate flex h-[190px] w-full flex-col justify-between overflow-hidden rounded-card p-4 text-[color:var(--card-foreground)] select-none [contain:paint]",
         "@sm:h-[210px] @sm:p-5",
         className,
       )}
@@ -118,7 +134,7 @@ export const SubscriptionCardFrame = forwardRef<
           ...opacityStyle(layerOpacity?.gradient, 560),
         }}
       />
-      {visual.cardPattern && (
+      {visual.cardPattern && creationPresentation && (
         <div
           data-subscription-card-layer="pattern"
           className="pointer-events-none absolute inset-0 z-0"
@@ -141,11 +157,30 @@ export const SubscriptionCardFrame = forwardRef<
           className="absolute inset-0 z-0"
         />
       )}
+      {visual.cardPattern && !creationPresentation && (
+        <div
+          data-subscription-card-layer="pattern"
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            backgroundImage: visual.cardPattern,
+            backgroundSize: visual.cardPattern.includes("gradient(")
+              ? "24px 24px"
+              : undefined,
+            opacity: 0.4,
+          }}
+        />
+      )}
       <div
         data-subscription-card-layer="vignette"
+        data-subscription-card-readability={
+          creationPresentation ? "creation-overlay" : "wcag-copy-zones"
+        }
+        data-subscription-card-veil-opacity={contrast.veilOpacity}
         className="absolute inset-0 z-0"
         style={{
-          background: contrast.overlayBackground,
+          background: creationPresentation
+            ? contrast.overlayBackground
+            : vividArtworkOverlay(contrast),
           ...opacityStyle(layerOpacity?.vignette, 480),
         }}
       />

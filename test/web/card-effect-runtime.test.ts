@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   requiresWebGL,
   requiresWebGL2,
+  resolveCardEffectColors,
+  resolveCardEffectOutputColors,
   resolveCardEffectRuntime,
 } from "../../web/src/components/reactbits/card-effect-runtime.js";
 
@@ -86,5 +88,64 @@ describe("card effect runtime policy", () => {
         capabilities: NO_WEBGL,
       }),
     ).toMatchObject({ effect: "waves", mode: "native" });
+  });
+
+  it("extracts every effect-specific palette shape used by concept cards", () => {
+    expect(
+      resolveCardEffectColors("rippleGrid", { gridColor: "#e6ff58" }),
+    ).toEqual(["#e6ff58"]);
+    expect(
+      resolveCardEffectColors("liquidChrome", {
+        baseColor: [0.1, 0.5, 1],
+      }),
+    ).toEqual(["#1a80ff", "#000000", "#ffffff"]);
+    expect(
+      resolveCardEffectColors("dither", {
+        waveColor: [0.5, 0.25, 0],
+      }),
+    ).toEqual(["#804000", "#000000"]);
+    expect(
+      resolveCardEffectColors("paperDither", {
+        colorBack: "#101820",
+        colorFront: "#00b2ff",
+      }),
+    ).toEqual(["#101820", "#00b2ff"]);
+    expect(
+      resolveCardEffectColors("galaxy", { hueShift: 212 }),
+    ).toEqual(["#ffffff", "#000000"]);
+    expect(
+      resolveCardEffectColors("galaxy", {
+        hueShift: 212,
+        saturation: 0.8,
+      }),
+    ).toEqual(["hsl(212 80% 60%)", "#ffffff", "#000000"]);
+  });
+
+  it("models the full output gamut of additive and contrast-expanding shaders", () => {
+    expect(
+      resolveCardEffectOutputColors("lineWaves", {
+        color1: "#9A6A24",
+        color2: "#553A15",
+        color3: "#000000",
+      }),
+    ).toEqual([
+      "#9A6A24",
+      "#553A15",
+      "#000000",
+      "#ffffff",
+    ]);
+
+    for (const [effect, props] of [
+      ["softAurora", { color1: "#ff1744", color2: "#651fff" }],
+      ["rippleGrid", { gridColor: "#ef4444" }],
+      ["radar", { color: "#9f29ff" }],
+      ["particles", { particleColors: ["#f59e0b", "#2563eb"] }],
+      ["grainient", { color1: "#ff9ffc", color2: "#5227ff", color3: "#b497cf" }],
+      ["balatro", { color1: "#de443b", color2: "#006bb4", color3: "#162325" }],
+    ] as const) {
+      expect(resolveCardEffectOutputColors(effect, props)).toEqual(
+        expect.arrayContaining(["#000000", "#ffffff"]),
+      );
+    }
   });
 });

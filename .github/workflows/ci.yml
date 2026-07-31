@@ -22,6 +22,10 @@ jobs:
         run: npm run check
       - name: Build
         run: npm run build
+      # The root Vitest project deliberately includes component contracts from
+      # `web/test`; install that package graph before resolving those imports.
+      - name: Install web test dependencies
+        run: npm --prefix web ci
       - name: Unit tests
         run: npm test
       - name: Property-based tests

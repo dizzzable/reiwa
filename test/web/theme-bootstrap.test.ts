@@ -104,8 +104,17 @@ describe("pre-paint theme bootstrap", () => {
     expect(result.properties.get("--radius-card")).toBe("2px");
     expect(result.properties.get("--radius-item")).toBe("1px");
     expect(result.properties.get("--radius-pill")).toBe("0px");
-    expect(result.properties.get("--bootstrap-app-background-image")).toBe(
+    expect(result.properties.get("--bootstrap-app-background-image")).toContain(
       "linear-gradient(135deg, #f8f4e9, #eee7d8)",
+    );
+    expect(result.properties.get("--bootstrap-app-background-image")).toContain(
+      "data:image/svg+xml",
+    );
+    expect(result.properties.get("--bootstrap-app-background-size")).toBe(
+      "24px 24px, cover",
+    );
+    expect(result.properties.get("--bootstrap-app-background-blend")).toBe(
+      "soft-light, normal",
     );
     expect(result.dataset["bootstrapAppBackground"]).toBe("true");
     expect(result.dataset["themeScheme"]).toBe("light");
@@ -140,10 +149,13 @@ describe("pre-paint theme bootstrap", () => {
       "#101820",
     );
     expect(result.properties.get("--bootstrap-app-background-image")).toContain(
+      "linear-gradient(180deg, rgb(0 0 0 /",
+    );
+    expect(result.properties.get("--bootstrap-app-background-image")).toContain(
       "data:image/svg+xml",
     );
     expect(result.properties.get("--bootstrap-app-background-size")).toBe(
-      "32px 32px",
+      "cover, 32px 32px",
     );
     expect(result.dataset["bootstrapAppBackgroundKind"]).toBe("texture");
   });
@@ -173,6 +185,89 @@ describe("pre-paint theme bootstrap", () => {
     );
     expect(result.dataset["bootstrapAppBackground"]).toBe("true");
     expect(result.dataset["bootstrapAppBackgroundKind"]).toBe("effect");
+  });
+
+  it("prepends the same readability veil used by the runtime shell for AM", () => {
+    const snapshot = {
+      ...DEFAULT_PUBLIC_CONFIG,
+      branding: {
+        ...DEFAULT_PUBLIC_CONFIG.branding,
+        themePresetId: "concept-am",
+        themePresetVersion: 1,
+        appBackground: {
+          ...DEFAULT_PUBLIC_CONFIG.branding.appBackground,
+          kind: "gradient",
+          gradient:
+            "linear-gradient(180deg, #DFA98B 0%, #DFA98B 18%, #8E6D72 100%)",
+          texture: {
+            pattern: "diagonal",
+            color: "#8f5b54",
+            background: "#DFA98B",
+            scale: 28,
+            opacity: 0.14,
+          },
+        },
+        surfaceTheme: {
+          ...DEFAULT_PUBLIC_CONFIG.branding.surfaceTheme!,
+          foreground: "#FFF7EF",
+          mutedForeground: "#D6B7AD",
+        },
+      },
+    };
+
+    const result = executeBootstrap(snapshot);
+    const image = result.properties.get("--bootstrap-app-background-image");
+
+    expect(image).toContain("linear-gradient(180deg, rgb(0 0 0 /");
+    expect(image).toContain("data:image/svg+xml");
+    expect(image).toContain("#DFA98B");
+    expect(result.properties.get("--bootstrap-app-background-size")).toBe(
+      "cover, 28px 28px, cover",
+    );
+    expect(result.properties.get("--bootstrap-app-background-blend")).toBe(
+      "normal, soft-light, normal",
+    );
+  });
+
+  it("mirrors the medium-muted runtime fix for concept-a-like dark shells", () => {
+    const snapshot = {
+      ...DEFAULT_PUBLIC_CONFIG,
+      branding: {
+        ...DEFAULT_PUBLIC_CONFIG.branding,
+        themePresetId: "concept-a",
+        themePresetVersion: 1,
+        appBackground: {
+          ...DEFAULT_PUBLIC_CONFIG.branding.appBackground,
+          kind: "gradient",
+          gradient:
+            "linear-gradient(180deg, #351411 0%, #4b201c 58%, #5c2d27 100%)",
+          texture: {
+            pattern: "cross",
+            color: "#8b4c42",
+            background: "#351411",
+            scale: 28,
+            opacity: 0.12,
+          },
+        },
+        surfaceTheme: {
+          ...DEFAULT_PUBLIC_CONFIG.branding.surfaceTheme!,
+          foreground: "#E8D5CB",
+          mutedForeground: "#8A807B",
+        },
+      },
+    };
+
+    const result = executeBootstrap(snapshot);
+    const image = result.properties.get("--bootstrap-app-background-image");
+
+    expect(image).toContain("linear-gradient(180deg, rgb(0 0 0 /");
+    expect(image).toContain("#351411");
+    expect(result.properties.get("--bootstrap-app-background-size")).toBe(
+      "cover, 28px 28px, cover",
+    );
+    expect(result.properties.get("--bootstrap-app-background-blend")).toBe(
+      "normal, soft-light, normal",
+    );
   });
 
   it("restores old snapshots without appBackground using the branded solid fallback", () => {

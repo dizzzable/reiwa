@@ -143,6 +143,8 @@ export default function StealthLayout() {
             "var(--bootstrap-app-background-color, var(--brand-bg-primary))",
           backgroundImage: "var(--bootstrap-app-background-image, none)",
           backgroundSize: "var(--bootstrap-app-background-size, auto)",
+          backgroundBlendMode:
+            "var(--bootstrap-app-background-blend, normal)",
           backgroundPosition: "center",
           backgroundRepeat: "repeat",
         }}

@@ -42,6 +42,50 @@ const PAPER_EFFECTS = new Set([
 const CANVAS_2D_EFFECTS = new Set(["waves"]);
 
 const DEFAULT_AURORA_COLORS = ["#5227FF", "#7CFF67", "#5227FF"] as const;
+const DEFAULT_EFFECT_COLORS: Readonly<Record<string, readonly string[]>> = {
+  aurora: DEFAULT_AURORA_COLORS,
+  threads: ["#ffffff"],
+  softAurora: ["#f7f7f7", "#e100ff"],
+  rippleGrid: ["#ffffff"],
+  radar: ["#9f29ff", "#000000"],
+  plasma: ["#ffffff", "#000000"],
+  particles: ["#ffffff"],
+  liquidChrome: ["#1a1a1a", "#000000", "#ffffff"],
+  lineWaves: ["#ffffff"],
+  iridescence: ["#ffffff", "#000000"],
+  grainient: ["#ff9ffc", "#5227ff", "#b497cf"],
+  galaxy: ["#ffffff", "#000000"],
+  balatro: ["#de443b", "#006bb4", "#162325"],
+  waves: ["#ffffff", "#00000000"],
+  silk: ["#7b7481"],
+  beams: ["#ffffff", "#000000"],
+  dither: ["#808080", "#000000"],
+  paperMesh: ["#e0eaff", "#241d9a", "#f75092", "#9f50d3"],
+  paperWarp: ["#121212", "#9470ff", "#8838ff"],
+  paperGrain: ["#000000", "#7300ff", "#eba8ff", "#00bfff", "#2a00ff"],
+  paperDither: ["#000000", "#00b2ff"],
+  paperSwirl: ["#000000", "#ffd1d1", "#ff8a8a", "#660000"],
+  paperMetaballs: ["#000000", "#6e33cc", "#ff5500", "#ffc105", "#f585ff"],
+};
+
+/**
+ * These shaders do not stay inside the convex hull of their configured input
+ * palette. Additive channels, glow, procedural noise or post-contrast can
+ * produce both display extremes after the GPU clamps the fragment output.
+ * Contrast analysis therefore needs the conservative output gamut, not just
+ * the operator-supplied uniforms.
+ */
+const FULL_OUTPUT_GAMUT_EFFECTS = new Set([
+  "softAurora",
+  "rippleGrid",
+  "radar",
+  "particles",
+  "liquidChrome",
+  "lineWaves",
+  "grainient",
+  "galaxy",
+  "balatro",
+]);
 
 function asColor(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0
@@ -49,34 +93,128 @@ function asColor(value: unknown): string | null {
     : null;
 }
 
-function configuredColors(props: Readonly<Record<string, unknown>>): string[] {
+function rgbVectorColor(value: unknown): string | null {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 3 ||
+    value.some(
+      (channel) => typeof channel !== "number" || !Number.isFinite(channel),
+    )
+  ) {
+    return null;
+  }
+  const scale = value.every((channel) => channel >= 0 && channel <= 1)
+    ? 255
+    : 1;
+  return `#${value
+    .map((channel) =>
+      Math.round(Math.min(255, Math.max(0, channel * scale)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+function configuredColors(
+  effect: string,
+  props: Readonly<Record<string, unknown>>,
+): string[] {
   const fromArray = (value: unknown): string[] =>
     Array.isArray(value)
       ? value.map(asColor).filter((value): value is string => value !== null)
       : [];
 
-  const colors = fromArray(props["colors"]);
-  if (colors.length > 0) return colors;
+  const colors = [
+    ...fromArray(props["colors"]),
+    ...fromArray(props["colorStops"]),
+    ...fromArray(props["particleColors"]),
+    ...[
+      "color1",
+      "color2",
+      "color3",
+      "color",
+      "colorBack",
+      "colorFront",
+      "gridColor",
+      "lineColor",
+      "backgroundColor",
+      "lightColor",
+    ]
+      .map((key) => asColor(props[key]))
+      .filter((value): value is string => value !== null),
+    ...["baseColor", "waveColor", "color"]
+      .map((key) => rgbVectorColor(props[key]))
+      .filter((value): value is string => value !== null),
+  ];
 
-  const stops = fromArray(props["colorStops"]);
-  if (stops.length > 0) return stops;
+  if (effect === "rippleGrid" && props["enableRainbow"] === true) {
+    colors.push(
+      "#ff0000",
+      "#ffff00",
+      "#00ff00",
+      "#00ffff",
+      "#0000ff",
+      "#ff00ff",
+    );
+  }
+  if (effect === "dither") colors.push("#000000");
+  if (effect === "liquidChrome") colors.push("#000000", "#ffffff");
+  if (effect === "galaxy") {
+    const hue =
+      typeof props["hueShift"] === "number" &&
+      Number.isFinite(props["hueShift"])
+        ? props["hueShift"]
+        : 140;
+    const saturation =
+      typeof props["saturation"] === "number" &&
+      Number.isFinite(props["saturation"])
+        ? Math.min(1, Math.max(0, props["saturation"]))
+        : 0;
+    if (saturation > 0) {
+      colors.push(
+        `hsl(${hue} ${Math.round(saturation * 100)}% 60%)`,
+      );
+    }
+    colors.push("#ffffff", "#000000");
+  }
+  if (["radar", "plasma", "beams"].includes(effect)) {
+    colors.push("#000000");
+  }
 
-  return [props["color1"], props["color2"], props["color3"], props["colorBack"]]
-    .map(asColor)
-    .filter((value): value is string => value !== null);
+  return [...new Set(colors)];
 }
 
 export function resolveCardEffectColors(
+  effect: string,
   props: Readonly<Record<string, unknown>>,
 ): readonly string[] {
-  const colors = configuredColors(props);
-  return colors.length > 0 ? colors : DEFAULT_AURORA_COLORS;
+  const configured = configuredColors(effect, props);
+  return configured.length > 0
+    ? configured
+    : (DEFAULT_EFFECT_COLORS[effect] ?? DEFAULT_AURORA_COLORS);
+}
+
+/**
+ * Conservative fragment colours used only for contrast analysis.
+ *
+ * Keep this separate from `resolveCardEffectColors`: the latter also powers
+ * the static CSS fallback and must stay faithful to the branded input palette.
+ */
+export function resolveCardEffectOutputColors(
+  effect: string,
+  props: Readonly<Record<string, unknown>>,
+): readonly string[] {
+  const colors = [...resolveCardEffectColors(effect, props)];
+  if (FULL_OUTPUT_GAMUT_EFFECTS.has(effect)) {
+    colors.push("#000000", "#ffffff");
+  }
+  return [...new Set(colors)];
 }
 
 function resolveAuroraProps(
   props: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> {
-  const colors = resolveCardEffectColors(props);
+  const colors = resolveCardEffectColors("aurora", props);
   const middle = colors[Math.floor((colors.length - 1) / 2)] ?? colors[0];
   const speed = props["speed"];
 
@@ -133,13 +271,14 @@ export function detectCardEffectCapabilities(): CardEffectCapabilities {
 }
 
 function resolveCssFallback(
+  effect: string,
   props: Readonly<Record<string, unknown>>,
 ): ResolvedCardEffectRuntime {
   return {
     effect: "NONE",
     props: {},
     mode: "css-fallback",
-    cssColors: resolveCardEffectColors(props),
+    cssColors: resolveCardEffectColors(effect, props),
   };
 }
 
@@ -171,7 +310,7 @@ export function resolveCardEffectRuntime({
 
   if (!requiresWebGL(effect)) {
     return failed
-      ? resolveCssFallback(props)
+      ? resolveCssFallback(effect, props)
       : {
           effect,
           props,
@@ -205,5 +344,5 @@ export function resolveCardEffectRuntime({
     };
   }
 
-  return resolveCssFallback(props);
+  return resolveCssFallback(effect, props);
 }

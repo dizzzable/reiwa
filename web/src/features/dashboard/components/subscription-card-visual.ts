@@ -3,6 +3,7 @@ import {
   resolveCardContrast,
   type CardContrast,
 } from "../../../lib/card-contrast";
+import { resolveCardEffectOutputColors } from "../../../components/reactbits/card-effect-runtime";
 import type {
   Branding,
   CardEffect,
@@ -135,6 +136,10 @@ export function resolveSubscriptionCardVisual(
     branding.bgSecondary,
     "var(--brand-bg-secondary)",
   );
+  const effectArtwork =
+    cardEffect === "NONE"
+      ? null
+      : resolveCardEffectOutputColors(cardEffect, cardEffectProps).join(" ");
 
   return {
     slotIndex,
@@ -144,11 +149,13 @@ export function resolveSubscriptionCardVisual(
     contrast: resolveCardContrast(cardGradient, {
       fallbackBackground: bgSecondary,
       preferredForeground: primaryFg,
-      minimumVeilOpacity:
-        cardEffect === "NONE"
-          ? 0.12
-          : 0.18 +
-            Math.min(1, Math.max(0, cardEffectOpacity)) * 0.12,
+      // The contrast resolver still calculates the required WCAG-AA veil from
+      // the actual artwork stops. Do not additionally increase it merely
+      // because an effect exists: light concepts otherwise receive a white
+      // full-card film which visibly drains the shader colours.
+      minimumVeilOpacity: 0.12,
+      overlayArtwork: effectArtwork,
+      overlayOpacity: cardEffect === "NONE" ? 0 : cardEffectOpacity,
     }),
     cardGradient,
     cardPattern:

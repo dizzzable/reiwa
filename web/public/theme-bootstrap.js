@@ -130,6 +130,485 @@
     return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
   }
 
+  function contrastRatio(left, right) {
+    var a = relativeLuminance(left);
+    var b = relativeLuminance(right);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  }
+
+  function relativeLuminance(rgb) {
+    function channel(value) {
+      var normalized = value / 255;
+      return normalized <= 0.04045
+        ? normalized / 12.92
+        : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    }
+    return (
+      0.2126 * channel(rgb[0]) +
+      0.7152 * channel(rgb[1]) +
+      0.0722 * channel(rgb[2])
+    );
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function roundOpacity(value) {
+    return Math.round(value * 1000) / 1000;
+  }
+
+  function rgbChannels(rgb) {
+    return rgb.join(" ");
+  }
+
+  function compositeRgb(foreground, background, alpha) {
+    return [
+      Math.round(foreground[0] * alpha + background[0] * (1 - alpha)),
+      Math.round(foreground[1] * alpha + background[1] * (1 - alpha)),
+      Math.round(foreground[2] * alpha + background[2] * (1 - alpha)),
+    ];
+  }
+
+  function parseCssColor(value) {
+    var trimmed = typeof value === "string" ? value.trim() : "";
+    if (!trimmed) return null;
+    if (trimmed.toLowerCase() === "black") {
+      return { rgb: [0, 0, 0], alpha: 1 };
+    }
+    if (trimmed.toLowerCase() === "white") {
+      return { rgb: [255, 255, 255], alpha: 1 };
+    }
+    if (trimmed.charAt(0) === "#") return parseHexColor(trimmed);
+    var rgbMatch = /^rgba?\(([^)]+)\)$/i.exec(trimmed);
+    if (rgbMatch) return parseRgbFunction(rgbMatch[1]);
+    var hslMatch = /^hsla?\(([^)]+)\)$/i.exec(trimmed);
+    if (hslMatch) return parseHslFunction(hslMatch[1]);
+    return null;
+  }
+
+  function parseHexColor(value) {
+    var body = value.trim().slice(1);
+    if (![3, 4, 6, 8].includes(body.length) || !/^[\da-f]+$/i.test(body)) {
+      return null;
+    }
+    var expanded =
+      body.length === 3 || body.length === 4
+        ? body
+            .split("")
+            .map(function duplicate(character) {
+              return character + character;
+            })
+            .join("")
+        : body;
+    return {
+      rgb: [
+        parseInt(expanded.slice(0, 2), 16),
+        parseInt(expanded.slice(2, 4), 16),
+        parseInt(expanded.slice(4, 6), 16),
+      ],
+      alpha:
+        expanded.length === 8 ? parseInt(expanded.slice(6, 8), 16) / 255 : 1,
+    };
+  }
+
+  function parseRgbFunction(value) {
+    var normalized = value.replace(/\s*\/\s*/g, ",");
+    var parts = normalized.split(/[,\s]+/).filter(Boolean);
+    if (parts.length < 3) return null;
+    var rgb = parts.slice(0, 3).map(parseRgbChannel);
+    if (rgb.some(function isNull(channel) { return channel === null; })) {
+      return null;
+    }
+    var alpha = parts[3] ? parseAlpha(parts[3]) : 1;
+    if (alpha === null) return null;
+    return { rgb: rgb, alpha: alpha };
+  }
+
+  function parseHslFunction(value) {
+    var normalized = value.replace(/\s*\/\s*/g, ",");
+    var parts = normalized.split(/[,\s]+/).filter(Boolean);
+    if (parts.length < 3) return null;
+    var hue = parseFloat(parts[0] || "");
+    var saturation = parsePercentage(parts[1] || "");
+    var lightness = parsePercentage(parts[2] || "");
+    var alpha = parts[3] ? parseAlpha(parts[3]) : 1;
+    if (
+      !Number.isFinite(hue) ||
+      saturation === null ||
+      lightness === null ||
+      alpha === null
+    ) {
+      return null;
+    }
+
+    var chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    var hueSegment = (((hue % 360) + 360) % 360) / 60;
+    var secondary = chroma * (1 - Math.abs((hueSegment % 2) - 1));
+    var match = lightness - chroma / 2;
+    var triplet =
+      hueSegment < 1
+        ? [chroma, secondary, 0]
+        : hueSegment < 2
+          ? [secondary, chroma, 0]
+          : hueSegment < 3
+            ? [0, chroma, secondary]
+            : hueSegment < 4
+              ? [0, secondary, chroma]
+              : hueSegment < 5
+                ? [secondary, 0, chroma]
+                : [chroma, 0, secondary];
+
+    return {
+      rgb: [
+        Math.round((triplet[0] + match) * 255),
+        Math.round((triplet[1] + match) * 255),
+        Math.round((triplet[2] + match) * 255),
+      ],
+      alpha: alpha,
+    };
+  }
+
+  function parseRgbChannel(value) {
+    if (/%$/.test(value)) {
+      var percentage = parsePercentage(value);
+      return percentage === null ? null : Math.round(percentage * 255);
+    }
+    var numeric = parseFloat(value);
+    if (!Number.isFinite(numeric)) return null;
+    return clamp(Math.round(numeric), 0, 255);
+  }
+
+  function parsePercentage(value) {
+    if (!/%$/.test(value)) return null;
+    var numeric = parseFloat(value.slice(0, -1));
+    if (!Number.isFinite(numeric)) return null;
+    return clamp(numeric / 100, 0, 1);
+  }
+
+  function parseAlpha(value) {
+    if (/%$/.test(value)) return parsePercentage(value);
+    var numeric = parseFloat(value);
+    if (!Number.isFinite(numeric)) return null;
+    return clamp(numeric, 0, 1);
+  }
+
+  function extractCssColors(value) {
+    if (typeof value !== "string" || !value) return [];
+    var samples = [];
+    var match;
+
+    var hexPattern = /#[\da-f]{3,8}(?![\da-f])/gi;
+    while ((match = hexPattern.exec(value)) !== null) {
+      var parsedHex = parseHexColor(match[0]);
+      if (parsedHex) samples.push(parsedHex);
+    }
+
+    var rgbPattern = /\brgba?\(([^)]+)\)/gi;
+    while ((match = rgbPattern.exec(value)) !== null) {
+      var parsedRgb = parseRgbFunction(match[1]);
+      if (parsedRgb) samples.push(parsedRgb);
+    }
+
+    var hslPattern = /\bhsla?\(([^)]+)\)/gi;
+    while ((match = hslPattern.exec(value)) !== null) {
+      var parsedHsl = parseHslFunction(match[1]);
+      if (parsedHsl) samples.push(parsedHsl);
+    }
+
+    var namedPattern = /\b(?:black|white)\b/gi;
+    while ((match = namedPattern.exec(value)) !== null) {
+      samples.push({
+        rgb: match[0].toLowerCase() === "black" ? [0, 0, 0] : [255, 255, 255],
+        alpha: 1,
+      });
+    }
+
+    return samples;
+  }
+
+  function requiredVeilOpacity(samples, textColors, veil) {
+    var required = 0;
+    for (var sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
+      var sample = samples[sampleIndex];
+      for (var textIndex = 0; textIndex < textColors.length; textIndex += 1) {
+        var textColor = textColors[textIndex];
+        if (contrastRatio(textColor, sample) >= 4.5) continue;
+        var low = 0;
+        var high = 1;
+        for (var iteration = 0; iteration < 18; iteration += 1) {
+          var midpoint = (low + high) / 2;
+          var supported = compositeRgb(veil, sample, midpoint);
+          if (contrastRatio(textColor, supported) >= 4.5) {
+            high = midpoint;
+          } else {
+            low = midpoint;
+          }
+        }
+        required = Math.max(required, high);
+      }
+    }
+    return required;
+  }
+
+  function resolveAppBackgroundReadability(branding, appBackground, appBackgroundKind) {
+    if (
+      !isRecord(branding) ||
+      !isRecord(appBackground) ||
+      !isRecord(branding.surfaceTheme) ||
+      appBackgroundKind === "none" ||
+      appBackgroundKind === "effect"
+    ) {
+      return null;
+    }
+
+    var foreground = parseCssColor(branding.surfaceTheme.foreground);
+    var mutedForeground = parseCssColor(branding.surfaceTheme.mutedForeground);
+    if (!foreground || !mutedForeground) return null;
+
+    var fallback =
+      parseCssColor(
+        appBackgroundKind === "texture" && isRecord(appBackground.texture)
+          ? appBackground.texture.background
+          : branding.bgPrimary,
+      ) || parseCssColor(branding.bgPrimary);
+
+    if (appBackgroundKind === "texture" && isRecord(appBackground.texture)) {
+      var textureBackground = parseCssColor(appBackground.texture.background);
+      var textureColor = parseCssColor(appBackground.texture.color);
+      if (!textureBackground) return null;
+      var texturedSamples = textureColor
+        ? uniqueRgb([
+            textureBackground.rgb,
+            compositeRgb(
+              textureColor.rgb,
+              textureBackground.rgb,
+              clamp(appBackground.texture.opacity, 0, 1),
+            ),
+          ])
+        : [textureBackground.rgb];
+      return resolveReadabilityOverlay(texturedSamples, [foreground.rgb, mutedForeground.rgb]);
+    } else {
+      var gradientSamples = resolveGradientSamples(
+        extractCssColors(appBackground.gradient),
+        fallback ? fallback.rgb : null,
+      );
+      var samples = gradientSamples.slice();
+      if (
+        appBackgroundKind === "gradient" &&
+        typeof branding.themePresetId === "string" &&
+        branding.themePresetId.indexOf("concept-") === 0 &&
+        isRecord(appBackground.texture)
+      ) {
+        var conceptColor = parseCssColor(appBackground.texture.color);
+        if (conceptColor) {
+          samples = samples.concat(
+            resolveSoftLightTextureSamples(
+              gradientSamples,
+              conceptColor.rgb,
+              clamp(appBackground.texture.opacity, 0, 1),
+            ),
+          );
+        }
+      }
+      return resolveReadabilityOverlay(uniqueRgb(samples), [foreground.rgb, mutedForeground.rgb]);
+    }
+  }
+
+  function resolveVeilCandidate(samples, textColors, veilRgb) {
+    var rawOpacity = requiredVeilOpacity(samples, textColors, veilRgb);
+    if (rawOpacity <= 0) return null;
+    var veilOpacity = roundOpacity(clamp(rawOpacity + 0.03, 0, 0.88));
+    if (!supportsContrast(samples, textColors, veilRgb, veilOpacity)) {
+      return null;
+    }
+    return { veilRgb: veilRgb, rawOpacity: rawOpacity, veilOpacity: veilOpacity };
+  }
+
+  function supportsContrast(samples, textColors, veilRgb, veilOpacity) {
+    for (var sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
+      var supported = compositeRgb(veilRgb, samples[sampleIndex], veilOpacity);
+      for (var textIndex = 0; textIndex < textColors.length; textIndex += 1) {
+        if (contrastRatio(textColors[textIndex], supported) < 4.5) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  function resolveReadabilityOverlay(samples, textColors) {
+    if (samples.length === 0) return null;
+    var candidates = [
+      resolveVeilCandidate(samples, textColors, [0, 0, 0]),
+      resolveVeilCandidate(samples, textColors, [255, 255, 255]),
+    ].filter(Boolean);
+    if (candidates.length === 0) return null;
+    candidates.sort(function sortByRequirement(left, right) {
+      return left.rawOpacity - right.rawOpacity;
+    });
+    var chosen = candidates[0];
+    var channels = rgbChannels(chosen.veilRgb);
+    var edgeOpacity = roundOpacity(clamp(chosen.veilOpacity + 0.12, 0, 0.88));
+
+    return (
+      "linear-gradient(180deg, " +
+      "rgb(" +
+      channels +
+      " / " +
+      edgeOpacity +
+      ") 0%, " +
+      "rgb(" +
+      channels +
+      " / " +
+      chosen.veilOpacity +
+      ") 16%, " +
+      "rgb(" +
+      channels +
+      " / " +
+      chosen.veilOpacity +
+      ") 28%, " +
+      "rgb(" +
+      channels +
+      " / " +
+      chosen.veilOpacity +
+      ") 40%, " +
+      "rgb(" +
+      channels +
+      " / " +
+      chosen.veilOpacity +
+      ") 60%, " +
+      "rgb(" +
+      channels +
+      " / " +
+      chosen.veilOpacity +
+      ") 72%, " +
+      "rgb(" +
+      channels +
+      " / " +
+      chosen.veilOpacity +
+      ") 84%, " +
+      "rgb(" +
+      channels +
+      " / " +
+      edgeOpacity +
+      ") 100%)"
+    );
+  }
+
+  function resolveGradientSamples(samples, fallback) {
+    var opaqueBackdrops = uniqueRgb(
+      samples
+        .filter(function isOpaque(sample) {
+          return sample.alpha >= 1;
+        })
+        .map(function pickRgb(sample) {
+          return sample.rgb;
+        })
+        .concat(fallback ? [fallback] : []),
+    );
+    var backdrops =
+      opaqueBackdrops.length > 0 ? opaqueBackdrops : fallback ? [fallback] : [];
+    var translucent = samples.filter(function isTranslucent(sample) {
+      return sample.alpha < 1;
+    });
+    var resolved = samples.flatMap(function resolve(sample) {
+      if (sample.alpha >= 1) return [sample.rgb];
+      return backdrops.map(function compositeBackdrop(backdrop) {
+        return compositeRgb(sample.rgb, backdrop, sample.alpha);
+      });
+    });
+    var stacked = backdrops.flatMap(function resolveBackdrop(backdrop) {
+      return translucent.flatMap(function resolveLower(lower) {
+        var lowerComposite = compositeRgb(lower.rgb, backdrop, lower.alpha);
+        return translucent.map(function resolveUpper(upper) {
+          return compositeRgb(upper.rgb, lowerComposite, upper.alpha);
+        });
+      });
+    });
+    return uniqueRgb(
+      resolved
+        .concat(stacked)
+        .concat(interpolateRgbStates(resolved))
+        .concat(interpolateRgbStates(stacked)),
+    );
+  }
+
+  function resolveSoftLightTextureSamples(baseSamples, textureColor, opacity) {
+    if (opacity <= 0) return [];
+    var alphaStates = [0.25, 0.5, 0.75, 1]
+      .map(function alphaStep(step) {
+        return roundOpacity(clamp(opacity * step, 0, 1));
+      })
+      .filter(function uniqueAlpha(alpha, index, values) {
+        return alpha > 0 && values.indexOf(alpha) === index;
+      });
+    var textured = baseSamples.flatMap(function resolveBase(base) {
+      return alphaStates.map(function resolveAlpha(alpha) {
+        return compositeRgb(softLightBlend(textureColor, base), base, alpha);
+      });
+    });
+    return uniqueRgb(textured.concat(interpolateRgbStates(textured)));
+  }
+
+  function interpolateRgbStates(samples) {
+    var blended = [];
+    for (var left = 0; left < samples.length; left += 1) {
+      for (var right = left + 1; right < samples.length; right += 1) {
+        blended.push(mixRgb(samples[left], samples[right], 0.25));
+        blended.push(mixRgb(samples[left], samples[right], 0.5));
+        blended.push(mixRgb(samples[left], samples[right], 0.75));
+      }
+    }
+    return uniqueRgb(blended);
+  }
+
+  function softLightBlend(source, backdrop) {
+    return [
+      softLightChannel(source[0], backdrop[0]),
+      softLightChannel(source[1], backdrop[1]),
+      softLightChannel(source[2], backdrop[2]),
+    ];
+  }
+
+  function softLightChannel(source, backdrop) {
+    var s = source / 255;
+    var b = backdrop / 255;
+    var value =
+      s <= 0.5
+        ? b - (1 - 2 * s) * b * (1 - b)
+        : b + (2 * s - 1) * (softLightCurve(b) - b);
+    return Math.round(clamp(value, 0, 1) * 255);
+  }
+
+  function softLightCurve(value) {
+    if (value <= 0.25) {
+      return ((16 * value - 12) * value + 4) * value;
+    }
+    return Math.sqrt(value);
+  }
+
+  function mixRgb(left, right, alpha) {
+    return [
+      Math.round(left[0] * (1 - alpha) + right[0] * alpha),
+      Math.round(left[1] * (1 - alpha) + right[1] * alpha),
+      Math.round(left[2] * (1 - alpha) + right[2] * alpha),
+    ];
+  }
+
+  function uniqueRgb(samples) {
+    var seen = new Set();
+    var unique = [];
+    for (var index = 0; index < samples.length; index += 1) {
+      var sample = samples[index];
+      var key = sample.join(",");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(sample);
+    }
+    return unique;
+  }
+
   function texturePattern(pattern, stroke, opacity) {
     switch (pattern) {
       case "dots":
@@ -317,19 +796,70 @@
         (appBackgroundKind === "effect" &&
           typeof appBackground.effect === "string" &&
           appBackground.effect !== "NONE");
+      var readabilityOverlay = resolveAppBackgroundReadability(
+        branding,
+        appBackground,
+        appBackgroundKind,
+      );
       if (usesStaticGradient && isSafeGradient(appBackground.gradient)) {
+        var conceptTexture =
+          appBackgroundKind === "gradient" &&
+          typeof branding.themePresetId === "string" &&
+          branding.themePresetId.indexOf("concept-") === 0
+            ? buildTextureBackground(appBackground.texture)
+            : null;
         bootstrapBackground = {
           color: branding.bgPrimary,
-          image: appBackground.gradient,
-          size: "cover",
+          image:
+            readabilityOverlay !== null && conceptTexture !== null
+              ? readabilityOverlay +
+                ", " +
+                conceptTexture.image +
+                ", " +
+                appBackground.gradient
+              : readabilityOverlay !== null
+                ? readabilityOverlay + ", " + appBackground.gradient
+                : conceptTexture !== null
+                  ? conceptTexture.image + ", " + appBackground.gradient
+                  : appBackground.gradient,
+          size:
+            readabilityOverlay !== null && conceptTexture !== null
+              ? "cover, " + conceptTexture.size + ", cover"
+              : readabilityOverlay !== null
+                ? "cover, cover"
+                : conceptTexture !== null
+                  ? conceptTexture.size + ", cover"
+                  : "cover",
+          blend:
+            readabilityOverlay !== null && conceptTexture !== null
+              ? "normal, soft-light, normal"
+              : readabilityOverlay !== null
+                ? "normal, normal"
+                : conceptTexture !== null
+                  ? "soft-light, normal"
+                  : "normal",
         };
       } else if (appBackgroundKind === "texture") {
-        bootstrapBackground = buildTextureBackground(appBackground.texture);
+        var textureBackground = buildTextureBackground(appBackground.texture);
+        if (textureBackground !== null && readabilityOverlay !== null) {
+          bootstrapBackground = {
+            color: textureBackground.color,
+            image: readabilityOverlay + ", " + textureBackground.image,
+            size: "cover, " + textureBackground.size,
+            blend: "normal, normal",
+          };
+        } else {
+          bootstrapBackground = textureBackground;
+        }
       }
       if (bootstrapBackground !== null) {
         set("--bootstrap-app-background-color", bootstrapBackground.color);
         set("--bootstrap-app-background-image", bootstrapBackground.image);
         set("--bootstrap-app-background-size", bootstrapBackground.size);
+        set(
+          "--bootstrap-app-background-blend",
+          bootstrapBackground.blend || "normal",
+        );
         root.dataset.bootstrapAppBackground = "true";
         root.dataset.bootstrapAppBackgroundKind = appBackgroundKind;
       }

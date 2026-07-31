@@ -17,12 +17,14 @@ import { useLayoutEffect } from "react";
 
 import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { buildTextureCss } from "@/lib/app-texture";
+import { resolveAppBackgroundReadability } from "@/lib/app-background-contrast";
 import { clearBootstrapAppBackground } from "@/lib/branding-document";
 import { useBranding } from "@/lib/branding-provider";
 
 export function AppBackground() {
   const { branding } = useBranding();
   const appBg = branding.appBackground;
+  const readability = resolveAppBackgroundReadability(branding);
 
   useLayoutEffect(() => {
     if (!appBg || appBg.kind === "none") return;
@@ -34,12 +36,44 @@ export function AppBackground() {
   if (!appBg || appBg.kind === "none") return null;
 
   if (appBg.kind === "gradient") {
+    const texture = appBg.texture;
+    const conceptTexture =
+      typeof branding.themePresetId === "string" &&
+      branding.themePresetId.startsWith("concept-") &&
+      texture
+        ? buildTextureCss(texture)
+        : null;
     return (
       <div
-        className="pointer-events-none absolute inset-0 z-0"
+        className="pointer-events-none absolute inset-0 z-0 isolate overflow-hidden"
         aria-hidden
-        style={{ background: appBg.gradient }}
-      />
+        data-app-background-kind="gradient"
+      >
+        <div
+          className="absolute inset-0"
+          style={{ background: appBg.gradient }}
+        />
+        {conceptTexture && (
+          <div
+            className="absolute inset-0 mix-blend-soft-light"
+            data-app-background-concept-texture={texture?.pattern}
+            style={{
+              backgroundImage: conceptTexture.backgroundImage,
+              backgroundSize: conceptTexture.backgroundSize,
+              backgroundRepeat: "repeat",
+            }}
+          />
+        )}
+        {readability && (
+          <div
+            className="absolute inset-0"
+            aria-hidden
+            data-app-background-readability="wcag-direct-copy-zones"
+            data-app-background-readability-opacity={readability.veilOpacity}
+            style={{ background: readability.overlayBackground }}
+          />
+        )}
+      </div>
     );
   }
 
@@ -55,7 +89,17 @@ export function AppBackground() {
           backgroundSize: css.backgroundSize,
           backgroundRepeat: "repeat",
         }}
-      />
+      >
+        {readability && (
+          <div
+            className="absolute inset-0"
+            aria-hidden
+            data-app-background-readability="wcag-direct-copy-zones"
+            data-app-background-readability-opacity={readability.veilOpacity}
+            style={{ background: readability.overlayBackground }}
+          />
+        )}
+      </div>
     );
   }
 
