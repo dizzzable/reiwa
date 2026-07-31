@@ -12,8 +12,8 @@
  *    slides and scrolled-away cards pause their GPU work.
  *
  * Reduced motion keeps a static CSS rendition of the configured palette and
- * does not mount the native canvas/WebGL renderer. The operator's theme remains
- * visible without forcing an infinite decorative animation.
+ * does not mount the native canvas/WebGL renderer. The selected palette stays
+ * visually complete without forcing an infinite decorative animation.
  */
 
 import {
@@ -43,14 +43,10 @@ interface CardEffectLayerProps {
   readonly opacity?: number;
   readonly className?: string;
   /**
-   * Carousel pre-warm hint. When `true`, the effect mounts even while the
-   * card is off-screen, so the next/prev slide's WebGL context + shaders are
-   * already initialised before the user swipes to it (the parent passes
-   * `true` for the active card and its immediate neighbours). This can't be
-   * done with `IntersectionObserver` alone: the carousel's `overflow-x-auto`
-   * track clips off-screen slides, so a viewport `rootMargin` never sees them.
-   * Left `undefined` for standalone usage, where the IntersectionObserver
-   * below drives mounting.
+   * Carousel ownership hint. The parent passes `true` only to the selected
+   * slide, guaranteeing that one subscription at most owns a live WebGL/canvas
+   * renderer. Left `undefined` for standalone usage, where the
+   * IntersectionObserver below drives mounting.
    */
   readonly active?: boolean;
 }
@@ -97,7 +93,13 @@ class EffectErrorBoundary extends Component<{
   }
 }
 
-function CssEffectFallback({ colors }: { readonly colors: readonly string[] }) {
+function CssEffectFallback({
+  colors,
+  opacity,
+}: {
+  readonly colors: readonly string[];
+  readonly opacity: number;
+}) {
   const first = colors[0] ?? "#5227FF";
   const middle = colors[Math.floor((colors.length - 1) / 2)] ?? first;
   const last = colors.at(-1) ?? middle;
@@ -105,18 +107,49 @@ function CssEffectFallback({ colors }: { readonly colors: readonly string[] }) {
   return (
     <div
       aria-hidden
-      className="card-effect-layer__css-fallback absolute inset-0"
+      className="absolute inset-0"
       style={{
-        backgroundImage: `radial-gradient(95% 135% at 4% 100%, ${first} 0%, transparent 64%), radial-gradient(85% 120% at 100% 2%, ${last} 0%, transparent 60%), linear-gradient(135deg, ${first}, ${middle}, ${last})`,
+        backgroundColor: first,
       }}
-    />
+    >
+      <div
+        data-card-effect-artwork
+        className="card-effect-layer__css-fallback absolute inset-0"
+        style={{
+          backgroundImage: `radial-gradient(95% 135% at 4% 100%, ${first} 0%, transparent 64%), radial-gradient(85% 120% at 100% 2%, ${last} 0%, transparent 60%), linear-gradient(135deg, ${first}, ${middle}, ${last})`,
+          opacity,
+        }}
+      />
+    </div>
   );
 }
 
-export function CardEffectLayer({ effect, props, opacity = 1, className, active }: CardEffectLayerProps) {
+function EffectReadySignal({
+  presentationKey,
+  onReady,
+}: {
+  readonly presentationKey: string;
+  readonly onReady: (key: string) => void;
+}) {
+  useEffect(() => {
+    onReady(presentationKey);
+  }, [onReady, presentationKey]);
+
+  return null;
+}
+
+export function CardEffectLayer({
+  effect,
+  props,
+  opacity = 1,
+  className,
+  active,
+}: CardEffectLayerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
-  const [faded, setFaded] = useState(false);
+  const [readyPresentationKey, setReadyPresentationKey] = useState<
+    string | null
+  >(null);
   const [capabilitySnapshot, setCapabilitySnapshot] = useState<{
     readonly effect: string;
     readonly capabilities: ReturnType<typeof detectCardEffectCapabilities>;
@@ -131,6 +164,7 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
   // contexts at ~8 and the "oldest context will be lost" thrash is exactly the
   // flicker/under-load users see with several subscriptions.
   useEffect(() => {
+    if (active !== undefined) return;
     const el = ref.current;
     if (!el) return;
     const io = new IntersectionObserver(
@@ -139,7 +173,7 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
     );
     io.observe(el);
     return () => io.disconnect();
-  }, []);
+  }, [active]);
 
   const shouldMount = active === undefined ? visible : active;
   const shouldAnimate = shouldMount && !prefersReducedMotion;
@@ -164,18 +198,6 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
     return () => window.cancelAnimationFrame(frame);
   }, [effect, isValid, shouldAnimate]);
 
-  // Fade the effect in over the always-present static gradient base so it
-  // appears smoothly instead of popping after WebGL init. Reset when unmounted
-  // so a remount fades again.
-  useEffect(() => {
-    if (!shouldMount) {
-      setFaded(false);
-      return;
-    }
-    const id = requestAnimationFrame(() => setFaded(true));
-    return () => cancelAnimationFrame(id);
-  }, [shouldMount]);
-
   const sourceProps = props ?? {};
   const staticProps = isValid
     ? {
@@ -187,15 +209,14 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
     capabilitySnapshot?.effect === effect
       ? capabilitySnapshot.capabilities
       : null;
-  const runtime =
-    prefersReducedMotion && isValid
-      ? {
-          effect: "NONE",
-          props: {},
-          mode: "css-fallback" as const,
-          cssColors: resolveCardEffectColors(effect, staticProps),
-        }
-      : !isValid || (requiresWebGL(effect) && capabilities === null)
+  const runtime = prefersReducedMotion && isValid
+    ? {
+        effect: "NONE",
+        props: {},
+        mode: "css-fallback" as const,
+        cssColors: resolveCardEffectColors(effect, staticProps),
+      }
+    : !isValid || (requiresWebGL(effect) && capabilities === null)
       ? null
       : resolveCardEffectRuntime({
           effect,
@@ -212,6 +233,20 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
     runtimeId === undefined || runtimeId === "NONE"
       ? {}
       : { ...CARD_EFFECT_DEFAULTS[runtimeId], ...(runtime?.props ?? {}) };
+  const effectColors =
+    runtimeId === undefined || runtimeId === "NONE"
+      ? runtime?.cssColors ?? resolveCardEffectColors(effect, staticProps)
+      : resolveCardEffectColors(runtimeId, mergedProps);
+  const configuredOpacity = Math.min(Math.max(opacity, 0.05), 1);
+  const presentationKey =
+    runtime === null
+      ? null
+      : `${effect}:${runtime.effect}:${runtime.mode}:${effectFailed ? "fallback" : "native"}`;
+  const presentationReady =
+    shouldMount &&
+    presentationKey !== null &&
+    (runtime?.mode === "css-fallback" ||
+      readyPresentationKey === presentationKey);
 
   useEffect(() => {
     if (
@@ -257,27 +292,54 @@ export function CardEffectLayer({ effect, props, opacity = 1, className, active 
       className={className}
       data-card-effect-source={effect}
       data-card-effect-runtime={runtime?.mode ?? "probing"}
+      data-card-effect-ready={presentationReady ? "true" : "false"}
       style={{
-        opacity: faded ? Math.min(Math.max(opacity, 0.05), 1) : 0,
+        // Keep the theme card visible as the cheap lazy placeholder. Once the
+        // selected effect is ready, this surface becomes fully opaque so the
+        // theme gradient and pattern cannot tint or desaturate the artwork.
+        opacity: presentationReady ? 1 : 0,
         transition: prefersReducedMotion ? "none" : "opacity 450ms ease",
         isolation: "isolate",
         overflow: "hidden",
         contain: "paint",
       }}
     >
-      {runtime?.mode === "css-fallback" && (
-        <CssEffectFallback colors={runtime.cssColors} />
-      )}
-      {shouldAnimate && Effect !== null && runtimeId !== undefined && runtimeId !== "NONE" && (
-        <EffectErrorBoundary
-          resetKey={`${effect}:${runtimeId}:${effectFailed ? "fallback" : "native"}`}
-          onError={() => setEffectFailed(true)}
+      {runtime !== null && (
+        <div
+          data-card-effect-palette-surface
+          className="absolute inset-0"
         >
-          <Suspense fallback={null}>
-            <Effect key={runtimeId} {...mergedProps} />
-          </Suspense>
-        </EffectErrorBoundary>
+          <CssEffectFallback
+            colors={effectColors}
+            opacity={configuredOpacity}
+          />
+        </div>
       )}
+      {shouldAnimate &&
+        Effect !== null &&
+        runtimeId !== undefined &&
+        runtimeId !== "NONE" && (
+          <EffectErrorBoundary
+            resetKey={`${effect}:${runtimeId}:${effectFailed ? "fallback" : "native"}`}
+            onError={() => setEffectFailed(true)}
+          >
+            <Suspense fallback={null}>
+              <div
+                data-card-effect-renderer
+                className="absolute inset-0"
+                style={{ opacity: configuredOpacity }}
+              >
+                <Effect key={runtimeId} {...mergedProps} />
+              </div>
+              {presentationKey !== null && (
+                <EffectReadySignal
+                  presentationKey={presentationKey}
+                  onReady={setReadyPresentationKey}
+                />
+              )}
+            </Suspense>
+          </EffectErrorBoundary>
+        )}
     </div>
   );
 }

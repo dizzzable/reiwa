@@ -22,14 +22,20 @@ function cssBlock(selector: string): string {
 }
 
 describe("animated card CSS opacity contract", () => {
-  it("applies configured opacity once at the effect root", () => {
+  it("keeps the selected effect opaque over the theme placeholder", () => {
     const fallback = cssBlock(".card-effect-layer__css-fallback");
     const opacityDeclarations =
       fallback.match(/\bopacity\s*:\s*[^;]+;/g) ?? [];
 
     expect(opacityDeclarations).toEqual(["opacity: 1;"]);
     expect(EFFECT_LAYER_SOURCE).toContain(
-      "opacity: faded ? Math.min(Math.max(opacity, 0.05), 1) : 0",
+      "opacity: presentationReady ? 1 : 0",
+    );
+    expect(EFFECT_LAYER_SOURCE).toContain(
+      "data-card-effect-palette-surface",
+    );
+    expect(EFFECT_LAYER_SOURCE).toContain(
+      "style={{ opacity: configuredOpacity }}",
     );
     expect(EFFECT_LAYER_SOURCE).toContain('contain: "paint"');
     expect(EFFECT_LAYER_SOURCE).toContain('overflow: "hidden"');

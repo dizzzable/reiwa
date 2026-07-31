@@ -14,6 +14,7 @@ vi.mock("react-i18next", () => ({
 import { SubscriptionCardFrame } from "../src/features/dashboard/components/subscription-card-frame";
 import { SubscriptionCardContent } from "../src/features/dashboard/components/subscription-card";
 import { resolveSubscriptionCardVisual } from "../src/features/dashboard/components/subscription-card-visual";
+import { CardEffectLayer } from "../src/components/reactbits/card-effect-layer";
 import { DEFAULT_BRANDING } from "../src/types/branding";
 
 describe("SubscriptionCardFrame visual containment", () => {
@@ -58,24 +59,39 @@ describe("SubscriptionCardFrame visual containment", () => {
     const copy = markup.indexOf("data-card-copy");
 
     expect(gradient).toBeGreaterThan(-1);
-    expect(effect).toBeGreaterThan(gradient);
-    expect(pattern).toBeGreaterThan(effect);
-    expect(vignette).toBeGreaterThan(pattern);
-    expect(copy).toBeGreaterThan(vignette);
+    expect(pattern).toBeGreaterThan(gradient);
+    expect(effect).toBeGreaterThan(pattern);
+    expect(vignette).toBe(-1);
+    expect(copy).toBeGreaterThan(effect);
+    expect(markup).not.toContain(
+      'data-subscription-card-readability="wcag-copy-zones"',
+    );
+  });
+
+  it("keeps the computed veil for a static card", () => {
+    const visual = resolveSubscriptionCardVisual({
+      ...DEFAULT_BRANDING,
+      cardEffect: "NONE",
+      cardGradient: "linear-gradient(135deg, #ffffff, #e2e8f0)",
+    });
+    const markup = renderToStaticMarkup(
+      <SubscriptionCardFrame visual={visual}>
+        <span data-card-copy>Subscription</span>
+      </SubscriptionCardFrame>,
+    );
+
     expect(markup).toContain(
       'data-subscription-card-readability="wcag-copy-zones"',
     );
     expect(markup).toContain(
       `rgb(${visual.contrast.veilRgb} / ${visual.contrast.veilOpacity}) 41%`,
     );
-    expect(markup).toContain(
-      `rgb(${visual.contrast.veilRgb} / ${visual.contrast.veilOpacity}) 82%`,
-    );
   });
 
-  it("puts the full computed veil only behind profile copy", () => {
+  it("uses compact opaque readability supports for vivid artwork", () => {
     const markup = renderToStaticMarkup(
       <SubscriptionCardContent
+        localReadability
         subscription={{
           id: "sub-profile-support",
           userRemnaId: "usr_fallback",
@@ -99,7 +115,30 @@ describe("SubscriptionCardFrame visual containment", () => {
 
     expect(markup).toContain("data-subscription-card-profile-support");
     expect(markup).toContain(
-      "background-color:rgb(var(--card-veil-rgb) / var(--card-veil-opacity))",
+      "background-color:var(--card-support-background)",
     );
+    expect(markup).toContain(
+      'data-subscription-card-local-support="plan"',
+    );
+    expect(markup).toContain(
+      'data-subscription-card-local-support="expiry"',
+    );
+  });
+
+  it("builds an opaque effect-owned palette beneath the lazy renderer", () => {
+    const markup = renderToStaticMarkup(
+      <CardEffectLayer
+        effect="waves"
+        props={{ lineColor: "#7300ff", backgroundColor: "#000000" }}
+        opacity={0.68}
+        active
+      />,
+    );
+
+    expect(markup).toContain("data-card-effect-palette-surface");
+    expect(markup).toContain("data-card-effect-artwork");
+    expect(markup).toContain("background-color:#7300ff");
+    expect(markup).toContain("opacity:0.68");
+    expect(markup).toContain('data-card-effect-ready="false"');
   });
 });

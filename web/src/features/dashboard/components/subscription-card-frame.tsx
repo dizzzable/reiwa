@@ -78,6 +78,7 @@ export const SubscriptionCardFrame = forwardRef<
 ) {
   const { contrast } = visual;
   const creationPresentation = layerOpacity !== undefined;
+  const animatedArtwork = visual.cardEffect !== "NONE";
   const frameStyle = {
     "--card-foreground": contrast.foreground,
     "--card-foreground-rgb": contrast.foregroundRgb,
@@ -134,7 +135,7 @@ export const SubscriptionCardFrame = forwardRef<
           ...opacityStyle(layerOpacity?.gradient, 560),
         }}
       />
-      {visual.cardPattern && creationPresentation && (
+      {visual.cardPattern && (
         <div
           data-subscription-card-layer="pattern"
           className="pointer-events-none absolute inset-0 z-0"
@@ -144,7 +145,9 @@ export const SubscriptionCardFrame = forwardRef<
               ? "24px 24px"
               : undefined,
             opacity: 0.4,
-            ...opacityStyle(layerOpacity?.gradient, 560),
+            ...(creationPresentation
+              ? opacityStyle(layerOpacity.gradient, 560)
+              : undefined),
           }}
         />
       )}
@@ -157,33 +160,22 @@ export const SubscriptionCardFrame = forwardRef<
           className="absolute inset-0 z-0"
         />
       )}
-      {visual.cardPattern && !creationPresentation && (
+      {(creationPresentation || !animatedArtwork) && (
         <div
-          data-subscription-card-layer="pattern"
-          className="pointer-events-none absolute inset-0 z-0"
+          data-subscription-card-layer="vignette"
+          data-subscription-card-readability={
+            creationPresentation ? "creation-overlay" : "wcag-copy-zones"
+          }
+          data-subscription-card-veil-opacity={contrast.veilOpacity}
+          className="absolute inset-0 z-0"
           style={{
-            backgroundImage: visual.cardPattern,
-            backgroundSize: visual.cardPattern.includes("gradient(")
-              ? "24px 24px"
-              : undefined,
-            opacity: 0.4,
+            background: creationPresentation
+              ? contrast.overlayBackground
+              : vividArtworkOverlay(contrast),
+            ...opacityStyle(layerOpacity?.vignette, 480),
           }}
         />
       )}
-      <div
-        data-subscription-card-layer="vignette"
-        data-subscription-card-readability={
-          creationPresentation ? "creation-overlay" : "wcag-copy-zones"
-        }
-        data-subscription-card-veil-opacity={contrast.veilOpacity}
-        className="absolute inset-0 z-0"
-        style={{
-          background: creationPresentation
-            ? contrast.overlayBackground
-            : vividArtworkOverlay(contrast),
-          ...opacityStyle(layerOpacity?.vignette, 480),
-        }}
-      />
 
       {layerOpacity?.watermark === undefined ? (
         watermark

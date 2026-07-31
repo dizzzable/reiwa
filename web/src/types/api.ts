@@ -96,9 +96,9 @@ export interface Subscription {
   status: SubscriptionStatus;
   isTrial: boolean;
   /**
-   * True only for a FREE trial (non-renewable — must be upgraded). The
-   * dashboard disables the "Renew" action for it. Paid trials are renewable
-   * and stay `false`/absent. Optional for backward-compat with older payloads.
+   * True only for a FREE trial. Both free and paid trials are one-time and
+   * non-renewable; the dashboard routes either kind through an upgrade.
+   * Optional for backward compatibility with older payloads.
    */
   trialFree?: boolean;
   trafficLimit: number | null; // GB
