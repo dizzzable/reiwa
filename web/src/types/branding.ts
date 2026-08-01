@@ -170,6 +170,40 @@ export interface CornerRadii {
   pillPx: number;
 }
 
+/** A brightness representation of one operator-selected conceptual theme. */
+export type BrandingThemeMode = "light" | "dark";
+/** Only the operator can lock/unlock the end-user brightness chooser. */
+export type BrandingThemeModePolicy = "fixed" | "user-selectable";
+
+/**
+ * Resolved visual values for the same conceptual preset. It intentionally has
+ * no preset id or brand identity, preventing this payload from becoming a
+ * user-facing theme catalogue.
+ */
+export interface BrandingThemeVariant {
+  primary: string;
+  primaryFg: string;
+  bgPrimary: string;
+  bgSecondary: string;
+  cardGradient: string;
+  cardPattern: string | null;
+  cardEffect: CardEffect;
+  cardEffectProps: Record<string, unknown>;
+  cardEffectOpacity: number;
+  cardEffectsByIndex: CardEffectSlot[];
+  bgEffect: BgEffect;
+  appBackground: AppBackground;
+  borderRadius: string;
+  cornerRadii: CornerRadii;
+  fontFamily: string;
+  surfaceTheme: SurfaceTheme;
+}
+
+export interface BrandingThemeVariants {
+  light: BrandingThemeVariant;
+  dark: BrandingThemeVariant;
+}
+
 export const DEFAULT_SURFACE_THEME: SurfaceTheme = {
   foreground: "#fafafa",
   mutedForeground: "#a1a1a1",
@@ -188,6 +222,12 @@ export interface Branding {
   /** Stable WEB Reiwa preset identity; resolved values remain authoritative. */
   themePresetId?: string | null;
   themePresetVersion?: number | null;
+  /** Operator policy for the light/dark representation of a concept. */
+  themeModePolicy?: BrandingThemeModePolicy;
+  /** Locked mode or initial mode for a user-selectable concept. */
+  themeDefaultMode?: BrandingThemeMode;
+  /** Both resolved representations of that one concept. */
+  themeVariants?: BrandingThemeVariants | null;
   brandName: string;
   /** Optional short subtitle shown on the splash + in-app loader. */
   tagline?: string | null;
@@ -305,6 +345,9 @@ export interface CustomIcon {
 export const DEFAULT_BRANDING: Branding = {
   themePresetId: null,
   themePresetVersion: null,
+  themeModePolicy: "fixed",
+  themeDefaultMode: "dark",
+  themeVariants: null,
   brandName: "Reiwa",
   tagline: null,
   logoUrl: null,
@@ -359,6 +402,43 @@ export const DEFAULT_BRANDING: Branding = {
   ],
   navGap: 2,
 };
+
+/**
+ * Applies a selected brightness without changing the administrator's concept
+ * identity or policy fields. Missing/legacy variants are deliberately a
+ * no-op, keeping old public-config snapshots fully compatible.
+ */
+export function resolveBrandingThemeMode(
+  branding: Branding,
+  mode: BrandingThemeMode,
+): Branding {
+  const variant = branding.themeVariants?.[mode];
+  if (!variant) return branding;
+
+  // Copy the visual subset explicitly.  In particular, never spread an
+  // untrusted nested payload over the root: a brightness representation must
+  // not be able to change the operator-selected preset id, policy, identity,
+  // navigation or any user-facing business setting.
+  return {
+    ...branding,
+    primary: variant.primary,
+    primaryFg: variant.primaryFg,
+    bgPrimary: variant.bgPrimary,
+    bgSecondary: variant.bgSecondary,
+    cardGradient: variant.cardGradient,
+    cardPattern: variant.cardPattern,
+    cardEffect: variant.cardEffect,
+    cardEffectProps: variant.cardEffectProps,
+    cardEffectOpacity: variant.cardEffectOpacity,
+    cardEffectsByIndex: variant.cardEffectsByIndex,
+    bgEffect: variant.bgEffect,
+    appBackground: variant.appBackground,
+    borderRadius: variant.borderRadius,
+    cornerRadii: variant.cornerRadii,
+    fontFamily: variant.fontFamily,
+    surfaceTheme: variant.surfaceTheme,
+  };
+}
 
 export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
   branding: DEFAULT_BRANDING,

@@ -126,6 +126,9 @@ export function isPublicConfigSnapshot(value: unknown): value is PublicConfigSna
   return (
     hasOptionalPresetId(branding, "themePresetId") &&
     hasOptionalPresetVersion(branding, "themePresetVersion") &&
+    hasOptionalThemeModePolicy(branding, "themeModePolicy") &&
+    hasOptionalThemeDefaultMode(branding, "themeDefaultMode") &&
+    hasOptionalThemeVariants(branding, "themeVariants") &&
     isNonEmptyString(branding["brandName"]) &&
     hasOptionalStringOrNull(branding, "tagline") &&
     isNullableImageUrl(branding["logoUrl"]) &&
@@ -513,6 +516,64 @@ function hasOptionalPresetVersion(record: Record<string, unknown>, key: string):
       Number.isInteger(value) &&
       value >= 1 &&
       value <= 2_147_483_647)
+  );
+}
+
+function hasOptionalThemeModePolicy(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  const value = record[key];
+  return value === undefined || value === "fixed" || value === "user-selectable";
+}
+
+function hasOptionalThemeDefaultMode(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  const value = record[key];
+  return value === undefined || value === "light" || value === "dark";
+}
+
+function hasOptionalThemeVariants(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  const value = record[key];
+  return (
+    value === undefined ||
+    value === null ||
+    (isRecord(value) && isThemeVariant(value["light"]) && isThemeVariant(value["dark"]))
+  );
+}
+
+function isThemeVariant(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const appBackground = value["appBackground"];
+  const cornerRadii = value["cornerRadii"];
+  const surfaceTheme = value["surfaceTheme"];
+  return (
+    isHex(value["primary"]) &&
+    isHex(value["primaryFg"]) &&
+    isHex(value["bgPrimary"]) &&
+    isHex(value["bgSecondary"]) &&
+    isSafeGradient(value["cardGradient"]) &&
+    isNullableSafeGradient(value["cardPattern"]) &&
+    isAllowedString(value["cardEffect"], CARD_EFFECTS) &&
+    isRecord(value["cardEffectProps"]) &&
+    isNumberInRange(value["cardEffectOpacity"], 0.05, 1) &&
+    Array.isArray(value["cardEffectsByIndex"]) &&
+    value["cardEffectsByIndex"].length <= 20 &&
+    value["cardEffectsByIndex"].every(isCardEffectSlot) &&
+    isAllowedString(value["bgEffect"], BG_EFFECTS) &&
+    isRecord(appBackground) &&
+    hasOptionalAppBackground({ appBackground }, "appBackground") &&
+    isAllowedString(value["borderRadius"], BORDER_RADII) &&
+    isRecord(cornerRadii) &&
+    hasOptionalCornerRadii({ cornerRadii }, "cornerRadii") &&
+    isNonEmptyString(value["fontFamily"]) &&
+    isRecord(surfaceTheme) &&
+    hasOptionalSurfaceTheme({ surfaceTheme }, "surfaceTheme")
   );
 }
 

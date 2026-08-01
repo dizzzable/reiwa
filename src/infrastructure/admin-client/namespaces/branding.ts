@@ -8,6 +8,13 @@ import type { AdminTransport } from '../transport.js';
 export interface BrandingPayload {
   readonly themePresetId?: string | null;
   readonly themePresetVersion?: number | null;
+  readonly themeModePolicy?: 'fixed' | 'user-selectable';
+  readonly themeDefaultMode?: 'light' | 'dark';
+  /** Resolved modes of the same operator-selected concept, never a catalogue. */
+  readonly themeVariants?: {
+    readonly light: BrandingThemeVariantPayload;
+    readonly dark: BrandingThemeVariantPayload;
+  } | null;
   readonly brandName: string;
   readonly tagline?: string | null;
   readonly logoUrl: string | null;
@@ -103,6 +110,25 @@ export interface BrandingPayload {
     readonly visible: boolean;
   }>;
   readonly navGap?: number;
+}
+
+interface BrandingThemeVariantPayload {
+  readonly primary: string;
+  readonly primaryFg: string;
+  readonly bgPrimary: string;
+  readonly bgSecondary: string;
+  readonly cardGradient: string;
+  readonly cardPattern: string | null;
+  readonly cardEffect: string;
+  readonly cardEffectProps: Record<string, unknown>;
+  readonly cardEffectOpacity: number;
+  readonly cardEffectsByIndex: BrandingPayload['cardEffectsByIndex'];
+  readonly bgEffect: string;
+  readonly appBackground: NonNullable<BrandingPayload['appBackground']>;
+  readonly borderRadius: string;
+  readonly cornerRadii: NonNullable<BrandingPayload['cornerRadii']>;
+  readonly fontFamily: string;
+  readonly surfaceTheme: NonNullable<BrandingPayload['surfaceTheme']>;
 }
 
 export interface PublicConfigPayload {

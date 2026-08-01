@@ -7,6 +7,7 @@ import {
 } from "../../web/src/lib/branding-provider-policy.js";
 import {
   DEFAULT_PUBLIC_CONFIG,
+  resolveBrandingThemeMode,
   type PublicConfig,
 } from "../../web/src/types/branding.js";
 
@@ -34,6 +35,66 @@ describe("BrandingProvider snapshot fallback", () => {
     expect(shouldPersistPublicConfig(undefined, 0, true, false)).toBe(false);
     expect(shouldPersistPublicConfig(STORED_SNAPSHOT, Date.now(), true, true)).toBe(false);
     expect(shouldPersistPublicConfig(STORED_SNAPSHOT, Date.now(), false, true)).toBe(true);
+  });
+});
+
+describe("operator concept mode resolution", () => {
+  it("changes only brightness of the selected concept, never its identity", () => {
+    const branding = {
+      ...DEFAULT_PUBLIC_CONFIG.branding,
+      themePresetId: "concept-cu",
+      themePresetVersion: 2,
+      themeModePolicy: "user-selectable" as const,
+      themeDefaultMode: "dark" as const,
+      themeVariants: {
+        light: {
+          primary: "#165eff",
+          primaryFg: "#ffffff",
+          bgPrimary: "#f5f8ff",
+          bgSecondary: "#eef3ff",
+          cardGradient: "linear-gradient(135deg, #f5f8ff, #b8d0ff)",
+          cardPattern: null,
+          cardEffect: "aurora" as const,
+          cardEffectProps: {},
+          cardEffectOpacity: 0.8,
+          cardEffectsByIndex: [],
+          bgEffect: "NONE" as const,
+          appBackground: { ...DEFAULT_PUBLIC_CONFIG.branding.appBackground! },
+          borderRadius: "rounded-none",
+          cornerRadii: { cardPx: 0, itemPx: 0, pillPx: 0 },
+          fontFamily: "Archivo, sans-serif",
+          surfaceTheme: { ...DEFAULT_PUBLIC_CONFIG.branding.surfaceTheme! },
+        },
+        dark: {
+          primary: "#8cb4ff",
+          primaryFg: "#000000",
+          bgPrimary: "#0c1324",
+          bgSecondary: "#121d36",
+          cardGradient: "linear-gradient(135deg, #0c1324, #293f70)",
+          cardPattern: null,
+          cardEffect: "aurora" as const,
+          cardEffectProps: {},
+          cardEffectOpacity: 0.8,
+          cardEffectsByIndex: [],
+          bgEffect: "NONE" as const,
+          appBackground: { ...DEFAULT_PUBLIC_CONFIG.branding.appBackground! },
+          borderRadius: "rounded-none",
+          cornerRadii: { cardPx: 0, itemPx: 0, pillPx: 0 },
+          fontFamily: "Archivo, sans-serif",
+          surfaceTheme: { ...DEFAULT_PUBLIC_CONFIG.branding.surfaceTheme! },
+        },
+      },
+    };
+
+    const effective = resolveBrandingThemeMode(branding, "light");
+
+    expect(effective.themePresetId).toBe("concept-cu");
+    expect(effective.themePresetVersion).toBe(2);
+    expect(effective.themeModePolicy).toBe("user-selectable");
+    expect(effective.primary).toBe("#165eff");
+    expect(effective.bgPrimary).toBe("#f5f8ff");
+    expect(effective.borderRadius).toBe("rounded-none");
+    expect(effective.themeVariants).toBe(branding.themeVariants);
   });
 });
 

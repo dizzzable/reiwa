@@ -256,6 +256,59 @@ describe('public branding configuration routes', () => {
     expect(isPublicConfigSnapshot(withPlanCardStyles)).toBe(true);
   });
 
+  it('accepts two resolved modes for one concept and rejects a partial mode snapshot', () => {
+    const baseVariant = {
+      primary: '#6750a4',
+      primaryFg: '#ffffff',
+      bgPrimary: '#121212',
+      bgSecondary: '#242424',
+      cardGradient: 'linear-gradient(135deg, #312e81 0%, #a78bfa 100%)',
+      cardPattern: null,
+      cardEffect: 'aurora',
+      cardEffectProps: {},
+      cardEffectOpacity: 0.7,
+      cardEffectsByIndex: [],
+      bgEffect: 'AURORA',
+      appBackground: {
+        kind: 'gradient',
+        effect: 'NONE',
+        props: {},
+        opacity: 1,
+        gradient: 'linear-gradient(135deg, #121212, #242424)',
+      },
+      borderRadius: 'rounded-xl',
+      cornerRadii: { cardPx: 12, itemPx: 8, pillPx: 9999 },
+      fontFamily: 'Manrope, sans-serif',
+      surfaceTheme: OPERATOR_PUBLIC_CONFIG.branding.surfaceTheme!,
+    };
+    const withModes = {
+      ...OPERATOR_PUBLIC_CONFIG,
+      branding: {
+        ...OPERATOR_PUBLIC_CONFIG.branding,
+        themeModePolicy: 'user-selectable',
+        themeDefaultMode: 'dark',
+        themeVariants: {
+          light: { ...baseVariant, bgPrimary: '#f5f7ff' },
+          dark: baseVariant,
+        },
+      },
+    };
+
+    expect(isPublicConfigSnapshot(withModes)).toBe(true);
+    expect(
+      isPublicConfigSnapshot({
+        ...withModes,
+        branding: {
+          ...withModes.branding,
+          themeVariants: {
+            light: baseVariant,
+            dark: { primary: '#ffffff' },
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
   it('keeps legacy HTTP asset snapshots readable during the admin write migration', () => {
     const legacy = {
       ...OPERATOR_PUBLIC_CONFIG,

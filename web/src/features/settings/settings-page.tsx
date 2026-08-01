@@ -37,6 +37,8 @@ import {
   Share,
   PackagePlus,
   WalletCards,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 import { useSession } from "@/hooks/use-session";
@@ -55,11 +57,12 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { session } = useSession();
-  const { branding } = useBranding();
+  const { branding, themeMode, canChooseThemeMode, setThemeMode } = useBranding();
   const { replayTour } = useOnboardingContext();
   const install = useInstallPrompt();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [showLangDialog, setShowLangDialog] = useState(false);
+  const [showThemeModeDialog, setShowThemeModeDialog] = useState(false);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
 
   // Support indicator: count UNREAD support replies (the operator answered and
@@ -225,6 +228,20 @@ export default function SettingsPage() {
           sublabel={i18n.language === "ru" ? t("common.languageRu") : t("common.languageEn")}
           onClick={() => setShowLangDialog(true)}
         />
+        {canChooseThemeMode && (
+          <MenuItem
+            icon={themeMode === "light" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            iconBg="bg-(--brand-primary)/10 text-(--brand-primary)"
+            tint={iconTint("themeMode")}
+            label={t("settings.themeMode")}
+            sublabel={
+              themeMode === "light"
+                ? t("settings.themeModeLight")
+                : t("settings.themeModeDark")
+            }
+            onClick={() => setShowThemeModeDialog(true)}
+          />
+        )}
         <MenuItem
           icon={<MessageSquare className="h-5 w-5" />}
           iconBg="bg-(--brand-primary)/10 text-(--brand-primary)"
@@ -312,6 +329,35 @@ export default function SettingsPage() {
       </Dialog>
 
       {/* ── Install (iOS) Help Dialog ── */}
+      <Dialog open={showThemeModeDialog} onOpenChange={setShowThemeModeDialog}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{t("settings.themeMode")}</DialogTitle>
+            <DialogDescription>{t("settings.themeModeDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <ThemeModeOption
+              mode="light"
+              label={t("settings.themeModeLight")}
+              active={themeMode === "light"}
+              onClick={() => {
+                setThemeMode("light");
+                setShowThemeModeDialog(false);
+              }}
+            />
+            <ThemeModeOption
+              mode="dark"
+              label={t("settings.themeModeDark")}
+              active={themeMode === "dark"}
+              onClick={() => {
+                setThemeMode("dark");
+                setShowThemeModeDialog(false);
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showInstallHelp} onOpenChange={setShowInstallHelp}>
         <DialogContent className="max-w-xs">
           <DialogHeader>
@@ -450,6 +496,34 @@ function LangOption({
       }`}
     >
       <FlagIcon code={code} className="h-5 w-7" />
+      <span className="flex-1 text-left text-sm font-medium">{label}</span>
+      {active && <CheckCircle2 className="h-4 w-4" style={{ color: "var(--brand-primary)" }} />}
+    </button>
+  );
+}
+
+function ThemeModeOption({
+  mode,
+  label,
+  active,
+  onClick,
+}: {
+  mode: "light" | "dark";
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const Icon = mode === "light" ? Sun : Moon;
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center gap-3 rounded-xl border p-3.5 transition-all active:scale-[0.98] ${
+        active
+          ? "border-(--brand-primary)/50 bg-(--brand-primary)/5"
+          : "border-[color:var(--color-border-soft)] hover:border-[color:var(--color-border-strong)]"
+      }`}
+    >
+      <Icon className="h-5 w-5 text-(--brand-primary)" />
       <span className="flex-1 text-left text-sm font-medium">{label}</span>
       {active && <CheckCircle2 className="h-4 w-4" style={{ color: "var(--brand-primary)" }} />}
     </button>

@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -43,8 +44,10 @@ import {
   DEFAULT_BRANDING,
   DEFAULT_PUBLIC_CONFIG,
   type Branding,
+  type BrandingThemeMode,
   type CustomIcon,
   type PublicConfig,
+  resolveBrandingThemeMode,
 } from "@/types/branding";
 import { applyBrandingToDocument } from "@/lib/branding-document";
 
@@ -57,6 +60,12 @@ interface BrandingContextValue {
   readonly botUsername: string | null;
   readonly supportUsername: string | null;
   readonly emailEnabled: boolean;
+  /** Effective representation of the operator-selected concept. */
+  readonly themeMode: BrandingThemeMode;
+  /** `true` only when the operator explicitly unlocked light/dark selection. */
+  readonly canChooseThemeMode: boolean;
+  /** Changes only light/dark for the selected concept; never its preset id. */
+  readonly setThemeMode: (mode: BrandingThemeMode) => void;
   readonly isLoading: boolean;
 }
 
@@ -69,10 +78,35 @@ const BrandingContext = createContext<BrandingContextValue>({
   botUsername: DEFAULT_PUBLIC_CONFIG.botUsername ?? null,
   supportUsername: DEFAULT_PUBLIC_CONFIG.supportUsername ?? null,
   emailEnabled: DEFAULT_PUBLIC_CONFIG.emailEnabled ?? false,
+  themeMode: "dark",
+  canChooseThemeMode: false,
+  setThemeMode: () => undefined,
   isLoading: true,
 });
 
 const LOCALE_STORAGE_KEY = "reiwa_locale";
+const THEME_MODE_STORAGE_PREFIX = "reiwa_theme_mode";
+
+interface ThemeModePreference {
+  readonly key: string | null;
+  readonly mode: BrandingThemeMode | null;
+}
+
+function themeModeStorageKey(branding: Branding): string | null {
+  const presetId = branding.themePresetId?.trim();
+  if (!presetId || !presetId.startsWith("concept-")) return null;
+  return `${THEME_MODE_STORAGE_PREFIX}:${presetId}:${branding.themePresetVersion ?? 1}`;
+}
+
+function readStoredThemeMode(key: string | null): BrandingThemeMode | null {
+  if (!key || typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(key);
+    return value === "light" || value === "dark" ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 export function BrandingProvider({ children }: PropsWithChildren) {
   const { i18n } = useTranslation();
@@ -117,13 +151,56 @@ export function BrandingProvider({ children }: PropsWithChildren) {
   }, [refetch]);
 
   const config = selectBrandingProviderConfig(data, snapshot);
+  const defaultThemeMode: BrandingThemeMode =
+    config.branding.themeDefaultMode === "light" ? "light" : "dark";
+  const themePreferenceKey = themeModeStorageKey(config.branding);
+  const canChooseThemeMode =
+    config.branding.themeModePolicy === "user-selectable" &&
+    themePreferenceKey !== null &&
+    config.branding.themeVariants !== null &&
+    config.branding.themeVariants !== undefined;
+  const [themePreference, setThemePreference] = useState<ThemeModePreference>(
+    () => ({ key: null, mode: null }),
+  );
+
+  // The selected brightness belongs to the current concept identity. Keeping
+  // only this primitive in state avoids duplicating the branding payload; the
+  // effective visual is derived below from the admin source of truth.
+  useLayoutEffect(() => {
+    setThemePreference({
+      key: themePreferenceKey,
+      mode: canChooseThemeMode ? readStoredThemeMode(themePreferenceKey) : null,
+    });
+  }, [canChooseThemeMode, themePreferenceKey]);
+
+  const themeMode =
+    canChooseThemeMode && themePreference.key === themePreferenceKey && themePreference.mode
+      ? themePreference.mode
+      : defaultThemeMode;
+  const effectiveBranding = useMemo(
+    () => resolveBrandingThemeMode(config.branding, themeMode),
+    [config.branding, themeMode],
+  );
+  const setThemeMode = useCallback(
+    (mode: BrandingThemeMode): void => {
+      if (!canChooseThemeMode || !themePreferenceKey) return;
+      setThemePreference({ key: themePreferenceKey, mode });
+      try {
+        window.localStorage.setItem(themePreferenceKey, mode);
+      } catch {
+        // The visual change remains available for this session even when the
+        // browser blocks storage (private/TMA restrictions).
+      }
+    },
+    [canChooseThemeMode, themePreferenceKey],
+  );
 
   // Apply branding tokens before the browser paints. In particular, a valid
   // last-known-good snapshot must never render one frame with the built-in
   // palette while the admin panel is unavailable.
   useLayoutEffect(() => {
-    applyBrandingToDocument(config.branding);
-  }, [config.branding]);
+    applyBrandingToDocument(effectiveBranding);
+  }, [effectiveBranding]);
 
   // Persist only data confirmed by React Query as a real (non-placeholder)
   // successful result. A failed refresh leaves the last known-good snapshot
@@ -213,8 +290,8 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       meta.name = "theme-color";
       document.head.appendChild(meta);
     }
-    meta.content = config.branding.bgPrimary;
-  }, [config.branding.bgPrimary]);
+    meta.content = effectiveBranding.bgPrimary;
+  }, [effectiveBranding.bgPrimary]);
 
   // Synchronise i18n with the operator-configured default locale, but only
   // when the user has not made an explicit choice yet.
@@ -234,7 +311,7 @@ export function BrandingProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<BrandingContextValue>(
     () => ({
-      branding: config.branding,
+      branding: effectiveBranding,
       locales: config.locales,
       defaultLocale: config.defaultLocale,
       defaultCurrency: config.defaultCurrency,
@@ -242,9 +319,12 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       botUsername: config.botUsername ?? null,
       supportUsername: config.supportUsername ?? null,
       emailEnabled: config.emailEnabled ?? false,
+      themeMode,
+      canChooseThemeMode,
+      setThemeMode,
       isLoading,
     }),
-    [config.branding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, config.botUsername, config.supportUsername, config.emailEnabled, isLoading],
+    [effectiveBranding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, config.botUsername, config.supportUsername, config.emailEnabled, themeMode, canChooseThemeMode, setThemeMode, isLoading],
   );
 
   return (
