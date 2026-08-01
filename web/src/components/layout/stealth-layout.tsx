@@ -170,15 +170,11 @@ export default function StealthLayout() {
     return <Navigate to={`/bootstrap${next}`} replace />;
   }
 
-  // A Telegram-authenticated session already carries a credential (Telegram
-  // itself). By DEFAULT we still require a web login/password on first entry
-  // (operator mandate: a first-time user sets login+password on both the web
-  // Telegram widget and the Mini App). The operator can flip
-  // `requireTelegramWebCredentials` off in Settings → then a Telegram user is
-  // let straight into the cabinet without web credentials. Already-registered
-  // users (webAccount.login set) always pass regardless. Web-first accounts
-  // have no telegram id, so they always keep the mandatory flow.
-  const requireTelegramWebCredentials = platformPolicy?.requireTelegramWebCredentials ?? true;
+  // A signed Telegram Mini App launch already is an authentication credential.
+  // Auto-login is the default; an operator may explicitly enable the extra
+  // web-login/password setup gate in Rezeis if their policy requires it.
+  // Web-first accounts keep the normal credential flow.
+  const requireTelegramWebCredentials = platformPolicy?.requireTelegramWebCredentials ?? false;
   const hasTelegramCredential =
     session.telegramId != null && String(session.telegramId).trim().length > 0;
   const skipCredentialSetup = hasTelegramCredential && !requireTelegramWebCredentials;

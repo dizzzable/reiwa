@@ -333,6 +333,14 @@ export function resolveCardEffectRuntime({
     };
   }
 
+  // Paper shaders require WebGL2. Replacing an operator-selected Warp/Grain
+  // with Aurora on a WebGL1-only Telegram WebView changes both its shape and
+  // colours. Preserve the selected visual identity with its own CSS palette
+  // instead of substituting a different animation.
+  if (requiresWebGL2(effect)) {
+    return resolveCssFallback(effect, props);
+  }
+
   // Do not retry Aurora after its own context has been lost: that would create
   // a loop of failed contexts. The CSS card treatment is the stable endpoint.
   if (capabilities.webgl && effect !== "aurora") {

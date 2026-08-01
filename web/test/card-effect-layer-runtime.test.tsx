@@ -175,6 +175,30 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect((layer as HTMLElement).style.opacity).toBe("1");
   });
 
+  it("keeps a Paper card's own palette on a WebGL1-only Telegram WebView", () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      ((contextId: string) =>
+        contextId === "webgl"
+          ? ({ getExtension: vi.fn().mockReturnValue({ loseContext: vi.fn() }) } as unknown as WebGLRenderingContext)
+          : null) as typeof HTMLCanvasElement.prototype.getContext,
+    );
+
+    const container = renderIntoDom(
+      <CardEffectLayer
+        effect="paperWarp"
+        props={{ colors: ["#121212", "#9470ff", "#8838ff"] }}
+        active
+      />,
+    );
+
+    const layer = container.querySelector("[data-card-effect-source]") as HTMLElement | null;
+    expect(layer?.getAttribute("data-card-effect-runtime")).toBe("css-fallback");
+    expect(layer?.getAttribute("data-card-effect-ready")).toBe("true");
+    expect(layer?.style.opacity).toBe("1");
+    expect(container.querySelector("[data-card-effect-renderer]")).toBeNull();
+    expect(container.innerHTML).toContain("background-color: rgb(18, 18, 18)");
+  });
+
   it("leaves the live artwork uncovered and the copy unoutlined", () => {
     allowMotion();
     const container = renderIntoDom(

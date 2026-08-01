@@ -23,7 +23,7 @@ describe("card effect runtime policy", () => {
     ).toMatchObject({ effect: "paperWarp", mode: "native" });
   });
 
-  it("uses a themed WebGL1 Aurora fallback for Paper effects", () => {
+  it("keeps the selected Paper palette when WebGL2 is unavailable", () => {
     expect(
       resolveCardEffectRuntime({
         effect: "paperGrain",
@@ -34,12 +34,24 @@ describe("card effect runtime policy", () => {
         capabilities: WEBGL1,
       }),
     ).toMatchObject({
-      effect: "aurora",
-      mode: "webgl1-fallback",
-      props: {
-        colorStops: ["#4c06a2", "#723a83", "#18047c"],
-        speed: 1.25,
-      },
+      effect: "NONE",
+      mode: "css-fallback",
+      cssColors: ["#4c06a2", "#723a83", "#03759b", "#18047c"],
+    });
+  });
+
+  it("does not replace a selected Paper effect after its WebGL2 context is lost", () => {
+    expect(
+      resolveCardEffectRuntime({
+        effect: "paperWarp",
+        props: { colors: ["#121212", "#9470ff", "#8838ff"] },
+        capabilities: WEBGL2,
+        failed: true,
+      }),
+    ).toMatchObject({
+      effect: "NONE",
+      mode: "css-fallback",
+      cssColors: ["#121212", "#9470ff", "#8838ff"],
     });
   });
 
