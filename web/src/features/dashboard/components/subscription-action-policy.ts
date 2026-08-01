@@ -10,11 +10,41 @@ const RENEWABLE_STATUSES = new Set(["ACTIVE", "LIMITED", "EXPIRED"]);
 export function canRenewSubscription(
   subscription: Subscription | null,
   restricted: boolean,
+  policyCanRenew: boolean | undefined,
 ): boolean {
   return (
     subscription !== null &&
     RENEWABLE_STATUSES.has(subscription.status) &&
-    subscription.isTrial !== true &&
+    // Fail closed for legacy/incomplete payloads. Renewing a subscription is
+    // safe only when the immutable marker explicitly says it is not a trial.
+    subscription.isTrial === false &&
+    policyCanRenew === true &&
     !restricted
   );
+}
+
+/**
+ * Re-check the complete renewal policy at invocation time. The native
+ * `disabled` attribute prevents pointer/keyboard activation, while this guard
+ * also protects against programmatic clicks and a stale render during a
+ * carousel policy transition.
+ */
+export function invokeRenewSubscriptionAction(input: {
+  readonly subscription: Subscription | null;
+  readonly restricted: boolean;
+  readonly policyCanRenew: boolean | undefined;
+  readonly onRenew: () => void;
+}): boolean {
+  if (
+    !canRenewSubscription(
+      input.subscription,
+      input.restricted,
+      input.policyCanRenew,
+    )
+  ) {
+    return false;
+  }
+
+  input.onRenew();
+  return true;
 }

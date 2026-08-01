@@ -14,6 +14,25 @@ describe("subscription query keys", () => {
     );
   });
 
+  it("isolates the portfolio policy from every selected subscription policy", () => {
+    expect(subscriptionQueryKeys.actionPolicy()).toEqual([
+      "action-policy",
+      "portfolio",
+    ]);
+    expect(subscriptionQueryKeys.actionPolicy("subscription-1")).toEqual([
+      "action-policy",
+      "subscription-1",
+    ]);
+    expect(subscriptionQueryKeys.actionPolicy("subscription-2")).not.toEqual(
+      subscriptionQueryKeys.actionPolicy("subscription-1"),
+    );
+    expect(
+      subscriptionQueryKeys
+        .actionPolicy("subscription-1")
+        .slice(0, subscriptionQueryKeys.actionPolicyRoot.length),
+    ).toEqual(subscriptionQueryKeys.actionPolicyRoot);
+  });
+
   it.each([
     "subscription.created",
     "subscription.deleted",
@@ -23,4 +42,19 @@ describe("subscription query keys", () => {
   ])("maps %s to the canonical subscription list", (eventType) => {
     expect(userRealtimeQueryKeysByType[eventType]).toContain(subscriptionQueryKeys.all);
   });
+
+  it.each([
+    "subscription.created",
+    "subscription.deleted",
+    "subscription.renewed",
+    "subscription.expired",
+    "subscription.upgraded",
+    "subscription.trial_granted",
+    "payment.completed",
+  ])("invalidates scoped action policies after %s", (eventType) => {
+    expect(userRealtimeQueryKeysByType[eventType]).toContain(
+      subscriptionQueryKeys.actionPolicyRoot,
+    );
+  });
+
 });

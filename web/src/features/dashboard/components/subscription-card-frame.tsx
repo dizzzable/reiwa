@@ -23,6 +23,7 @@ export interface SubscriptionCardFrameProps
   readonly visual: ResolvedSubscriptionCardVisual;
   readonly children?: ReactNode;
   readonly overlay?: ReactNode;
+  /** Active dashboard ownership; only this frame may opt into live card art. */
   readonly effectActive?: boolean;
   /**
    * Omitted for normal cards so the production DOM receives no animation
@@ -42,18 +43,16 @@ function opacityStyle(
   };
 }
 
-function vividArtworkOverlay(
+function staticArtworkVeil(
   contrast: ResolvedSubscriptionCardVisual["contrast"],
 ): string {
-  const veil = Math.min(0.75, Math.max(0, contrast.veilOpacity));
-  const edge = Math.min(0.84, veil + 0.12);
-  const artworkWindow = Math.max(0.035, veil * 0.28);
   const channels = contrast.veilRgb;
 
-  // The WCAG-calculated veil stays intact behind the top, profile and bottom
-  // copy. A narrow copy-free window exposes the shader without weakening the
-  // contrast calculation in a text-bearing band.
-  return `linear-gradient(180deg, rgb(${channels} / ${edge}) 0%, rgb(${channels} / ${veil}) 24%, rgb(${channels} / ${artworkWindow}) 30%, rgb(${channels} / ${artworkWindow}) 35%, rgb(${channels} / ${veil}) 41%, rgb(${channels} / ${veil}) 82%, rgb(${channels} / ${edge}) 100%)`;
+  // Static artwork has no motion to protect, so the calculated minimum veil
+  // may cover the complete dynamic flex layout. One uniform, theme-derived
+  // layer avoids fragile copy coordinates and per-field capsules.
+  const veil = Math.min(0.75, Math.max(0, contrast.veilOpacity));
+  return `linear-gradient(180deg, rgb(${channels} / ${veil}) 0%, rgb(${channels} / ${veil}) 100%)`;
 }
 
 /**
@@ -84,7 +83,6 @@ export const SubscriptionCardFrame = forwardRef<
     "--card-foreground-rgb": contrast.foregroundRgb,
     "--card-veil-rgb": contrast.veilRgb,
     "--card-veil-opacity": contrast.veilOpacity,
-    "--card-support-background": contrast.supportBackground,
     "--card-danger":
       contrast.foregroundTone === "dark" ? "#b91c1c" : "#f87171",
     "--card-warning":
@@ -117,6 +115,7 @@ export const SubscriptionCardFrame = forwardRef<
         className,
       )}
       style={frameStyle}
+      data-subscription-card-artwork={animatedArtwork ? "animated" : "static"}
       {...props}
     >
       <div
@@ -160,18 +159,22 @@ export const SubscriptionCardFrame = forwardRef<
           className="absolute inset-0 z-0"
         />
       )}
+      {/* Live artwork is the card. Painting a veil over it flattens the shader
+          into one dull colour, so animated cards stay uncovered and rely on
+          the tone `resolveCardContrast` already picked from the shader output
+          palette. Only static artwork and the creation reveal get a film. */}
       {(creationPresentation || !animatedArtwork) && (
         <div
           data-subscription-card-layer="vignette"
           data-subscription-card-readability={
-            creationPresentation ? "creation-overlay" : "wcag-copy-zones"
+            creationPresentation ? "creation-overlay" : "wcag-full-card-veil"
           }
           data-subscription-card-veil-opacity={contrast.veilOpacity}
-          className="absolute inset-0 z-0"
+          className="pointer-events-none absolute inset-0 z-0"
           style={{
             background: creationPresentation
               ? contrast.overlayBackground
-              : vividArtworkOverlay(contrast),
+              : staticArtworkVeil(contrast),
             ...opacityStyle(layerOpacity?.vignette, 480),
           }}
         />

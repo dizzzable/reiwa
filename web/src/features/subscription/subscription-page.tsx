@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
@@ -14,20 +15,24 @@ import {
 } from '@/lib/subscription-limit'
 import { formatDate, getDaysLeft } from '@/lib/utils'
 import { toast } from 'sonner'
+import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
+import { canRenewSubscription } from '@/features/dashboard/components/subscription-action-policy'
 
 export default function SubscriptionPage() {
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const renewalReasonId = useId()
 
   const { data: sub, isLoading } = useQuery({
-    queryKey: ['subscription'],
+    queryKey: subscriptionQueryKeys.detail,
     queryFn: getSubscription,
     retry: false,
   })
 
   const { data: policy } = useQuery({
-    queryKey: ['action-policy'],
-    queryFn: () => getActionPolicy(),
+    queryKey: subscriptionQueryKeys.actionPolicy(sub?.id ?? null),
+    queryFn: () => getActionPolicy(sub?.id),
+    enabled: !isLoading,
     // Always load capacity — needed even when there is no "current" sub row
     // (empty account / multi-sub portfolio edge cases).
     staleTime: 30_000,
@@ -35,6 +40,8 @@ export default function SubscriptionPage() {
 
   const daysLeft = sub?.expireAt ? getDaysLeft(sub.expireAt) : null
   const isExpiringSoon = daysLeft !== null && daysLeft <= 3 && (sub?.status === 'ACTIVE' || sub?.status === 'LIMITED')
+  const canRenew = canRenewSubscription(sub ?? null, false, policy?.canRenew)
+  const trialRenewalReason = sub?.isTrial === true ? t('renewal.reason.trial') : null
 
   function copyUrl() {
     if (!sub?.url) return
@@ -146,15 +153,28 @@ export default function SubscriptionPage() {
 
           {/* Action buttons */}
           <div className="space-y-3">
-            {policy?.canRenew && (
+            {(canRenew || trialRenewalReason) && (
               <StadiumButton
                 fullWidth size="lg"
-                onClick={() => navigate('/renew')}
+                disabled={!canRenew}
+                aria-describedby={trialRenewalReason ? renewalReasonId : undefined}
+                onClick={() => {
+                  if (canRenew) navigate('/renew')
+                }}
                 icon={<RotateCcw className="h-5 w-5" />}
-                glow={isExpiringSoon}
+                glow={canRenew && isExpiringSoon}
               >
                 {t('subscription.renewFull')}
               </StadiumButton>
+            )}
+            {trialRenewalReason && (
+              <p
+                id={renewalReasonId}
+                role="note"
+                className="text-sm leading-relaxed text-muted-foreground"
+              >
+                {trialRenewalReason}
+              </p>
             )}
             {policy?.canBuy && !policy.canRenew && (
               <StadiumButton

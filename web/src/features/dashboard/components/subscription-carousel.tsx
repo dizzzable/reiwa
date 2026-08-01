@@ -68,6 +68,49 @@ interface DeleteTarget {
   readonly item: SubscriptionCarouselSubscriptionItem;
 }
 
+export function SubscriptionCarouselPagination({
+  count,
+  activeIndex,
+  disabled,
+  onSelect,
+  getLabel,
+}: {
+  readonly count: number;
+  readonly activeIndex: number;
+  readonly disabled: boolean;
+  readonly onSelect: (index: number) => void;
+  readonly getLabel: (index: number) => string;
+}) {
+  if (count <= 1) return null;
+
+  return (
+    <div className="mt-3 flex items-center justify-center gap-1.5">
+      {Array.from({ length: count }, (_, index) => (
+        <button
+          key={index}
+          type="button"
+          data-subscription-carousel-dot
+          onClick={() => onSelect(index)}
+          disabled={disabled}
+          aria-label={getLabel(index)}
+          aria-current={index === activeIndex ? "true" : undefined}
+          className="group flex h-6 w-6 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--brand-bg-primary)] disabled:cursor-not-allowed"
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              "h-1.5 rounded-full transition-all duration-200",
+              index === activeIndex
+                ? "w-4 bg-(--brand-primary)"
+                : "w-1.5 bg-[color:var(--color-border-strong)] group-hover:bg-[color:var(--brand-muted-foreground)]",
+            )}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 interface DeletionPresentation {
   readonly operationId: number;
   readonly item: SubscriptionCarouselSubscriptionItem;
@@ -330,7 +373,9 @@ export function SubscriptionCarousel({
       void queryClient.invalidateQueries({
         queryKey: subscriptionQueryKeys.detail,
       });
-      void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
+      void queryClient.invalidateQueries({
+        queryKey: subscriptionQueryKeys.actionPolicyRoot,
+      });
       void queryClient.invalidateQueries({ queryKey: ["devices"] });
       // Eligibility answers `ALREADY_HAS_SUBSCRIPTION` while a subscription
       // exists and is cached for a minute. Without this the user lands on the
@@ -501,25 +546,15 @@ export function SubscriptionCarousel({
         </>
       )}
 
-      {count > 1 && (
-        <div className="mt-3 flex items-center justify-center gap-1.5">
-          {renderedItems.map((item, index) => (
-            <button
-              key={item.key}
-              onClick={() => goTo(index)}
-              disabled={deletion !== null}
-              aria-label={t("subscription.carouselItemAria", {
-                index: index + 1,
-              })}
-              className={`h-1.5 rounded-full transition-all duration-200 ${
-                index === activeIndex
-                  ? "w-4 bg-(--brand-primary)"
-                  : "w-1.5 bg-[color:var(--color-border-strong)] hover:bg-[color:var(--brand-muted-foreground)]"
-              }`}
-            />
-          ))}
-        </div>
-      )}
+      <SubscriptionCarouselPagination
+        count={count}
+        activeIndex={activeIndex}
+        disabled={deletion !== null}
+        onSelect={goTo}
+        getLabel={(index) =>
+          t("subscription.carouselItemAria", { index: index + 1 })
+        }
+      />
 
       <DeleteSubscriptionDialog
         subscription={deleteTarget?.item.subscription ?? null}

@@ -17,8 +17,56 @@ import { resolveSubscriptionCardVisual } from "../src/features/dashboard/compone
 import { CardEffectLayer } from "../src/components/reactbits/card-effect-layer";
 import { DEFAULT_BRANDING } from "../src/types/branding";
 
+type Rgb = readonly [number, number, number];
+
+function parseRgb(value: string): Rgb {
+  if (value.startsWith("#")) {
+    return [0, 2, 4].map((offset) =>
+      Number.parseInt(value.slice(offset + 1, offset + 3), 16),
+    ) as unknown as Rgb;
+  }
+  return value.split(/\s+/).map(Number) as unknown as Rgb;
+}
+
+function composite(foreground: Rgb, background: Rgb, alpha: number): Rgb {
+  return foreground.map(
+    (channel, index) =>
+      channel * alpha + background[index] * (1 - alpha),
+  ) as unknown as Rgb;
+}
+
+function contrast(left: Rgb, right: Rgb): number {
+  const luminance = (rgb: Rgb) => {
+    const [red, green, blue] = rgb.map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045
+        ? normalized / 12.92
+        : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const a = luminance(left);
+  const b = luminance(right);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+function fullHeightGradientOpacities(markup: string): readonly [number, number] {
+  const stops = new Map<number, number>();
+  for (const match of markup.matchAll(
+    /rgb\([\d.]+ [\d.]+ [\d.]+ \/ ([\d.]+)\) (0|100)%/g,
+  )) {
+    stops.set(Number(match[2]), Number(match[1]));
+  }
+  const start = stops.get(0);
+  const end = stops.get(100);
+  if (start === undefined || end === undefined) {
+    throw new Error("Expected a generated full-height readability gradient");
+  }
+  return [start, end];
+}
+
 describe("SubscriptionCardFrame visual containment", () => {
-  it("clips every artwork layer to one isolated card paint boundary", () => {
+  it("leaves animated artwork as the topmost background layer", () => {
     const visual = resolveSubscriptionCardVisual({
       ...DEFAULT_BRANDING,
       cardGradient:
@@ -53,26 +101,25 @@ describe("SubscriptionCardFrame visual containment", () => {
     const pattern = markup.indexOf(
       'data-subscription-card-layer="pattern"',
     );
-    const vignette = markup.indexOf(
-      'data-subscription-card-layer="vignette"',
-    );
     const copy = markup.indexOf("data-card-copy");
 
     expect(gradient).toBeGreaterThan(-1);
     expect(pattern).toBeGreaterThan(gradient);
     expect(effect).toBeGreaterThan(pattern);
-    expect(vignette).toBe(-1);
     expect(copy).toBeGreaterThan(effect);
-    expect(markup).not.toContain(
-      'data-subscription-card-readability="wcag-copy-zones"',
-    );
+    expect(markup).toContain('data-subscription-card-artwork="animated"');
+    // Nothing is painted between the shader and the copy.
+    expect(markup).not.toContain('data-subscription-card-layer="vignette"');
+    expect(markup).not.toContain("data-subscription-card-readability");
+    expect(markup).not.toContain("text-shadow");
   });
 
   it("keeps the computed veil for a static card", () => {
+    const stops = ["#ffffff", "#e2e8f0"] as const;
     const visual = resolveSubscriptionCardVisual({
       ...DEFAULT_BRANDING,
       cardEffect: "NONE",
-      cardGradient: "linear-gradient(135deg, #ffffff, #e2e8f0)",
+      cardGradient: `linear-gradient(135deg, ${stops.join(", ")})`,
     });
     const markup = renderToStaticMarkup(
       <SubscriptionCardFrame visual={visual}>
@@ -81,17 +128,32 @@ describe("SubscriptionCardFrame visual containment", () => {
     );
 
     expect(markup).toContain(
-      'data-subscription-card-readability="wcag-copy-zones"',
+      'data-subscription-card-readability="wcag-full-card-veil"',
     );
-    expect(markup).toContain(
-      `rgb(${visual.contrast.veilRgb} / ${visual.contrast.veilOpacity}) 41%`,
-    );
+    expect(markup).toContain('data-subscription-card-artwork="static"');
+    expect(markup).not.toContain("text-shadow");
+
+    // A card with no motion to protect keeps the uniform WCAG-AA film.
+    const [startOpacity, endOpacity] = fullHeightGradientOpacities(markup);
+    expect([startOpacity, endOpacity]).toEqual([
+      visual.contrast.veilOpacity,
+      visual.contrast.veilOpacity,
+    ]);
+    const foreground = parseRgb(visual.contrast.foreground);
+    const veil = parseRgb(visual.contrast.veilRgb);
+    for (const stop of stops) {
+      expect(
+        contrast(
+          foreground,
+          composite(veil, parseRgb(stop), visual.contrast.veilOpacity),
+        ),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
-  it("uses compact opaque readability supports for vivid artwork", () => {
+  it("keeps vivid artwork copy clean without per-field capsules", () => {
     const markup = renderToStaticMarkup(
       <SubscriptionCardContent
-        localReadability
         subscription={{
           id: "sub-profile-support",
           userRemnaId: "usr_fallback",
@@ -113,16 +175,72 @@ describe("SubscriptionCardFrame visual containment", () => {
       />,
     );
 
-    expect(markup).toContain("data-subscription-card-profile-support");
-    expect(markup).toContain(
-      "background-color:var(--card-support-background)",
+    expect(markup).toContain("Unlimited");
+    expect(markup).toContain("usr_profile");
+    expect(markup).not.toContain("data-subscription-card-local-support");
+    expect(markup).not.toContain("data-subscription-card-profile-support");
+    expect(markup).not.toContain("--card-support-background");
+  });
+
+  it.each([
+    {
+      effect: "lineWaves",
+      props: { color1: "#000000", color2: "#ffffff", color3: "#000000" },
+    },
+    {
+      effect: "rippleGrid",
+      props: { gridColor: "#ffffff", glowIntensity: 0.8 },
+    },
+  ])(
+    "never films or outlines the copy over live $effect artwork",
+    ({ effect, props }) => {
+      const visual = resolveSubscriptionCardVisual({
+        ...DEFAULT_BRANDING,
+        cardEffect: effect,
+        cardEffectProps: props,
+        cardEffectOpacity: 1,
+      });
+
+      const markup = renderToStaticMarkup(
+        <SubscriptionCardFrame visual={visual} effectActive />,
+      );
+
+      expect(markup).toContain('data-subscription-card-artwork="animated"');
+      expect(markup).not.toContain('data-subscription-card-layer="vignette"');
+      expect(markup).not.toContain("data-subscription-card-readability");
+      expect(markup).not.toContain("text-shadow");
+      expect(markup).not.toContain("-webkit-text-stroke");
+      expect(markup).not.toContain("paint-order");
+      // Readability now rests entirely on the tone the contrast resolver
+      // picked from the composited shader output palette.
+      expect(markup).toContain(
+        `--card-foreground:${visual.contrast.foreground}`,
+      );
+      expect(["#0a0a0a", "#ffffff"]).toContain(visual.contrast.foreground);
+    },
+  );
+
+  it("keeps the creation reveal overlay for an animated card", () => {
+    const visual = resolveSubscriptionCardVisual({
+      ...DEFAULT_BRANDING,
+      cardEffect: "aurora",
+      cardEffectProps: { colorStops: ["#ff1744", "#651fff", "#00e5ff"] },
+    });
+
+    const markup = renderToStaticMarkup(
+      <SubscriptionCardFrame
+        visual={visual}
+        effectActive={false}
+        layerOpacity={{ foundation: 1, gradient: 1, vignette: 1 }}
+      />,
     );
+
     expect(markup).toContain(
-      'data-subscription-card-local-support="plan"',
+      'data-subscription-card-readability="creation-overlay"',
     );
-    expect(markup).toContain(
-      'data-subscription-card-local-support="expiry"',
-    );
+    for (const opacity of fullHeightGradientOpacities(markup)) {
+      expect(opacity).toBeGreaterThanOrEqual(visual.contrast.veilOpacity);
+    }
   });
 
   it("builds an opaque effect-owned palette beneath the lazy renderer", () => {

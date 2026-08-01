@@ -42,9 +42,9 @@ export interface SubscriptionCardProps {
   /** First device name to show on the card face. */
   firstDevice?: string | null;
   /**
-   * True when this card is the active carousel slide or an immediate
-   * neighbour. Pre-warms the animated background so swiping to it shows the
-   * live effect instantly instead of after a WebGL-init delay.
+   * True only while this card owns the active dashboard slide. This is the
+   * single live-renderer boundary for the carousel when motion is allowed;
+   * reduced-motion users and inactive neighbours keep static artwork.
    */
   effectActive?: boolean;
   /**
@@ -76,7 +76,6 @@ export function SubscriptionCard({
       <SubscriptionCardContent
         subscription={subscription}
         firstDevice={firstDevice}
-        localReadability={resolvedVisual.cardEffect !== "NONE"}
       />
     </SubscriptionCardFrame>
   );
@@ -85,8 +84,6 @@ export function SubscriptionCard({
 export interface SubscriptionCardContentProps {
   readonly subscription: Subscription;
   readonly firstDevice?: string | null;
-  /** Compact opaque supports replace the full-card veil for vivid effects. */
-  readonly localReadability?: boolean;
 }
 
 /**
@@ -96,7 +93,6 @@ export interface SubscriptionCardContentProps {
 export function SubscriptionCardContent({
   subscription,
   firstDevice,
-  localReadability = false,
 }: SubscriptionCardContentProps) {
   const { t } = useTranslation();
   const { customIcons } = useBranding();
@@ -170,40 +166,23 @@ export function SubscriptionCardContent({
   ) : (
     <WifiOff className="h-4 w-4 shrink-0 opacity-60" />
   );
-  const localSupportStyle = localReadability
-    ? { backgroundColor: "var(--card-support-background)" }
-    : undefined;
-
   return (
     <>
       {/* Top row: plan name + status */}
       <div className="relative flex items-start justify-between gap-2">
-        <div
-          data-subscription-card-local-support={
-            localReadability ? "plan" : undefined
-          }
-          className={cn(
-            "flex min-w-0 items-center gap-2",
-            localReadability && "-m-1 rounded-md px-1.5 py-1 shadow-sm",
-          )}
-          style={localSupportStyle}
-        >
+        <div className="flex min-w-0 items-center gap-2">
           {nameIcon}
           <span className="truncate text-[13px] font-semibold tracking-wide @sm:text-sm">
             {sub.plan?.name ?? t("subscription.planFallback")}
           </span>
         </div>
         <span
-          data-subscription-card-local-support={
-            localReadability ? "status" : undefined
-          }
           className={cn(
             "shrink-0 rounded-full border border-[rgb(var(--card-foreground-rgb)/0.14)] px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-[color:var(--card-foreground)] uppercase backdrop-blur-md",
             isActive
               ? "bg-[rgb(var(--card-veil-rgb)/0.30)] shadow-sm"
               : "bg-[rgb(var(--card-veil-rgb)/0.44)]",
           )}
-          style={localSupportStyle}
         >
           {statusLabel}
         </span>
@@ -215,15 +194,7 @@ export function SubscriptionCardContent({
 
       {/* Center: profile name (like card number) */}
       <div className="relative flex min-w-0 flex-1 items-center">
-        <p
-          data-subscription-card-profile-support
-          className="-mx-1 w-fit max-w-full truncate px-1 font-mono text-[13px] tracking-[0.12em] text-[color:var(--card-foreground)] drop-shadow @sm:text-[15px]"
-          style={{
-            backgroundColor: localReadability
-              ? "var(--card-support-background)"
-              : "rgb(var(--card-veil-rgb) / var(--card-veil-opacity))",
-          }}
-        >
+        <p className="w-fit max-w-full truncate font-mono text-[13px] tracking-[0.12em] text-[color:var(--card-foreground)] @sm:text-[15px]">
           {sub.profileName || sub.userRemnaId || t("card.pendingStatus")}
         </p>
       </div>
@@ -247,45 +218,18 @@ export function SubscriptionCardContent({
                 }}
               />
             </div>
-            <p
-              data-subscription-card-local-support={
-                localReadability ? "traffic" : undefined
-              }
-              className={cn(
-                "w-fit text-[10px] font-medium tracking-wider uppercase",
-                localReadability && "rounded px-1 py-0.5",
-              )}
-              style={localSupportStyle}
-            >
+            <p className="w-fit text-[10px] font-medium tracking-wider uppercase">
               {t("card.trafficUsed")}: {trafficUsedGb} / {trafficTotalGb} GB
             </p>
           </div>
         ) : trafficTotalGb === null ? (
-          <p
-            data-subscription-card-local-support={
-              localReadability ? "traffic" : undefined
-            }
-            className={cn(
-              "w-fit text-[10px] font-medium tracking-wider uppercase",
-              localReadability && "rounded px-1 py-0.5",
-            )}
-            style={localSupportStyle}
-          >
+          <p className="w-fit text-[10px] font-medium tracking-wider uppercase">
             {t("card.trafficUnlimited")}
           </p>
         ) : null}
 
         <div className="flex items-end justify-between gap-2">
-          <div
-            data-subscription-card-local-support={
-              localReadability ? "expiry" : undefined
-            }
-            className={cn(
-              "min-w-0",
-              localReadability && "-m-1 rounded-md px-1.5 py-1",
-            )}
-            style={localSupportStyle}
-          >
+          <div className="min-w-0">
             {daysLeft !== null ? (
               <>
                 <p className="text-[10px] font-medium tracking-wider uppercase">
@@ -312,16 +256,7 @@ export function SubscriptionCardContent({
               </>
             )}
           </div>
-          <div
-            data-subscription-card-local-support={
-              localReadability ? "device" : undefined
-            }
-            className={cn(
-              "min-w-0 text-right",
-              localReadability && "-m-1 rounded-md px-1.5 py-1",
-            )}
-            style={localSupportStyle}
-          >
+          <div className="min-w-0 text-right">
             <p className="text-[10px] font-medium tracking-wider uppercase">
               {t("card.firstDevice")}
             </p>

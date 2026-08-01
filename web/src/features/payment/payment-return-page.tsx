@@ -18,7 +18,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { ExternalLink } from "lucide-react";
@@ -43,6 +43,24 @@ const MAX_POLLS = 30;
 const POLL_INTERVAL_MS = 2000;
 const AUTO_REDIRECT_MS = 3500;
 const PROVISIONING_REDIRECT_MS = 900;
+
+/**
+ * Every successful payment can change both the subscription snapshot and its
+ * exact action policy (notably trial -> ordinary after UPGRADE).
+ */
+export async function invalidatePaymentReturnSuccessQueries(
+  queryClient: Pick<QueryClient, "invalidateQueries">,
+): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.detail }),
+    queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all }),
+    queryClient.invalidateQueries({
+      queryKey: subscriptionQueryKeys.actionPolicyRoot,
+    }),
+    queryClient.invalidateQueries({ queryKey: ["devices"] }),
+    queryClient.invalidateQueries({ queryKey: ["session"] }),
+  ]);
+}
 
 export default function PaymentReturnPage() {
   const navigate = useNavigate();
@@ -130,14 +148,7 @@ export default function PaymentReturnPage() {
           provisioningSuccessRef.current = isSubscriptionCreation;
           setState("success");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-          queryClient.invalidateQueries({
-            queryKey: subscriptionQueryKeys.detail,
-          });
-          queryClient.invalidateQueries({
-            queryKey: subscriptionQueryKeys.all,
-          });
-          queryClient.invalidateQueries({ queryKey: ["devices"] });
-          queryClient.invalidateQueries({ queryKey: ["session"] });
+          void invalidatePaymentReturnSuccessQueries(queryClient);
           return;
         }
         if (status.status === "FAILED" || status.status === "CANCELED") {

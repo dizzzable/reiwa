@@ -13,6 +13,20 @@ const EFFECT_LAYER_SOURCE = readFileSync(
   ),
   "utf8",
 );
+const CARD_FRAME_SOURCE = readFileSync(
+  new URL(
+    "../../web/src/features/dashboard/components/subscription-card-frame.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const CARD_CONTENT_SOURCE = readFileSync(
+  new URL(
+    "../../web/src/features/dashboard/components/subscription-card.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 function cssBlock(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -45,6 +59,29 @@ describe("animated card CSS opacity contract", () => {
     expect(EFFECT_LAYER_SOURCE).toContain(
       'mode: "css-fallback" as const',
     );
+    expect(EFFECT_LAYER_SOURCE).not.toContain("allowMotionWhenReduced");
+    expect(EFFECT_LAYER_SOURCE).toContain(
+      'transition: prefersReducedMotion ? "none" : "opacity 450ms ease"',
+    );
+  });
+});
+
+describe("subscription card artwork contract", () => {
+  it("films static artwork only, never the live shader", () => {
+    expect(CARD_FRAME_SOURCE).toContain(
+      "{(creationPresentation || !animatedArtwork) && (",
+    );
+    expect(CARD_FRAME_SOURCE).toContain("staticArtworkVeil(contrast)");
+  });
+
+  it("keeps the card copy free of outlines and capsules", () => {
+    for (const source of [CARD_FRAME_SOURCE, CARD_CONTENT_SOURCE]) {
+      expect(source).not.toContain("textShadow");
+      expect(source).not.toContain("WebkitTextStroke");
+      expect(source).not.toContain("paintOrder");
+      expect(source).not.toContain("supportBackground");
+      expect(source).not.toContain("localReadability");
+    }
   });
 });
 

@@ -72,7 +72,7 @@ export default function DashboardPage() {
 
   // Capacity for multi-sub Buy gating (effective max folds per-user + global).
   const { data: actionPolicy } = useQuery({
-    queryKey: ["action-policy"],
+    queryKey: subscriptionQueryKeys.actionPolicy(),
     queryFn: () => getActionPolicy(),
     staleTime: 30_000,
   });
@@ -144,6 +144,12 @@ export default function DashboardPage() {
       : canonicalActiveSubscription;
   const activeSubscriptionId: string | null =
     activeSubscription?.id ?? null;
+  const { data: activeSubscriptionPolicy } = useQuery({
+    queryKey: subscriptionQueryKeys.actionPolicy(activeSubscriptionId),
+    queryFn: () => getActionPolicy(activeSubscriptionId as string),
+    enabled: activeSubscriptionId !== null,
+    staleTime: 30_000,
+  });
   const hasCarouselItems = carouselItems.length > 0;
   const deleteGuardWasActive = useRef(false);
 
@@ -221,7 +227,9 @@ export default function DashboardPage() {
     (paymentId: string, subscription: Subscription) => {
       completeHandoff(paymentId);
       setActiveItemKey(subscriptionCarouselItemKey(subscription.id));
-      void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
+      void queryClient.invalidateQueries({
+        queryKey: subscriptionQueryKeys.actionPolicyRoot,
+      });
       void queryClient.invalidateQueries({ queryKey: ["session"] });
     },
     [completeHandoff, queryClient],
@@ -353,6 +361,7 @@ export default function DashboardPage() {
               disabled={deleteGuardActive}
               purchasesBlocked={purchasesBlocked}
               restricted={restricted}
+              policyCanRenew={activeSubscriptionPolicy?.canRenew}
               onConnect={() => {
                 const url = activeSubscription?.url;
                 if (url) {

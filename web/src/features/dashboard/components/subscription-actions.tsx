@@ -13,6 +13,7 @@
  */
 
 import { ArrowUpCircle, Link2, Plus, RotateCcw } from "lucide-react";
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -20,7 +21,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { Subscription } from "@/types/api";
 import { getSubscriptionAddOns } from "@/lib/api-client";
 import { openExternalUrl } from "@/lib/utils";
-import { canRenewSubscription } from "./subscription-action-policy";
+import {
+  canRenewSubscription,
+  invokeRenewSubscriptionAction,
+} from "./subscription-action-policy";
 
 interface SubscriptionActionsProps {
   subscription: Subscription | null;
@@ -31,6 +35,8 @@ interface SubscriptionActionsProps {
   purchasesBlocked?: boolean;
   /** RESTRICTED freezes the whole money path, including renewal. */
   restricted?: boolean;
+  /** Authoritative action policy for this exact subscription id. */
+  policyCanRenew?: boolean;
   /** A transient presentation (for example deletion) owns the card. */
   disabled?: boolean;
 }
@@ -42,10 +48,12 @@ export function SubscriptionActions({
   onRenew,
   purchasesBlocked = false,
   restricted = false,
+  policyCanRenew,
   disabled = false,
 }: SubscriptionActionsProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const renewalReasonId = useId();
   const sub = subscription;
   const hasUrl = !!sub?.url;
   const isActive = sub?.status === "ACTIVE" || sub?.status === "LIMITED";
@@ -56,7 +64,9 @@ export function SubscriptionActions({
   // LIVE Remnawave profile, which the backend rejects outright once expired.
   const canRenewOrUpgrade =
     sub?.status === "ACTIVE" || sub?.status === "LIMITED" || sub?.status === "EXPIRED";
-  const canRenew = canRenewSubscription(sub, restricted);
+  const canRenew = canRenewSubscription(sub, restricted, policyCanRenew);
+  const trialRenewalReason =
+    sub?.isTrial === true ? t("renewal.reason.trial") : null;
 
   // Top-up (докупка) is only meaningful when the subscription actually has
   // eligible add-on options. Query the SAME v2 subscription-scoped eligibility
@@ -97,7 +107,15 @@ export function SubscriptionActions({
         icon={<RotateCcw className="h-5 w-5" />}
         label={t("card.actions.renew")}
         disabled={disabled || !canRenew}
-        onClick={onRenew}
+        ariaDescribedBy={trialRenewalReason ? renewalReasonId : undefined}
+        onClick={() => {
+          invokeRenewSubscriptionAction({
+            subscription: sub,
+            restricted,
+            policyCanRenew,
+            onRenew,
+          });
+        }}
       />
       <ActionButton
         icon={<Plus className="h-5 w-5" />}
@@ -109,6 +127,15 @@ export function SubscriptionActions({
           navigate(sub?.id ? `/addons?subscriptionId=${encodeURIComponent(sub.id)}` : "/addons")
         }
       />
+      {trialRenewalReason ? (
+        <p
+          id={renewalReasonId}
+          role="note"
+          className="col-span-4 px-1 pt-1 text-xs leading-relaxed text-[color:var(--brand-muted-foreground)]"
+        >
+          {trialRenewalReason}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -118,16 +145,19 @@ function ActionButton({
   label,
   disabled,
   onClick,
+  ariaDescribedBy,
 }: {
   icon: React.ReactNode;
   label: string;
   disabled?: boolean;
   onClick: () => void;
+  ariaDescribedBy?: string;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
+      aria-describedby={ariaDescribedBy}
       className="flex flex-col items-center gap-1.5 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-1 py-3 transition-all duration-150 hover:bg-[color:var(--color-surface-high)] active:scale-95 disabled:pointer-events-none disabled:opacity-40"
     >
       <span className="text-(--brand-primary)">{icon}</span>

@@ -14,9 +14,11 @@ import type {
 export const getSubscription = () =>
   apiClient.get<Subscription | null>("/subscription").then((r) => r.data);
 
-export const getActionPolicy = (planId?: string | number) =>
+export const getActionPolicy = (subscriptionId?: string) =>
   apiClient
-    .post<ActionPolicy>("/subscription/action-policy", { planId })
+    .post<ActionPolicy>("/subscription/action-policy", {
+      ...(subscriptionId ? { subscriptionId } : {}),
+    })
     .then((r) => r.data);
 
 export const getQuote = (

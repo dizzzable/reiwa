@@ -451,7 +451,9 @@ function QuoteView({
       void queryClient.invalidateQueries({
         queryKey: subscriptionQueryKeys.all,
       });
-      void queryClient.invalidateQueries({ queryKey: ["action-policy"] });
+      void queryClient.invalidateQueries({
+        queryKey: subscriptionQueryKeys.actionPolicyRoot,
+      });
       void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
       navigate("/dashboard", { replace: true });
     },
@@ -721,7 +723,7 @@ export default function PurchasePage() {
   // Hard capacity gate: never let the wizard complete a NEW/ADDITIONAL buy
   // when the effective multi-sub limit is full (deep-link / stale store).
   const { data: actionPolicy, isFetched: policyFetched } = useQuery({
-    queryKey: ["action-policy"],
+    queryKey: subscriptionQueryKeys.actionPolicy(),
     queryFn: () => getActionPolicy(),
     staleTime: 15_000,
   });

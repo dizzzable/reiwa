@@ -11,9 +11,9 @@
  *  - Only renders while on-screen (IntersectionObserver) so off-screen carousel
  *    slides and scrolled-away cards pause their GPU work.
  *
- * Reduced motion keeps a static CSS rendition of the configured palette and
- * does not mount the native canvas/WebGL renderer. The selected palette stays
- * visually complete without forcing an infinite decorative animation.
+ * Reduced motion always keeps a static CSS rendition of the configured
+ * palette and does not mount the native canvas/WebGL renderer. The selected
+ * colours stay intact without forcing perpetual decorative motion.
  */
 
 import {
@@ -209,21 +209,22 @@ export function CardEffectLayer({
     capabilitySnapshot?.effect === effect
       ? capabilitySnapshot.capabilities
       : null;
-  const runtime = prefersReducedMotion && isValid
-    ? {
-        effect: "NONE",
-        props: {},
-        mode: "css-fallback" as const,
-        cssColors: resolveCardEffectColors(effect, staticProps),
-      }
-    : !isValid || (requiresWebGL(effect) && capabilities === null)
-      ? null
-      : resolveCardEffectRuntime({
-          effect,
-          props: sourceProps,
-          capabilities: capabilities ?? { webgl: false, webgl2: false },
-          failed: effectFailed,
-        });
+  const runtime =
+    prefersReducedMotion && isValid
+      ? {
+          effect: "NONE",
+          props: {},
+          mode: "css-fallback" as const,
+          cssColors: resolveCardEffectColors(effect, staticProps),
+        }
+      : !isValid || (requiresWebGL(effect) && capabilities === null)
+        ? null
+        : resolveCardEffectRuntime({
+            effect,
+            props: sourceProps,
+            capabilities: capabilities ?? { webgl: false, webgl2: false },
+            failed: effectFailed,
+          });
   const runtimeId = runtime?.effect as CardEffectId | "NONE" | undefined;
   const Effect =
     runtimeId === undefined || runtimeId === "NONE"

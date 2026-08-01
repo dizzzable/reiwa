@@ -10,6 +10,7 @@ import {
   isSubscriptionLimitReached,
   notifySubscriptionLimitReached,
 } from '@/lib/subscription-limit'
+import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
 import { BackButton } from '@/components/ui/back-button'
 import { TariffCard } from './tariff-card'
 
@@ -26,7 +27,7 @@ export default function PlansPage() {
   })
 
   const { data: actionPolicy, isFetched: policyFetched } = useQuery({
-    queryKey: ['action-policy'],
+    queryKey: subscriptionQueryKeys.actionPolicy(),
     queryFn: () => getActionPolicy(),
     staleTime: 30_000,
   })

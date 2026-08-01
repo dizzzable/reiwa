@@ -14,26 +14,30 @@ export const userRealtimeQueryKeysByType: Readonly<
     ["session"],
     subscriptionQueryKeys.detail,
     subscriptionQueryKeys.all,
+    subscriptionQueryKeys.actionPolicyRoot,
   ],
   "subscription.deleted": [
     ["trial", "eligibility"],
     subscriptionQueryKeys.detail,
     subscriptionQueryKeys.all,
-    ["action-policy"],
+    subscriptionQueryKeys.actionPolicyRoot,
     ["devices"],
   ],
   "subscription.renewed": [
     subscriptionQueryKeys.detail,
     subscriptionQueryKeys.all,
+    subscriptionQueryKeys.actionPolicyRoot,
   ],
   "subscription.expired": [
     subscriptionQueryKeys.detail,
     subscriptionQueryKeys.all,
+    subscriptionQueryKeys.actionPolicyRoot,
     ["activity", "notifications"],
   ],
   "subscription.upgraded": [
     subscriptionQueryKeys.detail,
     subscriptionQueryKeys.all,
+    subscriptionQueryKeys.actionPolicyRoot,
   ],
   // `all` is the list the dashboard carousel actually reads, so without it a
   // trial granted outside the cabinet (bot, admin, quest reward) never showed up
@@ -41,12 +45,15 @@ export const userRealtimeQueryKeysByType: Readonly<
   "subscription.trial_granted": [
     subscriptionQueryKeys.detail,
     subscriptionQueryKeys.all,
+    subscriptionQueryKeys.actionPolicyRoot,
     ["trial", "eligibility"],
     ["session"],
   ],
   "payment.completed": [
     ["activity", "transactions"],
     subscriptionQueryKeys.detail,
+    subscriptionQueryKeys.all,
+    subscriptionQueryKeys.actionPolicyRoot,
     ["session"],
   ],
   "payment.failed": [["activity", "transactions"]],
