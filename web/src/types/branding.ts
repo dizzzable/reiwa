@@ -415,10 +415,15 @@ export function resolveBrandingThemeMode(
   const variant = branding.themeVariants?.[mode];
   if (!variant) return branding;
 
-  // Copy the visual subset explicitly.  In particular, never spread an
+  // Copy the visual subset explicitly. In particular, never spread an
   // untrusted nested payload over the root: a brightness representation must
   // not be able to change the operator-selected preset id, policy, identity,
   // navigation or any user-facing business setting.
+  //
+  // Subscription-card effects are intentionally not part of the brightness
+  // representation. They are an operator-controlled layer: a positional
+  // effect wins over the global effect, and both must survive a user's switch
+  // between the light and dark renderings of the same concept.
   return {
     ...branding,
     primary: variant.primary,
@@ -427,10 +432,6 @@ export function resolveBrandingThemeMode(
     bgSecondary: variant.bgSecondary,
     cardGradient: variant.cardGradient,
     cardPattern: variant.cardPattern,
-    cardEffect: variant.cardEffect,
-    cardEffectProps: variant.cardEffectProps,
-    cardEffectOpacity: variant.cardEffectOpacity,
-    cardEffectsByIndex: variant.cardEffectsByIndex,
     bgEffect: variant.bgEffect,
     appBackground: variant.appBackground,
     borderRadius: variant.borderRadius,

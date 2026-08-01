@@ -96,6 +96,62 @@ describe("operator concept mode resolution", () => {
     expect(effective.borderRadius).toBe("rounded-none");
     expect(effective.themeVariants).toBe(branding.themeVariants);
   });
+
+  it("keeps the operator's global and positional card effects above a brightness variant", () => {
+    const lightVariant = {
+      primary: "#165eff",
+      primaryFg: "#ffffff",
+      bgPrimary: "#f5f8ff",
+      bgSecondary: "#eef3ff",
+      cardGradient: "linear-gradient(135deg, #f5f8ff, #b8d0ff)",
+      cardPattern: null,
+      cardEffect: "rippleGrid" as const,
+      cardEffectProps: { gridSize: 18 },
+      cardEffectOpacity: 0.4,
+      cardEffectsByIndex: [
+        {
+          cardEffect: "aurora" as const,
+          cardEffectProps: { speed: 0.2 },
+          cardEffectOpacity: 0.3,
+          cardGradient: "linear-gradient(#fff, #b8d0ff)",
+        },
+      ],
+      bgEffect: "NONE" as const,
+      appBackground: { ...DEFAULT_PUBLIC_CONFIG.branding.appBackground! },
+      borderRadius: "rounded-xl",
+      cornerRadii: { cardPx: 16, itemPx: 12, pillPx: 9999 },
+      fontFamily: "Inter, sans-serif",
+      surfaceTheme: { ...DEFAULT_PUBLIC_CONFIG.branding.surfaceTheme! },
+    };
+    const branding = {
+      ...DEFAULT_PUBLIC_CONFIG.branding,
+      cardEffect: "paperGrain" as const,
+      cardEffectProps: { speed: 0.7 },
+      cardEffectOpacity: 0.68,
+      cardEffectsByIndex: [
+        {
+          cardEffect: "paperWarp" as const,
+          cardEffectProps: { speed: 1.1 },
+          cardEffectOpacity: 0.86,
+          cardGradient: "linear-gradient(135deg, #2a0c35, #ef62a5)",
+        },
+      ],
+      themeVariants: {
+        light: lightVariant,
+        dark: lightVariant,
+      },
+    };
+
+    const effective = resolveBrandingThemeMode(branding, "light");
+
+    expect(effective.cardGradient).toBe(
+      "linear-gradient(135deg, #f5f8ff, #b8d0ff)",
+    );
+    expect(effective.cardEffect).toBe("paperGrain");
+    expect(effective.cardEffectProps).toEqual({ speed: 0.7 });
+    expect(effective.cardEffectOpacity).toBe(0.68);
+    expect(effective.cardEffectsByIndex).toEqual(branding.cardEffectsByIndex);
+  });
 });
 
 describe("BrandingProvider document tokens", () => {
