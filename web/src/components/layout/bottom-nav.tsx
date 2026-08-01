@@ -36,7 +36,6 @@ import { resolveActiveTabTo, useNavTabs } from "@/components/layout/use-nav-tabs
 import {
   preloadNavigationRoute,
 } from "@/components/layout/navigation-preload";
-import { useNavigationPreload } from "@/components/layout/use-navigation-preload";
 
 export function BottomNav() {
   const location = useLocation();
@@ -45,11 +44,10 @@ export function BottomNav() {
   const { branding } = useBranding();
   const navGap = branding.navGap ?? 2;
 
-  // A route remains lazy until it becomes relevant. After the initial screen
-  // settles, warm only the destinations this operator put in the navigation.
-  // A pointer/focus event below also begins the request before React Router
-  // changes routes, covering a user who taps a tab immediately after launch.
-  useNavigationPreload(tabs.map((tab) => tab.to));
+  // Keep navigation itself synchronous. The selected route starts loading on
+  // pointer/focus intent below, but the shell never starts a timed bulk import
+  // after launch: on mid-range phones that background parsing competed with a
+  // tap and made the tab switch feel delayed.
 
   return (
     <nav

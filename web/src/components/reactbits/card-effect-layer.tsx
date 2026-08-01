@@ -53,19 +53,13 @@ interface CardEffectLayerProps {
 }
 
 /**
- * Subscription-card effects are decorative artwork. Some native WebGL/Paper
- * renderers and the CSS compatibility renderer paint opaque pixels, so letting
- * their wrapper reach 100% would replace the operator's gradient instead of
- * layering over it. Apply one ceiling to every runtime path: values below the
- * ceiling remain literal, while a requested 100% is still a strong overlay.
+ * The effect-opacity control is part of the operator's published card design.
+ * Do not impose a second, hidden ceiling here: a saved 100% must remain 100%
+ * in both the live cabinet and Rezeis preview. The card gradient is a separate
+ * foundation layer, so this clamp only protects the valid input range.
  */
-export const CARD_EFFECT_MAX_OVERLAY_OPACITY = 0.68;
-
 export function resolveCardEffectOverlayOpacity(opacity: number): number {
-  return Math.min(
-    Math.max(opacity, 0.05),
-    CARD_EFFECT_MAX_OVERLAY_OPACITY,
-  );
+  return Math.min(Math.max(opacity, 0.05), 1);
 }
 
 class EffectErrorBoundary extends Component<{
@@ -107,12 +101,13 @@ function CssEffectFallback({
       data-card-effect-artwork
       className="card-effect-layer__css-fallback absolute inset-0"
       style={{
-        // CSS fallback is artwork over the operator-owned card gradient, not
-        // a replacement canvas. In particular, never add an opaque base
-        // colour here: it was the source of the apparent random-gradient
-        // switch after an effect became ready.
-        backgroundImage: `radial-gradient(95% 135% at 4% 100%, ${first} 0%, transparent 64%), radial-gradient(85% 120% at 100% 2%, ${last} 0%, transparent 60%), linear-gradient(135deg, ${first}, ${middle}, ${last})`,
+        // The fallback remains alpha artwork. A full-frame opaque gradient
+        // here would replace a custom card gradient as soon as an unavailable
+        // WebGL effect falls back. Screen compositing makes black shader
+        // regions neutral while preserving the selected colours and intensity.
+        backgroundImage: `radial-gradient(70% 110% at 4% 100%, ${first} 0%, transparent 72%), radial-gradient(66% 100% at 100% 2%, ${last} 0%, transparent 72%), radial-gradient(54% 66% at 52% 50%, ${middle} 0%, transparent 82%)`,
         opacity,
+        mixBlendMode: "screen",
       }}
     />
   );
@@ -313,7 +308,13 @@ export function CardEffectLayer({
               <div
                 data-card-effect-renderer
                 className="absolute inset-0"
-                style={{ opacity: configuredOpacity }}
+                style={{
+                  opacity: configuredOpacity,
+                  // Paper and a few third-party canvases paint an opaque
+                  // black base. Composite those pixels instead of allowing
+                  // them to erase the operator's gradient beneath.
+                  mixBlendMode: "screen",
+                }}
               >
                 <Effect key={runtimeId} {...mergedProps} />
               </div>

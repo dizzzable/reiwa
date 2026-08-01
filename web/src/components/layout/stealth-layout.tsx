@@ -24,7 +24,7 @@ import { NetworkBg } from "@/components/ui/network-bg";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
 import { useBranding } from "@/lib/branding-provider";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
-import { useInstallPrompt } from "@/hooks/use-install-prompt";
+import { isStandalonePwa } from "@/hooks/use-install-prompt";
 import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
 import { reportSurface } from "@/lib/api-client";
@@ -80,7 +80,10 @@ export default function StealthLayout() {
   const { branding } = useBranding();
   const isDesktop = useIsDesktop();
   const location = useLocation();
-  const { isStandalone } = useInstallPrompt();
+  // Telemetry only needs the display mode. Do not mount the install-prompt
+  // listener for every dashboard visit: Chromium correctly reports a deferred
+  // `beforeinstallprompt` as a console warning when no install CTA is shown.
+  const isStandalone = isStandalonePwa();
 
   // Whether the operator requires Telegram users to set a web login/password
   // before entering the cabinet. Default true (enforce) — while the policy

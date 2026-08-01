@@ -22,7 +22,6 @@ vi.mock("react-i18next", () => ({
 }));
 
 import {
-  CARD_EFFECT_MAX_OVERLAY_OPACITY,
   CardEffectLayer,
   resolveCardEffectOverlayOpacity,
 } from "../src/components/reactbits/card-effect-layer";
@@ -179,7 +178,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect((layer as HTMLElement).style.opacity).toBe("1");
   });
 
-  it("keeps native opaque artwork an overlay when 100% is requested", () => {
+  it("uses the native artwork at the exact opacity the operator selected", () => {
     allowMotion();
     const container = renderIntoDom(
       <CardEffectLayer effect="paperWarp" active opacity={1} />,
@@ -192,12 +191,11 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
 
     expect(layer?.getAttribute("data-card-effect-runtime")).toBe("native");
     expect(layer?.style.opacity).toBe("1");
-    // Paper/WebGL effects can emit an opaque canvas. The wrapper must retain
-    // part of the operator gradient instead of replacing it at max input.
-    expect(renderer?.style.opacity).toBe(String(CARD_EFFECT_MAX_OVERLAY_OPACITY));
+    expect(renderer?.style.opacity).toBe("1");
+    expect(renderer?.style.mixBlendMode).toBe("screen");
   });
 
-  it("preserves an operator-selected native effect opacity below the overlay ceiling", () => {
+  it("preserves an operator-selected native effect opacity and clamps only invalid values", () => {
     allowMotion();
     const container = renderIntoDom(
       <CardEffectLayer effect="paperWarp" active opacity={0.42} />,
@@ -209,7 +207,9 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
 
     expect(renderer?.style.opacity).toBe("0.42");
     expect(resolveCardEffectOverlayOpacity(0.42)).toBe(0.42);
-    expect(resolveCardEffectOverlayOpacity(1)).toBe(CARD_EFFECT_MAX_OVERLAY_OPACITY);
+    expect(resolveCardEffectOverlayOpacity(1)).toBe(1);
+    expect(resolveCardEffectOverlayOpacity(4)).toBe(1);
+    expect(resolveCardEffectOverlayOpacity(0)).toBe(0.05);
   });
 
   it("keeps a Paper card's own palette on a WebGL1-only Telegram WebView", () => {
@@ -273,9 +273,10 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect(patternLayer?.style.backgroundImage).toContain("linear-gradient");
     expect(fallback?.style.backgroundColor).toBe("");
     expect(fallback?.style.opacity).toBe("0.68");
+    expect(fallback?.style.mixBlendMode).toBe("screen");
   });
 
-  it("keeps base card colour visible when a CSS fallback requests full opacity", () => {
+  it("uses the literal saved opacity for the CSS fallback while retaining the foundation layer", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
       ((contextId: string) =>
         contextId === "webgl"
@@ -296,16 +297,12 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     const fallback = container.querySelector(
       "[data-card-effect-artwork]",
     ) as HTMLElement | null;
-    const fallbackOpacity = Number(fallback?.style.opacity);
-    const compositeChannel = (
-      artworkChannel: number,
-      baseChannel: number,
-    ) => artworkChannel * fallbackOpacity + baseChannel * (1 - fallbackOpacity);
-
-    expect(fallbackOpacity).toBe(CARD_EFFECT_MAX_OVERLAY_OPACITY);
-    // This is an alpha-compositing assertion, rather than a DOM-only check:
-    // a CSS fallback at requested 100% must still retain the green base card.
-    expect(compositeChannel(18, 46)).toBeGreaterThan(18);
+    expect(fallback?.style.opacity).toBe("1");
+    expect(fallback?.style.mixBlendMode).toBe("screen");
+    expect(fallback?.style.backgroundImage).not.toContain("linear-gradient");
+    expect(
+      container.querySelector('[data-subscription-card-layer="gradient"]'),
+    ).not.toBeNull();
   });
 
   it("leaves the live artwork uncovered and the copy unoutlined", () => {

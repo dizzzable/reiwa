@@ -360,6 +360,48 @@ describe('public branding configuration routes', () => {
     ).toBe(false);
   });
 
+  it('accepts an opt-in global card-glass layer and rejects unsafe values', () => {
+    const configured = {
+      ...OPERATOR_PUBLIC_CONFIG,
+      branding: {
+        ...OPERATOR_PUBLIC_CONFIG.branding,
+        subscriptionCardGlass: {
+          enabled: true,
+          tint: '#f8fafc',
+          opacity: 0.16,
+          blurPx: 10,
+          borderOpacity: 0.24,
+        },
+      },
+    };
+
+    expect(isPublicConfigSnapshot(configured)).toBe(true);
+    expect(
+      isPublicConfigSnapshot({
+        ...configured,
+        branding: {
+          ...configured.branding,
+          subscriptionCardGlass: {
+            ...configured.branding.subscriptionCardGlass,
+            tint: '#f8fafc80',
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isPublicConfigSnapshot({
+        ...configured,
+        branding: {
+          ...configured.branding,
+          subscriptionCardGlass: {
+            ...configured.branding.subscriptionCardGlass,
+            blurPx: 41,
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
   it('accepts two resolved modes for one concept and rejects a partial mode snapshot', () => {
     const baseVariant = {
       primary: '#6750a4',

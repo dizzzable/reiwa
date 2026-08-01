@@ -1,16 +1,11 @@
 /**
  * Main destinations are code-split so an unused section does not inflate the
- * initial Mini App bundle. Once the cabinet is idle, we warm only the tabs an
- * operator actually exposed. This keeps the first intentional tab switch
- * instant without spending a user's constrained connection up front.
+ * initial Mini App bundle. A destination starts downloading only on explicit
+ * user intent (pointer/focus), never from a post-mount timer: bulk parsing in
+ * the background visibly delayed taps on lower-powered phones.
  */
 
 type RoutePreloader = () => Promise<unknown>;
-
-export interface ConnectionHints {
-  readonly saveData?: boolean;
-  readonly effectiveType?: string;
-}
 
 const routePreloaders: Readonly<Record<string, RoutePreloader>> = {
   "/dashboard": () => import("@/features/dashboard/dashboard-page"),
@@ -27,14 +22,6 @@ const routePreloaders: Readonly<Record<string, RoutePreloader>> = {
 };
 
 const pendingPreloads = new Map<string, Promise<void>>();
-
-/** Do not prefetch optional UI on a connection where the user opted out. */
-export function canPreloadNavigationRoutes(
-  connection?: ConnectionHints,
-): boolean {
-  if (connection?.saveData) return false;
-  return connection?.effectiveType !== "slow-2g" && connection?.effectiveType !== "2g";
-}
 
 export function isNavigationRoutePreloadable(route: string): boolean {
   return route in routePreloaders;
@@ -55,8 +42,4 @@ export function preloadNavigationRoute(route: string): void {
       pendingPreloads.delete(route);
     });
   pendingPreloads.set(route, pending);
-}
-
-export function preloadNavigationRoutes(routes: readonly string[]): void {
-  for (const route of routes) preloadNavigationRoute(route);
 }

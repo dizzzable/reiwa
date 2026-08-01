@@ -55,6 +55,22 @@ function staticArtworkVeil(
   return `linear-gradient(180deg, rgb(${channels} / ${veil}) 0%, rgb(${channels} / ${veil}) 100%)`;
 }
 
+function glassColor(tint: string, opacity: number): string {
+  const compact = tint.trim().replace(/^#/, "");
+  const hex = compact.length === 3
+    ? compact.split("").map((channel) => `${channel}${channel}`).join("")
+    : compact;
+  const channels = /^[\da-f]{6}$/i.test(hex)
+    ? [
+        Number.parseInt(hex.slice(0, 2), 16),
+        Number.parseInt(hex.slice(2, 4), 16),
+        Number.parseInt(hex.slice(4, 6), 16),
+      ]
+    : [255, 255, 255];
+  const alpha = Math.min(Math.max(opacity, 0), 1);
+  return `rgb(${channels.join(" ")} / ${alpha})`;
+}
+
 /**
  * The single production card frame. It owns the exact established dimensions,
  * stacking order, watermark and (at most) one CardEffectLayer.
@@ -176,6 +192,30 @@ export const SubscriptionCardFrame = forwardRef<
               ? contrast.overlayBackground
               : staticArtworkVeil(contrast),
             ...opacityStyle(layerOpacity?.vignette, 480),
+          }}
+        />
+      )}
+      {visual.subscriptionCardGlass.enabled && (
+        <div
+          data-subscription-card-layer="glass"
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            backgroundColor: glassColor(
+              visual.subscriptionCardGlass.tint,
+              visual.subscriptionCardGlass.opacity,
+            ),
+            border: `1px solid ${glassColor(
+              visual.subscriptionCardGlass.tint,
+              visual.subscriptionCardGlass.borderOpacity,
+            )}`,
+            backdropFilter:
+              visual.subscriptionCardGlass.blurPx > 0
+                ? `blur(${visual.subscriptionCardGlass.blurPx}px)`
+                : undefined,
+            WebkitBackdropFilter:
+              visual.subscriptionCardGlass.blurPx > 0
+                ? `blur(${visual.subscriptionCardGlass.blurPx}px)`
+                : undefined,
           }}
         />
       )}

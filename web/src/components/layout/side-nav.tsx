@@ -21,7 +21,6 @@ import { useBranding } from "@/lib/branding-provider";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { resolveActiveTabTo, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
 import { preloadNavigationRoute } from "@/components/layout/navigation-preload";
-import { useNavigationPreload } from "@/components/layout/use-navigation-preload";
 
 export function SideNav() {
   const location = useLocation();
@@ -50,8 +49,6 @@ export function SideNav() {
           ? [supportTab, { ...tab, matchPrefix: tab.matchPrefix.filter((p) => p !== "/support") }]
           : [tab],
       );
-
-  useNavigationPreload(tabs.map((tab) => tab.to));
 
   return (
     <nav

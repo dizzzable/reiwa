@@ -4,11 +4,15 @@ import {
   type CardContrast,
 } from "../../../lib/card-contrast";
 import { resolveCardEffectOutputColors } from "../../../components/reactbits/card-effect-runtime";
-import { resolveSubscriptionCardText } from "../../../types/branding";
+import {
+  resolveSubscriptionCardGlass,
+  resolveSubscriptionCardText,
+} from "../../../types/branding";
 import type {
   Branding,
   CardEffect,
   CardLogoPreset,
+  SubscriptionCardGlass,
   SubscriptionCardText,
 } from "../../../types/branding";
 
@@ -28,6 +32,7 @@ export interface ResolvedSubscriptionCardVisual {
   readonly cardGradient: string;
   readonly cardPattern: string | null;
   readonly subscriptionCardText: SubscriptionCardText;
+  readonly subscriptionCardGlass: SubscriptionCardGlass;
   readonly cardEffect: CardEffect;
   readonly cardEffectProps: Readonly<Record<string, unknown>>;
   readonly cardEffectOpacity: number;
@@ -148,6 +153,9 @@ export function resolveSubscriptionCardVisual(
   const subscriptionCardText = resolveSubscriptionCardText(
     branding.subscriptionCardText,
   );
+  const subscriptionCardGlass = resolveSubscriptionCardGlass(
+    branding.subscriptionCardGlass,
+  );
   const effectArtwork =
     cardEffect === "NONE"
       ? null
@@ -178,6 +186,7 @@ export function resolveSubscriptionCardVisual(
         ? branding.cardPattern
         : null,
     subscriptionCardText,
+    subscriptionCardGlass,
     cardEffect: cardEffect as CardEffect,
     cardEffectProps,
     cardEffectOpacity,

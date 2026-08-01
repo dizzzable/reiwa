@@ -30,6 +30,13 @@ export interface BrandingPayload {
     readonly mode: 'auto' | 'light' | 'dark' | 'custom';
     readonly color: string | null;
   };
+  readonly subscriptionCardGlass?: {
+    readonly enabled: boolean;
+    readonly tint: string;
+    readonly opacity: number;
+    readonly blurPx: number;
+    readonly borderOpacity: number;
+  };
   readonly cardLogo: string;
   readonly cardLogoUrl: string | null;
   readonly cardEffect: string;

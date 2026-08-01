@@ -190,6 +190,28 @@ export const DEFAULT_SUBSCRIPTION_CARD_TEXT: SubscriptionCardText = {
 };
 
 /**
+ * Optional translucent film drawn above a subscription card's artwork.
+ * It is deliberately independent from card effects: toggling glass must not
+ * replace, recolour, or otherwise mutate the operator-selected animation.
+ */
+export interface SubscriptionCardGlass {
+  readonly enabled: boolean;
+  /** Opaque #rgb/#rrggbb tint used by the glass film and its edge. */
+  readonly tint: string;
+  readonly opacity: number;
+  readonly blurPx: number;
+  readonly borderOpacity: number;
+}
+
+export const DEFAULT_SUBSCRIPTION_CARD_GLASS: SubscriptionCardGlass = {
+  enabled: false,
+  tint: "#ffffff",
+  opacity: 0.14,
+  blurPx: 8,
+  borderOpacity: 0.18,
+};
+
+/**
  * Resolved visual values for the same conceptual preset. It intentionally has
  * no preset id or brand identity, preventing this payload from becoming a
  * user-facing theme catalogue.
@@ -262,6 +284,8 @@ export interface Branding {
   cardPattern: string | null;
   /** Missing in legacy payloads; resolved as `auto` at card-render time. */
   subscriptionCardText?: SubscriptionCardText;
+  /** Missing in legacy payloads; disabled by default at card-render time. */
+  subscriptionCardGlass?: SubscriptionCardGlass;
   /** Card watermark glyph preset (DEFAULT = Reiwa mark, NONE = hidden). */
   cardLogo: CardLogoPreset;
   /** Custom card watermark image (same-origin upload, HTTPS, or data image); overrides cardLogo. */
@@ -381,6 +405,7 @@ export const DEFAULT_BRANDING: Branding = {
   cardGradient: "linear-gradient(135deg, #064e3b 0%, #22c55e 100%)",
   cardPattern: null,
   subscriptionCardText: DEFAULT_SUBSCRIPTION_CARD_TEXT,
+  subscriptionCardGlass: DEFAULT_SUBSCRIPTION_CARD_GLASS,
   cardLogo: "DEFAULT",
   cardLogoUrl: null,
   cardEffect: "aurora",
@@ -458,6 +483,7 @@ export function resolveBrandingThemeMode(
     // This is one global operator decision, never a brightness token. Ignore
     // a stale/corrupt variant copy so a theme switch cannot change it.
     subscriptionCardText: resolveSubscriptionCardText(branding.subscriptionCardText),
+    subscriptionCardGlass: resolveSubscriptionCardGlass(branding.subscriptionCardGlass),
     bgEffect: variant.bgEffect,
     appBackground: variant.appBackground,
     borderRadius: variant.borderRadius,
@@ -503,6 +529,38 @@ export function resolveSubscriptionCardText(
     // A colour belongs only to custom mode. Clearing stale values keeps mode
     // switches deterministic across the cached public-config boundary.
     color: null,
+  };
+}
+
+/**
+ * Normalizes the optional global glass layer at the same boundary as card
+ * copy. Old cached snapshots therefore render exactly as before (no glass),
+ * while malformed values cannot turn into an opaque film over live artwork.
+ */
+export function resolveSubscriptionCardGlass(
+  value: SubscriptionCardGlass | null | undefined,
+): SubscriptionCardGlass {
+  if (!value || value.enabled !== true) return DEFAULT_SUBSCRIPTION_CARD_GLASS;
+
+  const tint =
+    typeof value.tint === "string" && isSubscriptionCardTextHex(value.tint.trim())
+      ? value.tint.trim()
+      : DEFAULT_SUBSCRIPTION_CARD_GLASS.tint;
+  const bounded = (candidate: unknown, fallback: number, maximum: number) =>
+    typeof candidate === "number" && Number.isFinite(candidate)
+      ? Math.min(maximum, Math.max(0, candidate))
+      : fallback;
+
+  return {
+    enabled: true,
+    tint,
+    opacity: bounded(value.opacity, DEFAULT_SUBSCRIPTION_CARD_GLASS.opacity, 1),
+    blurPx: bounded(value.blurPx, DEFAULT_SUBSCRIPTION_CARD_GLASS.blurPx, 40),
+    borderOpacity: bounded(
+      value.borderOpacity,
+      DEFAULT_SUBSCRIPTION_CARD_GLASS.borderOpacity,
+      1,
+    ),
   };
 }
 

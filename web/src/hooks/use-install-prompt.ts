@@ -31,7 +31,7 @@ export interface InstallPromptState {
 
 export function useInstallPrompt(): InstallPromptState {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isStandalone, setIsStandalone] = useState<boolean>(detectStandalone);
+  const [isStandalone, setIsStandalone] = useState<boolean>(isStandalonePwa);
 
   useEffect(() => {
     const onBeforeInstall = (e: Event): void => {
@@ -68,7 +68,8 @@ export function useInstallPrompt(): InstallPromptState {
   };
 }
 
-function detectStandalone(): boolean {
+/** Read-only standalone check for shell telemetry; it never captures PWA events. */
+export function isStandalonePwa(): boolean {
   if (typeof window === "undefined") return false;
   const mediaStandalone = window.matchMedia?.("(display-mode: standalone)").matches === true;
   const iosStandalone = (window.navigator as { standalone?: boolean }).standalone === true;

@@ -48,15 +48,18 @@ describe("animated card CSS opacity contract", () => {
     );
     expect(EFFECT_LAYER_SOURCE).toContain("data-card-effect-artwork");
     expect(EFFECT_LAYER_SOURCE).not.toContain("backgroundColor: first");
-    expect(EFFECT_LAYER_SOURCE).toContain(
-      "style={{ opacity: configuredOpacity }}",
+    expect(EFFECT_LAYER_SOURCE).toContain("opacity: configuredOpacity,");
+    expect(EFFECT_LAYER_SOURCE).toContain('mixBlendMode: "screen"');
+    expect(EFFECT_LAYER_SOURCE).not.toContain(
+      "linear-gradient(135deg, ${first}, ${middle}, ${last})",
     );
     expect(EFFECT_LAYER_SOURCE).toContain(
       "const configuredOpacity = resolveCardEffectOverlayOpacity(opacity)",
     );
     expect(EFFECT_LAYER_SOURCE).toContain(
-      "CARD_EFFECT_MAX_OVERLAY_OPACITY = 0.68",
+      "return Math.min(Math.max(opacity, 0.05), 1)",
     );
+    expect(EFFECT_LAYER_SOURCE).not.toContain("CARD_EFFECT_MAX_OVERLAY_OPACITY");
     expect(EFFECT_LAYER_SOURCE).toContain('contain: "paint"');
     expect(EFFECT_LAYER_SOURCE).toContain('overflow: "hidden"');
     expect(EFFECT_LAYER_SOURCE).toContain(

@@ -114,6 +114,42 @@ describe("SubscriptionCardFrame visual containment", () => {
     expect(markup).not.toContain("text-shadow");
   });
 
+  it("renders opt-in glass above, but independently from, live artwork", () => {
+    const visual = resolveSubscriptionCardVisual({
+      ...DEFAULT_BRANDING,
+      cardEffect: "paperWarp",
+      cardEffectProps: { colors: ["#050505", "#7c3aed", "#22d3ee"] },
+      cardEffectOpacity: 0.72,
+      subscriptionCardGlass: {
+        enabled: true,
+        tint: "#ffffff",
+        opacity: 0.16,
+        blurPx: 10,
+        borderOpacity: 0.24,
+      },
+    });
+
+    const markup = renderToStaticMarkup(
+      <SubscriptionCardFrame visual={visual} effectActive>
+        <span data-card-copy>Subscription</span>
+      </SubscriptionCardFrame>,
+    );
+
+    const effect = markup.indexOf('data-card-effect-source="paperWarp"');
+    const glass = markup.indexOf('data-subscription-card-layer="glass"');
+    const copy = markup.indexOf("data-card-copy");
+    expect(effect).toBeGreaterThan(-1);
+    expect(glass).toBeGreaterThan(effect);
+    expect(copy).toBeGreaterThan(glass);
+    expect(markup).toContain("background-color:rgb(255 255 255 / 0.16)");
+    expect(markup).toContain("border:1px solid rgb(255 255 255 / 0.24)");
+    expect(markup).toContain("backdrop-filter:blur(10px)");
+    expect(markup).toContain("-webkit-backdrop-filter:blur(10px)");
+    // Glass must not change the effect source, palette, or selected opacity.
+    expect(markup).toContain('data-card-effect-source="paperWarp"');
+    expect(visual.cardEffectOpacity).toBe(0.72);
+  });
+
   it("keeps the computed veil for a static card", () => {
     const stops = ["#ffffff", "#e2e8f0"] as const;
     const visual = resolveSubscriptionCardVisual({

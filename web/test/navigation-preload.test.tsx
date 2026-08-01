@@ -1,9 +1,19 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
-  canPreloadNavigationRoutes,
   isNavigationRoutePreloadable,
 } from "../src/components/layout/navigation-preload";
+
+const bottomNavSource = readFileSync(
+  new URL("../src/components/layout/bottom-nav.tsx", import.meta.url),
+  "utf8",
+);
+const sideNavSource = readFileSync(
+  new URL("../src/components/layout/side-nav.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("navigation route preloading", () => {
   it("warms every primary cabinet destination that can be put in navigation", () => {
@@ -24,11 +34,11 @@ describe("navigation route preloading", () => {
     expect(isNavigationRoutePreloadable("/renew")).toBe(false);
   });
 
-  it("does not spend an opted-in or slow mobile connection on optional chunks", () => {
-    expect(canPreloadNavigationRoutes()).toBe(true);
-    expect(canPreloadNavigationRoutes({ saveData: true })).toBe(false);
-    expect(canPreloadNavigationRoutes({ effectiveType: "slow-2g" })).toBe(false);
-    expect(canPreloadNavigationRoutes({ effectiveType: "2g" })).toBe(false);
-    expect(canPreloadNavigationRoutes({ effectiveType: "3g" })).toBe(true);
+  it("preloads only from a user's navigation intent, never from a launch timer", () => {
+    for (const source of [bottomNavSource, sideNavSource]) {
+      expect(source).toContain("onPointerDown={() => preloadNavigationRoute(tab.to)}");
+      expect(source).toContain("onFocus={() => preloadNavigationRoute(tab.to)}");
+      expect(source).not.toContain("useNavigationPreload(");
+    }
   });
 });

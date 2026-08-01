@@ -147,6 +147,7 @@ export function isPublicConfigSnapshot(value: unknown): value is PublicConfigSna
     isNullableSafeGradient(branding["cardPattern"]) &&
     hasOptionalSubscriptionCardText(branding, "subscriptionCardText") &&
     hasConsistentVariantSubscriptionCardText(branding) &&
+    hasOptionalSubscriptionCardGlass(branding, "subscriptionCardGlass") &&
     isString(branding["cardLogo"]) &&
     isNullableImageUrl(branding["cardLogoUrl"]) &&
     isAllowedString(branding["cardEffect"], CARD_EFFECTS) &&
@@ -231,6 +232,27 @@ function hasOptionalSubscriptionCardText(
   return value["mode"] === "custom"
     ? isOpaqueHex(value["color"])
     : value["color"] === null;
+}
+
+/**
+ * Glass is a root-level card presentation control, never a brightness token.
+ * Keep the validation intentionally strict so a corrupt cache cannot place an
+ * opaque/expensive layer over every animated card.
+ */
+function hasOptionalSubscriptionCardGlass(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  const value = record[key];
+  return (
+    value === undefined ||
+    (isRecord(value) &&
+      typeof value["enabled"] === "boolean" &&
+      isOpaqueHex(value["tint"]) &&
+      isNumberInRange(value["opacity"], 0, 1) &&
+      isNumberInRange(value["blurPx"], 0, 40) &&
+      isNumberInRange(value["borderOpacity"], 0, 1))
+  );
 }
 
 /**
