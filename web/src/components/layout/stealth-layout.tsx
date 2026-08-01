@@ -4,7 +4,7 @@
  * Authenticated shell rendered behind every protected route. Composes:
  *   1. a branded background (`<NetworkBg>`),
  *   2. a scrollable main region containing the route's element wrapped in a
- *      `<PageTransition>` so navigations crossfade,
+ *      synchronous `<PageTransition>` shell,
  *   3. the bottom navigation pill anchored above the safe-area inset.
  *
  * Session gate: we redirect to `/bootstrap` when no session is found, which
@@ -232,7 +232,7 @@ export default function StealthLayout() {
         {hasAppBackground ? <AppBackground /> : <NetworkBg />}
 
         <div className="app-shell z-10 flex flex-col overflow-hidden">
-          {/* Scrollable main content with page-transition wrapper */}
+          {/* Scrollable main content; route changes render synchronously. */}
           <main className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto">
             <PageTransition>
               <Outlet />

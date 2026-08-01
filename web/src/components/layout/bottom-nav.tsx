@@ -33,6 +33,10 @@ import { NavLink, useLocation } from "react-router";
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { resolveActiveTabTo, useNavTabs } from "@/components/layout/use-nav-tabs";
+import {
+  preloadNavigationRoute,
+} from "@/components/layout/navigation-preload";
+import { useNavigationPreload } from "@/components/layout/use-navigation-preload";
 
 export function BottomNav() {
   const location = useLocation();
@@ -40,6 +44,12 @@ export function BottomNav() {
   const activeTo = resolveActiveTabTo(tabs, location.pathname);
   const { branding } = useBranding();
   const navGap = branding.navGap ?? 2;
+
+  // A route remains lazy until it becomes relevant. After the initial screen
+  // settles, warm only the destinations this operator put in the navigation.
+  // A pointer/focus event below also begins the request before React Router
+  // changes routes, covering a user who taps a tab immediately after launch.
+  useNavigationPreload(tabs.map((tab) => tab.to));
 
   return (
     <nav
@@ -61,6 +71,9 @@ export function BottomNav() {
                   to={tab.to}
                   data-testid={tab.testId}
                   aria-current={isActive ? "page" : undefined}
+                  onPointerDown={() => preloadNavigationRoute(tab.to)}
+                  onPointerEnter={() => preloadNavigationRoute(tab.to)}
+                  onFocus={() => preloadNavigationRoute(tab.to)}
                   className={cn(
                     "relative z-10 flex min-h-[52px] w-16 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 font-medium transition-colors duration-200 select-none",
                     isActive

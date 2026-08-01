@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { resolveActiveTabTo, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
+import { preloadNavigationRoute } from "@/components/layout/navigation-preload";
+import { useNavigationPreload } from "@/components/layout/use-navigation-preload";
 
 export function SideNav() {
   const location = useLocation();
@@ -48,6 +50,8 @@ export function SideNav() {
           ? [supportTab, { ...tab, matchPrefix: tab.matchPrefix.filter((p) => p !== "/support") }]
           : [tab],
       );
+
+  useNavigationPreload(tabs.map((tab) => tab.to));
 
   return (
     <nav
@@ -81,6 +85,9 @@ export function SideNav() {
                 to={tab.to}
                 data-testid={`side-${tab.testId}`}
                 aria-current={isActive ? "page" : undefined}
+                onPointerDown={() => preloadNavigationRoute(tab.to)}
+                onPointerEnter={() => preloadNavigationRoute(tab.to)}
+                onFocus={() => preloadNavigationRoute(tab.to)}
                 className={cn(
                   "relative z-10 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200 select-none",
                   isActive
