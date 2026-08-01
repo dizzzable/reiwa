@@ -7,13 +7,18 @@
  * news item jumps to the feed with `?n=<id>` (which opens the full modal).
  */
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { Bell, ChevronRight } from "lucide-react";
+import { Bell, CheckCheck, ChevronRight } from "lucide-react";
+import { toast } from "sonner";
 
-import { getNotifications, getUnreadCount } from "@/lib/api-client";
+import {
+  getNotifications,
+  getUnreadCount,
+  markAllNotificationsRead,
+} from "@/lib/api-client";
 import { presentNotification } from "@/lib/notification-presenter";
 import { useSupportInNav } from "@/components/layout/use-nav-tabs";
 import { useSupportUnread } from "@/hooks/use-support-unread";
@@ -25,12 +30,14 @@ import {
 } from "@/components/ui/dialog";
 import { EmojiText } from "@/components/ui/emoji-text";
 import { cn } from "@/lib/utils";
+import type { NotificationsResponse } from "@/types/api";
 
 const RECENT_LIMIT = 5;
 
 export function NotificationBell() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
 
   const { data: unread } = useQuery({
@@ -40,7 +47,12 @@ export function NotificationBell() {
     refetchInterval: 60_000,
   });
 
-  const { data: feed } = useQuery({
+  const {
+    data: feed,
+    isError: isFeedError,
+    isLoading: isFeedLoading,
+    refetch: refetchFeed,
+  } = useQuery({
     queryKey: ["notifications"],
     queryFn: ({ signal }) => getNotifications(1, RECENT_LIMIT, { signal }),
     enabled: open,
@@ -56,16 +68,75 @@ export function NotificationBell() {
   const rawCount = unread?.count ?? 0;
   const count = supportInNav ? Math.max(0, rawCount - supportUnread) : rawCount;
   const hasUnread = count > 0;
+  const bellLabel = hasUnread
+    ? `${t("notifications.feedTitle")}: ${t("dashboard.unread", { count })}`
+    : t("notifications.feedTitle");
   const recent = (feed?.notifications ?? [])
     .slice(0, RECENT_LIMIT)
     .map((n) => presentNotification(n, t));
+  // The popup displays only the latest few rows, but this action clears the
+  // entire inbox. Keep it available when an unread item is just outside the
+  // compact preview as well.
+  const canMarkAllRead = hasUnread && feed !== undefined;
+
+  const markAllRead = useMutation({
+    mutationFn: markAllNotificationsRead,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      await queryClient.cancelQueries({
+        queryKey: ["notifications", "unread-count"],
+      });
+
+      const previousFeed = queryClient.getQueryData<NotificationsResponse>([
+        "notifications",
+      ]);
+      const previousUnread = queryClient.getQueryData<{ count: number }>([
+        "notifications",
+        "unread-count",
+      ]);
+      const readAt = new Date().toISOString();
+
+      queryClient.setQueryData<NotificationsResponse>(["notifications"], (current) =>
+        current === undefined
+          ? current
+          : {
+              ...current,
+              notifications: current.notifications.map((notification) => ({
+                ...notification,
+                readAt: notification.readAt ?? readAt,
+              })),
+            },
+      );
+      queryClient.setQueryData(["notifications", "unread-count"], { count: 0 });
+
+      return { previousFeed, previousUnread };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousFeed !== undefined) {
+        queryClient.setQueryData(["notifications"], context.previousFeed);
+      }
+      if (context?.previousUnread !== undefined) {
+        queryClient.setQueryData(
+          ["notifications", "unread-count"],
+          context.previousUnread,
+        );
+      }
+      toast.error(t("notifications.markAllReadFailed"));
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notifications", "unread-count"],
+      });
+    },
+  });
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
         className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
-        aria-label={t("notifications.feedTitle")}
+        aria-label={bellLabel}
       >
         <motion.span
           className="inline-flex"
@@ -90,13 +161,31 @@ export function NotificationBell() {
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent
+          className="max-w-sm"
+          aria-busy={markAllRead.isPending || undefined}
+        >
           <DialogHeader>
             <DialogTitle>{t("notifications.recentTitle")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-2">
-            {recent.length === 0 ? (
+            {isFeedLoading ? (
+              <p
+                role="status"
+                className="py-6 text-center text-sm text-[color:var(--brand-muted-foreground)]"
+              >
+                {t("notifications.loading")}
+              </p>
+            ) : isFeedError ? (
+              <button
+                type="button"
+                onClick={() => void refetchFeed()}
+                className="w-full rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] px-3 py-4 text-sm text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)]"
+              >
+                {t("notifications.loadFailed")}
+              </button>
+            ) : recent.length === 0 ? (
               <p className="py-6 text-center text-sm text-[color:var(--brand-muted-foreground)]">
                 {t("activity.emptyNotifications")}
               </p>
@@ -132,13 +221,25 @@ export function NotificationBell() {
             )}
           </div>
 
+          {canMarkAllRead && (
+            <button
+              type="button"
+              onClick={() => markAllRead.mutate()}
+              disabled={markAllRead.isPending}
+              className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] px-3 py-2 text-xs font-medium text-[color:var(--brand-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] disabled:pointer-events-none disabled:opacity-60"
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              {t("activity.markAllRead")}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
               setOpen(false);
               navigate("/settings/notifications/feed");
             }}
-            className="mt-1 flex items-center justify-center gap-1 text-xs font-medium text-(--brand-primary) hover:underline"
+            className="mt-1 flex min-h-7 items-center justify-center gap-1 rounded-[var(--radius-pill)] px-2 text-xs font-medium text-(--brand-primary) hover:bg-[color:var(--color-surface-high)] hover:underline"
           >
             {t("notifications.seeAll")}
             <ChevronRight className="h-3.5 w-3.5" />

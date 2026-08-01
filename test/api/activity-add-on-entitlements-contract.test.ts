@@ -47,4 +47,40 @@ describe('ActivityNamespace add-on entitlement contract', () => {
     expect(result).toEqual(RESPONSE);
     expect(result.entitlements[0]?.addOnId).toBeNull();
   });
+
+  it('uses the canonical web identity for notification writes', async () => {
+    const calls: Array<{
+      method: string;
+      path: string;
+      body: unknown;
+    }> = [];
+    const namespace = new ActivityNamespace({
+      request: async (method: string, path: string, body: unknown) => {
+        calls.push({ method, path, body });
+        return { ok: true };
+      },
+    } as never);
+
+    await namespace.markAllRead({ userId: 'user-1', telegramId: 'stale-telegram' });
+    await namespace.markRead({ userId: 'user-1', telegramId: 'stale-telegram' }, 'notice/1');
+    await namespace.markAllRead({ telegramId: 'legacy-telegram' });
+
+    expect(calls).toEqual([
+      {
+        method: 'POST',
+        path: '/api/internal/user/notifications/read-all',
+        body: { userId: 'user-1' },
+      },
+      {
+        method: 'POST',
+        path: '/api/internal/user/notifications/notice%2F1/read',
+        body: { userId: 'user-1' },
+      },
+      {
+        method: 'POST',
+        path: '/api/internal/user/notifications/read-all',
+        body: { telegramId: 'legacy-telegram' },
+      },
+    ]);
+  });
 });

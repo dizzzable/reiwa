@@ -7,7 +7,7 @@ import { createActivityRouter } from '../../src/api/routes/activity.js';
 import { createProfileRouter } from '../../src/api/routes/profile.js';
 import { UpstreamError } from '../../src/core/errors/index.js';
 
-type ActivityMethod = () => Promise<unknown>;
+type ActivityMethod = (...args: unknown[]) => Promise<unknown>;
 
 function attachWebSession(
   app: express.Express,
@@ -26,16 +26,28 @@ function attachWebSession(
   });
 }
 
-function makeActivityApp(methods: {
-  readonly getNotifications: ActivityMethod;
-  readonly getUnreadCount: ActivityMethod;
-}, destroyWebSession: () => Promise<void>): express.Express {
+function makeActivityApp(
+  methods: Partial<{
+    readonly getNotifications: ActivityMethod;
+    readonly getUnreadCount: ActivityMethod;
+    readonly markAllRead: ActivityMethod;
+    readonly markRead: ActivityMethod;
+  }>,
+  destroyWebSession: () => Promise<void>,
+): express.Express {
   const app = express();
   attachWebSession(app, destroyWebSession);
+  const activity = {
+    getNotifications: async () => ({ notifications: [] }),
+    getUnreadCount: async () => ({ unread: 0 }),
+    markAllRead: async () => ({ ok: true }),
+    markRead: async () => ({ ok: true }),
+    ...methods,
+  };
   app.use(
     '/api/v1',
     createActivityRouter({
-      adminClient: { activity: methods } as never,
+      adminClient: { activity } as never,
       sessionStore: null,
       config: { NODE_ENV: 'test' } as never,
     }),
@@ -55,9 +67,10 @@ function makeActivityApp(methods: {
   return app;
 }
 
-async function get(
+async function request(
   app: express.Express,
   path: string,
+  method: 'GET' | 'POST',
 ): Promise<{ readonly status: number; readonly body: unknown }> {
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -65,7 +78,7 @@ async function get(
   try {
     return await new Promise((resolve, reject) => {
       const request = http.request(
-        { host: '127.0.0.1', port, path, method: 'GET' },
+        { host: '127.0.0.1', port, path, method },
         (response) => {
           let payload = '';
           response.on('data', (chunk) => (payload += chunk));
@@ -86,6 +99,9 @@ async function get(
     });
   }
 }
+
+const get = (app: express.Express, path: string) => request(app, path, 'GET');
+const post = (app: express.Express, path: string) => request(app, path, 'POST');
 
 describe('activity routes for a user absent upstream', () => {
   it('revokes the stale session and returns 401 instead of propagating the upstream identity 404 as a 500', async () => {
@@ -151,6 +167,69 @@ describe('activity routes for a user absent upstream', () => {
 
     expect(response).toEqual({ status: 500, body: { message: 'Internal server error' } });
     expect(destroyWebSession).not.toHaveBeenCalled();
+  });
+
+  it('revokes the stale session when marking every notification read', async () => {
+    const destroyWebSession = vi.fn(async () => undefined);
+    const markAllRead = vi.fn(async () => {
+      throw new UpstreamError(
+        'POST',
+        '/api/internal/user/notifications/read-all',
+        404,
+        'User not found',
+      );
+    });
+    const response = await post(
+      makeActivityApp({ markAllRead }, destroyWebSession),
+      '/api/v1/activity/notifications/read-all',
+    );
+
+    expect(response).toEqual({ status: 401, body: { message: 'Session expired' } });
+    expect(markAllRead).toHaveBeenCalledWith({ userId: 'missing-user' });
+    expect(destroyWebSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim notification writes succeeded when the upstream rejects them', async () => {
+    const destroyWebSession = vi.fn(async () => undefined);
+    const response = await post(
+      makeActivityApp(
+        {
+          markAllRead: vi.fn(async () => {
+            throw new UpstreamError(
+              'POST',
+              '/api/internal/user/notifications/read-all',
+              502,
+              'Upstream unavailable',
+            );
+          }),
+        },
+        destroyWebSession,
+      ),
+      '/api/v1/activity/notifications/read-all',
+    );
+
+    expect(response).toEqual({ status: 500, body: { message: 'Internal server error' } });
+    expect(destroyWebSession).not.toHaveBeenCalled();
+  });
+
+  it('revokes the stale session when marking one notification read', async () => {
+    const destroyWebSession = vi.fn(async () => undefined);
+    const markRead = vi.fn(async () => {
+      throw new UpstreamError(
+        'POST',
+        '/api/internal/user/notifications/notice-1/read',
+        404,
+        'User not found',
+      );
+    });
+    const response = await post(
+      makeActivityApp({ markRead }, destroyWebSession),
+      '/api/v1/activity/notifications/notice-1/read',
+    );
+
+    expect(response).toEqual({ status: 401, body: { message: 'Session expired' } });
+    expect(markRead).toHaveBeenCalledWith({ userId: 'missing-user' }, 'notice-1');
+    expect(destroyWebSession).toHaveBeenCalledTimes(1);
   });
 
   it('makes the session probe revoke a stale CUID and preserve its null contract', async () => {

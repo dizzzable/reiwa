@@ -24,6 +24,10 @@ export default defineConfig({
     include: ['test/**/*.test.ts', 'src/**/*.test.ts', 'web/test/**/*.test.tsx'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.property.test.ts'],
     passWithNoTests: true,
+    // The mixed Node + jsdom suite is stable in isolation but fork workers
+    // intermittently exit during a parallel run on Windows. Keep CI and local
+    // `npm test` deterministic instead of accepting a false-red test command.
+    fileParallelism: false,
     environment: 'node',
     globals: false,
   },

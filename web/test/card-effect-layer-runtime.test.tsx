@@ -95,32 +95,32 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps the shared layer on its static CSS fallback", () => {
+  it("keeps the operator-selected artwork live when the OS requests reduced motion", () => {
     const container = renderIntoDom(
       <CardEffectLayer effect="paperWarp" active />,
     );
 
-    expect(container.querySelectorAll("[data-card-effect-renderer]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-card-effect-renderer]")).toHaveLength(1);
     expect(
       container
         .querySelector("[data-card-effect-runtime]")
         ?.getAttribute("data-card-effect-runtime"),
-    ).toBe("css-fallback");
+    ).toBe("native");
   });
 
-  it("keeps the active dashboard card on the static palette fallback", () => {
+  it("keeps the active dashboard card live when the OS requests reduced motion", () => {
     const container = renderIntoDom(
       <SubscriptionCardFrame visual={animatedVisual()} effectActive>
         <span>Active subscription</span>
       </SubscriptionCardFrame>,
     );
 
-    expect(container.querySelectorAll("[data-card-effect-renderer]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-card-effect-renderer]")).toHaveLength(1);
     expect(
       container
         .querySelector("[data-card-effect-runtime]")
         ?.getAttribute("data-card-effect-runtime"),
-    ).toBe("css-fallback");
+    ).toBe("native");
   });
 
   it("mounts no renderer for an inactive dashboard card", () => {
@@ -133,7 +133,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect(container.querySelectorAll("[data-card-effect-renderer]")).toHaveLength(0);
   });
 
-  it("keeps every dashboard card static when reduced motion is requested", () => {
+  it("keeps one live renderer across several cards when reduced motion is requested", () => {
     const visual = animatedVisual();
     const container = renderIntoDom(
       <>
@@ -143,8 +143,8 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
       </>,
     );
 
-    expect(container.querySelectorAll("[data-card-effect-renderer]")).toHaveLength(0);
-    expect(container.querySelectorAll("[data-test-native-card-effect]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-card-effect-renderer]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-test-native-card-effect]")).toHaveLength(1);
   });
 
   it("keeps exactly one live renderer across multiple cards when motion is allowed", () => {

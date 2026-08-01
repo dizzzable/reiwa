@@ -11,9 +11,10 @@
  *  - Only renders while on-screen (IntersectionObserver) so off-screen carousel
  *    slides and scrolled-away cards pause their GPU work.
  *
- * Reduced motion always keeps a static CSS rendition of the configured
- * palette and does not mount the native canvas/WebGL renderer. The selected
- * colours stay intact without forcing perpetual decorative motion.
+ * Card artwork is an operator-selected part of the brand and must render the
+ * same way in the live cabinet as it does in the Rezeis preview. It is
+ * therefore not disabled by the browser's decorative reduced-motion hint.
+ * CSS fallback is reserved for genuine canvas/WebGL capability failures.
  */
 
 import {
@@ -49,26 +50,6 @@ interface CardEffectLayerProps {
    * IntersectionObserver below drives mounting.
    */
   readonly active?: boolean;
-}
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(media.matches);
-    update();
-    media.addEventListener?.("change", update);
-    return () => media.removeEventListener?.("change", update);
-  }, []);
-
-  return reduced;
 }
 
 class EffectErrorBoundary extends Component<{
@@ -155,7 +136,6 @@ export function CardEffectLayer({
     readonly capabilities: ReturnType<typeof detectCardEffectCapabilities>;
   } | null>(null);
   const [effectFailed, setEffectFailed] = useState(false);
-  const prefersReducedMotion = usePrefersReducedMotion();
 
   // Mount the effect while the card is on screen (standalone usage). In the
   // carousel the parent passes an explicit `active` boolean: in that mode it
@@ -176,7 +156,7 @@ export function CardEffectLayer({
   }, [active]);
 
   const shouldMount = active === undefined ? visible : active;
-  const shouldAnimate = shouldMount && !prefersReducedMotion;
+  const shouldAnimate = shouldMount;
   const isValid = effect !== "NONE" && effect in CARD_EFFECT_COMPONENTS;
 
   useEffect(() => {
@@ -210,21 +190,14 @@ export function CardEffectLayer({
       ? capabilitySnapshot.capabilities
       : null;
   const runtime =
-    prefersReducedMotion && isValid
-      ? {
-          effect: "NONE",
-          props: {},
-          mode: "css-fallback" as const,
-          cssColors: resolveCardEffectColors(effect, staticProps),
-        }
-      : !isValid || (requiresWebGL(effect) && capabilities === null)
-        ? null
-        : resolveCardEffectRuntime({
-            effect,
-            props: sourceProps,
-            capabilities: capabilities ?? { webgl: false, webgl2: false },
-            failed: effectFailed,
-          });
+    !isValid || (requiresWebGL(effect) && capabilities === null)
+      ? null
+      : resolveCardEffectRuntime({
+          effect,
+          props: sourceProps,
+          capabilities: capabilities ?? { webgl: false, webgl2: false },
+          failed: effectFailed,
+        });
   const runtimeId = runtime?.effect as CardEffectId | "NONE" | undefined;
   const Effect =
     runtimeId === undefined || runtimeId === "NONE"
@@ -299,7 +272,7 @@ export function CardEffectLayer({
         // selected effect is ready, this surface becomes fully opaque so the
         // theme gradient and pattern cannot tint or desaturate the artwork.
         opacity: presentationReady ? 1 : 0,
-        transition: prefersReducedMotion ? "none" : "opacity 450ms ease",
+        transition: "opacity 450ms ease",
         isolation: "isolate",
         overflow: "hidden",
         contain: "paint",

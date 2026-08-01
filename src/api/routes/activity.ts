@@ -90,10 +90,20 @@ export function createActivityRouter(deps: {
     "/activity/notifications/read-all",
     requireSession,
     async (req: AuthRequest, res) => {
-      await adminClient?.activity
-        .markAllRead(resolveUserIdentity(req))
-        .catch(() => {});
-      res.json({ ok: true });
+      if (adminClient === null) {
+        res.status(503).json({ message: "Notifications unavailable" });
+        return;
+      }
+      try {
+        await adminClient.activity.markAllRead(resolveUserIdentity(req));
+        res.json({ ok: true });
+      } catch (error: unknown) {
+        if (await invalidateStaleUserSession(req, error)) {
+          res.status(401).json({ message: "Session expired" });
+          return;
+        }
+        throw error;
+      }
     },
   );
 
@@ -102,13 +112,23 @@ export function createActivityRouter(deps: {
     "/activity/notifications/:notificationId/read",
     requireSession,
     async (req: AuthRequest, res) => {
-      await adminClient?.activity
-        .markRead(
+      if (adminClient === null) {
+        res.status(503).json({ message: "Notifications unavailable" });
+        return;
+      }
+      try {
+        await adminClient.activity.markRead(
           resolveUserIdentity(req),
           String(req.params["notificationId"]),
-        )
-        .catch(() => {});
-      res.json({ ok: true });
+        );
+        res.json({ ok: true });
+      } catch (error: unknown) {
+        if (await invalidateStaleUserSession(req, error)) {
+          res.status(401).json({ message: "Session expired" });
+          return;
+        }
+        throw error;
+      }
     },
   );
 

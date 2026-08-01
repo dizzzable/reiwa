@@ -1035,6 +1035,9 @@ export const en: RuDict = {
     feedTitle: 'Notifications feed',
     recentTitle: 'Latest news',
     seeAll: 'All notifications',
+    loading: 'Loading notifications…',
+    loadFailed: 'Could not load notifications. Tap to retry.',
+    markAllReadFailed: 'Could not mark notifications as read. Please try again.',
     emptyBody: 'Notification text is unavailable.',
     feedSub: 'Received notifications',
     types: {

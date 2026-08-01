@@ -42,14 +42,16 @@ function identityQuery(identity: UserIdentity): string {
 }
 
 function identityBody(identity: UserIdentity): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
   if (typeof identity.userId === 'string' && identity.userId.length > 0) {
-    body['userId'] = identity.userId;
+    // Match GET semantics: the current web-session identity is canonical.
+    // Never combine it with a possibly stale legacy Telegram cookie on a
+    // state-changing request.
+    return { userId: identity.userId };
   }
   if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
-    body['telegramId'] = identity.telegramId;
+    return { telegramId: identity.telegramId };
   }
-  return body;
+  return {};
 }
 
 export class ActivityNamespace {

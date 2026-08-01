@@ -54,15 +54,10 @@ describe("animated card CSS opacity contract", () => {
     expect(EFFECT_LAYER_SOURCE).toContain('contain: "paint"');
     expect(EFFECT_LAYER_SOURCE).toContain('overflow: "hidden"');
     expect(EFFECT_LAYER_SOURCE).toContain(
-      "const shouldAnimate = shouldMount && !prefersReducedMotion",
+      "const shouldAnimate = shouldMount",
     );
-    expect(EFFECT_LAYER_SOURCE).toContain(
-      'mode: "css-fallback" as const',
-    );
-    expect(EFFECT_LAYER_SOURCE).not.toContain("allowMotionWhenReduced");
-    expect(EFFECT_LAYER_SOURCE).toContain(
-      'transition: prefersReducedMotion ? "none" : "opacity 450ms ease"',
-    );
+    expect(EFFECT_LAYER_SOURCE).not.toContain("prefersReducedMotion");
+    expect(EFFECT_LAYER_SOURCE).toContain('transition: "opacity 450ms ease"');
   });
 });
 
