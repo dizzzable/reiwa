@@ -36,20 +36,26 @@ function cssBlock(selector: string): string {
 }
 
 describe("animated card CSS opacity contract", () => {
-  it("keeps the selected effect opaque over the theme placeholder", () => {
+  it("keeps the selected effect as alpha artwork over the theme foundation", () => {
     const fallback = cssBlock(".card-effect-layer__css-fallback");
     const opacityDeclarations =
       fallback.match(/\bopacity\s*:\s*[^;]+;/g) ?? [];
 
     expect(opacityDeclarations).toEqual(["opacity: 1;"]);
-    expect(EFFECT_LAYER_SOURCE).toContain(
-      "opacity: presentationReady ? 1 : 0",
-    );
+    expect(EFFECT_LAYER_SOURCE).toContain("runtime?.mode === \"css-fallback\"");
     expect(EFFECT_LAYER_SOURCE).toContain(
       "data-card-effect-palette-surface",
     );
+    expect(EFFECT_LAYER_SOURCE).toContain("data-card-effect-artwork");
+    expect(EFFECT_LAYER_SOURCE).not.toContain("backgroundColor: first");
     expect(EFFECT_LAYER_SOURCE).toContain(
       "style={{ opacity: configuredOpacity }}",
+    );
+    expect(EFFECT_LAYER_SOURCE).toContain(
+      "const configuredOpacity = resolveCardEffectOverlayOpacity(opacity)",
+    );
+    expect(EFFECT_LAYER_SOURCE).toContain(
+      "CARD_EFFECT_MAX_OVERLAY_OPACITY = 0.68",
     );
     expect(EFFECT_LAYER_SOURCE).toContain('contain: "paint"');
     expect(EFFECT_LAYER_SOURCE).toContain('overflow: "hidden"');
@@ -57,7 +63,8 @@ describe("animated card CSS opacity contract", () => {
       "const shouldAnimate = shouldMount",
     );
     expect(EFFECT_LAYER_SOURCE).not.toContain("prefersReducedMotion");
-    expect(EFFECT_LAYER_SOURCE).toContain('transition: "opacity 450ms ease"');
+    expect(EFFECT_LAYER_SOURCE).toContain("opacity: 1,");
+    expect(EFFECT_LAYER_SOURCE).not.toContain('transition: "opacity 450ms ease"');
   });
 });
 

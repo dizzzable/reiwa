@@ -4,10 +4,12 @@ import {
   type CardContrast,
 } from "../../../lib/card-contrast";
 import { resolveCardEffectOutputColors } from "../../../components/reactbits/card-effect-runtime";
+import { resolveSubscriptionCardText } from "../../../types/branding";
 import type {
   Branding,
   CardEffect,
   CardLogoPreset,
+  SubscriptionCardText,
 } from "../../../types/branding";
 
 /**
@@ -25,6 +27,7 @@ export interface ResolvedSubscriptionCardVisual {
   readonly contrast: CardContrast;
   readonly cardGradient: string;
   readonly cardPattern: string | null;
+  readonly subscriptionCardText: SubscriptionCardText;
   readonly cardEffect: CardEffect;
   readonly cardEffectProps: Readonly<Record<string, unknown>>;
   readonly cardEffectOpacity: number;
@@ -52,6 +55,12 @@ function validSlotIndex(index: number | undefined): number | null {
     index >= 0
     ? index
     : null;
+}
+
+function resolveCardTextForeground(text: SubscriptionCardText): string | null {
+  if (text.mode === "light") return "#ffffff";
+  if (text.mode === "dark") return "#0a0a0a";
+  return text.mode === "custom" ? text.color : null;
 }
 
 /**
@@ -136,6 +145,9 @@ export function resolveSubscriptionCardVisual(
     branding.bgSecondary,
     "var(--brand-bg-secondary)",
   );
+  const subscriptionCardText = resolveSubscriptionCardText(
+    branding.subscriptionCardText,
+  );
   const effectArtwork =
     cardEffect === "NONE"
       ? null
@@ -149,6 +161,7 @@ export function resolveSubscriptionCardVisual(
     contrast: resolveCardContrast(cardGradient, {
       fallbackBackground: bgSecondary,
       preferredForeground: primaryFg,
+      forcedForeground: resolveCardTextForeground(subscriptionCardText),
       // The contrast resolver still calculates the required WCAG-AA veil from
       // the actual artwork stops. Do not additionally increase it merely
       // because an effect exists: light concepts otherwise receive a white
@@ -164,6 +177,7 @@ export function resolveSubscriptionCardVisual(
       branding.cardPattern !== "none"
         ? branding.cardPattern
         : null,
+    subscriptionCardText,
     cardEffect: cardEffect as CardEffect,
     cardEffectProps,
     cardEffectOpacity,

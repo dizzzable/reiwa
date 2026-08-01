@@ -10,6 +10,7 @@ import {
 } from "../../web/src/features/dashboard/components/subscription-card-visual.js";
 import {
   DEFAULT_BRANDING,
+  resolveSubscriptionCardText,
   type Branding,
 } from "../../web/src/types/branding.js";
 
@@ -170,6 +171,77 @@ describe("subscription card visual resolver", () => {
       foreground: "#ffffff",
       veilRgb: "0 0 0",
     });
+  });
+
+  it.each([
+    ["auto", null, "#ffffff"],
+    ["light", null, "#ffffff"],
+    ["dark", null, "#0a0a0a"],
+    ["custom", "#1b2c3d", "#1b2c3d"],
+  ] as const)(
+    "respects the operator's %s subscription-card text policy",
+    (mode, color, expectedForeground) => {
+      const visual = resolveSubscriptionCardVisual(
+        branding({
+          primaryFg: "#0a0a0a",
+          cardGradient: "linear-gradient(135deg, #020617, #172554)",
+          subscriptionCardText: { mode, color },
+        }),
+      );
+
+      expect(visual.subscriptionCardText).toEqual({ mode, color });
+      expect(visual.contrast.foreground).toBe(expectedForeground);
+    },
+  );
+
+  it("defaults a legacy missing text policy to automatic contrast", () => {
+    const visual = resolveSubscriptionCardVisual(
+      branding({
+        subscriptionCardText: undefined,
+        primaryFg: "#ffffff",
+        cardGradient: "linear-gradient(135deg, #020617, #172554)",
+      }),
+    );
+
+    expect(visual.subscriptionCardText).toEqual({ mode: "auto", color: null });
+    expect(visual.contrast.foreground).toBe("#ffffff");
+  });
+
+  it("normalizes malformed legacy custom text settings to automatic contrast", () => {
+    expect(
+      resolveSubscriptionCardText({ mode: "custom", color: null }),
+    ).toEqual({ mode: "auto", color: null });
+    expect(
+      resolveSubscriptionCardText({ mode: "custom", color: "rgb(1, 2, 3)" }),
+    ).toEqual({ mode: "auto", color: null });
+    expect(
+      resolveSubscriptionCardText({ mode: "custom", color: "#f8fafc80" }),
+    ).toEqual({ mode: "auto", color: null });
+    expect(
+      resolveSubscriptionCardText({ mode: "dark", color: "#f8fafc" }),
+    ).toEqual({ mode: "dark", color: null });
+  });
+
+  it("keeps text policy global while a positional effect/gradient overrides artwork", () => {
+    const visual = resolveSubscriptionCardVisual(
+      branding({
+        subscriptionCardText: { mode: "custom", color: "#f8fafc" },
+        cardEffectsByIndex: [
+          {
+            cardEffect: "paperWarp",
+            cardEffectProps: { colors: ["#0a1020", "#f72585"] },
+            cardEffectOpacity: 0.68,
+            cardGradient: "linear-gradient(135deg, #052e16, #0f766e)",
+          },
+        ],
+      }),
+      0,
+    );
+
+    expect(visual.cardGradient).toBe("linear-gradient(135deg, #052e16, #0f766e)");
+    expect(visual.cardEffect).toBe("paperWarp");
+    expect(visual.cardEffectOpacity).toBe(0.68);
+    expect(visual.contrast.foreground).toBe("#f8fafc");
   });
 
   it("does not add a desaturating veil merely because an animated effect exists", () => {

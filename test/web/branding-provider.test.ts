@@ -46,6 +46,7 @@ describe("operator concept mode resolution", () => {
       themePresetVersion: 2,
       themeModePolicy: "user-selectable" as const,
       themeDefaultMode: "dark" as const,
+      subscriptionCardText: { mode: "custom" as const, color: "#102030" },
       themeVariants: {
         light: {
           primary: "#165eff",
@@ -54,6 +55,7 @@ describe("operator concept mode resolution", () => {
           bgSecondary: "#eef3ff",
           cardGradient: "linear-gradient(135deg, #f5f8ff, #b8d0ff)",
           cardPattern: null,
+          subscriptionCardText: { mode: "dark" as const, color: null },
           cardEffect: "aurora" as const,
           cardEffectProps: {},
           cardEffectOpacity: 0.8,
@@ -72,6 +74,7 @@ describe("operator concept mode resolution", () => {
           bgSecondary: "#121d36",
           cardGradient: "linear-gradient(135deg, #0c1324, #293f70)",
           cardPattern: null,
+          subscriptionCardText: { mode: "light" as const, color: null },
           cardEffect: "aurora" as const,
           cardEffectProps: {},
           cardEffectOpacity: 0.8,
@@ -93,6 +96,12 @@ describe("operator concept mode resolution", () => {
     expect(effective.themeModePolicy).toBe("user-selectable");
     expect(effective.primary).toBe("#165eff");
     expect(effective.bgPrimary).toBe("#f5f8ff");
+    // Even a stale public snapshot must not turn the global operator choice
+    // into a brightness-specific policy.
+    expect(effective.subscriptionCardText).toEqual({
+      mode: "custom",
+      color: "#102030",
+    });
     expect(effective.borderRadius).toBe("rounded-none");
     expect(effective.themeVariants).toBe(branding.themeVariants);
   });
@@ -105,6 +114,7 @@ describe("operator concept mode resolution", () => {
       bgSecondary: "#eef3ff",
       cardGradient: "linear-gradient(135deg, #f5f8ff, #b8d0ff)",
       cardPattern: null,
+      subscriptionCardText: { mode: "custom" as const, color: "#102030" },
       cardEffect: "rippleGrid" as const,
       cardEffectProps: { gridSize: 18 },
       cardEffectOpacity: 0.4,
@@ -136,6 +146,7 @@ describe("operator concept mode resolution", () => {
           cardGradient: "linear-gradient(135deg, #2a0c35, #ef62a5)",
         },
       ],
+      subscriptionCardText: { mode: "custom" as const, color: "#102030" },
       themeVariants: {
         light: lightVariant,
         dark: lightVariant,
@@ -151,6 +162,10 @@ describe("operator concept mode resolution", () => {
     expect(effective.cardEffectProps).toEqual({ speed: 0.7 });
     expect(effective.cardEffectOpacity).toBe(0.68);
     expect(effective.cardEffectsByIndex).toEqual(branding.cardEffectsByIndex);
+    expect(effective.subscriptionCardText).toEqual({
+      mode: "custom",
+      color: "#102030",
+    });
   });
 });
 

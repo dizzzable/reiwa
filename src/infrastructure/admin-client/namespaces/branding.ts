@@ -26,6 +26,10 @@ export interface BrandingPayload {
   readonly bgSecondary: string;
   readonly cardGradient: string;
   readonly cardPattern: string | null;
+  readonly subscriptionCardText?: {
+    readonly mode: 'auto' | 'light' | 'dark' | 'custom';
+    readonly color: string | null;
+  };
   readonly cardLogo: string;
   readonly cardLogoUrl: string | null;
   readonly cardEffect: string;
@@ -119,6 +123,7 @@ interface BrandingThemeVariantPayload {
   readonly bgSecondary: string;
   readonly cardGradient: string;
   readonly cardPattern: string | null;
+  readonly subscriptionCardText?: BrandingPayload['subscriptionCardText'];
   readonly cardEffect: string;
   readonly cardEffectProps: Record<string, unknown>;
   readonly cardEffectOpacity: number;

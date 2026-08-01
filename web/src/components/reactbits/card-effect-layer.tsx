@@ -52,6 +52,22 @@ interface CardEffectLayerProps {
   readonly active?: boolean;
 }
 
+/**
+ * Subscription-card effects are decorative artwork. Some native WebGL/Paper
+ * renderers and the CSS compatibility renderer paint opaque pixels, so letting
+ * their wrapper reach 100% would replace the operator's gradient instead of
+ * layering over it. Apply one ceiling to every runtime path: values below the
+ * ceiling remain literal, while a requested 100% is still a strong overlay.
+ */
+export const CARD_EFFECT_MAX_OVERLAY_OPACITY = 0.68;
+
+export function resolveCardEffectOverlayOpacity(opacity: number): number {
+  return Math.min(
+    Math.max(opacity, 0.05),
+    CARD_EFFECT_MAX_OVERLAY_OPACITY,
+  );
+}
+
 class EffectErrorBoundary extends Component<{
   children: ReactNode;
   resetKey: string;
@@ -88,20 +104,17 @@ function CssEffectFallback({
   return (
     <div
       aria-hidden
-      className="absolute inset-0"
+      data-card-effect-artwork
+      className="card-effect-layer__css-fallback absolute inset-0"
       style={{
-        backgroundColor: first,
+        // CSS fallback is artwork over the operator-owned card gradient, not
+        // a replacement canvas. In particular, never add an opaque base
+        // colour here: it was the source of the apparent random-gradient
+        // switch after an effect became ready.
+        backgroundImage: `radial-gradient(95% 135% at 4% 100%, ${first} 0%, transparent 64%), radial-gradient(85% 120% at 100% 2%, ${last} 0%, transparent 60%), linear-gradient(135deg, ${first}, ${middle}, ${last})`,
+        opacity,
       }}
-    >
-      <div
-        data-card-effect-artwork
-        className="card-effect-layer__css-fallback absolute inset-0"
-        style={{
-          backgroundImage: `radial-gradient(95% 135% at 4% 100%, ${first} 0%, transparent 64%), radial-gradient(85% 120% at 100% 2%, ${last} 0%, transparent 60%), linear-gradient(135deg, ${first}, ${middle}, ${last})`,
-          opacity,
-        }}
-      />
-    </div>
+    />
   );
 }
 
@@ -211,7 +224,7 @@ export function CardEffectLayer({
     runtimeId === undefined || runtimeId === "NONE"
       ? runtime?.cssColors ?? resolveCardEffectColors(effect, staticProps)
       : resolveCardEffectColors(runtimeId, mergedProps);
-  const configuredOpacity = Math.min(Math.max(opacity, 0.05), 1);
+  const configuredOpacity = resolveCardEffectOverlayOpacity(opacity);
   const presentationKey =
     runtime === null
       ? null
@@ -268,17 +281,16 @@ export function CardEffectLayer({
       data-card-effect-runtime={runtime?.mode ?? "probing"}
       data-card-effect-ready={presentationReady ? "true" : "false"}
       style={{
-        // Keep the theme card visible as the cheap lazy placeholder. Once the
-        // selected effect is ready, this surface becomes fully opaque so the
-        // theme gradient and pattern cannot tint or desaturate the artwork.
-        opacity: presentationReady ? 1 : 0,
-        transition: "opacity 450ms ease",
+        // The card gradient/pattern stay visible both before and after the
+        // lazy renderer mounts. Only the artwork itself has opacity; fading a
+        // full layer here caused a foreign colour flash during readiness.
+        opacity: 1,
         isolation: "isolate",
         overflow: "hidden",
         contain: "paint",
       }}
     >
-      {runtime !== null && (
+      {runtime?.mode === "css-fallback" && (
         <div
           data-card-effect-palette-surface
           className="absolute inset-0"

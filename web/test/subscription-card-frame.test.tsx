@@ -243,7 +243,7 @@ describe("SubscriptionCardFrame visual containment", () => {
     }
   });
 
-  it("builds an opaque effect-owned palette beneath the lazy renderer", () => {
+  it("keeps the operator gradient/pattern foundation when a lazy effect mounts", () => {
     const markup = renderToStaticMarkup(
       <CardEffectLayer
         effect="waves"
@@ -253,10 +253,11 @@ describe("SubscriptionCardFrame visual containment", () => {
       />,
     );
 
-    expect(markup).toContain("data-card-effect-palette-surface");
-    expect(markup).toContain("data-card-effect-artwork");
-    expect(markup).toContain("background-color:#7300ff");
-    expect(markup).toContain("opacity:0.68");
+    // Native effects do not inject a palette foundation at all. The selected
+    // gradient/pattern below the layer remain the card's source of colour.
+    expect(markup).not.toContain("data-card-effect-palette-surface");
+    expect(markup).not.toContain("background-color:#7300ff");
+    expect(markup).toContain("opacity:1");
     expect(markup).toContain('data-card-effect-ready="false"');
   });
 });

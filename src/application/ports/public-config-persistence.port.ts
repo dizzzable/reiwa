@@ -72,6 +72,12 @@ const APP_BACKGROUND_TEXTURES = new Set([
   "noise",
 ]);
 const ICON_COLOR_MODES = new Set(["default", "theme", "custom"]);
+const SUBSCRIPTION_CARD_TEXT_MODES = new Set([
+  "auto",
+  "light",
+  "dark",
+  "custom",
+]);
 const BORDER_RADII = new Set([
   "rounded-none",
   "rounded-lg",
@@ -139,6 +145,8 @@ export function isPublicConfigSnapshot(value: unknown): value is PublicConfigSna
     isHex(branding["bgSecondary"]) &&
     isSafeGradient(branding["cardGradient"]) &&
     isNullableSafeGradient(branding["cardPattern"]) &&
+    hasOptionalSubscriptionCardText(branding, "subscriptionCardText") &&
+    hasConsistentVariantSubscriptionCardText(branding) &&
     isString(branding["cardLogo"]) &&
     isNullableImageUrl(branding["cardLogoUrl"]) &&
     isAllowedString(branding["cardEffect"], CARD_EFFECTS) &&
@@ -203,6 +211,78 @@ function hasOptionalRecord(record: Record<string, unknown>, key: string): boolea
 function hasOptionalBoolean(record: Record<string, unknown>, key: string): boolean {
   const value = record[key];
   return value === undefined || typeof value === "boolean";
+}
+
+function hasOptionalSubscriptionCardText(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  const value = record[key];
+  if (value === undefined) return true;
+  if (
+    !isRecord(value) ||
+    !isAllowedString(value["mode"], SUBSCRIPTION_CARD_TEXT_MODES)
+  ) {
+    return false;
+  }
+  // Custom card copy has no meaningful safe default colour. Rejecting an
+  // incomplete snapshot lets the durable last-known-good config continue
+  // serving instead of silently changing what the operator selected.
+  return value["mode"] === "custom"
+    ? isOpaqueHex(value["color"])
+    : value["color"] === null;
+}
+
+/**
+ * Card text is a global operator policy, not a light/dark concept token.
+ * Variants written before the control existed omit it and intentionally fall
+ * back to the root. New snapshots may include a transport copy, but it must
+ * be exactly the root value or the snapshot is unsafe to serve.
+ */
+function hasConsistentVariantSubscriptionCardText(
+  branding: Record<string, unknown>,
+): boolean {
+  const variants = branding["themeVariants"];
+  if (variants === undefined || variants === null) return true;
+  if (!isRecord(variants)) return false;
+
+  const root = branding["subscriptionCardText"];
+  if (root === undefined) {
+    // Pre-control snapshots did not carry the field anywhere. A variant-only
+    // value cannot be a valid legacy fallback because there is no global
+    // operator source to inherit.
+    return [variants["light"], variants["dark"]].every(
+      (variant) => isRecord(variant) && variant["subscriptionCardText"] === undefined,
+    );
+  }
+  const rootText = readSubscriptionCardText(root);
+  if (rootText === null) return false;
+
+  return [variants["light"], variants["dark"]].every((variant) => {
+    if (!isRecord(variant)) return false;
+    const candidate = variant["subscriptionCardText"];
+    if (candidate === undefined) return true;
+    const candidateText = readSubscriptionCardText(candidate);
+    if (candidateText === null) return false;
+    return (
+      candidateText.mode === rootText.mode &&
+      candidateText.color === rootText.color
+    );
+  });
+}
+
+function readSubscriptionCardText(
+  value: unknown,
+): { readonly mode: string; readonly color: string | null } | null {
+  if (!isRecord(value) || !isAllowedString(value["mode"], SUBSCRIPTION_CARD_TEXT_MODES)) {
+    return null;
+  }
+  if (value["mode"] === "custom") {
+    return isOpaqueHex(value["color"])
+      ? { mode: value["mode"], color: value["color"].trim() }
+      : null;
+  }
+  return value["color"] === null ? { mode: value["mode"], color: null } : null;
 }
 
 function hasOptionalCornerRadii(
@@ -436,6 +516,13 @@ function isHex(value: unknown): value is string {
   return typeof value === "string" && HEX_PATTERN.test(value.trim());
 }
 
+function isOpaqueHex(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim())
+  );
+}
+
 function hasOptionalHexOrNull(
   record: Record<string, unknown>,
   key: string,
@@ -559,6 +646,7 @@ function isThemeVariant(value: unknown): boolean {
     isHex(value["bgSecondary"]) &&
     isSafeGradient(value["cardGradient"]) &&
     isNullableSafeGradient(value["cardPattern"]) &&
+    hasOptionalSubscriptionCardText(value, "subscriptionCardText") &&
     isAllowedString(value["cardEffect"], CARD_EFFECTS) &&
     isRecord(value["cardEffectProps"]) &&
     isNumberInRange(value["cardEffectOpacity"], 0.05, 1) &&

@@ -44,6 +44,12 @@ export interface CardContrast {
 export interface CardContrastOptions {
   readonly fallbackBackground?: string | null;
   readonly preferredForeground?: string | null;
+  /**
+   * Explicit operator choice for subscription-card copy. Unlike
+   * `preferredForeground`, this is not a tiebreaker: valid input is rendered
+   * literally and the supporting veil is calculated from that colour.
+   */
+  readonly forcedForeground?: string | null;
   readonly minimumVeilOpacity?: number;
   /** Colours painted by an animated layer above the static artwork. */
   readonly overlayArtwork?: string | null;
@@ -55,6 +61,7 @@ export function resolveCardContrast(
   artwork: string,
   options: CardContrastOptions = {},
 ): CardContrast {
+  const forcedForeground = parseCssColor(options.forcedForeground ?? "");
   const fallback = parseCssColor(options.fallbackBackground ?? "");
   const rawSamples = extractCssColors(artwork);
   const baseSamples = (
@@ -108,7 +115,7 @@ export function resolveCardContrast(
     BLACK_RGB,
   );
   const prefersLight = preferredForegroundIsLight(options);
-  const foregroundTone =
+  const automaticTone =
     Math.abs(darkRequirement - lightRequirement) <= 0.015
       ? prefersLight
         ? "light"
@@ -116,14 +123,43 @@ export function resolveCardContrast(
       : darkRequirement < lightRequirement
         ? "dark"
         : "light";
-
-  const foregroundRgb =
-    foregroundTone === "dark"
+  const foregroundTone = forcedForeground
+    ? toneForForeground(forcedForeground.rgb)
+    : automaticTone;
+  const foregroundRgb = forcedForeground?.rgb ??
+    (foregroundTone === "dark"
       ? parseCssColor(DARK_FOREGROUND)!.rgb
-      : WHITE_RGB;
-  const veilRgb = foregroundTone === "dark" ? WHITE_RGB : BLACK_RGB;
-  const rawRequirement =
-    foregroundTone === "dark" ? darkRequirement : lightRequirement;
+      : WHITE_RGB);
+  // A custom operator colour is not necessarily near black or white. Testing
+  // both veil directions avoids blindly using the colour's luminance as a
+  // proxy for readability (for example, saturated magenta on light artwork
+  // needs a black support veil even though it is classified as a dark tone).
+  const forcedWhiteRequirement = forcedForeground
+    ? requiredVeilOpacity(resolvedSamples, foregroundRgb, WHITE_RGB)
+    : 0;
+  const forcedBlackRequirement = forcedForeground
+    ? requiredVeilOpacity(resolvedSamples, foregroundRgb, BLACK_RGB)
+    : 0;
+  const forcedPreferredVeil = foregroundTone === "dark" ? WHITE_RGB : BLACK_RGB;
+  const forcedUsesWhiteVeil = forcedForeground
+    ? Math.abs(forcedWhiteRequirement - forcedBlackRequirement) <= 0.015
+      ? forcedPreferredVeil === WHITE_RGB
+      : forcedWhiteRequirement < forcedBlackRequirement
+    : false;
+  const veilRgb = forcedForeground
+    ? forcedUsesWhiteVeil
+      ? WHITE_RGB
+      : BLACK_RGB
+    : foregroundTone === "dark"
+      ? WHITE_RGB
+      : BLACK_RGB;
+  const rawRequirement = forcedForeground
+    ? forcedUsesWhiteVeil
+      ? forcedWhiteRequirement
+      : forcedBlackRequirement
+    : foregroundTone === "dark"
+      ? darkRequirement
+      : lightRequirement;
   const minimumVeil = clamp(
     options.minimumVeilOpacity ?? MINIMUM_VEIL_OPACITY,
     0,
@@ -149,8 +185,11 @@ export function resolveCardContrast(
 
   return {
     foregroundTone,
-    foreground:
-      foregroundTone === "dark" ? DARK_FOREGROUND : LIGHT_FOREGROUND,
+    foreground: forcedForeground
+      ? foregroundForCss(options.forcedForeground!)
+      : foregroundTone === "dark"
+        ? DARK_FOREGROUND
+        : LIGHT_FOREGROUND,
     foregroundRgb: rgbChannels(foregroundRgb),
     veilRgb: veilChannels,
     veilOpacity,
@@ -378,6 +417,16 @@ function hslToRgb(hue: number, saturation: number, lightness: number): Rgb {
 function preferredForegroundIsLight(options: CardContrastOptions): boolean {
   const preferred = parseCssColor(options.preferredForeground ?? "");
   return preferred ? relativeLuminance(preferred.rgb) >= 0.5 : true;
+}
+
+function toneForForeground(foreground: Rgb): "dark" | "light" {
+  return relativeLuminance(foreground) >= 0.5 ? "light" : "dark";
+}
+
+function foregroundForCss(value: string): string {
+  // Runtime branding accepts opaque custom card text only. Keep the persisted
+  // literal exactly so preview and cabinet render the same foreground.
+  return value.trim();
 }
 
 function compositeRgb(foreground: Rgb, background: Rgb, alpha: number): Rgb {

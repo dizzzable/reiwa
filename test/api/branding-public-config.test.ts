@@ -256,6 +256,110 @@ describe('public branding configuration routes', () => {
     expect(isPublicConfigSnapshot(withPlanCardStyles)).toBe(true);
   });
 
+  it('accepts card-text policy globally and in both concept brightness variants', () => {
+    const baseVariant = {
+      primary: '#6750a4',
+      primaryFg: '#ffffff',
+      bgPrimary: '#121212',
+      bgSecondary: '#242424',
+      cardGradient: 'linear-gradient(135deg, #312e81 0%, #a78bfa 100%)',
+      cardPattern: null,
+      subscriptionCardText: { mode: 'light', color: null },
+      cardEffect: 'aurora',
+      cardEffectProps: {},
+      cardEffectOpacity: 0.7,
+      cardEffectsByIndex: [],
+      bgEffect: 'AURORA',
+      appBackground: {
+        kind: 'gradient',
+        effect: 'NONE',
+        props: {},
+        opacity: 1,
+        gradient: 'linear-gradient(135deg, #121212, #242424)',
+      },
+      borderRadius: 'rounded-xl',
+      cornerRadii: { cardPx: 12, itemPx: 8, pillPx: 9999 },
+      fontFamily: 'Manrope, sans-serif',
+      surfaceTheme: OPERATOR_PUBLIC_CONFIG.branding.surfaceTheme!,
+    };
+    const configured = {
+      ...OPERATOR_PUBLIC_CONFIG,
+      branding: {
+        ...OPERATOR_PUBLIC_CONFIG.branding,
+        subscriptionCardText: { mode: 'custom', color: '#1b2c3d' },
+        themeVariants: {
+          light: { ...baseVariant, subscriptionCardText: { mode: 'custom', color: '#1b2c3d' } },
+          dark: { ...baseVariant, subscriptionCardText: { mode: 'custom', color: '#1b2c3d' } },
+        },
+      },
+    };
+
+    expect(isPublicConfigSnapshot(configured)).toBe(true);
+    expect(
+      isPublicConfigSnapshot({
+        ...configured,
+        branding: {
+          ...configured.branding,
+          subscriptionCardText: { mode: 'custom', color: 'rgb(1, 2, 3)' },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isPublicConfigSnapshot({
+        ...configured,
+        branding: {
+          ...configured.branding,
+          subscriptionCardText: { mode: 'custom', color: '#1b2c3d80' },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isPublicConfigSnapshot({
+        ...configured,
+        branding: {
+          ...configured.branding,
+          subscriptionCardText: { mode: 'custom', color: null },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isPublicConfigSnapshot({
+        ...configured,
+        branding: {
+          ...configured.branding,
+          themeVariants: {
+            ...configured.branding.themeVariants,
+            dark: { ...baseVariant, subscriptionCardText: { mode: 'neon', color: null } },
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isPublicConfigSnapshot({
+        ...configured,
+        branding: {
+          ...configured.branding,
+          themeVariants: {
+            ...configured.branding.themeVariants,
+            dark: { ...baseVariant, subscriptionCardText: { mode: 'custom', color: null } },
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isPublicConfigSnapshot({
+        ...configured,
+        branding: {
+          ...configured.branding,
+          themeVariants: {
+            ...configured.branding.themeVariants,
+            dark: { ...baseVariant, subscriptionCardText: { mode: 'dark', color: null } },
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
   it('accepts two resolved modes for one concept and rejects a partial mode snapshot', () => {
     const baseVariant = {
       primary: '#6750a4',

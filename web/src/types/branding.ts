@@ -175,6 +175,20 @@ export type BrandingThemeMode = "light" | "dark";
 /** Only the operator can lock/unlock the end-user brightness chooser. */
 export type BrandingThemeModePolicy = "fixed" | "user-selectable";
 
+/** Foreground policy for the copy drawn on a subscription card. */
+export type SubscriptionCardTextMode = "auto" | "light" | "dark" | "custom";
+
+export interface SubscriptionCardText {
+  readonly mode: SubscriptionCardTextMode;
+  /** Used only by `custom`; accepted values are opaque #rgb/#rrggbb. */
+  readonly color: string | null;
+}
+
+export const DEFAULT_SUBSCRIPTION_CARD_TEXT: SubscriptionCardText = {
+  mode: "auto",
+  color: null,
+};
+
 /**
  * Resolved visual values for the same conceptual preset. It intentionally has
  * no preset id or brand identity, preventing this payload from becoming a
@@ -187,6 +201,12 @@ export interface BrandingThemeVariant {
   bgSecondary: string;
   cardGradient: string;
   cardPattern: string | null;
+  /**
+   * Optional transport copy for snapshots written after this control existed.
+   * Card text remains global and this value is never allowed to override root
+   * branding during brightness resolution.
+   */
+  subscriptionCardText?: SubscriptionCardText;
   cardEffect: CardEffect;
   cardEffectProps: Record<string, unknown>;
   cardEffectOpacity: number;
@@ -240,6 +260,8 @@ export interface Branding {
   bgSecondary: string;
   cardGradient: string;
   cardPattern: string | null;
+  /** Missing in legacy payloads; resolved as `auto` at card-render time. */
+  subscriptionCardText?: SubscriptionCardText;
   /** Card watermark glyph preset (DEFAULT = Reiwa mark, NONE = hidden). */
   cardLogo: CardLogoPreset;
   /** Custom card watermark image (same-origin upload, HTTPS, or data image); overrides cardLogo. */
@@ -358,6 +380,7 @@ export const DEFAULT_BRANDING: Branding = {
   bgSecondary: "#171717",
   cardGradient: "linear-gradient(135deg, #064e3b 0%, #22c55e 100%)",
   cardPattern: null,
+  subscriptionCardText: DEFAULT_SUBSCRIPTION_CARD_TEXT,
   cardLogo: "DEFAULT",
   cardLogoUrl: null,
   cardEffect: "aurora",
@@ -432,6 +455,9 @@ export function resolveBrandingThemeMode(
     bgSecondary: variant.bgSecondary,
     cardGradient: variant.cardGradient,
     cardPattern: variant.cardPattern,
+    // This is one global operator decision, never a brightness token. Ignore
+    // a stale/corrupt variant copy so a theme switch cannot change it.
+    subscriptionCardText: resolveSubscriptionCardText(branding.subscriptionCardText),
     bgEffect: variant.bgEffect,
     appBackground: variant.appBackground,
     borderRadius: variant.borderRadius,
@@ -439,6 +465,49 @@ export function resolveBrandingThemeMode(
     fontFamily: variant.fontFamily,
     surfaceTheme: variant.surfaceTheme,
   };
+}
+
+/**
+ * Browser/Redis snapshots can predate card-text controls. Normalize once at
+ * the branding boundary so every card gets stable legacy behaviour.
+ */
+export function resolveSubscriptionCardText(
+  value: SubscriptionCardText | null | undefined,
+): SubscriptionCardText {
+  if (!value) return DEFAULT_SUBSCRIPTION_CARD_TEXT;
+  if (
+    value.mode !== "auto" &&
+    value.mode !== "light" &&
+    value.mode !== "dark" &&
+    value.mode !== "custom"
+  ) {
+    return DEFAULT_SUBSCRIPTION_CARD_TEXT;
+  }
+  const color =
+    typeof value.color === "string" && value.color.trim().length > 0
+      ? value.color.trim()
+      : null;
+  // `custom` is meaningful only with a persisted opaque hex colour. Alpha
+  // would make the effective foreground dependent on card artwork and break
+  // parity with the live Rezeis preview.
+  // Old snapshots sometimes contain `{ mode: "custom", color: null }` from
+  // before this field was transactional. Treat it as automatic contrast,
+  // rather than producing an accidental dark/light choice at runtime.
+  if (value.mode === "custom") {
+    return color !== null && isSubscriptionCardTextHex(color)
+      ? { mode: "custom", color }
+      : DEFAULT_SUBSCRIPTION_CARD_TEXT;
+  }
+  return {
+    mode: value.mode,
+    // A colour belongs only to custom mode. Clearing stale values keeps mode
+    // switches deterministic across the cached public-config boundary.
+    color: null,
+  };
+}
+
+function isSubscriptionCardTextHex(value: string): boolean {
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value);
 }
 
 export const DEFAULT_PUBLIC_CONFIG: PublicConfig = {

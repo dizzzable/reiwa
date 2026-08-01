@@ -380,9 +380,9 @@ body {
   background-size: 170% 170%, 165% 165%, 190% 190%;
   animation: card-effect-fallback-drift 18s ease-in-out infinite;
   /*
-   * CardEffectLayer already owns the operator-configured opacity. Applying a
-   * second opacity here made the CSS fallback roughly twice as faint as the
-   * native shader and desaturated concept palettes on low-end/mobile GPUs.
+     * The component applies an inline, compatibility-capped alpha. Keep this
+     * base rule opaque so it does not multiply that alpha or desaturate the
+     * decorative fallback artwork.
    */
   opacity: 1;
 }

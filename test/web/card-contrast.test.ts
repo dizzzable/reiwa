@@ -123,6 +123,21 @@ describe("artwork card contrast", () => {
     expectStopsToPass(result, stops);
   });
 
+  it("chooses the cheaper black or white veil for a saturated custom foreground", () => {
+    const result = resolveCardContrast(
+      "linear-gradient(135deg, #ffffff, #f4f4f5)",
+      {
+        fallbackBackground: "#ffffff",
+        forcedForeground: "#ff00ff",
+      },
+    );
+
+    expect(result.foreground).toBe("#ff00ff");
+    // Magenta has a dark luminance, but a white veil cannot improve its
+    // contrast on this bright artwork. A black veil is the lower-cost path.
+    expect(result.veilRgb).toBe("0 0 0");
+  });
+
   it("raises the veil only as far as needed for mixed light/dark artwork", () => {
     const stops = ["#000000", "#ffffff", "#64748b"];
     const result = resolveCardContrast(
