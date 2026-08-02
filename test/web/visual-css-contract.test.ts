@@ -56,7 +56,7 @@ describe("animated card CSS opacity contract", () => {
     expect(EFFECT_LAYER_SOURCE).toContain("data-card-effect-artwork");
     expect(EFFECT_LAYER_SOURCE).not.toContain("backgroundColor: first");
     expect(EFFECT_LAYER_SOURCE).toContain("opacity: configuredOpacity,");
-    expect(EFFECT_LAYER_SOURCE).toContain('mixBlendMode: "screen"');
+    expect(EFFECT_LAYER_SOURCE).not.toContain("mixBlendMode");
     expect(EFFECT_LAYER_SOURCE).not.toContain(
       "linear-gradient(135deg, ${first}, ${middle}, ${last})",
     );
@@ -80,11 +80,11 @@ describe("animated card CSS opacity contract", () => {
 });
 
 describe("subscription card artwork contract", () => {
-  it("films static artwork only, never the live shader", () => {
-    expect(CARD_FRAME_SOURCE).toContain(
-      "{(creationPresentation || !animatedArtwork) && (",
-    );
-    expect(CARD_FRAME_SOURCE).toContain("staticArtworkVeil(contrast)");
+  it("never mutates normal artwork when the operator changes text colour", () => {
+    expect(CARD_FRAME_SOURCE).not.toContain("staticArtworkVeil");
+    expect(CARD_FRAME_SOURCE).not.toContain("animatedArtwork");
+    // A short-lived creation reveal is allowed; it is not contrast policy.
+    expect(CARD_FRAME_SOURCE).toContain("creationPresentation && (");
   });
 
   it("keeps the card copy free of outlines and capsules", () => {

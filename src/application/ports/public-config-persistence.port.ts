@@ -388,12 +388,21 @@ function hasOptionalNavItems(record: Record<string, unknown>, key: string): bool
 }
 
 function isCardEffectSlot(value: unknown): boolean {
+  if (!isRecord(value) || !hasOptionalSafeGradientOrNull(value, "cardGradient")) {
+    return false;
+  }
+  const mode = value["mode"];
+  if (mode !== undefined && mode !== "inherit" && mode !== "override") {
+    return false;
+  }
+  // `inherit` is intentionally lightweight. A legacy slot without a mode is
+  // rendered as inherit, but must still be structurally complete; otherwise
+  // one malformed stale field could make the complete public config invalid.
+  if (mode === "inherit") return true;
   return (
-    isRecord(value) &&
     isAllowedString(value["cardEffect"], CARD_EFFECTS) &&
     isRecord(value["cardEffectProps"]) &&
-    isNumberInRange(value["cardEffectOpacity"], 0.05, 1) &&
-    hasOptionalSafeGradientOrNull(value, "cardGradient")
+    isNumberInRange(value["cardEffectOpacity"], 0.05, 1)
   );
 }
 

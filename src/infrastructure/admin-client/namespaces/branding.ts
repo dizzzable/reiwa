@@ -43,9 +43,10 @@ export interface BrandingPayload {
   readonly cardEffectProps: Record<string, unknown>;
   readonly cardEffectOpacity: number;
   readonly cardEffectsByIndex: ReadonlyArray<{
-    readonly cardEffect: string;
-    readonly cardEffectProps: Record<string, unknown>;
-    readonly cardEffectOpacity: number;
+    readonly mode?: 'inherit' | 'override';
+    readonly cardEffect?: string;
+    readonly cardEffectProps?: Record<string, unknown>;
+    readonly cardEffectOpacity?: number;
     readonly cardGradient?: string | null;
   }>;
   readonly bgEffect: 'NONE' | 'MESH' | 'PARTICLES' | 'NOISE' | 'AURORA';

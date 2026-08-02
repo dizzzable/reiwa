@@ -281,15 +281,13 @@ export function CardEffectLayer({
       data-card-effect-runtime={runtime?.mode ?? "probing"}
       data-card-effect-ready={presentationReady ? "true" : "false"}
       style={{
-        // The card gradient/pattern stay visible both before and after the
-        // lazy renderer mounts. Only the artwork itself has opacity; fading a
-        // full layer here caused a foreign colour flash during readiness.
+        // The effect is composited with normal source-over alpha. A previous
+        // unconditional `screen` blend mathematically recoloured every
+        // operator gradient and made black/transparent shader regions expose
+        // the old concept artwork. Opacity is the only blending decision here
+        // and is configured explicitly by the operator.
         opacity: 1,
         overflow: "hidden",
-        // Blend the complete effect group with the preceding card gradient.
-        // Applying `screen` to a child inside an isolated paint group made its
-        // opaque black pixels composite against transparency instead.
-        mixBlendMode: "screen",
       }}
     >
       {runtime?.mode === "css-fallback" && (

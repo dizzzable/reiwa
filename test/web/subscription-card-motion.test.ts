@@ -40,6 +40,7 @@ describe("subscription card visual resolver", () => {
         cardEffectOpacity: 0.42,
         cardEffectsByIndex: [
           {
+            mode: "override",
             cardEffect: "aurora",
             cardEffectProps: { colorStops, custom: { nested: true } },
             cardEffectOpacity: 0.73,
@@ -69,6 +70,7 @@ describe("subscription card visual resolver", () => {
         cardEffectOpacity: 0.64,
         cardEffectsByIndex: [
           {
+            mode: "override",
             cardEffect: "waves",
             cardEffectProps: { speed: 2 },
             cardEffectOpacity: 0.5,
@@ -93,12 +95,14 @@ describe("subscription card visual resolver", () => {
       cardGradient: "linear-gradient(135deg, #111827, #7c3aed)",
       cardEffectsByIndex: [
         {
+          mode: "override",
           cardEffect: "aurora",
           cardEffectProps: { amplitude: 1 },
           cardEffectOpacity: 0.51,
           cardGradient: "linear-gradient(135deg, #7f1d1d, #ef4444)",
         },
         {
+          mode: "override",
           cardEffect: "waves",
           cardEffectProps: { speed: 2 },
           cardEffectOpacity: 0.72,
@@ -227,7 +231,8 @@ describe("subscription card visual resolver", () => {
       branding({
         subscriptionCardText: { mode: "custom", color: "#f8fafc" },
         cardEffectsByIndex: [
-          {
+        {
+            mode: "override",
             cardEffect: "paperWarp",
             cardEffectProps: { colors: ["#0a1020", "#f72585"] },
             cardEffectOpacity: 0.68,
@@ -273,6 +278,37 @@ describe("subscription card visual resolver", () => {
     expect(animatedVisual.contrast.overlayBackground).toBe(
       staticVisual.contrast.overlayBackground,
     );
+  });
+
+  it("gives a global operator effect priority over legacy and inherited slots", () => {
+    const visual = resolveSubscriptionCardVisual(
+      branding({
+        cardEffect: "paperGrain",
+        cardEffectProps: { colors: ["#101010", "#f72585"], noise: 0.4 },
+        cardEffectOpacity: 0.82,
+        cardEffectsByIndex: [
+          // Older concept payloads carried complete values but no explicit
+          // operator opt-in. They must no longer shadow the global controls.
+          {
+            cardEffect: "paperWarp",
+            cardEffectProps: { shape: "stripes" },
+            cardEffectOpacity: 0.2,
+            cardGradient: "linear-gradient(90deg, red, blue)",
+          },
+          { mode: "inherit", cardGradient: null },
+        ],
+      }),
+      0,
+    );
+
+    expect(visual.cardEffect).toBe("paperGrain");
+    expect(visual.cardEffectOpacity).toBe(0.82);
+    expect(visual.cardEffectProps).toEqual({
+      colors: ["#101010", "#f72585"],
+      noise: 0.4,
+    });
+    // Static per-position gradients remain a separate explicit visual choice.
+    expect(visual.cardGradient).toBe("linear-gradient(90deg, red, blue)");
   });
 
   it("injects Aurora defaults only when colorStops are absent", () => {

@@ -43,18 +43,6 @@ function opacityStyle(
   };
 }
 
-function staticArtworkVeil(
-  contrast: ResolvedSubscriptionCardVisual["contrast"],
-): string {
-  const channels = contrast.veilRgb;
-
-  // Static artwork has no motion to protect, so the calculated minimum veil
-  // may cover the complete dynamic flex layout. One uniform, theme-derived
-  // layer avoids fragile copy coordinates and per-field capsules.
-  const veil = Math.min(0.75, Math.max(0, contrast.veilOpacity));
-  return `linear-gradient(180deg, rgb(${channels} / ${veil}) 0%, rgb(${channels} / ${veil}) 100%)`;
-}
-
 function glassColor(tint: string, opacity: number): string {
   const compact = tint.trim().replace(/^#/, "");
   const hex = compact.length === 3
@@ -93,7 +81,6 @@ export const SubscriptionCardFrame = forwardRef<
 ) {
   const { contrast } = visual;
   const creationPresentation = layerOpacity !== undefined;
-  const animatedArtwork = visual.cardEffect !== "NONE";
   const frameStyle = {
     "--card-foreground": contrast.foreground,
     "--card-foreground-rgb": contrast.foregroundRgb,
@@ -131,7 +118,7 @@ export const SubscriptionCardFrame = forwardRef<
         className,
       )}
       style={frameStyle}
-      data-subscription-card-artwork={animatedArtwork ? "animated" : "static"}
+      data-subscription-card-artwork={visual.cardEffect !== "NONE" ? "animated" : "static"}
       {...props}
     >
       <div
@@ -175,22 +162,18 @@ export const SubscriptionCardFrame = forwardRef<
           className="absolute inset-0 z-0"
         />
       )}
-      {/* Live artwork is the card. Painting a veil over it flattens the shader
-          into one dull colour, so animated cards stay uncovered and rely on
-          the tone `resolveCardContrast` already picked from the shader output
-          palette. Only static artwork and the creation reveal get a film. */}
-      {(creationPresentation || !animatedArtwork) && (
+      {/* Text mode selects text only. Never paint an automatic WCAG film above
+          operator artwork: it changes the perceived gradient when the
+          operator switches light/dark/custom text. The creation reveal is a
+          short-lived motion layer and remains the sole intentional film. */}
+      {creationPresentation && (
         <div
           data-subscription-card-layer="vignette"
-          data-subscription-card-readability={
-            creationPresentation ? "creation-overlay" : "wcag-full-card-veil"
-          }
+          data-subscription-card-readability="creation-overlay"
           data-subscription-card-veil-opacity={contrast.veilOpacity}
           className="pointer-events-none absolute inset-0 z-0"
           style={{
-            background: creationPresentation
-              ? contrast.overlayBackground
-              : staticArtworkVeil(contrast),
+            background: contrast.overlayBackground,
             ...opacityStyle(layerOpacity?.vignette, 480),
           }}
         />

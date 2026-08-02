@@ -107,8 +107,9 @@ export function SubscriptionSelectCard({
   // to the brand colour when no explicit colorStops are pinned.
   const auroraStops = useMemo(() => brandAuroraStops(branding.primary), [branding.primary]);
   const slot = index !== undefined ? branding.cardEffectsByIndex?.[index] : undefined;
-  const effect = slot?.cardEffect ?? branding.cardEffect;
-  const slotProps = slot?.cardEffectProps;
+  const slotOverridesEffect = slot?.mode === "override";
+  const effect = slotOverridesEffect ? slot?.cardEffect ?? branding.cardEffect : branding.cardEffect;
+  const slotProps = slotOverridesEffect ? slot?.cardEffectProps : undefined;
   const effectProps = useMemo<Record<string, unknown>>(() => {
     const base = slotProps ?? branding.cardEffectProps ?? {};
     if (effect === "aurora" && base["colorStops"] === undefined) {
@@ -116,7 +117,9 @@ export function SubscriptionSelectCard({
     }
     return base;
   }, [effect, slotProps, branding.cardEffectProps, auroraStops]);
-  const effectOpacity = slot?.cardEffectOpacity ?? branding.cardEffectOpacity ?? 1;
+  const effectOpacity = slotOverridesEffect
+    ? slot?.cardEffectOpacity ?? branding.cardEffectOpacity ?? 1
+    : branding.cardEffectOpacity ?? 1;
   const cardGradient =
     (slot?.cardGradient ?? "").trim().length > 0
       ? (slot!.cardGradient as string)

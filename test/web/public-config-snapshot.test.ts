@@ -77,6 +77,22 @@ describe("public config snapshot", () => {
     expect(readPublicConfigSnapshot()).toEqual(config);
   });
 
+  it("accepts an explicit inherited card slot without a redundant effect copy", () => {
+    const storage = new FakeStorage();
+    installWindow(storage);
+    const config = {
+      ...DEFAULT_PUBLIC_CONFIG,
+      branding: {
+        ...DEFAULT_PUBLIC_CONFIG.branding,
+        cardEffectsByIndex: [{ mode: "inherit" as const, cardGradient: null }],
+      },
+    };
+
+    writePublicConfigSnapshot(config);
+
+    expect(readPublicConfigSnapshot()).toEqual(config);
+  });
+
   it("ignores malformed stored data", () => {
     const storage = new FakeStorage();
     storage.setItem(STORAGE_KEY, "{ this is not JSON");

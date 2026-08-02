@@ -101,10 +101,16 @@ export function resolveSubscriptionCardVisual(
       ? undefined
       : branding.cardEffectsByIndex[slotIndex];
 
+  // A positional card is a deliberate exception, never a hidden copy left by
+  // a concept preset. Missing `mode` is treated as inherit for backwards
+  // compatibility with snapshots produced before the explicit control
+  // existed. This makes a later global operator edit authoritative again.
+  const slotOverridesEffect = slot?.mode === "override";
+
   const globalProps = isRecord(branding.cardEffectProps)
     ? branding.cardEffectProps
     : {};
-  const slotProps = isRecord(slot?.cardEffectProps)
+  const slotProps = slotOverridesEffect && isRecord(slot?.cardEffectProps)
     ? slot.cardEffectProps
     : undefined;
   const rawProps = slotProps ?? globalProps;
@@ -114,11 +120,11 @@ export function resolveSubscriptionCardVisual(
       ? branding.cardEffect
       : "NONE";
   const cardEffect =
-    typeof slot?.cardEffect === "string"
+    slotOverridesEffect && typeof slot?.cardEffect === "string"
       ? slot.cardEffect
       : globalEffect;
   const cardEffectOpacity = finiteNumber(
-    slot?.cardEffectOpacity,
+    slotOverridesEffect ? slot?.cardEffectOpacity : undefined,
     finiteNumber(branding.cardEffectOpacity, 1),
   );
 

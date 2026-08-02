@@ -85,7 +85,7 @@ export const CARD_EFFECT_DEFAULTS: Record<CardEffectId, Record<string, unknown>>
   liquidChrome: { baseColor: [0.1, 0.1, 0.1], speed: 0.2, amplitude: 0.5, frequencyX: 3, frequencyY: 2 },
   lineWaves: { color1: "#ffffff", color2: "#ffffff", color3: "#ffffff", speed: 0.3, brightness: 0.2, warpIntensity: 1 },
   iridescence: { color: [1, 1, 1], speed: 1, amplitude: 0.1 },
-  grainient: { color1: "#FF9FFC", color2: "#5227FF", color3: "#B497CF", timeSpeed: 0.25, grainAmount: 0.1, warpStrength: 1 },
+  grainient: { color1: "#FF9FFC", color2: "#5227FF", color3: "#B497CF", timeSpeed: 0.25, grainAmount: 0.1, warpStrength: 1, contrast: 1.5 },
   galaxy: { speed: 1, density: 1, hueShift: 140, glowIntensity: 0.3, twinkleIntensity: 0.3 },
   balatro: { color1: "#DE443B", color2: "#006BB4", color3: "#162325", spinSpeed: 7, spinRotation: -2, contrast: 3.5, lighting: 0.4 },
   waves: { lineColor: "#ffffff", backgroundColor: "#00000000", waveSpeedX: 0.0125, waveAmpX: 32, xGap: 10, yGap: 32 },

@@ -58,9 +58,16 @@ export type IconColorMode = "default" | "theme" | "custom";
  * Slot N applies to the Nth subscription card (by creation order).
  */
 export interface CardEffectSlot {
-  cardEffect: CardEffect;
-  cardEffectProps: Record<string, unknown>;
-  cardEffectOpacity: number;
+  /**
+   * A slot inherits the global card artwork until the operator explicitly
+   * marks it as an override. Older snapshots have no mode and deliberately
+   * resolve as `inherit`: themes used to populate every slot automatically,
+   * which made later global edits appear to do nothing.
+   */
+  mode?: "inherit" | "override";
+  cardEffect?: CardEffect;
+  cardEffectProps?: Record<string, unknown>;
+  cardEffectOpacity?: number;
   /**
    * Optional per-slot static card gradient (CSS). Overrides the global
    * `cardGradient` for the Nth subscription card; absent → global gradient.
