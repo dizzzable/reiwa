@@ -20,7 +20,9 @@
 import {
   Component,
   Suspense,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -37,6 +39,10 @@ import {
   resolveCardEffectColors,
   resolveCardEffectRuntime,
 } from "./card-effect-runtime";
+import {
+  observeCardEffectCanvases,
+  resolveCardEffectOverlayOpacity,
+} from "./card-effect-layer-utils";
 
 interface CardEffectLayerProps {
   readonly effect: string;
@@ -58,26 +64,25 @@ interface CardEffectLayerProps {
  * in both the live cabinet and Rezeis preview. The card gradient is a separate
  * foundation layer, so this clamp only protects the valid input range.
  */
-export function resolveCardEffectOverlayOpacity(opacity: number): number {
-  return Math.min(Math.max(opacity, 0.05), 1);
-}
-
 class EffectErrorBoundary extends Component<{
   children: ReactNode;
   resetKey: string;
   onError: () => void;
-}, { hasError: boolean }> {
-  state = { hasError: false };
+}, { hasError: boolean; resetKey: string }> {
+  state = { hasError: false, resetKey: this.props.resetKey };
   static getDerivedStateFromError() {
     return { hasError: true };
   }
+  static getDerivedStateFromProps(
+    props: { resetKey: string },
+    state: { hasError: boolean; resetKey: string },
+  ) {
+    return props.resetKey === state.resetKey
+      ? null
+      : { hasError: false, resetKey: props.resetKey };
+  }
   componentDidCatch() {
     this.props.onError();
-  }
-  componentDidUpdate(prev: { resetKey: string }) {
-    if (prev.resetKey !== this.props.resetKey && this.state.hasError) {
-      this.setState({ hasError: false });
-    }
   }
   render() {
     return this.state.hasError ? null : this.props.children;
@@ -103,11 +108,10 @@ function CssEffectFallback({
       style={{
         // The fallback remains alpha artwork. A full-frame opaque gradient
         // here would replace a custom card gradient as soon as an unavailable
-        // WebGL effect falls back. Screen compositing makes black shader
-        // regions neutral while preserving the selected colours and intensity.
+        // WebGL effect falls back. The parent effect group owns screen
+        // compositing so it can blend with the card gradient sibling.
         backgroundImage: `radial-gradient(70% 110% at 4% 100%, ${first} 0%, transparent 72%), radial-gradient(66% 100% at 100% 2%, ${last} 0%, transparent 72%), radial-gradient(54% 66% at 52% 50%, ${middle} 0%, transparent 82%)`,
         opacity,
-        mixBlendMode: "screen",
       }}
     />
   );
@@ -143,7 +147,10 @@ export function CardEffectLayer({
     readonly effect: string;
     readonly capabilities: ReturnType<typeof detectCardEffectCapabilities>;
   } | null>(null);
-  const [effectFailed, setEffectFailed] = useState(false);
+  const [failureState, setFailureState] = useState<{
+    readonly scope: string;
+    readonly count: number;
+  } | null>(null);
 
   // Mount the effect while the card is on screen (standalone usage). In the
   // carousel the parent passes an explicit `active` boolean: in that mode it
@@ -151,6 +158,8 @@ export function CardEffectLayer({
   // most ONE card holds a live WebGL context at a time — mobile browsers cap
   // contexts at ~8 and the "oldest context will be lost" thrash is exactly the
   // flicker/under-load users see with several subscriptions.
+  // Visibility is an external IntersectionObserver signal, not state derived
+  // from `active`; the dependency only enables/disables standalone tracking.
   useEffect(() => {
     if (active !== undefined) return;
     const el = ref.current;
@@ -159,6 +168,7 @@ export function CardEffectLayer({
       ([entry]) => setVisible(entry.isIntersecting),
       { threshold: 0.01 },
     );
+    // eslint-disable-next-line react-doctor/no-adjust-state-on-prop-change
     io.observe(el);
     return () => io.disconnect();
   }, [active]);
@@ -166,14 +176,22 @@ export function CardEffectLayer({
   const shouldMount = active === undefined ? visible : active;
   const shouldAnimate = shouldMount;
   const isValid = effect !== "NONE" && effect in CARD_EFFECT_COMPONENTS;
-
-  useEffect(() => {
-    setEffectFailed(false);
-  }, [effect]);
+  const propsKey = useMemo(() => JSON.stringify(props ?? {}), [props]);
+  const failureScope = `${effect}:${propsKey}`;
+  const failureCount =
+    failureState?.scope === failureScope ? failureState.count : 0;
+  const markRuntimeFailed = useCallback(() => {
+    setFailureState((current) => {
+      const count = current?.scope === failureScope ? current.count : 0;
+      const nextCount = Math.min(count + 1, 2);
+      return count === nextCount
+        ? current
+        : { scope: failureScope, count: nextCount };
+    });
+  }, [failureScope]);
 
   useEffect(() => {
     if (!shouldAnimate || !isValid || !requiresWebGL(effect)) {
-      setCapabilitySnapshot(null);
       return;
     }
     const capabilities = detectCardEffectCapabilities();
@@ -204,7 +222,7 @@ export function CardEffectLayer({
           effect,
           props: sourceProps,
           capabilities: capabilities ?? { webgl: false, webgl2: false },
-          failed: effectFailed,
+          failureCount,
         });
   const runtimeId = runtime?.effect as CardEffectId | "NONE" | undefined;
   const Effect =
@@ -223,7 +241,7 @@ export function CardEffectLayer({
   const presentationKey =
     runtime === null
       ? null
-      : `${effect}:${runtime.effect}:${runtime.mode}:${effectFailed ? "fallback" : "native"}`;
+      : `${failureScope}:${runtime.effect}:${runtime.mode}:failure-${failureCount}`;
   const presentationReady =
     shouldMount &&
     presentationKey !== null &&
@@ -234,6 +252,7 @@ export function CardEffectLayer({
     if (
       !isValid ||
       !shouldMount ||
+      !presentationReady ||
       runtimeId === undefined ||
       runtimeId === "NONE"
     ) {
@@ -242,28 +261,14 @@ export function CardEffectLayer({
     const root = ref.current;
     if (root === null) return;
 
-    const listeners = new Map<HTMLCanvasElement, () => void>();
-    const markFailed = () => setEffectFailed(true);
-    const observeCanvas = () => {
-      root.querySelectorAll("canvas").forEach((canvas) => {
-        if (listeners.has(canvas)) return;
-        canvas.addEventListener("webglcontextlost", markFailed);
-        canvas.addEventListener("webglcontextcreationerror", markFailed);
-        listeners.set(canvas, () => {
-          canvas.removeEventListener("webglcontextlost", markFailed);
-          canvas.removeEventListener("webglcontextcreationerror", markFailed);
-        });
-      });
-    };
-    const observer = new MutationObserver(observeCanvas);
-    observer.observe(root, { childList: true, subtree: true });
-    observeCanvas();
-
-    return () => {
-      observer.disconnect();
-      listeners.forEach((remove) => remove());
-    };
-  }, [isValid, runtimeId, shouldMount]);
+    return observeCardEffectCanvases(root, markRuntimeFailed);
+  }, [
+    isValid,
+    markRuntimeFailed,
+    presentationReady,
+    runtimeId,
+    shouldMount,
+  ]);
 
   if (!isValid) return null;
 
@@ -280,9 +285,11 @@ export function CardEffectLayer({
         // lazy renderer mounts. Only the artwork itself has opacity; fading a
         // full layer here caused a foreign colour flash during readiness.
         opacity: 1,
-        isolation: "isolate",
         overflow: "hidden",
-        contain: "paint",
+        // Blend the complete effect group with the preceding card gradient.
+        // Applying `screen` to a child inside an isolated paint group made its
+        // opaque black pixels composite against transparency instead.
+        mixBlendMode: "screen",
       }}
     >
       {runtime?.mode === "css-fallback" && (
@@ -301,8 +308,8 @@ export function CardEffectLayer({
         runtimeId !== undefined &&
         runtimeId !== "NONE" && (
           <EffectErrorBoundary
-            resetKey={`${effect}:${runtimeId}:${effectFailed ? "fallback" : "native"}`}
-            onError={() => setEffectFailed(true)}
+            resetKey={`${presentationKey ?? failureScope}:${runtimeId}`}
+            onError={markRuntimeFailed}
           >
             <Suspense fallback={null}>
               <div
@@ -310,10 +317,6 @@ export function CardEffectLayer({
                 className="absolute inset-0"
                 style={{
                   opacity: configuredOpacity,
-                  // Paper and a few third-party canvases paint an opaque
-                  // black base. Composite those pixels instead of allowing
-                  // them to erase the operator's gradient beneath.
-                  mixBlendMode: "screen",
                 }}
               >
                 <Effect key={runtimeId} {...mergedProps} />

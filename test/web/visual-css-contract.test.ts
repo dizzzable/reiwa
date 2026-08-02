@@ -13,6 +13,13 @@ const EFFECT_LAYER_SOURCE = readFileSync(
   ),
   "utf8",
 );
+const EFFECT_LAYER_UTILS_SOURCE = readFileSync(
+  new URL(
+    "../../web/src/components/reactbits/card-effect-layer-utils.ts",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const CARD_FRAME_SOURCE = readFileSync(
   new URL(
     "../../web/src/features/dashboard/components/subscription-card-frame.tsx",
@@ -56,11 +63,12 @@ describe("animated card CSS opacity contract", () => {
     expect(EFFECT_LAYER_SOURCE).toContain(
       "const configuredOpacity = resolveCardEffectOverlayOpacity(opacity)",
     );
-    expect(EFFECT_LAYER_SOURCE).toContain(
+    expect(EFFECT_LAYER_UTILS_SOURCE).toContain(
       "return Math.min(Math.max(opacity, 0.05), 1)",
     );
     expect(EFFECT_LAYER_SOURCE).not.toContain("CARD_EFFECT_MAX_OVERLAY_OPACITY");
-    expect(EFFECT_LAYER_SOURCE).toContain('contain: "paint"');
+    expect(EFFECT_LAYER_SOURCE).not.toContain('isolation: "isolate"');
+    expect(EFFECT_LAYER_SOURCE).not.toContain('contain: "paint"');
     expect(EFFECT_LAYER_SOURCE).toContain('overflow: "hidden"');
     expect(EFFECT_LAYER_SOURCE).toContain(
       "const shouldAnimate = shouldMount",

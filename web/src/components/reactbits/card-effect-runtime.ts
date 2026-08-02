@@ -3,8 +3,9 @@
  *
  * Rezeis lets an operator select several GPU-backed effects. They are visual
  * enhancements, never a prerequisite for a readable subscription card: the
- * CSS card gradient is always present underneath. Paper effects need WebGL2;
- * most other live effects can run on WebGL1; `waves` is Canvas 2D.
+ * CSS card gradient is always present underneath. Paper, native WebGL2 and
+ * Three/Fiber effects need WebGL2; most others can run on WebGL1; `waves` is
+ * Canvas 2D.
  */
 
 export interface CardEffectCapabilities {
@@ -29,7 +30,12 @@ export interface ResolvedCardEffectRuntime {
   readonly cssColors: readonly string[];
 }
 
-const PAPER_EFFECTS = new Set([
+const WEBGL2_ONLY_EFFECTS = new Set([
+  "plasma",
+  "grainient",
+  "silk",
+  "beams",
+  "dither",
   "paperMesh",
   "paperWarp",
   "paperGrain",
@@ -230,7 +236,7 @@ function resolveAuroraProps(
 }
 
 export function requiresWebGL2(effect: string): boolean {
-  return PAPER_EFFECTS.has(effect);
+  return WEBGL2_ONLY_EFFECTS.has(effect);
 }
 
 export function requiresWebGL(effect: string): boolean {
@@ -293,12 +299,17 @@ export function resolveCardEffectRuntime({
   props,
   capabilities,
   failed = false,
+  failureCount = 0,
 }: {
   readonly effect: string;
   readonly props: Readonly<Record<string, unknown>>;
   readonly capabilities: CardEffectCapabilities;
+  /** @deprecated Prefer `failureCount` for the complete retry chain. */
   readonly failed?: boolean;
+  readonly failureCount?: number;
 }): ResolvedCardEffectRuntime {
+  const runtimeFailureCount = Math.max(failureCount, failed ? 1 : 0);
+
   if (effect === "NONE") {
     return {
       effect: "NONE",
@@ -309,7 +320,7 @@ export function resolveCardEffectRuntime({
   }
 
   if (!requiresWebGL(effect)) {
-    return failed
+    return runtimeFailureCount > 0
       ? resolveCssFallback(effect, props)
       : {
           effect,
@@ -319,12 +330,11 @@ export function resolveCardEffectRuntime({
         };
   }
 
-  const needsFallback =
-    failed ||
+  const unavailable =
     !capabilities.webgl ||
     (requiresWebGL2(effect) && !capabilities.webgl2);
 
-  if (!needsFallback) {
+  if (!unavailable && runtimeFailureCount === 0) {
     return {
       effect,
       props,
@@ -333,17 +343,20 @@ export function resolveCardEffectRuntime({
     };
   }
 
-  // Paper shaders require WebGL2. Replacing an operator-selected Warp/Grain
-  // with Aurora on a WebGL1-only Telegram WebView changes both its shape and
-  // colours. Preserve the selected visual identity with its own CSS palette
-  // instead of substituting a different animation.
-  if (requiresWebGL2(effect)) {
+  // WebGL2-only shaders cannot start on a WebGL1-only Telegram WebView.
+  // Replacing the operator-selected artwork with Aurora would change both its
+  // shape and colours, so preserve its identity with its own CSS palette.
+  if (unavailable || requiresWebGL2(effect)) {
     return resolveCssFallback(effect, props);
   }
 
   // Do not retry Aurora after its own context has been lost: that would create
   // a loop of failed contexts. The CSS card treatment is the stable endpoint.
-  if (capabilities.webgl && effect !== "aurora") {
+  if (
+    runtimeFailureCount === 1 &&
+    capabilities.webgl &&
+    effect !== "aurora"
+  ) {
     return {
       effect: "aurora",
       props: resolveAuroraProps(props),

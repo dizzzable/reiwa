@@ -27,15 +27,12 @@
  *   are pulled in; we already had `motion` from the previous SPA work.
  */
 
-import { motion } from "motion/react";
+import { domMax, LazyMotion, m } from "motion/react";
 import { NavLink, useLocation } from "react-router";
 
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { resolveActiveTabTo, useNavTabs } from "@/components/layout/use-nav-tabs";
-import {
-  preloadNavigationRoute,
-} from "@/components/layout/navigation-preload";
 
 export function BottomNav() {
   const location = useLocation();
@@ -44,12 +41,8 @@ export function BottomNav() {
   const { branding } = useBranding();
   const navGap = branding.navGap ?? 2;
 
-  // Keep navigation itself synchronous. The selected route starts loading on
-  // pointer/focus intent below, but the shell never starts a timed bulk import
-  // after launch: on mid-range phones that background parsing competed with a
-  // tap and made the tab switch feel delayed.
-
   return (
+    <LazyMotion features={domMax} strict>
     <nav
       aria-label="Primary"
       className="relative shrink-0"
@@ -69,9 +62,6 @@ export function BottomNav() {
                   to={tab.to}
                   data-testid={tab.testId}
                   aria-current={isActive ? "page" : undefined}
-                  onPointerDown={() => preloadNavigationRoute(tab.to)}
-                  onPointerEnter={() => preloadNavigationRoute(tab.to)}
-                  onFocus={() => preloadNavigationRoute(tab.to)}
                   className={cn(
                     "relative z-10 flex min-h-[52px] w-16 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 font-medium transition-colors duration-200 select-none",
                     isActive
@@ -81,7 +71,7 @@ export function BottomNav() {
                 >
                   {/* Animated active-tab pill — slides between tabs via layoutId. */}
                   {isActive && (
-                    <motion.span
+                    <m.span
                       layoutId="bottom-nav-active-pill"
                       className="absolute inset-0 -z-10 rounded-2xl"
                       style={{ backgroundColor: "var(--brand-primary)" }}
@@ -94,7 +84,7 @@ export function BottomNav() {
                   )}
                   <span className="relative">
                     <Icon
-                      className="h-5 w-5 shrink-0"
+                      className="size-5 shrink-0"
                       strokeWidth={isActive ? 2.25 : 1.75}
                     />
                     {badge > 0 && (
@@ -116,5 +106,6 @@ export function BottomNav() {
         </ul>
       </div>
     </nav>
+    </LazyMotion>
   );
 }

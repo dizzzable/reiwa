@@ -13,6 +13,25 @@ const WEBGL1 = { webgl: true, webgl2: false } as const;
 const NO_WEBGL = { webgl: false, webgl2: false } as const;
 
 describe("card effect runtime policy", () => {
+  it.each([
+    "plasma",
+    "grainient",
+    "silk",
+    "beams",
+    "dither",
+    "paperMesh",
+    "paperWarp",
+    "paperGrain",
+    "paperDither",
+    "paperSwirl",
+    "paperMetaballs",
+  ])("keeps WebGL2-only effect %s off WebGL1", (effect) => {
+    expect(requiresWebGL2(effect)).toBe(true);
+    expect(
+      resolveCardEffectRuntime({ effect, props: {}, capabilities: WEBGL1 }),
+    ).toMatchObject({ effect: "NONE", mode: "css-fallback" });
+  });
+
   it("keeps a Paper shader when WebGL2 is actually available", () => {
     expect(
       resolveCardEffectRuntime({
@@ -39,6 +58,30 @@ describe("card effect runtime policy", () => {
       cssColors: ["#4c06a2", "#723a83", "#03759b", "#18047c"],
     });
   });
+
+  it.each([
+    ["plasma", { color: "#12c8ff" }, ["#12c8ff", "#000000"]],
+    [
+      "grainient",
+      { color1: "#ff9ffc", color2: "#5227ff", color3: "#b497cf" },
+      ["#ff9ffc", "#5227ff", "#b497cf"],
+    ],
+    ["silk", { color: "#d946ef" }, ["#d946ef"]],
+    ["beams", { lightColor: "#67e8f9" }, ["#67e8f9", "#000000"]],
+    ["dither", { waveColor: [0.5, 0.25, 0] }, ["#804000", "#000000"]],
+  ])(
+    "keeps the selected %s palette on WebGL1 instead of mounting a WebGL2 shader",
+    (effect, props, cssColors) => {
+      expect(requiresWebGL2(effect)).toBe(true);
+      expect(
+        resolveCardEffectRuntime({ effect, props, capabilities: WEBGL1 }),
+      ).toMatchObject({
+        effect: "NONE",
+        mode: "css-fallback",
+        cssColors,
+      });
+    },
+  );
 
   it("does not replace a selected Paper effect after its WebGL2 context is lost", () => {
     expect(
@@ -87,6 +130,30 @@ describe("card effect runtime policy", () => {
         failed: true,
       }),
     ).toMatchObject({ effect: "NONE", mode: "css-fallback" });
+  });
+
+  it("finishes the native to Aurora to CSS chain after two runtime failures", () => {
+    expect(
+      resolveCardEffectRuntime({
+        effect: "threads",
+        props: { color: "#8b5cf6" },
+        capabilities: WEBGL1,
+        failureCount: 1,
+      }),
+    ).toMatchObject({ effect: "aurora", mode: "webgl1-fallback" });
+
+    expect(
+      resolveCardEffectRuntime({
+        effect: "threads",
+        props: { color: "#8b5cf6" },
+        capabilities: WEBGL1,
+        failureCount: 2,
+      }),
+    ).toMatchObject({
+      effect: "NONE",
+      mode: "css-fallback",
+      cssColors: ["#8b5cf6"],
+    });
   });
 
   it("does not require WebGL for the Canvas 2D waves effect", () => {

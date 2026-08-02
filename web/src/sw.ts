@@ -44,6 +44,11 @@ function validateStrategyIntegrity(): boolean {
   return true
 }
 
+// Workbox registers its own `activate` listener. This helper must therefore
+// run during the service worker's initial evaluation, not from inside our
+// custom activate handler (Chrome rejects listeners added after evaluation).
+cleanupOutdatedCaches()
+
 // Run validation on service worker activation
 self.addEventListener('activate', (event) => {
   event.waitUntil(
@@ -65,18 +70,18 @@ self.addEventListener('activate', (event) => {
         return
       }
 
-      // Clean up old caches from previous versions
-      await cleanupOutdatedCaches()
-
-      // Delete any caches that don't match current version identifiers
+      // Delete only old Reiwa runtime caches. CacheStorage is shared by every
+      // application on the origin; deleting unknown names can destroy caches
+      // owned by another app or a future worker.
       const cacheNames = await caches.keys()
       const validCaches = [STATIC_CACHE, API_CACHE, NAV_CACHE]
+      const ownedCachePrefixes = ['static-assets-', 'api-responses-', 'navigations-']
       await Promise.all(
         cacheNames
           .filter(
             (name) =>
               !validCaches.includes(name) &&
-              !name.startsWith('workbox-precache'),
+              ownedCachePrefixes.some((prefix) => name.startsWith(prefix)),
           )
           .map((name) => caches.delete(name)),
       )

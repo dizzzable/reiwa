@@ -13,7 +13,7 @@
  * `aria-hidden`, sits at the back of the stacking context.
  */
 
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useMemo } from "react";
 
 import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { buildTextureCss } from "@/lib/app-texture";
@@ -24,7 +24,13 @@ import { useBranding } from "@/lib/branding-provider";
 export function AppBackground() {
   const { branding } = useBranding();
   const appBg = branding.appBackground;
-  const readability = resolveAppBackgroundReadability(branding);
+  // StealthLayout rerenders on every route change. The readability resolver
+  // samples the full concept palette and is intentionally expensive, so only
+  // recompute it when the operator's branding actually changes.
+  const readability = useMemo(
+    () => resolveAppBackgroundReadability(branding),
+    [branding],
+  );
 
   useLayoutEffect(() => {
     if (!appBg || appBg.kind === "none") return;

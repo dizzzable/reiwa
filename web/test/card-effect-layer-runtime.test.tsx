@@ -1,16 +1,34 @@
 // @vitest-environment jsdom
 
-import { act, type ReactElement } from "react";
+import { act, lazy, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/components/reactbits/registry", () => ({
   CARD_EFFECT_COMPONENTS: {
-    paperWarp: () => <div data-test-native-card-effect />,
+    paperWarp: () => <canvas data-test-native-card-effect />,
+    threads: () => <canvas data-test-native-card-effect />,
+    aurora: () => <canvas data-test-aurora-card-effect />,
+    waves: lazy(
+      () =>
+        new Promise<{ default: () => ReactElement }>((resolve) => {
+          delayedEffect.resolve = () =>
+            resolve({
+              default: () => <canvas data-test-delayed-card-effect />,
+            });
+        }),
+    ),
   },
   CARD_EFFECT_DEFAULTS: {
     paperWarp: {},
+    threads: {},
+    aurora: {},
+    waves: {},
   },
+}));
+
+const delayedEffect = vi.hoisted(() => ({
+  resolve: undefined as undefined | (() => void),
 }));
 
 vi.mock("@/lib/branding-provider", () => ({
@@ -23,8 +41,11 @@ vi.mock("react-i18next", () => ({
 
 import {
   CardEffectLayer,
-  resolveCardEffectOverlayOpacity,
 } from "../src/components/reactbits/card-effect-layer";
+import {
+  observeCardEffectCanvases,
+  resolveCardEffectOverlayOpacity,
+} from "../src/components/reactbits/card-effect-layer-utils";
 import { SubscriptionCardFrame } from "../src/features/dashboard/components/subscription-card-frame";
 import { SubscriptionCardContent } from "../src/features/dashboard/components/subscription-card";
 import { resolveSubscriptionCardVisual } from "../src/features/dashboard/components/subscription-card-visual";
@@ -96,6 +117,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     }
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("keeps the operator-selected artwork live when the OS requests reduced motion", () => {
@@ -191,8 +213,9 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
 
     expect(layer?.getAttribute("data-card-effect-runtime")).toBe("native");
     expect(layer?.style.opacity).toBe("1");
+    expect(layer?.style.mixBlendMode).toBe("screen");
     expect(renderer?.style.opacity).toBe("1");
-    expect(renderer?.style.mixBlendMode).toBe("screen");
+    expect(renderer?.style.mixBlendMode).toBe("");
   });
 
   it("preserves an operator-selected native effect opacity and clamps only invalid values", () => {
@@ -210,6 +233,83 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect(resolveCardEffectOverlayOpacity(1)).toBe(1);
     expect(resolveCardEffectOverlayOpacity(4)).toBe(1);
     expect(resolveCardEffectOverlayOpacity(0)).toBe(0.05);
+  });
+
+  it("reports a renderer that silently fails to create its canvas", () => {
+    vi.useFakeTimers();
+    const root = document.createElement("div");
+    const onFailure = vi.fn();
+    const stop = observeCardEffectCanvases(root, onFailure, 25);
+
+    vi.advanceTimersByTime(25);
+    expect(onFailure).toHaveBeenCalledOnce();
+
+    stop();
+    vi.useRealTimers();
+  });
+
+  it("starts the missing-canvas watchdog only after a lazy renderer commits", async () => {
+    vi.useFakeTimers();
+    const container = renderIntoDom(
+      <CardEffectLayer effect="waves" active />,
+    );
+
+    expect(delayedEffect.resolve).toBeTypeOf("function");
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(
+      container
+        .querySelector("[data-card-effect-source]")
+        ?.getAttribute("data-card-effect-runtime"),
+    ).toBe("native");
+    expect(container.querySelector("[data-card-effect-artwork]")).toBeNull();
+
+    await act(async () => {
+      delayedEffect.resolve?.();
+      await Promise.resolve();
+    });
+    expect(container.querySelector("[data-test-delayed-card-effect]"))
+      .not.toBeNull();
+
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(
+      container
+        .querySelector("[data-card-effect-source]")
+        ?.getAttribute("data-card-effect-runtime"),
+    ).toBe("native");
+    expect(container.querySelector("[data-card-effect-artwork]")).toBeNull();
+  });
+
+  it("finishes native to Aurora to CSS after two distinct runtime failures", () => {
+    const container = renderIntoDom(
+      <CardEffectLayer
+        effect="threads"
+        props={{ color: "#8b5cf6" }}
+        active
+      />,
+    );
+
+    const native = container.querySelector(
+      "[data-test-native-card-effect]",
+    );
+    expect(native).not.toBeNull();
+    act(() => native?.dispatchEvent(new Event("webglcontextlost")));
+
+    expect(
+      container
+        .querySelector("[data-card-effect-source]")
+        ?.getAttribute("data-card-effect-runtime"),
+    ).toBe("webgl1-fallback");
+    const aurora = container.querySelector("[data-test-aurora-card-effect]");
+    expect(aurora).not.toBeNull();
+    act(() => aurora?.dispatchEvent(new Event("webglcontextlost")));
+
+    expect(
+      container
+        .querySelector("[data-card-effect-source]")
+        ?.getAttribute("data-card-effect-runtime"),
+    ).toBe("css-fallback");
+    expect(container.querySelector("[data-card-effect-renderer]")).toBeNull();
+    expect(container.querySelector("[data-card-effect-artwork]")).not.toBeNull();
   });
 
   it("keeps a Paper card's own palette on a WebGL1-only Telegram WebView", () => {
@@ -273,7 +373,11 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect(patternLayer?.style.backgroundImage).toContain("linear-gradient");
     expect(fallback?.style.backgroundColor).toBe("");
     expect(fallback?.style.opacity).toBe("0.68");
-    expect(fallback?.style.mixBlendMode).toBe("screen");
+    expect(fallback?.style.mixBlendMode).toBe("");
+    expect(
+      (container.querySelector("[data-card-effect-source]") as HTMLElement | null)
+        ?.style.mixBlendMode,
+    ).toBe("screen");
   });
 
   it("uses the literal saved opacity for the CSS fallback while retaining the foundation layer", () => {
@@ -298,7 +402,11 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
       "[data-card-effect-artwork]",
     ) as HTMLElement | null;
     expect(fallback?.style.opacity).toBe("1");
-    expect(fallback?.style.mixBlendMode).toBe("screen");
+    expect(fallback?.style.mixBlendMode).toBe("");
+    expect(
+      (container.querySelector("[data-card-effect-source]") as HTMLElement | null)
+        ?.style.mixBlendMode,
+    ).toBe("screen");
     expect(fallback?.style.backgroundImage).not.toContain("linear-gradient");
     expect(
       container.querySelector('[data-subscription-card-layer="gradient"]'),

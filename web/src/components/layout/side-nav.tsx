@@ -11,7 +11,7 @@
  * destination set stays in lockstep across the two shells.
  */
 
-import { motion } from "motion/react";
+import { domMax, LazyMotion, m } from "motion/react";
 import { NavLink, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { MessageSquare } from "lucide-react";
@@ -20,7 +20,6 @@ import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { resolveActiveTabTo, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
-import { preloadNavigationRoute } from "@/components/layout/navigation-preload";
 
 export function SideNav() {
   const location = useLocation();
@@ -51,6 +50,7 @@ export function SideNav() {
       );
 
   return (
+    <LazyMotion features={domMax} strict>
     <nav
       aria-label="Primary"
       className="flex h-full w-64 shrink-0 flex-col gap-2 border-r border-[var(--color-border-soft)] bg-[var(--color-surface)] px-3 py-5 backdrop-blur-xl"
@@ -61,10 +61,10 @@ export function SideNav() {
           <img
             src={branding.logoUrl}
             alt={branding.brandName}
-            className="h-8 w-8 shrink-0 rounded-lg object-contain"
+            className="size-8 shrink-0 rounded-lg object-contain"
           />
         ) : (
-          <ReiwaLogo className="h-8 w-8 shrink-0 text-(--brand-primary)" title={branding.brandName} />
+          <ReiwaLogo className="size-8 shrink-0 text-(--brand-primary)" title={branding.brandName} />
         )}
         <span className="truncate text-base font-semibold text-[var(--brand-foreground)]">{branding.brandName}</span>
       </div>
@@ -82,9 +82,6 @@ export function SideNav() {
                 to={tab.to}
                 data-testid={`side-${tab.testId}`}
                 aria-current={isActive ? "page" : undefined}
-                onPointerDown={() => preloadNavigationRoute(tab.to)}
-                onPointerEnter={() => preloadNavigationRoute(tab.to)}
-                onFocus={() => preloadNavigationRoute(tab.to)}
                 className={cn(
                   "relative z-10 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200 select-none",
                   isActive
@@ -93,14 +90,14 @@ export function SideNav() {
                 )}
               >
                 {isActive && (
-                  <motion.span
+                  <m.span
                     layoutId="side-nav-active-pill"
                     className="absolute inset-0 -z-10 rounded-xl"
                     style={{ backgroundColor: "var(--brand-primary)" }}
                     transition={{ type: "spring", stiffness: 380, damping: 30 }}
                   />
                 )}
-                <Icon className="h-5 w-5 shrink-0" strokeWidth={isActive ? 2.25 : 1.75} />
+                <Icon className="size-5 shrink-0" strokeWidth={isActive ? 2.25 : 1.75} />
                 <span className="truncate">{tab.label}</span>
                 {(tab.badge ?? 0) > 0 && (
                   <span className="ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
@@ -114,5 +111,6 @@ export function SideNav() {
         })()}
       </ul>
     </nav>
+    </LazyMotion>
   );
 }

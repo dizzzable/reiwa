@@ -90,9 +90,8 @@ describe("SubscriptionCardFrame visual containment", () => {
     expect(markup).toContain("overflow-hidden");
     expect(markup).toContain("[contain:paint]");
     expect(markup).toContain('data-card-effect-source="aurora"');
-    expect(markup).toContain(
-      "isolation:isolate;overflow:hidden;contain:paint",
-    );
+    expect(markup).toContain("overflow:hidden;mix-blend-mode:screen");
+    expect(markup).not.toContain("isolation:isolate;overflow:hidden");
 
     const gradient = markup.indexOf(
       'data-subscription-card-layer="gradient"',

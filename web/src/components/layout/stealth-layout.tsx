@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { SideNav } from "@/components/layout/side-nav";
 import { PageTransition } from "@/components/layout/page-transition";
+import { RouteContentBoundary } from "@/components/layout/route-content-boundary";
 import { AppBackground } from "@/components/layout/app-background";
 import { NetworkBg } from "@/components/ui/network-bg";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
@@ -153,7 +154,7 @@ export default function StealthLayout() {
         }}
       >
         <div
-          className="relative z-10 h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+          className="relative z-10 size-8 animate-spin rounded-full border-2 border-t-transparent"
           style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
         />
       </div>
@@ -218,7 +219,9 @@ export default function StealthLayout() {
           <main className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto">
             <div className="mx-auto w-full max-w-[46rem] px-2">
               <PageTransition>
-                <Outlet />
+                <RouteContentBoundary>
+                  <Outlet />
+                </RouteContentBoundary>
               </PageTransition>
             </div>
           </main>
@@ -238,7 +241,9 @@ export default function StealthLayout() {
           {/* Scrollable main content; route changes render synchronously. */}
           <main className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto">
             <PageTransition>
-              <Outlet />
+              <RouteContentBoundary>
+                <Outlet />
+              </RouteContentBoundary>
             </PageTransition>
           </main>
 
