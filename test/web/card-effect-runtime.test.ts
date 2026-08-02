@@ -112,7 +112,7 @@ describe("card effect runtime policy", () => {
     });
   });
 
-  it("falls back after a live WebGL context is lost", () => {
+  it("preserves Threads' palette instead of substituting Aurora after context loss", () => {
     expect(
       resolveCardEffectRuntime({
         effect: "threads",
@@ -120,7 +120,11 @@ describe("card effect runtime policy", () => {
         capabilities: WEBGL1,
         failed: true,
       }),
-    ).toMatchObject({ effect: "aurora", mode: "webgl1-fallback" });
+    ).toMatchObject({
+      effect: "NONE",
+      mode: "css-fallback",
+      cssColors: ["#8b5cf6"],
+    });
 
     expect(
       resolveCardEffectRuntime({
@@ -132,7 +136,7 @@ describe("card effect runtime policy", () => {
     ).toMatchObject({ effect: "NONE", mode: "css-fallback" });
   });
 
-  it("finishes the native to Aurora to CSS chain after two runtime failures", () => {
+  it("keeps the same CSS fallback after repeated runtime failures", () => {
     expect(
       resolveCardEffectRuntime({
         effect: "threads",
@@ -140,7 +144,11 @@ describe("card effect runtime policy", () => {
         capabilities: WEBGL1,
         failureCount: 1,
       }),
-    ).toMatchObject({ effect: "aurora", mode: "webgl1-fallback" });
+    ).toMatchObject({
+      effect: "NONE",
+      mode: "css-fallback",
+      cssColors: ["#8b5cf6"],
+    });
 
     expect(
       resolveCardEffectRuntime({

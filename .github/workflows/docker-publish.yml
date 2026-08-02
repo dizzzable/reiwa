@@ -19,6 +19,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Read package version
+        id: version
+        run: echo "value=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(jq -r .version package.json)"
+          test "$package_version" = "$tag_version" || {
+            echo "Release tag v$tag_version does not match package version $package_version" >&2
+            exit 1
+          }
+
       - name: Lower-case repo name
         id: repo
         run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"

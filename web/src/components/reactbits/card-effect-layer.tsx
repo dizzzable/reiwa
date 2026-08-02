@@ -7,7 +7,7 @@
  *
  * Safety:
  *  - Lazy-loads the effect so the WebGL/canvas code only downloads when used.
- *  - Degrades GPU failures through Aurora/WebGL1 to a themed CSS layer.
+ *  - Degrades GPU failures to a same-palette CSS layer.
  *  - Only renders while on-screen (IntersectionObserver) so off-screen carousel
  *    slides and scrolled-away cards pause their GPU work.
  *
@@ -108,8 +108,8 @@ function CssEffectFallback({
       style={{
         // The fallback remains alpha artwork. A full-frame opaque gradient
         // here would replace a custom card gradient as soon as an unavailable
-        // WebGL effect falls back. The parent effect group owns screen
-        // compositing so it can blend with the card gradient sibling.
+        // WebGL effect falls back. Its own alpha source-over composition keeps
+        // the card gradient and pattern visible beneath the palette fields.
         backgroundImage: `radial-gradient(70% 110% at 4% 100%, ${first} 0%, transparent 72%), radial-gradient(66% 100% at 100% 2%, ${last} 0%, transparent 72%), radial-gradient(54% 66% at 52% 50%, ${middle} 0%, transparent 82%)`,
         opacity,
       }}
@@ -261,7 +261,12 @@ export function CardEffectLayer({
     const root = ref.current;
     if (root === null) return;
 
-    return observeCardEffectCanvases(root, markRuntimeFailed);
+    return observeCardEffectCanvases(
+      root,
+      markRuntimeFailed,
+      1_200,
+      runtimeId === "waves" ? "2d" : undefined,
+    );
   }, [
     isValid,
     markRuntimeFailed,

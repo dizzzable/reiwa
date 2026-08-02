@@ -8,11 +8,14 @@ export function resolveCardEffectOverlayOpacity(opacity: number): number {
  * Observe canvases created by a lazy effect and report both explicit WebGL
  * failures and silent renderer initialisation failures. Several GPU libraries
  * only log when context creation fails, which otherwise leaves a blank layer.
+ * Canvas 2D renderers also need a real 2D context: a bare canvas is not a
+ * usable presentation and must reach the same CSS fallback.
  */
 export function observeCardEffectCanvases(
   root: HTMLElement,
   onFailure: () => void,
   timeoutMs = 1_200,
+  requiredContext?: "2d",
 ): () => void {
   const listeners = new Map<HTMLCanvasElement, () => void>();
   let sawCanvas = false;
@@ -26,8 +29,19 @@ export function observeCardEffectCanvases(
 
   const observeCanvas = () => {
     root.querySelectorAll("canvas").forEach((canvas) => {
-      sawCanvas = true;
       if (listeners.has(canvas)) return;
+      if (requiredContext === "2d") {
+        try {
+          if (canvas.getContext("2d") === null) {
+            reportFailureOnce();
+            return;
+          }
+        } catch {
+          reportFailureOnce();
+          return;
+        }
+      }
+      sawCanvas = true;
       canvas.addEventListener("webglcontextlost", reportFailureOnce);
       canvas.addEventListener("webglcontextcreationerror", reportFailureOnce);
       listeners.set(canvas, () => {

@@ -200,7 +200,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect((layer as HTMLElement).style.opacity).toBe("1");
   });
 
-  it("uses the native artwork at the exact opacity the operator selected", () => {
+  it("uses normal source-over native artwork at the exact operator opacity", () => {
     allowMotion();
     const container = renderIntoDom(
       <CardEffectLayer effect="paperWarp" active opacity={1} />,
@@ -213,7 +213,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
 
     expect(layer?.getAttribute("data-card-effect-runtime")).toBe("native");
     expect(layer?.style.opacity).toBe("1");
-    expect(layer?.style.mixBlendMode).toBe("screen");
+    expect(layer?.style.mixBlendMode).toBe("");
     expect(renderer?.style.opacity).toBe("1");
     expect(renderer?.style.mixBlendMode).toBe("");
   });
@@ -248,10 +248,10 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     vi.useRealTimers();
   });
 
-  it("starts the missing-canvas watchdog only after a lazy renderer commits", async () => {
+  it("falls back when a committed Waves canvas cannot create a Canvas2D context", async () => {
     vi.useFakeTimers();
     const container = renderIntoDom(
-      <CardEffectLayer effect="waves" active />,
+      <CardEffectLayer effect="waves" props={{ lineColor: "#7300ff" }} active />,
     );
 
     expect(delayedEffect.resolve).toBeTypeOf("function");
@@ -263,23 +263,30 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     ).toBe("native");
     expect(container.querySelector("[data-card-effect-artwork]")).toBeNull();
 
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      ((contextId: string) =>
+        contextId === "2d"
+          ? null
+          : ({ getExtension: vi.fn().mockReturnValue({ loseContext: vi.fn() }) } as unknown as WebGL2RenderingContext)) as typeof HTMLCanvasElement.prototype.getContext,
+    );
     await act(async () => {
       delayedEffect.resolve?.();
       await Promise.resolve();
     });
-    expect(container.querySelector("[data-test-delayed-card-effect]"))
-      .not.toBeNull();
 
-    act(() => vi.advanceTimersByTime(2_000));
     expect(
       container
         .querySelector("[data-card-effect-source]")
         ?.getAttribute("data-card-effect-runtime"),
-    ).toBe("native");
-    expect(container.querySelector("[data-card-effect-artwork]")).toBeNull();
+    ).toBe("css-fallback");
+    expect(container.querySelector("[data-card-effect-renderer]")).toBeNull();
+    expect(
+      (container.querySelector("[data-card-effect-artwork]") as HTMLElement | null)
+        ?.style.backgroundImage,
+    ).toContain("rgb(115, 0, 255)");
   });
 
-  it("finishes native to Aurora to CSS after two distinct runtime failures", () => {
+  it("uses a same-palette CSS fallback when Threads loses its WebGL context", () => {
     const container = renderIntoDom(
       <CardEffectLayer
         effect="threads"
@@ -298,18 +305,13 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
       container
         .querySelector("[data-card-effect-source]")
         ?.getAttribute("data-card-effect-runtime"),
-    ).toBe("webgl1-fallback");
-    const aurora = container.querySelector("[data-test-aurora-card-effect]");
-    expect(aurora).not.toBeNull();
-    act(() => aurora?.dispatchEvent(new Event("webglcontextlost")));
-
-    expect(
-      container
-        .querySelector("[data-card-effect-source]")
-        ?.getAttribute("data-card-effect-runtime"),
     ).toBe("css-fallback");
     expect(container.querySelector("[data-card-effect-renderer]")).toBeNull();
-    expect(container.querySelector("[data-card-effect-artwork]")).not.toBeNull();
+    expect(container.querySelector("[data-test-aurora-card-effect]")).toBeNull();
+    expect(
+      (container.querySelector("[data-card-effect-artwork]") as HTMLElement | null)
+        ?.style.backgroundImage,
+    ).toContain("rgb(139, 92, 246)");
   });
 
   it("keeps a Paper card's own palette on a WebGL1-only Telegram WebView", () => {
@@ -377,7 +379,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect(
       (container.querySelector("[data-card-effect-source]") as HTMLElement | null)
         ?.style.mixBlendMode,
-    ).toBe("screen");
+    ).toBe("");
   });
 
   it("uses the literal saved opacity for the CSS fallback while retaining the foundation layer", () => {
@@ -406,7 +408,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect(
       (container.querySelector("[data-card-effect-source]") as HTMLElement | null)
         ?.style.mixBlendMode,
-    ).toBe("screen");
+    ).toBe("");
     expect(fallback?.style.backgroundImage).not.toContain("linear-gradient");
     expect(
       container.querySelector('[data-subscription-card-layer="gradient"]'),

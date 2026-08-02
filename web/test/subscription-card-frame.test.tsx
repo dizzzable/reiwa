@@ -17,39 +17,6 @@ import { resolveSubscriptionCardVisual } from "../src/features/dashboard/compone
 import { CardEffectLayer } from "../src/components/reactbits/card-effect-layer";
 import { DEFAULT_BRANDING } from "../src/types/branding";
 
-type Rgb = readonly [number, number, number];
-
-function parseRgb(value: string): Rgb {
-  if (value.startsWith("#")) {
-    return [0, 2, 4].map((offset) =>
-      Number.parseInt(value.slice(offset + 1, offset + 3), 16),
-    ) as unknown as Rgb;
-  }
-  return value.split(/\s+/).map(Number) as unknown as Rgb;
-}
-
-function composite(foreground: Rgb, background: Rgb, alpha: number): Rgb {
-  return foreground.map(
-    (channel, index) =>
-      channel * alpha + background[index] * (1 - alpha),
-  ) as unknown as Rgb;
-}
-
-function contrast(left: Rgb, right: Rgb): number {
-  const luminance = (rgb: Rgb) => {
-    const [red, green, blue] = rgb.map((channel) => {
-      const normalized = channel / 255;
-      return normalized <= 0.04045
-        ? normalized / 12.92
-        : ((normalized + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-  };
-  const a = luminance(left);
-  const b = luminance(right);
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-}
-
 function fullHeightGradientOpacities(markup: string): readonly [number, number] {
   const stops = new Map<number, number>();
   for (const match of markup.matchAll(
@@ -66,7 +33,7 @@ function fullHeightGradientOpacities(markup: string): readonly [number, number] 
 }
 
 describe("SubscriptionCardFrame visual containment", () => {
-  it("leaves animated artwork as the topmost background layer", () => {
+  it("keeps animated artwork above static layers with normal source-over compositing", () => {
     const visual = resolveSubscriptionCardVisual({
       ...DEFAULT_BRANDING,
       cardGradient:
@@ -90,7 +57,8 @@ describe("SubscriptionCardFrame visual containment", () => {
     expect(markup).toContain("overflow-hidden");
     expect(markup).toContain("[contain:paint]");
     expect(markup).toContain('data-card-effect-source="aurora"');
-    expect(markup).toContain("overflow:hidden;mix-blend-mode:screen");
+    expect(markup).toContain("overflow:hidden");
+    expect(markup).not.toContain("mix-blend-mode");
     expect(markup).not.toContain("isolation:isolate;overflow:hidden");
 
     const gradient = markup.indexOf(
@@ -149,7 +117,7 @@ describe("SubscriptionCardFrame visual containment", () => {
     expect(visual.cardEffectOpacity).toBe(0.72);
   });
 
-  it("keeps the computed veil for a static card", () => {
+  it("leaves a static operator gradient unchanged by automatic readability film", () => {
     const stops = ["#ffffff", "#e2e8f0"] as const;
     const visual = resolveSubscriptionCardVisual({
       ...DEFAULT_BRANDING,
@@ -162,28 +130,16 @@ describe("SubscriptionCardFrame visual containment", () => {
       </SubscriptionCardFrame>,
     );
 
-    expect(markup).toContain(
-      'data-subscription-card-readability="wcag-full-card-veil"',
-    );
     expect(markup).toContain('data-subscription-card-artwork="static"');
+    expect(markup).toContain(
+      'data-subscription-card-layer="gradient"',
+    );
+    expect(markup).toContain(stops[0]);
+    expect(markup).toContain(stops[1]);
+    expect(markup).not.toContain('data-subscription-card-layer="vignette"');
+    expect(markup).not.toContain("data-subscription-card-readability");
     expect(markup).not.toContain("text-shadow");
-
-    // A card with no motion to protect keeps the uniform WCAG-AA film.
-    const [startOpacity, endOpacity] = fullHeightGradientOpacities(markup);
-    expect([startOpacity, endOpacity]).toEqual([
-      visual.contrast.veilOpacity,
-      visual.contrast.veilOpacity,
-    ]);
-    const foreground = parseRgb(visual.contrast.foreground);
-    const veil = parseRgb(visual.contrast.veilRgb);
-    for (const stop of stops) {
-      expect(
-        contrast(
-          foreground,
-          composite(veil, parseRgb(stop), visual.contrast.veilOpacity),
-        ),
-      ).toBeGreaterThanOrEqual(4.5);
-    }
+    expect(markup).toContain(`--card-foreground:${visual.contrast.foreground}`);
   });
 
   it("keeps vivid artwork copy clean without per-field capsules", () => {

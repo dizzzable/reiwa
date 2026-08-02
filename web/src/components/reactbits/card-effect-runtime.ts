@@ -20,7 +20,6 @@ const NO_WEBGL_CAPABILITIES: CardEffectCapabilities = {
 
 export type CardEffectRuntimeMode =
   | "native"
-  | "webgl1-fallback"
   | "css-fallback";
 
 export interface ResolvedCardEffectRuntime {
@@ -217,24 +216,6 @@ export function resolveCardEffectOutputColors(
   return [...new Set(colors)];
 }
 
-function resolveAuroraProps(
-  props: Readonly<Record<string, unknown>>,
-): Readonly<Record<string, unknown>> {
-  const colors = resolveCardEffectColors("aurora", props);
-  const middle = colors[Math.floor((colors.length - 1) / 2)] ?? colors[0];
-  const speed = props["speed"];
-
-  return {
-    colorStops: [colors[0], middle, colors.at(-1) ?? colors[0]],
-    amplitude: 1.05,
-    blend: 0.56,
-    speed:
-      typeof speed === "number" && Number.isFinite(speed)
-        ? Math.min(Math.max(speed, 0.15), 1.25)
-        : 0.7,
-  };
-}
-
 export function requiresWebGL2(effect: string): boolean {
   return WEBGL2_ONLY_EFFECTS.has(effect);
 }
@@ -291,8 +272,8 @@ function resolveCssFallback(
 /**
  * Resolves the active effect without looking at the user agent. A context can
  * disappear under GPU pressure on any browser, so feature availability is the
- * only reliable input. Aurora is the shared WebGL1 fallback; the CSS layer is
- * the final no-GPU fallback.
+ * only reliable input. An unavailable or failed renderer always becomes a
+ * same-palette CSS fallback; it must never substitute another live effect.
  */
 export function resolveCardEffectRuntime({
   effect,
@@ -304,7 +285,7 @@ export function resolveCardEffectRuntime({
   readonly effect: string;
   readonly props: Readonly<Record<string, unknown>>;
   readonly capabilities: CardEffectCapabilities;
-  /** @deprecated Prefer `failureCount` for the complete retry chain. */
+  /** @deprecated Prefer `failureCount` for runtime failure state. */
   readonly failed?: boolean;
   readonly failureCount?: number;
 }): ResolvedCardEffectRuntime {
@@ -343,27 +324,8 @@ export function resolveCardEffectRuntime({
     };
   }
 
-  // WebGL2-only shaders cannot start on a WebGL1-only Telegram WebView.
-  // Replacing the operator-selected artwork with Aurora would change both its
-  // shape and colours, so preserve its identity with its own CSS palette.
-  if (unavailable || requiresWebGL2(effect)) {
-    return resolveCssFallback(effect, props);
-  }
-
-  // Do not retry Aurora after its own context has been lost: that would create
-  // a loop of failed contexts. The CSS card treatment is the stable endpoint.
-  if (
-    runtimeFailureCount === 1 &&
-    capabilities.webgl &&
-    effect !== "aurora"
-  ) {
-    return {
-      effect: "aurora",
-      props: resolveAuroraProps(props),
-      mode: "webgl1-fallback",
-      cssColors: [],
-    };
-  }
-
+  // WebGL2-only shaders cannot start on a WebGL1-only Telegram WebView, and a
+  // lost context cannot safely be retried. Preserve the selected artwork's
+  // palette in CSS instead of replacing it with another animation.
   return resolveCssFallback(effect, props);
 }
