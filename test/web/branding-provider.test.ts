@@ -106,6 +106,54 @@ describe("operator concept mode resolution", () => {
     expect(effective.themeVariants).toBe(branding.themeVariants);
   });
 
+  it("keeps an explicit operator card gradient after both persisted brightness variants resolve", () => {
+    const operatorGradient = "linear-gradient(135deg, #1e1b4b 0%, #6366f1 100%)";
+    const operatorSlots = [
+      {
+        cardEffect: "paperWarp" as const,
+        cardEffectProps: { speed: 1.1 },
+        cardEffectOpacity: 0.86,
+        // null is intentional: the slot inherits the selected operator card.
+        cardGradient: null,
+      },
+    ];
+    const makeVariant = (primary: string, bgPrimary: string) => ({
+      primary,
+      primaryFg: "#ffffff",
+      bgPrimary,
+      bgSecondary: bgPrimary,
+      cardGradient: operatorGradient,
+      cardPattern: null,
+      subscriptionCardText: { mode: "auto" as const, color: null },
+      cardEffect: "aurora" as const,
+      cardEffectProps: {},
+      cardEffectOpacity: 0.6,
+      cardEffectsByIndex: operatorSlots,
+      bgEffect: "NONE" as const,
+      appBackground: { ...DEFAULT_PUBLIC_CONFIG.branding.appBackground! },
+      borderRadius: "rounded-xl",
+      cornerRadii: { cardPx: 16, itemPx: 12, pillPx: 9999 },
+      fontFamily: "Inter, sans-serif",
+      surfaceTheme: { ...DEFAULT_PUBLIC_CONFIG.branding.surfaceTheme! },
+    });
+    const branding = {
+      ...DEFAULT_PUBLIC_CONFIG.branding,
+      cardGradient: operatorGradient,
+      cardEffectsByIndex: operatorSlots,
+      themeVariants: {
+        light: makeVariant("#165eff", "#f5f8ff"),
+        dark: makeVariant("#8cb4ff", "#0c1324"),
+      },
+    };
+
+    for (const mode of ["light", "dark"] as const) {
+      const effective = resolveBrandingThemeMode(branding, mode);
+      expect(effective.cardGradient).toBe(operatorGradient);
+      expect(effective.cardEffectsByIndex).toEqual(operatorSlots);
+      expect(effective.cardEffectsByIndex[0]?.cardGradient).toBeNull();
+    }
+  });
+
   it("keeps the operator's global and positional card effects above a brightness variant", () => {
     const lightVariant = {
       primary: "#165eff",
