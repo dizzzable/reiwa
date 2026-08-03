@@ -65,6 +65,16 @@ export type { ExternalAuthProvider, PublicExternalProvider } from "./ext-auth.js
 
 // Plans
 export { getPlans } from "./plans.js";
+export {
+  getTariffConstructorManifest,
+  getTariffConstructorQuote,
+  createTariffConstructorCheckout,
+  type TariffConstructorManifest,
+  type TariffConstructorQuote,
+  type TariffConstructorQuoteRequest,
+  type TariffConstructorCheckoutRequest,
+  type TariffModuleType,
+} from './tariff-constructor.js';
 
 // Landing
 export { getLanding } from "./landing.js";

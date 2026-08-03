@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { Shield } from 'lucide-react'
-import { getActionPolicy, getPlans } from '@/lib/api-client'
+import { Calculator, Shield } from 'lucide-react'
+import { getActionPolicy, getPlans, getTariffConstructorManifest } from '@/lib/api-client'
 import type { Plan } from '@/types/api'
 import { usePurchaseStore } from '@/stores/purchase.store'
 import {
@@ -30,6 +30,12 @@ export default function PlansPage() {
     queryKey: subscriptionQueryKeys.actionPolicy(),
     queryFn: () => getActionPolicy(),
     staleTime: 30_000,
+  })
+  const { data: constructorManifest } = useQuery({
+    queryKey: ['tariff-constructor'],
+    queryFn: getTariffConstructorManifest,
+    staleTime: 60_000,
+    retry: false,
   })
 
   // Deep-link / refresh landing on /plans while already at capacity.
@@ -68,6 +74,12 @@ export default function PlansPage() {
       </div>
 
       <div className="px-5 space-y-4">
+        {constructorManifest ? (
+          <button type="button" onClick={() => navigate('/constructor')} className="flex w-full items-center gap-3 rounded-2xl border border-(--brand-primary)/30 bg-(--brand-primary)/10 p-4 text-left transition hover:bg-(--brand-primary)/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand-primary)">
+            <Calculator className="h-6 w-6 text-(--brand-primary)" />
+            <span><span className="block font-medium">Собрать свой тариф</span><span className="text-xs text-zinc-400">Выберите срок и параметры, затем получите расчёт</span></span>
+          </button>
+        ) : null}
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="theme-skeleton h-[150px] animate-pulse rounded-card" />

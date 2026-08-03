@@ -62,6 +62,7 @@ const PartnerPage = lazy(
   () => import("@/features/partner/partner-page"),
 );
 const PlansPage = lazy(() => import("@/features/plans/plans-page"));
+const ConstructorPage = lazy(() => import('@/features/constructor/constructor-page'));
 const PurchasePage = lazy(() => import("@/features/purchase/purchase-page"));
 const RenewalPage = lazy(() => import("@/features/renewal/renewal-page"));
 const UpgradePage = lazy(() => import("@/features/upgrade/upgrade-page"));
@@ -131,6 +132,7 @@ export default function App() {
           <Route path="/subscription/devices" element={<DevicesPage />} />
           <Route path="/partner" element={<PartnerPage />} />
           <Route path="/plans" element={<PlansPage />} />
+          <Route path="/constructor" element={<ConstructorPage />} />
           <Route path="/purchase" element={<PurchasePage />} />
           <Route path="/renew" element={<RenewalPage />} />
           <Route path="/upgrade" element={<UpgradePage />} />

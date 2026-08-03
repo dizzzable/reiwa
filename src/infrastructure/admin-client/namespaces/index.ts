@@ -54,6 +54,14 @@ export { SubscriptionNamespace } from './subscription.js';
 export type { UserIdentity } from './subscription.js';
 export { SupportNamespace } from './support.js';
 export type { CreateTicketInput } from './support.js';
+export { TariffConstructorNamespace } from './tariff-constructor.js';
+export type {
+  TariffConstructorManifest,
+  TariffConstructorCheckout,
+  TariffConstructorCheckoutInput,
+  TariffConstructorQuote,
+  TariffConstructorQuoteInput,
+} from './tariff-constructor.js';
 export { SystemNamespace } from './system.js';
 export { TrialNamespace } from './trial.js';
 export { UserNamespace } from './user.js';
