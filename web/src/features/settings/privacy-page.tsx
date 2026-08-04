@@ -11,8 +11,9 @@
  * channel is already attached.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router";
 import { Check, Copy, Key, Mail, Send } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -26,6 +27,7 @@ import {
 } from "@/lib/api-client";
 import { useSession, SESSION_QUERY_KEY } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
+import { resolvePrivacyDeepLink } from "@/lib/privacy-deep-link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,11 +36,31 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 export default function PrivacyPage() {
   const { t } = useTranslation();
   const { session } = useSession();
-  const { emailEnabled } = useBranding();
+  const { emailEnabled, isLoading: brandingLoading } = useBranding();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeSheet, setActiveSheet] = useState<"password" | "telegram" | "email" | null>(null);
 
   const telegramLinked = Boolean(session?.telegramId);
   const emailVerified = Boolean(session?.webAccount?.emailVerifiedAt);
+
+  // Deep-link: `?link=telegram|email` (from the quests dialog and the trial
+  // CTA) opens that linking form straight away, so a button that says
+  // "Привязать" lands on the actual form instead of a menu the user still has
+  // to read. Cleared once consumed so closing the sheet, a back-nav or a
+  // refresh doesn't re-open it. Decision lives in `resolvePrivacyDeepLink`.
+  const deepLinkTarget = searchParams.get("link");
+  useEffect(() => {
+    const { open, consumed } = resolvePrivacyDeepLink(deepLinkTarget, {
+      emailEnabled,
+      brandingLoading,
+    });
+    if (!consumed) return;
+    if (open !== null) setActiveSheet(open);
+    const next = new URLSearchParams(searchParams);
+    next.delete("link");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkTarget, emailEnabled, brandingLoading]);
 
   return (
     <div className="min-h-full pb-6">

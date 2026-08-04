@@ -1,84 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { reportClientError } from '@/lib/client-error-reporter'
-
-// Types for Telegram WebApp SDK
-interface TelegramUser {
-  id: number
-  first_name: string
-  last_name?: string
-  username?: string
-  language_code?: string
-  is_premium?: boolean
-  photo_url?: string
-}
-
-interface TelegramWebApp {
-  initData: string
-  initDataUnsafe: { user?: TelegramUser; start_param?: string }
-  version: string
-  platform: string
-  colorScheme: 'light' | 'dark'
-  themeParams: Record<string, string>
-  isExpanded: boolean
-  viewportHeight: number
-  viewportStableHeight: number
-  ready?: () => void
-  expand?: () => void
-  close: () => void
-  isVersionAtLeast?: (version: string) => boolean
-  /** Bot API 7.7+ — stop the swipe-down-to-minimise gesture that lets the
-   *  whole Mini App be dragged (reads as "content out of bounds" on iOS). */
-  disableVerticalSwipes?: () => void
-  HapticFeedback: {
-    impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void
-    notificationOccurred: (type: 'error' | 'success' | 'warning') => void
-    selectionChanged: () => void
-  }
-  BackButton: {
-    isVisible: boolean
-    show: () => void
-    hide: () => void
-    onClick: (cb: () => void) => void
-    offClick: (cb: () => void) => void
-  }
-  MainButton: {
-    text: string
-    color: string
-    textColor: string
-    isVisible: boolean
-    isProgressVisible: boolean
-    isActive: boolean
-    show: () => void
-    hide: () => void
-    enable: () => void
-    disable: () => void
-    setText: (text: string) => void
-    onClick: (cb: () => void) => void
-    offClick: (cb: () => void) => void
-    showProgress: (leaveActive?: boolean) => void
-    hideProgress: () => void
-  }
-  openLink: (url: string, options?: { try_instant_view?: boolean }) => void
-  openTelegramLink: (url: string) => void
-  showPopup: (params: { title?: string; message: string; buttons?: Array<{ id?: string; type?: string; text?: string }> }, cb?: (id: string) => void) => void
-  showAlert: (message: string, cb?: () => void) => void
-  showConfirm: (message: string, cb?: (ok: boolean) => void) => void
-  sendData: (data: string) => void
-  switchInlineQuery: (query: string, choose_chat_types?: string[]) => void
-  CloudStorage: {
-    setItem: (key: string, value: string, cb?: (error: Error | null, stored?: boolean) => void) => void
-    getItem: (key: string, cb: (error: Error | null, value?: string) => void) => void
-    removeItem: (key: string, cb?: (error: Error | null, removed?: boolean) => void) => void
-    getKeys: (cb: (error: Error | null, keys?: string[]) => void) => void
-  }
-}
-
-declare global {
-  interface Window {
-    Telegram?: { WebApp?: TelegramWebApp }
-    __reiwaTelegramSdkState?: 'loading' | 'ready' | 'error'
-  }
-}
+// The SDK surface and the `window.Telegram` / `__reiwaTelegramSdkState`
+// globals live in `@/types/telegram` and are declared exactly once. This hook
+// used to carry its own copy alongside a second one in `vite-env.d.ts`;
+// `skipLibCheck` hid the conflict, so add members there, never here.
+import type { TelegramUser, TelegramWebApp } from '@/types/telegram'
 
 export type TelegramPlatform = 'telegram-mobile' | 'telegram-desktop' | 'web'
 

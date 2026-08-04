@@ -198,7 +198,7 @@ export function CtaBannerSection({ section, locale, defaultLocale }: Props) {
         {ctaLabel.length > 0 && href && (
           <a
             href={href}
-            className={`inline-flex h-12 items-center justify-center rounded-full px-8 text-base font-semibold transition hover:opacity-90 ${buttonClass}`}
+            className={`ls-cta inline-flex h-12 items-center justify-center rounded-full px-8 text-base font-semibold transition hover:opacity-90 ${buttonClass}`}
           >
             {ctaLabel}
           </a>

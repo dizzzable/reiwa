@@ -61,7 +61,24 @@ export type LandingBackground =
   | 'spotlight'
   | 'network';
 export type LandingSurfaceStyle = 'solid' | 'glass' | 'outline';
-export type LandingAnimation = 'none' | 'fade' | 'fadeUp' | 'zoom';
+export const LANDING_CARD_HOVERS = ['none', 'lift', 'glow', 'scale'] as const;
+export type LandingCardHover = (typeof LANDING_CARD_HOVERS)[number];
+export const LANDING_CTA_STYLES = ['none', 'lift', 'shine'] as const;
+export type LandingCtaStyle = (typeof LANDING_CTA_STYLES)[number];
+export const LANDING_BACKGROUND_OVERLAYS = ['none', 'noise', 'grid', 'dots', 'vignette', 'scanline'] as const;
+export type LandingBackgroundOverlay = (typeof LANDING_BACKGROUND_OVERLAYS)[number];
+export const LANDING_ANIMATIONS = [
+  'none',
+  'fade',
+  'fadeUp',
+  'fadeDown',
+  'slideLeft',
+  'slideRight',
+  'zoom',
+  'zoomOut',
+  'blurIn',
+] as const;
+export type LandingAnimation = (typeof LANDING_ANIMATIONS)[number];
 
 export interface LandingTheme {
   readonly inherit?: boolean;
@@ -71,12 +88,15 @@ export interface LandingTheme {
     readonly fg?: string;
     readonly accent?: string;
   };
-  readonly font?: { readonly family?: string; readonly scale?: number };
+  readonly font?: { readonly family?: string };
   readonly radius?: 'none' | 'sm' | 'md' | 'lg' | 'xl';
   readonly background?: LandingBackground;
+  readonly backgroundOverlay?: LandingBackgroundOverlay;
   readonly backgroundColors?: readonly string[];
   readonly animateBackground?: boolean;
   readonly surfaceStyle?: LandingSurfaceStyle;
+  readonly cardHover?: LandingCardHover;
+  readonly ctaStyle?: LandingCtaStyle;
 }
 
 export interface LandingConfigPayload {
@@ -95,6 +115,10 @@ export type EffectiveLandingPayload = LandingConfigPayload | DisabledLandingPayl
 
 function isKnownSectionType(value: unknown): value is SectionType {
   return typeof value === 'string' && (KNOWN_SECTION_TYPES as readonly string[]).includes(value);
+}
+
+function isKnownAnimation(value: unknown): value is LandingAnimation {
+  return typeof value === 'string' && (LANDING_ANIMATIONS as readonly string[]).includes(value);
 }
 
 /**
@@ -117,11 +141,10 @@ export function parseLandingPayload(raw: unknown): EffectiveLandingPayload {
     if (s['visible'] === false) continue;
     const id = typeof s['id'] === 'string' ? (s['id'] as string) : `${s['type'] as string}-${sections.length}`;
     const data = s['data'] !== null && typeof s['data'] === 'object' ? (s['data'] as Record<string, unknown>) : {};
-    const animation =
-      typeof s['animation'] === 'string' &&
-      ['none', 'fade', 'fadeUp', 'zoom'].includes(s['animation'] as string)
-        ? (s['animation'] as LandingAnimation)
-        : undefined;
+    // Validated against the exported list, not a literal: a second copy of the
+    // animation names here would silently drop every newly added preset back to
+    // "no animation" while every other layer accepted it.
+    const animation = isKnownAnimation(s['animation']) ? s['animation'] : undefined;
     sections.push({ id, type: s['type'] as SectionType, visible: true, animation, data });
   }
 

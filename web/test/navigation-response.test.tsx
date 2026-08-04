@@ -37,7 +37,7 @@ vi.mock("motion/react", () => ({
 import { BottomNav } from "../src/components/layout/bottom-nav";
 import { SideNav } from "../src/components/layout/side-nav";
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 const mounted: Array<{ root: Root; container: HTMLDivElement }> = [];
 

@@ -322,9 +322,19 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       themeMode,
       canChooseThemeMode,
       setThemeMode,
-      isLoading,
+      // `placeholderData` is always defined (the selector falls back to the
+      // snapshot, then to the built-in defaults), so React Query reports
+      // `success` on the very first render and `isLoading` is false for the
+      // whole life of the app. Consumers that must distinguish "operator
+      // config has arrived" from "we are still painting defaults" — the
+      // `?link=email` deep link is the live one — need the placeholder flag
+      // folded in. Self-terminating: the placeholder branch only applies
+      // while the query is `pending`, so a permanent fetch failure flips
+      // `status` to `error`, clears `isPlaceholderData`, and releases the
+      // waiters instead of hanging on defaults forever.
+      isLoading: isLoading || isPlaceholderData,
     }),
-    [effectiveBranding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, config.botUsername, config.supportUsername, config.emailEnabled, themeMode, canChooseThemeMode, setThemeMode, isLoading],
+    [effectiveBranding, config.locales, config.defaultLocale, config.defaultCurrency, config.customIcons, config.botUsername, config.supportUsername, config.emailEnabled, themeMode, canChooseThemeMode, setThemeMode, isLoading, isPlaceholderData],
   );
 
   return (

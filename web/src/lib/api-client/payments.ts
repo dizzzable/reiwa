@@ -111,6 +111,25 @@ export const getPaymentStatus = (paymentId: string) =>
     .then((r) => r.data);
 
 /**
+ * Give up on an unpaid checkout.
+ *
+ * Not a refund — no money has moved and none comes back. This exists because a
+ * paid-trial draft holds the buyer's trial reservation, and the quota counts a
+ * reservation as spent; cancelling frees it immediately instead of after the
+ * expiry sweep.
+ *
+ * Rejects with 409 once the draft exists at the payment provider: the invoice
+ * there stays payable and no gateway offers a cancel, so freeing the quota
+ * while it lives would let one buyer collect several trials.
+ */
+export const abandonCheckout = (paymentId: string) =>
+  apiClient
+    .post<{ abandoned: boolean; status: PaymentStatus["status"] }>(
+      `/payments/${encodeURIComponent(paymentId)}/abandon`,
+    )
+    .then((r) => r.data);
+
+/**
  * Combined multi-subscription renewal: one provider checkout for the summed
  * total. Each id renews on its original plan and duration server-side. The
  * `source` hint preserves the post-payment redirect surface (Mini App vs web).

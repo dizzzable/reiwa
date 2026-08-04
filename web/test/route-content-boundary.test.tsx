@@ -2,11 +2,11 @@
 
 import { act, lazy, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RouteContentBoundary } from "../src/components/layout/route-content-boundary";
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 let mounted: { root: Root; container: HTMLDivElement } | null = null;
 

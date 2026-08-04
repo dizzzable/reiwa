@@ -28,7 +28,7 @@ import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
-import { openExternalUrl } from "@/lib/utils";
+import { startCheckoutRedirect } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
 import { BackButton } from "@/components/ui/back-button";
 import { useBranding } from "@/lib/branding-provider";
@@ -532,14 +532,14 @@ function CheckoutStep() {
       // and wizard re-fetch instead of showing a stale offer for up to 60s.
       void queryClient.invalidateQueries({ queryKey: ["add-ons-eligibility"] });
       if (result.checkoutUrl) {
-        // Stash the URL so the return page can offer a manual "open payment"
-        // button — the auto-open below is blocked on Telegram Desktop (openLink
-        // must run inside a user gesture, which the async onSuccess has lost).
+        // Stash the URL first: `startCheckoutRedirect` cannot navigate inside a
+        // Telegram Mini App (no gesture on this path), so the buyer finishes
+        // from the button on the return page — and that button needs this URL.
         savePendingCheckout(result.paymentId, result.checkoutUrl, {
           returnTo: "/addons",
           label: selectedAddOn?.name,
         });
-        openExternalUrl(result.checkoutUrl);
+        startCheckoutRedirect(result.checkoutUrl);
         navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
       } else {
         // Free add-on: applied instantly server-side, no redirect.

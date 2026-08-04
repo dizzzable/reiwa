@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
 
-import { getPlans } from '@/lib/api-client';
+import { useLandingKit, type LandingCatalogPlan } from '../landing-kit-context';
 import { pickLocalized, safeUrl, type LandingSection } from '../landing-schema';
 
 /**
@@ -21,15 +20,7 @@ interface Props {
   defaultLocale: string;
 }
 
-interface PlanShape {
-  id?: string;
-  name?: string;
-  description?: string | null;
-  durationDays?: number;
-  priceMonthlyCents?: number;
-  priceCents?: number;
-  currency?: string;
-}
+type PlanShape = LandingCatalogPlan;
 
 function formatMoney(cents: number | undefined, currency: string | undefined, locale: string): string {
   if (typeof cents !== 'number' || Number.isNaN(cents)) return '';
@@ -44,11 +35,17 @@ function formatMoney(cents: number | undefined, currency: string | undefined, lo
 }
 
 function CatalogPricing({ heading }: { heading: string }) {
+  const { LinkComponent, loadPlans } = useLandingKit();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['landing', 'plans'],
-    queryFn: getPlans,
+    // The host injects the catalog. `enabled` guards the fetch; the fallback
+    // only satisfies the hook contract and never runs.
+    queryFn: loadPlans ?? (async () => []),
     staleTime: 60_000,
+    enabled: loadPlans !== null,
   });
+  // No catalog source in this host → fail-closed, same as a catalog error.
+  if (loadPlans === null) return null;
   if (isLoading || isError) return null;
   const plans = Array.isArray(data) ? (data as unknown as PlanShape[]) : [];
   const cleaned = plans.filter((p) => p && typeof p === 'object' && typeof p.id === 'string');
@@ -70,12 +67,12 @@ function CatalogPricing({ heading }: { heading: string }) {
             <p className="text-3xl font-bold">
               {formatMoney(plan.priceCents ?? plan.priceMonthlyCents, plan.currency, 'ru')}
             </p>
-            <Link
+            <LinkComponent
               to="/register"
-              className="mt-auto inline-flex h-11 items-center justify-center rounded-full bg-(--brand-primary) px-6 text-sm font-semibold text-(--brand-primary-fg) transition hover:opacity-90"
+              className="ls-cta mt-auto inline-flex h-11 items-center justify-center rounded-full bg-(--brand-primary) px-6 text-sm font-semibold text-(--brand-primary-fg) transition hover:opacity-90"
             >
               →
-            </Link>
+            </LinkComponent>
           </li>
         ))}
       </ul>
@@ -105,6 +102,7 @@ function StaticPricing({
   locale: string;
   defaultLocale: string;
 }) {
+  const { LinkComponent } = useLandingKit();
   const plans = Array.isArray(data.staticPlans) ? data.staticPlans : [];
   if (plans.length === 0) return null;
   return (
@@ -158,12 +156,12 @@ function StaticPricing({
                 })}
               </ul>
               {ctaLabel.length > 0 && ctaHref && (
-                <Link
+                <LinkComponent
                   to={ctaHref}
-                  className="mt-auto inline-flex h-11 items-center justify-center rounded-full bg-(--brand-primary) px-6 text-sm font-semibold text-(--brand-primary-fg) transition hover:opacity-90"
+                  className="ls-cta mt-auto inline-flex h-11 items-center justify-center rounded-full bg-(--brand-primary) px-6 text-sm font-semibold text-(--brand-primary-fg) transition hover:opacity-90"
                 >
                   {ctaLabel}
-                </Link>
+                </LinkComponent>
               )}
             </li>
           );

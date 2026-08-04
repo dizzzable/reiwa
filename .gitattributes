@@ -1,0 +1,6 @@
+# The landing kit is the source of truth for a copy vendored into rezeis-admin,
+# where a sha256 manifest fails the build on any mismatch. Line endings are
+# content to a hash, so both sides must agree on LF regardless of the checkout's
+# autocrlf setting — otherwise the manifest is valid only on the machine that
+# generated it.
+web/src/features/landing/** text eol=lf

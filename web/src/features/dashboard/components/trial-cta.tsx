@@ -170,7 +170,10 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
 
   async function handleActivate() {
     if (needsTelegramLink) {
-      navigate("/settings/privacy");
+      // Same contract as the linking quests: this button says "link Telegram",
+      // so open that form directly instead of leaving the user on the privacy
+      // list to find the row themselves.
+      navigate("/settings/privacy?link=telegram");
       return;
     }
     if (paidTrial && trialPlan) {

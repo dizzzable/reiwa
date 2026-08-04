@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { ArrowUpCircle, Check } from "lucide-react";
@@ -24,7 +24,7 @@ import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
-import { openExternalUrl } from "@/lib/utils";
+import { startCheckoutRedirect } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 
@@ -75,7 +75,14 @@ export default function UpgradePage() {
         </div>
       </div>
 
-      <StepTransition stepKey={step}>
+      {/* `checkout` and `polling` render the same child, so they must share a
+          transition key. A changing key remounts it — a fresh `CheckoutStep`
+          with a fresh ref latch, which would create a second draft. Today
+          that is masked only because `setCheckoutResult` (which sets
+          `polling`) and `navigate("/payment-return")` batch into one commit
+          and the unmount wins the race; keying them together removes the
+          dependency on that ordering. */}
+      <StepTransition stepKey={step === "polling" ? "checkout" : step}>
         {step === "subscriptions" && <SelectSubscription />}
         {step === "plan" && <SelectPlan />}
         {step === "duration" && <SelectDuration />}
@@ -426,11 +433,11 @@ function CheckoutStep() {
       ),
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
-      // Stash the URL so the return page can offer a manual "open payment"
-      // button — the auto-open below is blocked on Telegram Desktop (openLink
-      // must run inside a user gesture, which the async onSuccess has lost).
+      // Stash the URL first: `startCheckoutRedirect` cannot navigate inside a
+      // Telegram Mini App (no gesture on this path), so the buyer finishes from
+      // the button on the return page — and that button needs this URL.
       savePendingCheckout(result.paymentId, result.checkoutUrl ?? null, { returnTo: "/upgrade" });
-      if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
+      if (result.checkoutUrl) startCheckoutRedirect(result.checkoutUrl);
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
     onError: () => {
@@ -440,10 +447,16 @@ function CheckoutStep() {
     },
   });
 
+  // A ref, not the mutation flags: StrictMode runs setup → cleanup → setup
+  // with no re-render in between, and React Query publishes state through a
+  // `setTimeout`, so the second setup still reads `isPending: false` and fires
+  // a second draft (two `savePendingCheckout` + `startCheckoutRedirect` +
+  // `navigate` runs). Refs survive the simulated remount; this latch does not.
+  const started = useRef(false);
   useEffect(() => {
-    if (!mutation.isPending && !mutation.isSuccess && !mutation.isError) {
-      mutation.mutate();
-    }
+    if (started.current) return;
+    started.current = true;
+    mutation.mutate();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

@@ -12,6 +12,8 @@ import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 import { UpstreamError } from "../../core/errors/upstream-error.js";
 import {
+  extractAbandonRefusalCode,
+  extractCheckoutRefusalCode,
   extractSubscriptionLimitCode,
   normalizeWireDecimal,
   resolveRenewalCheckoutError,
@@ -133,12 +135,22 @@ export function createPaymentsRouter(deps: {
         // SUBSCRIPTION_LIMIT_REACHED — surface as a typed 400 so the SPA can
         // toast "limit reached" instead of a generic 500.
         if (isUpstreamStatus(e, 400)) {
-          const code = extractSubscriptionLimitCode(describeUpstreamError(e).message);
+          const body = describeUpstreamError(e).message;
+          const code = extractSubscriptionLimitCode(body);
           if (code === "SUBSCRIPTION_LIMIT_REACHED") {
             res.status(400).json({
               code: "SUBSCRIPTION_LIMIT_REACHED",
               message: "Subscription limit reached",
             });
+            return;
+          }
+          // Paid-trial refusals. Without this they fall through to the generic
+          // 500 below, and the buyer whose own unfinished attempt is blocking
+          // them is told only "failed to create checkout" — with no hint that
+          // there is anything they can do about it.
+          const refusal = extractCheckoutRefusalCode(body);
+          if (refusal !== undefined) {
+            res.status(400).json({ code: refusal, message: refusal });
             return;
           }
         }
@@ -332,6 +344,48 @@ export function createPaymentsRouter(deps: {
         res.json(status ?? {});
       } catch {
         res.status(404).json({ message: "Payment not found" });
+      }
+    },
+  );
+
+  // POST /api/v1/payments/:paymentId/abandon
+  //
+  // "I am not going to pay this." No money has moved and none is returned —
+  // this is not a refund path. It cancels an unpaid draft so a paid-trial
+  // reservation is freed at once instead of after the expiry sweep.
+  //
+  // Deliberately NOT behind `requireMode`: giving up on a checkout must keep
+  // working even when new purchases are blocked.
+  router.post(
+    "/payments/:paymentId/abandon",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      if (!adminClient) {
+        res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
+        return;
+      }
+      try {
+        const result = await adminClient.payments.abandon(
+          String(req.params["paymentId"]),
+          resolveUserIdentity(req),
+        );
+        res.json(result);
+      } catch (e: unknown) {
+        // rezeis refuses once the draft exists at the provider — the invoice
+        // there stays payable and no gateway offers a cancel. Forward the
+        // reason so the SPA can say what to do instead of failing silently.
+        if (isUpstreamStatus(e, 409)) {
+          const refusal = extractAbandonRefusalCode(describeUpstreamError(e).message);
+          if (refusal !== undefined) {
+            res.status(409).json({ code: refusal, message: refusal });
+            return;
+          }
+        }
+        if (isUpstreamStatus(e, 404)) {
+          res.status(404).json({ message: "Payment not found" });
+          return;
+        }
+        sendSafeError(req, res, e, 500, "Failed to abandon checkout", "payments/abandon");
       }
     },
   );

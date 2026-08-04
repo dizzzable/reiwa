@@ -1,11 +1,35 @@
 import { Suspense, lazy } from 'react';
-import { Navigate } from 'react-router';
+import { Link, Navigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
-import { getLanding } from '@/lib/api-client';
+import { getLanding, getPlans } from '@/lib/api-client';
 import { parseLandingPayload } from './landing-schema';
+import {
+  LandingKitProvider,
+  type LandingCatalogPlan,
+  type LandingKitLinkProps,
+} from './landing-kit-context';
 
 const LandingRenderer = lazy(() => import('./landing-renderer'));
+
+/**
+ * Host bindings for the landing kit. The kit is host-agnostic (it also runs
+ * inside the rezeis-admin preview); this is where reiwa plugs in its router,
+ * its i18n locale, and its public plans catalog.
+ */
+function RouterLink({ to, className, children }: LandingKitLinkProps) {
+  return (
+    <Link to={to} className={className}>
+      {children}
+    </Link>
+  );
+}
+
+const loadCatalogPlans = (): Promise<readonly LandingCatalogPlan[]> =>
+  getPlans() as Promise<readonly LandingCatalogPlan[]>;
+
+const KIT_BINDINGS = { LinkComponent: RouterLink, loadPlans: loadCatalogPlans };
 
 const LANDING_QUERY_KEY = ['landing'] as const;
 
@@ -20,6 +44,7 @@ const LANDING_QUERY_KEY = ['landing'] as const;
  * 1.4 empty-state).
  */
 export default function LandingPage() {
+  const { i18n } = useTranslation();
   const { data, isLoading, isError } = useQuery({
     queryKey: LANDING_QUERY_KEY,
     queryFn: getLanding,
@@ -43,7 +68,9 @@ export default function LandingPage() {
 
   return (
     <Suspense fallback={null}>
-      <LandingRenderer config={parsed} />
+      <LandingKitProvider value={KIT_BINDINGS}>
+        <LandingRenderer config={parsed} locale={i18n.language} />
+      </LandingKitProvider>
     </Suspense>
   );
 }

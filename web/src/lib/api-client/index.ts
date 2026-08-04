@@ -84,6 +84,7 @@ export {
 
 // Payments + gateways
 export {
+  abandonCheckout,
   createCheckout,
   createRenewCheckout,
   createRenewalCheckout,

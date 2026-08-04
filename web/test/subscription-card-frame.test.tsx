@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import type { CardEffect } from "../src/types/branding";
+
 vi.mock("@/lib/branding-provider", () => ({
   useBranding: () => ({ customIcons: [] }),
 }));
@@ -182,7 +184,10 @@ describe("SubscriptionCardFrame visual containment", () => {
       effect: "rippleGrid",
       props: { gridColor: "#ffffff", glowIntensity: 0.8 },
     },
-  ])(
+  ] satisfies ReadonlyArray<{
+    effect: CardEffect;
+    props: Record<string, unknown>;
+  }>)(
     "never films or outlines the copy over live $effect artwork",
     ({ effect, props }) => {
       const visual = resolveSubscriptionCardVisual({

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-import type { LandingAnimation, LandingBackground } from './landing-schema';
+import type {
+  LandingAnimation,
+  LandingBackground,
+  LandingBackgroundOverlay,
+} from './landing-schema';
 
 /**
  * LandingBg — a fixed, pointer-transparent CSS background layer behind all
@@ -51,12 +55,38 @@ export function LandingBg({
     return <NetworkCanvas color={colors?.[0] ?? '#22c55e'} animate={animate} />;
   }
   const style: CSSProperties = {};
-  const [c1, c2, c3] = colors ?? [];
+  const [c1, c2, c3, c4] = colors ?? [];
   const vars = style as Record<string, string>;
   if (c1) vars['--ls-c1'] = c1;
   if (c2) vars['--ls-c2'] = c2;
   if (c3) vars['--ls-c3'] = c3;
+  if (c4) vars['--ls-c4'] = c4;
   return <div ref={ref} className={`ls-bg ls-bg--${effect}`} data-animate={animate ? 'on' : 'off'} style={style} aria-hidden="true" />;
+}
+
+/**
+ * LandingOverlay — texture layer painted over the base effect.
+ *
+ * Separate element rather than another `.ls-bg` modifier: it must be able to
+ * combine with any base, which is the whole reason the layer was split out.
+ * Sits at the same stacking level as the base and after it in the DOM, so it
+ * paints on top of the effect and under every section.
+ */
+export function LandingOverlay({
+  overlay,
+  animate,
+}: {
+  overlay: LandingBackgroundOverlay | undefined;
+  animate: boolean;
+}) {
+  if (!overlay || overlay === 'none') return null;
+  return (
+    <div
+      className={`ls-ov ls-ov--${overlay}`}
+      data-animate={animate ? 'on' : 'off'}
+      aria-hidden="true"
+    />
+  );
 }
 
 /**
@@ -89,6 +119,14 @@ export function NetworkCanvas({ color, animate }: { color: string; animate: bool
     }
     let nodes: Node[] = [];
 
+    // The pair scan below is O(n²), so the node count stays bounded — the
+    // ceiling is a real limit on that growth, not decoration. Both bounds are
+    // the density the background was designed around. They were cut back once
+    // to buy frame time, but that cost lived in the scan's rejection path
+    // (`Math.hypot` on every pair) and is now gone: 70 nodes on a squared-
+    // distance compare are cheaper than the 40 that briefly replaced them.
+    // Between the two bounds the viewport area governs; there is no
+    // device-class branch.
     const seed = (): void => {
       const count = Math.max(18, Math.min(70, Math.round((width * height) / 20000)));
       nodes = Array.from({ length: count }, () => ({
@@ -111,10 +149,18 @@ export function NetworkCanvas({ color, animate }: { color: string; animate: bool
 
     const rgb = hexToRgb(color);
     const linkDist = 130;
+    const linkDistSq = linkDist * linkDist;
+    // Only the alpha varies between links, so the constant channel prefix is
+    // built once here instead of being re-interpolated for every drawn link.
+    const strokePrefix = `rgba(${rgb.r},${rgb.g},${rgb.b},`;
 
     const draw = (): void => {
       ctx.clearRect(0, 0, width, height);
-      for (let i = 0; i < nodes.length; i += 1) {
+      // Same for every link. It stays inside `draw` rather than moving to setup
+      // because assigning `canvas.width` in `resize` resets the whole 2D state.
+      ctx.lineWidth = 1;
+      const count = nodes.length;
+      for (let i = 0; i < count; i += 1) {
         const a = nodes[i];
         if (animate && !reduced) {
           a.x += a.vx;
@@ -122,15 +168,27 @@ export function NetworkCanvas({ color, animate }: { color: string; animate: bool
           if (a.x < 0 || a.x > width) a.vx *= -1;
           if (a.y < 0 || a.y > height) a.vy *= -1;
         }
-        for (let j = i + 1; j < nodes.length; j += 1) {
+        // `a` cannot move again until the next outer step, so its position is
+        // read once rather than once per candidate pair.
+        const ax = a.x;
+        const ay = a.y;
+        for (let j = i + 1; j < count; j += 1) {
           const b = nodes[j];
-          const dist = Math.hypot(a.x - b.x, a.y - b.y);
-          if (dist < linkDist) {
+          const dx = ax - b.x;
+          const dy = ay - b.y;
+          const distSq = dx * dx + dy * dy;
+          // Most pairs are beyond `linkDist` and die right here. `Math.hypot` is
+          // overflow-safe and correspondingly slow, and the scan used to run it
+          // on every pair only to throw the result away; comparing squares
+          // selects exactly the same pairs without ever taking a root.
+          if (distSq < linkDistSq) {
+            // Only pairs that actually get drawn pay for the root — the alpha
+            // ramp needs the true distance.
+            const dist = Math.sqrt(distSq);
             const alpha = (1 - dist / linkDist) * 0.5;
-            ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha.toFixed(3)})`;
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = `${strokePrefix}${alpha.toFixed(3)})`;
             ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
+            ctx.moveTo(ax, ay);
             ctx.lineTo(b.x, b.y);
             ctx.stroke();
           }
@@ -145,21 +203,55 @@ export function NetworkCanvas({ color, animate }: { color: string; animate: bool
     };
 
     let raf = 0;
+    let running = false;
     const loop = (): void => {
       draw();
       raf = win.requestAnimationFrame(loop);
+    };
+    const start = (): void => {
+      if (running || !animate || reduced) return;
+      running = true;
+      loop();
+    };
+    const stop = (): void => {
+      if (!running) return;
+      running = false;
+      if (raf !== 0) win.cancelAnimationFrame(raf);
+      raf = 0;
     };
 
     resize();
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
     ro?.observe(wrap);
 
-    if (animate && !reduced) loop();
+    // The loop used to run for the lifetime of the page: it kept drawing while
+    // the background was scrolled past and while the tab sat in the background,
+    // burning battery for pixels nobody was looking at. Gate it on both.
+    const doc = canvas.ownerDocument;
+    let onScreen = true;
+    const onVisibility = (): void => {
+      if (doc.visibilityState === 'hidden') stop();
+      else if (onScreen) start();
+    };
+    const io =
+      typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver((entries) => {
+            onScreen = entries.some((entry) => entry.isIntersecting);
+            if (onScreen && doc.visibilityState !== 'hidden') start();
+            else stop();
+          })
+        : null;
+    io?.observe(wrap);
+    doc.addEventListener('visibilitychange', onVisibility);
+
+    if (animate && !reduced) start();
     else draw();
 
     return () => {
-      if (raf !== 0) win.cancelAnimationFrame(raf);
+      stop();
       ro?.disconnect();
+      io?.disconnect();
+      doc.removeEventListener('visibilitychange', onVisibility);
     };
   }, [color, animate]);
 
@@ -187,9 +279,17 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 export function Reveal({
   animation,
   children,
+  first = false,
 }: {
   animation: LandingAnimation | undefined;
   children: ReactNode;
+  /**
+   * The first section on the page. It is above the fold, so it has nothing to
+   * reveal on scroll — and starting it at `opacity: 0` would drop the page's
+   * largest text out of Chrome's LCP candidates until the observer fires. It
+   * keeps its transform entrance and skips the fade; see `.ls-reveal--first`.
+   */
+  first?: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
@@ -211,7 +311,14 @@ export function Reveal({
           }
         }
       },
-      { threshold: 0.12, rootMargin: '0px 0px -10% 0px' },
+      // `threshold: 0` — fire as soon as any part of the section enters. A
+      // ratio-based threshold is unreachable for a section taller than the
+      // viewport can cover: with the -10% margin the highest ratio a section of
+      // height S can reach is 0.9·viewport/S, so anything past ~7.5 viewports
+      // never crosses 0.12 and stays at `opacity: 0` for good — a long features
+      // list or FAQ simply never appears. The margin below already supplies the
+      // "wait until it is meaningfully on screen" part.
+      { threshold: 0, rootMargin: '0px 0px -10% 0px' },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -219,7 +326,12 @@ export function Reveal({
 
   if (animation === undefined || animation === 'none') return <>{children}</>;
   return (
-    <div ref={ref} className={`ls-reveal ls-reveal--${animation}${visible ? ' is-visible' : ''}`}>
+    <div
+      ref={ref}
+      className={`ls-reveal ls-reveal--${animation}${first ? ' ls-reveal--first' : ''}${
+        visible ? ' is-visible' : ''
+      }`}
+    >
       {children}
     </div>
   );

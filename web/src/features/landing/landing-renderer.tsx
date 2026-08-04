@@ -1,5 +1,4 @@
 import type { ComponentType, CSSProperties } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import './landing.css';
 import type {
@@ -8,7 +7,7 @@ import type {
   LandingTheme,
   SectionType,
 } from './landing-schema';
-import { LandingBg, Reveal } from './landing-background';
+import { LandingBg, LandingOverlay, Reveal } from './landing-background';
 import HeroSection from './sections/hero';
 import FeaturesGridSection from './sections/features-grid';
 import HowItWorksSection from './sections/how-it-works';
@@ -88,8 +87,13 @@ function readableForeground(background: string | undefined): string | undefined 
  * Map the config `theme` to CSS custom properties applied at the landing root.
  * `inherit: true` (default) leaves the app-wide brand tokens intact so the
  * landing follows operator branding by default; overrides set explicit vars.
+ *
+ * Exported because the admin preview builds its own root element (it interleaves
+ * builder chrome between sections) and must resolve the theme through THIS
+ * function — a second mapping is exactly how `radius`, `fg` and `accent` came to
+ * apply in production but not in the preview.
  */
-function themeToCssVars(theme: LandingTheme | undefined): CSSProperties {
+export function themeToCssVars(theme: LandingTheme | undefined): CSSProperties {
   const style: Record<string, string> = {};
   const primary = theme?.colors?.primary;
   const bg = theme?.colors?.bg;
@@ -120,6 +124,12 @@ function themeToCssVars(theme: LandingTheme | undefined): CSSProperties {
 
 interface LandingRendererProps {
   config: LandingConfigPayload;
+  /**
+   * Viewer locale (2-letter). Injected by the host — reiwa derives it from
+   * i18next, the admin preview from its locale switcher — so the kit itself
+   * carries no i18n runtime. Defaults to the config's own default locale.
+   */
+  locale?: string;
 }
 
 /**
@@ -127,9 +137,8 @@ interface LandingRendererProps {
  * optional CSS background effect and with per-section scroll-reveal.
  * Unknown/invalid sections are skipped defensively — the page never errors.
  */
-export default function LandingRenderer({ config }: LandingRendererProps) {
-  const { i18n } = useTranslation();
-  const locale = i18n.language?.slice(0, 2).toLowerCase() ?? config.defaultLocale;
+export default function LandingRenderer({ config, locale: localeProp }: LandingRendererProps) {
+  const locale = (localeProp ?? config.defaultLocale).slice(0, 2).toLowerCase();
   const defaultLocale = config.defaultLocale;
   const theme = config.theme;
   const style = themeToCssVars(theme);
@@ -145,6 +154,8 @@ export default function LandingRenderer({ config }: LandingRendererProps) {
     <main
       lang={locale}
       data-surface={surface}
+      data-card-hover={theme?.cardHover ?? 'none'}
+      data-cta={theme?.ctaStyle ?? 'none'}
       className="ls-root ls-root--page w-full"
       style={style}
     >
@@ -153,11 +164,15 @@ export default function LandingRenderer({ config }: LandingRendererProps) {
         colors={bgColors}
         animate={theme?.animateBackground !== false}
       />
-      {config.sections.map((section) => {
+      <LandingOverlay
+        overlay={theme?.backgroundOverlay}
+        animate={theme?.animateBackground !== false}
+      />
+      {config.sections.map((section, index) => {
         const Component = LANDING_SECTIONS[section.type];
         if (!Component) return null; // defence-in-depth (parser already dropped these)
         return (
-          <Reveal key={section.id} animation={section.animation}>
+          <Reveal key={section.id} animation={section.animation} first={index === 0}>
             <Component section={section} locale={locale} defaultLocale={defaultLocale} />
           </Reveal>
         );

@@ -6,7 +6,7 @@
  * Color inputs come from CSS custom properties set by the renderer:
  *   --ls-bg      page background
  *   --ls-primary primary/accent used by effects
- *   --ls-c1..c3  optional extra background colors
+ *   --ls-c1..c4  optional extra background colors (position is meaningful)
  */
 
 .ls-root {
@@ -58,15 +58,37 @@
 
 /* gradient — oversized animated linear gradient */
 .ls-bg--gradient {
-  background: linear-gradient(120deg, var(--ls-c1, var(--ls-primary)), var(--ls-c2, var(--ls-bg)), var(--ls-c3, var(--ls-primary)));
-  background-size: 300% 300%;
   opacity: 0.5;
-  animation: ls-gradient 18s ease infinite;
+}
+/*
+ * The ramp lives on the pseudo-element, not the layer, and drifts by
+ * `transform` rather than by animating `background-position`.
+ * Background-position is a paint property: animating it repainted a
+ * full-screen gradient every frame for as long as the page stayed open.
+ * `transform` is composited, so the same motion costs the main thread nothing.
+ * Oversized (`inset: -50%`) so the drift never exposes an edge.
+ *
+ * Four stops: the schema allows four background colours, and 86 of the 104
+ * shipped concepts are four-stop gradients. `--ls-c4` falls back to `--ls-c3`
+ * so a three-colour theme keeps its previous ramp instead of gaining a band.
+ */
+.ls-bg--gradient::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: linear-gradient(
+    120deg,
+    var(--ls-c1, var(--ls-primary)),
+    var(--ls-c2, var(--ls-bg)),
+    var(--ls-c3, var(--ls-primary)),
+    var(--ls-c4, var(--ls-c3, var(--ls-primary)))
+  );
+  animation: ls-gradient 18s ease-in-out infinite;
 }
 @keyframes ls-gradient {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% { transform: translate3d(-8%, -4%, 0) scale(1.1); }
+  50% { transform: translate3d(8%, 4%, 0) scale(1.15); }
+  100% { transform: translate3d(-8%, -4%, 0) scale(1.1); }
 }
 
 /* aurora — blurred radial blobs slowly rotating/scaling */
@@ -79,14 +101,14 @@
   border-radius: 50%;
   filter: blur(80px);
   opacity: 0.45;
-  background: radial-gradient(circle at center, var(--ls-primary), transparent 60%);
+  background: radial-gradient(circle at center, var(--ls-c1, var(--ls-primary)), transparent 60%);
   animation: ls-aurora 22s ease-in-out infinite;
 }
 .ls-bg--aurora::before { top: -20vmax; left: -10vmax; }
 .ls-bg--aurora::after {
   bottom: -20vmax;
   right: -10vmax;
-  background: radial-gradient(circle at center, var(--ls-c2, #6366f1), transparent 60%);
+  background: radial-gradient(circle at center, var(--ls-c2, var(--ls-primary)), transparent 60%);
   animation-delay: -11s;
 }
 @keyframes ls-aurora {
@@ -100,7 +122,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 20%, var(--ls-primary), transparent 55%);
+  background: radial-gradient(circle at 50% 20%, var(--ls-c1, var(--ls-primary)), transparent 55%);
   opacity: 0.28;
   animation: ls-glow 8s ease-in-out infinite;
 }
@@ -115,9 +137,12 @@
   position: absolute;
   inset: -20%;
   background:
-    radial-gradient(30% 30% at 20% 30%, var(--ls-primary) 0%, transparent 60%),
-    radial-gradient(30% 30% at 80% 20%, var(--ls-c2, #6366f1) 0%, transparent 60%),
-    radial-gradient(35% 35% at 60% 80%, var(--ls-c3, #ec4899) 0%, transparent 60%);
+    radial-gradient(30% 30% at 20% 30%, var(--ls-c1, var(--ls-primary)) 0%, transparent 60%),
+    radial-gradient(30% 30% at 80% 20%, var(--ls-c2, var(--ls-primary)) 0%, transparent 60%),
+    radial-gradient(35% 35% at 60% 80%, var(--ls-c3, var(--ls-primary)) 0%, transparent 60%),
+    /* Fourth blob only exists when the theme supplies a fourth colour — the
+       `transparent` fallback keeps three-colour themes pixel-identical. */
+    radial-gradient(28% 28% at 42% 62%, var(--ls-c4, transparent) 0%, transparent 60%);
   filter: blur(60px);
   opacity: 0.4;
   animation: ls-mesh 26s ease-in-out infinite alternate;
@@ -151,7 +176,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 0%, var(--ls-primary), transparent 60%);
+  background: radial-gradient(circle at 50% 0%, var(--ls-c1, var(--ls-primary)), transparent 60%);
   opacity: 0.16;
 }
 .ls-bg--noise::after {
@@ -173,14 +198,14 @@
   border-radius: 50%;
   filter: blur(70px);
   opacity: 0.4;
-  background: radial-gradient(circle at center, var(--ls-primary), transparent 65%);
+  background: radial-gradient(circle at center, var(--ls-c1, var(--ls-primary)), transparent 65%);
   animation: ls-blobs 20s ease-in-out infinite;
 }
 .ls-bg--blobs::before { top: 8%; left: 6%; }
 .ls-bg--blobs::after {
   bottom: 6%;
   right: 8%;
-  background: radial-gradient(circle at center, var(--ls-c2, #6366f1), transparent 65%);
+  background: radial-gradient(circle at center, var(--ls-c2, var(--ls-primary)), transparent 65%);
   animation-delay: -10s;
 }
 @keyframes ls-blobs {
@@ -223,49 +248,273 @@
   border: 1px solid var(--ls-border-strong);
 }
 
+/* ── Background overlay ──────────────────────────────────────────────────────
+ * A second, texture-only layer drawn on top of the base effect.
+ *
+ * `noise`, `grid` and `dots` are overlays by nature — they are textures, not
+ * scenes — yet as base effects they COMPETED with `aurora`/`mesh`/`gradient`
+ * instead of combining with them. Splitting the layer turns the same CSS into
+ * roughly fifty combinations without a single new visual being authored.
+ *
+ * Overlays never carry motion of their own except `scanline`, and they never
+ * paint a background colour: they must let the base show through.
+ * ─────────────────────────────────────────────────────────────────────────── */
+/* Same stacking level as the base layer (both behind content), so DOM order
+   decides: the overlay is rendered after `.ls-bg` and therefore paints on top
+   of it — but still under every section, which is what keeps a vignette from
+   dimming the copy it is meant to frame. */
+.ls-ov {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  contain: strict;
+}
+.ls-ov--grid {
+  background-image:
+    linear-gradient(to right, var(--ls-border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--ls-border) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+.ls-ov--dots {
+  background-image: radial-gradient(var(--ls-border) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+.ls-ov--noise {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+}
+/* Darkened edges — pulls the eye to the centre column where the copy sits. */
+.ls-ov--vignette {
+  background: radial-gradient(ellipse 75% 65% at 50% 45%, transparent 40%, rgb(0 0 0 / 55%) 100%);
+}
+/* Slow CRT sweep. The band is a repeating gradient moved by `transform`, so the
+   texture rasterises once and the motion stays on the compositor. */
+.ls-ov--scanline::before {
+  content: '';
+  position: absolute;
+  inset: -50% 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 3px,
+    rgb(255 255 255 / 3%) 3px 4px
+  );
+  animation: ls-scanline 6s linear infinite;
+}
+@keyframes ls-scanline {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, 8px, 0); }
+}
+
+/* ── Micro-interactions ──────────────────────────────────────────────────────
+ * Card and CTA hover feedback, selected per landing on the theme.
+ *
+ * Everything here is behind `@media (hover: hover) and (pointer: fine)`. On a
+ * touch screen a `:hover` rule latches after a tap and stays applied until the
+ * user touches something else, so a "lift" becomes a card stuck in the air.
+ *
+ * Only `transform`, `box-shadow`, `border-color` and `opacity` are animated —
+ * all compositor-friendly — and durations stay in the 150-250ms band where a
+ * hover reads as responsive rather than sluggish.
+ * ─────────────────────────────────────────────────────────────────────────── */
+@media (hover: hover) and (pointer: fine) {
+  [data-card-hover='lift'] .ls-surface,
+  [data-card-hover='glow'] .ls-surface,
+  [data-card-hover='scale'] .ls-surface {
+    transition:
+      transform 0.2s ease-out,
+      box-shadow 0.2s ease-out,
+      border-color 0.2s ease-out;
+  }
+  [data-card-hover='lift'] .ls-surface:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+  }
+  [data-card-hover='glow'] .ls-surface:hover {
+    border-color: var(--ls-primary);
+    box-shadow: 0 0 0 1px var(--ls-primary), 0 8px 28px color-mix(in oklab, var(--ls-primary) 30%, transparent);
+  }
+  [data-card-hover='scale'] .ls-surface:hover {
+    transform: scale(1.02);
+  }
+
+  [data-cta='lift'] .ls-cta,
+  [data-cta='shine'] .ls-cta {
+    transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+  }
+  [data-cta='lift'] .ls-cta:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgb(0 0 0 / 30%);
+  }
+  /* A highlight sweeps across the button once per hover. `overflow: hidden`
+     keeps the band inside the pill; the band itself moves by transform. */
+  [data-cta='shine'] .ls-cta {
+    position: relative;
+    overflow: hidden;
+  }
+  [data-cta='shine'] .ls-cta::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40%;
+    background: linear-gradient(
+      100deg,
+      transparent,
+      rgb(255 255 255 / 35%),
+      transparent
+    );
+    transform: translateX(-250%);
+  }
+  [data-cta='shine'] .ls-cta:hover::after {
+    animation: ls-shine 0.7s ease-out;
+  }
+  @keyframes ls-shine {
+    to { transform: translateX(350%); }
+  }
+}
+
+/* `:active` feedback is universal — a press must acknowledge itself even when
+   the operator picked no hover style. Deliberately OUTSIDE the hover query:
+   touch is where press feedback matters most, because there is no hover state
+   to precede it. Under 100ms so it feels like the button reacted, not like it
+   played an animation. */
+.ls-cta:active {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
+}
+
+/* FAQ open/close, progressive. Native `<details>` snaps because the closed
+   content is not rendered; `::details-content` + `interpolate-size` lets it
+   animate where supported and changes nothing where it is not. Kept native
+   rather than rebuilt as a JS accordion — `<details>` carries keyboard and
+   screen-reader behaviour that a div-based rewrite would have to re-earn. */
+@supports selector(::details-content) {
+  .ls-root {
+    interpolate-size: allow-keywords;
+  }
+  .ls-root details::details-content {
+    block-size: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition:
+      block-size 0.28s ease-out,
+      content-visibility 0.28s allow-discrete,
+      opacity 0.2s ease-out;
+  }
+  .ls-root details[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+}
+
 /* ── Scroll reveal ───────────────────────────────────────────────────────── */
+/*
+ * 450ms, not 600: past ~500ms a reveal stops reading as motion and starts
+ * reading as lag.
+ *
+ * `will-change` is NOT set here. It promotes a layer for the whole lifetime of
+ * the element, so every revealed section would hold a full-screen GPU layer
+ * forever — for an animation that runs once. It is applied only while the
+ * element is actually armed (see `.ls-reveal:not(.is-visible)`) and drops away
+ * the moment the section settles.
+ */
 .ls-reveal {
   opacity: 0;
-  transition: opacity 0.6s ease, transform 0.6s ease, filter 0.6s ease;
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.45s ease;
+}
+.ls-reveal:not(.is-visible) {
   will-change: opacity, transform;
 }
 .ls-reveal--fade { }
 .ls-reveal--fadeUp { transform: translateY(24px); }
+.ls-reveal--fadeDown { transform: translateY(-20px); }
+.ls-reveal--slideLeft { transform: translateX(40px); }
+.ls-reveal--slideRight { transform: translateX(-40px); }
 .ls-reveal--zoom { transform: scale(0.96); }
+.ls-reveal--zoomOut { transform: scale(1.04); }
+.ls-reveal--blurIn { filter: blur(8px); }
 .ls-reveal.is-visible {
   opacity: 1;
   transform: none;
   filter: none;
 }
 
+/*
+ * LCP guard. Chrome does not treat an element with `opacity: 0` as an LCP
+ * candidate, so a hero with a reveal animation removes the page's largest text
+ * from the measurement until the IntersectionObserver fires — and a later
+ * repaint (web font, resize) can then register it with a much worse timestamp.
+ *
+ * The first section is above the fold by definition: it has nothing to reveal
+ * on scroll. It therefore keeps its transform-based entrance (transform does
+ * not affect LCP candidacy) but never starts invisible.
+ */
+.ls-reveal--first {
+  opacity: 1;
+  /* `blurIn` would otherwise survive the exemption and paint the hero — the
+     very element LCP measures — as unreadable smear for the full 450ms. */
+  filter: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ls-bg--gradient,
+  .ls-bg--gradient::before,
   .ls-bg--aurora::before,
   .ls-bg--aurora::after,
   .ls-bg--glow::before,
   .ls-bg--mesh::before,
   .ls-bg--blobs::before,
-  .ls-bg--blobs::after {
+  .ls-bg--blobs::after,
+  .ls-ov--scanline::before {
     animation: none !important;
   }
   .ls-bg--spotlight {
     transition: none !important;
   }
+  /*
+   * Reduced motion is a request to remove vestibular triggers — sliding,
+   * zooming, parallax — not to remove all feedback. Every reveal collapses to
+   * a short opacity fade: no movement, but sections still announce themselves
+   * instead of snapping in, which reads as a rendering glitch.
+   */
   .ls-reveal {
-    opacity: 1 !important;
     transform: none !important;
-    transition: none !important;
+    filter: none !important;
+    transition: opacity 0.2s ease !important;
+  }
+  /*
+   * Micro-interactions are motion too. A card that jumps 4px and a button that
+   * plays a sweeping highlight are exactly the vestibular triggers this query
+   * exists to suppress — and they fire on every pointer pass over a pricing
+   * grid. The non-moving feedback (border, shadow) stays, so hover still
+   * answers; only the movement goes.
+   */
+  [data-card-hover] .ls-surface:hover,
+  [data-cta] .ls-cta:hover,
+  .ls-cta:active {
+    transform: none !important;
+  }
+  [data-cta='shine'] .ls-cta:hover::after {
+    animation: none !important;
   }
 }
 
 /* animateBackground:false — freeze CSS-driven background motion (spotlight is
    additionally JS-gated so its listener never attaches). */
-.ls-bg[data-animate='off'].ls-bg--gradient,
+.ls-bg[data-animate='off'].ls-bg--gradient::before,
 .ls-bg[data-animate='off'].ls-bg--aurora::before,
 .ls-bg[data-animate='off'].ls-bg--aurora::after,
 .ls-bg[data-animate='off'].ls-bg--glow::before,
 .ls-bg[data-animate='off'].ls-bg--mesh::before,
 .ls-bg[data-animate='off'].ls-bg--blobs::before,
-.ls-bg[data-animate='off'].ls-bg--blobs::after {
+.ls-bg[data-animate='off'].ls-bg--blobs::after,
+.ls-ov[data-animate='off'].ls-ov--scanline::before {
   animation: none !important;
 }

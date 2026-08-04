@@ -300,6 +300,12 @@ export const en: RuDict = {
     backToDashboard: 'Back to dashboard',
     viewSubscription: 'My subscription',
     tryAgain: 'Try again',
+    // Abandoning an unpaid checkout. Never call this a refund — no money has
+    // moved, and refunds in this product are handled by support only.
+    abandonCheckout: 'Cancel this attempt',
+    abandonDone: 'Attempt cancelled',
+    abandonAtProvider: 'This payment already exists at the provider — finish it or let it expire.',
+    abandonFailed: 'Could not cancel the attempt. Try again.',
   },
   activity: {
     title: 'Activity',

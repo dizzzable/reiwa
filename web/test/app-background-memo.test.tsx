@@ -22,7 +22,7 @@ vi.mock("@/components/reactbits/card-effect-layer", () => ({
 import { AppBackground } from "../src/components/layout/app-background";
 import { DEFAULT_BRANDING } from "../src/types/branding";
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;

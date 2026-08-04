@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Check, RotateCcw } from "lucide-react";
@@ -26,7 +26,7 @@ import { PromoInput } from "@/features/purchase/components/promo-input";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
 import type { RenewalOptionItem, Subscription } from "@/types/api";
-import { cn, openExternalUrl } from "@/lib/utils";
+import { cn, startCheckoutRedirect } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
 import { TariffCard } from "@/features/plans/tariff-card";
 import { gatewayLabel } from "@/lib/gateway-display";
@@ -157,14 +157,21 @@ export default function RenewalPage() {
         </div>
       </div>
 
-      <StepTransition stepKey={step}>
+      {/* `checkout` and `polling` render the same child, so they must share a
+          transition key. A changing key remounts it — a fresh `CheckoutStep`
+          with a fresh ref latch AND a fresh `attemptId`, which would create a
+          second draft under a second idempotency key. Today that is masked
+          only because `setCheckoutResult` (which sets `polling`) and
+          `navigate("/payment-return")` batch into one commit and the unmount
+          wins the race; keying them together removes the dependency on that
+          ordering. */}
+      <StepTransition stepKey={step === "polling" ? "checkout" : step}>
         {step === "subscriptions" && <SelectSubscriptions />}
         {step === "plan" && <SelectPlan />}
         {step === "addons" && <SelectRenewalAddOns />}
         {step === "gateway" && <SelectGateway />}
         {step === "review" && <RenewalReview />}
-        {step === "checkout" && <CheckoutStep />}
-        {step === "polling" && <CheckoutStep />}
+        {(step === "checkout" || step === "polling") && <CheckoutStep />}
       </StepTransition>
     </div>
   );
@@ -1211,11 +1218,11 @@ function CheckoutStep() {
     },
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
-      // Stash the URL so the return page can offer a manual "open payment"
-      // button — the auto-open below is blocked on Telegram Desktop (openLink
-      // must run inside a user gesture, which the async onSuccess has lost).
+      // Stash the URL first: `startCheckoutRedirect` cannot navigate inside a
+      // Telegram Mini App (no gesture on this path), so the buyer finishes from
+      // the button on the return page — and that button needs this URL.
       savePendingCheckout(result.paymentId, result.checkoutUrl ?? null, { returnTo: "/renew" });
-      if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
+      if (result.checkoutUrl) startCheckoutRedirect(result.checkoutUrl);
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
     onError: () => {
@@ -1225,10 +1232,18 @@ function CheckoutStep() {
     },
   });
 
+  // A ref, not the mutation flags: StrictMode runs setup → cleanup → setup
+  // with no re-render in between, and React Query publishes state through a
+  // `setTimeout`, so the second setup still reads `isPending: false` and fires
+  // a second draft (two `savePendingCheckout` + `startCheckoutRedirect` +
+  // `navigate` runs). Refs survive the simulated remount; this latch does not.
+  // The latch is per mount, so `attemptId` still pairs 1:1 with it — a genuine
+  // retry remounts this step from `review` and mints a fresh key.
+  const started = useRef(false);
   useEffect(() => {
-    if (!mutation.isPending && !mutation.isSuccess && !mutation.isError) {
-      mutation.mutate();
-    }
+    if (started.current) return;
+    started.current = true;
+    mutation.mutate();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

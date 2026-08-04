@@ -88,7 +88,7 @@ describe("AppBackground concept contract", () => {
         foreground: "#FFF7EF",
         mutedForeground: "#D6B7AD",
       },
-    };
+    } satisfies Branding;
     brandingContext.branding = branding;
 
     const readability = resolveAppBackgroundReadability(branding);

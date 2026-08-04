@@ -48,6 +48,26 @@ export interface PaymentStatusResponse {
   readonly updatedAt: string;
 }
 
+export interface AbandonCheckoutResponse {
+  readonly abandoned: boolean;
+  readonly status: PaymentTransactionStatus;
+}
+
+/**
+ * Caller identity as query parameters. rezeis scopes the lookup by it, so an
+ * empty identity is not "act as anyone" — the mutating routes reject it.
+ */
+function identityQuery(identity: UserIdentity): string {
+  const query: string[] = [];
+  if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+    query.push(`userId=${encodeURIComponent(identity.userId)}`);
+  }
+  if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+    query.push(`telegramId=${encodeURIComponent(identity.telegramId)}`);
+  }
+  return query.length > 0 ? `?${query.join('&')}` : '';
+}
+
 export class PaymentsNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
@@ -135,17 +155,24 @@ export class PaymentsNamespace {
   }
 
   getStatus(paymentId: string, identity: UserIdentity = {}): Promise<PaymentStatusResponse> {
-    const query: string[] = [];
-    if (typeof identity.userId === 'string' && identity.userId.length > 0) {
-      query.push(`userId=${encodeURIComponent(identity.userId)}`);
-    }
-    if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
-      query.push(`telegramId=${encodeURIComponent(identity.telegramId)}`);
-    }
-    const qs = query.length > 0 ? `?${query.join('&')}` : '';
     return this.transport.request<PaymentStatusResponse>(
       'GET',
-      `/api/internal/payments/${encodeURIComponent(paymentId)}${qs}`,
+      `/api/internal/payments/${encodeURIComponent(paymentId)}${identityQuery(identity)}`,
+    );
+  }
+
+  /**
+   * Abandon a checkout the buyer started and does not intend to finish.
+   *
+   * Nothing to do with refunds — no money has moved. It cancels an unpaid draft
+   * so its paid-trial reservation is freed at once instead of waiting for the
+   * expiry sweep. rezeis refuses (409) once the draft exists at the provider,
+   * because the invoice there stays payable and no gateway offers a cancel.
+   */
+  abandon(paymentId: string, identity: UserIdentity = {}): Promise<AbandonCheckoutResponse> {
+    return this.transport.request<AbandonCheckoutResponse>(
+      'POST',
+      `/api/internal/payments/${encodeURIComponent(paymentId)}/abandon${identityQuery(identity)}`,
     );
   }
 

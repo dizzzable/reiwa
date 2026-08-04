@@ -23,7 +23,9 @@ import { AnimatePresence, motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { ExternalLink } from "lucide-react";
 
-import { getPaymentStatus } from "@/lib/api-client";
+import { toast } from "sonner";
+
+import { abandonCheckout, getPaymentStatus } from "@/lib/api-client";
 import { resolvePaymentResult } from "./payment-result-policy";
 import { Button } from "@/components/ui/button";
 import { useBranding } from "@/lib/branding-provider";
@@ -74,10 +76,17 @@ export default function PaymentReturnPage() {
   const pollCountRef = useRef(0);
   const provisioningSuccessRef = useRef(false);
 
-  // The provider URL stashed by the flow that created this checkout. On
-  // Telegram Desktop the auto-open (fired from an async mutation callback) is
-  // blocked because `openLink` must run inside a user gesture — so we surface a
-  // manual button here that opens the page from a fresh click.
+  // The provider URL stashed by the flow that created this checkout. Two
+  // different flows arrive here needing the button below, so it is not
+  // Telegram-only and must not be narrowed to that case:
+  //   - Telegram Desktop, where the auto-open (fired from an async mutation
+  //     callback) is blocked because the bridge needs a live user gesture;
+  //   - any plain browser paying via a `t.me` gateway (Telegram Stars,
+  //     CryptoPay). `startCheckoutRedirect` deliberately refuses to assign a
+  //     `t.me` link — it never redirects back here, so it would destroy this
+  //     tab mid-poll — which leaves this button as the whole route to payment.
+  // Either way the buyer's press is the genuine gesture that lets
+  // `openExternalUrl` open a new tab without being pop-up blocked.
   const checkoutUrl = useMemo(() => readPendingCheckout(paymentId), [paymentId]);
   // Where "retry" should send the user — the originating flow (/addons, /renew,
   // /upgrade), captured before the poll clears the pending record. Falls back
@@ -86,6 +95,37 @@ export default function PaymentReturnPage() {
   const purchaseLabel = useMemo(() => readPendingCheckoutLabel(paymentId), [paymentId]);
   const openPayment = () => {
     if (checkoutUrl) openExternalUrl(checkoutUrl);
+  };
+
+  // Giving up on an unpaid checkout. Worth a button of its own because a
+  // paid-trial draft holds the buyer's trial reservation and the quota counts a
+  // reservation as spent — so an abandoned attempt hides the trial from the
+  // person who abandoned it until the expiry sweep catches up.
+  //
+  // The server refuses (409) once the draft exists at the provider: that
+  // invoice is still payable and no gateway offers a cancel. On a refusal the
+  // button is withdrawn rather than left to fail again.
+  const [abandoning, setAbandoning] = useState(false);
+  const [abandonRefused, setAbandonRefused] = useState(false);
+  const handleAbandon = async (): Promise<void> => {
+    if (!paymentId || abandoning) return;
+    setAbandoning(true);
+    try {
+      await abandonCheckout(paymentId);
+      clearPendingCheckout(paymentId);
+      toast.success(t("payment.abandonDone"));
+      navigate(retryTo, { replace: true });
+    } catch (error) {
+      const status = (error as { response?: { status?: number } }).response?.status;
+      if (status === 409) {
+        setAbandonRefused(true);
+        toast.error(t("payment.abandonAtProvider"));
+      } else {
+        toast.error(t("payment.abandonFailed"));
+      }
+    } finally {
+      setAbandoning(false);
+    }
   };
 
   // ── Polling logic ─────────────────────────────────────────────────────────
@@ -151,7 +191,12 @@ export default function PaymentReturnPage() {
           void invalidatePaymentReturnSuccessQueries(queryClient);
           return;
         }
-        if (status.status === "FAILED" || status.status === "CANCELED") {
+        // Use the policy's verdict, not the raw status: it also settles
+        // REFUNDED, which the raw check missed. A refunded payment is done —
+        // polling it to the 60s cap only stranded the buyer on the *timeout*
+        // screen (with a button reopening a settled invoice) and left the
+        // pending-checkout and provisioning receipt behind in storage.
+        if (result === "failed") {
           clearPendingCheckout(paymentId);
           clearSubscriptionProvisioningReceipt(paymentId);
           setState("failed");
@@ -218,6 +263,8 @@ export default function PaymentReturnPage() {
             onOpenPayment={openPayment}
             onRetry={() => navigate(retryTo)}
             onHome={() => navigate("/dashboard", { replace: true })}
+            onAbandon={abandonRefused ? undefined : handleAbandon}
+            abandoning={abandoning}
           />
         )}
       </AnimatePresence>
@@ -290,18 +337,20 @@ function ProcessingState({
         ))}
       </div>
 
-      {/* Manual open — the reliable path on Telegram Desktop, where the
-          auto-open (openLink from an async callback) is blocked. */}
+      {/* Not a fallback — the primary action whenever the buyer is still here
+          with an unpaid checkout, and for two whole populations the ONLY way
+          through: a Telegram Mini App (the bridge needs a live user gesture and
+          the checkout link arrives asynchronously) and any browser paying via a
+          `t.me` gateway (that link cannot be assigned without destroying this
+          polling tab). Nothing but a press can open either. Styled as the main
+          button accordingly; an outline button read as optional and buyers left
+          without paying. */}
       {checkoutUrl && (
         <div className="mt-1 flex flex-col items-center gap-2">
           <p className="max-w-xs text-xs text-muted-foreground">
             {t("paymentAnim.openPaymentHint")}
           </p>
-          <Button
-            onClick={onOpenPayment}
-            variant="outline"
-            className="gap-2 bg-card backdrop-blur hover:bg-accent"
-          >
+          <Button onClick={onOpenPayment} size="lg" className="gap-2 font-semibold shadow-lg">
             <ExternalLink className="h-4 w-4" />
             {t("paymentAnim.openPayment")}
           </Button>
@@ -383,12 +432,17 @@ function FailedState({
   onOpenPayment,
   onRetry,
   onHome,
+  onAbandon,
+  abandoning,
 }: {
   isTimeout: boolean;
   checkoutUrl: string | null;
   onOpenPayment: () => void;
   onRetry: () => void;
   onHome: () => void;
+  /** Absent once the draft exists at the provider — the server refuses then. */
+  onAbandon?: (() => void) | undefined;
+  abandoning?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -461,6 +515,21 @@ function FailedState({
         >
           {t("common.retry")}
         </Button>
+        {onAbandon && (
+          // Only offered when the draft never reached the provider. Past that
+          // point the invoice is still payable and freeing the trial quota
+          // would let the same buyer collect several trials — so the server
+          // refuses, and offering a button that always fails is worse than
+          // offering none.
+          <Button
+            onClick={onAbandon}
+            disabled={abandoning}
+            variant="ghost"
+            className="w-full text-muted-foreground"
+          >
+            {t("payment.abandonCheckout")}
+          </Button>
+        )}
         <Button onClick={onHome} variant="ghost" className="w-full text-muted-foreground">
           {t("payment.backToDashboard")}
         </Button>

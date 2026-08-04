@@ -1,5 +1,4 @@
-import { Link } from 'react-router';
-
+import { useLandingKit } from '../landing-kit-context';
 import { pickLocalized, safeUrl, type LandingSection } from '../landing-schema';
 
 /**
@@ -42,6 +41,7 @@ function CtaLink({
   defaultLocale: string;
   variant: 'primary' | 'secondary';
 }) {
+  const { LinkComponent } = useLandingKit();
   if (!cta || typeof cta !== 'object') return null;
   const label = pickLocalized(cta.label, locale, defaultLocale);
   if (label.length === 0) return null;
@@ -49,13 +49,13 @@ function CtaLink({
   if (target === null) return null;
   const className =
     variant === 'primary'
-      ? 'inline-flex h-12 items-center justify-center rounded-full bg-(--brand-primary) px-8 text-base font-semibold text-(--brand-primary-fg) shadow-lg transition hover:opacity-90'
+      ? 'ls-cta inline-flex h-12 items-center justify-center rounded-full bg-(--brand-primary) px-8 text-base font-semibold text-(--brand-primary-fg) shadow-lg transition hover:opacity-90'
       : 'inline-flex h-12 items-center justify-center rounded-full border border-[color:var(--ls-border-strong)] bg-[color:var(--ls-surface)] px-8 text-base font-medium text-[color:var(--ls-fg)] transition hover:bg-[color:var(--ls-surface-high)]';
   if (target.internal) {
     return (
-      <Link to={target.href} className={className}>
+      <LinkComponent to={target.href} className={className}>
         {label}
-      </Link>
+      </LinkComponent>
     );
   }
   return (

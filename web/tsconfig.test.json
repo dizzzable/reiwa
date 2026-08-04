@@ -1,0 +1,25 @@
+{
+  // Type-checks `web/test/` under the app's own compiler options. Without this
+  // project nothing checks the tests: the root `tsc -p tsconfig.json` covers
+  // `src/**/*.ts` at the repo root, `tsconfig.app.json` covers `web/src` and
+  // `tsconfig.node.json` covers `vite.config.ts`. Vitest compiles the specs
+  // with esbuild, which strips types without reading them, so a type error in
+  // a spec used to be invisible to every command.
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    // The specs reach for Node built-ins the app never touches
+    // (`node:fs` in navigation-preload.test.tsx).
+    "types": ["node"]
+  },
+  // `src` is load-bearing, not padding — do NOT "tidy" this to ["test"].
+  // The specs pull most of `src` in through their imports, but the two files
+  // carrying the ambient declarations are reached by no import at all:
+  // `src/types/telegram.ts` (`declare global` for `window.Telegram`) and
+  // `src/vite-env.d.ts` (`import.meta.glob`, `*.css` side-effect imports).
+  // Their consumers, `src/lib/utils.ts` among them, read those globals instead
+  // of importing the modules, so only `include` can put them in the program.
+  // Narrow this to ["test"] and the build reports ~18 errors it has no
+  // business reporting: TS2339 on `window.Telegram` and `import.meta.glob`,
+  // TS2882 on the CSS imports.
+  "include": ["test", "src"]
+}

@@ -395,11 +395,18 @@ function PartnerAction({ quest }: { quest: QuestCabinetItem }): JSX.Element | nu
   return null;
 }
 
-function questAction(type: QuestCabinetItem["type"]): { route: string; labelKey: string } | null {
+export function questAction(
+  type: QuestCabinetItem["type"],
+): { route: string; labelKey: string } | null {
   switch (type) {
+    // Deep-link into the linking form itself, not the settings hub. The quest
+    // row already declared the intent ("link Telegram"), so landing on
+    // /settings and leaving the user to spot Конфиденциальность reads as a
+    // dead end — support watched a user stall exactly there.
     case "LINK_TELEGRAM":
+      return { route: "/settings/privacy?link=telegram", labelKey: "quests.actions.link" };
     case "LINK_EMAIL":
-      return { route: "/settings", labelKey: "quests.actions.link" };
+      return { route: "/settings/privacy?link=email", labelKey: "quests.actions.link" };
     case "INVITE_FRIENDS":
       return { route: "/referrals", labelKey: "quests.actions.invite" };
     default:

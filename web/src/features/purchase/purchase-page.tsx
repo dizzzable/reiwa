@@ -1,4 +1,4 @@
-import { useEffect, type ComponentType, type SVGProps } from "react";
+import { useEffect, useRef, type ComponentType, type SVGProps } from "react";
 import { useNavigate } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
@@ -31,7 +31,7 @@ import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { PromoInput } from "./components/promo-input";
 import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
-import { cn, openExternalUrl } from "@/lib/utils";
+import { cn, startCheckoutRedirect } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
 import {
@@ -660,12 +660,9 @@ function CheckoutStep({
     },
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
-      // Stash the URL so the return page can offer a manual "open payment"
-      // button. `checkoutUrl` can be null for non-redirect flows (e.g. Telegram
-      // Stars) — then we skip opening and just poll status on the return page.
-      // The auto-open below is blocked on Telegram Desktop (openLink must run
-      // inside a user gesture, which this async onSuccess has already lost), so
-      // the return-page button is the reliable path there.
+      // Stash the URL first: `startCheckoutRedirect` cannot navigate inside a
+      // Telegram Mini App (no gesture on this path), so the buyer finishes from
+      // the button on the return page — and that button needs this URL.
       savePendingCheckout(result.paymentId, result.checkoutUrl ?? null);
       saveSubscriptionProvisioningReceipt({
         paymentId: result.paymentId,
@@ -674,7 +671,7 @@ function CheckoutStep({
         slotIndexSource,
         phase: "AWAITING_PAYMENT",
       });
-      if (result.checkoutUrl) openExternalUrl(result.checkoutUrl);
+      if (result.checkoutUrl) startCheckoutRedirect(result.checkoutUrl);
       // Navigate to payment return to poll status
       navigate(`/payment-return?paymentId=${result.paymentId}`, {
         replace: true,
@@ -690,10 +687,16 @@ function CheckoutStep({
     },
   });
 
+  // A ref, not the mutation flags: StrictMode runs setup → cleanup → setup
+  // with no re-render in between, and React Query publishes state through a
+  // `setTimeout`, so the second setup still reads `isPending: false` and fires
+  // a second draft (two `savePendingCheckout` + `startCheckoutRedirect` +
+  // `navigate` runs). Refs survive the simulated remount; this latch does not.
+  const started = useRef(false);
   useEffect(() => {
-    if (!mutation.isPending && !mutation.isSuccess && !mutation.isError) {
-      mutation.mutate();
-    }
+    if (started.current) return;
+    started.current = true;
+    mutation.mutate();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
