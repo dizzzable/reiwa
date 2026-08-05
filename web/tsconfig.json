@@ -1,9 +1,20 @@
 {
   "files": [],
+  // `tsconfig.test.json` is deliberately NOT referenced here.
+  //
+  // The web tests import `vitest` and `@testing-library/*`, which are devDeps
+  // of the ROOT package, not of `web/`. CI's web job runs `npm ci` inside
+  // `web/` only, so those modules do not exist there and `tsc -b` fails with
+  // TS2307 on every test file — while passing locally, where the root's
+  // `node_modules` sits one directory up and resolution walks into it.
+  //
+  // To bring the tests under CI type checking, one of these has to happen
+  // first: install the test tooling in `web/`, or make the web CI job install
+  // the root's dependencies as well. Until then run it by hand:
+  //   npx tsc -p web/tsconfig.test.json --noEmit
   "references": [
     { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.test.json" }
+    { "path": "./tsconfig.node.json" }
   ],
   "compilerOptions": {
     "baseUrl": ".",
