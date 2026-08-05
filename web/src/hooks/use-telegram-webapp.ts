@@ -28,6 +28,29 @@ const TELEGRAM_LAUNCH_PARAMETER_NAMES = [
   'tgWebAppThemeParams',
 ] as const
 
+/**
+ * Did Telegram open this URL? Exactly the test `public/telegram-webapp-loader.js`
+ * runs before it requests the SDK, so it is also the precise condition under
+ * which a `reiwa:telegram-sdk-ready` / `-error` signal is on its way.
+ *
+ * Exported because the entry routes (`/`, `/bootstrap`) need the same answer to
+ * decide how long they may wait for the SDK. Every copy of this rule is a place
+ * the launch policy can drift, and the copies did drift — the root page carried
+ * its own unconditional timeout and downgraded real Mini App launches to the
+ * login form. Reuse this; do not restate it.
+ */
+export function hasTelegramLaunchParameters(): boolean {
+  const search = new URLSearchParams(window.location.search)
+  const hash = new URLSearchParams(
+    window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash,
+  )
+  return TELEGRAM_LAUNCH_PARAMETER_NAMES.some(
+    (name) => search.has(name) || hash.has(name),
+  )
+}
+
 interface UseTelegramWebAppOptions {
   /** Enable the one-time native `ready()` / `expand()` handshake. */
   readonly activate?: boolean
@@ -124,18 +147,6 @@ export function useTelegramWebApp(
         isMobile,
       })
       return true
-    }
-
-    const hasTelegramLaunchParameters = (): boolean => {
-      const search = new URLSearchParams(window.location.search)
-      const hash = new URLSearchParams(
-        window.location.hash.startsWith('#')
-          ? window.location.hash.slice(1)
-          : window.location.hash,
-      )
-      return TELEGRAM_LAUNCH_PARAMETER_NAMES.some(
-        (name) => search.has(name) || hash.has(name),
-      )
     }
 
     const finishAsWeb = () => {
