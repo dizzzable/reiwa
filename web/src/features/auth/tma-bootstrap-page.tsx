@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -9,6 +9,7 @@ import { useBranding } from '@/lib/branding-provider'
 import { bootstrapTelegram, getSession } from '@/lib/api-client'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { useTelegramWebApp } from '@/hooks/use-telegram-webapp'
+import { readTelegramLaunchInitData } from '@/lib/telegram-launch-params'
 
 type BootstrapPhase = 'detecting' | 'authenticating' | 'ready' | 'error' | 'rate_limited'
 
@@ -18,8 +19,16 @@ export default function BootstrapPage() {
   const { t } = useTranslation()
   // The root app owns the one-time Telegram host activation. This page only
   // consumes auth data, avoiding duplicate bridge calls on `/tma`.
-  const { initData, isReady, telegram } = useTelegramWebApp({ activate: false })
+  const { initData: sdkInitData, isReady, telegram } = useTelegramWebApp({ activate: false })
   const { branding } = useBranding()
+
+  // The launch payload, straight from the URL — `initData` IS `tgWebAppData`,
+  // and Telegram put it in the address bar before any script ran. The SDK's
+  // copy is the fallback for launch shapes the URL does not carry. Signing in
+  // must not wait on telegram.org: the user is here to BUY a VPN, so they do
+  // not have one, and that is the host their network blocks.
+  const launchInitData = useMemo(() => readTelegramLaunchInitData(), [])
+  const initData = launchInitData ?? sdkInitData
   const [phase, setPhase]     = useState<BootstrapPhase>('detecting')
   const [errorMsg, setErrorMsg] = useState('')
   const [retryAfter, setRetryAfter] = useState(0)
@@ -35,7 +44,13 @@ export default function BootstrapPage() {
   })()
 
   useEffect(() => {
-    if (!isReady || calledRef.current) return
+    if (calledRef.current) return
+    // Start the moment there is something to authenticate with. Waiting for
+    // `isReady` once the payload is already in hand would put the telegram.org
+    // fetch back in front of the sign-in — which is the failure this page sits
+    // downstream of. Only a launch with no payload of its own still waits for
+    // the SDK to settle, because for that one the bridge is the last hope.
+    if (initData === null && !isReady) return
     calledRef.current = true
 
     async function run() {

@@ -1,21 +1,26 @@
 // @vitest-environment jsdom
 
 /**
- * A user taps the bot's «Открыть приложение» button on a slow, VPN-proxied
- * link. The Mini App opens, shows «Подключение…» for two seconds, and then
- * puts a username/password form in front of a user who has never had a
- * password. Nothing recovers from that screen.
+ * A user taps the bot's «Открыть приложение» button. The Mini App opens, shows
+ * «Подключение…», and then puts a username/password form in front of a user who
+ * has never had a password. Nothing recovers from that screen.
  *
- * The cause was a clock. Both entry routes had to decide "Mini App or
- * browser?" before the Telegram SDK — fetched from telegram.org, not bundled —
- * had arrived, and both treated running out of time as evidence of "browser".
- * `/` waited a flat 1.5s for every launch; `/bootstrap` did not wait at all.
- * `useTelegramWebApp` had already worked out the rule that avoids this (wait
- * for the loader's explicit `ready`/`error` signal when, and only when, the
- * launch actually came from Telegram) — the entry routes just did not use it.
+ * The cause was the question, not the clock. Both entry routes decided "Mini
+ * App or browser?" by waiting for `telegram.org/js/telegram-web-app.js` and
+ * reading `window.Telegram.WebApp.initData` out of it — ~100 KB fetched
+ * cross-origin to re-read a value already sitting in `location.hash`, because
+ * `initData` IS `tgWebAppData`. This product sells VPN, so the user who tapped
+ * that button does not have one yet and telegram.org is exactly the host their
+ * network blocks. Failure of that fetch was then spent as "plain browser".
+ *
+ * Bounding the wait better was the previous attempt and it treated a symptom:
+ * a launch whose SDK never arrives at all still has to sign in. So the decision
+ * now comes from the URL, and the SDK is a fallback for launch shapes the URL
+ * does not carry — chiefly a client-side hop that dropped the hash before the
+ * session mirror could be read.
  *
  * These mount the real pages, because the bug was never in the decision
- * function: it was in how long the call site let it look.
+ * function: it was in what the call site let it look at.
  */
 
 import { act, type ReactElement, type ReactNode } from "react";
@@ -58,6 +63,8 @@ import WebHomePage from "../src/features/auth/web-home-page";
 
 const TELEGRAM = "Telegram" as const;
 const SDK_STATE = "__reiwaTelegramSdkState" as const;
+/** The SDK's own session key; the cabinet mirrors the launch into it. */
+const SDK_LAUNCH_PARAMS_KEY = "__telegram__initParams" as const;
 
 /** A signed Telegram launch payload, i.e. a non-empty `initData`. */
 const INIT_DATA = "user=%7B%22id%22%3A42%7D&auth_date=1&hash=deadbeef";
@@ -65,9 +72,23 @@ const INIT_DATA = "user=%7B%22id%22%3A42%7D&auth_date=1&hash=deadbeef";
 /**
  * The fragment Telegram appends when it opens a Mini App URL — the hash, not
  * the query, which is why it does not survive a react-router navigation.
+ *
+ * `tgWebAppData` is the launch's `initData`, percent-encoded once. It is in the
+ * address bar before a single byte has been requested from telegram.org, which
+ * is what lets every case below answer without an SDK.
  */
 function withLaunchParameters(): void {
-  window.location.hash = "#tgWebAppData=payload&tgWebAppVersion=9.6&tgWebAppPlatform=android";
+  window.location.hash =
+    `#tgWebAppData=${encodeURIComponent(INIT_DATA)}` +
+    "&tgWebAppVersion=9.6&tgWebAppPlatform=android";
+}
+
+/** The mirror the cabinet (and the SDK) leaves for later documents in the tab. */
+function withMirroredLaunchParameters(): void {
+  window.sessionStorage.setItem(
+    SDK_LAUNCH_PARAMS_KEY,
+    JSON.stringify({ tgWebAppData: INIT_DATA, tgWebAppVersion: "9.6" }),
+  );
 }
 
 /** The loader's marker: stamped for every Telegram launch, even a failing one. */
@@ -130,6 +151,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   // Full reset, not just the hash: one case below rewrites the path and query.
   window.history.replaceState({}, "", "/");
+  // The launch mirror outlives a navigation by design, so it has to be cleared
+  // explicitly or a Telegram case would leak its payload into the browser ones.
+  window.sessionStorage.clear();
   Reflect.deleteProperty(window as unknown as Record<string, unknown>, TELEGRAM);
   withSdkState(undefined);
   // No cookie and no published landing: every non-Telegram verdict therefore
@@ -149,14 +173,93 @@ afterEach(() => {
 });
 
 describe("WebHomePage launch context", () => {
-  it("keeps a Telegram launch waiting past the browser deadline and still routes it to the Mini App", async () => {
+  it("routes a Telegram launch to the Mini App from the URL alone, with no SDK at all", async () => {
     withLaunchParameters();
     withSdkState("loading");
 
     mount(<WebHomePage />);
-    // Well past the 1.5s the page used to give every launch. On the reported
-    // connection (~2.7 KB/s over a VPN) the SDK had not arrived by then, and
-    // the expired timer was read as "plain browser".
+    // The clock never moves. Anything asserted after this had to be decided
+    // with no waiting whatsoever — and there is nothing to wait for: no bridge
+    // ever appears, which on the reported connection is the permanent state.
+    await settleWithoutTime();
+
+    expect(navigate).toHaveBeenCalledWith("/tma", { replace: true });
+    expect(navigate).not.toHaveBeenCalledWith("/sign-in", { replace: true });
+    expect(window.Telegram).toBeUndefined();
+    expect(api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("still reaches the Mini App after the loader reports the SDK cannot be fetched", async () => {
+    // The VPN-less launch, exactly: telegram.org is unreachable, the loader's
+    // request fails, and `error` is recorded before React mounts. That used to
+    // be a final answer of "plain browser" — a password form for a user who has
+    // no password. The launch parameters were in the URL the whole time.
+    withLaunchParameters();
+    withSdkState("error");
+
+    mount(<WebHomePage />);
+    await settleWithoutTime();
+    await dispatchSdk("error");
+    await settleWithoutTime();
+
+    expect(navigate).toHaveBeenCalledWith("/tma", { replace: true });
+    expect(navigate).not.toHaveBeenCalledWith("/sign-in", { replace: true });
+  });
+
+  it("still reaches the Mini App when the loader recorded ready but no bridge followed", async () => {
+    // The loader is a `defer` script in `index.html`, so on a warm cache it can
+    // finish before React mounts and the event is long gone. A `ready` with no
+    // usable bridge behind it (an intercepted or truncated script that still
+    // executed) says nothing about the launch; the URL does.
+    withLaunchParameters();
+    withSdkState("ready");
+
+    mount(<WebHomePage />);
+    await settleWithoutTime();
+
+    expect(navigate).toHaveBeenCalledWith("/tma", { replace: true });
+    expect(navigate).not.toHaveBeenCalledWith("/sign-in", { replace: true });
+  });
+
+  it("prefers the URL's payload to a bridge reporting an empty initData", async () => {
+    // A bridge that came up without launch data is not evidence of a browser
+    // when the address bar is holding a signed payload. Believing it here is
+    // what turned a partially-initialised SDK into a dead-end login form.
+    withLaunchParameters();
+    withSdkState("ready");
+    withTelegramBridge(null);
+
+    mount(<WebHomePage />);
+    await settleWithoutTime();
+
+    expect(navigate).toHaveBeenCalledWith("/tma", { replace: true });
+    expect(navigate).not.toHaveBeenCalledWith("/sign-in", { replace: true });
+  });
+
+  it("recognises the launch from the session mirror once the hash is gone", async () => {
+    // A second document in the same tab — a reload, or the return leg from a
+    // payment gateway — has no fragment left. The mirror written on the launch
+    // document is what is left of it, and it is enough.
+    withMirroredLaunchParameters();
+    expect(window.location.hash).toBe("");
+
+    mount(<WebHomePage />);
+    await settleWithoutTime();
+
+    expect(navigate).toHaveBeenCalledWith("/tma", { replace: true });
+    expect(window.Telegram).toBeUndefined();
+  });
+
+  it("keeps waiting past the browser deadline when only the loader's marker is left", async () => {
+    // No parameters in the URL and no mirror either (a cold tab, private mode).
+    // The loader's marker is then the whole signal, and it still may not be
+    // spent on a clock — this is the guard the previous fix added, and the
+    // shape it protects is the only one that now depends on the SDK.
+    withSdkState("loading");
+    expect(window.location.hash).toBe("");
+
+    mount(<WebHomePage />);
+    // Well past the 1.5s the page gives a browser.
     await elapse(5000);
 
     expect(navigate).not.toHaveBeenCalled();
@@ -169,49 +272,6 @@ describe("WebHomePage launch context", () => {
 
     expect(navigate).toHaveBeenCalledWith("/tma", { replace: true });
     expect(navigate).not.toHaveBeenCalledWith("/sign-in", { replace: true });
-  });
-
-  it("falls through to the web flow as soon as the loader reports the SDK cannot be fetched", async () => {
-    withLaunchParameters();
-    withSdkState("loading");
-
-    mount(<WebHomePage />);
-    await settleWithoutTime();
-    expect(navigate).not.toHaveBeenCalled();
-
-    // `error` is an answer, not a delay: no bridge is coming, so the web flow
-    // is correct and must not wait for a signal that already arrived.
-    withSdkState("error");
-    await dispatchSdk("error");
-    await settleWithoutTime();
-
-    expect(navigate).toHaveBeenCalledWith("/sign-in", { replace: true });
-  });
-
-  it("takes the already-recorded ready state instead of waiting for an event that will not fire again", async () => {
-    // The loader is a `defer` script in `index.html`, so on a warm cache it can
-    // finish before React mounts — the event is then long gone and only the
-    // recorded state is left. No bridge appeared with it, which is a real
-    // answer ("not Telegram after all"), not a reason to keep waiting.
-    withLaunchParameters();
-    withSdkState("ready");
-
-    mount(<WebHomePage />);
-    await settleWithoutTime();
-
-    expect(navigate).toHaveBeenCalledWith("/sign-in", { replace: true });
-  });
-
-  it("still calls an empty initData a browser even when the SDK is present", async () => {
-    withLaunchParameters();
-    withSdkState("ready");
-    withTelegramBridge(null);
-
-    mount(<WebHomePage />);
-    await settleWithoutTime();
-
-    expect(navigate).toHaveBeenCalledWith("/sign-in", { replace: true });
-    expect(navigate).not.toHaveBeenCalledWith("/tma", { replace: true });
   });
 
   it("gives a launch with no Telegram parameters a bounded wait and lets it expire", async () => {
@@ -229,19 +289,16 @@ describe("WebHomePage launch context", () => {
 });
 
 describe("ContextRouter launch context", () => {
-  it("waits for the SDK before forwarding, instead of guessing on mount", async () => {
+  it("forwards a Telegram launch to the Mini App from the URL alone", async () => {
     withLaunchParameters();
     withSdkState("loading");
 
     mount(<ContextRouter />);
     await settleWithoutTime();
-    expect(navigate).not.toHaveBeenCalled();
-
-    withTelegramBridge(INIT_DATA);
-    withSdkState("ready");
-    await dispatchSdk("ready");
 
     expect(navigate).toHaveBeenCalledWith("/tma", { replace: true });
+    expect(navigate).not.toHaveBeenCalledWith("/", { replace: true });
+    expect(window.Telegram).toBeUndefined();
   });
 
   it("recognises a Telegram launch that arrived here through a client-side hop", async () => {

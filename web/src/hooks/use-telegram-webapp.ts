@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { reportClientError } from '@/lib/client-error-reporter'
+import { hasTelegramLaunchParameters } from '@/lib/telegram-launch-params'
 // The SDK surface and the `window.Telegram` / `__reiwaTelegramSdkState`
 // globals live in `@/types/telegram` and are declared exactly once. This hook
 // used to carry its own copy alongside a second one in `vite-env.d.ts`;
@@ -21,35 +22,17 @@ interface UseTelegramWebAppResult {
 const POLL_INTERVAL_MS = 80
 const POLL_TIMEOUT_MS  = 2000
 const activatedApps = new WeakSet<object>()
-const TELEGRAM_LAUNCH_PARAMETER_NAMES = [
-  'tgWebAppData',
-  'tgWebAppVersion',
-  'tgWebAppPlatform',
-  'tgWebAppThemeParams',
-] as const
 
 /**
- * Did Telegram open this URL? Exactly the test `public/telegram-webapp-loader.js`
- * runs before it requests the SDK, so it is also the precise condition under
- * which a `reiwa:telegram-sdk-ready` / `-error` signal is on its way.
+ * This hook is the SDK's consumer, not authentication's gatekeeper.
  *
- * Exported because the entry routes (`/`, `/bootstrap`) need the same answer to
- * decide how long they may wait for the SDK. Every copy of this rule is a place
- * the launch policy can drift, and the copies did drift — the root page carried
- * its own unconditional timeout and downgraded real Mini App launches to the
- * login form. Reuse this; do not restate it.
+ * It still loads and waits for the bridge, because the bridge is what supplies
+ * haptics, BackButton/MainButton, the theme and `openInvoice` — the only call
+ * that can raise Telegram's payment sheet. What it no longer does is decide
+ * whether the user is in a Mini App: `lib/telegram-launch-params.ts` reads that
+ * off the URL, before any script is fetched, so a blocked telegram.org costs
+ * this session its native chrome and nothing more.
  */
-export function hasTelegramLaunchParameters(): boolean {
-  const search = new URLSearchParams(window.location.search)
-  const hash = new URLSearchParams(
-    window.location.hash.startsWith('#')
-      ? window.location.hash.slice(1)
-      : window.location.hash,
-  )
-  return TELEGRAM_LAUNCH_PARAMETER_NAMES.some(
-    (name) => search.has(name) || hash.has(name),
-  )
-}
 
 interface UseTelegramWebAppOptions {
   /** Enable the one-time native `ready()` / `expand()` handshake. */

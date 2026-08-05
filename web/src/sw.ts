@@ -10,9 +10,20 @@ declare let self: ServiceWorkerGlobalScope
 
 // ─── Cache Names ───────────────────────────────────────────────────────────────
 // Bump the version suffix whenever the caching strategy changes so the
-// `activate` cleanup purges the previous generation's caches. v2 fixes the
+// `activate` cleanup purges the previous generation's caches. v2 fixed the
 // stale-app bug where navigations were served CacheFirst (see below).
-const STATIC_CACHE = 'static-assets-v2'
+//
+// v3 is a purge, not a tuning change. Until it, the static route matched every
+// `script` request with no origin test, so `telegram.org/js/telegram-web-app.js`
+// was stored CacheFirst for 30 days — and `CacheableResponsePlugin({ statuses:
+// [0, 200] })` accepts an ISP/DPI interception page returned as 200 just as
+// happily as the real SDK. Once stored, that response survived every redeploy:
+// a transient network failure promoted to a permanent one. Renaming the cache
+// is what deletes it, because the `activate` handler above drops any
+// `static-assets-*` generation that is no longer the current one — installed
+// clients therefore lose the poisoned entries on their next load, with no
+// separate migration step to forget.
+const STATIC_CACHE = 'static-assets-v3'
 // v4 drops FAQ responses from the service-worker cache. FAQ is edited live in
 // the operator panel; a stale-while-revalidate hit could otherwise hide a new
 // answer or attachment for the rest of the session (React Query would accept
@@ -128,15 +139,28 @@ const navigationRoute = new Route(
 registerRoute(navigationRoute)
 
 // ─── Static Assets: Cache-First Strategy ──────────────────────────────────────
-// Matches hashed build assets (JS, CSS, fonts, images). These are immutable —
-// Vite fingerprints the filename — so cache-first is safe and fast. Documents
-// are intentionally EXCLUDED here (handled by the network-first route above).
+// Matches hashed build assets (JS, CSS, fonts, images) on THIS origin. These
+// are immutable — Vite fingerprints the filename — so cache-first is safe and
+// fast. Documents are intentionally EXCLUDED here (handled by the
+// network-first route above), and so is everything we did not build.
 const staticAssetsRoute = new Route(
   ({ request, url }) => {
     // Never let document/navigation requests fall into cache-first.
     if (request.mode === 'navigate' || request.destination === 'document') {
       return false
     }
+    // Same-origin only, and this test comes FIRST because everything below it
+    // matches on shape alone. The route's whole justification is that Vite
+    // fingerprints the filename, so the bytes behind a URL never change —
+    // which is true of nothing on another origin. Without this it swallowed
+    // three third-party scripts, and one of them cost users their accounts:
+    // `telegram.org/js/telegram-web-app.js` (the Mini App SDK, on a network
+    // that blocks telegram.org), Cloudflare Turnstile and Telegram's login
+    // widget. Cross-origin responses arrive opaque, `CacheableResponsePlugin`
+    // here admits status 0, and the entry then outlives 30 days of redeploys.
+    // Third-party assets now simply fall through to the network, where the
+    // browser's own HTTP cache still applies.
+    if (url.origin !== self.location.origin) return false
     // Match assets directory
     if (url.pathname.startsWith('/assets/')) return true
     // Match static file types (JS, CSS, images, fonts)

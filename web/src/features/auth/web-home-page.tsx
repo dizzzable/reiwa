@@ -38,9 +38,10 @@ import { detectTelegramInitData } from './telegram-launch'
  * we're authenticating, not crashed.
  */
 /**
- * Ceiling on the SDK wait — for a launch with NO Telegram parameters only.
- * A Telegram launch has no ceiling at all; `telegram-launch.ts` explains why
- * the two cases cannot share one.
+ * Ceiling on the SDK wait — for a launch with NO Telegram parameters only, and
+ * only for the ordering race where a bridge turns up anyway. A launch that
+ * carries `tgWebAppData` never reaches a clock at all; `telegram-launch.ts`
+ * explains why the two cases cannot share one.
  */
 const BROWSER_SDK_WAIT_MS = 1500
 
@@ -96,24 +97,16 @@ export default function WebHomePage() {
       // Telegram. This makes the Mini App work regardless of which URL the
       // button points at, so operators never need to configure `/tma`.
       //
-      // The Telegram SDK script is fetched from telegram.org after first paint
-      // (so a RU-IP browser without a VPN — which can't reach it — never blocks
-      // on it), so `window.Telegram` is not there yet when this runs. How long
-      // we may wait for it depends on where the launch came from:
+      // `initData` IS `tgWebAppData`, and Telegram puts it in the URL fragment
+      // of the launch document, so for a real Mini App this resolves with no
+      // network at all. It used to wait for telegram.org to hand the same value
+      // back through `window.Telegram` — and the users who arrive here are
+      // shopping for a VPN, so telegram.org is the one host they cannot reach.
+      // Every failed fetch became "plain browser", i.e. a password form for a
+      // user who has never had a password. Nothing downstream undoes that.
       //
-      //   - Launched by Telegram → no time limit. We wait for the loader's
-      //     `ready`/`error` signal. A cap here is what sent Mini App users to
-      //     the login form: on a slow or VPN-proxied link the SDK fetch simply
-      //     takes longer than any number we could pick, and the timeout then
-      //     answers "plain browser" for a real Mini App — an answer nothing
-      //     downstream can undo, since the login form is a dead end for a user
-      //     who has no password.
-      //   - Plain browser → bounded, because no signal is coming: the loader
-      //     never requests the SDK without launch parameters, so waiting on one
-      //     would hang the splash forever.
-      //
-      // Either way the verdict is final the moment the bridge exists: initData
-      // present → TMA, empty → plain browser.
+      // Only a launch whose URL carries no payload still consults the SDK, and
+      // only then does `BROWSER_SDK_WAIT_MS` mean anything.
       const tgInitData = await detectTelegramInitData(BROWSER_SDK_WAIT_MS)
       if (typeof tgInitData === 'string' && tgInitData.length > 0) {
         navigate(keepQuery('/tma'), { replace: true })

@@ -1,8 +1,14 @@
 /**
- * Load Telegram's Mini App SDK only when Telegram launch parameters are
- * present. Regular browser sessions do not need the bridge and may be unable
- * to reach telegram.org, so an unconditional request only creates noisy
- * ERR_FAILED console entries without adding any functionality.
+ * Load Telegram's Mini App SDK only for a session Telegram actually launched.
+ * Regular browser sessions do not need the bridge and may be unable to reach
+ * telegram.org, so an unconditional request only creates noisy ERR_FAILED
+ * console entries without adding any functionality.
+ *
+ * Nothing about authentication rides on this script any more. `initData` IS
+ * `tgWebAppData` and the cabinet reads it straight off the URL, so a failure
+ * here costs the session its native chrome — haptics, BackButton/MainButton,
+ * theme, and `openInvoice`, which is the only call that can raise Telegram's
+ * payment sheet — and never its sign-in.
  */
 (() => {
   const launchParameterNames = [
@@ -21,7 +27,39 @@
     (name) => searchParameters.has(name) || hashParameters.has(name),
   );
 
-  if (!isTelegramMiniApp) return;
+  /**
+   * The launch parameters as the SDK itself persists them
+   * (`sessionStorage['__telegram__initParams']`); `lib/telegram-launch-params.ts`
+   * writes the same key in the same shape on the launch document.
+   *
+   * Consulted deliberately. The URL test alone is right only for the document
+   * Telegram opened: a second document in the same tab — a reload, the return
+   * leg from a payment gateway, an OS-restored webview — has lost the hash, and
+   * skipping the SDK there leaves a live Mini App with no BackButton, no theme
+   * and no `openInvoice`, which is a payment the user cannot complete. The
+   * early return is still worth keeping for the case it was written for,
+   * because this key exists only in a tab Telegram launched: a plain browser
+   * session on a network that blocks telegram.org still never asks for the
+   * script. That is the whole trade — one extra request in a session already
+   * known to be a Mini App, in exchange for the bridge those documents need.
+   */
+  const hasStoredLaunchParameters = () => {
+    try {
+      const stored = JSON.parse(
+        window.sessionStorage.getItem("__telegram__initParams"),
+      );
+      if (stored === null || typeof stored !== "object") return false;
+      return launchParameterNames.some(
+        (name) => typeof stored[name] === "string" && stored[name].length > 0,
+      );
+    } catch (error) {
+      // Storage disabled, or somebody else's value under the key. Treat it as
+      // "not a Telegram session" — the URL test above is the authority.
+      return false;
+    }
+  };
+
+  if (!isTelegramMiniApp && !hasStoredLaunchParameters()) return;
   if (document.querySelector("script[data-reiwa-telegram-sdk]")) return;
 
   window.__reiwaTelegramSdkState = "loading";

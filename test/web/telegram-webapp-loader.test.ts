@@ -19,6 +19,8 @@ interface LoadedScript {
 function runLoader(
   url: string,
   alreadyLoaded = false,
+  /** Raw `sessionStorage['__telegram__initParams']`, as the SDK stores it. */
+  storedLaunchParameters: string | null = null,
 ): { readonly appended: LoadedScript[]; readonly window: Record<string, unknown> } {
   const appended: LoadedScript[] = [];
   const listeners = new Map<string, () => void>();
@@ -41,6 +43,13 @@ function runLoader(
   const sdkWindow: Record<string, unknown> = {
     location,
     dispatchEvent: vi.fn(),
+    sessionStorage: {
+      getItem: vi
+        .fn()
+        .mockImplementation((key: string) =>
+          key === '__telegram__initParams' ? storedLaunchParameters : null,
+        ),
+    },
   };
 
   runInNewContext(loaderSource, {
@@ -71,6 +80,32 @@ describe('Telegram WebApp SDK loader', () => {
         src: 'https://telegram.org/js/telegram-web-app.js',
       },
     ]);
+  });
+
+  it('loads the SDK for a later document in a session Telegram launched', () => {
+    // A reload, or the return leg from a payment gateway: the fragment is gone,
+    // but the Mini App is still on screen and still needs the bridge for
+    // haptics, BackButton, theme and `openInvoice` — the only call that can
+    // raise Telegram's payment sheet. Authentication no longer rides on this
+    // script, so the request costs a failed fetch at worst.
+    expect(
+      runLoader(
+        'https://cabinet.example/dashboard',
+        false,
+        JSON.stringify({ tgWebAppData: 'signed-data', tgWebAppVersion: '9.6' }),
+      ).appended,
+    ).toMatchObject([{ src: 'https://telegram.org/js/telegram-web-app.js' }]);
+  });
+
+  it.each([
+    ['no launch parameters in it', JSON.stringify({ unrelated: 'value' })],
+    ['not the SDK object at all', JSON.stringify('signed-data')],
+    ['not JSON', 'tgWebAppData=signed-data'],
+  ])('ignores a stored value with %s', (_name, stored) => {
+    // The early return is what keeps a plain browser session on a network that
+    // blocks telegram.org from asking for a script it cannot get. Only the
+    // SDK's own shape may lift it.
+    expect(runLoader('https://cabinet.example/sign-in', false, stored).appended).toEqual([]);
   });
 
   it('does not append a duplicate Telegram SDK script', () => {

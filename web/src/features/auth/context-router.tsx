@@ -25,7 +25,10 @@ import { detectTelegramInitData } from './telegram-launch'
  * mount. Being wrong here is not self-correcting — the fallback `/` is a
  * react-router navigation, and that drops the URL hash carrying Telegram's
  * launch parameters, so the root page would then see a plain browser too and
- * send a Mini App user to the login form. Hence the shared wait.
+ * send a Mini App user to the login form. Hence the shared decision in
+ * `telegram-launch.ts`, which now reads the launch off the URL rather than
+ * waiting for telegram.org to describe it — and mirrors it into the session
+ * store on the way, so the hash this route drops is no longer the only copy.
  */
 export default function ContextRouter() {
   const navigate = useNavigate()
