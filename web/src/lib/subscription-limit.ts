@@ -34,12 +34,22 @@ export function isSubscriptionLimitReached(
 }
 
 /**
- * User-facing notice when Buy is pressed at capacity. Uses toast + optional
- * Telegram haptic / alert so it is visible inside the Mini App WebView.
+ * User-facing notice when an action is REFUSED at capacity — a Buy press, or a
+ * navigation the app is about to undo. Never a page-load announcement: this
+ * fires a toast, a haptic and (by default) a blocking native dialog, which is
+ * feedback for something the user just did, not a way to state a fact a screen
+ * can state itself.
+ *
+ * `nativeAlert: false` drops the modal and keeps the toast. Use it when the
+ * user stays where they are and the screen already carries the explanation —
+ * a modal there is the third telling of one sentence. Keep the default when the
+ * app navigates away underneath them: a toast can be missed during a route
+ * change, and the modal is what makes the reason survive it.
  */
 export function notifySubscriptionLimitReached(
   t: (key: string, opts?: Record<string, unknown>) => string,
   policy?: ActionPolicy | null,
+  options?: { readonly nativeAlert?: boolean },
 ): void {
   const current = policy?.activeSubscriptionCount;
   const max = policy?.maxSubscriptions;
@@ -54,6 +64,7 @@ export function notifySubscriptionLimitReached(
   } catch {
     // non-TMA / missing SDK
   }
+  if (options?.nativeAlert === false) return;
   try {
     window.Telegram?.WebApp?.showAlert?.(message);
   } catch {

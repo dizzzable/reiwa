@@ -102,7 +102,19 @@ describe("operator concept mode resolution", () => {
       mode: "custom",
       color: "#102030",
     });
-    expect(effective.borderRadius).toBe("rounded-none");
+    // Geometry and typeface follow the same rule as the card text above, and
+    // this line used to contradict it: it asserted the variant's radius won,
+    // which is what made the panel's font and radius controls do nothing in the
+    // cabinet. The variants are the concept preset's snapshot; the operator
+    // edits these on the root afterwards, and the panel offers no per-mode
+    // control for either.
+    expect(effective.borderRadius).toBe(DEFAULT_PUBLIC_CONFIG.branding.borderRadius);
+    expect(effective.borderRadius).not.toBe("rounded-none");
+    expect(effective.fontFamily).toBe(DEFAULT_PUBLIC_CONFIG.branding.fontFamily);
+    expect(effective.fontFamily).not.toBe("Archivo, sans-serif");
+    // Brightness still comes from the variant — this is the half that must not
+    // move, or a light theme renders light text on a light background.
+    expect(effective.surfaceTheme).toEqual(branding.themeVariants.light.surfaceTheme);
     expect(effective.themeVariants).toBe(branding.themeVariants);
   });
 

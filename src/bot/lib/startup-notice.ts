@@ -26,7 +26,7 @@ import type { BotContext, PageDeps } from '../pages/types.js';
 const CREDITS_PROJECT_NAME = 'REIWA';
 const CREDITS_GITHUB_URL = 'https://github.com/dizzzable/reiwa';
 const CREDITS_TELEGRAM_URL = 'https://t.me/rezies_reiwa';
-const CREDITS_SUPPORT_URL = 'https://www.donationalerts.com/r/dizzzable';
+const CREDITS_SUPPORT_URL = 'https://dalink.to/dizzzable';
 const CREDITS_WALLET_USDT_TRC20 = 'TNmxGN8iL5p2yfreNF1DtCEzpQCLuVZjeR';
 const CREDITS_WALLET_TRX = 'TNmxGN8iL5p2yfreNF1DtCEzpQCLuVZjeR';
 const CREDITS_WALLET_BNB = '0x22b74b0c2606d3f49bdd144cdfbf6f070750c2ff';

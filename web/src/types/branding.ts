@@ -493,9 +493,29 @@ export function resolveBrandingThemeMode(
     subscriptionCardGlass: resolveSubscriptionCardGlass(branding.subscriptionCardGlass),
     bgEffect: variant.bgEffect,
     appBackground: variant.appBackground,
-    borderRadius: variant.borderRadius,
-    cornerRadii: variant.cornerRadii,
-    fontFamily: variant.fontFamily,
+    // Typeface and geometry are NOT brightness tokens, and taking them from the
+    // variant is why the operator's font never reached the cabinet.
+    //
+    // The variants are a snapshot of the concept preset, written once when the
+    // preset is applied. Only three global controls are mirrored back into them
+    // afterwards by the panel (card gradient, card pattern, card text) — the
+    // font and the corner radii are not, because there is nothing per-mode
+    // about them: the panel offers ONE font dropdown and ONE set of radius
+    // sliders, not one per brightness. So every later edit landed on the root
+    // and was then overwritten here by the preset's original value, on every
+    // read, forever.
+    //
+    // Root wins for exactly the same reason `subscriptionCardText` above does:
+    // it is one global operator decision, and a brightness switch must not be
+    // able to change it. Fixing it on this side rather than by teaching the
+    // panel a fourth mirror also repairs installs whose variants already hold
+    // the stale copy — there is nothing to migrate.
+    //
+    // `surfaceTheme` stays on the variant: text and glass colours are the one
+    // thing here that genuinely differs between a light and a dark rendering.
+    borderRadius: branding.borderRadius,
+    cornerRadii: branding.cornerRadii,
+    fontFamily: branding.fontFamily,
     surfaceTheme: variant.surfaceTheme,
   };
 }
