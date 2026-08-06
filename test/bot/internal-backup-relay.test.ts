@@ -25,11 +25,33 @@ import {
   REQUEST_TIMESTAMP_HEADER,
   buildInternalSignature,
 } from '../../src/lib/internal-hmac.js';
-import { startInternalHttpListener } from '../../src/bot/listeners/internal-http-listener.js';
+import {
+  BACKUP_RELAY_CONTRACT,
+  startInternalHttpListener,
+} from '../../src/bot/listeners/internal-http-listener.js';
 
 const SECRET = 's'.repeat(32);
 const REZEIS_ADMIN_URL = 'http://rezeis:8000';
 const PATH = '/notify-backup-document';
+
+/**
+ * The statuses rezeis's `isTransientHttpStatus`
+ * (`rezeis-admin/src/modules/backup/backup-delivery-retry.util.ts`) calls
+ * temporary — `status >= 500 || status === 408 || status === 429` — spelled out
+ * as literals on purpose. Deriving them from reiwa's copy of the rule would let
+ * the copy drift and still agree with itself; written out, a change to the rule
+ * has to be made here too and argued for.
+ */
+const TRANSIENT_DOWNLOAD_STATUSES = [408, 429, 500, 502, 503, 504, 507, 599] as const;
+/** A representative sweep of the statuses it does NOT call temporary. */
+const PERMANENT_DOWNLOAD_STATUSES = [400, 401, 403, 404, 409, 410, 422, 499] as const;
+
+/** A real undici network failure, shape and all — what a dead hop throws. */
+function networkFailure(): TypeError {
+  return Object.assign(new TypeError('fetch failed'), {
+    cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+  });
+}
 
 type ListenerOptions = Parameters<typeof startInternalHttpListener>[0];
 
@@ -69,13 +91,25 @@ interface RelayResult {
 async function callBackupRelay(opts: {
   readonly sendDocument?: () => Promise<unknown>;
   readonly downloadStatus?: number;
+  /** Make the download `fetch` REJECT — no HTTP exchange completes at all. */
+  readonly downloadError?: Error;
+  /** Answer the download 2xx with a null `body` (rezeis said 204 No Content). */
+  readonly downloadBodyless?: boolean;
   readonly sign?: boolean;
 }): Promise<RelayResult> {
   const sendDocument = vi.fn(opts.sendDocument ?? (async () => ({ message_id: 1 })));
   const bot = { api: { sendDocument } } as unknown as ListenerOptions['bot'];
-  const fetchMock = vi
-    .spyOn(globalThis, 'fetch')
-    .mockResolvedValue(new Response('backup-bytes', { status: opts.downloadStatus ?? 200 }));
+  const fetchMock = vi.spyOn(globalThis, 'fetch');
+  if (opts.downloadError !== undefined) {
+    fetchMock.mockRejectedValue(opts.downloadError);
+  } else if (opts.downloadBodyless === true) {
+    // 204 is the success status the fetch spec gives a null `body`.
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+  } else {
+    fetchMock.mockResolvedValue(
+      new Response('backup-bytes', { status: opts.downloadStatus ?? 200 }),
+    );
+  }
 
   const server = startInternalHttpListener({
     bot,
@@ -215,6 +249,108 @@ describe('bot /notify-backup-document', () => {
 
     // Nothing was uploaded, so nothing may be reported as delivered.
     expect(sendCalls).toHaveLength(0);
+    expect(status).toBe(204);
+    expect(text).toBe('');
+  });
+
+  // ── Which download failures are worth another attempt ──────────────────────
+  //
+  // "Could not download" is three different events, and answering all of them
+  // 204 spends rezeis's only lever — `unconfirmed` is deliberately NOT retried —
+  // on failures that a retry seconds later would sail through. Nothing is
+  // uploaded in any of them, so unlike the post-`sendDocument` paths a retry
+  // here cannot put a second multi-gigabyte file in the operator's topic.
+
+  it('matches rezeis on exactly which statuses are worth another attempt', () => {
+    const { isTransientDownloadStatus, retryableStatus } = BACKUP_RELAY_CONTRACT;
+
+    for (const status of TRANSIENT_DOWNLOAD_STATUSES) {
+      expect(isTransientDownloadStatus(status), `${status} must be transient`).toBe(true);
+    }
+    for (const status of PERMANENT_DOWNLOAD_STATUSES) {
+      expect(isTransientDownloadStatus(status), `${status} must be permanent`).toBe(false);
+    }
+    // Closes the loop across the hop. The status we answer in order to REQUEST a
+    // retry is the only value that actually crosses to rezeis, and rezeis feeds
+    // it to its own copy of this rule. So the rule must call our own answer
+    // temporary — narrow it to exclude 5xx and the status stops meaning the
+    // thing it is answered for, which fails right here instead of silently
+    // burying a backup on the far side.
+    expect(isTransientDownloadStatus(retryableStatus)).toBe(true);
+    // …and the "do not retry" answer must not be, or both branches below would
+    // be asking rezeis for the same thing.
+    expect(isTransientDownloadStatus(204)).toBe(false);
+  });
+
+  it('asks rezeis to retry when rezeis answered the download transiently', async () => {
+    for (const downloadStatus of TRANSIENT_DOWNLOAD_STATUSES) {
+      const label = `download ${downloadStatus}`;
+      const { status, text, sendCalls, downloadUrl } = await callBackupRelay({ downloadStatus });
+
+      // Self-check: the handler must actually have reached the download. Without
+      // this, any earlier bail-out that happened to answer the same code would
+      // satisfy the assertion below for free.
+      expect(downloadUrl, label).toContain('/api/internal/backups/download');
+      expect(sendCalls, label).toHaveLength(0);
+      // A 204 here is filed by rezeis as `unconfirmed` and never retried, so a
+      // rezeis restart permanently loses that night's off-site copy.
+      expect(status, label).toBe(BACKUP_RELAY_CONTRACT.retryableStatus);
+      expect(text, label).toBe('');
+    }
+  });
+
+  it('leaves a permanent download refusal non-retryable', async () => {
+    // A spent or forged token, a record that no longer exists: rezeis refuses an
+    // identical retry identically, so three attempts buy nothing but a delay on
+    // alerting the operator.
+    for (const downloadStatus of PERMANENT_DOWNLOAD_STATUSES) {
+      const label = `download ${downloadStatus}`;
+      const { status, sendCalls, downloadUrl } = await callBackupRelay({ downloadStatus });
+
+      expect(downloadUrl, label).toContain('/api/internal/backups/download');
+      expect(sendCalls, label).toHaveLength(0);
+      expect(status, label).toBe(204);
+    }
+  });
+
+  it('asks rezeis to retry when the download never reached rezeis at all', async () => {
+    // `fetch` threw: no HTTP exchange completed, so this is the one failure we
+    // can be certain never touched Telegram — the cheapest retry of the set.
+    const { status, text, sendCalls, downloadUrl } = await callBackupRelay({
+      downloadError: networkFailure(),
+    });
+
+    expect(downloadUrl).toContain('/api/internal/backups/download');
+    expect(sendCalls).toHaveLength(0);
+    expect(status).toBe(BACKUP_RELAY_CONTRACT.retryableStatus);
+    expect(text).toBe('');
+  });
+
+  it('does not retry when rezeis answered the download success-but-empty', async () => {
+    // 2xx with a null body — rezeis said 204 No Content. Nothing was uploaded,
+    // but unlike a 503 this is systematic, not a bad moment: an identical retry
+    // earns an identically empty response, so it cannot change the answer.
+    const { status, sendCalls, downloadUrl } = await callBackupRelay({ downloadBodyless: true });
+
+    expect(downloadUrl).toContain('/api/internal/backups/download');
+    expect(sendCalls).toHaveLength(0);
+    expect(status).toBe(204);
+  });
+
+  it('keeps a network-shaped UPLOAD failure on 204 so a retry cannot duplicate the file', async () => {
+    // The SAME error object as the download-never-reached-rezeis case above, on
+    // the other side of `sendDocument` — and it must get the opposite answer.
+    // Once the upload is entered the bytes may already be in the topic (a
+    // mid-upload reset on a 2 GB file looks exactly like this), so asking for a
+    // retry risks a second copy. The discriminator is not the error, it is
+    // whether `sendDocument` ran, which `sendCalls` pins.
+    const { status, text, sendCalls } = await callBackupRelay({
+      sendDocument: async () => {
+        throw networkFailure();
+      },
+    });
+
+    expect(sendCalls).toHaveLength(1);
     expect(status).toBe(204);
     expect(text).toBe('');
   });

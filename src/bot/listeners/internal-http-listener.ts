@@ -781,6 +781,54 @@ async function handleNotifyBroadcastDocument(opts: {
 }
 
 /**
+ * The status `/notify-backup-document` answers when it wants rezeis to try the
+ * whole relay again.
+ *
+ * It is 502 rather than any other 5xx because of what happens to it on the way
+ * back: reiwa-api's webhook router turns a bot 5xx into its own 502
+ * (`webhooks.ts`, `BotRelayError`), rezeis's `BotNotifierClient` files a non-2xx
+ * as `rejected` carrying that status, and `isRetryableRelayOutcome` then asks
+ * `isTransientHttpStatus` about it. 502 is the value that survives all three
+ * hops meaning "temporary — ask again", and it is what the sibling
+ * `handleNotifyBroadcastDocument` already answers for the same class of event.
+ */
+const RETRYABLE_RELAY_STATUS = 502;
+
+/**
+ * Whether a status rezeis returned for the backup DOWNLOAD means "ask again".
+ *
+ * Deliberately identical to rezeis's own `isTransientHttpStatus` in
+ * `src/modules/backup/backup-delivery-retry.util.ts` — `status >= 500 ||
+ * status === 408 || status === 429` — because that function is what decides, on
+ * the far side of the hop, whether the answer we give here actually buys a
+ * retry. They are two copies of one rule and CAN drift: nothing at build time
+ * links these repos, which ship as separate images.
+ *
+ * Three things bound that risk, and they are why this is a copy rather than an
+ * invented second list:
+ *
+ *  - The only value that crosses the hop is `RETRYABLE_RELAY_STATUS` itself, so
+ *    the sole way drift can break the feature is rezeis dropping 5xx from its
+ *    transient set — which would equally break `handleNotifyBroadcastDocument`
+ *    and reiwa-api's 502, i.e. it is not a quiet failure of this branch alone.
+ *  - `test/bot/internal-backup-relay.test.ts` pins this set code-by-code, so
+ *    changing it here is a deliberate act that turns a test red rather than a
+ *    silent edit.
+ *  - That test also closes the loop: it asserts this predicate calls
+ *    `RETRYABLE_RELAY_STATUS` transient. Narrow the rule and the status we
+ *    answer stops meaning what we answer it for, and the suite says so.
+ */
+function isTransientDownloadStatus(status: number): boolean {
+  return status >= 500 || status === 408 || status === 429;
+}
+
+/** Exported for the relay tests, which pin the set above against rezeis's copy. */
+export const BACKUP_RELAY_CONTRACT = {
+  retryableStatus: RETRYABLE_RELAY_STATUS,
+  isTransientDownloadStatus,
+} as const;
+
+/**
  * `/notify-backup-document` — fetch a backup file from rezeis (signed download
  * URL) and upload it to the configured Telegram chat/topic. Used on the split
  * deployment where rezeis has no bot token: rezeis hands the bot a short-lived
@@ -788,9 +836,13 @@ async function handleNotifyBroadcastDocument(opts: {
  * Best-effort.
  *
  * Answers `200 { messageId }` when — and only when — Telegram returned a
- * message id for the upload; `204` for every outcome that did not prove a
- * delivery (bot/admin URL unavailable, download failed, send failed). The id is
- * what rezeis requires before it records the backup as delivered off-site.
+ * message id for the upload. Every other outcome answers `204` (rezeis:
+ * `unconfirmed`, deliberately never retried) EXCEPT the two download failures
+ * that are both momentary and provably pre-upload, which answer
+ * `RETRYABLE_RELAY_STATUS` so rezeis tries again. The dividing line is not
+ * "did it fail" but "could a retry put a second multi-gigabyte file in the
+ * operator's topic": once `sendDocument` has been entered it could, so
+ * everything from there on stays on 204.
  */
 async function handleNotifyBackupDocument(opts: {
   readonly bot: Bot<Context> | null;
@@ -835,14 +887,63 @@ async function handleNotifyBackupDocument(opts: {
   const downloadUrl =
     `${rezeisAdminUrl.replace(/\/+$/, '')}/api/internal/backups/download` +
     `?recordId=${encodeURIComponent(recordId)}&token=${encodeURIComponent(token)}`;
+  // The download gets its own `try` — it used to share one with the upload
+  // below, which collapsed three different events into a single 204. Everything
+  // that fails in here fails BEFORE a byte reaches Telegram, so a retry cannot
+  // duplicate anything; everything that fails after `sendDocument` is entered
+  // may already have delivered the file, and must not ask for one.
+  let response: Awaited<ReturnType<typeof fetch>>;
   try {
-    const response = await fetch(downloadUrl);
-    if (!response.ok || response.body === null) {
-      logger.warn({ status: response.status, recordId }, 'Notify-backup-document: fetch failed');
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
+    response = await fetch(downloadUrl);
+  } catch (err: unknown) {
+    // `fetch` threw, so no HTTP exchange completed at all: DNS, refused
+    // connection, TLS, a socket reset on the docker hop. Nothing was uploaded
+    // and the cause is almost always momentary — rezeis mid-restart is the
+    // common one — which makes this the cheapest retry of the set, exactly the
+    // reading rezeis gives its own `failed` status for the mirror-image hop.
+    // A permanently wrong `REZEIS_ADMIN_URL` lands here too and will spend all
+    // three attempts; that cost is bounded, and a misconfigured backup relay is
+    // the failure an operator most needs to hear about loudly.
+    logger.warn(
+      { err, recordId },
+      'Notify-backup-document: download never reached rezeis — asking for a retry',
+    );
+    res.statusCode = RETRYABLE_RELAY_STATUS;
+    res.end();
+    return;
+  }
+  if (!response.ok) {
+    // rezeis answered, and its status says whether asking again can change the
+    // answer. 5xx/408/429 is rezeis having a bad moment (restarting, overloaded,
+    // shedding load) → retry. Any other status is rezeis refusing THIS request —
+    // a spent or forged download token, a record that no longer exists — and it
+    // will refuse an identical retry identically, so three attempts buy nothing
+    // but a delay on telling the operator. 204 → rezeis reads `unconfirmed`.
+    const retryable = isTransientDownloadStatus(response.status);
+    logger.warn(
+      { status: response.status, recordId, retryable },
+      'Notify-backup-document: rezeis refused the backup download',
+    );
+    res.statusCode = retryable ? RETRYABLE_RELAY_STATUS : 204;
+    res.end();
+    return;
+  }
+  if (response.body === null) {
+    // 2xx with no stream. Per the fetch spec a null body on a successful
+    // response means rezeis answered 204/205: it considers the request fine and
+    // has no bytes for us. Nothing was uploaded — but unlike the 5xx above this
+    // is SYSTEMATIC rather than a bad moment, and an identical retry earns an
+    // identically empty response. A retry is only worth its cost when it might
+    // change the answer, and here it cannot. 204.
+    logger.warn(
+      { status: response.status, recordId },
+      'Notify-backup-document: rezeis returned no file body',
+    );
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+  try {
     // Stream the file straight through to Telegram instead of buffering — a
     // 2 GB backup (Local Bot API Server) must never be held in memory.
     const stream = Readable.fromWeb(response.body as WebReadableStream<Uint8Array>);
@@ -873,7 +974,13 @@ async function handleNotifyBackupDocument(opts: {
     res.end(JSON.stringify({ messageId }));
   } catch (err: unknown) {
     logger.warn({ err, recordId }, 'Notify-backup-document: send failed');
-    // Soft-success: delivery is best-effort; don't make admin retry forever.
+    // POST-UPLOAD. `sendDocument` has been entered, so the bytes may already be
+    // in the operator's topic even though the call rejected — a mid-upload
+    // socket reset on a multi-gigabyte file surfaces right here, and so does a
+    // response that was lost after Telegram accepted the file. This branch must
+    // therefore stay on 204 (rezeis: `unconfirmed`, never retried) no matter how
+    // transient the error text looks: a missing off-site copy is alerted and
+    // visible, a silent second 2 GB upload is neither.
     res.statusCode = 204;
     res.end();
   }
