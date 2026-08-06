@@ -784,6 +784,8 @@ export const en: RuDict = {
     untilDate: 'until {{date}}',
     firstDevice: 'Device',
     noDevicesYet: 'No devices yet',
+    /** Device read failed — the card slot must not claim "No devices yet". */
+    devicesUnavailable: 'Unavailable',
     trafficUsed: 'Used',
     trafficUnlimited: 'Unlimited traffic',
     actions: {
@@ -811,6 +813,8 @@ export const en: RuDict = {
     regenerateConfirm:
       'The link will be regenerated and all devices on this subscription disconnected. Reconnect them with the new link. Continue?',
     regenerated: 'Link regenerated. Reconnect your devices.',
+    regeneratedNotCleared:
+      'New link created — the old one no longer works. Your devices could NOT be disconnected, so they still hold their slots: remove the ones you do not use, then connect with the new link.',
     allRevoked: 'All devices disconnected. Reconnect them.',
     revoked: 'Device revoked',
     error: 'Operation failed',
@@ -832,6 +836,12 @@ export const en: RuDict = {
     deleteConfirm: 'Remove this device?',
     deleted: 'Device removed',
     deleteError: 'Failed to remove device',
+    // Shown INSTEAD of the empty state when the device read failed. Must not
+    // read like "you have no devices" — it is our outage, not the customer's.
+    loadFailedTitle: 'Could not load your devices',
+    loadFailedBody:
+      'This is a temporary problem on our side, not a change to your devices. Your connected devices are unchanged — try again in a moment.',
+    countUnavailable: 'Device count unavailable',
   },
   subscriptionPicker: {
     traffic: 'Traffic',

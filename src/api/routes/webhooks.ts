@@ -155,7 +155,15 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
  *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
  *   - `reiwa.channel.broadcast.document` → POST bot `/notify-broadcast-document` { eventId, chatId, content, filename?, caption?, topicThreadId?, parseMode? }
+ *   - `reiwa.backup.document`   → POST bot `/notify-backup-document` { recordId, token, chatId, filename?, caption?, topicThreadId? }
  * Unknown event types are ack'd (204) so the admin dispatcher doesn't retry.
+ *
+ * Response contract: the two events whose delivery rezeis has to record —
+ * `reiwa.user.notify` and `reiwa.backup.document` — answer `200 { messageId }`,
+ * echoing Telegram's own id (or `null` when the bot could not prove a
+ * delivery). Every other event acks with a bodiless 204. rezeis treats a 2xx
+ * without a numeric `messageId` as "accepted but unconfirmed", never as
+ * delivered, so the id must not be dropped on those two paths.
  */
 export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
   const { config } = deps;
@@ -279,7 +287,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // the backup file from rezeis (docker hop) and uploads it to the
           // configured chat/topic. No bytes travel through this webhook.
           const parsed = parseRelayMetadata(z.object({ recordId: eventIdSchema, token: z.string().trim().min(1).max(2048), chatId: chatIdSchema, filename: filenameSchema.optional(), caption: captionSchema.optional(), topicThreadId: topicThreadIdSchema.optional() }), meta);
-          await relayToBot("/notify-backup-document", {
+          const relayed = await relayToBot("/notify-backup-document", {
             recordId: parsed.recordId,
             token: parsed.token,
             chatId: parsed.chatId,
@@ -287,7 +295,16 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.caption ? { caption: parsed.caption } : {}),
             ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
           });
-          break;
+          // Surface the Telegram message id back to admin — same shape as
+          // `reiwa.user.notify` above. A 2xx only proves this relay instruction
+          // was accepted; the bot fetches and uploads afterwards, so the id is
+          // the sole evidence the backup actually reached Telegram. Answering
+          // 204 here (no body, no id) makes rezeis record EVERY backup as not
+          // delivered, and it classifies that outcome as non-retryable.
+          // `messageId` is null when the bot could not prove a delivery — never
+          // a fabricated id.
+          res.status(200).json({ messageId: relayed.messageId });
+          return;
         }
         case "reiwa.platform.policy_invalidated": {
           // Drop the cached platform policy so the next gated request

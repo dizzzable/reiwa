@@ -332,8 +332,13 @@ export interface PlatformPolicy {
 }
 
 // ─── Devices (HWID) ───────────────────────────────────────────────────────
+//
+// Wire shape of `GET /api/v1/devices` and
+// `GET /api/v1/devices/subscription/:id`, which reiwa's BFF forwards verbatim
+// from rezeis-admin's `mapHwidDevice` projection. Keep this honest about what
+// the panel actually sends: a field typed as always-present that never arrives
+// is how `(data as any)?.devices` went unnoticed in the first place.
 export interface HwidDevice {
-  id: string;
   hwid: string;
   platform: string | null;
   osVersion: string | null;
@@ -341,10 +346,25 @@ export interface HwidDevice {
   userAgent: string | null;
   createdAt: string;
   lastSeenAt: string | null;
+  /**
+   * Not emitted by the panel projection — `mapHwidDevice` sends `deviceModel`.
+   * Optional (not removed) because the devices page still reads it first, and
+   * switching that page to `deviceModel` would change what a customer sees on
+   * a SUCCESSFUL read.
+   */
+  deviceName?: string | null;
+  /** Not emitted by the panel projection; rows are keyed by `hwid`. */
+  id?: string;
 }
 
 export interface DevicesResponse {
   devices: HwidDevice[];
+  /**
+   * Panel-reported device count. Defensive upstream (falls back to
+   * `devices.length`) and absent on older payloads, so treat it as optional
+   * and never as a substitute for the rows.
+   */
+  total?: number;
 }
 
 // ─── All subscriptions ───────────────────────────────────────────────────

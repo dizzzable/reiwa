@@ -11,6 +11,12 @@
  *                       devices for THIS subscription only (old links die).
  *
  * Revoke acts on a single device of this subscription.
+ *
+ * REGENERATION HAS TWO OUTCOMES, NOT ONE. Admin-side the wipe runs after the
+ * new link is rotated AND persisted, and is non-fatal, so
+ * `{ regenerated: true, devicesCleared: false }` is a successful response
+ * meaning "new link, old devices still bound". The confirm dialog promises
+ * both; the toast has to say which one the customer actually got.
  */
 
 import { useEffect, useState } from "react";
@@ -27,6 +33,7 @@ import {
   regenerateSubscriptionLink,
 } from "@/lib/api-client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LoadErrorCard } from "@/components/ui/load-error-card";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import {
   Dialog,
@@ -40,6 +47,15 @@ import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 interface DevicesListProps {
   devices: HwidDevice[];
   isLoading: boolean;
+  /**
+   * The device read failed. Renders the "could not load" card INSTEAD of the
+   * empty card — a customer must never read a panel outage as "no devices".
+   */
+  isError?: boolean;
+  /** A refetch is in flight; disables the retry button. */
+  isRefetching?: boolean;
+  /** Retry handler for the failure card (TanStack Query `refetch`). */
+  onRetry?: () => void;
   /** The subscription whose devices/link these actions operate on. */
   subscriptionId: string;
   /** Current connect URL for this subscription (used by the copy action). */
@@ -54,6 +70,9 @@ interface DevicesListProps {
 export function DevicesList({
   devices,
   isLoading,
+  isError = false,
+  isRefetching = false,
+  onRetry,
   subscriptionId,
   subscriptionUrl,
   deviceLimit,
@@ -87,10 +106,25 @@ export function DevicesList({
 
   const regenerateMutation = useMutation({
     mutationFn: () => regenerateSubscriptionLink(subscriptionId),
-    onSuccess: () => {
+    onSuccess: (result) => {
       // The link + device list both change — refresh subscriptions and devices.
       queryClient.invalidateQueries({ queryKey: ["devices", subscriptionId] });
       queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
+      // A rotation reports TWO outcomes, and the confirm dialog promised both:
+      // a new link AND the old devices disconnected. Admin-side the wipe is
+      // secondary and non-fatal — the link is rotated and stored before it
+      // runs — so `regenerated: true, devicesCleared: false` is a successful
+      // response in which half of what we promised did not happen. Telling
+      // that customer to "reconnect your devices" is wrong twice over: nothing
+      // was disconnected, and their slots are still occupied, so a reconnect
+      // can run straight into the device limit. Say which outcome they got.
+      // Absent (the BFF's `{ regenerated: true }` fallback) is not a reported
+      // failure and stays on the success path; only an explicit `false` warns.
+      if (result?.devicesCleared === false) {
+        toast.warning(t("devices.regeneratedNotCleared"), { duration: 8_000 });
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("warning");
+        return;
+      }
       toast.success(t("devices.regenerated"));
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
     },
@@ -161,7 +195,18 @@ export function DevicesList({
         </div>
       </div>
 
-      {devices.length === 0 ? (
+      {isError ? (
+        // Checked BEFORE `devices.length === 0` on purpose: a failed read has
+        // no rows either, and falling through to the empty card is exactly the
+        // "you have no devices" lie this branch exists to prevent.
+        <LoadErrorCard
+          title={t("devices.loadFailedTitle")}
+          body={t("devices.loadFailedBody")}
+          retryLabel={t("common.retry")}
+          pending={isRefetching}
+          onRetry={() => onRetry?.()}
+        />
+      ) : devices.length === 0 ? (
         <div className="rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-6 text-center">
           <Smartphone className="mx-auto h-8 w-8 text-[color:var(--brand-muted-foreground)] opacity-60" />
           <p className="mt-2 text-xs text-[color:var(--brand-muted-foreground)]">

@@ -38,13 +38,17 @@ function buildApp(): express.Express {
   return app;
 }
 
-async function post(app: express.Express, body: unknown, signature: string): Promise<number> {
+async function post(
+  app: express.Express,
+  body: unknown,
+  signature: string,
+): Promise<{ status: number; text: string }> {
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as { port: number };
   const raw = JSON.stringify(body);
   try {
-    return await new Promise<number>((resolve, reject) => {
+    return await new Promise<{ status: number; text: string }>((resolve, reject) => {
       const req = http.request(
         {
           host: '127.0.0.1',
@@ -58,8 +62,12 @@ async function post(app: express.Express, body: unknown, signature: string): Pro
           },
         },
         (res) => {
-          res.resume();
-          res.on('end', () => resolve(res.statusCode ?? 0));
+          let text = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => {
+            text += chunk;
+          });
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
         },
       );
       req.on('error', reject);
@@ -74,31 +82,47 @@ async function post(app: express.Express, body: unknown, signature: string): Pro
  * Post a `{ event, metadata }` webhook, capturing the payload the router
  * relays to the bot. Returns the HTTP status plus the relayed path + body so a
  * test can assert both that the webhook accepted the payload (not 400) and that
- * it forwarded the exact contract the bot expects.
+ * it forwarded the exact contract the bot expects. `response` is what the
+ * webhook itself answered with — the half rezeis reads back.
  */
 async function relay(
   event: string,
   metadata: Record<string, unknown>,
   botStatus = 204,
   botBody: unknown = null,
-): Promise<{ status: number; url: string | null; body: Record<string, unknown> | null }> {
+): Promise<{
+  status: number;
+  url: string | null;
+  body: Record<string, unknown> | null;
+  response: string;
+}> {
   const fetchMock = vi
     .spyOn(globalThis, 'fetch')
     .mockResolvedValue(new Response(botBody === null ? null : JSON.stringify(botBody), { status: botStatus }));
   try {
     const app = buildApp();
     const body = { event, metadata };
-    const status = await post(app, body, sign(JSON.stringify(body)));
+    const { status, text } = await post(app, body, sign(JSON.stringify(body)));
     const call = fetchMock.mock.calls[0] as [string, RequestInit] | undefined;
     return {
       status,
       url: call ? String(call[0]) : null,
       body: call ? (JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>) : null,
+      response: text,
     };
   } finally {
     fetchMock.mockRestore();
   }
 }
+
+const BACKUP_METADATA = {
+  recordId: 'ckbackup0001',
+  token: 'signed-download-token',
+  chatId: '-1001234567890',
+  topicThreadId: 42,
+  filename: 'reiwa-2026-08-06.sql.gz',
+  caption: '<b>Backup</b>',
+} as const;
 
 describe('Rezeis webhook relay', () => {
   afterEach(() => {
@@ -387,5 +411,77 @@ describe('Rezeis webhook relay', () => {
     expect(status).toBe(204);
     expect(body?.chatId).toBe('@my_channel');
     expect(body?.buttons).toEqual([{ text: 'Промо', webAppPath: '/promo?code=X' }]);
+  });
+
+  // ── backup relay: the message id is the delivery receipt ───────────────────
+  //
+  // A 2xx from this webhook only proves the relay INSTRUCTION was accepted —
+  // the bot fetches the file from rezeis and uploads it afterwards. Telegram's
+  // message id, echoed back through here, is the only evidence in the exchange
+  // that the backup actually left the machine. rezeis records a backup as
+  // delivered off-site strictly on a numeric `messageId` and classifies a 2xx
+  // without one as `unconfirmed` — a NON-retryable failure. So dropping the id
+  // here does not degrade gracefully: it marks every backup, on every cycle,
+  // as never delivered, and no retry can ever correct it.
+
+  it('echoes the Telegram message id for a delivered backup', async () => {
+    const { status, url, body, response } = await relay(
+      'reiwa.backup.document',
+      { ...BACKUP_METADATA },
+      200,
+      { messageId: 4242 },
+    );
+
+    expect(url).toBe('http://reiwa-bot:5100/notify-backup-document');
+    expect(body).toMatchObject({
+      recordId: 'ckbackup0001',
+      token: 'signed-download-token',
+      chatId: '-1001234567890',
+      topicThreadId: 42,
+      filename: 'reiwa-2026-08-06.sql.gz',
+      caption: '<b>Backup</b>',
+    });
+    // This pair IS rezeis's `confirmed` bar: 2xx + a numeric messageId in the
+    // body. Anything else there is recorded as an undelivered backup.
+    expect(status).toBe(200);
+    expect(JSON.parse(response)).toEqual({ messageId: 4242 });
+    expect(typeof (JSON.parse(response) as { messageId: unknown }).messageId).toBe('number');
+  });
+
+  it('reports no id — never a fake one — when the bot could not prove delivery', async () => {
+    // Bot answered 204: upload never happened, or happened unprovably (no bot
+    // token, download failed, sendDocument threw). Must NOT invent an id: that
+    // would stamp a backup that is only on the local disk as safely off-site,
+    // and retention prunes local copies it believes are duplicated.
+    const { status, response } = await relay('reiwa.backup.document', { ...BACKUP_METADATA }, 204);
+
+    expect(status).toBe(200);
+    expect(JSON.parse(response)).toEqual({ messageId: null });
+  });
+
+  it('still fails loudly when the bot relay itself fails', async () => {
+    // A bot 5xx is transient — rezeis must see a 502 and retry, not a 2xx that
+    // it would file as "accepted, unconfirmed" and never try again.
+    const { status, response } = await relay('reiwa.backup.document', { ...BACKUP_METADATA }, 503);
+
+    expect(status).toBe(502);
+    expect(response).not.toContain('messageId');
+  });
+
+  it('leaves the other relay kinds on their bodiless 204 ack', async () => {
+    // The backup case returns early; the shared fall-through must be untouched,
+    // including when the bot happens to answer 200 with a body.
+    const broadcast = await relay(
+      'reiwa.channel.broadcast.document',
+      { eventId: 'evt-11', chatId: '-1001234567890', content: 'report' },
+      200,
+      { messageId: 4242 },
+    );
+    expect(broadcast.status).toBe(204);
+    expect(broadcast.response).toBe('');
+
+    const invalidate = await relay('reiwa.bot.invalidate', { reason: 'test' });
+    expect(invalidate.status).toBe(204);
+    expect(invalidate.response).toBe('');
   });
 });

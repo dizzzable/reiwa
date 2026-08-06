@@ -13,6 +13,8 @@ import { getUserDevices, deleteUserDevice } from '@/lib/api-client'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
+import { LoadErrorCard } from '@/components/ui/load-error-card'
+import { resolveDevicesViewState } from '@/lib/devices-view-state'
 import { useSession } from '@/hooks/use-session'
 
 function platformIcon(platform: string | null) {
@@ -31,7 +33,9 @@ export default function DevicesPage() {
   const queryClient = useQueryClient()
   const { session } = useSession()
 
-  const { data, isLoading } = useQuery({
+  // `retry: false` is deliberate and stays: the panel behind this read is the
+  // thing that just failed, and the customer gets an explicit retry button.
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['devices'],
     queryFn: getUserDevices,
     retry: false,
@@ -47,8 +51,8 @@ export default function DevicesPage() {
     onError: () => toast.error(t('devices.deleteError')),
   })
 
-  const devices = (data as any)?.devices ?? []
-  const deviceCount = (data as any)?.deviceCount ?? 0
+  const { devices, showLoadError, showEmptyState, deviceCount } =
+    resolveDevicesViewState(data, isError)
 
   return (
     <div className="pb-8">
@@ -57,7 +61,13 @@ export default function DevicesPage() {
         <BackButton fallback="/dashboard" label={t('common.back')} />
         <div>
           <h1 className="text-lg font-semibold">{t('devices.pageTitle')}</h1>
-          <p className="text-xs text-muted-foreground">{t('devices.connectedCount', { count: deviceCount })}</p>
+          <p className="text-xs text-muted-foreground">
+            {/* `null` means the list is unknown — say so in words. Printing 0
+                here is the header half of the bug this page just fixed. */}
+            {deviceCount === null
+              ? t('devices.countUnavailable')
+              : t('devices.connectedCount', { count: deviceCount })}
+          </p>
         </div>
       </div>
 
@@ -66,21 +76,33 @@ export default function DevicesPage() {
           {t('devices.tip')}
         </TipCard>
 
+        {showLoadError && (
+          <LoadErrorCard
+            title={t('devices.loadFailedTitle')}
+            body={t('devices.loadFailedBody')}
+            retryLabel={t('common.retry')}
+            pending={isFetching}
+            onRetry={() => {
+              void refetch()
+            }}
+          />
+        )}
+
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
               <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
             ))}
           </div>
-        ) : !devices.length ? (
+        ) : showEmptyState ? (
           <div className="glass-card p-8 text-center">
             <Smartphone className="mx-auto mb-3 h-10 w-10 text-muted-foreground opacity-60" />
             <p className="text-sm text-muted-foreground">{t('devices.emptyTitle')}</p>
             <p className="mt-1 text-xs text-muted-foreground opacity-70">{t('devices.emptyHint')}</p>
           </div>
-        ) : (
+        ) : devices.length === 0 ? null : (
           <div className="space-y-3">
-            {devices.map((device: any, i: number) => (
+            {devices.map((device, i) => (
               <motion.div
                 key={device.hwid}
                 initial={{ opacity: 0, y: 8 }}

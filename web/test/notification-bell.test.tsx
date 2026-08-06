@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  defaultScheduler,
+  notifyManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { act, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -93,6 +98,18 @@ function notificationBellButton(): HTMLButtonElement {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // React Query defers every observer notification onto a real
+  // `setTimeout(…, 0)`, registered while the settled query/mutation promise
+  // drains its microtasks — i.e. AFTER the timer `settle()` has already
+  // registered for its own wakeup. Both are 0 ms, so they share a timer phase
+  // only while that drain stays inside one millisecond. Under full-suite load
+  // it does not, and the act scope wakes before the invalidated feed re-render
+  // lands — which is exactly what these assertions read (the mark-all button
+  // disappearing, and the optimistic state being rolled back on failure).
+  // Microtasks always drain ahead of timers, so scheduling notifications on
+  // them puts the re-render inside the open act scope regardless of the wall
+  // clock. Same fix, same reason, as `privacy-page-deep-link.test.tsx`.
+  notifyManager.setScheduler(queueMicrotask);
   upstreamUnreadCount = 1;
   upstreamReadAt = null;
   api.getUnreadCount.mockImplementation(async () => ({ count: upstreamUnreadCount }));
@@ -120,6 +137,7 @@ afterEach(() => {
   container?.remove();
   root = null;
   container = null;
+  notifyManager.setScheduler(defaultScheduler);
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });

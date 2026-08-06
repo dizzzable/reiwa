@@ -32,6 +32,7 @@ import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
 import { SubscriptionActions } from "./components/subscription-actions";
 import { DevicesList } from "./components/devices-list";
+import { resolveDevicesViewState } from "@/lib/devices-view-state";
 import { NotificationBell } from "./components/notification-bell";
 import { QuestsIcon } from "./components/quests-icon";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
@@ -205,19 +206,33 @@ export default function DashboardPage() {
   // The device list follows the currently selected subscription card.
   // Devices — scoped to the active subscription so switching cards swaps the
   // device list (each subscription has its own Remnawave profile).
-  const { data: devicesData, isLoading: devicesLoading } = useQuery({
+  // Retry policy is the app-wide default (`lib/query-client.ts`, `retry: 1`)
+  // — deliberately NOT raised here, so a panel that is already down is not
+  // hammered. The failure card below gives the customer an explicit retry.
+  const {
+    data: devicesData,
+    isLoading: devicesLoading,
+    isError: devicesFailed,
+    isFetching: devicesFetching,
+    refetch: refetchDevices,
+  } = useQuery({
     queryKey: ["devices", activeSubscriptionId],
     queryFn: () => getSubscriptionDevices(activeSubscriptionId as string),
     enabled: activeSubscriptionId !== null,
     staleTime: 30_000,
   });
 
-  const devices = devicesData?.devices ?? [];
+  const devicesView = resolveDevicesViewState(devicesData, devicesFailed);
+  const devices = devicesView.devices;
+  // The card face carries a device slot. On a failed read it must say so:
+  // `null` there renders `card.noDevicesYet`, which is the same "you have
+  // none" lie the list below used to tell, just smaller.
   const firstDeviceById: Record<string, string | null> =
     activeSubscriptionId !== null
       ? {
-          [activeSubscriptionId]:
-            devices.length > 0
+          [activeSubscriptionId]: devicesFailed
+            ? t("card.devicesUnavailable")
+            : devices.length > 0
               ? (devices[0]?.deviceModel ?? devices[0]?.platform ?? null)
               : null,
         }
@@ -380,6 +395,11 @@ export default function DashboardPage() {
               <DevicesList
                 devices={devices}
                 isLoading={devicesLoading}
+                isError={devicesFailed}
+                isRefetching={devicesFetching}
+                onRetry={() => {
+                  void refetchDevices();
+                }}
                 disabled={deleteGuardActive}
                 subscriptionId={activeSubscriptionId}
                 subscriptionUrl={activeSubscription?.url ?? null}

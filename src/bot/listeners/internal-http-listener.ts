@@ -418,13 +418,18 @@ function renderNotifyBody(
   return { text: rendered.text, parseMode, entities: undefined };
 }
 
-export function startInternalHttpListener(opts: ListenerOptions): void {
+/**
+ * Returns the bound `http.Server`, or `null` when the listener is disabled
+ * (no shared secret). Callers in production ignore it; tests need it to learn
+ * the ephemeral port (`port: 0`) and to close the socket afterwards.
+ */
+export function startInternalHttpListener(opts: ListenerOptions): http.Server | null {
   const { bot, cache, secret, port, logger, onUserBlocked, devId, rezeisAdminUrl, keyboardUrls } = opts;
   if (secret === null || secret.length === 0) {
     logger.info(
       'Internal HTTP listener disabled (REZEIS_INTERNAL_SHARED_SECRET unset)',
     );
-    return;
+    return null;
   }
 
   const server = http.createServer(async (req, res) => {
@@ -504,6 +509,7 @@ export function startInternalHttpListener(opts: ListenerOptions): void {
   server.on('error', (err) => {
     logger.error({ err, port }, 'Internal HTTP server error');
   });
+  return server;
 }
 
 /**
@@ -780,6 +786,11 @@ async function handleNotifyBroadcastDocument(opts: {
  * deployment where rezeis has no bot token: rezeis hands the bot a short-lived
  * token, the bot pulls the bytes over the docker hop and re-uploads them.
  * Best-effort.
+ *
+ * Answers `200 { messageId }` when — and only when — Telegram returned a
+ * message id for the upload; `204` for every outcome that did not prove a
+ * delivery (bot/admin URL unavailable, download failed, send failed). The id is
+ * what rezeis requires before it records the backup as delivered off-site.
  */
 async function handleNotifyBackupDocument(opts: {
   readonly bot: Bot<Context> | null;
@@ -836,12 +847,30 @@ async function handleNotifyBackupDocument(opts: {
     // 2 GB backup (Local Bot API Server) must never be held in memory.
     const stream = Readable.fromWeb(response.body as WebReadableStream<Uint8Array>);
     const document = new InputFile(stream, filename);
-    await bot.api.sendDocument(chatId, document, {
+    const sent = await bot.api.sendDocument(chatId, document, {
       ...(caption !== undefined ? { caption } : {}),
       ...(topicThreadId !== undefined ? { message_thread_id: topicThreadId } : {}),
     });
-    res.statusCode = 204;
-    res.end();
+    // Echo Telegram's own message id, exactly as `/notify` does below. It is
+    // the only evidence in this exchange that the bytes reached Telegram: a 2xx
+    // alone proves only that the relay instruction was accepted, since the
+    // fetch + upload happen after it. rezeis stamps a backup as delivered
+    // off-site ONLY on a numeric id, so a bare 204 here records every single
+    // backup as undelivered — forever, on every cycle.
+    const messageId = typeof sent.message_id === 'number' ? sent.message_id : null;
+    if (messageId === null) {
+      // Upload resolved but Telegram named no id. Never invent one, and never
+      // ask for a retry: the file is already up there, so a second attempt
+      // would put a second copy in the topic without changing the answer.
+      // 204 → rezeis reads `unconfirmed`, which it deliberately does not retry.
+      logger.warn({ recordId, chatId }, 'Notify-backup-document: sent without a message id');
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ messageId }));
   } catch (err: unknown) {
     logger.warn({ err, recordId }, 'Notify-backup-document: send failed');
     // Soft-success: delivery is best-effort; don't make admin retry forever.
