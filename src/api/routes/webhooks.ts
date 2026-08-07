@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 
 import type { ReiwaConfig } from "../../config.js";
+import { invalidateLegalDocumentsCache } from '../../infrastructure/admin-client/legal-documents-cache.js';
 import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
 import { resetBrandingCache } from "./branding.js";
 import { resetLandingCache } from "./landing.js";
@@ -311,6 +312,11 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // refetches the current accessMode immediately.  No relay
           // to the bot — the bot reads through the same cache.
           getPolicyCache((req.app.locals['adminClient'] ?? null) as AdminClient | null).invalidate();
+          // The panel fires this same webhook when a legal document is edited
+          // (reason `legal.<KEY>`), so the bot's copy is dropped here too —
+          // otherwise switching a document on would take up to a minute to
+          // change which link the rules screen offers.
+          invalidateLegalDocumentsCache();
           break;
         }
         case "reiwa.branding.invalidate": {

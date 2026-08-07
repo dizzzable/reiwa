@@ -8,6 +8,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { registerRulesPage } from '../../../src/bot/pages/rules.js';
+import { setLegalDocumentsCache } from '../../../src/infrastructure/admin-client/legal-documents-cache.js';
 import { setPolicyCache } from '../../../src/infrastructure/admin-client/policy-cache.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
 import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
@@ -15,6 +16,10 @@ import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
 describe('registerRulesPage', () => {
   beforeEach(() => {
     setPolicyCache(null);
+    // Both caches are process-wide singletons. Left bound, the first case's
+    // fake client answers every later one through a 60-second TTL — which is
+    // exactly what happened before this line existed.
+    setLegalDocumentsCache(null);
   });
 
   it('registers a single callback handler for the "rules" callback', () => {

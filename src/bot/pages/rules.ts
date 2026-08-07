@@ -21,6 +21,7 @@
  */
 import { InlineKeyboard } from 'grammy';
 
+import { getLegalDocumentsCache } from '../../infrastructure/admin-client/legal-documents-cache.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
 import { coerceLocale } from './coerce-locale.js';
@@ -59,13 +60,19 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
     //
     // `rulesLink` stays as the fallback for installs that have not filled the
     // documents in yet — removing it would blank a screen operators rely on.
-    // try/catch, not `.catch()`: an older admin-client may not carry the
-    // namespace at all, and a missing property throws synchronously before
-    // any promise exists. A rules screen that breaks because the documents
-    // endpoint is unreachable is worse than one that shows the legacy link.
+    // Through the cache, not straight to the panel. `AdminTransport` runs one
+    // 50-connection pool for everything the bot does, and an uncached call here
+    // has no timeout of its own — only the transport's 10s. While the panel is
+    // slow every tap on this screen parks a connection that checkout also needs.
+    // The cache mirrors `PolicyCache` read two lines above: TTL, single-flight,
+    // last-known-good, and it returns an empty list rather than throwing.
+    //
+    // try/catch around it anyway: an older admin-client may not carry the
+    // namespace at all, and a missing property throws synchronously before any
+    // promise exists.
     let activeDocuments: readonly { readonly key: string }[] = [];
     try {
-      activeDocuments = (await adminClient?.legalDocuments?.list(lang)) ?? [];
+      activeDocuments = adminClient ? await getLegalDocumentsCache(adminClient).get(lang) : [];
     } catch {
       activeDocuments = [];
     }
