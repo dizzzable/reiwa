@@ -618,6 +618,13 @@ export const en: RuDict = {
     passwordPlaceholder: 'At least 8 characters',
     submit: 'Register',
     submitting: 'Registering...',
+    legal: {
+      accept: 'I accept the',
+      retry: 'Try again',
+      required: 'The service terms have changed. Tick the boxes and try again.',
+      unavailable:
+        'Cannot load the terms right now. Registration requires accepting them — please try again in a moment.',
+    },
     hasAccount: 'Already have an account?',
     signIn: 'Sign in',
     disabled: 'Registration is temporarily unavailable. Please sign in to an existing account.',
@@ -1017,6 +1024,9 @@ export const en: RuDict = {
   privacy: {
     changePassword: 'Change password',
     changePasswordSub: 'Update your sign-in password',
+    legalDocuments: 'Terms and conditions',
+    legalDocumentsSub: 'The current wording — readable in full',
+    legalDocumentsEmpty: 'The operator has not published any documents.',
     linkTelegram: 'Link Telegram',
     linkTelegramSub: 'For quick sign-in via bot',
     linkEmail: 'Link Email',

@@ -12,7 +12,11 @@ import { createSessionMiddleware } from "../middleware/session.js";
 import { createAuthBruteForceDetection } from "../middleware/brute-force-detection.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { clearAdCodeCookie, readAdCodeCookie } from "../middleware/ad-capture.js";
-import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
+import {
+  describeUpstreamError,
+  isUpstreamStatus,
+  readUpstreamCode,
+} from "../lib/upstream-error.js";
 import type { AuthRequest } from "../middleware/session.js";
 
 /** Ceiling on the advertising attribution call made during registration. */
@@ -104,6 +108,18 @@ const registerSchema = z.object({
   referralCode: z.string().min(1).max(64).optional(),
   // Optional client-side UTM (server still stamps IP/UA/Referer from the request).
   utm: utmSchema,
+  /**
+   * Legal documents the applicant ticked on the form.
+   *
+   * Sent WITH the registration rather than confirmed after it: the panel
+   * refuses before writing a row, so a decline leaves nothing behind and there
+   * is no orphaned account to delete. The panel checks this again — the form
+   * can be bypassed by posting here directly.
+   */
+  acceptedLegalDocuments: z
+    .array(z.enum(["USER_AGREEMENT", "OFFER"]))
+    .max(2)
+    .optional(),
 });
 
 // Claim: mandatory first-entry onboarding for an authenticated Telegram-first
@@ -311,7 +327,8 @@ export function createAuthRouter(deps: {
         return;
       }
 
-      const { username, passwordHash, referralCode, utm } = parsed.data;
+      const { username, passwordHash, referralCode, utm, acceptedLegalDocuments } =
+        parsed.data;
 
       if (!adminClient) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
@@ -326,6 +343,7 @@ export function createAuthRouter(deps: {
       // Proxy to Rezeis_Admin
       const result = await adminClient.webAuth.register(username, passwordHash, {
         ...(referralCode ? { referralCode } : {}),
+        ...(acceptedLegalDocuments ? { acceptedLegalDocuments } : {}),
         registrationSnapshot: {
           channel: "web",
           ip,
@@ -362,7 +380,18 @@ export function createAuthRouter(deps: {
 
       // Handle specific error responses from Rezeis_Admin
       if (isUpstreamStatus(e, 403)) {
-        res.status(403).json({ message: "Registration is currently disabled" });
+        // Forward the panel's reason code. Registration is refused at 403 for
+        // several unrelated causes — access mode, a missing invite, missing
+        // consent to a legal document — and without the code every one of them
+        // reaches the visitor as "registration is disabled", which is wrong and
+        // unactionable whenever registration is in fact enabled. The prose stays
+        // generic; the code is what the SPA branches on.
+        const code = readUpstreamCode(e);
+        res.status(403).json(
+          code === null
+            ? { message: "Registration is currently disabled" }
+            : { code, message: "Registration is currently disabled" },
+        );
         return;
       }
       if (isUpstreamStatus(e, 409) || errMsg.toLowerCase().includes("username")) {

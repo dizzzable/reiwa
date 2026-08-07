@@ -20,6 +20,27 @@ export const getFaq = (locale?: string) =>
     })
     .then((r) => r.data.items ?? []);
 
+/**
+ * A legal document the operator switched on — plain text, already resolved to
+ * the requested locale upstream.
+ *
+ * `body` is NEVER markup. Render it with `white-space: pre-wrap` and nothing
+ * else: this type is reachable from the pre-login registration bundle, which
+ * deliberately ships without a sanitizer.
+ */
+export interface LegalDocument {
+  key: "USER_AGREEMENT" | "OFFER";
+  title: string;
+  body: string;
+}
+
+export const getLegalDocuments = (locale?: string) =>
+  apiClient
+    .get<{ documents: LegalDocument[] }>("/legal-documents", {
+      params: locale ? { locale } : undefined,
+    })
+    .then((r) => r.data.documents ?? []);
+
 export interface AddOnCheckoutResult {
   paymentId: string;
   checkoutUrl: string | null;

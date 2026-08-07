@@ -67,6 +67,45 @@ export function createContentRouter(deps: {
     }
   });
 
+  // GET /api/v1/legal-documents?locale=ru — the agreement / offer the operator
+  // enabled, as plain text.
+  //
+  // Public on purpose: the sign-up form has to render these before any account
+  // exists, so this is one of the few routes reachable without a session.
+  //
+  // Rides the FAQ channel — `no-store`, and NOT `/branding` or `/public-config`
+  // — for a reason that matters here more than it does for help articles.
+  // `/branding` lands in the service worker for up to 24 hours and
+  // `/public-config` sits behind four cache layers including a localStorage
+  // snapshot; either could show a visitor a document the operator has already
+  // rewritten, or keep offering one they switched off. A legal text is the last
+  // thing that should be served from a stale copy.
+  //
+  // An upstream outage returns 502 rather than an empty list. Empty would read
+  // as "the operator requires nothing", the form would drop its checkboxes, and
+  // the sign-up would then be refused by the panel with a mismatch nobody can
+  // see. Failing loudly keeps the two ends telling the same story.
+  router.get("/legal-documents", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const locale =
+        typeof req.query["locale"] === "string"
+          ? (req.query["locale"] as string)
+          : undefined;
+      const documents = await adminClient?.legalDocuments.list(locale);
+      res.json({ documents: documents ?? [] });
+    } catch (e: unknown) {
+      sendSafeError(
+        req,
+        res,
+        e,
+        502,
+        "Legal documents unavailable",
+        "legal-documents/list",
+      );
+    }
+  });
+
   // GET /api/v1/faq/media/:fileName - same-origin streaming proxy for FAQ
   // uploads stored by rezeis-admin. Browser video controls issue Range
   // requests while seeking, so the byte range and 206 metadata are preserved.

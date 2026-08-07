@@ -6,6 +6,7 @@
  * facade for old SPA bundles still in service-worker cache).
  */
 import type { AdminTransport } from '../transport.js';
+import type { LegalDocumentKey } from './legal-documents.js';
 
 export interface RegistrationSnapshotOptions {
   readonly channel?: string;
@@ -29,6 +30,12 @@ export interface WebAuthRegisterOptions {
   readonly referralCode?: string;
   /** Write-once network snapshot filled by the BFF (IP/UA/Referer/UTM). */
   readonly registrationSnapshot?: RegistrationSnapshotOptions;
+  /**
+   * Legal documents the applicant ticked. Travels with the registration
+   * itself so the panel can refuse BEFORE creating anything — there is no
+   * "created but not consented" state to clean up afterwards.
+   */
+  readonly acceptedLegalDocuments?: readonly LegalDocumentKey[];
 }
 
 export interface WebAuthRegisterResult {
@@ -86,6 +93,7 @@ export class WebAuthNamespace {
         telegramIdToLink: options?.telegramIdToLink,
         referralCode: options?.referralCode,
         registrationSnapshot: options?.registrationSnapshot,
+        acceptedLegalDocuments: options?.acceptedLegalDocuments,
       },
     );
   }

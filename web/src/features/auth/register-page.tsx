@@ -8,6 +8,9 @@ import { NetworkBg } from '@/components/ui/network-bg'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { registerUser, checkUsername, login } from '@/lib/api-client'
 import { useAccessMode } from '@/lib/use-access-mode'
+import { useLegalDocuments } from '@/lib/use-legal-documents'
+import { LegalDocumentDialog } from '@/components/legal-document-dialog'
+import type { LegalDocument } from '@/lib/api-client'
 import { ExternalAuthButtons } from './external-auth-buttons'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { AccessModeBanner } from '@/components/access-mode-banner'
@@ -116,6 +119,19 @@ export default function RegisterPage() {
   // Submission state
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+
+  // Legal consent. `failed` is NOT the same as "no documents": an outage
+  // leaves the list empty, and treating that as "nothing to accept" would let
+  // the form submit a registration the panel then refuses for missing consent
+  // — a rejection with no visible cause. So a failure blocks the button and
+  // says why, rather than quietly dropping the requirement.
+  const legalDocuments = useLegalDocuments()
+  const [acceptedDocuments, setAcceptedDocuments] = useState<Array<LegalDocument['key']>>([])
+  const [openDocument, setOpenDocument] = useState<LegalDocument | null>(null)
+  const allDocumentsAccepted =
+    !legalDocuments.failed &&
+    !legalDocuments.isLoading &&
+    legalDocuments.documents.every((document) => acceptedDocuments.includes(document.key))
 
   // Debounce timer for username check
   const usernameCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -230,6 +246,7 @@ export default function RegisterPage() {
         false,
         effectiveReferral,
         utmRef.current ?? undefined,
+        acceptedDocuments,
       )
 
       // Registration succeeded — backend confirmed both Web_Account and User creation
@@ -257,6 +274,13 @@ export default function RegisterPage() {
           setUsernameUnavailable(true)
           unavailableUsernamesRef.current.add(username)
           setServerError(t('register.errorUsernameTaken'))
+        } else if (code === 'LEGAL_CONSENT_REQUIRED') {
+          // The operator switched a document on while this form was open. The
+          // hook does not poll, so the checkbox for it was never rendered and
+          // the visitor could not have ticked it. Refetch so it appears, and
+          // say what to do — "registration is disabled" would be a lie here.
+          void queryClient.invalidateQueries({ queryKey: ['legal-documents'] })
+          setServerError(t('register.legal.required'))
         } else if (status === 403) {
           setServerError(t('register.errorDisabled'))
         } else if (status === 429) {
@@ -467,6 +491,63 @@ export default function RegisterPage() {
               </div>
             </div>
 
+
+            {/* Legal consent.
+                Rendered only for documents the operator switched on, and the
+                submit button below stays disabled until every one is ticked.
+                The panel repeats this check — the form can be bypassed by
+                posting to the endpoint directly — so this is the courteous
+                layer, not the enforcing one. */}
+            {legalDocuments.failed ? (
+              <div
+                className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400"
+                role="alert"
+              >
+                <p>{t('register.legal.unavailable')}</p>
+                <button
+                  type="button"
+                  className="mt-2 underline underline-offset-2"
+                  onClick={() => legalDocuments.retry()}
+                >
+                  {t('register.legal.retry')}
+                </button>
+              </div>
+            ) : (
+              legalDocuments.documents.length > 0 && (
+                <div className="space-y-2">
+                  {legalDocuments.documents.map((document) => (
+                    <label
+                      key={document.key}
+                      className="flex cursor-pointer items-start gap-2.5 text-xs text-(--tg-hint)"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-(--brand-primary)"
+                        checked={acceptedDocuments.includes(document.key)}
+                        onChange={(event) =>
+                          setAcceptedDocuments((prev) =>
+                            event.target.checked
+                              ? [...prev, document.key]
+                              : prev.filter((key) => key !== document.key),
+                          )
+                        }
+                      />
+                      <span>
+                        {t('register.legal.accept')}{' '}
+                        <button
+                          type="button"
+                          className="underline underline-offset-2 hover:text-(--brand-primary)"
+                          onClick={() => setOpenDocument(document)}
+                        >
+                          {document.title}
+                        </button>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )
+            )}
+
             {/* Server error */}
             {serverError && (
               <motion.div
@@ -482,7 +563,15 @@ export default function RegisterPage() {
             {/* Submit button */}
             <button
               type="submit"
-              disabled={submitting || !!usernameError || !!passwordError || usernameUnavailable || !username || !password}
+              disabled={
+                submitting ||
+                !!usernameError ||
+                !!passwordError ||
+                usernameUnavailable ||
+                !username ||
+                !password ||
+                !allDocumentsAccepted
+              }
               className="w-full flex items-center justify-center gap-2 rounded-xl bg-(--brand-primary) py-3.5 text-sm font-semibold text-(--brand-primary-fg) transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
             >
               {submitting ? (
@@ -496,6 +585,10 @@ export default function RegisterPage() {
             </button>
           </motion.form>
         )}
+
+        {/* Reader for the document behind a consent checkbox. Mounted outside the
+            form so opening it never submits anything. */}
+        <LegalDocumentDialog document={openDocument} onClose={() => setOpenDocument(null)} />
 
         {/* External sign-in / registration (renders nothing when disabled) */}
         <motion.div

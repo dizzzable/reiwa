@@ -65,6 +65,59 @@ describe('registerRulesPage', () => {
     expect(kb.inline_keyboard[0][0].url).toBe('https://rules.example/legal');
   });
 
+  /**
+   * The operator's documents outrank the legacy external link.
+   *
+   * Both are "the rules" to a reader, and a bot that points somewhere other
+   * than the sign-up form did is how the two quietly drift apart. A link and
+   * not the text itself because a document caps at 40 000 characters while a
+   * Telegram message caps at ~4096 — paginating a legal text across messages
+   * is worse than one button to a page that scrolls.
+   */
+  it('sends the reader to the cabinet documents page once a document is enabled', async () => {
+    const adminClient = ({
+      system: {
+        getPlatformPolicy: vi.fn().mockResolvedValue({ rulesLink: 'https://old.example/legal' }),
+      },
+      legalDocuments: {
+        list: vi.fn().mockResolvedValue([{ key: 'USER_AGREEMENT', title: 'A', body: 'B' }]),
+      },
+    } as unknown) as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: 'https://reiwa.example/',
+    });
+    registerRulesPage(bot as unknown as Parameters<typeof registerRulesPage>[0], deps);
+    const ctx = buildFakeCtx();
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    const [, opts] = ctx.editMessageText.mock.calls[0];
+    const kb = (opts as { reply_markup: { inline_keyboard: Array<Array<{ url?: string }>> } })
+      .reply_markup;
+    expect(kb.inline_keyboard[0][0].url).toBe('https://reiwa.example/legal');
+  });
+
+  it('keeps the legacy link while no document has been published', async () => {
+    const adminClient = ({
+      system: {
+        getPlatformPolicy: vi.fn().mockResolvedValue({ rulesLink: 'https://old.example/legal' }),
+      },
+      legalDocuments: { list: vi.fn().mockResolvedValue([]) },
+    } as unknown) as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: 'https://reiwa.example',
+    });
+    registerRulesPage(bot as unknown as Parameters<typeof registerRulesPage>[0], deps);
+    const ctx = buildFakeCtx();
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    const [, opts] = ctx.editMessageText.mock.calls[0];
+    const kb = (opts as { reply_markup: { inline_keyboard: Array<Array<{ url?: string }>> } })
+      .reply_markup;
+    expect(kb.inline_keyboard[0][0].url).toBe('https://old.example/legal');
+  });
+
   it('falls back to rules.unavailable when getPlatformPolicy throws', async () => {
     const adminClient = ({
       system: { getPlatformPolicy: vi.fn().mockRejectedValue(new Error('boom')) },

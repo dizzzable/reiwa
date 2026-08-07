@@ -5,7 +5,10 @@
  * Pure HTTP + DTO shaping; no React state. Components consume via
  * React Query.
  */
+import type { LegalDocument } from "./content.js";
 import { apiClient } from "./transport.js";
+
+export type LegalDocumentKey = LegalDocument["key"];
 
 export interface LoginRequest {
   username: string;
@@ -111,6 +114,12 @@ export const registerUser = (
   checkOnly?: boolean,
   referralCode?: string,
   utm?: RegisterUtm,
+  /**
+   * Legal documents the applicant ticked. Travels WITH the registration, not
+   * after it: the panel refuses before creating anything, so a decline leaves
+   * no account to delete and no half-registered state to clean up.
+   */
+  acceptedLegalDocuments?: readonly LegalDocumentKey[],
 ) =>
   apiClient
     .post<RegisterResponse>("/auth/register", {
@@ -119,6 +128,9 @@ export const registerUser = (
       ...(checkOnly ? { checkOnly: true } : {}),
       ...(referralCode ? { referralCode } : {}),
       ...(utm ? { utm } : {}),
+      ...(acceptedLegalDocuments && acceptedLegalDocuments.length > 0
+        ? { acceptedLegalDocuments }
+        : {}),
     })
     .then((r) => r.data);
 

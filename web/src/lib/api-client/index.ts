@@ -230,12 +230,14 @@ export {
 // Content (FAQ + add-ons)
 export {
   getFaq,
+  getLegalDocuments,
   getSubscriptionAddOns,
   purchaseAddOn,
   type AddOnCheckoutResult,
   type AddOnEligibilityResult,
   type EligibleAddOn,
   type FaqItem,
+  type LegalDocument,
 } from "./content.js";
 
 // Advertising (click ingest + partner self-service)

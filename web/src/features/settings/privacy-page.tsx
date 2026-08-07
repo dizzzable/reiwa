@@ -14,7 +14,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
-import { Check, Copy, Key, Mail, Send } from "lucide-react";
+import { Check, Copy, FileText, Key, Mail, Send } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -32,6 +32,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LegalDocumentDialog } from "@/components/legal-document-dialog";
+import { useLegalDocuments } from "@/lib/use-legal-documents";
+import type { LegalDocument } from "@/lib/api-client";
 
 export default function PrivacyPage() {
   const { t } = useTranslation();
@@ -39,6 +42,12 @@ export default function PrivacyPage() {
   const { emailEnabled, isLoading: brandingLoading } = useBranding();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeSheet, setActiveSheet] = useState<"password" | "telegram" | "email" | null>(null);
+
+  // The documents an operator published. Listed here so a user can read what
+  // they accepted at sign-up at any time — the consent screen is a moment, the
+  // documents are permanent.
+  const legalDocuments = useLegalDocuments();
+  const [openDocument, setOpenDocument] = useState<LegalDocument | null>(null);
 
   const telegramLinked = Boolean(session?.telegramId);
   const emailVerified = Boolean(session?.webAccount?.emailVerifiedAt);
@@ -87,6 +96,24 @@ export default function PrivacyPage() {
           linked={telegramLinked}
           onClick={() => setActiveSheet("telegram")}
         />
+        {/* An outage empties the list, and an empty list is indistinguishable
+            from "the operator published nothing" — so say which it is. The
+            public /legal page does the same. */}
+        {legalDocuments.failed && (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
+            {t("register.legal.unavailable")}
+          </p>
+        )}
+        {legalDocuments.documents.map((document) => (
+          <PrivacyItem
+            key={document.key}
+            icon={<FileText className="h-5 w-5" />}
+            iconBg="bg-slate-500/10 text-slate-400"
+            label={document.title}
+            sublabel={t("privacy.legalDocumentsSub")}
+            onClick={() => setOpenDocument(document)}
+          />
+        ))}
         {emailEnabled && (
           <PrivacyItem
             icon={<Mail className="h-5 w-5" />}
@@ -102,6 +129,8 @@ export default function PrivacyPage() {
           />
         )}
       </div>
+
+      <LegalDocumentDialog document={openDocument} onClose={() => setOpenDocument(null)} />
 
       {/* Change Password Dialog */}
       <Dialog open={activeSheet === "password"} onOpenChange={(open) => !open && setActiveSheet(null)}>

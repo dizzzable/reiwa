@@ -48,7 +48,33 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
     const policy = adminClient
       ? await getPolicyCache(adminClient).get().catch(() => null)
       : null;
-    const link = (policy?.rulesLink ?? '').trim();
+    // The operator's documents win over the legacy external link. Both are
+    // "the rules" from a user's point of view, and having the bot point
+    // somewhere else than the sign-up form did is how the two quietly diverge.
+    //
+    // Why a LINK and not the text itself: a document is capped at 40 000
+    // characters and a Telegram message at ~4096. Paginating a legal text
+    // across messages is worse than one button to a page that scrolls, so the
+    // bot sends the reader to the cabinet's public `/legal` page.
+    //
+    // `rulesLink` stays as the fallback for installs that have not filled the
+    // documents in yet — removing it would blank a screen operators rely on.
+    // try/catch, not `.catch()`: an older admin-client may not carry the
+    // namespace at all, and a missing property throws synchronously before
+    // any promise exists. A rules screen that breaks because the documents
+    // endpoint is unreachable is worse than one that shows the legacy link.
+    let activeDocuments: readonly { readonly key: string }[] = [];
+    try {
+      activeDocuments = (await adminClient?.legalDocuments?.list(lang)) ?? [];
+    } catch {
+      activeDocuments = [];
+    }
+    const publicWebUrl = (urls.publicWebUrl ?? '').trim();
+    const documentsLink =
+      activeDocuments.length > 0 && publicWebUrl.length > 0
+        ? `${publicWebUrl.replace(/\/+$/, '')}/legal`
+        : '';
+    const link = documentsLink || (policy?.rulesLink ?? '').trim();
 
     // Resolve text — operator override wins, otherwise i18n default.
     const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);

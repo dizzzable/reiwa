@@ -48,6 +48,7 @@ const TmaBootstrapPage = lazy(() => import("@/features/auth/tma-bootstrap-page")
 const LandingPage = lazy(() => import("@/features/landing/landing-page"));
 
 const RegisterPage = lazy(() => import("@/features/auth/register-page"));
+const LegalPage = lazy(() => import("@/features/legal/legal-page"));
 const RecoverPage = lazy(() => import("@/features/auth/recover-page"));
 const SignInPage = lazy(() => import("@/features/auth/sign-in-page"));
 const ChangePasswordPage = lazy(() => import("@/features/auth/change-password-page"));
@@ -121,6 +122,9 @@ export default function App() {
         <Route path="/finish-setup" element={<FinishSetupPage />} />
         <Route path="/payment-return" element={<PaymentReturn />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
+        {/* Public reader for the operator's legal documents — the bot links
+            here, and the sign-up form needs it before an account exists. */}
+        <Route path="/legal" element={<LegalPage />} />
         {/* Public anonymous support — no login required. */}
         <Route path="/support/guest" element={<GuestSupportPage />} />
 
