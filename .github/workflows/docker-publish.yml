@@ -9,6 +9,8 @@ on:
 permissions:
   contents: read
   packages: write
+  # Required so the Trivy SARIF can be uploaded to GitHub code scanning.
+  security-events: write
 
 env:
   REGISTRY: ghcr.io
@@ -60,11 +62,15 @@ jobs:
 
       # Single unified image: API + bot + worker + SPA (served by the API).
       - name: Build & push
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
           push: true
+          # Single-manifest image (no provenance index) so Trivy can scan
+          # the pushed image by its digest below.
+          provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -73,3 +79,27 @@ jobs:
             REIWA_GIT_BRANCH=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Without this step the reiwa image was never scanned at all: the
+      # Security tab reported "no analysis found", so a HIGH shipping in
+      # node_modules stayed invisible while the identically-built rezeis
+      # image had five alerts open. Mirrors rezeis/.github/workflows/
+      # docker-publish.yml — the two must be changed together.
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          # Scan the exact pushed image by digest (always exists; avoids the
+          # tag-mismatch that left no SARIF file).
+          image-ref: ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}@${{ steps.build.outputs.digest }}
+          severity: 'CRITICAL,HIGH'
+          # Report-only: the image is already published before this step, so
+          # failing here would not un-publish it. Findings are surfaced in the
+          # repository Security tab via the SARIF upload below.
+          exit-code: '0'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results.sarif'
