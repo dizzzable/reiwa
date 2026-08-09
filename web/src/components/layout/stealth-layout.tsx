@@ -31,16 +31,44 @@ import { useUserRealtime } from "@/hooks/use-user-realtime";
 import { reportSurface } from "@/lib/api-client";
 import { getPlatformPolicy } from "@/lib/api-client";
 import { ensurePushSubscription } from "@/lib/push";
+import { nextDestinationQuery } from "@/lib/next-destination";
+import { readTelegramLaunchInitData } from "@/lib/telegram-launch-params";
 
 type Surface = "tma" | "pwa" | "browser";
 type FormFactor = "mobile" | "tablet" | "desktop";
 type Os = "ios" | "android" | "windows" | "macos" | "linux" | "other";
 
-/** True when running inside a Telegram Mini App (validated initData present). */
+/**
+ * True when running inside a Telegram Mini App (launch `initData` present).
+ *
+ * Read off the launch parameters, NOT out of the bridge. `initData` IS
+ * `tgWebAppData`: Telegram writes it into the launch document's URL from the
+ * first byte, and `readTelegramLaunchInitData()` also restores it from the
+ * in-memory capture and the SDK's session mirror — which this call NEEDS,
+ * because every cabinet route is reached by a react-router navigation and that
+ * drops the fragment.
+ *
+ * The bridge cannot be the source here. `window.Telegram` exists only after
+ * ~100 KB has been fetched from `telegram.org/js/telegram-web-app.js`, and this
+ * product sells VPN: the customer who taps the bot's button has no VPN yet, so
+ * telegram.org is precisely the host their network blocks. Asking the bridge
+ * recorded every one of those genuine Mini App launches as `browser` (or
+ * `pwa`) — the usage analytics labelled the exact population hurt by the launch
+ * defects as web visitors, which is a large part of why nobody spotted them.
+ * A detector that is wrong only on the broken networks reports the product as
+ * healthy precisely when it is not.
+ *
+ * `c087865` removed this pattern from the entry routes and `claim-page.tsx`
+ * followed; this file was missed both times. It is the same rule as
+ * `telegram-launch.ts`: URL and mirror first, bridge only as the fallback for
+ * a launch shape the URL never carried (an embedder that hands the payload
+ * straight to the bridge).
+ */
 function detectTma(): boolean {
   if (typeof window === "undefined") return false;
-  const tg = (window as { Telegram?: { WebApp?: { initData?: string } } }).Telegram;
-  return typeof tg?.WebApp?.initData === "string" && tg.WebApp.initData.length > 0;
+  if (readTelegramLaunchInitData() !== null) return true;
+  const initData = window.Telegram?.WebApp?.initData;
+  return typeof initData === "string" && initData.length > 0;
 }
 
 /** Detect the host OS from the UA for usage analytics. */
@@ -87,9 +115,17 @@ export default function StealthLayout() {
   const isStandalone = isStandalonePwa();
 
   // Whether the operator requires Telegram users to set a web login/password
-  // before entering the cabinet. Default true (enforce) — while the policy
-  // query is loading or unavailable we keep the mandatory flow so we never
-  // accidentally let an un-credentialed first-timer skip it.
+  // before entering the cabinet.
+  //
+  // While this query is loading or unavailable the flag reads as FALSE — see
+  // `?? false` below — so a Telegram-authenticated user is let straight into
+  // the cabinet rather than held at the claim screen. That is deliberate
+  // (`c1072d2` flipped it from `?? true`): a signed Mini App launch already is
+  // a credential, and the failure it avoids is stranding a Telegram-first user
+  // on a form they cannot complete. Note the consequence, which is the reason
+  // this comment is explicit: `/platform-policy` answers `{}` on any upstream
+  // error (`src/api/routes/profile.ts`), and `{}` is indistinguishable here
+  // from an operator who deliberately turned the gate off.
   const { data: platformPolicy } = useQuery({
     queryKey: ["platform-policy"],
     queryFn: getPlatformPolicy,
@@ -161,16 +197,23 @@ export default function StealthLayout() {
     );
   }
 
+  // Preserve the intended destination across the bootstrap/auth handshake AND
+  // across the credential gates below, so a Mini App deep-link (e.g. the expiry
+  // notification's "Продлить" button → `${miniAppUrl}/renew`) lands the user on
+  // the right page instead of dumping them on /dashboard.
+  //
+  // The gates are the half this used to miss. A first-time Telegram user taps
+  // «Продлить», authenticates, is sent to /claim to pick a login — and /claim
+  // finished on /dashboard, because the `next` built here was handed to
+  // /bootstrap and to nothing else. `/renew` was reachable only if they went
+  // looking for it.
+  const intended = `${location.pathname}${location.search}`;
+  const next =
+    location.pathname !== "/" && location.pathname !== "/dashboard"
+      ? nextDestinationQuery(intended)
+      : "";
+
   if (!session) {
-    // Preserve the intended destination across the bootstrap/auth handshake so
-    // a Mini App deep-link (e.g. the expiry notification's "Продлить" button →
-    // `${miniAppUrl}/renew`) lands the user on the right page after auth instead
-    // of dumping them on /dashboard.
-    const intended = `${location.pathname}${location.search}`;
-    const next =
-      location.pathname !== "/" && location.pathname !== "/dashboard"
-        ? `?next=${encodeURIComponent(intended)}`
-        : "";
     return <Navigate to={`/bootstrap${next}`} replace />;
   }
 
@@ -189,21 +232,21 @@ export default function StealthLayout() {
   // gate on an explicit `null` — an absent/`undefined` field means the probe
   // degraded and we must not lock out an already-claimed user.
   if (session.webAccount === null && !skipCredentialSetup) {
-    return <Navigate to="/claim" replace />;
+    return <Navigate to={`/claim${next}`} replace />;
   }
 
   // External-auth registration gate: a user who signed up via a social provider
   // has a shell `WebAccount` (email attached) but no `login` yet. Login +
   // password stay mandatory, so force finish-setup before any cabinet route.
   if (session.webAccount && !session.webAccount.login && !skipCredentialSetup) {
-    return <Navigate to="/finish-setup" replace />;
+    return <Navigate to={`/finish-setup${next}`} replace />;
   }
 
   // Temp-password users (admin-issued reset) must set a new password before
   // they can use anything. The session carries the flag from the WebAccount;
   // block every protected route until it's cleared.
   if (session.webAccount?.requiresPasswordChange) {
-    return <Navigate to="/change-password" replace />;
+    return <Navigate to={`/change-password${next}`} replace />;
   }
 
   if (isDesktop) {

@@ -8,11 +8,7 @@ import { NetworkBg } from '@/components/ui/network-bg'
 import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { useBranding } from '@/lib/branding-provider'
 import { botSignin, getLanding } from '@/lib/api-client'
-import {
-  SESSION_QUERY_KEY,
-  SESSION_STALE_TIME_MS,
-  fetchSessionOrNull,
-} from '@/hooks/use-session'
+import { SESSION_QUERY_KEY, fetchSessionOrNull } from '@/hooks/use-session'
 import { LANDING_QUERY_KEY } from '@/features/landing/landing-page'
 import { parseLandingPayload } from '@/features/landing/landing-schema'
 import { detectTelegramInitData } from './telegram-launch'
@@ -156,11 +152,22 @@ export default function WebHomePage() {
       // fired on this same mount (`use-ad-attribution`) instead of issuing a
       // second concurrent `/api/v1/session`. `fetchQuery` also caches the
       // result, which is what the old `setQueryData` did by hand.
+      //
+      // `staleTime: 0` deliberately, NOT the shared `SESSION_STALE_TIME_MS`.
+      // The dedup this step exists for is the CONCURRENT one, and React Query
+      // gives that regardless of staleness: a fetch already in flight under this
+      // key is joined, not duplicated. What a non-zero staleTime would add is
+      // reuse of a result that already RESOLVED — and `fetchSessionOrNull`
+      // converts a network failure into a successful `null`, so a root probe
+      // that failed would be served to this decision as a confident "no
+      // session" for a full minute, sending a signed-in visitor to /sign-in.
+      // The cost of 0 is one extra round-trip when the root probe happened to
+      // land first; the cost of 60_000 is routing on a swallowed error.
       try {
         const session = await queryClient.fetchQuery({
           queryKey: SESSION_QUERY_KEY,
           queryFn: fetchSessionOrNull,
-          staleTime: SESSION_STALE_TIME_MS,
+          staleTime: 0,
           retry: false,
         })
         if (session) {

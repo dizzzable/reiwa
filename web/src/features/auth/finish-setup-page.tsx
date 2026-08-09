@@ -9,6 +9,7 @@ import { BrandLogo } from '@/components/ui/brand-logo'
 import { SESSION_QUERY_KEY, useSession } from '@/hooks/use-session'
 import { finishExternalSetup, signOut } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
+import { nextDestinationQuery, readNextDestination } from '@/lib/next-destination'
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,32}$/
 
@@ -51,15 +52,20 @@ export default function FinishSetupPage() {
   const [cancelling, setCancelling] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
 
-  // No session → back through the entry router.
+  // Where the user was going before this gate stopped them. StealthLayout
+  // forwards it here (`/finish-setup?next=%2Frenew`); dropping it would land a
+  // deep-linked user on /dashboard with the link already spent.
+  const nextDestination = readNextDestination()
+
+  // No session → back through the entry router, destination still attached.
   if (!isLoading && !isAuthenticated) {
-    navigate('/bootstrap', { replace: true })
+    navigate(`/bootstrap${nextDestinationQuery(nextDestination)}`, { replace: true })
     return null
   }
 
   // Already has credentials → never show this again.
   if (!isLoading && session?.webAccount?.login) {
-    navigate('/dashboard', { replace: true })
+    navigate(nextDestination ?? '/dashboard', { replace: true })
     return null
   }
 
@@ -105,7 +111,7 @@ export default function FinishSetupPage() {
       const passwordHash = await hashPassword(password)
       await finishExternalSetup({ username, passwordHash })
       await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
-      navigate('/dashboard', { replace: true })
+      navigate(nextDestination ?? '/dashboard', { replace: true })
     } catch (err: unknown) {
       setSubmitting(false)
       if (err && typeof err === 'object' && 'response' in err) {

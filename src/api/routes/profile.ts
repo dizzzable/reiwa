@@ -5,7 +5,9 @@ import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware, createOptionalSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity, hasUserIdentity } from "../middleware/user-identity.js";
+import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { describeUpstreamError } from "../lib/upstream-error.js";
 import { invalidateStaleUserSession } from "../lib/stale-user-session.js";
 
 export function createProfileRouter(deps: {
@@ -108,8 +110,18 @@ export function createProfileRouter(deps: {
     if (surface === "pwa") {
       try {
         await req.markSessionStandalone(os);
-      } catch {
-        // Session upgrade is best-effort — fall through to persist + ack.
+      } catch (err: unknown) {
+        // Best-effort — fall through to persist + ack, because failing the
+        // request would cost the user the cabinet over a session-window
+        // upgrade. But this one is not analytics: silently not upgrading is
+        // experienced as being logged out of an installed PWA days early, for
+        // no reason the user or we can see. Log it for the same reason as the
+        // persist below — an outage here is otherwise indistinguishable from
+        // normal operation.
+        getRequestLogger(req).warn(
+          { err: describeUpstreamError(err).message, os },
+          "surface/seen: standalone session upgrade failed",
+        );
       }
     }
     try {
@@ -118,8 +130,28 @@ export function createProfileRouter(deps: {
         formFactor,
         os,
       });
-    } catch {
-      // Best-effort analytics persist — the cabinet must never break on this.
+    } catch (err: unknown) {
+      // The cabinet must never break on this, so the response stays a 200 —
+      // that half of the original comment is right. What was wrong was
+      // discarding the error: a TOTAL loss of usage analytics then looks
+      // exactly like normal operation.
+      //
+      // And this endpoint fails all-or-nothing. rezeis-admin validates the body
+      // with a global `ValidationPipe({ whitelist: true,
+      // forbidNonWhitelisted: true })` against a closed-allowlist DTO
+      // (`internal-surface-seen.dto.ts`), so an undeclared field is a hard 400,
+      // not a silent strip — shipping a new field from here before the admin
+      // DTO accepts it stops `surface`, `formFactor` AND `os` together. Getting
+      // that deploy order wrong must not be invisible.
+      //
+      // `describeUpstreamError` yields the typed upstream body or the plain
+      // message; the request logger's redaction (`infrastructure/logger`)
+      // covers headers and credential fields, and nothing here stringifies the
+      // request, so neither is defeated.
+      getRequestLogger(req).warn(
+        { err: describeUpstreamError(err).message, surface, formFactor, os },
+        "surface/seen: usage analytics persist failed",
+      );
     }
     res.json({ ok: true });
   });

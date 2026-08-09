@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 import { recordAdClick } from '@/lib/api-client'
 import { useSession } from '@/hooks/use-session'
 import { useTelegramWebApp } from '@/hooks/use-telegram-webapp'
+import { readTelegramLaunchStartParam } from '@/lib/telegram-launch-params'
 
 /** Extracts an `ad_<code>` campaign code from a raw start/campaign param. */
 function parseAdCode(raw: string | null | undefined): string | null {
@@ -155,10 +156,24 @@ export function useAdAttribution(): void {
   const { session, isAuthenticated } = useSession()
   const inFlightRef = useRef(false)
 
+  // The launch's own `start_param`, from the URL Telegram opened (or the
+  // capture/mirror of it) rather than out of the bridge.
+  //
+  // The bridge is `window.Telegram`, which exists only after ~100 KB has been
+  // fetched from telegram.org — and this product sells VPN, so the customer who
+  // tapped a campaign's `t.me/…?startapp=ad_x` link has no VPN yet and that is
+  // exactly the host their network blocks. Every such placement recorded
+  // nothing: the bridge never arrived, and the `?startapp=` / `?campaign=`
+  // fallback below cannot cover it because Telegram puts the start parameter in
+  // `tgWebAppStartParam`, never in the query. Read once per mount — the launch
+  // is a property of the document, not of a render.
+  const launchStartParam = useMemo(() => readTelegramLaunchStartParam(), [])
+
   // Capture — no session gate, so the code is banked before any redirect.
   useEffect(() => {
     const fromQuery = new URLSearchParams(window.location.search)
     const code =
+      parseAdCode(launchStartParam) ??
       parseAdCode(startParam) ??
       parseAdCode(fromQuery.get('campaign')) ??
       parseAdCode(fromQuery.get('startapp'))
@@ -167,7 +182,7 @@ export function useAdAttribution(): void {
     // page has usually replaced the URL, so reading them at delivery time would
     // find nothing — exactly how the code itself used to be lost.
     writePendingCode(code, readUtmFromUrl())
-  }, [startParam])
+  }, [launchStartParam, startParam])
 
   // Deliver — once there is a session to attribute to.
   useEffect(() => {

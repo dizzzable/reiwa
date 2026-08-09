@@ -11,11 +11,16 @@
  * payment sheet — and never its sign-in.
  */
 (() => {
+  // Restated from `web/src/lib/telegram-launch-params.ts`
+  // (`TELEGRAM_LAUNCH_PARAMETER_NAMES`) so "the URL says Telegram" and "the
+  // loader will request the SDK" stay one rule. Add a name in one place only
+  // and the two drift.
   const launchParameterNames = [
     "tgWebAppData",
     "tgWebAppVersion",
     "tgWebAppPlatform",
     "tgWebAppThemeParams",
+    "tgWebAppStartParam",
   ];
   const searchParameters = new URLSearchParams(window.location.search);
   const hashParameters = new URLSearchParams(

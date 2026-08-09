@@ -7,13 +7,13 @@ import { NetworkBg } from '@/components/ui/network-bg'
 import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { useBranding } from '@/lib/branding-provider'
 import { bootstrapTelegram } from '@/lib/api-client'
-import {
-  SESSION_QUERY_KEY,
-  SESSION_STALE_TIME_MS,
-  fetchSessionOrNull,
-} from '@/hooks/use-session'
+import { SESSION_QUERY_KEY, fetchSessionOrNull } from '@/hooks/use-session'
 import { useTelegramWebApp } from '@/hooks/use-telegram-webapp'
-import { readTelegramLaunchInitData } from '@/lib/telegram-launch-params'
+import { readNextDestination } from '@/lib/next-destination'
+import {
+  forgetTelegramLaunchPayload,
+  readTelegramLaunchInitData,
+} from '@/lib/telegram-launch-params'
 
 type BootstrapPhase = 'detecting' | 'authenticating' | 'ready' | 'error' | 'rate_limited'
 
@@ -39,13 +39,11 @@ export default function BootstrapPage() {
   const calledRef = useRef(false)
 
   // Intended deep-link destination forwarded by the context router / Mini App
-  // deep-link (`?next=/renew`). Only honour same-origin absolute paths so a
-  // crafted `next` can't redirect the user off-app.
-  const nextDestination = (() => {
-    if (typeof window === 'undefined') return null
-    const raw = new URLSearchParams(window.location.search).get('next')
-    return raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : null
-  })()
+  // deep-link (`?next=/renew`). Only same-origin absolute paths are honoured, so
+  // a crafted `next` can't redirect the user off-app — that rule now lives in
+  // `lib/next-destination.ts`, shared with the credential gates that stand
+  // downstream of this page.
+  const nextDestination = readNextDestination()
 
   useEffect(() => {
     if (calledRef.current) return
@@ -65,12 +63,22 @@ export default function BootstrapPage() {
         // concurrent `/api/v1/session`. A failed probe still means "need to
         // bootstrap", exactly as before; `fetchQuery` caches a success, which
         // is what the old `setQueryData` did by hand.
+        //
+        // `staleTime: 0` deliberately, NOT the shared `SESSION_STALE_TIME_MS`.
+        // The concurrent dedup this step exists for survives it — React Query
+        // joins a fetch already in flight under this key. A non-zero staleTime
+        // would additionally reuse an already-RESOLVED result, and because
+        // `fetchSessionOrNull` turns a network failure into a successful
+        // `null`, a root probe that failed would be replayed here as a
+        // confident answer for a full minute. Harmless on this page (a `null`
+        // only means "bootstrap", which is the sign-in), but the probe should
+        // not be the place a swallowed error becomes sticky.
         setPhase('authenticating')
         try {
           const session = await queryClient.fetchQuery({
             queryKey: SESSION_QUERY_KEY,
             queryFn: fetchSessionOrNull,
-            staleTime: SESSION_STALE_TIME_MS,
+            staleTime: 0,
             retry: false,
           })
           if (session) {
@@ -111,6 +119,20 @@ export default function BootstrapPage() {
           setRetryAfter(waitSeconds)
           setPhase('rate_limited')
           return
+        }
+        // The server REFUSED this payload (401: the HMAC did not verify, or
+        // `auth_date` is past its 24h window). Retry, below, is
+        // `window.location.reload()` — a new document, which reads the payload
+        // back out of the session mirror and sends the identical bytes to the
+        // identical refusal. Dropping it here is what turns an unbreakable loop
+        // into one failure the user can act on.
+        //
+        // Only 401. A 400 is "the request carried nothing / the operator has no
+        // BOT_TOKEN", a 429 never reaches here, and 5xx and transport failures
+        // are transient — discarding a good payload for any of those would cost
+        // the launch for a reason that was going to clear on its own.
+        if (isAxiosErrorLike(err) && err.response?.status === 401) {
+          forgetTelegramLaunchPayload()
         }
         setErrorMsg(resolveBootstrapError(err, t))
         setPhase('error')

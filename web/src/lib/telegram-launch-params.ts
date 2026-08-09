@@ -27,19 +27,42 @@
 
 /**
  * The names Telegram appends to a Mini App URL. `tgWebAppData` is the launch's
- * `initData`; the others describe the client. `public/telegram-webapp-loader.js`
- * recognises the same four, so "the URL says Telegram" and "the loader will
- * request the SDK" stay one rule — restate the list there and they drift.
+ * `initData`; the others describe the client or the entry point.
+ * `public/telegram-webapp-loader.js` recognises the same five, so "the URL says
+ * Telegram" and "the loader will request the SDK" stay one rule — restate the
+ * list there and they drift.
+ *
+ * `tgWebAppStartParam` is the Mini App's `start_param`, i.e. the `startapp=`
+ * payload of the `t.me` link that opened the app — the ad campaign code, among
+ * other things. It is a launch parameter like the rest and travels the same
+ * way, so it is captured the same way. Reading it out of the bridge instead
+ * (`initDataUnsafe.start_param`) made Mini App ad attribution depend on
+ * telegram.org, which is the host this product's customers cannot reach; the
+ * `?startapp=` / `?campaign=` query fallback next to it never fires, because
+ * Telegram does not put the start parameter in the query.
  */
 export const TELEGRAM_LAUNCH_PARAMETER_NAMES = [
   'tgWebAppData',
   'tgWebAppVersion',
   'tgWebAppPlatform',
   'tgWebAppThemeParams',
+  'tgWebAppStartParam',
 ] as const
 
 /** Decoded launch parameters, the same map the SDK calls `initParams`. */
 export type TelegramLaunchParams = Readonly<Record<string, string>>
+
+/**
+ * The server's freshness window for a launch payload, restated.
+ *
+ * `src/lib/telegram-auth.ts` refuses a payload with `now - auth_date > 86400`,
+ * and `/auth/telegram/bootstrap` answers that refusal with a 401. Serving such a
+ * payload cannot succeed, so the only thing it can produce is the error screen
+ * — whose Retry is `window.location.reload()`, which reads the same mirror
+ * back. Keep this equal to the server's window; a larger value here re-opens
+ * that loop and a smaller one throws away launches the server would accept.
+ */
+const LAUNCH_PAYLOAD_MAX_AGE_SECONDS = 86_400
 
 /**
  * The SDK's own `sessionStorage` key, shared on purpose rather than shadowed.
@@ -62,10 +85,19 @@ export type TelegramLaunchParams = Readonly<Record<string, string>>
  * makes the two agree: whichever runs first, the other reads what it expects.
  * A different shape here would be actively harmful, because that `for…in` walks
  * whatever `JSON.parse` returned; hand it a bare string and the SDK's own
- * launch parameters acquire numeric-index garbage. Hence `persistLaunchParams`
+ * launch parameters acquire numeric-index garbage. Hence `writeLaunchParamsMirror`
  * merges over the stored object instead of replacing it, so names this module
- * never parses (`tgWebAppStartParam`, `tgWebAppBotInline`, `_path`) survive a
- * write untouched.
+ * never parses (`tgWebAppBotInline`, `_path`) survive a write untouched.
+ *
+ * That key-wise merge is the contract for BOTH carriers, not just this one.
+ * `resolveTelegramLaunchParams` used to quote it here and then assign
+ * `capturedLaunchParams = fromUrl` — replacing everything in memory while
+ * merging only into the store. The two then disagreed about exactly the case
+ * the merge exists for: a URL carrying `tgWebAppVersion` but no payload (a
+ * client that appends the descriptive names to a hop it makes itself) replaced
+ * the good in-memory capture with a payload-less record AND, being non-`null`,
+ * stopped the mirror from being consulted at all. The code now implements the
+ * merge the comment always described.
  */
 const SDK_LAUNCH_PARAMS_KEY = '__telegram__initParams'
 
@@ -98,18 +130,113 @@ export function hasTelegramLaunchParameters(): boolean {
   )
 }
 
+/**
+ * Is this a value at all, as opposed to a present-but-empty parameter?
+ *
+ * `trim()` decides the QUESTION; it never touches the ANSWER. `#tgWebAppData=`
+ * and `#tgWebAppData=%20` both arrive as a string `URLSearchParams` reports
+ * happily, and the second one used to pass a bare `length > 0` — so a fragment
+ * holding one space was accepted as a signed launch, made `detectTma()` answer
+ * true, and was sent to `/auth/telegram/bootstrap` to come back 401. The stored
+ * value stays byte-identical because the server HMACs those exact bytes: a
+ * trimmed `tgWebAppData` would fail the signature check just as surely.
+ */
+function isUsableLaunchValue(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
 /** The launch parameters carried by this document's own URL. */
 function readLaunchParamsFromUrl(): TelegramLaunchParams | null {
   const found: Record<string, string> = {}
   for (const source of urlParameterSources()) {
     for (const name of TELEGRAM_LAUNCH_PARAMETER_NAMES) {
       const value = source.get(name)
-      if (value !== null && value.length > 0 && found[name] === undefined) {
+      if (isUsableLaunchValue(value) && found[name] === undefined) {
         found[name] = value
       }
     }
   }
   return Object.keys(found).length > 0 ? found : null
+}
+
+/**
+ * How old the payload SAYS it is, in seconds, or `null` when it does not say.
+ *
+ * **Not a security check, and it must never become one.** `auth_date` is read
+ * straight out of `tgWebAppData` with no HMAC verification — client-side it is
+ * unsigned, and anybody who can edit the address bar can write any value there.
+ * The server is the only thing that decides whether a payload is genuine
+ * (`validateTelegramInitData`, keyed by the bot token). This is a freshness
+ * HEURISTIC with exactly one job: stop replaying a payload the server has
+ * already committed to refusing, because the bootstrap error screen's Retry is
+ * `window.location.reload()` and the mirror would hand the same dead payload
+ * back on every pass — forever.
+ *
+ * A payload that omits `auth_date`, or writes one that is not a positive
+ * integer, gets no verdict at all: judging it here would be inventing a
+ * rejection the server never made.
+ */
+function launchPayloadAgeSeconds(initData: string): number | null {
+  try {
+    const authDate = Number(new URLSearchParams(initData).get('auth_date') ?? '')
+    if (!Number.isSafeInteger(authDate) || authDate <= 0) return null
+    return Math.floor(Date.now() / 1000) - authDate
+  } catch {
+    return null
+  }
+}
+
+/** True when the server's own window has already closed on this payload. */
+function isSpentLaunchPayload(params: TelegramLaunchParams): boolean {
+  if (!isUsableLaunchValue(params.tgWebAppData)) return false
+  const age = launchPayloadAgeSeconds(params.tgWebAppData)
+  // A negative age is a clock disagreement, not an expiry — the server's own
+  // check is one-sided (`now - auth_date > 86400`) and so is this one.
+  return age !== null && age > LAUNCH_PAYLOAD_MAX_AGE_SECONDS
+}
+
+/** The same record with the payload removed; the client description stays. */
+function withoutLaunchPayload(params: TelegramLaunchParams): TelegramLaunchParams {
+  const { tgWebAppData: _spent, ...rest } = params
+  return rest
+}
+
+/**
+ * Takes the payload out of THIS document's own URL, hash and query alike.
+ *
+ * The other carriers can simply be dropped; the URL cannot, because Retry on
+ * the bootstrap error screen is `window.location.reload()` and a reload keeps
+ * the fragment. Clearing memory and the mirror without this leaves the loop
+ * exactly where it was — the reloaded document reads the same spent payload
+ * straight back out of its own address bar.
+ *
+ * Only `tgWebAppData` goes. `tgWebAppVersion` and friends stay, so the loader
+ * still recognises the document as a Mini App and still fetches the bridge.
+ */
+function scrubLaunchPayloadFromUrl(): void {
+  try {
+    const rawHash = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash
+    const hash = new URLSearchParams(rawHash)
+    const query = new URLSearchParams(window.location.search)
+    if (!hash.has('tgWebAppData') && !query.has('tgWebAppData')) return
+    hash.delete('tgWebAppData')
+    query.delete('tgWebAppData')
+    const search = query.toString()
+    const fragment = hash.toString()
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${search.length > 0 ? `?${search}` : ''}${
+        fragment.length > 0 ? `#${fragment}` : ''
+      }`,
+    )
+  } catch {
+    // A hostile embedder can make `history.replaceState` throw. Memory and the
+    // mirror are already cleared by then, so the worst case is that this one
+    // document keeps a spent payload in its own address bar.
+  }
 }
 
 /** The session store exactly as it sits on disk, so a merge cannot drop keys. */
@@ -136,20 +263,28 @@ function readPersistedLaunchParams(): TelegramLaunchParams | null {
     const value = record[name]
     // The SDK stores `null` for a valueless parameter; only a real string is a
     // launch parameter.
-    if (typeof value === 'string' && value.length > 0) params[name] = value
+    if (isUsableLaunchValue(value)) params[name] = value
   }
   return Object.keys(params).length > 0 ? params : null
 }
 
-function persistLaunchParams(params: TelegramLaunchParams): void {
+/**
+ * Merges `params` into the SDK's session record, optionally deleting names.
+ *
+ * The URL wins over the store, which is the SDK's own precedence
+ * (`if (typeof initParams[key] === 'undefined')`), and everything already stored
+ * under names this module does not parse is carried through. `remove` exists
+ * for the one thing a merge cannot express: forgetting a payload, which a merge
+ * would otherwise leave sitting under the key it is supposed to clear.
+ */
+function writeLaunchParamsMirror(
+  params: TelegramLaunchParams,
+  remove: readonly string[] = [],
+): void {
   try {
-    // The URL wins over the store, which is the SDK's own precedence
-    // (`if (typeof initParams[key] === 'undefined')`), and everything already
-    // stored under names this module does not parse is carried through.
-    window.sessionStorage.setItem(
-      SDK_LAUNCH_PARAMS_KEY,
-      JSON.stringify({ ...(readPersistedRecord() ?? {}), ...params }),
-    )
+    const record: Record<string, unknown> = { ...(readPersistedRecord() ?? {}), ...params }
+    for (const name of remove) delete record[name]
+    window.sessionStorage.setItem(SDK_LAUNCH_PARAMS_KEY, JSON.stringify(record))
   } catch {
     // Private mode, quota, or a hostile embedder. The URL is still the primary
     // source, so a failed mirror costs a LATER document its bridge — never this
@@ -158,21 +293,129 @@ function persistLaunchParams(params: TelegramLaunchParams): void {
 }
 
 /**
- * This document's launch parameters: from the URL when it still has them, from
- * the SDK's session store when it does not.
+ * This document's launch parameters, captured in memory the first time they are
+ * seen.
  *
- * Resolving also mirrors the URL copy into that store. `/bootstrap` is reached
- * by react-router `<Navigate>` from StealthLayout, logout, claim and
- * finish-setup, and a client-side navigation drops the hash — as does a full
- * reload after `history.replaceState`, and the return leg from a payment
- * gateway. The SDK survives those hops this exact way; mirroring here means the
- * cabinet does too, even on the networks where the SDK never arrived to do it.
+ * The session mirror alone is not enough, because writing it can silently fail.
+ * Telegram Web (weba/webk) runs the Mini App in an `iframe`, and in a
+ * partitioned or storage-blocked third-party context `window.sessionStorage`
+ * THROWS on access rather than returning null — which `writeLaunchParamsMirror`
+ * catches and swallows, exactly as it should. But then the payload has nowhere
+ * to live, and the next react-router `<Navigate>` (StealthLayout's redirect to
+ * `/bootstrap`, one tick later) takes the URL copy with it.
+ *
+ * This module-level copy costs nothing and covers every same-document hop,
+ * which is all of them: the SPA never reloads on an internal navigation. The
+ * mirror stays for what memory cannot survive — a genuinely NEW document, i.e.
+ * a reload or the return leg from a payment gateway.
+ *
+ * `web/src/main.tsx` calls `resolveTelegramLaunchParams()` at module scope,
+ * before `createRoot(root).render(…)`, so this is filled in before React has
+ * rendered anything at all. That placement is load-bearing and is explained
+ * there; the short version is that no React effect can be early enough,
+ * because `<Navigate>` is itself an effect and child effects run first.
+ */
+let capturedLaunchParams: TelegramLaunchParams | null = null
+
+/**
+ * This document's launch parameters: the URL merged over what this session was
+ * already carrying — the in-memory capture when a client-side navigation has
+ * dropped the URL copy, the SDK's session store when this is a new document
+ * altogether.
+ *
+ * The merge is key-wise, with the fresh URL winning per NAME. That is the SDK's
+ * own restore rule (quoted above `SDK_LAUNCH_PARAMS_KEY`) and it is now what
+ * both carriers do; the previous `capturedLaunchParams = fromUrl` replaced
+ * memory wholesale, so a URL carrying only descriptive names threw away a good
+ * payload and — being non-`null` — also stopped the mirror from being read.
+ *
+ * `/bootstrap` is reached by react-router `<Navigate>` from StealthLayout,
+ * logout, claim and finish-setup, and a client-side navigation drops the
+ * fragment AND the query — as does a full reload after `history.replaceState`,
+ * and the return leg from a payment gateway. The SDK survives those hops via
+ * the store; the cabinet survives them via the store OR memory, so it keeps
+ * working on the networks where the SDK never arrived and in the embeddings
+ * where the store is unreachable.
+ *
+ * A payload this session has been CARRYING past the server's own window is
+ * dropped here rather than served — see `isSpentLaunchPayload`, and note the
+ * comment there about why that is a loop guard and not a security check.
  */
 export function resolveTelegramLaunchParams(): TelegramLaunchParams | null {
   const fromUrl = readLaunchParamsFromUrl()
-  if (fromUrl === null) return readPersistedLaunchParams()
-  persistLaunchParams(fromUrl)
-  return fromUrl
+  let carried = capturedLaunchParams ?? readPersistedLaunchParams()
+
+  // Freshness is judged on the CARRIED copy only, never on a payload the
+  // current document's own URL is still holding.
+  //
+  // The carried one is the replay: the mirror outlives its launch with nothing
+  // to expire it, so a document opened a day later — a restored tab, the return
+  // leg from a slow payment, a webview the OS kept — sends a payload the server
+  // has already committed to refusing, and the error screen's Retry reloads
+  // into the same refusal.
+  //
+  // The URL copy is a different thing and must not be judged by the same clock.
+  // It belongs to a document Telegram just opened, so it is fresh by
+  // construction, and the only clock available to disprove that is the DEVICE's
+  // — which the server's check does not consult. A phone whose clock is a few
+  // days fast would have its perfectly good launch discarded here, before the
+  // server ever saw it, and the user would be told to open the app in Telegram
+  // while doing exactly that. A copied or bookmarked launch URL genuinely is
+  // stale, and that case is settled by the server's own verdict:
+  // `forgetTelegramLaunchPayload()` on a 401 takes it out of the URL too.
+  if (carried !== null && isSpentLaunchPayload(carried)) {
+    carried = withoutLaunchPayload(carried)
+    if (capturedLaunchParams !== null) capturedLaunchParams = carried
+    forgetPersistedLaunchPayload()
+  }
+
+  if (fromUrl === null) return carried
+
+  // This document's own launch, merged over what the session already carried.
+  const merged = { ...(carried ?? {}), ...fromUrl }
+  capturedLaunchParams = merged
+  writeLaunchParamsMirror(merged)
+  return merged
+}
+
+/** Drops the payload from the session mirror, leaving the rest of the record. */
+function forgetPersistedLaunchPayload(): void {
+  // Nothing stored means nothing to forget — and writing here would create the
+  // SDK's key on a document that never had one.
+  if (readPersistedRecord() === null) return
+  writeLaunchParamsMirror({}, ['tgWebAppData'])
+}
+
+/**
+ * Forget the launch payload this session is carrying — in memory, in the
+ * mirror, and in this document's own URL.
+ *
+ * Called when the SERVER has refused it: `/auth/telegram/bootstrap` answers a
+ * payload it cannot validate with 401. The bootstrap error screen's only
+ * affordance is Retry, and Retry is `window.location.reload()` — a new document
+ * that re-reads the mirror AND keeps the fragment, so it sends the identical
+ * bytes to the identical refusal. Leaving a refused payload in place therefore
+ * does not cost one failed sign-in, it costs every subsequent one, with no way
+ * out of the screen.
+ *
+ * Only `tgWebAppData` goes. The rest of the record describes the client, is not
+ * what was refused, and is what keeps `public/telegram-webapp-loader.js`
+ * fetching the bridge for a document that is still a Mini App.
+ */
+export function forgetTelegramLaunchPayload(): void {
+  if (capturedLaunchParams !== null) {
+    capturedLaunchParams = withoutLaunchPayload(capturedLaunchParams)
+  }
+  forgetPersistedLaunchPayload()
+  scrubLaunchPayloadFromUrl()
+}
+
+/**
+ * Test-only: forget the in-memory capture so each spec starts from a cold
+ * document. Production code must never call this.
+ */
+export function __resetTelegramLaunchCaptureForTests(): void {
+  capturedLaunchParams = null
 }
 
 /**
@@ -184,5 +427,18 @@ export function resolveTelegramLaunchParams(): TelegramLaunchParams | null {
  */
 export function readTelegramLaunchInitData(): string | null {
   const initData = resolveTelegramLaunchParams()?.tgWebAppData
-  return typeof initData === 'string' && initData.length > 0 ? initData : null
+  return isUsableLaunchValue(initData) ? initData : null
+}
+
+/**
+ * The launch's `start_param` — the `startapp=` payload of the `t.me` link that
+ * opened the Mini App — or `null` when this session did not come through one.
+ *
+ * This is `window.Telegram.WebApp.initDataUnsafe.start_param`, from the same
+ * place the SDK reads it (`initParams.tgWebAppStartParam`) and with the same
+ * availability as everything else here: no script, no network, no clock.
+ */
+export function readTelegramLaunchStartParam(): string | null {
+  const startParam = resolveTelegramLaunchParams()?.tgWebAppStartParam
+  return isUsableLaunchValue(startParam) ? startParam : null
 }

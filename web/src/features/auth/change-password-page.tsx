@@ -9,6 +9,7 @@ import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { hashPassword } from '@/lib/crypto'
 import { changePasswordAuth } from '@/lib/api-client'
+import { readNextDestination } from '@/lib/next-destination'
 import { useAuthStore } from '@/stores/auth.store'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 
@@ -45,9 +46,11 @@ export default function ChangePasswordPage() {
       // requiresPasswordChange flag (otherwise StealthLayout bounces back here).
       await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
 
-      // Confirm success (the toast rides along to the dashboard) then redirect.
+      // Confirm success (the toast rides along) then redirect — to the page the
+      // user was aiming at when this gate stopped them (StealthLayout forwards
+      // it as `?next=`), else the dashboard.
       toast.success(t('changePassword.success'))
-      navigate('/dashboard', { replace: true })
+      navigate(readNextDestination() ?? '/dashboard', { replace: true })
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'response' in err) {
         const axiosErr = err as { response?: { data?: { message?: string } } }

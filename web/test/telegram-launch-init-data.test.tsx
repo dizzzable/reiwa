@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   readTelegramLaunchInitData,
   resolveTelegramLaunchParams,
+  __resetTelegramLaunchCaptureForTests,
 } from "../src/lib/telegram-launch-params";
 
 const SDK_KEY = "__telegram__initParams";
@@ -139,10 +140,22 @@ function withLaunchHash(hash = LAUNCH_HASH): void {
 beforeEach(() => {
   window.history.replaceState({}, "", "/");
   window.sessionStorage.clear();
+  // A cold document. The module keeps an in-memory capture of the launch —
+  // correct in production, where a document has exactly one launch and never
+  // loses it to a client-side navigation — so each spec must clear it or a
+  // Telegram case leaks its payload into the browser cases that follow.
+  __resetTelegramLaunchCaptureForTests();
+  // Read the captured payload on the document it launched. `CAPTURED_INIT_DATA`
+  // carries a real `auth_date` (2025-01-01), and the module refuses to replay a
+  // CARRIED payload past the server's own 24h window — correctly, since the
+  // server would 401 it. Without pinning the clock these cases would be
+  // asserting the decoder against a launch the product is right to drop.
+  vi.spyOn(Date, "now").mockReturnValue(1_735_689_600_000 + 30_000);
 });
 
 afterEach(() => {
   window.sessionStorage.clear();
+  vi.restoreAllMocks();
 });
 
 describe("initData extracted from the launch URL", () => {

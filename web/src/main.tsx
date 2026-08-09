@@ -10,9 +10,43 @@ import { installGlobalErrorReporting } from '@/lib/client-error-reporter'
 import { installIosZoomLock } from '@/lib/ios-zoom-lock'
 import { AppErrorBoundary } from '@/components/error-boundary'
 import { BrandingProvider } from '@/lib/branding-provider'
+import { resolveTelegramLaunchParams } from '@/lib/telegram-launch-params'
 import App from './App'
 import '@/index.css'
 import '@/i18n/i18n'
+
+// Capture Telegram's launch parameters — here, at module scope, before React
+// exists.
+//
+// The bot opens the cabinet straight on a cabinet route: its notification and
+// keyboard buttons are `web_app` buttons built as `${miniAppUrl}${path}` (see
+// `src/bot/listeners/internal-http-listener.ts`, "Mini App deep-link button"),
+// and the path is operator-configured, so any route is a possible launch
+// document. `initData` IS `tgWebAppData` and it arrives in that document's
+// `location.hash` — but the first react-router navigation drops the fragment,
+// and on a cookieless deep-link launch that navigation happens immediately.
+// Whatever has not read the payload by then never will: `/bootstrap` finds
+// nothing, falls back to waiting for telegram.org — precisely the host a
+// VPN-less customer cannot reach — and the subscriber who tapped «Продлить»
+// lands on a password form.
+//
+// This used to live in `useTelegramWebApp`'s effect at the application root,
+// which is NOT early enough and only appeared to work by accident. `<Navigate>`
+// is itself a `useEffect` (react-router 8's `components.js`), and React runs
+// CHILD effects before parent ones — so a gate that renders `<Navigate>` on its
+// first render wins the race and the fragment is gone before the root's effect
+// runs. Today's session gate happens to be asynchronous (`useSession` has no
+// `initialData`, no `placeholderData` and no persister, so `isLoading` is true
+// on the first render and StealthLayout paints a spinner), which is the only
+// reason the effect placement survived. `/ref/:token` already loses it: that
+// route returns `<Navigate>` on its first render. Give `useSession` an
+// `initialData` one day and every deep-link launch breaks again, silently.
+//
+// Module scope in the entry chunk is the one place with no ordering left to
+// lose: it runs before the first render, before any effect, before any lazy
+// boundary, on every route. The call is idempotent and writes nothing for a
+// document with no launch parameters.
+resolveTelegramLaunchParams()
 
 // Register service worker for PWA support
 registerServiceWorker()

@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router'
 
+import { nextDestinationQuery } from '@/lib/next-destination'
+
 import { detectTelegramInitData } from './telegram-launch'
 
 /**
@@ -11,8 +13,13 @@ import { detectTelegramInitData } from './telegram-launch'
  * smaller role: detect the runtime context once, and forward to the
  * dedicated entry route.
  *
- *  - `Telegram.WebApp.initData` non-empty → redirect to `/tma`
- *    (which performs the actual Telegram auth handshake).
+ *  - a non-empty launch `initData` → redirect to `/tma` (which performs
+ *    the actual Telegram auth handshake). That is `detectTelegramInitData`
+ *    below, which reads `tgWebAppData` off the URL / capture / session
+ *    mirror; it has NOT read `Telegram.WebApp.initData` since `c087865`,
+ *    and describing it as if it did is how a bridge-only read in
+ *    `lib/client-source.ts` survived three sweeps citing this file as its
+ *    precedent.
  *  - Otherwise → redirect to `/` (web home), which probes the session
  *    cookie and either lands the user on `/dashboard` or `/sign-in`.
  *
@@ -37,11 +44,11 @@ export default function ContextRouter() {
     let cancelled = false
 
     // Preserve an intended deep-link destination (`?next=`) across the
-    // context hop so Mini App deep-links survive the bootstrap redirect.
+    // context hop so Mini App deep-links survive the bootstrap redirect. The
+    // same-origin rule is the shared one, so this hop cannot forward a value
+    // the pages downstream would refuse.
     const search = typeof window !== 'undefined' ? window.location.search : ''
-    const nextRaw = new URLSearchParams(search).get('next')
-    const nextSuffix =
-      nextRaw && nextRaw.startsWith('/') ? `?next=${encodeURIComponent(nextRaw)}` : ''
+    const nextSuffix = nextDestinationQuery(new URLSearchParams(search).get('next'))
 
     void (async () => {
       // A Telegram launch waits for the loader's verdict; a browser gets no

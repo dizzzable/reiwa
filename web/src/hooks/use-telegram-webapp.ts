@@ -306,6 +306,15 @@ export function useTelegramWebApp(
   const appliedBridgeRef = useRef<TelegramWebApp | null>(null)
 
   useEffect(() => {
+    // NOTE: capturing the launch parameters is deliberately NOT done here.
+    //
+    // It was, for one afternoon, on the theory that the application root is the
+    // earliest point that sees every launch. It is not: `<Navigate>` is itself
+    // a `useEffect`, React runs child effects before parent ones, and a gate
+    // that redirects on its first render therefore drops the fragment before
+    // this effect ever runs. The capture lives at module scope in
+    // `web/src/main.tsx` instead, which runs before React renders at all — see
+    // the comment there.
     const waiter = (bridgeWaiter ??= createBridgeWaiter())
 
     const apply: BridgeSubscriber = (tg) => {

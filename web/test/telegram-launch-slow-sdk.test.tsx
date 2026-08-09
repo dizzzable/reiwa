@@ -59,6 +59,7 @@ vi.mock("@/lib/branding-provider", () => ({
 vi.mock("@/features/landing/landing-page", () => ({ LANDING_QUERY_KEY: ["landing"] }));
 
 import ContextRouter from "../src/features/auth/context-router";
+import { __resetTelegramLaunchCaptureForTests } from "../src/lib/telegram-launch-params";
 import WebHomePage from "../src/features/auth/web-home-page";
 
 const TELEGRAM = "Telegram" as const;
@@ -66,8 +67,19 @@ const SDK_STATE = "__reiwaTelegramSdkState" as const;
 /** The SDK's own session key; the cabinet mirrors the launch into it. */
 const SDK_LAUNCH_PARAMS_KEY = "__telegram__initParams" as const;
 
-/** A signed Telegram launch payload, i.e. a non-empty `initData`. */
-const INIT_DATA = "user=%7B%22id%22%3A42%7D&auth_date=1&hash=deadbeef";
+/**
+ * A signed Telegram launch payload, i.e. a non-empty `initData`, with
+ * `auth_date` stamped NOW rather than 1970.
+ *
+ * The cabinet refuses to replay a CARRIED payload past the server's own 24h
+ * window (`telegram-launch-params.ts`, `isSpentLaunchPayload`) — the server
+ * would answer it 401 and the error screen's Retry would reload into the same
+ * 401 forever. A fixture stamped 1970 is exactly that dead payload, so every
+ * mirror/memory case below would be asserting on a launch the product is right
+ * to drop. This says what the fixture always claimed to be: a live launch.
+ */
+const LAUNCH_AUTH_DATE = Math.floor(Date.now() / 1000);
+const INIT_DATA = `user=%7B%22id%22%3A42%7D&auth_date=${LAUNCH_AUTH_DATE}&hash=deadbeef`;
 
 /**
  * The fragment Telegram appends when it opens a Mini App URL — the hash, not
@@ -154,6 +166,9 @@ beforeEach(() => {
   // The launch mirror outlives a navigation by design, so it has to be cleared
   // explicitly or a Telegram case would leak its payload into the browser ones.
   window.sessionStorage.clear();
+  // Same for the module's in-memory capture, which by design survives every
+  // client-side navigation within one document.
+  __resetTelegramLaunchCaptureForTests();
   Reflect.deleteProperty(window as unknown as Record<string, unknown>, TELEGRAM);
   withSdkState(undefined);
   // No cookie and no published landing: every non-Telegram verdict therefore
@@ -313,6 +328,27 @@ describe("WebHomePage launch context", () => {
       "the cookie probe did not go through the shared ['session'] query key, so it cannot collapse into useSession()'s request",
     ).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["session"] }));
     expect(navigate).toHaveBeenCalledWith("/dashboard", { replace: true });
+  });
+
+  it("does not consult the session probe at all for a Telegram launch", async () => {
+    // The entry-probe guard, executing rather than grepped. `fetchSessionOrNull`
+    // turns a failed `/api/v1/session` into a successful `null`, so the probe
+    // cannot tell "no session" from "could not ask" — and a swallowed failure
+    // read as "no session" ends on `/sign-in`. That must be unreachable for a
+    // launch carrying a payload, and it is: step 0 returns before step 2 exists.
+    withLaunchParameters();
+    withSdkState("loading");
+    queryClient.fetchQuery.mockRejectedValue(new Error("probe exploded"));
+
+    mount(<WebHomePage />);
+    await settleWithoutTime();
+
+    expect(navigate).toHaveBeenCalledWith("/tma", { replace: true });
+    expect(
+      queryClient.fetchQuery,
+      "a Telegram launch reached the cookie probe — a swallowed probe failure can now route it to /sign-in",
+    ).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalledWith("/sign-in", { replace: true });
   });
 });
 

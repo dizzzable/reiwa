@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
@@ -9,6 +9,8 @@ import { BrandLogo } from '@/components/ui/brand-logo'
 import { SESSION_QUERY_KEY, useSession } from '@/hooks/use-session'
 import { claimAccount, linkExistingAccount } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
+import { nextDestinationQuery, readNextDestination } from '@/lib/next-destination'
+import { readTelegramLaunchInitData } from '@/lib/telegram-launch-params'
 
 // ── Validation (mirrors register-page rules) ─────────────────────────────────
 
@@ -67,20 +69,44 @@ export default function ClaimPage() {
   // offered inside the Mini App, where a signed `initData` proves the Telegram
   // id. Plain-browser visitors (no initData) only get the create-credentials
   // flow.
-  const initData =
-    typeof window !== 'undefined' ? window.Telegram?.WebApp?.initData ?? '' : ''
+  //
+  // The payload comes off the URL, not out of the bridge. `initData` IS
+  // `tgWebAppData`: Telegram puts it in the launch document's hash from the
+  // first byte, and `readTelegramLaunchInitData()` also restores it from the
+  // SDK's session mirror — which this page NEEDS, because every route into
+  // `/claim` is a react-router `<Navigate>` from StealthLayout and that drops
+  // the fragment.
+  //
+  // The bridge is the fallback, never the source. `window.Telegram` exists only
+  // after ~100 KB has been fetched from telegram.org, and this product sells
+  // VPN: the customer who most needs "I already have an account" is precisely
+  // the one whose network blocks that host. Gating on the bridge hid this
+  // control from exactly the people it exists for, leaving them to create a
+  // SECOND account while their subscription sat on the first. `c087865` removed
+  // this pattern from every other entry file; this one was missed.
+  const launchInitData = useMemo(() => readTelegramLaunchInitData(), [])
+  const initData = launchInitData ?? window.Telegram?.WebApp?.initData ?? ''
   const canLinkExisting = initData.length > 0
   const [mode, setMode] = useState<'claim' | 'login'>('claim')
 
-  // No session → send back through the entry router (which routes to sign-in).
+  // Where the user was actually going. StealthLayout forwards it here
+  // (`/claim?next=%2Frenew`) because this gate stands between a Mini App
+  // deep-link and its destination: a first-time Telegram user who taps
+  // «Продлить» in the bot has no `WebAccount` yet, so the claim form is what
+  // they meet. Finishing it on `/dashboard` spends the deep-link — the
+  // notification that carried it is not coming again.
+  const nextDestination = readNextDestination()
+
+  // No session → send back through the entry router (which routes to sign-in),
+  // still carrying the destination so the bootstrap can restore it.
   if (!isLoading && !isAuthenticated) {
-    navigate('/bootstrap', { replace: true })
+    navigate(`/bootstrap${nextDestinationQuery(nextDestination)}`, { replace: true })
     return null
   }
 
   // Already claimed → never show the form again (Property 4).
   if (!isLoading && session?.webAccount) {
-    navigate('/dashboard', { replace: true })
+    navigate(nextDestination ?? '/dashboard', { replace: true })
     return null
   }
 
@@ -123,9 +149,9 @@ export default function ClaimPage() {
         await claimAccount(username, passwordHash)
       }
       // Refetch the session so StealthLayout sees the linked WebAccount and
-      // lets the user through.
+      // lets the user through — to where they were going, not to /dashboard.
       await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
-      navigate('/dashboard', { replace: true })
+      navigate(nextDestination ?? '/dashboard', { replace: true })
     } catch (err: unknown) {
       setSubmitting(false)
       if (err && typeof err === 'object' && 'response' in err) {
