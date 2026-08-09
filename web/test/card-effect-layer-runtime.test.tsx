@@ -4,8 +4,8 @@ import { act, lazy, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/components/reactbits/registry", () => ({
-  CARD_EFFECT_COMPONENTS: {
+vi.mock("../src/components/reactbits/card-effect-manifest", () => {
+  const components = {
     paperWarp: () => <canvas data-test-native-card-effect />,
     threads: () => <canvas data-test-native-card-effect />,
     aurora: () => <canvas data-test-aurora-card-effect />,
@@ -18,14 +18,24 @@ vi.mock("../src/components/reactbits/registry", () => ({
             });
         }),
     ),
-  },
-  CARD_EFFECT_DEFAULTS: {
+  };
+  const defaults: Record<string, Record<string, unknown>> = {
     paperWarp: {},
     threads: {},
     aurora: {},
     waves: {},
-  },
-}));
+  };
+  return {
+    CARD_EFFECT_COMPONENTS: components,
+    CARD_EFFECT_DEFAULTS: defaults,
+    // Derived from the maps above rather than hard-coded, and `Object.hasOwn`
+    // rather than `in`, so this stand-in keeps the property the real registry
+    // is relied on for: an inherited name such as `toString` is not an effect.
+    isKnownCardEffect: (id: string) => Object.hasOwn(components, id),
+    cardEffectDefaults: (id: string) =>
+      Object.hasOwn(defaults, id) ? defaults[id] : {},
+  };
+});
 
 const delayedEffect = vi.hoisted(() => ({
   resolve: undefined as undefined | (() => void),
@@ -60,6 +70,22 @@ function renderIntoDom(element: ReactElement): HTMLDivElement {
   mounted.push({ root, container });
   act(() => root.render(element));
   return container;
+}
+
+/**
+ * The fallback's palette now lives on its drift blobs — one radial-gradient
+ * child per colour field, moved by transform instead of the old multi-layer
+ * `background-position` animation (paint-per-frame on exactly the WebGL-less
+ * devices the fallback serves). Palette assertions therefore read the blobs.
+ */
+function fallbackBlobGradients(scope: HTMLElement): string {
+  return Array.from(
+    scope.querySelectorAll<HTMLElement>(
+      "[data-card-effect-artwork] .card-effect-layer__css-fallback-blob",
+    ),
+  )
+    .map((blob) => blob.style.backgroundImage)
+    .join(" ");
 }
 
 function allowMotion(): void {
@@ -280,10 +306,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
         ?.getAttribute("data-card-effect-runtime"),
     ).toBe("css-fallback");
     expect(container.querySelector("[data-card-effect-renderer]")).toBeNull();
-    expect(
-      (container.querySelector("[data-card-effect-artwork]") as HTMLElement | null)
-        ?.style.backgroundImage,
-    ).toContain("rgb(115, 0, 255)");
+    expect(fallbackBlobGradients(container)).toContain("rgb(115, 0, 255)");
   });
 
   it("uses a same-palette CSS fallback when Threads loses its WebGL context", () => {
@@ -308,10 +331,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     ).toBe("css-fallback");
     expect(container.querySelector("[data-card-effect-renderer]")).toBeNull();
     expect(container.querySelector("[data-test-aurora-card-effect]")).toBeNull();
-    expect(
-      (container.querySelector("[data-card-effect-artwork]") as HTMLElement | null)
-        ?.style.backgroundImage,
-    ).toContain("rgb(139, 92, 246)");
+    expect(fallbackBlobGradients(container)).toContain("rgb(139, 92, 246)");
   });
 
   it("keeps a Paper card's own palette on a WebGL1-only Telegram WebView", () => {
@@ -338,6 +358,18 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect(container.querySelector("[data-card-effect-artwork]")).not.toBeNull();
     const fallback = container.querySelector("[data-card-effect-artwork]");
     expect(fallback?.getAttribute("style") ?? "").not.toContain("background-color");
+    // One transform-drifted blob per palette field — alpha radial gradients
+    // only, so the operator's card gradient stays visible beneath them.
+    const blobs = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        "[data-card-effect-artwork] .card-effect-layer__css-fallback-blob",
+      ),
+    );
+    expect(blobs).toHaveLength(3);
+    for (const blob of blobs) {
+      expect(blob.style.backgroundImage).toContain("radial-gradient");
+      expect(blob.getAttribute("style") ?? "").not.toContain("background-color");
+    }
   });
 
   it("keeps a custom subscription gradient and pattern below the CSS fallback", () => {
@@ -409,7 +441,7 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
       (container.querySelector("[data-card-effect-source]") as HTMLElement | null)
         ?.style.mixBlendMode,
     ).toBe("");
-    expect(fallback?.style.backgroundImage).not.toContain("linear-gradient");
+    expect(fallbackBlobGradients(container)).not.toContain("linear-gradient");
     expect(
       container.querySelector('[data-subscription-card-layer="gradient"]'),
     ).not.toBeNull();

@@ -1,5 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Renderer, Program, Mesh, Triangle } from 'ogl';
+
+import { resolveBufferRatio } from './render-scale';
 
 interface GrainientProps {
   timeSpeed?: number;
@@ -160,17 +162,25 @@ const Grainient: React.FC<GrainientProps> = ({
   className = ''
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Bumped by `webglcontextrestored` to re-run Effect 1. OGL keeps every GL
+  // handle inside Renderer/Program/Geometry and caches driver state on the
+  // Renderer, none of which survive a context loss and none of which it can
+  // reset — so the only honest recovery is to build the whole thing again.
+  const [glGeneration, setGlGeneration] = useState(0);
 
   // Effect 1: build WebGL context once, pause when offscreen / tab hidden
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    // The ratio BEFORE the device-pixel budget; `setSize` reduces it when the
+    // box is large enough to need it.
+    const baseDpr = Math.min(window.devicePixelRatio || 1, 2);
     const renderer = new Renderer({
       webgl: 2,
       alpha: true,
       antialias: false,
-      dpr: Math.min(window.devicePixelRatio || 1, 2)
+      dpr: baseDpr
     });
 
     const gl = renderer.gl;
@@ -218,6 +228,12 @@ const Grainient: React.FC<GrainientProps> = ({
       const rect = container.getBoundingClientRect();
       const w = Math.max(1, Math.floor(rect.width));
       const h = Math.max(1, Math.floor(rect.height));
+      // Cap the DRAWING BUFFER, never the CSS box: the canvas is pinned to
+      // 100%×100% above and `setSize` multiplies only `canvas.width/height` by
+      // `dpr`. Every feature this shader draws is a fraction of
+      // `iResolution`, so the picture is the same one at a lower sampling
+      // density. See `render-scale.ts`.
+      renderer.dpr = resolveBufferRatio(w, h, baseDpr);
       renderer.setSize(w, h);
       const res = (program.uniforms.iResolution as { value: Float32Array }).value;
       res[0] = gl.drawingBufferWidth;
@@ -232,6 +248,7 @@ const Grainient: React.FC<GrainientProps> = ({
     let raf = 0;
     let isVisible = true;
     let isPageVisible = !document.hidden;
+    let contextLost = false;
     const t0 = performance.now();
 
     const loop = (t: number) => {
@@ -241,6 +258,7 @@ const Grainient: React.FC<GrainientProps> = ({
     };
 
     const tryStart = () => {
+      if (contextLost) return;
       if (isVisible && isPageVisible && raf === 0) raf = requestAnimationFrame(loop);
     };
     const tryStop = () => {
@@ -259,6 +277,22 @@ const Grainient: React.FC<GrainientProps> = ({
     };
     document.addEventListener('visibilitychange', onVisibility);
 
+    // Without preventDefault the browser never fires `webglcontextrestored`,
+    // so a recoverable loss becomes permanent.
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      tryStop();
+    };
+    // Restarting the loop alone would draw with handles the loss detached.
+    // Re-running the effect tears this renderer down (freeing its slot) and
+    // builds a fresh one, so the count of live contexts stays flat.
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
     tryStart();
 
     return () => {
@@ -266,10 +300,20 @@ const Grainient: React.FC<GrainientProps> = ({
       ro.disconnect();
       io.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
+      // Listeners come off before loseContext, or handleContextRestored would
+      // fire during teardown and rebuild everything we are about to free.
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       ctxMap.delete(container);
+      program.remove();
+      geometry.remove();
       try { container.removeChild(canvas); } catch { /* ignore */ }
+      // A dropped reference does not free the context: WebKit only returns the
+      // slot when the object is destroyed, and the page hits the 16-context cap
+      // long before GC gets there.
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
-  }, []); // renderer created once
+  }, [glGeneration]); // renderer rebuilt only when the GL context is replaced
 
   // Effect 2: sync props to uniforms — zero GPU cost, no teardown
   useEffect(() => {
@@ -305,7 +349,10 @@ const Grainient: React.FC<GrainientProps> = ({
     timeSpeed, colorBalance, warpStrength, warpFrequency, warpSpeed,
     warpAmplitude, blendAngle, blendSoftness, rotationAmount, noiseScale,
     grainAmount, grainScale, grainAnimated, contrast, gamma, saturation,
-    centerX, centerY, zoom, color1, color2, color3
+    centerX, centerY, zoom, color1, color2, color3,
+    // A rebuilt Program starts on the placeholder uniform values baked into its
+    // constructor; without this the restored canvas would render white.
+    glGeneration
   ]);
 
 

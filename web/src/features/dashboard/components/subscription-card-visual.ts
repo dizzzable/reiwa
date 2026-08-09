@@ -3,6 +3,7 @@ import {
   resolveCardContrast,
   type CardContrast,
 } from "../../../lib/card-contrast";
+import { isKnownCardEffect } from "../../../components/reactbits/card-effect-catalog";
 import { resolveCardEffectOutputColors } from "../../../components/reactbits/card-effect-runtime";
 import {
   resolveSubscriptionCardGlass,
@@ -143,6 +144,12 @@ export function resolveSubscriptionCardVisual(
 
   const globalGradient =
     typeof branding.cardGradient === "string" ? branding.cardGradient : "";
+  // NOT gated on `slot.mode`, unlike the effect fields above, and that is a
+  // decision rather than an oversight: a per-position gradient is its own
+  // explicit visual choice, pinned by `subscription-card-motion.test.ts` and
+  // stated to the operator in the panel hint ("this choice changes only the
+  // animation; the slot gradient is configured separately until reset").
+  // Gating it here would silently discard gradients operators have already set.
   const slotGradient =
     typeof slot?.cardGradient === "string" && slot.cardGradient.trim().length > 0
       ? slot.cardGradient
@@ -162,10 +169,21 @@ export function resolveSubscriptionCardVisual(
   const subscriptionCardGlass = resolveSubscriptionCardGlass(
     branding.subscriptionCardGlass,
   );
-  const effectArtwork =
-    cardEffect === "NONE"
-      ? null
-      : resolveCardEffectOutputColors(cardEffect, cardEffectProps).join(" ");
+  /**
+   * WHAT WENT WRONG: the overlay was gated on `cardEffect !== "NONE"` alone.
+   * `cardEffect` is open vocabulary — a panel one release ahead can name an
+   * effect this bundle has no component for — and for such an id
+   * `resolveCardEffectOutputColors` finds no configured colours and returns the
+   * DEFAULT aurora palette. So contrast chose the text colour and sized the veil
+   * for purple-and-green artwork while the layer drew nothing at all, and the
+   * operator's gradient wore a veil for a picture that was not there.
+   *
+   * An effect that cannot be drawn contributes no overlay, exactly like `NONE`.
+   */
+  const drawsOverlay = cardEffect !== "NONE" && isKnownCardEffect(cardEffect);
+  const effectArtwork = drawsOverlay
+    ? resolveCardEffectOutputColors(cardEffect, cardEffectProps).join(" ")
+    : null;
 
   return {
     slotIndex,
@@ -182,7 +200,7 @@ export function resolveSubscriptionCardVisual(
       // full-card film which visibly drains the shader colours.
       minimumVeilOpacity: 0.12,
       overlayArtwork: effectArtwork,
-      overlayOpacity: cardEffect === "NONE" ? 0 : cardEffectOpacity,
+      overlayOpacity: drawsOverlay ? cardEffectOpacity : 0,
     }),
     cardGradient,
     cardPattern:

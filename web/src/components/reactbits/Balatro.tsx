@@ -1,6 +1,8 @@
 import { Renderer, Program, Mesh, Triangle } from 'ogl';
 import { useEffect, useRef } from 'react';
 
+import { resolveBufferRatio } from './render-scale';
+
 interface BalatroProps {
   spinRotation?: number;
   spinSpeed?: number;
@@ -145,7 +147,29 @@ export default function Balatro({
     let program: Program;
 
     function resize() {
-      renderer.setSize(container.offsetWidth, container.offsetHeight);
+      const width = container.offsetWidth;
+      const height = container.offsetHeight;
+      // Cap the DRAWING BUFFER, never the CSS box. ogl's `setSize` writes
+      // `canvas.style` from the CSS numbers below and multiplies only
+      // `canvas.width/height` by `dpr`, so this lowers sampling density and
+      // changes nothing the operator configured — every feature this shader
+      // derives from `uResolution` is a fraction of it. See `render-scale.ts`.
+      const bufferRatio = resolveBufferRatio(width, height, 1);
+      // Reallocate the drawing buffer only when the box actually moved. iOS
+      // fires `window.resize` per frame while the address bar collapses
+      // mid-scroll, and a full-viewport host sized in `lvh` — which is how
+      // both apps size theirs — stays exactly where it was — while ogl's
+      // `setSize` writes `gl.canvas.width` unconditionally, and writing a
+      // canvas's width reallocates the WebGL drawing buffer even for an
+      // identical value. Same guard as `LiquidChrome.tsx`.
+      //
+      // The uniform stays OUTSIDE the guard: it is an array assignment, not a
+      // buffer, and leaving it inside would make a container that happens to
+      // match ogl's 300×150 construction size skip its only initialisation.
+      if (width !== renderer.width || height !== renderer.height || bufferRatio !== renderer.dpr) {
+        renderer.dpr = bufferRatio;
+        renderer.setSize(width, height);
+      }
       if (program) {
         program.uniforms.iResolution.value = [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height];
       }

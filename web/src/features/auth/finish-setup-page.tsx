@@ -137,10 +137,13 @@ export default function FinishSetupPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-(--brand-bg-primary) px-4">
+    // Own scroll container: html/body/#root are `100dvh; overflow:hidden`, and
+    // the iOS keyboard shrinks only the visual viewport — without an inner
+    // scroller WebKit jerks the layout viewport to reveal the focused input.
+    <div className="scroll-area entry-scroller relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-4">
       <NetworkBg intensity="low" />
 
-      <div className="relative z-10 w-full max-w-sm">
+      <div className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col justify-center py-8">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -160,9 +163,11 @@ export default function FinishSetupPage() {
           <p className="mt-2 text-center text-sm text-[color:var(--brand-muted-foreground)]">{t('finishSetup.subtitle')}</p>
         </motion.div>
 
+        {/* Opacity-only entrance: wraps glass (backdrop-filter) inputs — a
+            y-slide re-blurs their backdrop every frame on WebKit. */}
         <motion.form
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           transition={{ delay: 0.1 }}
           onSubmit={handleSubmit}
           className="space-y-4"

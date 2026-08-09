@@ -6,22 +6,30 @@
  * meta since iOS 10 (an accessibility decision). That's why the cabinet could
  * still be pinch-zoomed and double-tap-zoomed on iPhone — and once zoomed, the
  * page pans so content reads as "out of bounds", while Android (which honours
- * the meta) behaves. The only reliable way to suppress it is to cancel the
- * relevant touch/gesture events in JS:
+ * the meta) behaves.
  *
- *   - `gesturestart` / `gesturechange` / `gestureend` — Safari-only pinch
- *     gesture events. Cancelling `gesturestart` stops pinch-zoom.
- *   - multi-touch `touchmove` (2+ fingers) — belt-and-suspenders for engines
- *     that don't fire the gesture events.
- *   - double-tap zoom — cancel the second `touchend` inside ~300ms.
+ * Suppression rests on TWO cooperating layers, neither of which touches the
+ * scroll path:
  *
- * Listeners are non-passive (`{ passive: false }`) so `preventDefault()` is
- * honoured. We intentionally do NOT touch single-finger scrolling, taps, or
- * the carousel swipe — only the zoom gestures. No-op outside the browser.
+ *   - CSS `touch-action: pan-x pan-y` on html/body/#root (see `index.css`) —
+ *     honoured by iOS 13+ WebKit, it disallows pinch-zoom and double-tap zoom
+ *     declaratively, before any JS runs.
+ *   - `gesturestart` / `gesturechange` / `gestureend` preventDefault below —
+ *     Safari's proprietary pinch events, the belt-and-braces for Safari's own
+ *     gesture path. These are NOT touch events: cancelling them never blocks
+ *     scrolling, so they may stay non-passive at zero cost.
  *
- * This is purely a zoom suppressor; normal scrolling and interactions are
- * unaffected, so it does not regress accessibility within the app (the app is
- * already a fixed, dark, dvh-locked mobile shell).
+ * This module used to ALSO install non-passive `touchmove` and `touchend`
+ * listeners on `document` (multi-touch pinch + double-tap cancellation). Do
+ * not bring them back: a non-passive touch listener on the document disables
+ * WebKit's fast-path (compositor-thread) scrolling for the entire app — every
+ * scroll had to wait on the main thread, which is exactly the entry-screen
+ * lag this module now avoids. The zoom gestures they guarded against are
+ * already covered by the two layers above.
+ *
+ * No-op outside the browser. Purely a zoom suppressor; normal scrolling and
+ * interactions are unaffected, so it does not regress accessibility within
+ * the app (the app is already a fixed, dark, dvh-locked mobile shell).
  */
 
 let installed = false;
@@ -35,59 +43,9 @@ export function installIosZoomLock(): void {
   };
 
   // Safari pinch-gesture events (iOS + macOS Safari). Non-standard but the
-  // canonical way to block pinch-zoom on Apple browsers.
+  // canonical way to block pinch-zoom on Apple browsers. Not touch events —
+  // cancelling them does not interfere with scrolling.
   document.addEventListener('gesturestart', prevent, { passive: false });
   document.addEventListener('gesturechange', prevent, { passive: false });
   document.addEventListener('gestureend', prevent, { passive: false });
-
-  // Pinch via raw touches (engines that don't emit gesture* events): a
-  // touchmove with more than one active touch is a zoom/scale attempt.
-  document.addEventListener(
-    'touchmove',
-    (event: TouchEvent) => {
-      if (event.touches.length > 1) event.preventDefault();
-    },
-    { passive: false },
-  );
-
-  // Double-tap-to-zoom: cancel the SECOND tap when it lands within 300ms.
-  // Critically, only genuine STATIONARY taps count — a swipe (finger moved
-  // more than a few px) must never be treated as a tap, otherwise the second
-  // `touchend` of two quick carousel/page swipes would be preventDefault()ed
-  // and could interrupt the fling/scroll-snap on iOS. So we track the start
-  // point and reset the tap chain whenever the finger moved.
-  const TAP_MOVE_TOLERANCE_PX = 10;
-  let lastTapTime = 0;
-  let startX = 0;
-  let startY = 0;
-  document.addEventListener(
-    'touchstart',
-    (event: TouchEvent) => {
-      if (event.touches.length === 1) {
-        startX = event.touches[0]!.clientX;
-        startY = event.touches[0]!.clientY;
-      }
-    },
-    { passive: true },
-  );
-  document.addEventListener(
-    'touchend',
-    (event: TouchEvent) => {
-      const touch = event.changedTouches[0];
-      const moved =
-        touch === undefined ||
-        Math.abs(touch.clientX - startX) > TAP_MOVE_TOLERANCE_PX ||
-        Math.abs(touch.clientY - startY) > TAP_MOVE_TOLERANCE_PX;
-      if (moved) {
-        // A swipe/drag — never a double-tap. Reset the chain and leave the
-        // event untouched so momentum scrolling / snap is not disturbed.
-        lastTapTime = 0;
-        return;
-      }
-      const now = Date.now();
-      if (now - lastTapTime <= 300) event.preventDefault();
-      lastTapTime = now;
-    },
-    { passive: false },
-  );
 }

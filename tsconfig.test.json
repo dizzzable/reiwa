@@ -1,0 +1,34 @@
+{
+  // Type-checks the backend specs under `test/`.
+  //
+  // Until this file existed, `test/**` was checked by NOTHING. The root
+  // `tsconfig.json` includes `src/**/*.ts` only, and Vitest compiles specs with
+  // esbuild, which strips types without reading them. A spec could reference a
+  // function that no longer exists, or assert against a renamed field, and
+  // every command in the repo stayed green — which matters most for the
+  // source-text contracts in `test/web/`, whose whole job is to fail when a
+  // name changes.
+  //
+  // `src` is included alongside `test` deliberately: the specs import the
+  // backend modules they exercise, so the program has to contain both anyway,
+  // and listing `src` makes that explicit rather than incidental.
+  //
+  // `test/web/` is NOT here. Those specs reach into `web/src`, which is a
+  // different compiler world — `moduleResolution: bundler`, DOM lib, JSX, and
+  // the `@/*` alias — and pulling it in under NodeNext would report hundreds of
+  // TS2307s on extensionless imports that Vite resolves fine. They are checked
+  // by `web/tsconfig.test.json` instead, which already has those options.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The root config emits `dist/` from `rootDir: "src"`. This project only
+    // checks, so drop the emit settings rather than teaching them about a
+    // second root.
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": ["test", "src"],
+  "exclude": ["node_modules", "dist", "test/web"]
+}

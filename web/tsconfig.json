@@ -1,17 +1,18 @@
 {
   "files": [],
-  // `tsconfig.test.json` is deliberately NOT referenced here.
+  // `tsconfig.test.json` is deliberately NOT referenced here — but it IS run in
+  // CI, from the other job.
   //
   // The web tests import `vitest` and `@testing-library/*`, which are devDeps
   // of the ROOT package, not of `web/`. CI's web job runs `npm ci` inside
-  // `web/` only, so those modules do not exist there and `tsc -b` fails with
-  // TS2307 on every test file — while passing locally, where the root's
+  // `web/` only, so those modules do not exist there and `tsc -b` would fail
+  // with TS2307 on every test file — while passing locally, where the root's
   // `node_modules` sits one directory up and resolution walks into it.
   //
-  // To bring the tests under CI type checking, one of these has to happen
-  // first: install the test tooling in `web/`, or make the web CI job install
-  // the root's dependencies as well. Until then run it by hand:
-  //   npx tsc -p web/tsconfig.test.json --noEmit
+  // The BACKEND job installs both graphs (`npm ci` then `npm --prefix web ci`),
+  // so that is where the test projects are checked:
+  //   .github/workflows/ci.yml → "Typecheck web tests"
+  // Locally, `npm run check:tests` at the repo root runs the same two projects.
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }

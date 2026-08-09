@@ -1,7 +1,28 @@
-import React, { forwardRef, useMemo, useRef, useLayoutEffect } from 'react';
+import React, { forwardRef, useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { Canvas, useFrame, useThree, RootState } from '@react-three/fiber';
-import { Color, Mesh, ShaderMaterial } from 'three';
+import { Color, Mesh, Object3D, ShaderMaterial } from 'three';
 import { IUniform } from 'three';
+
+import { BudgetedDpr, type FiberDpr } from './fiber-render-scale';
+
+/**
+ * Delete the GPU objects hanging off a scene before the context that owns them
+ * goes away. Losing the context frees the driver allocations but leaves every
+ * three.js wrapper — geometry buffers, material programs — attached to the
+ * renderer's internal maps.
+ */
+const releaseSceneResources = (scene: Object3D): void => {
+  scene.traverse(object => {
+    const mesh = object as Partial<Mesh>;
+    mesh.geometry?.dispose();
+    const material = mesh.material;
+    if (Array.isArray(material)) {
+      for (const entry of material) entry.dispose();
+    } else {
+      material?.dispose();
+    }
+  });
+};
 
 type NormalizedRGB = [number, number, number];
 
@@ -125,8 +146,38 @@ export interface SilkProps {
   rotation?: number;
 }
 
+const BASE_DPR: FiberDpr = [1, 2];
+
 const Silk: React.FC<SilkProps> = ({ speed = 5, scale = 1, color = '#7B7481', noiseIntensity = 1.5, rotation = 0 }) => {
   const meshRef = useRef<Mesh>(null);
+  const rootRef = useRef<RootState | null>(null);
+  // Starts as the clamp fiber would have used on its own and becomes the
+  // budgeted number once `BudgetedDpr` has seen the measured box.
+  const [dpr, setDpr] = useState<FiberDpr>(BASE_DPR);
+  const handleResolve = useCallback((resolved: number) => {
+    setDpr(previous => (previous === resolved ? previous : resolved));
+  }, []);
+
+  // React Three Fiber does release the context on unmount, but from inside a
+  // 500 ms setTimeout and without ever calling gl.dispose(). Half a second is
+  // several slides of a carousel swipe, and WebKit allows only 16 live WebGL
+  // contexts per web-content process before it starts recycling the oldest and
+  // handing out an unrecoverable SyntheticLostContext. Release it here instead,
+  // synchronously, while unmounting.
+  useEffect(
+    () => () => {
+      const root = rootRef.current;
+      rootRef.current = null;
+      if (root === null) return;
+      releaseSceneResources(root.scene);
+      // dispose() detaches THREE.WebGLRenderer's own webglcontextlost /
+      // webglcontextrestored listeners, so the loss below cannot re-enter the
+      // restore path and rebuild what we are freeing.
+      root.gl.dispose();
+      root.gl.forceContextLoss();
+    },
+    []
+  );
 
   const uniforms = useMemo<SilkUniforms>(
     () => ({
@@ -141,7 +192,39 @@ const Silk: React.FC<SilkProps> = ({ speed = 5, scale = 1, color = '#7B7481', no
   );
 
   return (
-    <Canvas dpr={[1, 2]} frameloop="always">
+    /**
+     * `resize={{ offsetSize: true }}` — measure the LAYOUT box, not the painted one.
+     *
+     * fiber sizes itself from react-use-measure, whose default is
+     * getBoundingClientRect(): TRANSFORMED geometry. That measurement is then
+     * written straight back into `canvas.style.width/height`, which is a LAYOUT
+     * property — so under any ancestor transform fiber scales the canvas by the
+     * transform and the browser then scales it again. `offsetSize` swaps
+     * width/height for offsetWidth/offsetHeight, which a transform cannot see,
+     * and makes fiber's measure-then-style loop self-consistent. The panel's
+     * preview tiles carry `hover:scale-[1.03]`, and react-use-measure
+     * re-measures on scroll, so this is reachable rather than theoretical.
+     * Everywhere else it changes nothing: with no transform above, the layout
+     * box and the painted box are the same box.
+     *
+     * One inexactness, stated because it is real: offsetWidth/offsetHeight are
+     * the border box ROUNDED to whole pixels, so on a fractional layout box the
+     * canvas's inline CSS size can land up to half a pixel off the container.
+     * fiber's wrapper is `overflow: hidden`, so that shows as at most a
+     * sub-pixel edge; the drawing buffer stays 1:1 with what it presents into.
+     *
+     * `dpr` is state rather than the literal `[1, 2]` so the device-pixel
+     * budget can lower it — see `fiber-render-scale.tsx`.
+     */
+    <Canvas
+      dpr={dpr}
+      frameloop="always"
+      resize={{ offsetSize: true }}
+      onCreated={state => {
+        rootRef.current = state;
+      }}
+    >
+      <BudgetedDpr base={BASE_DPR} onResolve={handleResolve} />
       <SilkPlane ref={meshRef} uniforms={uniforms} />
     </Canvas>
   );

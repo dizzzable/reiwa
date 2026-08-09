@@ -1,10 +1,28 @@
 {
-  // Type-checks `web/test/` under the app's own compiler options. Without this
-  // project nothing checks the tests: the root `tsc -p tsconfig.json` covers
-  // `src/**/*.ts` at the repo root, `tsconfig.app.json` covers `web/src` and
-  // `tsconfig.node.json` covers `vite.config.ts`. Vitest compiles the specs
-  // with esbuild, which strips types without reading them, so a type error in
-  // a spec used to be invisible to every command.
+  // Type-checks the front-end specs under the app's own compiler options —
+  // `web/test/` (50 files) AND `../test/web/` (35 files), which is the root
+  // Vitest project's directory of component/source-text contracts.
+  //
+  // Without this project nothing checked either of them: the root
+  // `tsc -p tsconfig.json` covers `src/**/*.ts` at the repo root,
+  // `tsconfig.app.json` covers `web/src`, `tsconfig.node.json` covers
+  // `vite.config.ts`, and Vitest compiles specs with esbuild, which strips
+  // types without reading them. A source-text contract whose whole job is to
+  // fail when a name changes could itself reference a name that no longer
+  // exists, and every command in the repo stayed green.
+  //
+  // `../test/web` belongs HERE rather than in the root `tsconfig.test.json`
+  // because those specs import `web/src` modules, and `web/src` is a different
+  // compiler world: `moduleResolution: bundler` (extensionless relative
+  // imports), the DOM lib, JSX, and the `@/*` alias. Under the root project's
+  // NodeNext they would report a TS2835 on every extensionless import inside
+  // the graph they pull in. Their few backend imports
+  // (`../../src/application/ports/*.js`) resolve fine under bundler, which
+  // accepts both spellings.
+  //
+  // CI runs this from the BACKEND job (`.github/workflows/ci.yml`), which is
+  // the only one with both package graphs installed — see the note in
+  // `tsconfig.json` next door about why the web job cannot.
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
     // The specs reach for Node built-ins the app never touches
@@ -21,5 +39,5 @@
   // Narrow this to ["test"] and the build reports ~18 errors it has no
   // business reporting: TS2339 on `window.Telegram` and `import.meta.glob`,
   // TS2882 on the CSS imports.
-  "include": ["test", "src"]
+  "include": ["test", "src", "../test/web"]
 }

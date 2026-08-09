@@ -52,7 +52,7 @@ async function post(app: express.Express, path: string, body: unknown): Promise<
 
 describe('client-errors route', () => {
   it('forwards a client error as a web-source report and answers 204', async () => {
-    const report = vi.fn(async () => ({ ok: true }));
+    const report = vi.fn(async (_report: unknown) => ({ ok: true }));
     const status = await post(makeApp(report), '/api/v1/client-errors', {
       message: 'Cannot read properties of undefined',
       kind: 'react.errorBoundary',
@@ -83,7 +83,7 @@ describe('client-errors route', () => {
   });
 
   it('rejects an empty message with 400 and does not report', async () => {
-    const report = vi.fn(async () => ({ ok: true }));
+    const report = vi.fn(async (_report: unknown) => ({ ok: true }));
     const status = await post(makeApp(report), '/api/v1/client-errors', { message: '   ' });
     expect(status).toBe(400);
     await new Promise((r) => setTimeout(r, 0));

@@ -8,6 +8,8 @@
  * an animated card-effect on top of this static visual, EXCEPT when a custom
  * `textureUrl` image is set (then the image wins and the effect is suppressed).
  */
+import { isKnownCardEffect } from "@/components/reactbits/card-effect-catalog";
+import { resolveCardEffectOutputColors } from "@/components/reactbits/card-effect-runtime";
 import { buildTextureCss } from "@/lib/app-texture";
 import {
   ensureReadableCardAccent,
@@ -63,13 +65,46 @@ export function resolvePlanCardStyle(planId: string, branding: Branding): Resolv
   const effectProps = style?.cardEffectProps ?? {};
   const effectOpacity =
     typeof style?.cardEffectOpacity === "number" ? style.cardEffectOpacity : 1;
+  /**
+   * WHAT WENT WRONG, three times over. Each time the same way: this decided
+   * that an effect was on the card when the card was not going to draw one.
+   *
+   * The tariff card layers the same animated effect over its gradient as the
+   * subscription card does, but passed contrast only the gradient. Text colour
+   * and veil were therefore chosen for artwork the operator had covered up: an
+   * opaque white effect over a dark plan gradient still produced white text.
+   * The subscription card has fed the effect's own output colours in since it
+   * grew the same overlay; this brings the two into line.
+   *
+   * And the veil floor was raised for any effect id that was not `NONE`.
+   * `cardEffect` is open vocabulary, so an id from a panel one release ahead —
+   * one this bundle cannot draw — both fabricated a default aurora palette here
+   * and darkened the card for it. Nothing that cannot be drawn contributes
+   * anything: no colours, no extra veil.
+   *
+   * And `textureUrl` reopened it. A per-plan uploaded image is the deliberate
+   * art for that card, so `tariff-card.tsx` renders the image and suppresses
+   * the effect outright (`showEffect = effect !== "NONE" && !visual.textureUrl`).
+   * This did not know that, so a plan with BOTH an image and an effect got dark
+   * text and a raised veil sized for an animation that was never mounted. The
+   * two conditions have to agree; if that suppression rule ever moves, this
+   * moves with it.
+   *
+   * Note the asymmetry with `texturePreset` below, which is deliberate: a
+   * preset grain is a subtle overlay that sits ON TOP of a live effect, so it
+   * suppresses nothing and is not consulted here.
+   */
+  const drawsOverlay =
+    effect !== "NONE" && isKnownCardEffect(effect) && textureUrl === null;
+  const clampedEffectOpacity = Math.min(1, Math.max(0, effectOpacity));
   const contrast = resolveCardContrast(gradient, {
     fallbackBackground: branding.bgSecondary,
     preferredForeground: branding.primaryFg,
-    minimumVeilOpacity:
-      effect === "NONE"
-        ? 0.12
-        : 0.18 + Math.min(1, Math.max(0, effectOpacity)) * 0.12,
+    minimumVeilOpacity: drawsOverlay ? 0.18 + clampedEffectOpacity * 0.12 : 0.12,
+    overlayArtwork: drawsOverlay
+      ? resolveCardEffectOutputColors(effect, effectProps).join(" ")
+      : null,
+    overlayOpacity: drawsOverlay ? clampedEffectOpacity : 0,
   });
 
   let textureImage: string | null = null;

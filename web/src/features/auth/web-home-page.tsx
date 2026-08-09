@@ -5,10 +5,14 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 
 import { NetworkBg } from '@/components/ui/network-bg'
-import { BrandLogo } from '@/components/ui/brand-logo'
+import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { useBranding } from '@/lib/branding-provider'
-import { botSignin, getLanding, getSession } from '@/lib/api-client'
-import { SESSION_QUERY_KEY } from '@/hooks/use-session'
+import { botSignin, getLanding } from '@/lib/api-client'
+import {
+  SESSION_QUERY_KEY,
+  SESSION_STALE_TIME_MS,
+  fetchSessionOrNull,
+} from '@/hooks/use-session'
 import { LANDING_QUERY_KEY } from '@/features/landing/landing-page'
 import { parseLandingPayload } from '@/features/landing/landing-schema'
 import { detectTelegramInitData } from './telegram-launch'
@@ -147,16 +151,31 @@ export default function WebHomePage() {
         }
       }
 
-      // Step 2 — existing-cookie probe.
+      // Step 2 — existing-cookie probe, through the shared React-Query key so
+      // it collapses into the `useSession()` request the app root has already
+      // fired on this same mount (`use-ad-attribution`) instead of issuing a
+      // second concurrent `/api/v1/session`. `fetchQuery` also caches the
+      // result, which is what the old `setQueryData` did by hand.
       try {
-        const session = await getSession()
+        const session = await queryClient.fetchQuery({
+          queryKey: SESSION_QUERY_KEY,
+          queryFn: fetchSessionOrNull,
+          staleTime: SESSION_STALE_TIME_MS,
+          retry: false,
+        })
         if (session) {
-          queryClient.setQueryData(SESSION_QUERY_KEY, session)
           navigate(keepQuery('/dashboard'), { replace: true })
           return
         }
       } catch {
-        // No session — fall through to the landing/sign-in decision below.
+        // NOT the "no session" path — `fetchSessionOrNull` swallows the 401 and
+        // RETURNS null, so the falsy `session` above is what an unauthenticated
+        // visitor produces. Nothing in the query function throws, so this only
+        // fires if `fetchQuery` itself rejects (a CancelledError from a
+        // `cancelQueries` elsewhere). Kept as defence in depth: the outer
+        // effect is a bare `void (async () => …)()`, so an escaping rejection
+        // would be an unhandled one and the visitor would sit on the splash
+        // forever instead of falling through to the decision below.
       }
 
       // Step 3 — unauthenticated browser visitor: show the operator-authored
@@ -187,18 +206,7 @@ export default function WebHomePage() {
       <NetworkBg intensity="medium" />
 
       <div className="relative z-10 flex flex-col items-center gap-8 px-8 text-center">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-        >
-          <div
-            className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-[color:var(--color-surface)] ring-1 ring-[color:var(--color-border-soft)] backdrop-blur-xl"
-            style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
-          >
-            <BrandLogo className="h-14 w-14" />
-          </div>
-        </motion.div>
+        <EntryBrandTile size="lg" />
 
         <motion.div
           initial={{ opacity: 0, y: 8 }}

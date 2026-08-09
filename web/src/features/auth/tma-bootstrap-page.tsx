@@ -4,10 +4,14 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { NetworkBg } from '@/components/ui/network-bg'
-import { BrandLogo } from '@/components/ui/brand-logo'
+import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { useBranding } from '@/lib/branding-provider'
-import { bootstrapTelegram, getSession } from '@/lib/api-client'
-import { SESSION_QUERY_KEY } from '@/hooks/use-session'
+import { bootstrapTelegram } from '@/lib/api-client'
+import {
+  SESSION_QUERY_KEY,
+  SESSION_STALE_TIME_MS,
+  fetchSessionOrNull,
+} from '@/hooks/use-session'
 import { useTelegramWebApp } from '@/hooks/use-telegram-webapp'
 import { readTelegramLaunchInitData } from '@/lib/telegram-launch-params'
 
@@ -55,18 +59,34 @@ export default function BootstrapPage() {
 
     async function run() {
       try {
-        // 1. Try existing session first
+        // 1. Try existing session first — through the shared React-Query key,
+        // so this probe joins the `useSession()` request already in flight
+        // from the app root (`use-ad-attribution`) instead of issuing a second
+        // concurrent `/api/v1/session`. A failed probe still means "need to
+        // bootstrap", exactly as before; `fetchQuery` caches a success, which
+        // is what the old `setQueryData` did by hand.
         setPhase('authenticating')
         try {
-          const session = await getSession()
+          const session = await queryClient.fetchQuery({
+            queryKey: SESSION_QUERY_KEY,
+            queryFn: fetchSessionOrNull,
+            staleTime: SESSION_STALE_TIME_MS,
+            retry: false,
+          })
           if (session) {
-            queryClient.setQueryData(SESSION_QUERY_KEY, session)
             setPhase('ready')
             navigate(nextDestination ?? '/dashboard', { replace: true })
             return
           }
         } catch {
-          // No existing session — need to bootstrap
+          // NOT the "no existing session" path — `fetchSessionOrNull` swallows
+          // the 401 and RETURNS null, so a missing session is the falsy
+          // `session` above and falls through to the bootstrap below on its
+          // own. Nothing in the query function throws; this only fires if
+          // `fetchQuery` itself rejects (a CancelledError from a
+          // `cancelQueries` elsewhere). Kept as defence in depth so such a
+          // rejection still reaches the initData bootstrap instead of the
+          // outer catch's error screen.
         }
 
         // 2. Bootstrap with Telegram initData
@@ -123,18 +143,7 @@ export default function BootstrapPage() {
 
       <div className="relative z-10 flex flex-col items-center gap-8 px-8 text-center">
         {/* Logo/brand */}
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-        >
-          <div
-            className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-[color:var(--color-surface)] ring-1 ring-[color:var(--color-border-soft)] backdrop-blur-xl"
-            style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
-          >
-            <BrandLogo className="h-14 w-14" />
-          </div>
-        </motion.div>
+        <EntryBrandTile size="lg" />
 
         {/* Brand name */}
         <motion.div

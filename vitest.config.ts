@@ -21,7 +21,13 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['test/**/*.test.ts', 'src/**/*.test.ts', 'web/test/**/*.test.tsx'],
+    // `web/test` takes BOTH extensions. It used to take only `.tsx`, which
+    // silently dropped every component contract written without JSX — and
+    // `passWithNoTests` below meant even `vitest run <that file>` reported
+    // success while collecting nothing. This is the only project CI runs tests
+    // in (`web`'s CI job is typecheck and build only), so a file it does not
+    // collect is a file that never runs anywhere.
+    include: ['test/**/*.test.ts', 'src/**/*.test.ts', 'web/test/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.property.test.ts'],
     passWithNoTests: true,
     // The mixed Node + jsdom suite is stable in isolation but fork workers

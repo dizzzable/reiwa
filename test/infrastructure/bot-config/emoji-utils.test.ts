@@ -248,10 +248,13 @@ describe('applyCustomEmojiTokens', () => {
 
 describe('stripCustomEmojiEntities', () => {
   it('drops only custom_emoji entities, keeping text-format ones intact', () => {
+    // The second entity is deliberately NOT a custom_emoji — that is what the
+    // function has to keep — so the array cannot satisfy the parameter type
+    // element-wise. Cast the array, not the element, so the shapes stay honest.
     const entities = [
-      { type: 'custom_emoji' as const, offset: 0, length: 2, custom_emoji_id: '5333' },
-      { type: 'bold' as unknown as 'custom_emoji', offset: 3, length: 4 },
-    ];
+      { type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: '5333' },
+      { type: 'bold', offset: 3, length: 4 },
+    ] as unknown as Parameters<typeof stripCustomEmojiEntities>[0];
     const out = stripCustomEmojiEntities(entities);
     expect(out).toEqual([{ type: 'bold', offset: 3, length: 4 }]);
   });

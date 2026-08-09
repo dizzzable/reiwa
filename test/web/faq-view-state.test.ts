@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { FaqItem } from "../../web/src/lib/api-client/content.js";
 import { resolveFaqViewState } from "../../web/src/features/settings/faq-state.js";
 
-const t = (key: string) => key;
+/**
+ * i18next's `TFunction` is a branded, heavily overloaded type, and the resolver
+ * only ever calls it as `t(key)`. Take the parameter type from the function
+ * under test rather than importing `i18next` here, so this spec keeps compiling
+ * if the translator type is swapped.
+ */
+type Translate = Parameters<typeof resolveFaqViewState>[2];
+const t = ((key: string) => key) as unknown as Translate;
 
 describe("FAQ view state", () => {
   it("shows the operator-managed FAQ without an outage banner when the query succeeds", () => {

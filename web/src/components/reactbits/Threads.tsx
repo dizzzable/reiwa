@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { Renderer, Program, Mesh, Triangle, Color } from 'ogl';
 
+import { resolveBufferRatio } from './render-scale';
+
 interface ThreadsProps {
   color?: [number, number, number];
   amplitude?: number;
@@ -166,10 +168,29 @@ const Threads: React.FC<ThreadsProps> = ({
 
     function resize() {
       const { clientWidth, clientHeight } = container;
-      renderer.setSize(clientWidth, clientHeight);
-      program.uniforms.iResolution.value.r = clientWidth;
-      program.uniforms.iResolution.value.g = clientHeight;
-      program.uniforms.iResolution.value.b = clientWidth / clientHeight;
+      // Cap the DRAWING BUFFER, never the CSS box. ogl's `setSize` writes
+      // `canvas.style` from the CSS numbers below and multiplies only
+      // `canvas.width/height` by `dpr`, so this lowers sampling density and
+      // changes nothing the operator configured — every feature this shader
+      // derives from `uResolution` is a fraction of it. See `render-scale.ts`.
+      const bufferRatio = resolveBufferRatio(clientWidth, clientHeight, 1);
+      // Reallocate the drawing buffer only when the box actually moved — see
+      // the note in `LiquidChrome.tsx`: iOS fires `resize` per frame while the
+      // address bar collapses, a full-viewport host is `lvh`-sized so its box
+      // does not move, and ogl's `setSize` reallocates the WebGL buffer even
+      // for an identical value. The uniforms stay outside the guard so a
+      // container matching ogl's 300×150 construction size still gets them.
+      if (clientWidth !== renderer.width || clientHeight !== renderer.height || bufferRatio !== renderer.dpr) {
+        renderer.dpr = bufferRatio;
+        renderer.setSize(clientWidth, clientHeight);
+      }
+      // The BUFFER size, not the CSS one: the shader divides `gl_FragCoord` —
+      // which is in buffer pixels — by this, so a CSS-pixel resolution would
+      // squeeze the whole pattern into a corner as soon as the two differ.
+      // Identical to what this wrote before, because ogl's ratio was 1.
+      program.uniforms.iResolution.value.r = gl.canvas.width;
+      program.uniforms.iResolution.value.g = gl.canvas.height;
+      program.uniforms.iResolution.value.b = gl.canvas.width / gl.canvas.height;
     }
     window.addEventListener('resize', resize);
     resize();

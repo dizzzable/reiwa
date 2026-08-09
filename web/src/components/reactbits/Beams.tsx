@@ -1,10 +1,41 @@
-import { forwardRef, useImperativeHandle, useEffect, useRef, useMemo, FC, ReactNode } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useEffect,
+  useRef,
+  useMemo,
+  useState,
+  FC,
+  ReactNode
+} from 'react';
 
 import * as THREE from 'three';
 
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, RootState } from '@react-three/fiber';
 import { PerspectiveCamera } from '@react-three/drei';
 import { degToRad } from 'three/src/math/MathUtils.js';
+
+import { BudgetedDpr, type FiberDpr } from './fiber-render-scale';
+
+/**
+ * Delete the GPU objects hanging off a scene before the context that owns them
+ * goes away. Losing the context frees the driver allocations but leaves every
+ * three.js wrapper — geometry buffers, material programs — attached to the
+ * renderer's internal maps.
+ */
+const releaseSceneResources = (scene: THREE.Object3D): void => {
+  scene.traverse(object => {
+    const mesh = object as Partial<THREE.Mesh>;
+    mesh.geometry?.dispose();
+    const material = mesh.material;
+    if (Array.isArray(material)) {
+      for (const entry of material) entry.dispose();
+    } else {
+      material?.dispose();
+    }
+  });
+};
 
 type UniformValue = THREE.IUniform<unknown> | unknown;
 
@@ -75,11 +106,55 @@ function extendMaterial<T extends THREE.Material = THREE.Material>(
   return mat;
 }
 
-const CanvasWrapper: FC<{ children: ReactNode }> = ({ children }) => (
-  <Canvas dpr={[1, 2]} frameloop="always" className="w-full h-full relative">
-    {children}
-  </Canvas>
-);
+const BASE_DPR: FiberDpr = [1, 2];
+
+const CanvasWrapper: FC<{ children: ReactNode; onCreated?: (state: RootState) => void }> = ({
+  children,
+  onCreated
+}) => {
+  // Starts as the clamp fiber would have used on its own and becomes the
+  // budgeted number once `BudgetedDpr` has seen the measured box — see
+  // `fiber-render-scale.tsx` for why the resolved ratio has to live on the PROP
+  // rather than be pushed into the store from inside.
+  const [dpr, setDpr] = useState<FiberDpr>(BASE_DPR);
+  const handleResolve = useCallback((resolved: number) => {
+    setDpr(previous => (previous === resolved ? previous : resolved));
+  }, []);
+
+  return (
+    /**
+     * `resize={{ offsetSize: true }}` — measure the LAYOUT box, not the painted one.
+     *
+     * fiber sizes itself from react-use-measure, whose default is
+     * getBoundingClientRect(): TRANSFORMED geometry. That measurement is then
+     * written straight back into `canvas.style.width/height`, which is a LAYOUT
+     * property — so under any ancestor transform fiber scales the canvas by the
+     * transform and the browser then scales it again. `offsetSize` swaps
+     * width/height for offsetWidth/offsetHeight, which a transform cannot see,
+     * and makes fiber's measure-then-style loop self-consistent. The panel's
+     * preview tiles carry `hover:scale-[1.03]`, and react-use-measure
+     * re-measures on scroll, so this is reachable rather than theoretical.
+     * Everywhere else it changes nothing: with no transform above, the layout
+     * box and the painted box are the same box.
+     *
+     * One inexactness, stated because it is real: offsetWidth/offsetHeight are
+     * the border box ROUNDED to whole pixels, so on a fractional layout box the
+     * canvas's inline CSS size can land up to half a pixel off the container.
+     * fiber's wrapper is `overflow: hidden`, so that shows as at most a
+     * sub-pixel edge; the drawing buffer stays 1:1 with what it presents into.
+     */
+    <Canvas
+      dpr={dpr}
+      frameloop="always"
+      resize={{ offsetSize: true }}
+      className="w-full h-full relative"
+      onCreated={onCreated}
+    >
+      <BudgetedDpr base={BASE_DPR} onResolve={handleResolve} />
+      {children}
+    </Canvas>
+  );
+};
 
 const hexToNormalizedRGB = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
@@ -188,6 +263,28 @@ const Beams: FC<BeamsProps> = ({
   rotation = 0
 }) => {
   const meshRef = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>>(null!);
+  const rootRef = useRef<RootState | null>(null);
+
+  // React Three Fiber does release the context on unmount, but from inside a
+  // 500 ms setTimeout and without ever calling gl.dispose(). Half a second is
+  // several slides of a carousel swipe, and WebKit allows only 16 live WebGL
+  // contexts per web-content process before it starts recycling the oldest and
+  // handing out an unrecoverable SyntheticLostContext. Release it here instead,
+  // synchronously, while unmounting.
+  useEffect(
+    () => () => {
+      const root = rootRef.current;
+      rootRef.current = null;
+      if (root === null) return;
+      releaseSceneResources(root.scene);
+      // dispose() detaches THREE.WebGLRenderer's own webglcontextlost /
+      // webglcontextrestored listeners, so the loss below cannot re-enter the
+      // restore path and rebuild what we are freeing.
+      root.gl.dispose();
+      root.gl.forceContextLoss();
+    },
+    []
+  );
 
   const beamMaterial = useMemo(
     () =>
@@ -246,8 +343,16 @@ const Beams: FC<BeamsProps> = ({
     [speed, noiseIntensity, scale]
   );
 
+  // extendMaterial() compiles a fresh ShaderMaterial every time these props
+  // change; without this the superseded one keeps its compiled program.
+  useEffect(() => () => beamMaterial.dispose(), [beamMaterial]);
+
   return (
-    <CanvasWrapper>
+    <CanvasWrapper
+      onCreated={state => {
+        rootRef.current = state;
+      }}
+    >
       <group rotation={[0, 0, degToRad(rotation)]}>
         <PlaneNoise ref={meshRef} material={beamMaterial} count={beamNumber} width={beamWidth} height={beamHeight} />
         <DirLight color={lightColor} position={[0, 3, 10]} />
@@ -328,6 +433,9 @@ const MergedPlanes = forwardRef<
     () => createStackedPlanesBufferGeometry(count, width, height, 0, 100),
     [count, width, height]
   );
+  // The geometry is built here rather than declared as a JSX element, so
+  // nothing else will ever free its vertex buffers.
+  useEffect(() => () => geometry.dispose(), [geometry]);
   useFrame((_, delta) => {
     mesh.current.material.uniforms.time.value += 0.1 * delta;
   });

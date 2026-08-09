@@ -25,7 +25,9 @@ describe("WEB Reiwa navigation contract", () => {
     );
 
     expect(normalized.filter((item) => item.id === "plans")).toHaveLength(1);
-    expect(normalized.some((item) => item.id === "unknown")).toBe(false);
+    // `id` is narrowed to the known ids by then — which is the point of the
+    // assertion, so widen for the comparison instead of weakening the type.
+    expect(normalized.some((item) => (item.id as string) === "unknown")).toBe(false);
     expect(normalized.find((item) => item.id === "subscriptions")?.visible).toBe(true);
     expect(normalized.find((item) => item.id === "settings")?.visible).toBe(true);
     expect(normalized.filter((item) => item.visible)).toHaveLength(5);

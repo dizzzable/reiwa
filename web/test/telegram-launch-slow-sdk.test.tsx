@@ -286,6 +286,34 @@ describe("WebHomePage launch context", () => {
 
     expect(navigate).toHaveBeenCalledWith("/sign-in", { replace: true });
   });
+
+  it("probes the cookie through the shared session query key, never a second raw /session call", async () => {
+    // `useSession()` — mounted app-wide via ad-attribution — issues the same
+    // request under `['session']` on this very mount. Only going through the
+    // same React-Query key/fetcher lets the two collapse into ONE
+    // `/api/v1/session` round-trip; the direct `getSession()` this page used
+    // to make here was a guaranteed duplicate.
+    const session = { userId: 42 };
+    queryClient.fetchQuery.mockImplementation(
+      (options: { queryKey: readonly unknown[] }) =>
+        options.queryKey[0] === "session"
+          ? Promise.resolve(session)
+          : Promise.reject(new Error("landing unavailable")),
+    );
+
+    mount(<WebHomePage />);
+    await elapse(2000);
+
+    expect(
+      api.getSession,
+      "WebHomePage called getSession() directly — that is a SECOND concurrent /api/v1/session, duplicating the one useSession() already has in flight",
+    ).not.toHaveBeenCalled();
+    expect(
+      queryClient.fetchQuery,
+      "the cookie probe did not go through the shared ['session'] query key, so it cannot collapse into useSession()'s request",
+    ).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["session"] }));
+    expect(navigate).toHaveBeenCalledWith("/dashboard", { replace: true });
+  });
 });
 
 describe("ContextRouter launch context", () => {

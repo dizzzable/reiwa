@@ -253,7 +253,15 @@ describe("SubscriptionCardFrame visual containment", () => {
     // gradient/pattern below the layer remain the card's source of colour.
     expect(markup).not.toContain("data-card-effect-palette-surface");
     expect(markup).not.toContain("background-color:#7300ff");
-    expect(markup).toContain("opacity:1");
     expect(markup).toContain('data-card-effect-ready="false"');
+
+    // Transparent until it has actually painted. This line used to assert
+    // `opacity:1` alongside `ready="false"` — "not ready, yet fully visible" —
+    // which is the abrupt appearance stated as a rule: the layer occupied the
+    // card at full strength before the renderer had drawn anything, so the
+    // moment it did the whole card changed between two frames. Nothing is
+    // visible until it is ready, and the transition below carries it in.
+    expect(markup).toContain("opacity:0");
+    expect(markup).toContain("transition:opacity 420ms");
   });
 });

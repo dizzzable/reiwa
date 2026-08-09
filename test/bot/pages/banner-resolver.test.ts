@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { resolveBannerSource } from '../../../src/bot/pages/banner-resolver';
+import { resolveBannerSource } from '../../../src/bot/pages/banner-resolver.js';
 
 describe('resolveBannerSource', () => {
   it('fetches a canonical upload path from the configured admin origin', async () => {

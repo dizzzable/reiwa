@@ -7,9 +7,12 @@
  * but in a **more compact** size (it's a list row, not the hero card).
  *
  * Performance: the animated background uses the same `CardEffectLayer` as the
- * dashboard, which lazy-loads the effect (per-effect chunk) and pauses GPU work
- * for off-screen cards via IntersectionObserver — so a list of cards only runs
- * the effect for what's actually visible.
+ * dashboard, which lazy-loads the effect (per-effect chunk) and draws nothing
+ * for off-screen cards — so a list only runs the effect for what's visible. On
+ * top of that, a WebGL effect must win a slot from the shared context budget
+ * (`@/lib/card-effect-budget`): "visible" is not a ceiling, and these tiles are
+ * short enough that a tall viewport puts more of them on screen than WebKit
+ * will give the process contexts for.
  *
  * `control` chooses the selection affordance:
  *   - "check"  → square checkbox (multi-select, e.g. combined renewal)
@@ -27,6 +30,7 @@ import { CustomIconView } from "@/components/ui/custom-icon-view";
 import { EmojiText } from "@/components/ui/emoji-text";
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { useBranding } from "@/lib/branding-provider";
+import { useCardEffectSlot } from "@/lib/card-effect-budget";
 import { brandAuroraStops, cn, formatDate } from "@/lib/utils";
 
 /** Subscription identity as shown on the dashboard card (profile first). */
@@ -125,8 +129,17 @@ export function SubscriptionSelectCard({
       ? (slot!.cardGradient as string)
       : branding.cardGradient;
 
+  // The worst of the two call sites for context pressure: these tiles are
+  // ~112 px tall and they ALL draw the operator's one global `cardEffect`
+  // (default `aurora`, WebGL1), so a phone puts seven or eight on screen and a
+  // tablet twelve — each its own context, against WebKit's pool of 16 shared
+  // with the app background. The slot caps how many may be live at once; the
+  // rest keep the operator's gradient. See `card-effect-budget`.
+  const effectSlot = useCardEffectSlot(effect);
+
   return (
     <button
+      ref={effectSlot.ref}
       type="button"
       onClick={onSelect}
       disabled={disabled}
@@ -151,6 +164,7 @@ export function SubscriptionSelectCard({
           effect={effect}
           props={effectProps}
           opacity={effectOpacity}
+          active={effectSlot.active}
           className="absolute inset-0 z-0"
         />
       )}

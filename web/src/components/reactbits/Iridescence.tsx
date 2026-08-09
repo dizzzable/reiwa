@@ -1,4 +1,6 @@
 import { Renderer, Program, Mesh, Color, Triangle } from 'ogl';
+
+import { resolveBufferRatio } from './render-scale';
 import { useEffect, useRef } from 'react';
 
 const vertexShader = `
@@ -72,7 +74,24 @@ export default function Iridescence({
 
     function resize() {
       const scale = 1;
-      renderer.setSize(ctn.offsetWidth * scale, ctn.offsetHeight * scale);
+      const width = ctn.offsetWidth * scale;
+      const height = ctn.offsetHeight * scale;
+      // Cap the DRAWING BUFFER, never the CSS box. ogl's `setSize` writes
+      // `canvas.style` from the CSS numbers below and multiplies only
+      // `canvas.width/height` by `dpr`, so this lowers sampling density and
+      // changes nothing the operator configured — every feature this shader
+      // derives from `uResolution` is a fraction of it. See `render-scale.ts`.
+      const bufferRatio = resolveBufferRatio(width, height, 1);
+      // Reallocate the drawing buffer only when the box actually moved — see
+      // the note in `LiquidChrome.tsx`: iOS fires `resize` per frame while the
+      // address bar collapses, a full-viewport host is `lvh`-sized so its box
+      // does not move, and ogl's `setSize` reallocates the WebGL buffer even
+      // for an identical value. The uniform stays outside the guard so a
+      // container matching ogl's 300×150 construction size still gets it.
+      if (width !== renderer.width || height !== renderer.height || bufferRatio !== renderer.dpr) {
+        renderer.dpr = bufferRatio;
+        renderer.setSize(width, height);
+      }
       if (program) {
         program.uniforms.uResolution.value = new Color(
           gl.canvas.width,

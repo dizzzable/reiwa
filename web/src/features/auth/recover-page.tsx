@@ -10,6 +10,11 @@ import { recoverPassword, type RecoverResponse } from '@/lib/api-client'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { AxiosError } from 'axios'
 
+// Same gate as the sign-in form: autofocus on a touch device raises the iOS
+// keyboard mid-entrance (viewport shrink vs. mount motion + focus zoom).
+const autoFocusFinePointer =
+  typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches
+
 type RecoveryState = 'form' | 'result'
 
 export default function RecoverPage() {
@@ -114,14 +119,19 @@ export default function RecoverPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden px-5">
+    // Own scroll container: html/body/#root are `100dvh; overflow:hidden`, and
+    // the iOS keyboard shrinks only the visual viewport — without an inner
+    // scroller WebKit jerks the layout viewport to reveal the focused input.
+    <div className="scroll-area entry-scroller relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-5">
       <NetworkBg intensity="medium" />
 
+      {/* Opacity-only entrance: the glass input inside carries backdrop-filter,
+          and a y-slide re-blurs its backdrop every frame on WebKit. */}
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 0.4 }}
-        className="relative z-10 w-full max-w-sm"
+        className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col justify-center py-8"
       >
         {/* Header */}
         <div className="mb-8 text-center">
@@ -152,7 +162,7 @@ export default function RecoverPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder={t('auth.recover.usernamePlaceholder')}
                 autoComplete="username"
-                autoFocus
+                autoFocus={autoFocusFinePointer}
                 className="glass-input w-full rounded-xl px-4 py-3 text-sm"
               />
             </div>

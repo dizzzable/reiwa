@@ -23,32 +23,21 @@ export type CardLogoPreset =
   | "ORBIT"
   | "HEXAGON";
 
-/** Animated card-background effect ids (mirrors backend CARD_EFFECTS). */
-export type CardEffect =
-  | "NONE"
-  | "aurora"
-  | "threads"
-  | "softAurora"
-  | "rippleGrid"
-  | "radar"
-  | "plasma"
-  | "particles"
-  | "liquidChrome"
-  | "lineWaves"
-  | "iridescence"
-  | "grainient"
-  | "galaxy"
-  | "balatro"
-  | "waves"
-  | "silk"
-  | "beams"
-  | "dither"
-  | "paperMesh"
-  | "paperWarp"
-  | "paperGrain"
-  | "paperDither"
-  | "paperSwirl"
-  | "paperMetaballs";
+/**
+ * The name of an animated card background, as the panel published it.
+ *
+ * Deliberately `string` and not a union of the effects this build ships.
+ * rezeis-admin releases on its own cadence, so a name arriving here may belong
+ * to an effect the cabinet has not learned yet; the snapshot guard lets it
+ * through on purpose, and pretending otherwise in the type would only push the
+ * lie one layer down. `isKnownCardEffect` in the effect manifest is where the
+ * question "do we have this one?" is actually answered, and it answers it
+ * against the components this bundle really contains.
+ *
+ * `"NONE"` remains meaningful: it is the operator choosing no animation, which
+ * is not the same as naming one we cannot draw.
+ */
+export type CardEffect = string;
 
 /** Icon colouring strategy for cabinet menu icons (mirrors backend). */
 export type IconColorMode = "default" | "theme" | "custom";
@@ -79,7 +68,9 @@ export interface CardEffectSlot {
  * Site-wide app background — rendered behind the whole cabinet (mirrors backend
  * `AppBackgroundSettings`). A `kind` discriminator selects a plain colour
  * (`none`), a static gradient, a static tiled texture, or an animated effect.
- * Reuses the card-effect registry for `effect`, mounted once at the shell.
+ * Reuses the card-effect catalog (`components/reactbits/card-effect-catalog.ts`,
+ * with its component map in `card-effect-manifest.ts`) for `effect`, mounted
+ * once at the shell.
  */
 export type AppBackgroundKind = "none" | "gradient" | "texture" | "effect";
 
@@ -183,6 +174,18 @@ export type BrandingThemeMode = "light" | "dark";
 export type BrandingThemeModePolicy = "fixed" | "user-selectable";
 
 /** Foreground policy for the copy drawn on a subscription card. */
+/**
+ * Who owns the card gradient. See `Branding.cardGradientSource`.
+ */
+export type CardGradientSource = "concept" | "custom";
+
+/** Legacy payloads have no source; they behaved as `concept`. */
+export function resolveCardGradientSource(
+  value: CardGradientSource | undefined,
+): CardGradientSource {
+  return value === "custom" ? "custom" : "concept";
+}
+
 export type SubscriptionCardTextMode = "auto" | "light" | "dark" | "custom";
 
 export interface SubscriptionCardText {
@@ -289,6 +292,23 @@ export interface Branding {
   bgSecondary: string;
   cardGradient: string;
   cardPattern: string | null;
+  /**
+   * Where the card gradient comes from, and therefore who wins a disagreement
+   * between the root value and the per-brightness variants.
+   *
+   *   - `concept` — the operator picked a concept, and the concept's own
+   *     light/dark gradients apply. That difference is the concept's whole
+   *     point: it generates a distinct palette per brightness.
+   *   - `custom` — the operator wrote their own gradient. The root value wins
+   *     everywhere and no variant may override it.
+   *
+   * Before this existed, one field served both meanings and they could not be
+   * told apart, so the variant always won: an operator saved a gradient, the
+   * cabinet went on drawing the concept's, forever. Absent in legacy payloads
+   * and resolved as `concept`, which reproduces the previous behaviour for
+   * installs that never touched the control.
+   */
+  cardGradientSource?: CardGradientSource;
   /** Missing in legacy payloads; resolved as `auto` at card-render time. */
   subscriptionCardText?: SubscriptionCardText;
   /** Missing in legacy payloads; disabled by default at card-render time. */
@@ -469,6 +489,7 @@ export function resolveBrandingThemeMode(
 ): Branding {
   const variant = branding.themeVariants?.[mode];
   if (!variant) return branding;
+  const gradientSource = resolveCardGradientSource(branding.cardGradientSource);
 
   // Copy the visual subset explicitly. In particular, never spread an
   // untrusted nested payload over the root: a brightness representation must
@@ -485,8 +506,20 @@ export function resolveBrandingThemeMode(
     primaryFg: variant.primaryFg,
     bgPrimary: variant.bgPrimary,
     bgSecondary: variant.bgSecondary,
-    cardGradient: variant.cardGradient,
-    cardPattern: variant.cardPattern,
+    // The variant wins ONLY while the gradient belongs to a concept.
+    //
+    // A concept generates a deliberately different palette for each
+    // brightness, so taking the variant is correct there. But the same line
+    // used to run unconditionally, which is why an operator's own gradient
+    // never reached the cabinet: it landed on the root and was overwritten
+    // here on every read, forever — the identical defect already fixed below
+    // for the font and the corner radii, and for the same reason. The
+    // difference is that a font has no per-brightness meaning at all, whereas
+    // a card gradient has one exactly when a concept supplies it. So this is
+    // resolved by knowing WHOSE the gradient is, not by picking a side.
+    ...(gradientSource === "custom"
+      ? { cardGradient: branding.cardGradient, cardPattern: branding.cardPattern }
+      : { cardGradient: variant.cardGradient, cardPattern: variant.cardPattern }),
     // This is one global operator decision, never a brightness token. Ignore
     // a stale/corrupt variant copy so a theme switch cannot change it.
     subscriptionCardText: resolveSubscriptionCardText(branding.subscriptionCardText),

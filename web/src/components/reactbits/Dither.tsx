@@ -1,8 +1,32 @@
-import { useRef, useState, useEffect, forwardRef } from 'react';
-import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
+import { useCallback, useRef, useState, useEffect, forwardRef, RefObject } from 'react';
+import { Canvas, useFrame, useThree, ThreeEvent, RootState } from '@react-three/fiber';
 import { EffectComposer, wrapEffect } from '@react-three/postprocessing';
-import { Effect } from 'postprocessing';
+import { Effect, type EffectComposer as EffectComposerImpl } from 'postprocessing';
 import * as THREE from 'three';
+
+import { BudgetedDpr, type FiberDpr } from './fiber-render-scale';
+
+/** What the Canvas asked for before the device-pixel budget. */
+const BASE_DPR: FiberDpr = 1;
+
+/**
+ * Delete the GPU objects hanging off a scene before the context that owns them
+ * goes away. Losing the context frees the driver allocations but leaves every
+ * three.js wrapper — geometry buffers, material programs — attached to the
+ * renderer's internal maps.
+ */
+const releaseSceneResources = (scene: THREE.Object3D): void => {
+  scene.traverse(object => {
+    const mesh = object as Partial<THREE.Mesh>;
+    mesh.geometry?.dispose();
+    const material = mesh.material;
+    if (Array.isArray(material)) {
+      for (const entry of material) entry.dispose();
+    } else {
+      material?.dispose();
+    }
+  });
+};
 
 const waveVertexShader = `
 precision highp float;
@@ -155,9 +179,14 @@ class RetroEffectImpl extends Effect {
   }
 }
 
+// Hoisted out of the component body on purpose. wrapEffect() mints a new
+// component type on every call, so building it during render made React unmount
+// and remount the effect on each re-render — a fresh RetroEffectImpl, a fresh
+// compiled pass in the composer, and the previous ones left behind.
+const WrappedRetroEffect = wrapEffect(RetroEffectImpl);
+
 const RetroEffect = forwardRef<RetroEffectImpl, { colorNum: number; pixelSize: number }>((props, ref) => {
   const { colorNum, pixelSize } = props;
-  const WrappedRetroEffect = wrapEffect(RetroEffectImpl);
   return <WrappedRetroEffect ref={ref} colorNum={colorNum} pixelSize={pixelSize} />;
 });
 
@@ -186,6 +215,7 @@ interface DitheredWavesProps {
   disableAnimation: boolean;
   enableMouseInteraction: boolean;
   mouseRadius: number;
+  composerRef: RefObject<EffectComposerImpl | null>;
 }
 
 function DitheredWaves({
@@ -197,7 +227,8 @@ function DitheredWaves({
   pixelSize,
   disableAnimation,
   enableMouseInteraction,
-  mouseRadius
+  mouseRadius,
+  composerRef
 }: DitheredWavesProps) {
   const mesh = useRef<THREE.Mesh>(null);
   const mouseRef = useRef(new THREE.Vector2());
@@ -215,15 +246,21 @@ function DitheredWaves({
     mouseRadius: new THREE.Uniform(mouseRadius)
   });
 
+  // `viewport.dpr` rather than `gl.getPixelRatio()` alone: the device-pixel
+  // budget lowers the ratio WITHOUT the measured box changing, and this effect
+  // used to depend on `size` only — so the resolution uniform would have stayed
+  // on the pre-budget value and the shader would have sampled a buffer that no
+  // longer existed at that size. The two are the same number; the store one is
+  // what re-runs this.
+  const dpr = useThree(state => state.viewport.dpr);
   useEffect(() => {
-    const dpr = gl.getPixelRatio();
     const newWidth = Math.floor(size.width * dpr);
     const newHeight = Math.floor(size.height * dpr);
     const currentRes = waveUniformsRef.current.resolution.value;
     if (currentRes.x !== newWidth || currentRes.y !== newHeight) {
       currentRes.set(newWidth, newHeight);
     }
-  }, [size, gl]);
+  }, [size, dpr]);
 
   const prevColor = useRef([...waveColor]);
   useFrame(({ clock }) => {
@@ -268,7 +305,12 @@ function DitheredWaves({
         />
       </mesh>
 
-      <EffectComposer>
+      {/* `multisampling={0}`: @react-three/postprocessing defaults to an
+          8-sample MSAA render target plus a resolve blit per frame. Same
+          reasoning as `antialias: false` on the Canvas — one full-screen quad
+          has no geometry edges to smooth, and RetroEffect re-quantises every
+          pixel into deliberately chunky Bayer dithering anyway. */}
+      <EffectComposer ref={composerRef} multisampling={0}>
         <RetroEffect colorNum={colorNum} pixelSize={pixelSize} />
       </EffectComposer>
 
@@ -308,20 +350,110 @@ export default function Dither({
   enableMouseInteraction = true,
   mouseRadius = 1
 }: DitherProps) {
+  const rootRef = useRef<RootState | null>(null);
+  const composerRef = useRef<EffectComposerImpl | null>(null);
+  // The ratio and the factor it was reduced by, resolved once `BudgetedDpr`
+  // has seen the box fiber measured. Both are needed: the ratio goes on the
+  // `dpr` prop, and `pixelSize` — the one thing in this effect denominated in
+  // BUFFER pixels — is multiplied by the scale so the Bayer blocks keep exactly
+  // the size on screen the operator set. Without that compensation, capping the
+  // buffer would coarsen the dither by 1/scale, which is a different picture
+  // rather than a softer one.
+  const [budget, setBudget] = useState<{ dpr: FiberDpr; scale: number }>({
+    dpr: BASE_DPR,
+    scale: 1
+  });
+  const handleResolve = useCallback((dpr: number, scale: number) => {
+    setBudget(previous =>
+      previous.dpr === dpr && previous.scale === scale ? previous : { dpr, scale }
+    );
+  }, []);
+
+  // React Three Fiber does release the context on unmount, but from inside a
+  // 500 ms setTimeout and without ever calling gl.dispose(). Half a second is
+  // several slides of a carousel swipe, and WebKit allows only 16 live WebGL
+  // contexts per web-content process before it starts recycling the oldest and
+  // handing out an unrecoverable SyntheticLostContext. Release it here instead,
+  // synchronously, while unmounting.
+  useEffect(
+    () => () => {
+      const root = rootRef.current;
+      const composer = composerRef.current;
+      rootRef.current = null;
+      composerRef.current = null;
+      // The composer owns render targets — framebuffers and their textures —
+      // that @react-three/postprocessing never frees, so it goes first.
+      composer?.dispose();
+      if (root === null) return;
+      releaseSceneResources(root.scene);
+      // dispose() detaches THREE.WebGLRenderer's own webglcontextlost /
+      // webglcontextrestored listeners, so the loss below cannot re-enter the
+      // restore path and rebuild what we are freeing.
+      root.gl.dispose();
+      root.gl.forceContextLoss();
+    },
+    []
+  );
+
   return (
+    /**
+     * `resize={{ offsetSize: true }}` — measure the LAYOUT box, not the painted one.
+     *
+     * fiber sizes itself from react-use-measure, whose default is
+     * getBoundingClientRect(): TRANSFORMED geometry. That measurement is then
+     * written straight back into `canvas.style.width/height`, which is a LAYOUT
+     * property — so under any ancestor transform fiber scales the canvas by the
+     * transform and the browser then scales it again. `offsetSize` swaps
+     * width/height for offsetWidth/offsetHeight, which a transform cannot see,
+     * and makes fiber's measure-then-style loop self-consistent — for this
+     * canvas and for the composer's render targets, which track the renderer's
+     * size. The panel's preview tiles carry `hover:scale-[1.03]`, and
+     * react-use-measure re-measures on scroll, so this is reachable rather than
+     * theoretical. Everywhere else it changes nothing: with no transform above,
+     * the layout box and the painted box are the same box.
+     *
+     * One inexactness, stated because it is real: offsetWidth/offsetHeight are
+     * the border box ROUNDED to whole pixels, so on a fractional layout box the
+     * canvas's inline CSS size can land up to half a pixel off the container;
+     * fiber's wrapper is `overflow: hidden`, so that shows as at most a
+     * sub-pixel edge.
+     *
+     * `dpr` is state rather than the literal `1` so the device-pixel budget can
+     * lower it — see `fiber-render-scale.tsx`.
+     */
     <Canvas
       className="w-full h-full relative"
       camera={{ position: [0, 0, 6] }}
-      dpr={1}
-      gl={{ antialias: true, preserveDrawingBuffer: true }}
+      dpr={budget.dpr}
+      resize={{ offsetSize: true }}
+      // `preserveDrawingBuffer: false`: the `true` it replaced forced the
+      // browser to copy the full drawing buffer every frame instead of
+      // flipping it, and NOTHING reads the buffer back — WebGL effects carry
+      // paint-evidence "none" (the layer's pixel sampler returns before
+      // touching a shader canvas), and no toDataURL/readPixels/captureStream
+      // caller for this canvas exists in either repository.
+      // `antialias: false`: MSAA smooths geometry edges, and this scene is a
+      // single full-screen quad with none; the RetroEffect pass then
+      // re-quantises every pixel to a Bayer-dithered palette whose whole point
+      // is chunky pixels. The default framebuffer's MSAA storage bought
+      // nothing visible.
+      gl={{ antialias: false, preserveDrawingBuffer: false }}
+      onCreated={state => {
+        rootRef.current = state;
+      }}
     >
+      <BudgetedDpr base={BASE_DPR} onResolve={handleResolve} />
       <DitheredWaves
+        composerRef={composerRef}
         waveSpeed={waveSpeed}
         waveFrequency={waveFrequency}
         waveAmplitude={waveAmplitude}
         waveColor={waveColor}
         colorNum={colorNum}
-        pixelSize={pixelSize}
+        // In buffer pixels. `budget.scale` is 1 for every card and every phone,
+        // so this is bit-identical there; where the buffer is capped it keeps
+        // the blocks the same size on screen instead of magnifying them.
+        pixelSize={pixelSize * budget.scale}
         disableAnimation={disableAnimation}
         enableMouseInteraction={enableMouseInteraction}
         mouseRadius={mouseRadius}

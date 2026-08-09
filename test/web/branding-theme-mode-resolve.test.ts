@@ -21,7 +21,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_BRANDING,
+  DEFAULT_SURFACE_THEME,
   resolveBrandingThemeMode,
+  type AppBackground,
   type Branding,
   type BrandingThemeVariant,
 } from "../../web/src/types/branding.js";
@@ -39,11 +41,14 @@ const PRESET_VARIANT: BrandingThemeVariant = {
   cardEffectOpacity: 0.5,
   cardEffectsByIndex: [],
   bgEffect: DEFAULT_BRANDING.bgEffect,
-  appBackground: DEFAULT_BRANDING.appBackground,
+  // `Branding.appBackground` / `.surfaceTheme` are optional (older snapshots
+  // predate them) but a variant requires both, so take the complete defaults
+  // rather than the possibly-absent fields off `DEFAULT_BRANDING`.
+  appBackground: DEFAULT_BRANDING.appBackground as AppBackground,
   borderRadius: "rounded-none",
   cornerRadii: { cardPx: 0, itemPx: 0, pillPx: 0 },
   fontFamily: "Playfair Display, serif",
-  surfaceTheme: { ...DEFAULT_BRANDING.surfaceTheme, foreground: "#010101" },
+  surfaceTheme: { ...DEFAULT_SURFACE_THEME, foreground: "#010101" },
 };
 
 function brandingWithVariant(overrides: Partial<Branding> = {}): Branding {
@@ -95,7 +100,7 @@ describe("resolveBrandingThemeMode", () => {
     expect(resolved.primary).toBe(PRESET_VARIANT.primary);
     expect(resolved.bgPrimary).toBe(PRESET_VARIANT.bgPrimary);
     expect(resolved.bgSecondary).toBe(PRESET_VARIANT.bgSecondary);
-    expect(resolved.surfaceTheme.foreground).toBe("#010101");
+    expect(resolved.surfaceTheme?.foreground).toBe("#010101");
   });
 
   it("changes nothing at all when the snapshot predates variants", () => {

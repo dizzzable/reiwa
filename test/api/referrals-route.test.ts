@@ -8,7 +8,9 @@ function makeApp(exchangePoints: (identity: Record<string, unknown>, body: Recor
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    req.webSession = { userId: 'user-cuid-1' };
+    // `WebSession` also carries the bookkeeping the store maintains; the route
+    // only reads `userId`, but the shape has to be whole.
+    req.webSession = { userId: 'user-cuid-1', createdAt: 0, ip: '127.0.0.1', lastActivity: 0 };
     next();
   });
   app.use('/api/v1', createReferralsRouter({

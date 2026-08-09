@@ -11,6 +11,17 @@
  * Mounted exactly once at the cabinet shell, so the animated mode costs at most
  * ONE live WebGL context; the static modes cost nothing. Decorative +
  * `aria-hidden`, sits at the back of the stacking context.
+ *
+ * This file does NOT govern the effect's resolution. It used to: the layer was
+ * laid out at `scale × 100%` and stretched back with `transform: scale(1/scale)`
+ * so that layout-measuring renderers would allocate smaller buffers. That
+ * shrank the CSS box every effect derives its FEATURES from, so a `waves`
+ * lattice pitch went 10 px → 33 px and `dither`'s `pixelSize: 2` looked like
+ * 6.7 — a different picture, which breaks the rule that an effect renders the
+ * same way here as in the Rezeis preview. It was also inert for the 20 effects
+ * that size from `getBoundingClientRect()` (transformed geometry), and it
+ * clipped `prismGrid` outright. The replacement caps the BACKING STORE inside
+ * each effect instead — `@/components/reactbits/render-scale`.
  */
 
 import { useLayoutEffect, useMemo } from "react";
@@ -112,7 +123,10 @@ export function AppBackground() {
   // kind === "effect" — animated WebGL layer (single context).
   if (appBg.effect === "NONE") return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+    <div
+      className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+      aria-hidden
+    >
       {/* Keep the exact cold-boot gradient as the permanent base. The lazy
           shader fades in over it, so loading/probing/GPU failure never reveals
           the plain brand colour between frames. */}
@@ -120,11 +134,29 @@ export function AppBackground() {
         className="absolute inset-0"
         style={{ background: appBg.gradient }}
       />
+      {/* The full-screen mount costs what the whole viewport costs, and that is
+          handled INSIDE the effects, not here: each one caps its own drawing
+          buffer through `resolveRenderScale` (see
+          `@/components/reactbits/render-scale`), which reduces sampling density
+          and leaves the CSS box — and therefore every feature size and count
+          the operator configured — exactly as it is. Nothing in this file may
+          resize or transform the layer to influence that: an effect must render
+          the same way in the live cabinet as it does in the Rezeis preview, and
+          the only way to keep that true is to leave its CSS geometry alone. */}
+      {/* WHAT WENT WRONG: the layer started unmounting itself whenever the
+          page was hidden, which is right for a card and wrong here. This one
+          is mounted once for the whole cabinet, so a Telegram app-switch
+          destroyed the only background context and recompiled its shader on
+          return — a visible flash of the flat base gradient below, several
+          times a session. There is no context contention to relieve (one
+          layer, one context) and nothing to see if its clock lurches, since
+          it sits behind the entire UI. */}
       <CardEffectLayer
         effect={appBg.effect}
         props={appBg.props}
         opacity={appBg.opacity}
         active
+        keepMountedWhileHidden
         className="absolute inset-0 h-full w-full"
       />
     </div>

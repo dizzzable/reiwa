@@ -4,13 +4,20 @@ import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
-import { BrandLogo } from '@/components/ui/brand-logo'
+import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { login } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { ExternalAuthButtons } from './external-auth-buttons'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
+
+// Autofocusing the username field on a touch device raises the iOS keyboard in
+// the middle of the mount animation (viewport shrink vs. entrance motion, plus
+// an instant focus-zoom). Only a precise-pointer device — desktop, where a
+// hardware keyboard is already attached — keeps the convenience.
+const autoFocusFinePointer =
+  typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches
 
 export default function SignInPage() {
   const { t } = useTranslation()
@@ -138,23 +145,17 @@ export default function SignInPage() {
   const isFormDisabled = isSubmitting || rateLimitSeconds > 0
 
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-(--brand-bg-primary) px-4">
+    // The page is its own scroller: html/body/#root are locked to
+    // `100dvh; overflow:hidden`, and the iOS keyboard shrinks only the visual
+    // viewport — with no inner scroll container WebKit jerks the layout
+    // viewport to reveal the focused input. `min-h-full` + justify-center on
+    // the inner column keeps content centered while the keyboard is closed.
+    <div className="scroll-area entry-scroller relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-4">
       <NetworkBg intensity="medium" />
 
-      <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8">
+      <div className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col items-center justify-center gap-8 py-8">
         {/* Logo */}
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-        >
-          <div
-            className="flex h-20 w-20 items-center justify-center rounded-3xl bg-[color:var(--color-surface)] ring-1 ring-[color:var(--color-border-soft)] backdrop-blur-xl"
-            style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
-          >
-            <BrandLogo className="h-11 w-11" />
-          </div>
-        </motion.div>
+        <EntryBrandTile />
 
         {/* Title */}
         <motion.div
@@ -171,10 +172,12 @@ export default function SignInPage() {
           </p>
         </motion.div>
 
-        {/* Form */}
+        {/* Form. Opacity-only entrance: the glass inputs inside carry
+            backdrop-filter, and moving them (y-slide) re-blurs their backdrop
+            every frame on WebKit. */}
         <motion.form
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           transition={{ delay: 0.25 }}
           onSubmit={handleSubmit}
           className="flex w-full flex-col gap-4"
@@ -189,7 +192,7 @@ export default function SignInPage() {
               id="signin-username"
               type="text"
               autoComplete="username"
-              autoFocus
+              autoFocus={autoFocusFinePointer}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               disabled={isFormDisabled}

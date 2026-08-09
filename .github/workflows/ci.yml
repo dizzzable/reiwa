@@ -26,6 +26,22 @@ jobs:
       # `web/test`; install that package graph before resolving those imports.
       - name: Install web test dependencies
         run: npm --prefix web ci
+      # Vitest compiles specs with esbuild, which strips types without reading
+      # them, so until these two steps existed NOTHING type-checked a test file
+      # — 119 under `test/` (35 of them the front-end contracts in `test/web/`)
+      # and 50 under `web/test/`. That mattered most for the
+      # source-text contracts in `test/web/`, whose entire job is to fail when a
+      # name changes: a rename could break the contract itself and every command
+      # in the repo stayed green.
+      #
+      # Both run HERE and not in the `web` job because this is the only job with
+      # both package graphs installed — `web/test` imports `vitest` and
+      # `@testing-library/*`, which are root devDependencies (see the note in
+      # `web/tsconfig.json`).
+      - name: Typecheck backend tests
+        run: npx tsc -p tsconfig.test.json
+      - name: Typecheck web tests
+        run: npx tsc -p web/tsconfig.test.json --noEmit
       - name: Unit tests
         run: npm test
       - name: Property-based tests

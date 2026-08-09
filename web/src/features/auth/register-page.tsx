@@ -327,10 +327,15 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden px-4">
+    // Own scroll container: html/body/#root are `100dvh; overflow:hidden`, and
+    // the iOS keyboard shrinks only the visual viewport — without an inner
+    // scroller WebKit jerks the layout viewport to reveal the focused input.
+    // (This form is also the tallest auth screen; before, overflow-hidden
+    // simply clipped it on short viewports.)
+    <div className="scroll-area entry-scroller relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-4">
       <NetworkBg intensity="low" />
 
-      <div className="relative z-10 w-full max-w-sm">
+      <div className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col justify-center py-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -354,9 +359,11 @@ export default function RegisterPage() {
         {blockedByMode ? (
           <AccessModeBanner modes={['REG_BLOCKED', 'RESTRICTED']} />
         ) : needsInviteCode ? (
+          // Opacity-only entrance: wraps a glass (backdrop-filter) input —
+          // a y-slide re-blurs its backdrop every frame on WebKit.
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             className="space-y-4"
           >
             <AccessModeBanner modes={['INVITED']} />
@@ -400,9 +407,11 @@ export default function RegisterPage() {
             </form>
           </motion.div>
         ) : (
+          // Opacity-only entrance: wraps glass (backdrop-filter) inputs — a
+          // y-slide re-blurs their backdrop every frame on WebKit.
           <motion.form
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ delay: 0.1 }}
             onSubmit={handleSubmit}
             className="space-y-4"

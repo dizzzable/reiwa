@@ -1,5 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Renderer, Camera, Geometry, Program, Mesh } from 'ogl';
+
+import { resolveRenderScale } from './render-scale';
 
 interface ParticlesProps {
   particleCount?: number;
@@ -117,12 +119,26 @@ const Particles: React.FC<ParticlesProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Bumped by `webglcontextrestored` to re-run the effect below. OGL keeps
+  // every GL handle inside Renderer/Program/Geometry and caches driver state on
+  // the Renderer, none of which survive a context loss and none of which it can
+  // reset — so the only honest recovery is to build the whole thing again.
+  const [glGeneration, setGlGeneration] = useState(0);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const renderer = new Renderer({ dpr: pixelRatio, depth: false, alpha: true });
+    // `pixelRatio` is an operator-set control and reached the renderer
+    // unclamped. Fill rate is the reason for the ceiling: this shader runs per
+    // fragment, so the cost is the square of the multiplier, and on a phone
+    // already halving its frame rate under Low Power Mode or thermal pressure
+    // that is the difference between artwork and a slideshow. Two is beyond what
+    // any display resolves on a card, and the same component also backs the
+    // full-screen app background, where a large multiplier additionally
+    // approaches WebKit's canvas-area ceiling.
+    const dpr = Math.min(Math.max(pixelRatio, 1), 2);
+    const renderer = new Renderer({ dpr, depth: false, alpha: true });
     const gl = renderer.gl;
     container.appendChild(gl.canvas);
     gl.clearColor(0, 0, 0, 0);
@@ -130,11 +146,37 @@ const Particles: React.FC<ParticlesProps> = ({
     const camera = new Camera(gl, { fov: 15 });
     camera.position.set(0, 0, cameraDistance);
 
+    // Assigned once the program below exists. `resize` runs before it — ogl
+    // needs a sized surface first — and has to reach the point size afterwards.
+    let sizedProgram: Program | null = null;
+    let renderScale = 1;
+
     const resize = () => {
       const width = container.clientWidth;
       const height = container.clientHeight;
-      renderer.setSize(width, height);
+      // Cap the DRAWING BUFFER, never the CSS box. ogl's `setSize` writes
+      // `canvas.style` from the CSS numbers below and multiplies only
+      // `canvas.width/height` by `dpr`, so this lowers sampling density.
+      // `uBaseSize` is the one thing here denominated in BUFFER pixels
+      // (`gl_PointSize` is), so it is scaled by the same factor below and the
+      // particles keep exactly the on-screen size they had. See
+      // `render-scale.ts`.
+      renderScale = resolveRenderScale(width, height, dpr);
+      const bufferRatio = dpr * renderScale;
+      // Reallocate the drawing buffer only when the box actually moved — see
+      // the note in `LiquidChrome.tsx`: iOS fires `resize` per frame while the
+      // address bar collapses, a full-viewport host is `lvh`-sized so its box
+      // does not move, and ogl's `setSize` reallocates the WebGL buffer even
+      // for an identical value. The camera stays outside the guard so a
+      // container matching ogl's 300×150 construction size still gets it.
+      if (width !== renderer.width || height !== renderer.height || bufferRatio !== renderer.dpr) {
+        renderer.dpr = bufferRatio;
+        renderer.setSize(width, height);
+      }
       camera.perspective({ aspect: gl.canvas.width / gl.canvas.height });
+      if (sizedProgram) {
+        sizedProgram.uniforms.uBaseSize.value = particleBaseSize * pixelRatio * renderScale;
+      }
     };
     window.addEventListener('resize', resize, false);
     resize();
@@ -183,21 +225,25 @@ const Particles: React.FC<ParticlesProps> = ({
       uniforms: {
         uTime: { value: 0 },
         uSpread: { value: particleSpread },
-        uBaseSize: { value: particleBaseSize * pixelRatio },
+        uBaseSize: { value: particleBaseSize * pixelRatio * renderScale },
         uSizeRandomness: { value: sizeRandomness },
         uAlphaParticles: { value: alphaParticles ? 1 : 0 }
       },
       transparent: true,
       depthTest: false
     });
+    // From here on `resize` can keep the point size in step with the buffer.
+    sizedProgram = program;
 
     const particles = new Mesh(gl, { mode: gl.POINTS, geometry, program });
 
     let animationFrameId: number;
+    let contextLost = false;
     let lastTime = performance.now();
     let elapsed = 0;
 
     const update = (t: number) => {
+      if (contextLost) return;
       animationFrameId = requestAnimationFrame(update);
       const delta = t - lastTime;
       lastTime = t;
@@ -222,17 +268,44 @@ const Particles: React.FC<ParticlesProps> = ({
       renderer.render({ scene: particles, camera });
     };
 
+    // Without preventDefault the browser never fires `webglcontextrestored`,
+    // so a recoverable loss becomes permanent.
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      cancelAnimationFrame(animationFrameId);
+    };
+    // Restarting the loop alone would draw with handles the loss detached.
+    // Re-running the effect tears this renderer down (freeing its slot) and
+    // builds a fresh one, so the count of live contexts stays flat.
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    const canvas = gl.canvas;
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
     animationFrameId = requestAnimationFrame(update);
 
     return () => {
+      cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', resize);
+      // Listeners come off before loseContext, or handleContextRestored would
+      // fire during teardown and rebuild everything we are about to free.
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       if (moveParticlesOnHover) {
         container.removeEventListener('mousemove', handleMouseMove);
       }
-      cancelAnimationFrame(animationFrameId);
-      if (container.contains(gl.canvas)) {
-        container.removeChild(gl.canvas);
+      program.remove();
+      geometry.remove();
+      if (container.contains(canvas)) {
+        container.removeChild(canvas);
       }
+      // A dropped reference does not free the context: WebKit only returns the
+      // slot when the object is destroyed, and the page hits the 16-context cap
+      // long before GC gets there.
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -246,7 +319,8 @@ const Particles: React.FC<ParticlesProps> = ({
     sizeRandomness,
     cameraDistance,
     disableRotation,
-    pixelRatio
+    pixelRatio,
+    glGeneration
   ]);
 
   return <div ref={containerRef} className={`relative w-full h-full ${className}`} />;

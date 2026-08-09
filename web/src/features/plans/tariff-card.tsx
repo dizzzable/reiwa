@@ -14,6 +14,7 @@ import { Check } from "lucide-react";
 
 import type { Plan } from "@/types/api";
 import { useBranding } from "@/lib/branding-provider";
+import { useCardEffectSlot } from "@/lib/card-effect-budget";
 import { brandAuroraStops, cn } from "@/lib/utils";
 import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { CardWatermark } from "@/components/ui/card-watermark";
@@ -119,8 +120,8 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
   // Per-plan animated effect (opt-in). Tariff cards do NOT inherit the
   // subscription card's global effect anymore — an unset per-plan effect keeps
   // the card static. `aurora` is auto-tinted to the brand colour when no
-  // explicit colorStops are pinned. Rendered off-screen-paused via the
-  // CardEffectLayer IntersectionObserver.
+  // explicit colorStops are pinned. Off-screen cards draw nothing, and a WebGL
+  // effect additionally needs a slot from the shared context budget below.
   const auroraStops = useMemo(() => brandAuroraStops(branding.primary), [branding.primary]);
   const effect = visual.effect;
   const effectProps = useMemo<Record<string, unknown>>(() => {
@@ -136,9 +137,18 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
   // is set (the two would fight / wash each other out). Preset pattern grains
   // (textureImage) are subtle overlays and safely sit on top of the effect.
   const showEffect = effect !== "NONE" && !visual.textureUrl;
+  // `/plans` is a LIST, not a carousel: several cards are on screen at once and
+  // each WebGL effect is its own context. The layer's IntersectionObserver
+  // bounds that to "however many fit on this device", which on a tall viewport
+  // is more than WebKit's 16-per-process pool can carry alongside the app
+  // background. The slot turns that into a ceiling; a card that does not get
+  // one keeps its gradient, which is the `NONE` appearance. Canvas2d effects
+  // and suppressed effects claim nothing and stay on the layer's own observer.
+  const effectSlot = useCardEffectSlot(showEffect ? effect : "NONE");
 
   return (
     <motion.button
+      ref={effectSlot.ref}
       type="button"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -175,6 +185,7 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
           effect={effect}
           props={effectProps}
           opacity={effectOpacity}
+          active={effectSlot.active}
           className="absolute inset-0 z-0"
         />
       )}

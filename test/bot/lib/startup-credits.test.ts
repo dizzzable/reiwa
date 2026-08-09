@@ -13,7 +13,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { notifyDeveloperCredits } from '../../../src/bot/lib/startup-notice';
+import { notifyDeveloperCredits } from '../../../src/bot/lib/startup-notice.js';
 
 interface CapturedButton {
   readonly text: string;

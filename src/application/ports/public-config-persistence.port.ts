@@ -33,32 +33,11 @@ export const NOOP_PUBLIC_CONFIG_PERSISTENCE: PublicConfigPersistencePort = {
 };
 
 const HEX_PATTERN = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
-const CARD_EFFECTS = new Set([
-  "NONE",
-  "aurora",
-  "threads",
-  "softAurora",
-  "rippleGrid",
-  "radar",
-  "plasma",
-  "particles",
-  "liquidChrome",
-  "lineWaves",
-  "iridescence",
-  "grainient",
-  "galaxy",
-  "balatro",
-  "waves",
-  "silk",
-  "beams",
-  "dither",
-  "paperMesh",
-  "paperWarp",
-  "paperGrain",
-  "paperDither",
-  "paperSwirl",
-  "paperMetaballs",
-]);
+// The card-effect vocabulary that used to live here is gone on purpose; see
+// `isEffectId`. It was the only enum in this guard that rezeis-admin extends on
+// its own release cadence, and keeping a copy of it here made every such
+// extension a silent outage. `bgEffect` below is a closed legacy set that has
+// not gained a member since it was introduced, so it stays checked.
 const BG_EFFECTS = new Set(["NONE", "MESH", "PARTICLES", "NOISE", "AURORA"]);
 const APP_BACKGROUND_KINDS = new Set(["none", "gradient", "texture", "effect"]);
 const APP_BACKGROUND_TEXTURES = new Set([
@@ -150,7 +129,7 @@ export function isPublicConfigSnapshot(value: unknown): value is PublicConfigSna
     hasOptionalSubscriptionCardGlass(branding, "subscriptionCardGlass") &&
     isString(branding["cardLogo"]) &&
     isNullableImageUrl(branding["cardLogoUrl"]) &&
-    isAllowedString(branding["cardEffect"], CARD_EFFECTS) &&
+    isEffectId(branding["cardEffect"]) &&
     isRecord(branding["cardEffectProps"]) &&
     isNumberInRange(branding["cardEffectOpacity"], 0.05, 1) &&
     Array.isArray(branding["cardEffectsByIndex"]) &&
@@ -328,7 +307,7 @@ function hasOptionalAppBackground(record: Record<string, unknown>, key: string):
 
   const effect = value["effect"];
   const kind =
-    value["kind"] === undefined && isAllowedString(effect, CARD_EFFECTS)
+    value["kind"] === undefined && isEffectId(effect)
       ? effect === "NONE"
         ? "none"
         : "effect"
@@ -341,7 +320,7 @@ function hasOptionalAppBackground(record: Record<string, unknown>, key: string):
 
   return (
     isAllowedString(kind, APP_BACKGROUND_KINDS) &&
-    isAllowedString(effect, CARD_EFFECTS) &&
+    isEffectId(effect) &&
     isRecord(value["props"]) &&
     isNumberInRange(value["opacity"], 0.05, 1) &&
     isSafeGradient(value["gradient"]) &&
@@ -400,7 +379,7 @@ function isCardEffectSlot(value: unknown): boolean {
   // one malformed stale field could make the complete public config invalid.
   if (mode === "inherit") return true;
   return (
-    isAllowedString(value["cardEffect"], CARD_EFFECTS) &&
+    isEffectId(value["cardEffect"]) &&
     isRecord(value["cardEffectProps"]) &&
     isNumberInRange(value["cardEffectOpacity"], 0.05, 1)
   );
@@ -413,7 +392,7 @@ function isPlanCardStyle(value: unknown): boolean {
     hasOptionalHexOrNull(value, "accent") &&
     hasOptionalAllowedStringOrNull(value, "texturePreset", APP_BACKGROUND_TEXTURES) &&
     hasOptionalImageUrlOrNull(value, "textureUrl") &&
-    hasOptionalAllowedStringOrNull(value, "cardEffect", CARD_EFFECTS) &&
+    hasOptionalEffectIdOrNull(value, "cardEffect") &&
     hasOptionalRecord(value, "cardEffectProps") &&
     hasOptionalNullableNumberInRange(value, "cardEffectOpacity", 0.05, 1)
   );
@@ -607,6 +586,38 @@ function isAllowedString(value: unknown, allowed: ReadonlySet<string>): value is
   return typeof value === "string" && allowed.has(value);
 }
 
+/**
+ * The animated-effect vocabulary is OPEN, unlike every other enum here.
+ *
+ * `cardEffect` names a decorative animation, and rezeis-admin is allowed to
+ * ship a new one before this deployment knows it — that is precisely the
+ * forward compatibility the header of this file promises. Checking it against
+ * a closed set broke that promise in the worst available way: the guard is one
+ * `&&` chain, so a single unrecognised id invalidated the ENTIRE snapshot. The
+ * caller then threw before reaching `save`, so the cabinet went on serving the
+ * last stored snapshot — not until a restart, forever — and every later
+ * branding edit, colours and logo and texts alike, was discarded in silence
+ * while the panel reported the save had succeeded.
+ *
+ * An unknown id is therefore accepted here and resolved where it is used: the
+ * card effect layer renders nothing for an id it has no component for, leaving
+ * the operator's gradient in view. One card drawn plainly is a blemish; a
+ * configuration frozen for good is an outage.
+ *
+ * The consumers must treat this value as arbitrary text, because it now is —
+ * see `isKnownCardEffect` in the SPA's `card-effect-catalog.ts`, which exists
+ * so that an id like `toString` cannot be found by an inherited-property
+ * lookup.
+ */
+function isEffectId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 64;
+}
+
+function hasOptionalEffectIdOrNull(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key];
+  return value === undefined || value === null || isEffectId(value);
+}
+
 function hasOptionalAllowedStringOrNull(
   record: Record<string, unknown>,
   key: string,
@@ -678,7 +689,7 @@ function isThemeVariant(value: unknown): boolean {
     isSafeGradient(value["cardGradient"]) &&
     isNullableSafeGradient(value["cardPattern"]) &&
     hasOptionalSubscriptionCardText(value, "subscriptionCardText") &&
-    isAllowedString(value["cardEffect"], CARD_EFFECTS) &&
+    isEffectId(value["cardEffect"]) &&
     isRecord(value["cardEffectProps"]) &&
     isNumberInRange(value["cardEffectOpacity"], 0.05, 1) &&
     Array.isArray(value["cardEffectsByIndex"]) &&

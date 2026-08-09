@@ -185,6 +185,45 @@ body {
 }
 .scroll-area::-webkit-scrollbar { display: none; }
 
+/* ─── Entry-form scroller: keyboard reveal room ────────────────────────────────
+   The six auth screens are their own scroller (`scroll-area h-dvh`) with a
+   `min-h-full` + `justify-center` column inside, so the keyboard can be
+   revealed by scrolling instead of by WebKit jerking the layout viewport.
+
+   That only works on a form that OVERFLOWS. `/recover` is one field: the column
+   is exactly 100dvh, scrollHeight === clientHeight, and the scroller has zero
+   scroll range — so iOS falls straight back to panning the visual viewport,
+   which is the behaviour the inner scroller was added to remove. The `::after`
+   below is the fix: dead space past the fold that gives the reveal scroll
+   somewhere to go on EVERY form, short or tall.
+
+   It is a trailing pseudo-element and not padding on purpose. `min-h-full`
+   resolves against the scroller's content box (`box-sizing: border-box` is
+   global), so padding-bottom would shrink the column and lift the centred
+   content off centre with the keyboard closed. A box after the column moves
+   nothing: the column still starts at scroll offset 0 and still fills the first
+   100dvh, so the resting layout is byte-identical to no rule at all.
+
+   `:focus-within` is when the keyboard is actually up, so that is when the room
+   grows to a keyboard's worth. The small resting value stays non-zero so the
+   invariant ("there is always somewhere to scroll") never depends on the focus
+   style landing before WebKit's reveal.
+
+   `env(keyboard-inset-height)` resolves to its 0px fallback in every browser we
+   ship to today — WebKit has no VirtualKeyboard API at all, and Chromium only
+   reports it once `navigator.virtualKeyboard.overlaysContent = true`, which we
+   deliberately do not set (it would change how the keyboard resizes every other
+   screen). The rem floors are what actually run. The env() is there so this
+   rule becomes exact by itself if that opt-in is ever added. */
+.entry-scroller::after {
+  content: "";
+  display: block;
+  height: max(2rem, env(keyboard-inset-height, 0px));
+}
+.entry-scroller:focus-within::after {
+  height: max(10rem, env(keyboard-inset-height, 0px));
+}
+
 /* ─── Horizontal snap carousel track ───────────────────────────────────────────
    The subscription carousel is a HORIZONTAL scroller. It must NOT also be a
    vertical scroller: reusing `.scroll-area` gave the track `overflow-y: auto`,
@@ -238,6 +277,37 @@ body {
   outline: none;
   border-color: color-mix(in oklab, var(--brand-primary) 55%, transparent);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand-primary) 18%, transparent);
+}
+
+/* iOS auto-zooms the page when a focused control's font-size is below 16px
+   (still true through iOS 26), and inside the dvh-locked shell that zoom never
+   settles back cleanly. Touch devices therefore clamp the glass fields' small
+   text utilities to 16px; desktop (fine pointer) keeps the designed 12–14px —
+   its focus never zooms. Scoped to the sub-threshold utilities so larger sizes
+   (e.g. the promo code's text-lg) are left alone.
+
+   THE SCOPE IS THE WHOLE APP, NOT THE AUTH SCREENS. That is deliberate: iOS
+   zooms on focus wherever the field is, and the eleven auth inputs are only
+   about half the `.glass-input` fields that ship. It also reaches, today:
+     - quests-icon.tsx      partner activation code (the only `.text-xs` one)
+     - support-page.tsx     reply box, subject, message
+     - guest-support-page   every field
+     - ai-chat.tsx          the composer textarea
+     - points-exchange      the contact field
+   Two consequences a future edit must keep in mind. (1) A field with a FIXED
+   width has to fit its content at 16px, not at 12–14px — quests-icon's code
+   input was `w-24` and clipped, and is `w-32` for exactly this reason; the
+   contract in `test/web/visual-css-contract.test.ts` fails the build if a new
+   fixed-width glass field is too narrow. (2) Only `font-size` changes here,
+   never `line-height` — Tailwind v4 states `text-sm`/`text-xs` leading as
+   UNITLESS ratios (`calc(1.25/0.875)`, `calc(1/0.75)`), so the line box grows
+   with the clamp on its own and the multi-line fields keep their proportions.
+   Adding a `line-height` here would break that. */
+@media (pointer: coarse) {
+  .glass-input.text-xs,
+  .glass-input.text-sm {
+    font-size: 1rem;
+  }
 }
 
 /* ─── Glass icon button (back arrows / round chrome buttons) ─────────────────── */
@@ -355,9 +425,15 @@ body {
 }
 
 /* ─── Custom animations ────────────────────────────────────────────────────── */
+/* The pulse used to animate box-shadow directly — a paint property, so every
+   frame repainted the button and its halo for as long as the CTA was on
+   screen. The peak glow now lives pre-painted on a pseudo-element and only its
+   opacity (compositor-only) breathes; the resting 24px glow is the primary
+   variant's own static shadow (stadium-button), which the 0% keyframe used to
+   duplicate. */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 24px var(--color-brand-glow); }
-  50%      { box-shadow: 0 0 48px var(--color-brand-glow), 0 0 80px var(--color-brand-glow); }
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 1; }
 }
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(12px); }
@@ -370,15 +446,18 @@ body {
 
 /* GPU-safe visual endpoint for branded card effects. The static card gradient
    is already present below this layer; these soft color fields keep an
-   operator's chosen palette alive when iOS cannot provide a WebGL context. */
-@keyframes card-effect-fallback-drift {
-  0%, 100% { background-position: 0% 50%, 100% 50%, 0% 50%; }
-  50%      { background-position: 28% 42%, 72% 58%, 100% 50%; }
-}
+   operator's chosen palette alive when iOS cannot provide a WebGL context.
 
+   The drift used to animate `background-position` — a paint property, which
+   repainted the whole card every frame for 18s × infinite on exactly the
+   devices that land here (iOS without WebGL). Same cure as landing.css's
+   `ls-gradient`: each colour field is an oversized child layer moved by
+   `transform`, so the gradients rasterise once and the motion stays on the
+   compositor. The blob sizes/rest offsets and the translate endpoints below
+   reproduce the old `background-size` / `background-position` keyframes in
+   container units (translate % is relative to the blob's own oversized box). */
 .card-effect-layer__css-fallback {
-  background-size: 170% 170%, 165% 165%, 190% 190%;
-  animation: card-effect-fallback-drift 18s ease-in-out infinite;
+  overflow: hidden;
   /*
      * The component applies an inline, compatibility-capped alpha. Keep this
      * base rule opaque so it does not multiply that alpha or desaturate the
@@ -387,8 +466,49 @@ body {
   opacity: 1;
 }
 
+.card-effect-layer__css-fallback-blob {
+  position: absolute;
+  animation: 18s ease-in-out infinite;
+}
+/* was: layer 1, background-size 170%, position 0% 50% → 28% 42% */
+.card-effect-layer__css-fallback-blob--a {
+  width: 170%;
+  height: 170%;
+  left: 0;
+  top: -35%;
+  animation-name: card-effect-fallback-drift-a;
+}
+@keyframes card-effect-fallback-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(-11.5%, 3.3%, 0); }
+}
+/* was: layer 2, background-size 165%, position 100% 50% → 72% 58% */
+.card-effect-layer__css-fallback-blob--b {
+  width: 165%;
+  height: 165%;
+  left: -65%;
+  top: -32.5%;
+  animation-name: card-effect-fallback-drift-b;
+}
+@keyframes card-effect-fallback-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(11%, -3.2%, 0); }
+}
+/* was: layer 3, background-size 190%, position 0% 50% → 100% 50% */
+.card-effect-layer__css-fallback-blob--c {
+  width: 190%;
+  height: 190%;
+  left: 0;
+  top: -45%;
+  animation-name: card-effect-fallback-drift-c;
+}
+@keyframes card-effect-fallback-drift-c {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(-47.4%, 0, 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .card-effect-layer__css-fallback { animation: none; }
+  .card-effect-layer__css-fallback-blob { animation: none; }
 }
 
 /* Subtle game-like "glint" sheen — a diagonal highlight sweeps across the
@@ -401,7 +521,21 @@ body {
   100% { opacity: 0; transform: translateX(170%) rotate(20deg); }
 }
 
-.animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+/* See the pulse-glow keyframes above: the halo is a static box-shadow on a
+   pseudo-element and only its opacity animates (compositor-only). */
+.animate-pulse-glow { position: relative; }
+.animate-pulse-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 0 48px var(--color-brand-glow),
+    0 0 80px var(--color-brand-glow);
+  opacity: 0;
+  animation: pulse-glow 3s ease-in-out infinite;
+}
 .animate-fade-up    { animation: fade-up 0.4s ease-out forwards; }
 .animate-spin-slow  { animation: spin-slow 8s linear infinite; }
 .animate-glint      { animation: glint 3.8s ease-in-out infinite; }

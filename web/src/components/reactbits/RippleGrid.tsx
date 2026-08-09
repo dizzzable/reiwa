@@ -1,6 +1,8 @@
 import { useRef, useEffect } from 'react';
 import { Renderer, Program, Triangle, Mesh } from 'ogl';
 
+import { resolveBufferRatio } from './render-scale';
+
 type Props = {
   enableRainbow?: boolean;
   gridColor?: string;
@@ -46,8 +48,14 @@ const RippleGrid: React.FC<Props> = ({
         : [1, 1, 1];
     };
 
+    // `|| 1` because a browser that does not report a ratio yields `undefined`,
+    // and `Math.min(undefined, 2)` is `NaN` — which ogl passes straight into
+    // the canvas dimensions, producing a zero-sized surface and a blank card.
+    // This is the ratio BEFORE the device-pixel budget; `resize` reduces it
+    // when the box is large enough to need it.
+    const baseDpr = Math.min(window.devicePixelRatio || 1, 2);
     const renderer = new Renderer({
-      dpr: Math.min(window.devicePixelRatio, 2),
+      dpr: baseDpr,
       alpha: true
     });
     const gl = renderer.gl;
@@ -185,7 +193,22 @@ void main() {
 
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = containerRef.current!;
-      renderer.setSize(w, h);
+      // Cap the DRAWING BUFFER, never the CSS box. ogl's `setSize` writes
+      // `canvas.style` from the CSS numbers below and multiplies only
+      // `canvas.width/height` by `dpr`, so this lowers sampling density and
+      // changes nothing the operator configured — every feature this shader
+      // derives from `uResolution` is a fraction of it. See `render-scale.ts`.
+      const bufferRatio = resolveBufferRatio(w, h, baseDpr);
+      // Reallocate the drawing buffer only when the box actually moved — see
+      // the note in `LiquidChrome.tsx`: iOS fires `resize` per frame while the
+      // address bar collapses, a full-viewport host is `lvh`-sized so its box
+      // does not move, and ogl's `setSize` reallocates the WebGL buffer even
+      // for an identical value. The uniform stays outside the guard so a
+      // container matching ogl's 300×150 construction size still gets it.
+      if (w !== renderer.width || h !== renderer.height || bufferRatio !== renderer.dpr) {
+        renderer.dpr = bufferRatio;
+        renderer.setSize(w, h);
+      }
       uniforms.iResolution.value = [w, h];
     };
 
@@ -215,6 +238,12 @@ void main() {
     }
     resize();
 
+    // The frame id has to be kept: an unstored requestAnimationFrame cannot be
+    // cancelled, so the loop below outlived every unmount, held the renderer
+    // and its canvas alive against GC, and kept calling render() on a context
+    // the cleanup had already lost.
+    let raf = 0;
+
     const render = (t: number) => {
       uniforms.iTime.value = t * 0.001;
 
@@ -229,12 +258,13 @@ void main() {
       uniforms.mousePosition.value = [mousePositionRef.current.x, mousePositionRef.current.y];
 
       renderer.render({ scene: mesh });
-      requestAnimationFrame(render);
+      raf = requestAnimationFrame(render);
     };
 
-    requestAnimationFrame(render);
+    raf = requestAnimationFrame(render);
 
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
       if (mouseInteraction && containerRef.current) {
         containerRef.current.removeEventListener('mousemove', handleMouseMove);

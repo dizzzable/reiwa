@@ -5,11 +5,10 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { NetworkBg } from '@/components/ui/network-bg'
-import { ReiwaLogo } from '@/components/ui/reiwa-logo'
+import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { hashPassword } from '@/lib/crypto'
 import { changePasswordAuth } from '@/lib/api-client'
-import { useBranding } from '@/lib/branding-provider'
 import { useAuthStore } from '@/stores/auth.store'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 
@@ -17,7 +16,6 @@ export default function ChangePasswordPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { branding } = useBranding()
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -63,38 +61,23 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden px-4">
+    // Own scroll container: html/body/#root are `100dvh; overflow:hidden`, and
+    // the iOS keyboard shrinks only the visual viewport — without an inner
+    // scroller WebKit jerks the layout viewport to reveal the focused input.
+    <div className="scroll-area entry-scroller relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-4">
       <NetworkBg intensity="medium" />
 
+      {/* Opacity-only entrance: the tile and glass inputs inside carry
+          backdrop-filter, and a y-slide re-blurs their backdrop every frame. */}
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 0.4 }}
-        className="relative z-10 w-full max-w-sm"
+        className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col justify-center py-8"
       >
         {/* Header */}
         <div className="mb-8 flex flex-col items-center text-center">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-            className="mb-5"
-          >
-            <div
-              className="flex h-20 w-20 items-center justify-center rounded-3xl bg-[color:var(--color-surface)] ring-1 ring-[color:var(--color-border-soft)] backdrop-blur-xl"
-              style={{ boxShadow: '0 0 60px var(--color-brand-glow)' }}
-            >
-              {branding.logoUrl ? (
-                <img
-                  src={branding.logoUrl}
-                  alt={branding.brandName}
-                  className="h-11 w-11 rounded-xl object-contain"
-                />
-              ) : (
-                <ReiwaLogo className="h-11 w-11 text-(--brand-primary)" title={branding.brandName} />
-              )}
-            </div>
-          </motion.div>
+          <EntryBrandTile className="mb-5" />
           <h1 className="text-xl font-bold text-[color:var(--brand-foreground)]">
             {t('changePassword.title')}
           </h1>

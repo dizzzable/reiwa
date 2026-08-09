@@ -311,7 +311,16 @@ function PartnerAction({ quest }: { quest: QuestCabinetItem }): JSX.Element | nu
 
   if (quest.partnerMethod === "manual_code") {
     return (
-      <div className="flex items-center gap-1.5">
+      // Stacked, not side by side, and the field is 128px wide — both because
+      // of the `@media (pointer: coarse)` clamp in index.css, which raises
+      // every `.glass-input.text-xs` to 16px on touch so iOS does not zoom the
+      // dvh-locked shell on focus. At 16px an activation code needs ~110px of
+      // content box; the old `w-24` left 78px, so the code scrolled inside its
+      // own field. Widening it in a ROW would have taken that width off the
+      // quest description beside it (which is already down to ~33px once the
+      // Russian "Подтвердить" button is measured), so the two controls stack
+      // and the whole action cell is narrower than it was.
+      <div className="flex flex-col items-stretch gap-1.5">
         <input
           type="text"
           value={code}
@@ -319,7 +328,7 @@ function PartnerAction({ quest }: { quest: QuestCabinetItem }): JSX.Element | nu
           aria-label={t("quests.partner.codePlaceholder")}
           placeholder={t("quests.partner.codePlaceholder")}
           autoComplete="off"
-          className="glass-input w-24 rounded-[var(--radius-item)] px-2 py-1.5 text-xs"
+          className="glass-input w-32 rounded-[var(--radius-item)] px-2 py-1.5 text-xs"
         />
         <button
           type="button"

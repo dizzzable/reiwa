@@ -27,7 +27,7 @@ function fakeLogger() {
 
 function buildDeps(overrides?: { envSupportUsername?: string }) {
   const report = vi.fn();
-  const reply = vi.fn(async () => undefined);
+  const reply = vi.fn(async (_text?: unknown, _options?: unknown) => undefined);
   const logger = fakeLogger();
   const deps = {
     logger: logger as never,

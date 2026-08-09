@@ -46,7 +46,11 @@ function buildStubTranslator(): TranslatorPort {
     t(key, lang, vars) {
       const raw = PACK[lang]?.[key as keyof (typeof PACK)['ru']] ?? key;
       if (vars === undefined) return raw;
-      return Object.entries(vars).reduce(
+      // `reduce<string>`: `raw` is a union of the literal strings in PACK, so
+      // without the explicit type argument TS picks the overload whose
+      // accumulator is the ENTRY tuple and the whole `t` stops being a
+      // `(…) => string`.
+      return Object.entries(vars).reduce<string>(
         (acc, [k, v]) => acc.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), String(v)),
         raw,
       );

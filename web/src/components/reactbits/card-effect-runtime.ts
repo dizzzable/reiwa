@@ -2,11 +2,23 @@
  * Runtime policy for branded card effects.
  *
  * Rezeis lets an operator select several GPU-backed effects. They are visual
- * enhancements, never a prerequisite for a readable subscription card: the
- * CSS card gradient is always present underneath. Paper, native WebGL2 and
- * Three/Fiber effects need WebGL2; most others can run on WebGL1; `waves` is
- * Canvas 2D.
+ * enhancements, never a prerequisite for a readable subscription card: the CSS
+ * card gradient is always present underneath. What each effect needs from the
+ * device is declared beside the effect itself in `card-effect-catalog.ts`; this
+ * file decides what to do when the device cannot supply it.
  */
+
+import {
+  cardEffectPalette,
+  hasFullOutputGamut,
+  requiresWebGL,
+  requiresWebGL2,
+} from "./card-effect-catalog";
+
+// Re-exported because the layer has always asked this module, not the catalog,
+// what a device must provide. Keeping the question where it was answered before
+// leaves the split an implementation detail rather than a call-site migration.
+export { requiresWebGL, requiresWebGL2 };
 
 export interface CardEffectCapabilities {
   readonly webgl: boolean;
@@ -29,73 +41,30 @@ export interface ResolvedCardEffectRuntime {
   readonly cssColors: readonly string[];
 }
 
-const WEBGL2_ONLY_EFFECTS = new Set([
-  "plasma",
-  "grainient",
-  "silk",
-  "beams",
-  "dither",
-  "paperMesh",
-  "paperWarp",
-  "paperGrain",
-  "paperDither",
-  "paperSwirl",
-  "paperMetaballs",
-]);
-
-// This effect deliberately uses Canvas 2D and is safe when WebGL is absent.
-const CANVAS_2D_EFFECTS = new Set(["waves"]);
-
-const DEFAULT_AURORA_COLORS = ["#5227FF", "#7CFF67", "#5227FF"] as const;
-const DEFAULT_EFFECT_COLORS: Readonly<Record<string, readonly string[]>> = {
-  aurora: DEFAULT_AURORA_COLORS,
-  threads: ["#ffffff"],
-  softAurora: ["#f7f7f7", "#e100ff"],
-  rippleGrid: ["#ffffff"],
-  radar: ["#9f29ff", "#000000"],
-  plasma: ["#ffffff", "#000000"],
-  particles: ["#ffffff"],
-  liquidChrome: ["#1a1a1a", "#000000", "#ffffff"],
-  lineWaves: ["#ffffff"],
-  iridescence: ["#ffffff", "#000000"],
-  grainient: ["#ff9ffc", "#5227ff", "#b497cf"],
-  galaxy: ["#ffffff", "#000000"],
-  balatro: ["#de443b", "#006bb4", "#162325"],
-  waves: ["#ffffff", "#00000000"],
-  silk: ["#7b7481"],
-  beams: ["#ffffff", "#000000"],
-  dither: ["#808080", "#000000"],
-  paperMesh: ["#e0eaff", "#241d9a", "#f75092", "#9f50d3"],
-  paperWarp: ["#121212", "#9470ff", "#8838ff"],
-  paperGrain: ["#000000", "#7300ff", "#eba8ff", "#00bfff", "#2a00ff"],
-  paperDither: ["#000000", "#00b2ff"],
-  paperSwirl: ["#000000", "#ffd1d1", "#ff8a8a", "#660000"],
-  paperMetaballs: ["#000000", "#6e33cc", "#ff5500", "#ffc105", "#f585ff"],
-};
+// Which effects need WebGL2, which draw on a plain canvas, which palette each
+// falls back to, and which escape their input gamut: all of it now comes from
+// the catalog, where it is stated once alongside the effect it describes. The
+// four hand-kept sets that used to sit here are exactly what this file existed
+// to keep in step, and exactly what kept slipping.
 
 /**
- * These shaders do not stay inside the convex hull of their configured input
- * palette. Additive channels, glow, procedural noise or post-contrast can
- * produce both display extremes after the GPU clamps the fragment output.
- * Contrast analysis therefore needs the conservative output gamut, not just
- * the operator-supplied uniforms.
+ * Recognisable CSS colour forms only.
+ *
+ * This used to accept any non-empty string, which was safe while callers only
+ * handed it props named `color…`. Now that every prop is inspected, "any
+ * non-empty string" would read `shape: 'checks'`, `charset: 'dense'` and the
+ * word a globe spells as colours — and those values also flow on to the CSS
+ * fallback gradient, where they would produce an unparseable rule and a blank
+ * layer. Bare colour keywords are deliberately not accepted beyond
+ * `transparent`: telling `white` from `checks` needs the full keyword table,
+ * and none of the effects' own defaults use one.
  */
-const FULL_OUTPUT_GAMUT_EFFECTS = new Set([
-  "softAurora",
-  "rippleGrid",
-  "radar",
-  "particles",
-  "liquidChrome",
-  "lineWaves",
-  "grainient",
-  "galaxy",
-  "balatro",
-]);
+const CSS_COLOR = /^(#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|(?:rgb|hsl)a?\([^()]*\)|transparent)$/i;
 
 function asColor(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return CSS_COLOR.test(trimmed) ? trimmed : null;
 }
 
 function rgbVectorColor(value: unknown): string | null {
@@ -129,28 +98,29 @@ function configuredColors(
       ? value.map(asColor).filter((value): value is string => value !== null)
       : [];
 
-  const colors = [
-    ...fromArray(props["colors"]),
-    ...fromArray(props["colorStops"]),
-    ...fromArray(props["particleColors"]),
-    ...[
-      "color1",
-      "color2",
-      "color3",
-      "color",
-      "colorBack",
-      "colorFront",
-      "gridColor",
-      "lineColor",
-      "backgroundColor",
-      "lightColor",
-    ]
-      .map((key) => asColor(props[key]))
-      .filter((value): value is string => value !== null),
-    ...["baseColor", "waveColor", "color"]
-      .map((key) => rgbVectorColor(props[key]))
-      .filter((value): value is string => value !== null),
-  ];
+  /**
+   * Every prop is inspected, rather than a fixed list of prop names.
+   *
+   * The list used to be thirteen hand-written keys, and the effects that have
+   * arrived since do not use those names: `background`, `bgColor`, `voidColor`,
+   * `strokeColor`, `particleColor`, `sparkColor`, `horizonColor`, `snakeColor`,
+   * `anchor`, `colorA`… A missing name is not a harmless omission here, because
+   * a PARTIAL match is worse than none: `resolveCardEffectColors` treats any
+   * non-empty result as authoritative and stops falling back to the palette, so
+   * the colours it did recognise become the whole picture.
+   *
+   * Black Hole is the case that showed it. Its marks are three whites and its
+   * field is `background: '#000000'`; only the marks were recognised, contrast
+   * concluded the card was white, and chose dark text — over a card the
+   * component then painted black. The panel's own preview never reproduced it,
+   * because that one already scans every value. Scanning here is what makes the
+   * operator's preview and the subscriber's card agree.
+   */
+  const colors = Object.values(props).flatMap((value) => {
+    const single = asColor(value) ?? rgbVectorColor(value);
+    if (single !== null) return [single];
+    return fromArray(value);
+  });
 
   if (effect === "rippleGrid" && props["enableRainbow"] === true) {
     colors.push(
@@ -194,9 +164,7 @@ export function resolveCardEffectColors(
   props: Readonly<Record<string, unknown>>,
 ): readonly string[] {
   const configured = configuredColors(effect, props);
-  return configured.length > 0
-    ? configured
-    : (DEFAULT_EFFECT_COLORS[effect] ?? DEFAULT_AURORA_COLORS);
+  return configured.length > 0 ? configured : cardEffectPalette(effect);
 }
 
 /**
@@ -210,18 +178,13 @@ export function resolveCardEffectOutputColors(
   props: Readonly<Record<string, unknown>>,
 ): readonly string[] {
   const colors = [...resolveCardEffectColors(effect, props)];
-  if (FULL_OUTPUT_GAMUT_EFFECTS.has(effect)) {
+  // A shader whose output leaves its input palette — glow, additive channels,
+  // procedural noise — can put either display extreme behind the card text, so
+  // contrast has to be judged against both.
+  if (hasFullOutputGamut(effect)) {
     colors.push("#000000", "#ffffff");
   }
   return [...new Set(colors)];
-}
-
-export function requiresWebGL2(effect: string): boolean {
-  return WEBGL2_ONLY_EFFECTS.has(effect);
-}
-
-export function requiresWebGL(effect: string): boolean {
-  return effect !== "NONE" && !CANVAS_2D_EFFECTS.has(effect);
 }
 
 /**

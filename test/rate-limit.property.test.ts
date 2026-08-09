@@ -143,6 +143,10 @@ function createMockResponse(): Response & {
   statusCode: number;
   headers: Record<string, string>;
   body: unknown;
+  // Declared here, not only on the cast below: the annotation is what callers
+  // see, and `res.finish(...)` is how every test in this file completes a
+  // request.
+  finish: (statusCode: number) => void;
 } {
   const res = {
     statusCode: 200,

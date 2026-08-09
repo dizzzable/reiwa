@@ -1,6 +1,8 @@
 import React, { useRef, useEffect } from 'react';
 import { Renderer, Program, Mesh, Triangle } from 'ogl';
 
+import { resolveBufferRatio } from './render-scale';
+
 interface LiquidChromeProps extends React.HTMLAttributes<HTMLDivElement> {
   baseColor?: [number, number, number];
   speed?: number;
@@ -103,7 +105,23 @@ export const LiquidChrome: React.FC<LiquidChromeProps> = ({
 
     function resize() {
       const scale = 1;
-      renderer.setSize(container.offsetWidth * scale, container.offsetHeight * scale);
+      const width = container.offsetWidth * scale;
+      const height = container.offsetHeight * scale;
+      // Cap the DRAWING BUFFER, never the CSS box. ogl's `setSize` writes
+      // `canvas.style` from the CSS numbers below and multiplies only
+      // `canvas.width/height` by `dpr`, so this lowers sampling density and
+      // changes nothing the operator configured — every feature this shader
+      // derives from `uResolution` is a fraction of it. See `render-scale.ts`.
+      const bufferRatio = resolveBufferRatio(width, height, 1);
+      // iOS fires window `resize` repeatedly while the address bar
+      // collapses mid-scroll, but a full-viewport host is sized in
+      // `lvh` units and does not actually change. Skip setSize when the
+      // container dimensions are unchanged: assigning canvas.width always
+      // reallocates the GL drawing buffer, even for the same value, and a
+      // mid-gesture realloc storm is exactly the stutter we're avoiding.
+      if (width === renderer.width && height === renderer.height && bufferRatio === renderer.dpr) return;
+      renderer.dpr = bufferRatio;
+      renderer.setSize(width, height);
       const resUniform = program.uniforms.uResolution.value as Float32Array;
       resUniform[0] = gl.canvas.width;
       resUniform[1] = gl.canvas.height;
