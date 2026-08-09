@@ -1,6 +1,6 @@
 {
   "name": "reiwa",
-  "version": "0.9.6.99",
+  "version": "0.9.7.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,6 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "build:watch": "tsc -p tsconfig.json --watch",
     "check": "tsc --noEmit -p tsconfig.json",
+    "check:tests": "tsc -p tsconfig.test.json && tsc -p web/tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:pbt": "node --import tsx --test test/**/*.property.test.ts"
