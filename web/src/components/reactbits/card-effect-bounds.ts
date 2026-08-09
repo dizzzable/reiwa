@@ -212,6 +212,63 @@ export const CARD_EFFECT_NUMERIC_BOUNDS = {
     particlesCount: [500, 4000], particleScale: [1, 10], scale: [2, 10], speed: [5, 60],
     cursorRadius: [20, 200], cursorStrength: [0, 10],
   },
+  // ── Repaired reactbits ─────────────────────────────────────────────────────
+  colorBends: {
+    speed: [0.02, 2], rotation: [0, 360], autoRotate: [-2, 2], scale: [0.2, 4],
+    frequency: [0.2, 4], warpStrength: [0, 3], bandWidth: [1, 20], intensity: [0.1, 3],
+    noise: [0, 0.5], iterations: [1, 5], parallax: [0, 2], mouseInfluence: [0, 2],
+  },
+  pixelBlast: {
+    pixelSize: [1, 12], speed: [0.05, 3], patternScale: [0.5, 6], patternDensity: [0.1, 3],
+    pixelSizeJitter: [0, 1], edgeFade: [0, 1], noiseAmount: [0, 0.5], rippleSpeed: [0.05, 2],
+    rippleThickness: [0.01, 0.5], rippleIntensityScale: [0, 3], liquidStrength: [0, 1],
+    liquidRadius: [0.1, 3], liquidWobbleSpeed: [0.5, 10],
+  },
+  plasmaWave: {
+    speed1: [0.005, 0.5], speed2: [0.005, 0.5], dir2: [-1, 1], bend1: [0, 3], bend2: [0, 3],
+    focalLength: [0.2, 3], rotationDeg: [-180, 180], xOffset: [-500, 500], yOffset: [-500, 500],
+  },
+  evilEye: {
+    intensity: [0.1, 4], flameSpeed: [0.05, 4], pupilSize: [0.1, 1.5], irisWidth: [0.05, 1],
+    glowIntensity: [0, 1.5], scale: [0.2, 2], noiseScale: [0.2, 4], pupilFollow: [0, 2],
+  },
+  lightPillar: {
+    intensity: [0.1, 3], rotationSpeed: [0.02, 2], glowAmount: [0.001, 0.05],
+    pillarWidth: [0.5, 10], pillarHeight: [0.1, 2], pillarRotation: [-180, 180],
+    noiseIntensity: [0, 2],
+  },
+  prismaticBurst: {
+    intensity: [0.1, 5], speed: [0.05, 3], distort: [0, 10], rayCount: [0, 32],
+    hoverDampness: [0, 1],
+  },
+  faultyTerminal: {
+    brightness: [0.1, 3], timeScale: [0.05, 3], scale: [0.5, 5], digitSize: [0.5, 4],
+    scanlineIntensity: [0, 2], glitchAmount: [0, 5], flickerAmount: [0, 5], noiseAmp: [0, 3],
+    chromaticAberration: [0, 10], dither: [0, 5], curvature: [0, 1], mouseStrength: [0, 2],
+  },
+  letterGlitch: { glitchSpeed: [10, 500] },
+  shapeGrid: {
+    speed: [0.1, 5], squareSize: [10, 120], hoverTrailAmount: [0, 20], vignetteStrength: [0, 1],
+  },
+  magicRings: {
+    speed: [0.05, 3], ringCount: [1, 10], opacity: [0.05, 1], attenuation: [1, 30],
+    lineThickness: [0.5, 10], baseRadius: [0.05, 1], radiusStep: [0, 0.5], scaleRate: [0, 1],
+    ringGap: [0.5, 4], rotation: [-180, 180], noiseAmount: [0, 1], fadeIn: [0.05, 2],
+    fadeOut: [0.05, 3], parallax: [0, 1], mouseInfluence: [0, 1],
+  },
+  laserFlow: {
+    flowSpeed: [0.02, 2], decay: [0.2, 4], falloffStart: [0.2, 4], verticalSizing: [0.2, 6],
+    horizontalSizing: [0.1, 3], horizontalBeamOffset: [-1, 1], verticalBeamOffset: [-1, 1],
+    fogIntensity: [0, 2], fogScale: [0.05, 2], fogFallSpeed: [0.05, 3], wispDensity: [0.1, 2],
+    wispSpeed: [0.5, 40], wispIntensity: [0, 15], flowStrength: [0, 1],
+    mouseTiltStrength: [0, 0.2],
+  },
+  antigravity: {
+    count: [20, 800], particleSize: [0.2, 8], lerpSpeed: [0.02, 1], ringRadius: [2, 30],
+    magnetRadius: [2, 40], fieldStrength: [0.5, 30], waveAmplitude: [0, 5],
+    waveSpeed: [0.05, 3], rotationSpeed: [0.02, 2], pulseSpeed: [0.1, 10],
+    particleVariance: [0, 3], depthFactor: [0, 3],
+  },
 } satisfies Record<string, Readonly<Record<string, CardEffectPropRange>>>;
 
 const BOUNDS: Readonly<

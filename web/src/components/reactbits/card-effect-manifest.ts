@@ -84,6 +84,20 @@ export const CARD_EFFECT_COMPONENTS: Record<CardEffectId, CardEffectComponent> =
   cube: lazy(() => import("./originkit/Cube")),
   wordGlobe: lazy(() => import("./originkit/WordGlobe")),
   particleSphere: lazy(() => import("./originkit/Particlesphere")),
+
+  // Repaired reactbits — see the catalog.
+  colorBends: lazy(() => import("./ColorBends")),
+  pixelBlast: lazy(() => import("./PixelBlast")),
+  plasmaWave: lazy(() => import("./PlasmaWave")),
+  evilEye: lazy(() => import("./EvilEye")),
+  lightPillar: lazy(() => import("./LightPillar")),
+  prismaticBurst: lazy(() => import("./PrismaticBurst")),
+  faultyTerminal: lazy(() => import("./FaultyTerminal")),
+  letterGlitch: lazy(() => import("./LetterGlitch")),
+  shapeGrid: lazy(() => import("./ShapeGrid")),
+  magicRings: lazy(() => import("./MagicRings")),
+  laserFlow: lazy(() => import("./LaserFlow")),
+  antigravity: lazy(() => import("./Antigravity")),
 };
 
 export {

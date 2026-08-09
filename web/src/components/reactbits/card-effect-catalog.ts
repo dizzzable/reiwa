@@ -349,6 +349,131 @@ export const CARD_EFFECT_CATALOG = {
     palette: ["#ffffff", "#000000"],
     fullOutputGamut: true,
   },
+  // ── Repaired reactbits ─────────────────────────────────────────────────────
+  // Twelve components repaired in the panel tree and copied here byte-for-byte
+  // by `scripts/sync-card-effects.mjs`. Every number below mirrors the panel's
+  // own catalog, which is where an operator's range is decided; the parity test
+  // compares the two wherever both checkouts exist.
+  colorBends: {
+    renderer: "webgl1",
+    defaults: {
+      colors: ["#5227FF", "#FF9FFC", "#B19EEF"], speed: 0.2, rotation: 90, autoRotate: 0,
+      scale: 1, frequency: 1, warpStrength: 1, bandWidth: 6, intensity: 1.5, noise: 0.15,
+      iterations: 1, parallax: 0.5, mouseInfluence: 1, transparent: true,
+    },
+    palette: ["#5227FF", "#FF9FFC", "#B19EEF"],
+    fullOutputGamut: true,
+  },
+  pixelBlast: {
+    renderer: "webgl2",
+    defaults: {
+      color: "#B497CF", variant: "square", pixelSize: 3, speed: 0.5, patternScale: 2,
+      patternDensity: 1, pixelSizeJitter: 0, edgeFade: 0.5, noiseAmount: 0, enableRipples: true,
+      rippleSpeed: 0.3, rippleThickness: 0.1, rippleIntensityScale: 1, liquid: false,
+      liquidStrength: 0.1, liquidRadius: 1, liquidWobbleSpeed: 4.5, transparent: true,
+    },
+    palette: ["#B497CF"],
+    fullOutputGamut: true,
+  },
+  plasmaWave: {
+    renderer: "webgl1",
+    defaults: {
+      colors: ["#A855F7", "#06B6D4"], speed1: 0.05, speed2: 0.05, dir2: 1, bend1: 1, bend2: 0.5,
+      focalLength: 0.8, rotationDeg: 0, xOffset: 0, yOffset: 0,
+    },
+    palette: ["#A855F7", "#06B6D4"],
+    fullOutputGamut: true,
+  },
+  evilEye: {
+    renderer: "webgl1",
+    defaults: {
+      eyeColor: "#FF6F37", backgroundColor: "#000000", intensity: 1.5, flameSpeed: 1,
+      pupilSize: 0.6, irisWidth: 0.25, glowIntensity: 0.35, scale: 0.8, noiseScale: 1,
+      pupilFollow: 1,
+    },
+    palette: ["#FF6F37", "#000000"],
+    fullOutputGamut: true,
+  },
+  lightPillar: {
+    renderer: "webgl1",
+    defaults: {
+      topColor: "#5227FF", bottomColor: "#FF9FFC", intensity: 1, rotationSpeed: 0.3,
+      glowAmount: 0.005, pillarWidth: 3, pillarHeight: 0.4, pillarRotation: 0,
+      noiseIntensity: 0.5, quality: "high", interactive: false,
+    },
+    palette: ["#5227FF", "#FF9FFC"],
+    fullOutputGamut: true,
+  },
+  prismaticBurst: {
+    renderer: "webgl2",
+    defaults: {
+      colors: ["#FF3D9A", "#5227FF", "#7CFF67"], intensity: 2, speed: 0.5,
+      animationType: "rotate3d", distort: 0, rayCount: 0, hoverDampness: 0,
+    },
+    palette: ["#FF3D9A", "#5227FF", "#7CFF67"],
+    fullOutputGamut: true,
+  },
+  faultyTerminal: {
+    renderer: "webgl1",
+    defaults: {
+      tint: "#ffffff", brightness: 1, timeScale: 0.3, pause: false, scale: 1, digitSize: 1.5,
+      scanlineIntensity: 0.3, glitchAmount: 1, flickerAmount: 1, noiseAmp: 1,
+      chromaticAberration: 0, dither: 0, curvature: 0.2, mouseReact: true, mouseStrength: 0.2,
+      pageLoadAnimation: true,
+    },
+    palette: ["#ffffff", "#000000"],
+    fullOutputGamut: true,
+  },
+  letterGlitch: {
+    renderer: "canvas2d",
+    defaults: {
+      glitchColors: ["#2b4539", "#61dca3", "#61b3dc"], glitchSpeed: 50,
+      backgroundColor: "#000000", smooth: true, centerVignette: false, outerVignette: false,
+      characters: "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$&*()-_+=/[]{};:<>.,0123456789",
+    },
+    palette: ["#2b4539", "#61dca3", "#61b3dc"],
+  },
+  shapeGrid: {
+    renderer: "canvas2d",
+    defaults: {
+      borderColor: "#999999", hoverFillColor: "#222222", shape: "square", direction: "right",
+      speed: 1, squareSize: 40, hoverTrailAmount: 0, vignetteColor: "#120F17",
+      vignetteStrength: 1,
+    },
+    palette: ["#999999", "#222222", "#120F17"],
+  },
+  magicRings: {
+    renderer: "webgl1",
+    defaults: {
+      color: "#fc42ff", colorTwo: "#42fcff", speed: 1, ringCount: 6, opacity: 1,
+      attenuation: 10, lineThickness: 2, baseRadius: 0.35, radiusStep: 0.1, scaleRate: 0.1,
+      ringGap: 1.5, rotation: 0, noiseAmount: 0.1, fadeIn: 0.7, fadeOut: 0.5, parallax: 0.05,
+      followMouse: false, mouseInfluence: 0.2,
+    },
+    palette: ["#fc42ff", "#42fcff"],
+    fullOutputGamut: true,
+  },
+  laserFlow: {
+    renderer: "webgl1",
+    defaults: {
+      color: "#FF79C6", flowSpeed: 0.35, decay: 1.1, falloffStart: 1.2, verticalSizing: 2,
+      horizontalSizing: 0.5, horizontalBeamOffset: 0.1, verticalBeamOffset: 0,
+      fogIntensity: 0.45, fogScale: 0.3, fogFallSpeed: 0.6, wispDensity: 1, wispSpeed: 15,
+      wispIntensity: 5, flowStrength: 0.25, mouseTiltStrength: 0.01,
+    },
+    palette: ["#FF79C6", "#000000"],
+    fullOutputGamut: true,
+  },
+  antigravity: {
+    renderer: "webgl1",
+    defaults: {
+      color: "#FF9FFC", autoAnimate: true, count: 300, particleSize: 2, lerpSpeed: 0.1,
+      particleShape: "capsule", ringRadius: 10, magnetRadius: 10, fieldStrength: 10,
+      waveAmplitude: 1, waveSpeed: 0.4, rotationSpeed: 0.1, pulseSpeed: 3, particleVariance: 1,
+      depthFactor: 1,
+    },
+    palette: ["#FF9FFC"],
+  },
 } satisfies Record<string, CardEffectEntry>;
 
 /**
