@@ -53,6 +53,7 @@ import {
   CardEffectLayer,
 } from "../src/components/reactbits/card-effect-layer";
 import {
+  CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS,
   observeCardEffectCanvases,
   resolveCardEffectOverlayOpacity,
 } from "../src/components/reactbits/card-effect-layer-utils";
@@ -309,7 +310,22 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
     expect(fallbackBlobGradients(container)).toContain("rgb(115, 0, 255)");
   });
 
-  it("uses a same-palette CSS fallback when Threads loses its WebGL context", () => {
+  /**
+   * The backstop, and it is now a DEFERRED one.
+   *
+   * A `webglcontextlost` used to become `css-fallback` in the same tick. It no
+   * longer can: `preventDefault()` asks the browser to restore the context, and
+   * the only place a `webglcontextrestored` can be heard is on a canvas that is
+   * still in the document — which falling back to CSS removes. So the failure
+   * waits out `CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS` first. What must not change
+   * is where it ends up when nothing comes back, and that is this case.
+   * `card-effect-context-restore.test.tsx` pins the other branch.
+   */
+  it("uses a same-palette CSS fallback when Threads loses its WebGL context for good", () => {
+    // Only the clock the grace window runs on. Vitest's fake timers otherwise
+    // take over `requestAnimationFrame` too, displacing the synchronous stub
+    // the capability probe needs to get past.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const container = renderIntoDom(
       <CardEffectLayer
         effect="threads"
@@ -322,7 +338,20 @@ describe("CardEffectLayer reduced-motion renderer ownership", () => {
       "[data-test-native-card-effect]",
     );
     expect(native).not.toBeNull();
-    act(() => native?.dispatchEvent(new Event("webglcontextlost")));
+    act(() =>
+      native?.dispatchEvent(
+        new Event("webglcontextlost", { cancelable: true }),
+      ),
+    );
+
+    // Still native: the loss is being given its chance to come back.
+    expect(
+      container
+        .querySelector("[data-card-effect-source]")
+        ?.getAttribute("data-card-effect-runtime"),
+    ).toBe("native");
+
+    act(() => vi.advanceTimersByTime(CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS));
 
     expect(
       container

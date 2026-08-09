@@ -362,7 +362,6 @@ export default function DotMatrix({
   fontSizePx = 42
 }: DotMatrixProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const perlinProgramRef = useRef<Program | null>(null);
   const dotProgramRef = useRef<Program | null>(null);
   const applyAtlasRef = useRef<((enabled: boolean) => void) | null>(null);
@@ -385,22 +384,43 @@ export default function DotMatrix({
 
   useEffect(() => {
     const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return;
+    if (!container) return;
 
     // The ratio BEFORE the device-pixel budget. `applySize` lowers it once it
     // knows the box; `dprRef.current` always holds the one actually in force.
     const baseDpr = Math.min(window.devicePixelRatio || 1, 2);
     dprRef.current = baseDpr;
 
+    /**
+     * THE CANVAS IS OGL'S, NOT REACT'S — and that is the whole point.
+     *
+     * This used to render a `<canvas ref={canvasRef}>` and hand that element to
+     * OGL. React owns such an element, so it SURVIVES this effect's cleanup —
+     * while the cleanup ends by destroying the context living on it. A canvas
+     * hands the same context object back to every later `getContext` call, so a
+     * SECOND setup on the same element got the ALREADY-LOST context: every
+     * shader failed to compile with a null info log, OGL's `Program` constructor
+     * early-returned leaving `uniformLocations` undefined, and the first
+     * `render()` threw `Cannot read properties of undefined (reading 'forEach')`.
+     * The layer's error boundary caught it, dropped to `css-fallback`, and the
+     * card was statically dead for the rest of the session. React StrictMode's
+     * double-invoke reproduced it on every dev mount; in production any teardown
+     * and re-setup over preserved DOM did.
+     *
+     * Letting OGL allocate the element makes a second setup impossible to poison
+     * by construction: a new element cannot be holding an old context. The
+     * release below therefore STAYS — WebKit frees a context slot only when the
+     * context object is destroyed, and this project is under a
+     * 16-per-web-content-process ceiling. Same shape as `Plasma`/`Grainient`.
+     */
     const renderer = new Renderer({
-      canvas,
       dpr: baseDpr,
       alpha: true,
       premultipliedAlpha: false,
       webgl: 2
     });
     const gl = renderer.gl;
+    const canvas = gl.canvas as HTMLCanvasElement;
 
     const loseContext = () => {
       const ext = gl.getExtension('WEBGL_lose_context');
@@ -409,10 +429,15 @@ export default function DotMatrix({
 
     // The shaders are GLSL ES 3.00 (`#version 300 es`); on a WebGL1 context they
     // cannot compile at all, so bail out and leave the flat background instead.
+    // Checked BEFORE the canvas is attached, so a bail-out leaves no blank
+    // canvas behind for the card layer to mistake for a live renderer.
     if (!renderer.isWebgl2) {
       loseContext();
       return;
     }
+
+    canvas.className = 'pointer-events-none block h-full w-full';
+    container.appendChild(canvas);
 
     const measure = () => {
       const rect = container.getBoundingClientRect();
@@ -602,6 +627,15 @@ export default function DotMatrix({
         if (texture.texture) gl.deleteTexture(texture.texture);
       }
       if (renderTarget.depthBuffer) gl.deleteRenderbuffer(renderTarget.depthBuffer);
+      // The element goes before the context does. A detached canvas is not a
+      // presentation, and the card layer's canvas observer reads exactly that:
+      // a `webglcontextlost` on a canvas still in the document is a fault, one
+      // on a canvas that has left it is this teardown.
+      try {
+        container.removeChild(canvas);
+      } catch {
+        /* already gone */
+      }
       // Mobile browsers cap live WebGL contexts at roughly eight; hand this one
       // back immediately rather than waiting for the GC to notice the canvas.
       loseContext();
@@ -631,8 +665,6 @@ export default function DotMatrix({
   }, [useGlyphAtlas, effectiveCharacters, fontFamily, fontWeight, fontSizePx]);
 
   return (
-    <div ref={containerRef} className="absolute inset-0 h-full w-full overflow-hidden" style={{ background: bgColor }}>
-      <canvas ref={canvasRef} className="pointer-events-none block h-full w-full" />
-    </div>
+    <div ref={containerRef} className="absolute inset-0 h-full w-full overflow-hidden" style={{ background: bgColor }} />
   );
 }

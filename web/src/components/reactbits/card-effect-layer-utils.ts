@@ -223,6 +223,26 @@ function sampleCanvasPixels(
 }
 
 /**
+ * How long a lost context has to come back before it counts as a failure.
+ *
+ * WHY THE FAILURE IS DELAYED AT ALL. It cannot be reported first and withdrawn
+ * later: a reported failure resolves the runtime to `css-fallback`, which
+ * unmounts the effect — taking the canvas, and therefore the only thing that
+ * could ever hear `webglcontextrestored`, out of the document. So the choice is
+ * to wait or to be permanently deaf, and this is the wait.
+ *
+ * Long enough for a browser that means to restore: Blink schedules the first
+ * restore attempt immediately and retries about a second apart, so this covers
+ * one retry. Short enough that the case which never comes back — WebKit's
+ * `SyntheticLostContext`, handed to whichever context the seventeenth evicts,
+ * which its own source marks unrecoverable — reaches the CSS fallback while the
+ * user is still looking at the same screen. The cost of waiting is a dead
+ * canvas over the residual backdrop for this long, and it is only ever paid
+ * after a real GPU event; the cost of not waiting was a permanently static card.
+ */
+export const CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS = 2_000;
+
+/**
  * Observe canvases created by a lazy effect and report both explicit WebGL
  * failures and silent renderer initialisation failures. Several GPU libraries
  * only log when context creation fails, which otherwise leaves a blank layer.
@@ -235,14 +255,41 @@ function sampleCanvasPixels(
  * that dies while the card is up, which is the case WebKit produces when it
  * recycles the oldest of its sixteen. It cannot cover one that was already lost
  * before these listeners attached; see the failure notes in the layer.
+ *
+ * WHAT WENT WRONG. Every `webglcontextlost` was a permanent failure. The handler
+ * did not call `preventDefault()` — and per the WebGL spec that is the ONLY
+ * thing that asks the user agent to restore a context, so without it
+ * `webglcontextrestored` can never fire — and nothing listened for the restore
+ * either. One transient GPU event (sleep/wake, a driver reset, a tab coming back
+ * from the background) therefore stranded the card as a static gradient until
+ * the page was reloaded. That is the permanent half of the "animations disappear
+ * to a static card" report.
+ *
+ * `onContextRestored` is how a restorable loss actually gets restored. It
+ * returns whether the caller took the rebuild: a caller that has spent its
+ * rebuild budget answers `false`, and the loss becomes an ordinary failure
+ * immediately, which is what stops a GPU that keeps losing and restoring from
+ * driving an unbounded rebuild loop. With no callback at all every loss is still
+ * a failure, only later.
+ *
+ * The three roles do not fight each other. Several effects (`Plasma`,
+ * `Grainient`, `CosmicOrb`, and the three fiber ones through three.js) carry
+ * their own loss/restore handling; `preventDefault()` is idempotent, so a second
+ * caller changes nothing, and a rebuild here REPLACES that component rather than
+ * racing it — it costs those effects one redundant rebuild, which is bounded by
+ * the caller's budget and is the price of the ~40 catalog components that have
+ * no recovery of their own and would otherwise come back to a blank canvas.
  */
 export function observeCardEffectCanvases(
   root: HTMLElement,
   onFailure: () => void,
   timeoutMs = 1_200,
   requiredContext?: "2d",
+  onContextRestored?: () => boolean,
+  restoreGraceMs = CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS,
 ): () => void {
   const listeners = new Map<HTMLCanvasElement, () => void>();
+  const awaitingRestore = new Map<HTMLCanvasElement, number>();
   let sawCanvas = false;
   let reportedFailure = false;
 
@@ -250,6 +297,14 @@ export function observeCardEffectCanvases(
     if (reportedFailure) return;
     reportedFailure = true;
     onFailure();
+  };
+
+  const stopWaiting = (canvas: HTMLCanvasElement) => {
+    const timer = awaitingRestore.get(canvas);
+    if (timer === undefined) return false;
+    window.clearTimeout(timer);
+    awaitingRestore.delete(canvas);
+    return true;
   };
 
   const observeCanvas = () => {
@@ -267,10 +322,46 @@ export function observeCardEffectCanvases(
         }
       }
       sawCanvas = true;
-      canvas.addEventListener("webglcontextlost", reportFailureOnce);
+
+      const handleContextLost = (event: Event) => {
+        // A canvas that has left the document is being torn down, and the loss
+        // is this app's own `loseContext()` handing the slot back. Do not
+        // `preventDefault()` it — that would ask the browser to restore a
+        // context we are deliberately giving up, under a ceiling of sixteen —
+        // and do not report it: nothing is on screen to have failed.
+        if (!canvas.isConnected) return;
+        // Not a gesture event: this blocks nothing. It is the whole difference
+        // between a context that can come back and one that cannot.
+        event.preventDefault();
+        if (awaitingRestore.has(canvas)) return;
+        awaitingRestore.set(
+          canvas,
+          window.setTimeout(() => {
+            awaitingRestore.delete(canvas);
+            reportFailureOnce();
+          }, restoreGraceMs),
+        );
+      };
+
+      const handleContextRestored = () => {
+        // Only a loss this observer deferred can be answered by a restore. A
+        // restore with nothing pending belongs to a teardown, or to a component
+        // that healed a loss we never saw.
+        if (!stopWaiting(canvas)) return;
+        if (onContextRestored?.() === true) return;
+        reportFailureOnce();
+      };
+
+      canvas.addEventListener("webglcontextlost", handleContextLost);
+      canvas.addEventListener("webglcontextrestored", handleContextRestored);
       canvas.addEventListener("webglcontextcreationerror", reportFailureOnce);
       listeners.set(canvas, () => {
-        canvas.removeEventListener("webglcontextlost", reportFailureOnce);
+        stopWaiting(canvas);
+        canvas.removeEventListener("webglcontextlost", handleContextLost);
+        canvas.removeEventListener(
+          "webglcontextrestored",
+          handleContextRestored,
+        );
         canvas.removeEventListener(
           "webglcontextcreationerror",
           reportFailureOnce,

@@ -48,6 +48,12 @@ export interface SubscriptionCardProps {
    */
   effectActive?: boolean;
   /**
+   * One swipe away from active. Asks the shared context budget to keep this
+   * card's renderer alive so the swipe does not rebuild it in front of the
+   * user; refused without consequence when the budget is spent.
+   */
+  effectWarm?: boolean;
+  /**
    * Frozen visual supplied by a presentation lifecycle such as deletion.
    * Normal cards continue to resolve the live operator branding themselves.
    */
@@ -59,6 +65,7 @@ export function SubscriptionCard({
   index,
   firstDevice,
   effectActive,
+  effectWarm,
   visual,
 }: SubscriptionCardProps) {
   const { branding } = useBranding();
@@ -72,6 +79,7 @@ export function SubscriptionCard({
     <SubscriptionCardFrame
       visual={resolvedVisual}
       effectActive={effectActive}
+      effectWarm={effectWarm}
     >
       <SubscriptionCardContent
         subscription={subscription}

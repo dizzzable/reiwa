@@ -1339,7 +1339,6 @@ export default function Tornado({
   autoplay = true
 }: TornadoProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Prop units in, engine units out — the one place the two meet.
   const config: VortexConfig = {
@@ -1404,9 +1403,36 @@ export default function Tornado({
   const apiRef = useRef<VortexApi | null>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!container) return;
+
+    /**
+     * THE CANVAS IS THIS EFFECT'S, NOT REACT'S — and that is the whole point.
+     *
+     * This used to render a `<canvas ref={canvasRef}>` and hand that element to
+     * `THREE.WebGLRenderer`. React owns such an element, so it SURVIVES this
+     * effect's cleanup — while `dispose()` ends with `forceContextLoss()`, which
+     * is `WEBGL_lose_context.loseContext()` under another name, destroying the
+     * context living on it. A canvas hands the same context object back to every
+     * later `getContext` call, so a SECOND setup on the same element got the
+     * ALREADY-LOST context: three.js only throws when `getContext` returns
+     * NULL, and a lost context is not null, so it built happily, every shader
+     * failed to compile, and the card was permanently blank. React StrictMode's
+     * double-invoke reproduced it on every dev mount; in production any teardown
+     * and re-setup over preserved DOM did.
+     *
+     * Allocating the element here makes a second setup impossible to poison by
+     * construction: a new element cannot be holding an old context. The
+     * `forceContextLoss()` therefore STAYS — WebKit frees a context slot only
+     * when the context object is destroyed, and this project is under a
+     * 16-per-web-content-process ceiling.
+     *
+     * Attached only once the engine has built, so a device that cannot start
+     * WebGL leaves no blank canvas behind for the card layer to mistake for a
+     * live renderer.
+     */
+    const canvas = document.createElement('canvas');
+    canvas.className = 'block h-full w-full';
     try {
       apiRef.current = createVortex(canvas, container, configRef);
     } catch {
@@ -1414,7 +1440,17 @@ export default function Tornado({
       // Fail to a transparent canvas rather than taking the card down.
       return;
     }
+    container.appendChild(canvas);
     return () => {
+      // The element goes before the context does. A detached canvas is not a
+      // presentation, and the card layer's canvas observer reads exactly that:
+      // a `webglcontextlost` on a canvas still in the document is a fault, one
+      // on a canvas that has left it is this teardown.
+      try {
+        container.removeChild(canvas);
+      } catch {
+        /* already gone */
+      }
       apiRef.current?.dispose();
       apiRef.current = null;
     };
@@ -1432,9 +1468,5 @@ export default function Tornado({
     apiRef.current?.rebuild();
   }, [buildKey]);
 
-  return (
-    <div ref={containerRef} className="absolute inset-0 h-full w-full overflow-hidden" style={{ background }}>
-      <canvas ref={canvasRef} className="block h-full w-full" />
-    </div>
-  );
+  return <div ref={containerRef} className="absolute inset-0 h-full w-full overflow-hidden" style={{ background }} />;
 }

@@ -358,7 +358,6 @@ export default function CosmicOrb({
   seed = 17
 }: CosmicOrbProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const cfgRef = useRef({
     fit,
@@ -396,8 +395,30 @@ export default function CosmicOrb({
 
   useEffect(() => {
     const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return;
+    if (!container) return;
+
+    /**
+     * THE CANVAS IS THIS EFFECT'S, NOT REACT'S — and that is the whole point.
+     *
+     * This used to render a `<canvas ref={canvasRef}>` and open the context on
+     * that element. React owns such an element, so it SURVIVES this effect's
+     * cleanup — while the cleanup ends by destroying the context living on it.
+     * A canvas hands the same context object back to every later `getContext`
+     * call, so a SECOND setup on the same element got the ALREADY-LOST context:
+     * `createShader` returns null on a lost context, `init()` bailed, `ready`
+     * stayed false and the card was permanently blank — silently, with nothing
+     * thrown for the layer's error boundary to catch. React StrictMode's
+     * double-invoke reproduced it on every dev mount; in production any teardown
+     * and re-setup over preserved DOM did.
+     *
+     * Allocating the element here makes a second setup impossible to poison by
+     * construction: a new element cannot be holding an old context. The release
+     * in the cleanup therefore STAYS — WebKit frees a context slot only when the
+     * context object is destroyed, and this project is under a
+     * 16-per-web-content-process ceiling. Same shape as `Plasma`/`Grainient`.
+     */
+    const canvas = document.createElement('canvas');
+    canvas.className = 'block h-full w-full';
 
     const gl = canvas.getContext('webgl', {
       premultipliedAlpha: true,
@@ -406,6 +427,8 @@ export default function CosmicOrb({
       powerPreference: 'low-power'
     });
     if (!gl) return;
+
+    container.appendChild(canvas);
 
     let program: WebGLProgram | null = null;
     let buffer: WebGLBuffer | null = null;
@@ -501,7 +524,9 @@ export default function CosmicOrb({
     init();
 
     function applySize() {
-      if (!container || !canvas) return;
+      // A hoisted function declaration is created before the narrowing above,
+      // so TypeScript re-widens the captured `container` here.
+      if (!container) return;
       const rect = container.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
       let w = Math.max(1, Math.round(Math.max(1, rect.width) * dpr));
@@ -613,13 +638,18 @@ export default function CosmicOrb({
       canvas.removeEventListener('webglcontextlost', onLost);
       canvas.removeEventListener('webglcontextrestored', onRestored);
       releaseResources();
+      // The element goes before the context does. A detached canvas is not a
+      // presentation, and the card layer's canvas observer reads exactly that:
+      // a `webglcontextlost` on a canvas still in the document is a fault, one
+      // on a canvas that has left it is this teardown.
+      try {
+        container.removeChild(canvas);
+      } catch {
+        /* already gone */
+      }
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
   }, []);
 
-  return (
-    <div ref={containerRef} className="absolute inset-0 h-full w-full overflow-hidden">
-      <canvas ref={canvasRef} className="block h-full w-full" />
-    </div>
-  );
+  return <div ref={containerRef} className="absolute inset-0 h-full w-full overflow-hidden" />;
 }

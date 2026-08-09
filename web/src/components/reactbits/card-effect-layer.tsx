@@ -28,6 +28,10 @@
  *    listeners is never noticed, and that card sits at the residual too.
  *  - A `canvas2d` effect whose first painted frame lands after the samples
  *    stop is read as blank and keeps the whole backdrop.
+ *  - A context that dies more than `MAX_CONTEXT_RESTORES` times for one
+ *    presentation stops being rebuilt and becomes the CSS fallback, even if the
+ *    browser was willing to restore it again. That is deliberate: see the
+ *    constant.
  */
 
 import {
@@ -66,6 +70,22 @@ const PAINT_SAMPLE_INTERVAL_MS = 120;
 const PAINT_SAMPLE_ATTEMPTS = 5;
 
 /**
+ * How many times one presentation may be rebuilt after a restorable context
+ * loss before the loss is treated as the permanent kind.
+ *
+ * A restored context is a real recovery, so the honest response is to rebuild:
+ * only a handful of catalog components can heal themselves, and the rest come
+ * back to a canvas whose GL handles the loss detached. But "the browser
+ * restored it" is not a promise that it will stay, and a GPU that keeps losing
+ * and restoring would otherwise drive an unbounded rebuild loop — each turn of
+ * it allocating another context under WebKit's sixteen. Two is enough for a
+ * sleep/wake or a driver reset and short enough that a thrashing device reaches
+ * the CSS fallback quickly. Budget is per `failureScope`, so anything the
+ * operator changes starts again.
+ */
+const MAX_CONTEXT_RESTORES = 2;
+
+/**
  * How long the effect takes to fade in, and the backdrop to fade out.
  *
  * Shared with the frame so the two halves of the crossfade cannot drift apart:
@@ -74,16 +94,60 @@ const PAINT_SAMPLE_ATTEMPTS = 5;
  */
 export const CARD_EFFECT_REVEAL_MS = 420;
 
+/**
+ * How long a torn-down presentation may be away before coming back counts as a
+ * first appearance again.
+ *
+ * WHAT WENT WRONG: the fade above was built for the FIRST time a card shows its
+ * artwork — the complaint was that the effect arrived abruptly, between two
+ * frames 50 ms apart. But a carousel tears the renderer down the moment its
+ * slide stops being the selected one and rebuilds it when the user swipes back,
+ * and the fade was re-paid every time: measured at one frame plus the whole
+ * 420 ms, during which the card is the operator's flat gradient and watermark.
+ * Swiping between two subscriptions therefore showed a static card on every
+ * swipe, in both directions.
+ *
+ * So a reveal is remembered. Coming back to artwork the user was looking at
+ * moments ago is not an appearance and does not fade; coming back after a real
+ * absence is, and does. The window is measured from the moment the presentation
+ * was RELEASED, not from when it was first shown — a card watched for a minute
+ * and then swiped away for one second must still count as returning promptly.
+ *
+ * Thirty seconds covers a swipe, a pagination jump, and the app-switch a
+ * Telegram mini-app takes constantly; it does not cover leaving the cabinet
+ * open in a background tab, where the artwork genuinely is new again.
+ */
+export const CARD_EFFECT_REVEAL_MEMORY_MS = 30_000;
+
+/**
+ * How the layer is showing its presentation.
+ *  - `hidden`  — nothing committed, or torn down. Transparent.
+ *  - `fade`    — first appearance of this presentation: crossfade in.
+ *  - `instant` — the same presentation returning promptly: no transition at
+ *                all, so the browser has nothing to animate from.
+ */
+type CardEffectRevealPhase = "hidden" | "fade" | "instant";
+
+function monotonicNow(): number {
+  return typeof performance === "undefined" ? Date.now() : performance.now();
+}
+
 interface CardEffectLayerProps {
   readonly effect: string;
   readonly props?: Record<string, unknown>;
   readonly opacity?: number;
   readonly className?: string;
   /**
-   * Carousel ownership hint. The parent passes `true` only to the selected
-   * slide, guaranteeing that one subscription at most owns a live WebGL/canvas
-   * renderer. Left `undefined` for standalone usage, where the
-   * IntersectionObserver below drives mounting.
+   * Ownership decided by the parent, replacing this layer's own
+   * IntersectionObserver. Left `undefined` for standalone usage, where that
+   * observer drives mounting.
+   *
+   * NOT "exactly one card at a time" — it was, and the number moved. The
+   * carousel now passes `true` to the selected slide AND to a neighbour the
+   * shared context budget has granted, so a swipe finds the renderer already
+   * running instead of rebuilding it in front of the user. What bounds the
+   * total is `card-effect-budget.ts`, which every card except the selected
+   * slide asks; read `useCardEffectWarmSlot` before assuming a count here.
    */
   readonly active?: boolean;
   /**
@@ -242,8 +306,9 @@ export function CardEffectLayer({
 
   // Mount the effect while the card is on screen (standalone usage). In the
   // carousel the parent passes an explicit `active` boolean: in that mode it
-  // drives mounting EXCLUSIVELY (ignore the IntersectionObserver) so that at
-  // most ONE card holds a live WebGL context at a time.
+  // drives mounting EXCLUSIVELY (ignore the IntersectionObserver), and the
+  // number of cards it says yes to is rationed by `card-effect-budget.ts`
+  // rather than pinned at one — see the `active` prop.
   //
   // WebKit allows 16 live contexts per web-content process, and the 17th does
   // not merely evict the oldest — it hands that one a SyntheticLostContext,
@@ -331,10 +396,48 @@ export function CardEffectLayer({
     });
   }, [failureScope]);
 
+  /**
+   * Rebuild the renderer after a context came back.
+   *
+   * A restored context is not the one the effect was drawing with: every GL
+   * handle it holds was detached by the loss, and almost no component in the
+   * catalog rebuilds itself. Bumping the generation changes the renderer's
+   * `key`, so React unmounts the effect and mounts a fresh one on a fresh
+   * context — the same answer `Plasma` reaches for itself, applied uniformly.
+   *
+   * Returns whether the rebuild was taken. `false` hands the loss back to the
+   * observer as an ordinary failure, which is what keeps the budget above from
+   * being a suggestion. The budget lives in a ref rather than in state because
+   * the observer needs the answer synchronously, inside the DOM event.
+   */
+  const restoreBudgetRef = useRef<{ scope: string; used: number } | null>(null);
+  const [rendererGeneration, setRendererGeneration] = useState(0);
+  const requestRuntimeRebuild = useCallback(() => {
+    const budget = restoreBudgetRef.current;
+    const used = budget?.scope === failureScope ? budget.used : 0;
+    if (used >= MAX_CONTEXT_RESTORES) return false;
+    restoreBudgetRef.current = { scope: failureScope, used: used + 1 };
+    setRendererGeneration((generation) => generation + 1);
+    return true;
+  }, [failureScope]);
+
   useEffect(() => {
     if (!shouldAnimate || !isValid || !requiresWebGL(effect)) {
       return;
     }
+    // Asked once per effect, not once per activation. The probe opens a real
+    // `webgl2` context and WebKit frees it ASYNCHRONOUSLY, so a carousel that
+    // re-probed on every swipe would spend a live context out of sixteen on a
+    // question it had already answered — and the answer cannot change while
+    // this layer goes on drawing the same effect. A context that genuinely
+    // dies is caught by `observeCardEffectCanvases` and becomes a failure, not
+    // a re-probe.
+    //
+    // Gated on the SNAPSHOT rather than on a "already probed" flag: the frame
+    // below is cancellable, and a flag set before it fired would leave a card
+    // that was swiped past within one frame permanently without capabilities,
+    // hence permanently without a renderer.
+    if (capabilitySnapshot?.effect === effect) return;
     const capabilities = detectCardEffectCapabilities();
     // `WEBGL_lose_context` releases the short-lived probe asynchronously in
     // WebKit. Wait one frame before mounting the real renderer so the probe
@@ -343,7 +446,7 @@ export function CardEffectLayer({
       setCapabilitySnapshot({ effect, capabilities });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [effect, isValid, shouldAnimate]);
+  }, [capabilitySnapshot, effect, isValid, shouldAnimate]);
 
   const sourceProps = props ?? {};
   const staticProps = isValid
@@ -395,10 +498,14 @@ export function CardEffectLayer({
       ? runtime?.cssColors ?? resolveCardEffectColors(effect, staticProps)
       : resolveCardEffectColors(runtimeId, mergedProps);
   const configuredOpacity = resolveCardEffectOverlayOpacity(opacity);
+  // `gen-` is what makes a rebuild after a restored context a NEW presentation:
+  // readiness has to be handshaken again, the canvas observer is rebuilt around
+  // the new canvas, and the reveal fades rather than snapping in — a context
+  // loss is not a swipe, and the artwork really was gone.
   const presentationKey =
     runtime === null
       ? null
-      : `${failureScope}:${runtime.effect}:${runtime.mode}:failure-${failureCount}`;
+      : `${failureScope}:${runtime.effect}:${runtime.mode}:failure-${failureCount}:gen-${rendererGeneration}`;
   const presentationReady =
     shouldMount &&
     presentationKey !== null &&
@@ -412,16 +519,56 @@ export function CardEffectLayer({
    * to animate from — the transition never runs and the effect snaps in, which
    * is exactly what it used to do. Setting it from an effect puts the change
    * one paint later, which is what gives the transition something to move.
+   *
+   * That one-paint delay is precisely what `instant` gives up, and only for a
+   * presentation this layer has already shown: snapping in is the CORRECT
+   * behaviour for artwork that was on screen a moment ago, and the fade is
+   * reserved for artwork the user has not seen. Note that `instant` still waits
+   * for `presentationReady` — it shortens the reveal, never the readiness
+   * handshake, so a renderer that has not committed still shows nothing.
    */
-  const [revealed, setRevealed] = useState(false);
+  const revealMemoryRef = useRef<{
+    readonly key: string;
+    readonly releasedAt: number;
+  } | null>(null);
+  const [reveal, setReveal] = useState<CardEffectRevealPhase>("hidden");
+  const revealed = reveal !== "hidden";
   useEffect(() => {
-    if (!presentationReady) {
-      setRevealed(false);
+    if (!presentationReady || presentationKey === null) {
+      setReveal("hidden");
       return;
     }
-    const frame = requestAnimationFrame(() => setRevealed(true));
+    const memory = revealMemoryRef.current;
+    if (
+      memory !== null &&
+      memory.key === presentationKey &&
+      monotonicNow() - memory.releasedAt <= CARD_EFFECT_REVEAL_MEMORY_MS
+    ) {
+      setReveal("instant");
+      return;
+    }
+    const frame = requestAnimationFrame(() => setReveal("fade"));
     return () => cancelAnimationFrame(frame);
   }, [presentationReady, presentationKey]);
+
+  /**
+   * The receipt that lets a presentation come back without fading, written by
+   * the cleanup so it can only ever record something that was actually on
+   * screen. A presentation that was ready for a moment but never revealed —
+   * a slide swiped past inside a single frame — leaves nothing behind, so its
+   * first real appearance still fades.
+   *
+   * Keyed by `presentationKey`, which carries the effect, its props, the
+   * runtime mode and the failure count. Anything the operator changes produces
+   * a different key and therefore a fresh fade.
+   */
+  useEffect(() => {
+    if (reveal === "hidden" || presentationKey === null) return;
+    const key = presentationKey;
+    return () => {
+      revealMemoryRef.current = { key, releasedAt: monotonicNow() };
+    };
+  }, [presentationKey, reveal]);
 
   /**
    * Evidence that the effect drew. Not merely that it mounted.
@@ -512,11 +659,13 @@ export function CardEffectLayer({
       markRuntimeFailed,
       1_200,
       runtimeId === "waves" ? "2d" : undefined,
+      requestRuntimeRebuild,
     );
   }, [
     isValid,
     markRuntimeFailed,
     presentationReady,
+    requestRuntimeRebuild,
     runtimeId,
     shouldMount,
   ]);
@@ -531,6 +680,7 @@ export function CardEffectLayer({
       data-card-effect-source={effect}
       data-card-effect-runtime={runtime?.mode ?? "probing"}
       data-card-effect-ready={presentationReady ? "true" : "false"}
+      data-card-effect-reveal={reveal}
       style={{
         // The effect is composited with normal source-over alpha. A previous
         // unconditional `screen` blend mathematically recoloured every
@@ -540,8 +690,17 @@ export function CardEffectLayer({
         // Fades in once the renderer has actually painted. Before this the
         // layer jumped from absent to fully opaque in a single frame — the
         // whole card changed appearance between two paints, 50 ms apart.
+        //
+        // `transition: none` on the instant path is load-bearing, not tidiness.
+        // The layer really did paint at 0 while it was torn down, so that is
+        // the browser's before-change style and a transition WOULD run from it;
+        // only an after-change style with no transition-property keeps the
+        // return snap-free.
         opacity: revealed ? 1 : 0,
-        transition: `opacity ${CARD_EFFECT_REVEAL_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+        transition:
+          reveal === "instant"
+            ? "none"
+            : `opacity ${CARD_EFFECT_REVEAL_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
         overflow: "hidden",
       }}
     >
@@ -571,7 +730,14 @@ export function CardEffectLayer({
                   opacity: configuredOpacity,
                 }}
               >
-                <Effect key={runtimeId} {...mergedProps} />
+                {/* The generation is part of the key, not decoration: a
+                    restored context needs a NEW component instance on a NEW
+                    canvas, and re-rendering the same one would keep the GL
+                    handles the loss detached. */}
+                <Effect
+                  key={`${runtimeId}:${rendererGeneration}`}
+                  {...mergedProps}
+                />
               </div>
               {presentationKey !== null && (
                 <EffectReadySignal

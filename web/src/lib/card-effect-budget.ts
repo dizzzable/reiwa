@@ -34,9 +34,14 @@
  *     probes in the same tick, so the probes overlap each other and may still
  *     be draining when the renderers arrive.
  * plus 1 for the app background, which is `active` + `keepMountedWhileHidden`
- * and therefore never gives its context back while the cabinet is open.
+ * and therefore never gives its context back while the cabinet is open,
+ * plus 1 for the dashboard carousel's SELECTED slide, which is mounted
+ *   unconditionally and never asks — the queue below is first-come-first-served
+ *   with no revocation, and the one card the user is looking at must not be
+ *   refusable. Its warmed neighbours DO ask, so they come out of the six and
+ *   add nothing here; see `useCardEffectWarmSlot`.
  *
- *   2 × 6 + 1 = 13, leaving 3 of 16 free for whatever else holds one: the
+ *   2 × 6 + 1 + 1 = 14, leaving 2 of 16 free for whatever else holds one: the
  *   outgoing screen's cards during a route transition, the landing background,
  *   the entry brand tile.
  *
@@ -224,4 +229,56 @@ export function useCardEffectSlot(
     // commit it stops being visible.
     active: rationed ? granted && onScreen : undefined,
   };
+}
+
+/**
+ * A renderer kept alive for a card the user is not looking at YET.
+ *
+ * The carousel is the case this exists for. It hands `CardEffectLayer` an
+ * explicit `active`, so only the selected slide draws and every swipe used to
+ * tear one renderer down and build the next from nothing: a new GL context, a
+ * new shader compile, and — since the release that made this a bug — a fresh
+ * 420 ms crossfade, during which the incoming card is the operator's flat
+ * gradient. Warming the immediate neighbours means a swipe finds the renderer
+ * already running and already revealed, and it also stops the context CHURN,
+ * which the note above calls the more expensive half of the problem on iOS: a
+ * context leaves WebKit's pool only when its object is destroyed, so rapid
+ * swiping creates contexts faster than they are reclaimed.
+ *
+ * ── why this cannot make the ceiling worse ───────────────────────────────────
+ * A warm card is rationed against the SAME document-wide budget as any list, so
+ * the number of simultaneously live renderers is unchanged: at most `limit`
+ * from the budget, plus the carousel's own selected slide, which does not ask.
+ * Warming can only take slots from other budgeted cards, never add slots.
+ *
+ * And the selected slide deliberately stays OUTSIDE the budget. The queue is
+ * strict first-come-first-served with no revocation, so a card that asked late
+ * can be refused indefinitely — acceptable for the eighth card down a list,
+ * which falls back to the designed `NONE` appearance, and not acceptable for
+ * the one card the user is actually looking at.
+ *
+ * `wanted` going false releases the claim in the same effect that took it, so
+ * a neighbour that stops being a neighbour stops holding a slot; nothing keeps
+ * a claim alive on a card the carousel has moved away from.
+ */
+export function useCardEffectWarmSlot(
+  effect: string,
+  wanted: boolean,
+  budget: CardEffectBudget = cardEffectBudget,
+): boolean {
+  // Canvas effects cost no GPU context, so warming one takes nothing from the
+  // budget and must not be refused by it — the same rule the picker follows.
+  const rationed = requiresWebGL(effect);
+  const [granted, setGranted] = useState(false);
+
+  useEffect(() => {
+    if (!wanted || !rationed) return;
+    const release = budget.claim(setGranted);
+    return () => {
+      release();
+      setGranted(false);
+    };
+  }, [budget, rationed, wanted]);
+
+  return wanted && (!rationed || granted);
 }

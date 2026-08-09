@@ -127,6 +127,24 @@ function monotonicNow(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
 }
 
+/**
+ * How many slides either side of the selected one keep their renderer warm.
+ *
+ * WHAT WENT WRONG: only the selected slide was ever allowed a live renderer, so
+ * every swipe tore one down and built the next from nothing. That was survivable
+ * while a fresh renderer simply started drawing; once the release added a 420 ms
+ * reveal crossfade it meant the incoming card showed the flat operator gradient
+ * and watermark for the whole of it, on every swipe, in both directions.
+ *
+ * One either side, not more. A swipe can only reach a neighbour, so a second
+ * ring buys nothing a user can see while costing GPU contexts on a device that
+ * counts them; and warming is asked of the shared budget, which is what actually
+ * bounds the total — see `useCardEffectWarmSlot`. A carousel of twenty
+ * subscriptions still warms exactly two, because "neighbour" is a distance from
+ * the selected slide and not a count of the list.
+ */
+const CARD_EFFECT_WARM_RADIUS = 1;
+
 export function SubscriptionCarousel({
   items,
   firstDeviceById,
@@ -446,6 +464,7 @@ export function SubscriptionCarousel({
         aria-busy={deletion?.serverStatus === "pending" ? true : undefined}
       >
         {renderedItems.map((item, index) => {
+          const distanceFromActive = Math.abs(index - activeIndex);
           if (item.kind === "subscription") {
             const itemDeletion =
               deletion?.item.key === item.key ? deletion : null;
@@ -461,6 +480,10 @@ export function SubscriptionCarousel({
                 }
                 effectActive={
                   index === activeIndex || itemDeletion !== null
+                }
+                effectWarm={
+                  distanceFromActive > 0 &&
+                  distanceFromActive <= CARD_EFFECT_WARM_RADIUS
                 }
                 visual={itemDeletion?.visual ?? null}
                 deletion={itemDeletion}
@@ -602,6 +625,7 @@ function RealSubscriptionSlide({
   item,
   firstDevice,
   effectActive,
+  effectWarm,
   visual,
   deletion,
   reducedMotion,
@@ -615,6 +639,7 @@ function RealSubscriptionSlide({
   readonly item: SubscriptionCarouselSubscriptionItem;
   readonly firstDevice: string | null;
   readonly effectActive: boolean;
+  readonly effectWarm: boolean;
   readonly visual: ResolvedSubscriptionCardVisual | null;
   readonly deletion: DeletionPresentation | null;
   readonly reducedMotion: boolean;
@@ -645,6 +670,7 @@ function RealSubscriptionSlide({
           index={item.slotIndex}
           firstDevice={firstDevice}
           effectActive={effectActive}
+          effectWarm={effectWarm}
           visual={visual ?? undefined}
         />
       </SubscriptionDeletionMotion>

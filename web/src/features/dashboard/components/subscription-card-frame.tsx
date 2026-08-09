@@ -11,6 +11,7 @@ import {
   CardEffectLayer,
 } from "@/components/reactbits/card-effect-layer";
 import { CardWatermark } from "@/components/ui/card-watermark";
+import { useCardEffectWarmSlot } from "@/lib/card-effect-budget";
 import { cn } from "@/lib/utils";
 
 import type { ResolvedSubscriptionCardVisual } from "./subscription-card-visual";
@@ -29,6 +30,20 @@ export interface SubscriptionCardFrameProps
   readonly overlay?: ReactNode;
   /** Active dashboard ownership; only this frame may opt into live card art. */
   readonly effectActive?: boolean;
+  /**
+   * This card is one swipe away from being active.
+   *
+   * A hint, not an instruction: it asks the shared context budget for a slot
+   * and keeps the renderer alive only if one is free, so warming can never
+   * raise the number of live GPU contexts above what the budget already allows.
+   * The point is that a swipe finds the renderer running and revealed instead
+   * of paying for a rebuild and a crossfade in front of the user.
+   *
+   * Ignored unless `effectActive` is a boolean — an `undefined` `effectActive`
+   * means the layer is driving itself from its own IntersectionObserver, and
+   * there is no "next" card to warm.
+   */
+  readonly effectWarm?: boolean;
   /**
    * Omitted for normal cards so the production DOM receives no animation
    * styles. Creation motion may reveal the real layers progressively.
@@ -79,6 +94,7 @@ export const SubscriptionCardFrame = forwardRef<
     children,
     overlay,
     effectActive,
+    effectWarm,
     layerOpacity,
     className,
     style,
@@ -88,6 +104,18 @@ export const SubscriptionCardFrame = forwardRef<
 ) {
   const { contrast } = visual;
   const creationPresentation = layerOpacity !== undefined;
+
+  // Only a card the carousel is rationing can be warmed, and only while it is
+  // not the selected one — the selected slide already mounts unconditionally
+  // and must never be made to wait on a budget it could be refused by.
+  const rationedByOwner = effectActive !== undefined;
+  const warmGranted = useCardEffectWarmSlot(
+    visual.cardEffect,
+    rationedByOwner && effectWarm === true && effectActive !== true,
+  );
+  const layerActive = rationedByOwner
+    ? effectActive === true || warmGranted
+    : undefined;
 
   /**
    * How much of the operator's backdrop survives under the effect, set by the
@@ -196,7 +224,7 @@ export const SubscriptionCardFrame = forwardRef<
           effect={visual.cardEffect}
           props={visual.cardEffectProps}
           opacity={visual.cardEffectOpacity}
-          active={effectActive}
+          active={layerActive}
           onBackdropOpacityChange={setBackdropOpacity}
           className="absolute inset-0 z-0"
         />
