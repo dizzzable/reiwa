@@ -37,6 +37,7 @@ import { NotificationBell } from "./components/notification-bell";
 import { QuestsIcon } from "./components/quests-icon";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
 import { TrialCta } from "./components/trial-cta";
+import { OlcrtcCard } from "./components/olcrtc-card";
 import {
   buildSubscriptionCarouselItems,
   resolveActiveCarouselItemKey,
@@ -387,6 +388,10 @@ export default function DashboardPage() {
               onUpgrade={() => navigate("/upgrade")}
               onRenew={() => navigate("/renew")}
             />
+          </div>
+
+          <div className="mt-5 px-5">
+            <OlcrtcCard />
           </div>
 
           {/* Devices — scoped to the selected subscription */}

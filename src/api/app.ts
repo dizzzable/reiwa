@@ -36,6 +36,7 @@ import {
 import { createProfileRouter } from "./routes/profile.js";
 import { createPlansRouter } from "./routes/plans.js";
 import { createSubscriptionRouter } from "./routes/subscription.js";
+import { createOlcrtcRouter } from "./routes/olcrtc.js";
 import { createPaymentsRouter } from "./routes/payments.js";
 import { createActivityRouter } from "./routes/activity.js";
 import { createPromoRouter } from "./routes/promo.js";
@@ -287,6 +288,7 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createProfileRouter(deps));
   app.use("/api/v1", createPlansRouter(deps));
   app.use("/api/v1", createSubscriptionRouter(deps));
+  app.use("/api/v1", createOlcrtcRouter(deps));
   app.use("/api/v1", createPaymentsRouter(deps));
   app.use("/api/v1", createActivityRouter(deps));
   app.use("/api/v1", createPromoRouter(deps));
