@@ -959,6 +959,17 @@ export const en: RuDict = {
     failed: 'Could not configure the profile',
     failedHint: 'Your payment is saved. Refresh later or contact support.',
   },
+  olcrtc: {
+    title: 'Restricted connection',
+    pending: 'Preparing an additional connection path for restricted networks.',
+    ready: '{{provider}} / {{transport}} is ready. Copy the profile into the OLCRTC client.',
+    unavailable: 'Restricted connection is temporarily unavailable. Try again later.',
+    noSubscription: 'An active subscription is required for restricted connection.',
+    copy: 'Copy profile',
+    copied: 'Copied',
+    retry: 'Retry',
+    refresh: 'Refresh',
+  },
   deleteSubscription: {
     open: 'Delete subscription',
     title: 'Delete subscription?',

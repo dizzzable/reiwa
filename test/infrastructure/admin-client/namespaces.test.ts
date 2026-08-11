@@ -15,7 +15,7 @@ import { AdminClient } from '../../../src/infrastructure/admin-client/index.js';
 describe('AdminClient namespace facade', () => {
   const buildClient = () => new AdminClient('http://upstream.local', 'token-fake');
 
-  it('exposes all 17 namespaces', () => {
+  it('exposes the composed namespaces', () => {
     const client = buildClient();
     expect(client.system).toBeDefined();
     expect(client.catalog).toBeDefined();
@@ -34,6 +34,13 @@ describe('AdminClient namespace facade', () => {
     expect(client.push).toBeDefined();
     expect(client.events).toBeDefined();
     expect(client.support).toBeDefined();
+    expect(client.olcrtc).toBeDefined();
+  });
+
+  it('exposes the OLCRTC user surface', () => {
+    const client = buildClient();
+    expect(typeof client.olcrtc.getSubscription).toBe('function');
+    expect(typeof client.olcrtc.provisionSubscription).toBe('function');
   });
 
   it('exposes the LinkingNamespace nested telegram + email surfaces', () => {

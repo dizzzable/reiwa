@@ -27,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   getActionPolicy: vi.fn(),
   getAllSubscriptions: vi.fn(),
+  getOlcrtcSubscription: vi.fn(),
   getSubscriptionDevices: vi.fn(),
   deleteSubscriptionDevice: vi.fn(),
   regenerateSubscriptionLink: vi.fn(),

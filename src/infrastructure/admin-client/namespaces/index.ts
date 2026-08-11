@@ -33,6 +33,8 @@ export { FaqNamespace } from './faq.js';
 export type { FaqItem } from './faq.js';
 export { LegalDocumentsNamespace } from './legal-documents.js';
 export type { LegalDocument, LegalDocumentKey } from './legal-documents.js';
+export { OlcrtcNamespace } from './olcrtc.js';
+export type { OlcrtcSubscriptionResponse } from './olcrtc.js';
 export { LandingNamespace } from './landing.js';
 export { LinkingNamespace } from './linking.js';
 export type {

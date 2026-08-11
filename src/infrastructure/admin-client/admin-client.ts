@@ -29,6 +29,7 @@ import {
   ExtAuthNamespace,
   FaqNamespace,
   LegalDocumentsNamespace,
+  OlcrtcNamespace,
   LandingNamespace,
   LinkingNamespace,
   PartnerNamespace,
@@ -74,6 +75,7 @@ export class AdminClient {
   readonly support: SupportNamespace;
   readonly faq: FaqNamespace;
   readonly legalDocuments: LegalDocumentsNamespace;
+  readonly olcrtc: OlcrtcNamespace;
   readonly addOns: AddOnsNamespace;
   readonly advertising: AdvertisingNamespace;
   readonly aiConfig: AiConfigNamespace;
@@ -103,6 +105,7 @@ export class AdminClient {
     this.support = new SupportNamespace(this.transport);
     this.faq = new FaqNamespace(this.transport);
     this.legalDocuments = new LegalDocumentsNamespace(this.transport);
+    this.olcrtc = new OlcrtcNamespace(this.transport);
     this.addOns = new AddOnsNamespace(this.transport);
     this.advertising = new AdvertisingNamespace(this.transport);
     this.aiConfig = new AiConfigNamespace(this.transport);

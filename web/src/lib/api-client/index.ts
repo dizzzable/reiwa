@@ -82,6 +82,13 @@ export {
   getUpgradeOptions,
 } from "./subscription.js";
 
+// Restricted OLCRTC connection
+export {
+  getOlcrtcSubscription,
+  provisionOlcrtcSubscription,
+  type OlcrtcSubscriptionPayload,
+} from "./olcrtc.js";
+
 // Payments + gateways
 export {
   abandonCheckout,
