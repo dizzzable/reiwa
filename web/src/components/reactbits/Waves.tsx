@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, CSSProperties } from 'react';
+import React, { useRef, useEffect, useState, CSSProperties } from 'react';
 
 import { resolveRenderScale } from './render-scale';
 
@@ -193,6 +193,25 @@ const Waves: React.FC<WavesProps> = ({
   });
 
   const frameIdRef = useRef<number | null>(null);
+  /**
+   * Bumped by `contextrestored` to re-run the mount effect, exactly as the GL
+   * effects in this directory bump theirs on `webglcontextrestored`.
+   *
+   * THE EVENT NAMES DIFFER BECAUSE THE CONTEXT DOES. This canvas is 2D, and
+   * `webglcontextlost` is dispatched only at a canvas holding a WebGL context —
+   * a listener for it here could never fire once, which is worse than no
+   * handler at all because it reads like one. The 2D contract is HTML's
+   * `contextlost`/`contextrestored`, and its `preventDefault()` means the
+   * OPPOSITE of WebGL's: on `webglcontextlost` it asks the user agent to
+   * restore, on 2D `contextlost` it sets "context restoration disabled" and
+   * makes the loss permanent. So this handler deliberately does NOT call it.
+   *
+   * The rebuild is needed for the same reason as over there: a lost 2D context
+   * is reset to its defaults, which drops the device-pixel transform `setSize`
+   * installed, so the lines would come back drawn at the wrong scale into a
+   * cleared bitmap.
+   */
+  const [glGeneration, setGlGeneration] = useState(0);
 
   useEffect(() => {
     configRef.current = {
@@ -214,6 +233,7 @@ const Waves: React.FC<WavesProps> = ({
     const container = containerRef.current;
     if (!canvas || !container) return;
     ctxRef.current = canvas.getContext('2d');
+    let contextLost = false;
 
     function setSize() {
       if (!container || !canvas) return;
@@ -335,7 +355,7 @@ const Waves: React.FC<WavesProps> = ({
     }
 
     function tick(t: number) {
-      if (!container) return;
+      if (!container || contextLost) return;
       const mouse = mouseRef.current;
       mouse.sx += (mouse.x - mouse.sx) * 0.1;
       mouse.sy += (mouse.y - mouse.sy) * 0.1;
@@ -412,16 +432,37 @@ const Waves: React.FC<WavesProps> = ({
       typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize);
     boxObserver?.observe(container);
 
+    // NO preventDefault here — see the note on `glGeneration`. On a 2D canvas
+    // cancelling this event is what makes the loss permanent.
+    const handleContextLost = () => {
+      contextLost = true;
+      if (frameIdRef.current !== null) {
+        cancelAnimationFrame(frameIdRef.current);
+        frameIdRef.current = null;
+      }
+    };
+    // Restarting the loop alone would draw through a context that was reset to
+    // its defaults — no device-pixel transform — so the lines would come back
+    // at the wrong scale. Re-running the effect re-measures, rebuilds the point
+    // lattice and re-installs it.
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    canvas.addEventListener('contextlost', handleContextLost);
+    canvas.addEventListener('contextrestored', handleContextRestored);
+
     return () => {
       boxObserver?.disconnect();
       window.removeEventListener('resize', onResize);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('contextlost', handleContextLost);
+      canvas.removeEventListener('contextrestored', handleContextRestored);
       if (frameIdRef.current !== null) {
         cancelAnimationFrame(frameIdRef.current);
       }
     };
-  }, []);
+  }, [glGeneration]);
 
   return (
     <div

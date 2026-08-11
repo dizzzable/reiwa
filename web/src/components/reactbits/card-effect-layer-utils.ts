@@ -1,7 +1,5 @@
 /** Runtime helpers shared by the subscription-card effect layer and tests. */
 
-import { cardEffectRenderer } from "./card-effect-catalog";
-
 export function resolveCardEffectOverlayOpacity(opacity: number): number {
   return Math.min(Math.max(opacity, 0.05), 1);
 }
@@ -66,161 +64,29 @@ export function sanitizeCardEffectProps(
   return safe;
 }
 
-/** Alpha above which a sampled pixel counts as painted. Above dithering noise,
- *  far below anything an operator would call visible. */
-const PAINTED_ALPHA_THRESHOLD = 8;
-const SAMPLE_EDGE = 8;
-
-/**
- * What the operator's backdrop keeps while a shader is on top of it.
+/*
+ * NOTHING HERE DIMS THE OPERATOR'S BACKDROP, AND THAT IS THE DECISION.
  *
- * Both ends of this number are constraints rather than taste, and it is the
- * only number that reconciles them:
+ * This module used to carry a backdrop policy (`resolveCardEffectBackdropPolicy`,
+ * `WEBGL_BACKDROP_RESIDUAL_OPACITY`) and a pixel sampler
+ * (`sampleCardEffectPainted`) whose only purpose was to fade the operator's
+ * gradient down — to 0.12 under a shader, to 0 under a `canvas2d` effect —
+ * once the layer believed the effect had drawn. The whole chain is removed:
+ * the effect draws OVER the gradient, which keeps its own resting opacity for
+ * as long as the card is up.
  *
- *  - Low enough that a WORKING shader no longer shows the backdrop as a
- *    competing image, which is the whole reason the fade exists. A concept
- *    gradient spans roughly a third of the lightness range end to end; at 0.12
- *    over the flat foundation that is about four percent of lightness across
- *    the entire card — a tone, not an edge. The diagonal pattern layer, which
- *    rests at 0.4, lands at 0.048, below the alpha at which a hairline over a
- *    mid tone reads as a line rather than as grain. That is the artefact the
- *    original report described.
- *  - High enough that a shader which silently drew NOTHING still leaves the
- *    operator's artwork faintly on the card instead of an empty rectangle.
- *    Nothing below can tell those two cases apart, so this value is paid in
- *    both of them.
+ * The product owner made that call, and it reverses the earlier one
+ * deliberately. The admin panel's preview never dimmed the gradient; the live
+ * cabinet disagreeing with the preview was the defect, not the gradient showing
+ * through. Card artwork is one composition the operator authors from both
+ * layers, and neither half is a rendering fault.
  *
- * One number for `webgl1` and `webgl2` alike: what makes it necessary is the
- * compositing model, which both share.
+ * Do not reintroduce it "properly". The sampler cost five forced GPU→CPU
+ * readbacks per mount on exactly the low-end devices this layer is careful
+ * with, and for a shader it could never answer at all — see the removed notes
+ * in git history before repeating either experiment. No caller asks whether an
+ * effect painted, and none should need to.
  */
-export const WEBGL_BACKDROP_RESIDUAL_OPACITY = 0.12;
-
-export interface CardEffectBackdropPolicy {
-  /**
-   * The backdrop's opacity while this effect is up, as a multiplier on each
-   * backdrop layer's own resting value. `1` leaves the backdrop untouched.
-   */
-  readonly coveredOpacity: number;
-  /**
-   * `"pixels"` — `sampleCardEffectPainted` can answer for this effect and the
-   * caller must wait for it. `"none"` — nothing can answer, so there is nothing
-   * to wait for and nothing to ask the canvas.
-   */
-  readonly evidence: "pixels" | "none";
-}
-
-/**
- * How far the backdrop steps back for `effect`, and whether anything can prove
- * it should.
- *
- * The backdrop is the operator's gradient and its pattern. It steps back once
- * an effect paints, because a concept theme's diagonal artwork read through a
- * transparent shader looks like a rendering fault rather than like design.
- * Stepping back needs a reason, and the reason available depends entirely on
- * what draws.
- *
- *  - `canvas2d` retains its bitmap after compositing, so reading pixels back is
- *    a real answer about a real frame. Proof, so the backdrop goes all the way
- *    out.
- *  - `webgl1`/`webgl2`: THERE IS NO ANSWER. Whether a shader drew anything is
- *    not observable from JavaScript once the frame has been composited, and two
- *    attempts to observe it anyway both reported the opposite of the truth.
- *    Sampling pixels: the drawing buffer is cleared at composite time unless the
- *    context asked for `preserveDrawingBuffer`, so a read scheduled from a timer
- *    returned transparent for every WORKING shader in the catalog — the feature
- *    was dead, at the price of five forced GPU→CPU readbacks per mount. Asking
- *    `isContextLost()`: it answers `false` for a live context, which is exactly
- *    what the failure this was written for leaves behind — `getContext('webgl2')`
- *    returns null under GPU pressure, OGL drops to WebGL1, a GLSL ES 3.00 shader
- *    fails to compile with nothing but a `console.warn`, and a live context sits
- *    over a blank canvas. Context alive, evidence says "painted", card empty.
- *
- * So a shader's backdrop is not faded out, it is faded DOWN, to
- * `WEBGL_BACKDROP_RESIDUAL_OPACITY`. That is not a compromise between two
- * guesses; it is what is left when the question cannot be asked at all.
- *
- * `css-fallback` is not decided here: the layer never asks for a policy in that
- * mode. It is a translucent radial built so the operator's gradient stays
- * visible, and it must not fade by any amount.
- *
- * An unknown id has no renderer, never mounts, and draws nothing; it takes the
- * `canvas2d` branch, where the sampler will find no canvas and say so.
- */
-export function resolveCardEffectBackdropPolicy(
-  effect: string,
-): CardEffectBackdropPolicy {
-  const renderer = cardEffectRenderer(effect);
-  return renderer === "webgl1" || renderer === "webgl2"
-    ? { coveredOpacity: WEBGL_BACKDROP_RESIDUAL_OPACITY, evidence: "none" }
-    : { coveredOpacity: 0, evidence: "pixels" };
-}
-
-/**
- * Did this effect actually draw?
- *
- * Answerable only for renderers that keep what they drew — see
- * `resolveCardEffectBackdropPolicy`, which is also what decides whether it is
- * worth asking.
- *
- * The asymmetry the caller depends on: only an explicit `false` means "blank".
- * `null` — no canvas, a refused read, an unsized canvas, a renderer this cannot
- * interrogate — means "cannot tell", which the layer reads as "carry on". So
- * this function must be certain before it answers `false`.
- */
-export function sampleCardEffectPainted(
-  root: HTMLElement,
-  effect: string,
-): boolean | null {
-  // A shader's canvas is asked nothing at all, and this returns before it is
-  // even located. Not only because the answer would be meaningless: `getContext`
-  // CREATES a context on a canvas that has none and never hands it back, which
-  // lands precisely on the renderer that failed to start — the low-GPU device
-  // where WebKit's sixteen-context ceiling is already the problem. Per spec a
-  // later `getContext` on the same canvas ignores the attributes it asks for
-  // and hands back the context that already exists, so one created here would
-  // also quietly overrule the renderer's own: `Dither` declines `antialias`,
-  // and would be handed the multisampled backbuffer it declined.
-  if (resolveCardEffectBackdropPolicy(effect).evidence !== "pixels") return null;
-
-  const canvases = [...root.querySelectorAll("canvas")];
-  // No canvas is the honest `null` for a DOM- or SVG-drawn effect: it cannot
-  // fail this way, because if React rendered it the pixels are already there.
-  if (canvases.length === 0) return null;
-
-  return sampleCanvasPixels(canvases);
-}
-
-/** Evidence for a 2D canvas, which still holds its bitmap after compositing. */
-function sampleCanvasPixels(
-  canvases: readonly HTMLCanvasElement[],
-): boolean | null {
-  let sampled = false;
-  for (const canvas of canvases) {
-    if (canvas.width === 0 || canvas.height === 0) continue;
-    try {
-      // Downscale the whole canvas into a few dozen pixels rather than reading
-      // it at size: one `drawImage` and 64 pixels of `getImageData` is cheap
-      // enough to repeat, and a full-frame read on a retina card is not.
-      const probe = document.createElement("canvas");
-      probe.width = SAMPLE_EDGE;
-      probe.height = SAMPLE_EDGE;
-      const context = probe.getContext("2d", { willReadFrequently: true });
-      if (context === null) continue;
-      context.drawImage(canvas, 0, 0, SAMPLE_EDGE, SAMPLE_EDGE);
-      const { data } = context.getImageData(0, 0, SAMPLE_EDGE, SAMPLE_EDGE);
-      sampled = true;
-      for (let i = 3; i < data.length; i += 4) {
-        if (data[i] > PAINTED_ALPHA_THRESHOLD) return true;
-      }
-    } catch {
-      // A browser that will not hand back the drawing buffer tells us nothing
-      // either way, and "nothing" must not be read as "blank".
-      return null;
-    }
-  }
-
-  return sampled ? false : null;
-}
 
 /**
  * How long a lost context has to come back before it counts as a failure.
@@ -237,10 +103,44 @@ function sampleCanvasPixels(
  * `SyntheticLostContext`, handed to whichever context the seventeenth evicts,
  * which its own source marks unrecoverable — reaches the CSS fallback while the
  * user is still looking at the same screen. The cost of waiting is a dead
- * canvas over the residual backdrop for this long, and it is only ever paid
+ * canvas over the operator's gradient for this long, and it is only ever paid
  * after a real GPU event; the cost of not waiting was a permanently static card.
  */
 export const CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS = 2_000;
+
+/**
+ * How long a COMMITTED renderer has to put a canvas in the document before its
+ * silence counts as a failure.
+ *
+ * Measured from the commit, never from the request. The observer now attaches
+ * before the renderer mounts (see below), and the wait in front of it is a lazy
+ * chunk download on whatever connection the phone has — timing that as a GPU
+ * fault would fall back on a slow network. The caller passes `null` while the
+ * renderer has not committed, and this number once it has.
+ */
+export const CARD_EFFECT_RENDERER_READY_TIMEOUT_MS = 1_200;
+
+function monotonicNow(): number {
+  return typeof performance === "undefined" ? Date.now() : performance.now();
+}
+
+function pageIsHidden(): boolean {
+  return (
+    typeof document !== "undefined" && document.visibilityState === "hidden"
+  );
+}
+
+/**
+ * A deferred context loss, and how much of its grace window is left.
+ *
+ * `remainingMs` rather than a deadline because the window does not run while
+ * the page is hidden — see `handleVisibility`.
+ */
+interface PendingContextRestore {
+  timer: number | null;
+  remainingMs: number;
+  armedAt: number;
+}
 
 /**
  * Observe canvases created by a lazy effect and report both explicit WebGL
@@ -249,12 +149,28 @@ export const CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS = 2_000;
  * Canvas 2D renderers also need a real 2D context: a bare canvas is not a
  * usable presentation and must reach the same CSS fallback.
  *
- * Since `sampleCardEffectPainted` stopped interrogating shader contexts, this
- * is the ONLY thing that notices a WebGL context going away — by listening for
- * the event rather than by polling for the state. It therefore covers a context
- * that dies while the card is up, which is the case WebKit produces when it
- * recycles the oldest of its sixteen. It cannot cover one that was already lost
- * before these listeners attached; see the failure notes in the layer.
+ * This is the ONLY thing that notices a WebGL context going away — and it
+ * notices by listening for the event, never by polling for the state or by
+ * interrogating a canvas. It therefore covers a context that dies while the
+ * card is up, which is the case WebKit produces when it recycles the oldest of
+ * its sixteen.
+ *
+ * WHERE THE LISTENERS LIVE, AND WHY IT IS THE CONTAINER. They are attached to
+ * `root` in the CAPTURE phase, not to each canvas, and the caller attaches this
+ * observer BEFORE the renderer is mounted. Both halves are the fix for the same
+ * defect: `webglcontextcreationerror` is dispatched from inside `getContext()`,
+ * so a listener that waits for the canvas to exist — which is what per-canvas
+ * listeners discovered through the MutationObserver below necessarily do — can
+ * never hear it. A capture listener on an ancestor is in the propagation path
+ * of a non-bubbling event too, so one container listener hears every canvas the
+ * renderer puts inside it, including one it appends and immediately draws on.
+ *
+ * WHAT IS STILL UNHEARABLE, stated so it is not rediscovered. A renderer that
+ * creates a DETACHED canvas, calls `getContext()` on it and only then appends it
+ * — ogl and three.js both do exactly this — dispatches its creation error at a
+ * node with no ancestors, so no listener anywhere in the document can receive
+ * it. That case surfaces as "no canvas ever appeared" (the readiness timeout),
+ * as a throw caught by the layer's error boundary, or not at all.
  *
  * WHAT WENT WRONG. Every `webglcontextlost` was a permanent failure. The handler
  * did not call `preventDefault()` — and per the WebGL spec that is the ONLY
@@ -279,17 +195,28 @@ export const CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS = 2_000;
  * racing it — it costs those effects one redundant rebuild, which is bounded by
  * the caller's budget and is the price of the ~40 catalog components that have
  * no recovery of their own and would otherwise come back to a blank canvas.
+ *
+ * THE GRACE WINDOW DOES NOT RUN WHILE THE PAGE IS HIDDEN, and that is load-
+ * bearing rather than tidy. A hidden tab's timers are throttled or frozen
+ * outright, so the window above used to be spent in a tab nobody was looking at
+ * and fire the instant the user came back — reporting a permanent failure at the
+ * exact moment the browser was about to restore the context. The app background
+ * is the layer that showed it: it stays mounted while hidden by design, so a
+ * loss during an app-switch left it in the CSS fallback for the rest of the
+ * session. The window is therefore paused on `visibilitychange` and resumed with
+ * whatever is left of it, so the browser is always measured against real time in
+ * front of the user.
  */
 export function observeCardEffectCanvases(
   root: HTMLElement,
   onFailure: () => void,
-  timeoutMs = 1_200,
+  timeoutMs: number | null = CARD_EFFECT_RENDERER_READY_TIMEOUT_MS,
   requiredContext?: "2d",
   onContextRestored?: () => boolean,
   restoreGraceMs = CARD_EFFECT_CONTEXT_RESTORE_GRACE_MS,
 ): () => void {
-  const listeners = new Map<HTMLCanvasElement, () => void>();
-  const awaitingRestore = new Map<HTMLCanvasElement, number>();
+  const seen = new Set<HTMLCanvasElement>();
+  const awaitingRestore = new Map<HTMLCanvasElement, PendingContextRestore>();
   let sawCanvas = false;
   let reportedFailure = false;
 
@@ -299,17 +226,80 @@ export function observeCardEffectCanvases(
     onFailure();
   };
 
+  const arm = (canvas: HTMLCanvasElement, pending: PendingContextRestore) => {
+    if (pending.timer !== null || pageIsHidden()) return;
+    pending.armedAt = monotonicNow();
+    pending.timer = window.setTimeout(() => {
+      awaitingRestore.delete(canvas);
+      reportFailureOnce();
+    }, pending.remainingMs);
+  };
+
+  const disarm = (pending: PendingContextRestore) => {
+    if (pending.timer === null) return;
+    window.clearTimeout(pending.timer);
+    pending.timer = null;
+    pending.remainingMs = Math.max(
+      0,
+      pending.remainingMs - (monotonicNow() - pending.armedAt),
+    );
+  };
+
   const stopWaiting = (canvas: HTMLCanvasElement) => {
-    const timer = awaitingRestore.get(canvas);
-    if (timer === undefined) return false;
-    window.clearTimeout(timer);
+    const pending = awaitingRestore.get(canvas);
+    if (pending === undefined) return false;
+    disarm(pending);
     awaitingRestore.delete(canvas);
     return true;
   };
 
+  const canvasOf = (event: Event): HTMLCanvasElement | null =>
+    event.target instanceof HTMLCanvasElement ? event.target : null;
+
+  const handleContextLost = (event: Event) => {
+    const canvas = canvasOf(event);
+    // A canvas that has left the document is being torn down, and the loss is
+    // this app's own `loseContext()` handing the slot back. Do not
+    // `preventDefault()` it — that would ask the browser to restore a context
+    // we are deliberately giving up, under a ceiling of sixteen — and do not
+    // report it: nothing is on screen to have failed.
+    if (canvas === null || !canvas.isConnected) return;
+    // Not a gesture event: this blocks nothing. It is the whole difference
+    // between a context that can come back and one that cannot.
+    event.preventDefault();
+    if (awaitingRestore.has(canvas)) return;
+    const pending: PendingContextRestore = {
+      timer: null,
+      remainingMs: restoreGraceMs,
+      armedAt: monotonicNow(),
+    };
+    awaitingRestore.set(canvas, pending);
+    // Nothing is armed while the page is hidden; `handleVisibility` starts the
+    // window when the user is back and can actually see the result.
+    arm(canvas, pending);
+  };
+
+  const handleContextRestored = (event: Event) => {
+    const canvas = canvasOf(event);
+    // Only a loss this observer deferred can be answered by a restore. A
+    // restore with nothing pending belongs to a teardown, or to a component
+    // that healed a loss we never saw.
+    if (canvas === null || !stopWaiting(canvas)) return;
+    if (onContextRestored?.() === true) return;
+    reportFailureOnce();
+  };
+
+  const handleVisibility = () => {
+    if (pageIsHidden()) {
+      awaitingRestore.forEach((pending) => disarm(pending));
+      return;
+    }
+    awaitingRestore.forEach((pending, canvas) => arm(canvas, pending));
+  };
+
   const observeCanvas = () => {
     root.querySelectorAll("canvas").forEach((canvas) => {
-      if (listeners.has(canvas)) return;
+      if (seen.has(canvas)) return;
       if (requiredContext === "2d") {
         try {
           if (canvas.getContext("2d") === null) {
@@ -321,65 +311,45 @@ export function observeCardEffectCanvases(
           return;
         }
       }
+      seen.add(canvas);
       sawCanvas = true;
-
-      const handleContextLost = (event: Event) => {
-        // A canvas that has left the document is being torn down, and the loss
-        // is this app's own `loseContext()` handing the slot back. Do not
-        // `preventDefault()` it — that would ask the browser to restore a
-        // context we are deliberately giving up, under a ceiling of sixteen —
-        // and do not report it: nothing is on screen to have failed.
-        if (!canvas.isConnected) return;
-        // Not a gesture event: this blocks nothing. It is the whole difference
-        // between a context that can come back and one that cannot.
-        event.preventDefault();
-        if (awaitingRestore.has(canvas)) return;
-        awaitingRestore.set(
-          canvas,
-          window.setTimeout(() => {
-            awaitingRestore.delete(canvas);
-            reportFailureOnce();
-          }, restoreGraceMs),
-        );
-      };
-
-      const handleContextRestored = () => {
-        // Only a loss this observer deferred can be answered by a restore. A
-        // restore with nothing pending belongs to a teardown, or to a component
-        // that healed a loss we never saw.
-        if (!stopWaiting(canvas)) return;
-        if (onContextRestored?.() === true) return;
-        reportFailureOnce();
-      };
-
-      canvas.addEventListener("webglcontextlost", handleContextLost);
-      canvas.addEventListener("webglcontextrestored", handleContextRestored);
-      canvas.addEventListener("webglcontextcreationerror", reportFailureOnce);
-      listeners.set(canvas, () => {
-        stopWaiting(canvas);
-        canvas.removeEventListener("webglcontextlost", handleContextLost);
-        canvas.removeEventListener(
-          "webglcontextrestored",
-          handleContextRestored,
-        );
-        canvas.removeEventListener(
-          "webglcontextcreationerror",
-          reportFailureOnce,
-        );
-      });
     });
   };
+
+  // Capture phase, on the container: see the note above. The MutationObserver
+  // below is no longer what makes the events audible — it only answers "did a
+  // usable canvas ever appear".
+  root.addEventListener("webglcontextlost", handleContextLost, true);
+  root.addEventListener("webglcontextrestored", handleContextRestored, true);
+  root.addEventListener("webglcontextcreationerror", reportFailureOnce, true);
+  document.addEventListener("visibilitychange", handleVisibility);
 
   const observer = new MutationObserver(observeCanvas);
   observer.observe(root, { childList: true, subtree: true });
   observeCanvas();
-  const readinessTimer = window.setTimeout(() => {
-    if (!sawCanvas) reportFailureOnce();
-  }, timeoutMs);
+  const readinessTimer =
+    timeoutMs === null
+      ? null
+      : window.setTimeout(() => {
+          if (!sawCanvas) reportFailureOnce();
+        }, timeoutMs);
 
   return () => {
-    window.clearTimeout(readinessTimer);
+    if (readinessTimer !== null) window.clearTimeout(readinessTimer);
     observer.disconnect();
-    listeners.forEach((remove) => remove());
+    root.removeEventListener("webglcontextlost", handleContextLost, true);
+    root.removeEventListener(
+      "webglcontextrestored",
+      handleContextRestored,
+      true,
+    );
+    root.removeEventListener(
+      "webglcontextcreationerror",
+      reportFailureOnce,
+      true,
+    );
+    document.removeEventListener("visibilitychange", handleVisibility);
+    awaitingRestore.forEach((pending) => disarm(pending));
+    awaitingRestore.clear();
   };
 }

@@ -5,8 +5,8 @@
  *
  * The carousel gave exactly one slide a live renderer, so every swipe tore one
  * down and built the next from nothing. `card-effect-reveal-memory.test.tsx`
- * covers the half of that cost the release added — a fresh 420 ms crossfade on
- * every swipe — and removes it. This file covers the half that was always
+ * covers the half of that cost the release added — a fresh 420 ms reveal fade
+ * on every swipe — and removes it. This file covers the half that was always
  * there: a new GL context, a new shader compile, and the frames before either
  * produces a pixel, all while the user is already looking at the card.
  *
@@ -197,12 +197,13 @@ beforeEach(() => {
       // treats a refused 2d context as a renderer that failed to start. jsdom
       // refuses one by default, so without this every canvas2d card would fall
       // back to CSS and the exemption below would be testing nothing.
-      return kind === "2d"
-        ? {
-            drawImage: () => undefined,
-            getImageData: () => ({ data: new Uint8ClampedArray(256) }),
-          }
-        : null;
+      // An empty object is enough: the observer only asks whether a 2d context
+      // exists. `drawImage` and a 256-byte `getImageData` used to be here — 256
+      // is 8×8×4, the sampling window of the paint-evidence sampler that decided
+      // how far to fade the operator's gradient. That sampler is gone with the
+      // whole backdrop-dimming mechanism, and a stub for a caller that no longer
+      // exists reads like the mechanism is still there.
+      return kind === "2d" ? {} : null;
     }) as unknown as typeof HTMLCanvasElement.prototype.getContext,
   );
 });

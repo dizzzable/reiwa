@@ -8,11 +8,15 @@
 import type { Redis } from "ioredis";
 
 import {
-  isPublicConfigSnapshot,
+  describePublicConfigSnapshot,
   type PublicConfigPersistencePort,
   type PublicConfigSnapshot,
 } from "../../application/ports/public-config-persistence.port.js";
 import type { LoggerPort } from "../../application/ports/logger.port.js";
+import {
+  createPublicConfigRejectionNotifier,
+  type PublicConfigRejectionNotifier,
+} from "./rejection-notifier.js";
 
 const DEFAULT_KEY = "reiwa:public-config:last-known-good";
 
@@ -20,6 +24,12 @@ export interface RedisPublicConfigPersistenceOptions {
   /** An already-connected, composition-root-owned Redis client. */
   readonly redis: Redis;
   readonly logger?: LoggerPort;
+  /**
+   * Operator-visible reporting for rejected snapshots. Supplied by the
+   * composition root so the route and this adapter share one suppression
+   * state; a log-only notifier is built from `logger` when omitted.
+   */
+  readonly rejectionNotifier?: PublicConfigRejectionNotifier;
   /** Override the storage key for isolated deployments and tests. */
   readonly key?: string;
 }
@@ -27,11 +37,15 @@ export interface RedisPublicConfigPersistenceOptions {
 export class RedisPublicConfigPersistence implements PublicConfigPersistencePort {
   private readonly redis: Redis;
   private readonly logger: LoggerPort | undefined;
+  private readonly notifier: PublicConfigRejectionNotifier;
   private readonly key: string;
 
   constructor(options: RedisPublicConfigPersistenceOptions) {
     this.redis = options.redis;
     this.logger = options.logger;
+    this.notifier =
+      options.rejectionNotifier ??
+      createPublicConfigRejectionNotifier({ logger: options.logger });
     this.key = options.key ?? DEFAULT_KEY;
   }
 
@@ -41,14 +55,13 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
       if (raw === null || raw.length === 0) return null;
 
       const parsed: unknown = JSON.parse(raw);
-      if (!isPublicConfigSnapshot(parsed)) {
-        this.logger?.warn(
-          { component: "RedisPublicConfigPersistence" },
-          "Persisted public-config snapshot failed validation; ignoring it",
-        );
+      const rejection = describePublicConfigSnapshot(parsed);
+      if (rejection !== null) {
+        this.notifier.rejected("redis-load", rejection);
         return null;
       }
-      return parsed;
+      this.notifier.accepted("redis-load");
+      return parsed as PublicConfigSnapshot;
     } catch (err: unknown) {
       this.logger?.warn(
         { err, component: "RedisPublicConfigPersistence" },
@@ -59,13 +72,12 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
   }
 
   async save(snapshot: PublicConfigSnapshot): Promise<void> {
-    if (!isPublicConfigSnapshot(snapshot)) {
-      this.logger?.warn(
-        { component: "RedisPublicConfigPersistence" },
-        "Refusing to persist an invalid public-config snapshot",
-      );
+    const rejection = describePublicConfigSnapshot(snapshot);
+    if (rejection !== null) {
+      this.notifier.rejected("redis-save", rejection);
       return;
     }
+    this.notifier.accepted("redis-save");
 
     try {
       // Intentionally no expiry: this is a durable last-known-good snapshot,

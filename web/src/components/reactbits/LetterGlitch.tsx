@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 import { resolveRenderScale } from './render-scale';
 
@@ -48,6 +48,32 @@ const LetterGlitch = ({
   const grid = useRef({ columns: 0, rows: 0 });
   const context = useRef<CanvasRenderingContext2D | null>(null);
   const lastGlitchTime = useRef(Date.now());
+  /**
+   * Bumped by `contextrestored` to re-run the mount effect, exactly as the GL
+   * effects in this directory bump theirs on `webglcontextrestored`.
+   *
+   * THE EVENT NAMES DIFFER BECAUSE THE CONTEXT DOES. This canvas is 2D, and
+   * `webglcontextlost` is dispatched only at a canvas holding a WebGL context —
+   * a listener for it here could never fire once, which is worse than no
+   * handler at all because it reads like one. The 2D contract is HTML's
+   * `contextlost`/`contextrestored`, and its `preventDefault()` means the
+   * OPPOSITE of WebGL's: on `webglcontextlost` it asks the user agent to
+   * restore, on 2D `contextlost` it sets "context restoration disabled" and
+   * makes the loss permanent. So this handler deliberately does NOT call it.
+   *
+   * The rebuild is needed for the same reason as over there: a lost 2D context
+   * is reset to its defaults, which drops the device-pixel transform and the
+   * font `resizeCanvas` installed, so the grid would come back at the wrong
+   * scale in the wrong face over a cleared bitmap.
+   */
+  const [glGeneration, setGlGeneration] = useState(0);
+  /**
+   * A ref rather than a local in the effect, because `animate` below is
+   * component-scope and re-schedules itself: a local would be invisible to the
+   * one function that has to stop. Cleared on every effect setup, so the loop
+   * the rebuild starts is not stopped by the loss that caused it.
+   */
+  const contextLostRef = useRef(false);
 
   /**
    * The alphabet and the palette live in refs because the render loop is
@@ -230,6 +256,7 @@ const LetterGlitch = ({
   };
 
   const animate = () => {
+    if (contextLostRef.current) return;
     const now = Date.now();
     if (now - lastGlitchTime.current >= glitchSpeedRef.current) {
       updateLetters();
@@ -249,6 +276,7 @@ const LetterGlitch = ({
     if (!canvas) return;
 
     context.current = canvas.getContext('2d');
+    contextLostRef.current = false;
     resizeCanvas();
     animate();
 
@@ -270,20 +298,39 @@ const LetterGlitch = ({
     const ro = new ResizeObserver(handleResize);
     if (canvas.parentElement) ro.observe(canvas.parentElement);
 
+    // NO preventDefault here — see the note on `glGeneration`. On a 2D canvas
+    // cancelling this event is what makes the loss permanent.
+    const handleContextLost = () => {
+      contextLostRef.current = true;
+      if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    };
+    // Restarting the loop alone would draw through a context that was reset to
+    // its defaults — no device-pixel transform, no font — so the grid would
+    // come back at the wrong scale. Re-running the effect re-measures, re-seeds
+    // the letters and re-installs both.
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    canvas.addEventListener('contextlost', handleContextLost);
+    canvas.addEventListener('contextrestored', handleContextRestored);
+
     return () => {
       if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
       clearTimeout(resizeTimeout);
       window.removeEventListener('resize', handleResize);
       ro.disconnect();
+      canvas.removeEventListener('contextlost', handleContextLost);
+      canvas.removeEventListener('contextrestored', handleContextRestored);
       context.current = null;
     };
-    // Every prop is read through a ref by the loop above, so nothing here needs
-    // to restart it. There is no GL context on this canvas — it is 2D — so
-    // nothing is released on teardown and the React-owned `<canvas ref>` below
-    // stays inside `reactbits-canvas-ownership.test.ts`.
+    // Every prop is read through a ref by the loop above, so nothing but a
+    // replaced 2D context restarts this. There is no GL context on this canvas
+    // — it is 2D — so nothing is released on teardown and the React-owned
+    // `<canvas ref>` below stays inside `reactbits-canvas-ownership.test.ts`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [glGeneration]);
 
   return (
     <div

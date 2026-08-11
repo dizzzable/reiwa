@@ -1,15 +1,11 @@
 import {
   forwardRef,
-  useState,
   type CSSProperties,
   type HTMLAttributes,
   type ReactNode,
 } from "react";
 
-import {
-  CARD_EFFECT_REVEAL_MS,
-  CardEffectLayer,
-} from "@/components/reactbits/card-effect-layer";
+import { CardEffectLayer } from "@/components/reactbits/card-effect-layer";
 import { CardWatermark } from "@/components/ui/card-watermark";
 import { useCardEffectWarmSlot } from "@/lib/card-effect-budget";
 import { cn } from "@/lib/utils";
@@ -51,7 +47,7 @@ export interface SubscriptionCardFrameProps
   readonly layerOpacity?: SubscriptionCardLayerOpacity;
 }
 
-/** What the pattern layer sits at when nothing is covering it. */
+/** What the pattern layer sits at. Nothing covers it and nothing moves it. */
 const BACKDROP_PATTERN_RESTING_OPACITY = 0.4;
 
 function opacityStyle(
@@ -117,27 +113,19 @@ export const SubscriptionCardFrame = forwardRef<
     ? effectActive === true || warmGranted
     : undefined;
 
-  /**
-   * How much of the operator's backdrop survives under the effect, set by the
-   * layer. Held here rather than derived, because the backdrop must fade on the
-   * SAME schedule as the effect fades in — a single shared duration, two halves
-   * of one crossfade.
+  /*
+   * THE EFFECT DOES NOT DIM THE BACKDROP, and there is no state here for it to
+   * dim through.
    *
-   * A fraction and not a flag: how far the backdrop may step back depends on
-   * whether the renderer can be proved to have drawn, and only the layer knows
-   * that. See `resolveCardEffectBackdropPolicy`. Applied as a MULTIPLIER so
-   * each layer keeps its own resting value — the pattern rests at 0.4, and
-   * fading it from 1 would brighten it on the way out.
+   * A `backdropOpacity` state used to live at this point: the layer reported
+   * how much of the operator's gradient to keep once it believed the effect had
+   * painted, and both backdrop layers faded to a fraction of their resting
+   * value on the effect's own schedule. The product owner reversed that
+   * decision — the effect simply draws over the gradient, which stays where the
+   * operator set it. The admin panel's preview never dimmed, and the live
+   * cabinet disagreeing with the preview was the defect. Do not wire a
+   * "did it paint?" signal back into this component.
    */
-  const [backdropOpacity, setBackdropOpacity] = useState(1);
-  const backdropStyle = {
-    opacity: backdropOpacity,
-    transition: `opacity ${CARD_EFFECT_REVEAL_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-  };
-  const backdropPatternStyle = {
-    opacity: BACKDROP_PATTERN_RESTING_OPACITY * backdropOpacity,
-    transition: `opacity ${CARD_EFFECT_REVEAL_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-  };
   const frameStyle = {
     "--card-foreground": contrast.foreground,
     "--card-foreground-rgb": contrast.foregroundRgb,
@@ -186,21 +174,17 @@ export const SubscriptionCardFrame = forwardRef<
           ...opacityStyle(layerOpacity?.foundation, 420),
         }}
       />
-      {/* The backdrop shown until the effect paints, and the thing that used to
-          keep showing afterwards. A concept's diagonal artwork read through a
-          transparent shader looks like a rendering fault, not like design, so
-          once a REAL renderer is up the gradient steps back rather than
-          competing with it — all the way out where the effect can be proved to
-          have painted, to a residual where it cannot. The creation reveal owns
-          opacity while it runs and is left alone. */}
+      {/* The operator's gradient, at the strength the operator set, for as long
+          as the card is up. The effect layer draws OVER it and never dims it —
+          see the note above, and do not reintroduce a fade here. The creation
+          reveal is the one thing that owns this opacity, and only while it
+          runs. */}
       <div
         data-subscription-card-layer="gradient"
         className="absolute inset-0 z-0"
         style={{
           backgroundImage: visual.cardGradient,
-          ...(creationPresentation
-            ? opacityStyle(layerOpacity?.gradient, 560)
-            : backdropStyle),
+          ...opacityStyle(layerOpacity?.gradient, 560),
         }}
       />
       {visual.cardPattern && (
@@ -213,9 +197,9 @@ export const SubscriptionCardFrame = forwardRef<
               ? "24px 24px"
               : undefined,
             opacity: BACKDROP_PATTERN_RESTING_OPACITY,
-            ...(creationPresentation
-              ? opacityStyle(layerOpacity.gradient, 560)
-              : backdropPatternStyle),
+            // The creation reveal drives this layer with the gradient's own
+            // value while it runs; outside it the pattern simply rests.
+            ...opacityStyle(layerOpacity?.gradient, 560),
           }}
         />
       )}
@@ -225,7 +209,6 @@ export const SubscriptionCardFrame = forwardRef<
           props={visual.cardEffectProps}
           opacity={visual.cardEffectOpacity}
           active={layerActive}
-          onBackdropOpacityChange={setBackdropOpacity}
           className="absolute inset-0 z-0"
         />
       )}

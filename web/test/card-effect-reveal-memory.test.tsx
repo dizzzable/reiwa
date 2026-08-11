@@ -3,9 +3,9 @@
 /**
  * Swiping the subscription carousel.
  *
- * The crossfade in `subscription-card-crossfade.test.tsx` was built for the
- * FIRST time a card shows its artwork: the complaint was that the effect
- * arrived between two frames 50 ms apart, with nothing in between. What it
+ * The reveal fade — `CARD_EFFECT_REVEAL_MS` in `card-effect-layer.tsx` — was
+ * built for the FIRST time a card shows its artwork: the complaint was that the
+ * effect arrived between two frames 50 ms apart, with nothing in between. What it
  * actually did was fire on every activation — and the carousel deactivates the
  * slide you swipe away from and activates the one you swipe to, so both cards
  * paid it, both ways, for ever.
@@ -228,7 +228,7 @@ describe("a card the user swipes back to", () => {
   it("has nothing left for the browser to animate along", () => {
     // Separate from the assertion above, and not redundant with it. The layer
     // really did paint at opacity 0 while it was torn down, so leaving the
-    // 420 ms transition in place would run the whole crossfade anyway — the
+    // 420 ms transition in place would run the whole fade anyway — the
     // committed opacity would read "1" the entire time and the user would
     // still watch the static card.
     const { container, show } = revealThenLeave();
@@ -242,7 +242,7 @@ describe("a card the user swipes back to", () => {
     // The trap the readiness key was cleared to avoid, approached from the
     // other side. Skipping the fade must not become skipping the evidence:
     // with the chunk held out of the commit there is nothing on the card, and
-    // declaring it revealed would crossfade to an empty layer.
+    // declaring it revealed would fade in an empty layer.
     const { container, show } = revealThenLeave();
     control.suspend = true;
 

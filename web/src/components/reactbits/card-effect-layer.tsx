@@ -19,19 +19,32 @@
  * What this layer does NOT detect, stated so it is not rediscovered a fourth
  * time. For a WebGL effect, "the renderer started but nothing reached the
  * screen" is invisible from here — the drawing buffer is gone by the time any
- * timer runs and a live context proves nothing. The layer no longer tries; it
- * keeps a residual of the operator's backdrop instead, so the card degrades to
- * a dimmed gradient rather than to nothing. Consequences, all real:
- *  - A shader that compiles and draws perfectly still loses that residual of
- *    the backdrop it did not need to lose.
- *  - A context already lost before `observeCardEffectCanvases` attached its
- *    listeners is never noticed, and that card sits at the residual too.
- *  - A `canvas2d` effect whose first painted frame lands after the samples
- *    stop is read as blank and keeps the whole backdrop.
- *  - A context that dies more than `MAX_CONTEXT_RESTORES` times for one
- *    presentation stops being rebuilt and becomes the CSS fallback, even if the
- *    browser was willing to restore it again. That is deliberate: see the
- *    constant.
+ * timer runs and a live context proves nothing. The layer does not try, and it
+ * no longer needs to: it does not touch the operator's gradient, so a renderer
+ * that draws nothing leaves the card showing the operator's artwork rather
+ * than an empty rectangle. Consequences, all real:
+ *  - A context that dies silently — no `webglcontextlost`, a frozen picture —
+ *    is not noticed while the user stays on the page. It is answered only on the
+ *    way back in: a return from the back/forward cache rebuilds the renderer
+ *    without evidence, because after a bfcache thaw the context is dead more
+ *    often than not.
+ *  - A context that dies more than `MAX_CONTEXT_RESTORES` times WITHIN one
+ *    recovery window stops being rebuilt and becomes the CSS fallback, even if
+ *    the browser was willing to restore it again. That is deliberate, and it is
+ *    a window rather than a lifetime: see the constant and
+ *    `CARD_EFFECT_RECOVERY_CREDIT_MS`.
+ *  - Neither the failure state nor the capability probe survives a return that
+ *    finds the layer in the CSS fallback: coming back to a card that is not
+ *    running is worth one bounded attempt, and used to be worth a page reload.
+ *
+ * WHAT THIS LAYER NO LONGER DOES, AND MUST NOT DO AGAIN. It used to report a
+ * backdrop opacity to the frame, so the operator's gradient faded down (0.12
+ * under a shader) or out (0 under a `canvas2d` effect) once the effect was
+ * believed to have painted — which is what the periodic pixel sampling existed
+ * to establish. The product owner reversed that: the effect draws OVER the
+ * gradient and nothing dims it. The admin preview never dimmed, and the live
+ * cabinet disagreeing with the preview was the actual defect. See the note in
+ * `card-effect-layer-utils.ts` before reaching for a "cheaper" version of it.
  */
 
 import {
@@ -39,6 +52,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -58,16 +72,11 @@ import {
   resolveCardEffectRuntime,
 } from "./card-effect-runtime";
 import {
+  CARD_EFFECT_RENDERER_READY_TIMEOUT_MS,
   observeCardEffectCanvases,
-  resolveCardEffectBackdropPolicy,
   resolveCardEffectOverlayOpacity,
-  sampleCardEffectPainted,
   sanitizeCardEffectProps,
 } from "./card-effect-layer-utils";
-
-/** How often, and how many times, to look for evidence that the effect painted. */
-const PAINT_SAMPLE_INTERVAL_MS = 120;
-const PAINT_SAMPLE_ATTEMPTS = 5;
 
 /**
  * How many times one presentation may be rebuilt after a restorable context
@@ -81,16 +90,56 @@ const PAINT_SAMPLE_ATTEMPTS = 5;
  * it allocating another context under WebKit's sixteen. Two is enough for a
  * sleep/wake or a driver reset and short enough that a thrashing device reaches
  * the CSS fallback quickly. Budget is per `failureScope`, so anything the
- * operator changes starts again.
+ * operator changes starts again — and, since the defect below, per RECOVERY
+ * too: see `CARD_EFFECT_RECOVERY_CREDIT_MS`.
  */
 const MAX_CONTEXT_RESTORES = 2;
 
 /**
- * How long the effect takes to fade in, and the backdrop to fade out.
+ * How many times coming back to this layer may restart a renderer that is not
+ * running.
  *
- * Shared with the frame so the two halves of the crossfade cannot drift apart:
- * a shorter fade-out than fade-in shows the flat foundation through the middle
- * of the transition, a longer one shows both at once.
+ * WHAT WENT WRONG: nothing ever retried. A context that failed to be created, a
+ * shader that did not compile, a loss whose grace window expired — each of them
+ * resolved the layer to the CSS fallback and left it there for the lifetime of
+ * the page, so the only cure a user had was a reload. On a phone that is the
+ * common case rather than the exotic one: the GPU is busiest exactly while the
+ * app is being switched to, which is exactly when this layer is (re)building.
+ *
+ * Bounded, and the bound is not timidity. A rebuild allocates another context
+ * under WebKit's sixteen and recompiles a shader; a layer that retried on every
+ * return would, on a device that cannot run the effect at all, spend the whole
+ * session doing that instead of showing the operator's gradient — worse than no
+ * animation. Two is a sleep/wake and a second chance. Spent budget is returned
+ * by a cycle that actually worked, so a user who returns tomorrow is not paying
+ * for a GPU hiccup today.
+ */
+export const MAX_RETURN_RESTARTS = 2;
+
+/**
+ * How long a presentation has to keep running before the restart and rebuild
+ * budgets above are handed back.
+ *
+ * The budgets exist to stop a thrashing device from rebuilding for ever, and a
+ * refund on "the renderer committed" would defeat exactly that: lose → rebuild →
+ * ready → refund → lose is an unbounded loop with extra steps. Time in front of
+ * the user is what distinguishes a recovery from a thrash, so the refund is
+ * delayed by enough of it that a genuinely broken device can only spend its
+ * budget once per this interval, while a card that ran for ten seconds and then
+ * hit a transient loss starts from a full budget.
+ *
+ * This is the other half of "после третьего возврата перестало совсем": the
+ * budget was never returned, so three transient losses over an hour were spent
+ * as if they had been three in a row.
+ */
+export const CARD_EFFECT_RECOVERY_CREDIT_MS = 10_000;
+
+/**
+ * How long the effect takes to fade in over the operator's gradient.
+ *
+ * It used to be shared with the frame, which faded the gradient out on the same
+ * schedule. The gradient no longer moves at all — see the note at the top of
+ * this file — so this is one fade, not two halves of a crossfade.
  */
 export const CARD_EFFECT_REVEAL_MS = 420;
 
@@ -150,22 +199,6 @@ interface CardEffectLayerProps {
    * slide asks; read `useCardEffectWarmSlot` before assuming a count here.
    */
   readonly active?: boolean;
-  /**
-   * How much of the operator's backdrop the frame should keep, as a multiplier
-   * on each backdrop layer's own resting opacity. `1` is untouched.
-   *
-   * Not a boolean, and that is the point. The frame steps the gradient back
-   * once a real renderer is up, because a concept's diagonal artwork showing
-   * through a transparent shader looks like a rendering fault rather than like
-   * design — but how far it may step back depends on whether anything can prove
-   * the effect drew, and for a shader nothing can. See
-   * `resolveCardEffectBackdropPolicy`, which owns that decision and states why.
-   *
-   * `css-fallback` never reports anything but `1`: that mode is a translucent
-   * radial built precisely so the gradient stays visible, and dimming it would
-   * leave a low-capability device with almost nothing on the card.
-   */
-  readonly onBackdropOpacityChange?: (opacity: number) => void;
   /**
    * Keep the renderer mounted while the page is hidden.
    *
@@ -287,7 +320,6 @@ export function CardEffectLayer({
   opacity = 1,
   className,
   active,
-  onBackdropOpacityChange,
   keepMountedWhileHidden = false,
 }: CardEffectLayerProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -354,10 +386,62 @@ export function CardEffectLayer({
   const [pageVisible, setPageVisible] = useState(
     () => typeof document === "undefined" || document.visibilityState !== "hidden",
   );
+  /**
+   * A return the layer has not answered yet, and whether it came out of the
+   * back/forward cache.
+   *
+   * A counter rather than a boolean because the answer is given in an effect and
+   * must be given exactly once per return: dependency churn re-runs that effect,
+   * and a boolean would let one return spend the restart budget several times.
+   */
+  const [returnTicket, setReturnTicket] = useState(0);
+  const awayRef = useRef(false);
+  const bfcacheReturnRef = useRef(false);
+
+  /**
+   * `visibilitychange` alone was not enough, and the missing half is bfcache.
+   *
+   * Going "back" to this app does not re-run the page: the browser freezes the
+   * document into the back/forward cache and thaws it, and on iOS and Android
+   * Chromium alike that thaw can arrive WITHOUT a `visibilitychange` — the
+   * document never became hidden as far as that event is concerned, it stopped
+   * existing and started again. `pagehide`/`pageshow` are the events that do
+   * fire, and until this there was not one handler for either anywhere in the
+   * front end, so a card that came back from bfcache came back to a dead GPU
+   * context and no one asked.
+   *
+   * `pageshow.persisted` is the difference that matters: a normal load fires
+   * `pageshow` too, and that one must not be treated as a return.
+   */
   useEffect(() => {
-    const onVisibility = () => setPageVisible(document.visibilityState !== "hidden");
+    const leave = () => {
+      awayRef.current = true;
+      setPageVisible(false);
+    };
+    const arrive = (fromBfcache: boolean) => {
+      const returning = awayRef.current || fromBfcache;
+      awayRef.current = false;
+      if (fromBfcache) bfcacheReturnRef.current = true;
+      setPageVisible(true);
+      if (returning) setReturnTicket((ticket) => ticket + 1);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") leave();
+      else arrive(false);
+    };
+    const onPageHide = () => leave();
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (document.visibilityState === "hidden") return;
+      arrive(event.persisted);
+    };
     document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+    };
   }, []);
 
   const shouldMount =
@@ -370,8 +454,8 @@ export function CardEffectLayer({
    * `shouldMount` turning false unmounts only the CHILD — this component stays
    * put, keeping its state. So a hide/show cycle came back with the key of the
    * presentation that had just been torn down, `presentationReady` was true in
-   * the same commit that remounted the renderer, and the crossfade and paint
-   * sampling both ran against a canvas that was not in the DOM yet.
+   * the same commit that remounted the renderer, and the reveal ran against a
+   * canvas that was not in the DOM yet.
    */
   useEffect(() => {
     if (shouldMount) return;
@@ -513,6 +597,53 @@ export function CardEffectLayer({
       readyPresentationKey === presentationKey);
 
   /**
+   * Start a renderer that is not running, now that the user is looking again.
+   *
+   * WHAT IT UNDOES, and each of the three is a state the layer used to be stuck
+   * in until a reload:
+   *  - a failure — a creation error, a shader that would not compile, a loss
+   *    whose grace window ran out. The count is cleared, which is the only thing
+   *    that lifts `resolveCardEffectRuntime` back out of `css-fallback`.
+   *  - a negative capability probe. `detectCardEffectCapabilities` is asked once
+   *    per effect and cached for the life of the layer, and a probe taken while
+   *    the GPU was refusing new contexts — which is exactly the moment an app is
+   *    being switched back to — cached "this device has no WebGL" for a device
+   *    that has it. Clearing the snapshot re-probes. The card shows the
+   *    operator's gradient alone for the frame in between, which is the same
+   *    thing it shows while probing at first mount.
+   *  - a context that died silently. Nothing can detect that from here (see the
+   *    header), so a return from the back/forward cache — where the context is
+   *    dead far more often than not — rebuilds unconditionally rather than on
+   *    evidence. That is `fromBfcache`, and it is the only case that restarts a
+   *    presentation which still believes it is running.
+   *
+   * Returns whether an attempt was made, so a caller can tell "recovered" from
+   * "out of budget"; the budget is per `failureScope` and refunded by a cycle
+   * that ran (see `CARD_EFFECT_RECOVERY_CREDIT_MS`).
+   */
+  const restartBudgetRef = useRef<{ scope: string; used: number } | null>(null);
+  const inCssFallback = runtime?.mode === "css-fallback";
+  const restartAfterReturn = useCallback(
+    (fromBfcache: boolean) => {
+      if (!inCssFallback && !fromBfcache) return false;
+      const budget = restartBudgetRef.current;
+      const used = budget?.scope === failureScope ? budget.used : 0;
+      if (used >= MAX_RETURN_RESTARTS) return false;
+      restartBudgetRef.current = { scope: failureScope, used: used + 1 };
+      // A restart is a fresh start for the rebuild budget too: what it was
+      // spent on is the presentation being discarded here.
+      restoreBudgetRef.current = null;
+      if (inCssFallback) {
+        if (failureCount > 0) setFailureState(null);
+        else setCapabilitySnapshot(null);
+      }
+      setRendererGeneration((generation) => generation + 1);
+      return true;
+    },
+    [failureCount, failureScope, inCssFallback],
+  );
+
+  /**
    * Reveal is a SEPARATE state from readiness, and deliberately so. Readiness
    * flips inside the same commit that mounts the canvas, so binding opacity to
    * it directly means the browser paints the final value with no previous one
@@ -570,85 +701,43 @@ export function CardEffectLayer({
     };
   }, [presentationKey, reveal]);
 
-  /**
-   * Evidence that the effect drew. Not merely that it mounted.
+  /*
+   * NOTHING SAMPLES THE CANVAS, and nothing here reports to the frame.
    *
-   * Readiness cannot carry this weight: it flips when the lazy component
-   * mounts, which says nothing about what reached the screen. Only a `canvas2d`
-   * effect can be asked, and `resolveCardEffectBackdropPolicy` is what says so —
-   * for a shader nothing is sampled, no timer is scheduled, and its canvas is
-   * not touched. Read the policy for why, and for what the backdrop does
-   * instead; do not reintroduce a probe here on the assumption that some
-   * cheaper question would work.
-   *
-   * A handful of samples over roughly half a second, because the first frame
-   * after mount is often still empty: several renderers clear on frame one and
-   * draw on frame two. Sampling stops at the first positive, so the common case
-   * costs one downscale of sixty-four pixels.
-   *
-   * `runtimeId` rather than `effect`, because it is the effect actually being
-   * drawn after the runtime policy has had its say.
+   * A `painted` state used to live at this point: a timer sampled the canvas
+   * five times after mount looking for evidence the effect had drawn, and its
+   * ONLY consumer was the backdrop opacity this layer reported upward. Both are
+   * gone by the product owner's decision — the effect draws over the operator's
+   * gradient and nothing dims it, exactly as the admin preview has always shown
+   * it. With the fade gone the question "did it paint?" has no consumer left,
+   * and asking it cost five forced GPU→CPU readbacks on every mount.
    */
-  const backdropPolicy =
-    runtimeId === undefined ? null : resolveCardEffectBackdropPolicy(runtimeId);
-  const [painted, setPainted] = useState(false);
-  useEffect(() => {
-    setPainted(false);
-    if (!presentationReady || runtime?.mode !== "native") return;
-    if (runtimeId === undefined) return;
-    if (resolveCardEffectBackdropPolicy(runtimeId).evidence !== "pixels") return;
-    const root = ref.current;
-    if (root === null) return;
-
-    let attempt = 0;
-    let timer = 0;
-    const check = () => {
-      const result = sampleCardEffectPainted(root, runtimeId);
-      // `null` is "no canvas to inspect" — a DOM- or SVG-drawn effect, which
-      // cannot fail this way, so it is taken at its word.
-      if (result !== false) {
-        setPainted(true);
-        return;
-      }
-      attempt += 1;
-      if (attempt >= PAINT_SAMPLE_ATTEMPTS) return;
-      timer = window.setTimeout(check, PAINT_SAMPLE_INTERVAL_MS);
-    };
-    timer = window.setTimeout(check, PAINT_SAMPLE_INTERVAL_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [presentationKey, presentationReady, runtime?.mode, runtimeId]);
 
   /**
-   * What the frame should do with the operator's backdrop.
+   * WHAT WENT WRONG: this ran only once `presentationReady` was true — which is
+   * the handshake the renderer performs AFTER it has mounted and asked for its
+   * context. `webglcontextcreationerror` is dispatched from inside
+   * `getContext()`, so by the time these listeners existed the one event that
+   * says "this device would not give me a context" had already been and gone,
+   * and a card that never started was indistinguishable from one that was still
+   * loading. Nothing ever reported it, so nothing ever retried it.
    *
-   * A real renderer that is up covers it; `css-fallback` never does. How far it
-   * covers is the policy's call, and for a shader that is deliberately not all
-   * the way — see `onBackdropOpacityChange`. Where evidence exists it is also
-   * required: a `canvas2d` effect that sampled blank leaves the backdrop alone.
+   * It now attaches as soon as a renderer is going to be mounted, and in a
+   * LAYOUT effect: passive effects run child-first, so a `useEffect` here would
+   * still lose the race against a non-lazy effect (`aurora`, the product
+   * default) that creates its context in its own passive effect. Layout effects
+   * for the whole tree run before ANY passive effect, which is the only
+   * ordering that puts a container listener in front of a child's `getContext`.
+   *
+   * `presentationReady` is still a dependency, so the observer is rebuilt when
+   * the renderer commits — that second pass is what scans the committed canvas
+   * synchronously and starts the readiness timeout. Before the commit the
+   * timeout is `null`: what is being waited for at that point is a lazy chunk
+   * over the phone's connection, and timing that as a GPU fault would drop a
+   * slow network into the CSS fallback.
    */
-  const coversBackdrop =
-    revealed &&
-    runtime?.mode === "native" &&
-    backdropPolicy !== null &&
-    (backdropPolicy.evidence !== "pixels" || painted);
-  const backdropOpacity =
-    coversBackdrop && backdropPolicy !== null ? backdropPolicy.coveredOpacity : 1;
-  useEffect(() => {
-    onBackdropOpacityChange?.(backdropOpacity);
-  }, [backdropOpacity, onBackdropOpacityChange]);
-  useEffect(
-    () => () => onBackdropOpacityChange?.(1),
-    [onBackdropOpacityChange],
-  );
-
-  useEffect(() => {
-    if (
-      !isValid ||
-      !shouldMount ||
-      !presentationReady ||
-      runtimeId === undefined
-    ) {
+  useLayoutEffect(() => {
+    if (!isValid || !shouldMount || runtimeId === undefined || Effect === null) {
       return;
     }
     const root = ref.current;
@@ -657,18 +746,69 @@ export function CardEffectLayer({
     return observeCardEffectCanvases(
       root,
       markRuntimeFailed,
-      1_200,
+      presentationReady ? CARD_EFFECT_RENDERER_READY_TIMEOUT_MS : null,
       runtimeId === "waves" ? "2d" : undefined,
       requestRuntimeRebuild,
     );
   }, [
+    Effect,
     isValid,
     markRuntimeFailed,
+    presentationKey,
     presentationReady,
     requestRuntimeRebuild,
     runtimeId,
     shouldMount,
   ]);
+
+  /**
+   * Give the budgets back to a presentation that actually worked.
+   *
+   * WHAT WENT WRONG: both budgets were spent for the lifetime of a
+   * `failureScope` and returned by nothing, so they measured "failures ever"
+   * rather than "failures in a row". Two transient context losses hours apart
+   * left the third one — the first the user would have minded — with no rebuild
+   * left to spend, and the card in the CSS fallback until a reload. That is
+   * "после третьего возврата перестало совсем", and it is a ratchet rather than
+   * a policy.
+   *
+   * The refund waits for the presentation to have been up for
+   * `CARD_EFFECT_RECOVERY_CREDIT_MS`, which is what keeps it from becoming the
+   * unbounded rebuild loop the budgets exist to prevent: a device that loses its
+   * context immediately after every rebuild never reaches the credit and still
+   * falls back. Only `native` counts — the CSS fallback is what is being
+   * recovered FROM, so crediting it would refund the budget for failing.
+   */
+  useEffect(() => {
+    if (!presentationReady || runtime?.mode !== "native") return;
+    const scope = failureScope;
+    const timer = window.setTimeout(() => {
+      if (restoreBudgetRef.current?.scope === scope) {
+        restoreBudgetRef.current = null;
+      }
+      if (restartBudgetRef.current?.scope === scope) {
+        restartBudgetRef.current = null;
+      }
+    }, CARD_EFFECT_RECOVERY_CREDIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [failureScope, presentationReady, runtime?.mode]);
+
+  /**
+   * Try again when the user comes back.
+   *
+   * The ticket is consumed rather than read, so one return produces exactly one
+   * attempt however often this effect is re-run by dependency churn. What the
+   * attempt does is in `restartAfterReturn`; whether it is allowed is
+   * `MAX_RETURN_RESTARTS`.
+   */
+  const handledTicketRef = useRef(0);
+  useEffect(() => {
+    if (returnTicket === handledTicketRef.current) return;
+    handledTicketRef.current = returnTicket;
+    const fromBfcache = bfcacheReturnRef.current;
+    bfcacheReturnRef.current = false;
+    restartAfterReturn(fromBfcache);
+  }, [restartAfterReturn, returnTicket]);
 
   if (!isValid) return null;
 

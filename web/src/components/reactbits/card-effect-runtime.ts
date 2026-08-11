@@ -288,7 +288,14 @@ export function resolveCardEffectRuntime({
   }
 
   // WebGL2-only shaders cannot start on a WebGL1-only Telegram WebView, and a
-  // lost context cannot safely be retried. Preserve the selected artwork's
-  // palette in CSS instead of replacing it with another animation.
+  // lost context cannot safely be retried IN PLACE. Preserve the selected
+  // artwork's palette in CSS instead of replacing it with another animation.
+  //
+  // This function is a pure reading of the inputs it is given and has no memory
+  // — one failure is one fallback, and the moment `failureCount` returns to zero
+  // so does the effect. That distinction is worth stating because the two were
+  // confused: the fallback used to be permanent, and the permanence was never
+  // here. It was that nothing ever cleared the count. The layer clears it on a
+  // bounded retry when the user comes back; see `restartAfterReturn`.
   return resolveCssFallback(effect, props);
 }

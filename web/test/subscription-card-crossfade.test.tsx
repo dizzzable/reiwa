@@ -1,30 +1,28 @@
 // @vitest-environment jsdom
 
 /**
- * The card crossfade.
+ * The card backdrop under a live effect — and the crossfade that is no longer
+ * half of one.
  *
- * Two complaints, one mechanism. Before this, the animated background jumped
- * from absent to fully opaque inside a single frame — filmed at 20 fps, two
- * consecutive frames 50 ms apart showed a grey card and then a finished
- * animation, with nothing in between. And because the operator's gradient sat
- * underneath and stayed there, a concept's diagonal artwork went on showing
- * through every transparent shader, which reads as a rendering fault rather
- * than as design.
+ * WHAT THIS FILE USED TO PIN. The effect faded IN while the operator's gradient
+ * faded OUT on one shared duration: the layer reported how much of the backdrop
+ * to keep (0 where a `canvas2d` effect could be proved to have painted, a 0.12
+ * residual under a shader, where nothing can prove anything), and the frame
+ * applied that fraction to the gradient and to the pattern, each against its own
+ * resting value.
  *
- * So the effect fades IN while the backdrop fades OUT, on one shared duration.
+ * WHY IT NO LONGER DOES. The product owner reversed the decision: the effect
+ * draws OVER the operator's gradient and nothing dims it. The admin panel's
+ * preview never dimmed the gradient, so the live cabinet disagreeing with the
+ * preview was the defect — not the artwork showing through a transparent
+ * shader. The whole chain went with it, including the periodic pixel sampling
+ * that existed only to feed it.
  *
- * The exception that has to survive: `css-fallback`. That mode is a
- * translucent radial built deliberately so the operator's gradient stays
- * visible, because a device without WebGL2 — every Telegram in-app browser —
- * has nothing else to show. Hiding the backdrop there would leave the card
- * nearly blank, so the fade-out is gated on a real renderer, not on readiness.
- *
- * "Out" is not always all the way out. For a shader nothing can prove the
- * effect drew, so the layer asks for a residual instead of zero — see
- * `resolveCardEffectBackdropPolicy`. The frame's job is only to apply whatever
- * fraction it is given to both backdrop layers, each against its own resting
- * value, and that is what is asserted here; which fraction each renderer gets
- * belongs to the layer and is pinned in `card-effect-blank-canvas.test.tsx`.
+ * So what is left to guard is the ABSENCE: both backdrop layers rest where the
+ * operator set them, nothing animates them, and the frame hands the layer no
+ * channel through which a dimming signal could come back. The effect's own
+ * fade-in is a different mechanism and lives in
+ * `card-effect-reveal-memory.test.tsx`.
  */
 
 import { act } from "react";
@@ -35,20 +33,16 @@ import { SubscriptionCardFrame } from "../src/features/dashboard/components/subs
 import { resolveSubscriptionCardVisual } from "../src/features/dashboard/components/subscription-card-visual";
 import { DEFAULT_BRANDING } from "../src/types/branding";
 
-const reveal = vi.hoisted(() => ({
-  current: null as ((opacity: number) => void) | null,
+const layerProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/components/reactbits/card-effect-layer", () => ({
-  CARD_EFFECT_REVEAL_MS: 420,
-  // A stand-in for the real layer: it exposes the callback so a test can play
-  // the moment the renderer paints, without needing WebGL in jsdom.
-  CardEffectLayer: ({
-    onBackdropOpacityChange,
-  }: {
-    readonly onBackdropOpacityChange?: (opacity: number) => void;
-  }) => {
-    reveal.current = onBackdropOpacityChange ?? null;
+  // A stand-in for the real layer, kept so the frame can be rendered without
+  // WebGL in jsdom. It records what it was handed: the frame must not be
+  // passing it anything to report back through.
+  CardEffectLayer: (props: Record<string, unknown>) => {
+    layerProps.current = props;
     return <div data-testid="effect-layer" />;
   },
 }));
@@ -70,12 +64,18 @@ const VISUAL = resolveSubscriptionCardVisual({
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
-function render(): void {
+function render(layerOpacity?: { readonly gradient: number }): void {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   act(() => {
-    root?.render(<SubscriptionCardFrame visual={VISUAL} effectActive />);
+    root?.render(
+      <SubscriptionCardFrame
+        visual={VISUAL}
+        effectActive
+        layerOpacity={layerOpacity}
+      />,
+    );
   });
 }
 
@@ -85,7 +85,7 @@ function layer(name: string): HTMLElement | null {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  reveal.current = null;
+  layerProps.current = null;
 });
 
 afterEach(() => {
@@ -95,58 +95,55 @@ afterEach(() => {
   container = null;
 });
 
-describe("subscription card crossfade", () => {
-  it("shows the operator backdrop at full strength before the effect paints", () => {
+describe("the operator backdrop under a live effect", () => {
+  it("leaves the gradient at full strength, writing no opacity of its own", () => {
     render();
 
-    expect(layer("gradient")?.style.opacity).toBe("1");
-    expect(layer("pattern")?.style.opacity).toBe("0.4");
+    // Not `"1"`: the frame states no opacity at all for this layer outside the
+    // creation reveal. A literal here would be a value something could animate.
+    expect(layer("gradient")?.style.opacity).toBe("");
   });
 
-  it("gives both backdrop layers a transition so neither can snap", () => {
+  it("leaves the pattern at its own resting opacity", () => {
     render();
-
-    expect(layer("gradient")?.style.transition).toContain("420ms");
-    expect(layer("pattern")?.style.transition).toContain("420ms");
-  });
-
-  it("fades the backdrop out once a real renderer has painted", () => {
-    render();
-    act(() => reveal.current?.(0));
-
-    expect(layer("gradient")?.style.opacity).toBe("0");
-    expect(layer("pattern")?.style.opacity).toBe("0");
-  });
-
-  /**
-   * The pattern rests at 0.4, not 1. Fading it from 1 would brighten it on the
-   * way out — the texture would grow stronger before vanishing.
-   */
-  it("returns the pattern to its own resting opacity, not to full", () => {
-    render();
-    act(() => reveal.current?.(0));
-    act(() => reveal.current?.(1));
 
     expect(layer("pattern")?.style.opacity).toBe("0.4");
   });
 
-  it("brings the backdrop back when the effect goes away", () => {
+  it("gives neither backdrop layer a transition, because neither moves", () => {
+    // The 420 ms transition was the fade-out half of the crossfade. A
+    // transition still declared here would mean something is expected to change
+    // this opacity — which is exactly what was removed.
     render();
-    act(() => reveal.current?.(0));
-    act(() => reveal.current?.(1));
 
-    expect(layer("gradient")?.style.opacity).toBe("1");
+    expect(layer("gradient")?.style.transition).toBe("");
+    expect(layer("pattern")?.style.transition).toBe("");
   });
 
-  it("applies a partial fade as a fraction of each layer's own resting value", () => {
-    // A shader gets a residual rather than zero, because nothing can prove it
-    // painted. If the frame treated the signal as a flag, this would land on
-    // "0" and a silently blank shader would show an empty card — which is the
-    // whole reason the layer stopped sending a boolean.
+  it("hands the effect layer nothing it could report a backdrop opacity through", () => {
+    // Checked by SHAPE rather than by the old prop name: the mechanism came
+    // back once already, and it would come back under a new name. The frame
+    // passes the layer only data — effect id, props, opacity, active, class —
+    // so any callback at all is a channel that should not exist.
     render();
-    act(() => reveal.current?.(0.12));
 
-    expect(layer("gradient")?.style.opacity).toBe("0.12");
-    expect(layer("pattern")?.style.opacity).toBe("0.048");
+    const received = layerProps.current ?? {};
+    const callbacks = Object.entries(received).filter(
+      ([, value]) => typeof value === "function",
+    );
+
+    expect(
+      callbacks.map(([name]) => name),
+      "the frame is passing the effect layer a callback — if it is a backdrop/paint signal, the dimming the product owner removed is being wired back in",
+    ).toEqual([]);
+  });
+
+  it("still lets the creation reveal drive the gradient while it runs", () => {
+    // The one thing that DOES own this opacity, and the removal must not have
+    // taken it along: `layerOpacity` is the subscription-creation motion.
+    render({ gradient: 0.5 });
+
+    expect(layer("gradient")?.style.opacity).toBe("0.5");
+    expect(layer("gradient")?.style.transition).toContain("560ms");
   });
 });

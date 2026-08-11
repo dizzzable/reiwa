@@ -10,6 +10,7 @@ import type { AdminClient } from "../lib/admin-client.js";
 import type { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore, createWebSessionMiddleware } from "../infrastructure/redis/session.js";
 import { RedisPublicConfigPersistence } from "../infrastructure/public-config/redis-public-config-persistence.js";
+import { createPublicConfigRejectionNotifier } from "../infrastructure/public-config/rejection-notifier.js";
 import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
@@ -71,15 +72,23 @@ export interface CreateAppDeps {
 
 export function createApp(deps: CreateAppDeps) {
   const { config, logger } = deps;
+  const errorReporter = createErrorReporter({ adminClient: deps.adminClient, source: 'api' });
+  // One notifier for every path that can reject a public-config snapshot, so
+  // a single frozen-appearance incident is reported once and re-asserted on
+  // one schedule instead of once per read path.
+  const publicConfigRejectionNotifier = createPublicConfigRejectionNotifier({
+    logger,
+    errorReporter,
+  });
   // Share the composition root's Redis connection. The snapshot adapter does
   // not own connection lifecycle, so web-session shutdown remains unchanged.
   const publicConfigPersistence = deps.webSessionStore
     ? new RedisPublicConfigPersistence({
         redis: deps.webSessionStore.getRedis(),
         logger,
+        rejectionNotifier: publicConfigRejectionNotifier,
       })
     : undefined;
-  const errorReporter = createErrorReporter({ adminClient: deps.adminClient, source: 'api' });
   const reiwaPublicUrl = resolveReiwaPublicUrl(config);
   const app = express();
 
@@ -270,6 +279,7 @@ export function createApp(deps: CreateAppDeps) {
       botUsername: config.BOT_USERNAME ?? null,
       webBaseUrl: reiwaPublicUrl,
       publicConfigPersistence,
+      publicConfigRejectionNotifier,
     }),
   );
   app.use("/api/v1", createLandingRouter({ adminClient: deps.adminClient, logger }));
@@ -416,6 +426,7 @@ export function createApp(deps: CreateAppDeps) {
         deps.adminClient,
         (err) => logger?.debug?.({ err }, "manifest branding refresh failed"),
         publicConfigPersistence,
+        publicConfigRejectionNotifier,
       );
       const branding = (payload.body as { branding?: unknown }).branding;
       res.json(buildWebManifest(branding as Parameters<typeof buildWebManifest>[0]));

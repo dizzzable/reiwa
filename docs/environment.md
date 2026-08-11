@@ -39,8 +39,8 @@ rezeis-admin, что важно для продакшена, и какой compo
 
 | Переменная | Назначение | Обяз. | Прод |
 |---|---|---|---|
-| `REZEIS_HOST` | Хост админки. **Без точки** → docker-имя → `http://host:port` (один VPS, должно быть `rezeis` — имя контейнера). **С точкой** → публичный домен → `https://host` (split). | **да** | один VPS: `rezeis`; split: `panel.example.com` |
-| `REZEIS_PORT` | Порт админки (игнорируется для публичного домена). | — | `8000` |
+| `REZEIS_HOST` | Хост админки. **Без точки** → docker-имя → `http://host:port` (один VPS, должно быть `rezeis` — имя контейнера). **Частный адрес** (loopback, `10.`/`192.168.`/`172.16-31.`, `localhost`) → тоже `http://host:port`. **Домен или маршрутизируемый IP** → `https://host` (split). | **да** | один VPS: `rezeis`; split: `panel.example.com` |
+| `REZEIS_PORT` | Порт админки (для домена и публичного IP игнорируется). | — | `8000` |
 | `REZEIS_TOKEN` | Bearer-токен для вызовов reiwa→rezeis API. **Создаётся в админке rezeis** (раздел API-токенов) и вставляется сюда. | **да** | JWT из панели, **секрет** |
 | `REZEIS_CADDY_TOKEN` / `REZEIS_COOKIE` | Доп. заголовок/cookie, если rezeis за Caddy-auth. | — | пусто |
 | `REZEIS_INTERNAL_SHARED_SECRET` | HMAC (≥32 симв.): подписывает исходящие reiwa→rezeis запросы и релей reiwa-api→reiwa-bot. **Живёт только в reiwa**, админке не нужен. | рек. | свой ≥32, **секрет** |

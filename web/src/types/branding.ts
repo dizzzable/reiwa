@@ -186,6 +186,18 @@ export function resolveCardGradientSource(
   return value === "custom" ? "custom" : "concept";
 }
 
+/**
+ * Who owns the brand palette. See `Branding.brandPaletteSource`.
+ */
+export type BrandPaletteSource = "concept" | "custom";
+
+/** Legacy payloads have no source; they behaved as `concept`. */
+export function resolveBrandPaletteSource(
+  value: BrandPaletteSource | undefined,
+): BrandPaletteSource {
+  return value === "custom" ? "custom" : "concept";
+}
+
 export type SubscriptionCardTextMode = "auto" | "light" | "dark" | "custom";
 
 export interface SubscriptionCardText {
@@ -290,6 +302,46 @@ export interface Branding {
   primaryFg: string;
   bgPrimary: string;
   bgSecondary: string;
+  /**
+   * Where the brand palette — `primary`, `primaryFg`, `bgPrimary`,
+   * `bgSecondary` AND the whole of `surfaceTheme` — comes from, and therefore
+   * who wins a disagreement between the root values and the per-brightness
+   * variants.
+   *
+   *   - `concept` — the operator picked a concept, and the concept's own
+   *     light/dark palettes apply. Producing a deliberately different palette
+   *     per brightness is what a concept is for.
+   *   - `custom` — the operator set a colour by hand in the panel's colour or
+   *     surfaces tab. The root values win everywhere and no variant may
+   *     override them.
+   *
+   * Same defect as `cardGradientSource` below, in the same shape: the panel
+   * wrote the colour to the root only, the variant overwrote it on every read,
+   * and the operator saw their colour in the panel preview and nowhere else.
+   * "Root always wins" — the answer used for the font and the corner radii —
+   * is wrong here for the reason it was wrong for the gradient: a concept
+   * legitimately ships two palettes, and collapsing them would delete that.
+   *
+   * The colours move as ONE unit deliberately. `primary`/`primaryFg` is a
+   * contrast pair and `bgPrimary`/`bgSecondary` a surface pair; taking two from
+   * the operator and two from the concept yields a palette neither of them
+   * designed. The panel writes all four through the same control, so there is
+   * no per-colour ownership for a per-colour flag to express.
+   *
+   * `surfaceTheme` joined that unit rather than getting a marker of its own,
+   * and this is the one boundary here worth defending. It carries the
+   * FOREGROUND colours; `bgPrimary`/`bgSecondary` carry the backgrounds behind
+   * them. Give the two halves separate owners and a detached palette composes
+   * text and background from different designs — the operator's dark
+   * background under the light concept's dark text, which is not a degraded
+   * result but an unreadable one. A per-brightness rule for surfaces alone
+   * cannot avoid that, because the disagreement is between the two markers,
+   * not inside either. One marker, one contrast decision.
+   *
+   * Absent in legacy payloads and resolved as `concept`, which reproduces the
+   * previous behaviour for installs that never touched the control.
+   */
+  brandPaletteSource?: BrandPaletteSource;
   cardGradient: string;
   cardPattern: string | null;
   /**
@@ -429,7 +481,13 @@ export const DEFAULT_BRANDING: Branding = {
   primaryFg: "#0a0a0a",
   bgPrimary: "#0a0a0a",
   bgSecondary: "#171717",
+  brandPaletteSource: "concept",
   cardGradient: "linear-gradient(135deg, #064e3b 0%, #22c55e 100%)",
+  // Stated rather than left to `resolveCardGradientSource`, which resolves the
+  // same value from `undefined`. The backend default and the panel's form draft
+  // both spell it out, and `brandPaletteSource` above already does here; the
+  // one field that did not made this list read as if it had a different rule.
+  cardGradientSource: "concept",
   cardPattern: null,
   subscriptionCardText: DEFAULT_SUBSCRIPTION_CARD_TEXT,
   subscriptionCardGlass: DEFAULT_SUBSCRIPTION_CARD_GLASS,
@@ -490,6 +548,7 @@ export function resolveBrandingThemeMode(
   const variant = branding.themeVariants?.[mode];
   if (!variant) return branding;
   const gradientSource = resolveCardGradientSource(branding.cardGradientSource);
+  const paletteSource = resolveBrandPaletteSource(branding.brandPaletteSource);
 
   // Copy the visual subset explicitly. In particular, never spread an
   // untrusted nested payload over the root: a brightness representation must
@@ -502,10 +561,65 @@ export function resolveBrandingThemeMode(
   // between the light and dark renderings of the same concept.
   return {
     ...branding,
-    primary: variant.primary,
-    primaryFg: variant.primaryFg,
-    bgPrimary: variant.bgPrimary,
-    bgSecondary: variant.bgSecondary,
+    // The variant wins ONLY while the palette belongs to a concept.
+    //
+    // These four lines used to run unconditionally, which is why a colour the
+    // operator typed in the panel never reached the cabinet: it landed on the
+    // root and was overwritten here on every read, forever. Fourth appearance
+    // of the identical defect — see the font and the corner radii below, and
+    // the card gradient just after this.
+    //
+    // It cannot be fixed the way the font was. "Root always wins" is right for
+    // a font because a font has no per-brightness meaning at all; a palette
+    // has one exactly when a concept supplies it, and a concept generating a
+    // distinct palette per brightness is the entire point of a concept. So the
+    // question is WHOSE the palette is, not which side to pick — the same
+    // answer the gradient already needed.
+    //
+    // The four colours move together on purpose; `Branding.brandPaletteSource`
+    // records why splitting them composes a palette nobody designed.
+    //
+    // `surfaceTheme` moves with them, and that boundary is load-bearing rather
+    // than tidy. Its previous line — `surfaceTheme: variant.surfaceTheme`,
+    // unconditional — argued that text and glass colours are the one thing that
+    // genuinely differs between a light and a dark rendering. True, and still
+    // true while the palette belongs to a concept. But it stopped being the
+    // whole story the moment the palette above could detach, because
+    // `bgPrimary`/`bgSecondary` and `surfaceTheme.foreground` are the two halves
+    // of ONE contrast decision:
+    //
+    //   operator pins a dark background  → root wins for bgSecondary
+    //   user selects the light rendering → variant wins for foreground
+    //   result: the light variant's DARK text on the operator's DARK background
+    //
+    // Unreadable, and reachable with no exotic input — it is what a detached
+    // palette produced for every install between that fix and this one. A
+    // narrower rule for surfaces (opacities only, or "detach only while the
+    // brightness policy is fixed") would leave that state exactly as it is: the
+    // hazard is not that surfaces detach too freely, it is that ownership was
+    // split down the middle of a contrast pair. So there is one marker for the
+    // whole colour system, and the pair can never disagree about whose it is.
+    //
+    // The cost is stated plainly: an operator who hand-picks colours gets those
+    // colours in BOTH renderings, and the brightness toggle stops repainting
+    // the palette. That is what "these are my colours" means, and it is the
+    // safe direction — a contrast the operator composed themselves, rather than
+    // one assembled from two designs that never met.
+    ...(paletteSource === "custom"
+      ? {
+          primary: branding.primary,
+          primaryFg: branding.primaryFg,
+          bgPrimary: branding.bgPrimary,
+          bgSecondary: branding.bgSecondary,
+          surfaceTheme: branding.surfaceTheme,
+        }
+      : {
+          primary: variant.primary,
+          primaryFg: variant.primaryFg,
+          bgPrimary: variant.bgPrimary,
+          bgSecondary: variant.bgSecondary,
+          surfaceTheme: variant.surfaceTheme,
+        }),
     // The variant wins ONLY while the gradient belongs to a concept.
     //
     // A concept generates a deliberately different palette for each
@@ -524,19 +638,31 @@ export function resolveBrandingThemeMode(
     // a stale/corrupt variant copy so a theme switch cannot change it.
     subscriptionCardText: resolveSubscriptionCardText(branding.subscriptionCardText),
     subscriptionCardGlass: resolveSubscriptionCardGlass(branding.subscriptionCardGlass),
+    // These two are per-brightness with no marker of their own, and that is not
+    // an oversight in the shape of the four cases above. The panel has no
+    // control for `bgEffect` at all — only a preset writes it — so there is no
+    // operator value here for a variant to overwrite. `appBackground` does have
+    // one, and its ownership is resolved by a MIRROR instead of a marker: a
+    // direct root edit is copied into both snapshots, by the panel as the
+    // operator makes it and by the admin API again on save
+    // (`mergeBrandingSettings`, `hasDirectVisualPatch`). So what arrives here is
+    // already the operator's own background whenever they set one, and the
+    // concept's per-brightness backgrounds still apply while they have not.
     bgEffect: variant.bgEffect,
     appBackground: variant.appBackground,
     // Typeface and geometry are NOT brightness tokens, and taking them from the
     // variant is why the operator's font never reached the cabinet.
     //
     // The variants are a snapshot of the concept preset, written once when the
-    // preset is applied. Only three global controls are mirrored back into them
-    // afterwards by the panel (card gradient, card pattern, card text) — the
-    // font and the corner radii are not, because there is nothing per-mode
-    // about them: the panel offers ONE font dropdown and ONE set of radius
-    // sliders, not one per brightness. So every later edit landed on the root
-    // and was then overwritten here by the preset's original value, on every
-    // read, forever.
+    // preset is applied, and every global the operator can still edit afterwards
+    // is mirrored back into them by the panel — the card gradient and pattern,
+    // the card text, the brand palette, the surfaces, the app background. The
+    // font and the corner radii are the exception, because there is nothing
+    // per-mode about them: the panel offers ONE font dropdown and ONE set of
+    // radius sliders, not one per brightness, and the opposite-brightness
+    // builder copies all three across unchanged. So every later edit landed on
+    // the root and was then overwritten here by the preset's original value, on
+    // every read, forever.
     //
     // Root wins for exactly the same reason `subscriptionCardText` above does:
     // it is one global operator decision, and a brightness switch must not be
@@ -544,12 +670,12 @@ export function resolveBrandingThemeMode(
     // panel a fourth mirror also repairs installs whose variants already hold
     // the stale copy — there is nothing to migrate.
     //
-    // `surfaceTheme` stays on the variant: text and glass colours are the one
-    // thing here that genuinely differs between a light and a dark rendering.
+    // `surfaceTheme` used to be resolved here, unconditionally from the variant.
+    // It now travels with the brand palette above, because the two are one
+    // contrast decision — see the note there for what splitting them produced.
     borderRadius: branding.borderRadius,
     cornerRadii: branding.cornerRadii,
     fontFamily: branding.fontFamily,
-    surfaceTheme: variant.surfaceTheme,
   };
 }
 

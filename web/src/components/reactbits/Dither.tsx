@@ -428,10 +428,14 @@ export default function Dither({
       resize={{ offsetSize: true }}
       // `preserveDrawingBuffer: false`: the `true` it replaced forced the
       // browser to copy the full drawing buffer every frame instead of
-      // flipping it, and NOTHING reads the buffer back — WebGL effects carry
-      // paint-evidence "none" (the layer's pixel sampler returns before
-      // touching a shader canvas), and no toDataURL/readPixels/captureStream
-      // caller for this canvas exists in either repository.
+      // flipping it, and NOTHING reads the buffer back — no
+      // toDataURL/readPixels/captureStream caller for this canvas exists in
+      // either repository. This used to be argued through the card layer's
+      // paint-evidence sampler, which returned before touching a shader canvas
+      // anyway; that sampler has since been deleted from reiwa outright, so
+      // the one reader the argument had to reason around no longer exists at
+      // all. The conclusion is unchanged and now has one fewer thing holding
+      // it up.
       // `antialias: false`: MSAA smooths geometry edges, and this scene is a
       // single full-screen quad with none; the RetroEffect pass then
       // re-quantises every pixel to a Bayer-dithered palette whose whole point

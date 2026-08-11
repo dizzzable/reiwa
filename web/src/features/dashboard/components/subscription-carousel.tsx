@@ -133,7 +133,7 @@ function monotonicNow(): number {
  * WHAT WENT WRONG: only the selected slide was ever allowed a live renderer, so
  * every swipe tore one down and built the next from nothing. That was survivable
  * while a fresh renderer simply started drawing; once the release added a 420 ms
- * reveal crossfade it meant the incoming card showed the flat operator gradient
+ * reveal fade it meant the incoming card showed the flat operator gradient
  * and watermark for the whole of it, on every swipe, in both directions.
  *
  * One either side, not more. A swipe can only reach a neighbour, so a second

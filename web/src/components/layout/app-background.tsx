@@ -150,7 +150,18 @@ export function AppBackground() {
           return — a visible flash of the flat base gradient below, several
           times a session. There is no context contention to relieve (one
           layer, one context) and nothing to see if its clock lurches, since
-          it sits behind the entire UI. */}
+          it sits behind the entire UI.
+
+          WHAT THAT COST, AND WHERE IT IS PAID. Staying mounted means this is
+          the one layer whose context can be lost while nobody is looking, and
+          the recovery grace window used to be a plain timer: a hidden tab
+          froze it, and the browser delivered it expired the moment the user
+          came back — reporting a permanent failure precisely when the context
+          was about to be restored, which left the cabinet background in the
+          CSS fallback for the rest of the session. The window now pauses while
+          the page is hidden (`observeCardEffectCanvases`), so keeping this
+          mounted no longer trades a flash for a dead background. Do not
+          "simplify" that timer back into a deadline. */}
       <CardEffectLayer
         effect={appBg.effect}
         props={appBg.props}

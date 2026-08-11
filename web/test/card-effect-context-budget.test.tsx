@@ -289,10 +289,10 @@ beforeEach(() => {
         };
       }
       if (kind === "2d") {
-        return {
-          drawImage: () => undefined,
-          getImageData: () => ({ data: new Uint8ClampedArray(0) }),
-        };
+        // Existence is the whole question the observer asks. The `drawImage` /
+        // `getImageData` pair that used to be here served the paint-evidence
+        // sampler, which was removed together with backdrop dimming.
+        return {};
       }
       return null;
     }) as unknown as typeof HTMLCanvasElement.prototype.getContext,

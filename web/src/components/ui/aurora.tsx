@@ -10,7 +10,7 @@
  */
 
 import { Renderer, Program, Mesh, Color, Triangle } from "ogl";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // GLSL ES 1.00 (no `#version 300 es`). This compiles on BOTH a WebGL1 and a
 // WebGL2 context. That matters on iPhone: iOS Safari runs a SHARED GPU process
@@ -128,6 +128,11 @@ export function Aurora({
   propsRef.current = { colorStops, amplitude, blend, speed };
 
   const ctnDom = useRef<HTMLDivElement>(null);
+  // Bumped by `webglcontextrestored` to re-run the effect below. OGL keeps every
+  // GL handle inside Renderer/Program/Geometry and caches driver state on the
+  // Renderer, none of which survive a context loss and none of which it can
+  // reset — so the only honest recovery is to build the whole thing again.
+  const [glGeneration, setGlGeneration] = useState(0);
 
   useEffect(() => {
     const ctn = ctnDom.current;
@@ -225,15 +230,22 @@ export function Aurora({
     // hard, low cap on iPhone) and also on backgrounding — without these
     // handlers the card would render once, lose its context, and never come
     // back until the component fully remounts.
+    // Without preventDefault the browser never fires `webglcontextrestored`,
+    // so a recoverable loss becomes permanent.
     const handleContextLost = (e: Event) => {
       e.preventDefault();
       contextLost = true;
       cancelAnimationFrame(animateId);
     };
+    // Restarting the loop alone would draw with handles the loss detached: the
+    // program, the mesh and the renderer's cached driver state all belong to
+    // the context that went away, so the frames would land nowhere and the card
+    // would stay blank until a reload. Re-running the effect tears this
+    // renderer down (freeing its slot) and builds a fresh one, so the count of
+    // live contexts stays flat — which is what keeps this inside the iOS
+    // per-page cap rather than walking up it one restore at a time.
     const handleContextRestored = () => {
-      contextLost = false;
-      cancelAnimationFrame(animateId);
-      animateId = requestAnimationFrame(update);
+      setGlGeneration((generation) => generation + 1);
     };
     canvas.addEventListener("webglcontextlost", handleContextLost);
     canvas.addEventListener("webglcontextrestored", handleContextRestored);
@@ -244,6 +256,8 @@ export function Aurora({
     return () => {
       cancelAnimationFrame(animateId);
       ro.disconnect();
+      // Listeners come off before loseContext, or handleContextRestored would
+      // fire during teardown and rebuild everything we are about to free.
       canvas.removeEventListener("webglcontextlost", handleContextLost);
       canvas.removeEventListener("webglcontextrestored", handleContextRestored);
       if (canvas.parentNode === ctn) {
@@ -251,12 +265,13 @@ export function Aurora({
       }
       gl.getExtension("WEBGL_lose_context")?.loseContext();
     };
-    // Mount ONCE: every animated prop (amplitude/blend/speed/colorStops) is
-    // read live from `propsRef` inside the frame loop, so a prop change must
-    // NOT tear down and recreate the WebGL context — recreating contexts is
-    // exactly the iOS per-page context-cap churn this component avoids.
+    // Every animated prop (amplitude/blend/speed/colorStops) is read live from
+    // `propsRef` inside the frame loop, so a prop change must NOT tear down and
+    // recreate the WebGL context — recreating contexts is exactly the iOS
+    // per-page context-cap churn this component avoids. A REPLACED context is
+    // the one thing that has to, and `glGeneration` is the only way in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [glGeneration]);
 
   return (
     <div

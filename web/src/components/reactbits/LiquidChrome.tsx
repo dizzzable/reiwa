@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Renderer, Program, Mesh, Triangle } from 'ogl';
 
 import { resolveBufferRatio } from './render-scale';
@@ -22,6 +22,11 @@ export const LiquidChrome: React.FC<LiquidChromeProps> = ({
   ...props
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Bumped by `webglcontextrestored` to re-run the effect below. OGL keeps every
+  // GL handle inside Renderer/Program/Geometry and caches driver state on the
+  // Renderer, none of which survive a context loss and none of which it can
+  // reset — so the only honest recovery is to build the whole thing again.
+  const [glGeneration, setGlGeneration] = useState(0);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -157,7 +162,9 @@ export const LiquidChrome: React.FC<LiquidChromeProps> = ({
     }
 
     let animationId: number;
+    let contextLost = false;
     function update(t: number) {
+      if (contextLost) return;
       animationId = requestAnimationFrame(update);
       program.uniforms.uTime.value = t * 0.001 * speed;
       renderer.render({ scene: mesh });
@@ -166,6 +173,23 @@ export const LiquidChrome: React.FC<LiquidChromeProps> = ({
 
     container.appendChild(gl.canvas);
 
+    // Without preventDefault the browser never fires `webglcontextrestored`,
+    // so a recoverable loss becomes permanent.
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      cancelAnimationFrame(animationId);
+    };
+    // Restarting the loop alone would draw with handles the loss detached.
+    // Re-running the effect tears this renderer down (freeing its slot) and
+    // builds a fresh one, so the count of live contexts stays flat.
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    const canvas = gl.canvas as HTMLCanvasElement;
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
     return () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', resize);
@@ -173,12 +197,16 @@ export const LiquidChrome: React.FC<LiquidChromeProps> = ({
         container.removeEventListener('mousemove', handleMouseMove);
         container.removeEventListener('touchmove', handleTouchMove);
       }
+      // Listeners come off before loseContext, or handleContextRestored would
+      // fire during teardown and rebuild everything we are about to free.
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       if (gl.canvas.parentElement) {
         gl.canvas.parentElement.removeChild(gl.canvas);
       }
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
-  }, [baseColor, speed, amplitude, frequencyX, frequencyY, interactive]);
+  }, [glGeneration, baseColor, speed, amplitude, frequencyX, frequencyY, interactive]);
 
   return <div ref={containerRef} className="w-full h-full" {...props} />;
 };

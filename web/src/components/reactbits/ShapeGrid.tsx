@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 import { resolveRenderScale } from './render-scale';
 
@@ -57,6 +57,25 @@ const ShapeGrid: React.FC<ShapeGridProps> = ({
   const cellOpacities = useRef<Map<string, number>>(new Map());
   /** The CSS box, in CSS pixels — what the shape lattice is laid out in. */
   const cssSize = useRef({ width: 0, height: 0 });
+  /**
+   * Bumped by `contextrestored` to re-run the effect below, exactly as the GL
+   * effects in this directory bump theirs on `webglcontextrestored`.
+   *
+   * THE EVENT NAMES DIFFER BECAUSE THE CONTEXT DOES. This canvas is 2D, and
+   * `webglcontextlost` is dispatched only at a canvas holding a WebGL context —
+   * a listener for it here could never fire once, which is worse than no
+   * handler at all because it reads like one. The 2D contract is HTML's
+   * `contextlost`/`contextrestored`, and its `preventDefault()` means the
+   * OPPOSITE of WebGL's: on `webglcontextlost` it asks the user agent to
+   * restore, on 2D `contextlost` it sets "context restoration disabled" and
+   * makes the loss permanent. So this handler deliberately does NOT call it.
+   *
+   * The rebuild is needed for the same reason as over there: a lost 2D context
+   * is reset to its defaults, which drops the device-pixel transform
+   * `resizeCanvas` installed, so the lattice would come back drawn at the wrong
+   * scale into a cleared bitmap.
+   */
+  const [glGeneration, setGlGeneration] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -277,7 +296,10 @@ const ShapeGrid: React.FC<ShapeGridProps> = ({
       ctx.globalAlpha = 1;
     };
 
+    let contextLost = false;
+
     const updateAnimation = () => {
+      if (contextLost) return;
       const effectiveSpeed = Math.max(speed, 0.1);
       const wrapX = isHex ? hexHoriz * 2 : squareSize;
       const wrapY = isHex ? hexVert : isTri ? squareSize * 2 : squareSize;
@@ -446,6 +468,23 @@ const ShapeGrid: React.FC<ShapeGridProps> = ({
 
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseleave', handleMouseLeave);
+
+    // NO preventDefault here — see the note on `glGeneration`. On a 2D canvas
+    // cancelling this event is what makes the loss permanent.
+    const handleContextLost = () => {
+      contextLost = true;
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      requestRef.current = null;
+    };
+    // Restarting the loop alone would draw through a context that was reset to
+    // its defaults — no device-pixel transform, so the lattice comes back at
+    // the wrong scale. Re-running the effect re-measures and re-installs it.
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    canvas.addEventListener('contextlost', handleContextLost);
+    canvas.addEventListener('contextrestored', handleContextRestored);
+
     requestRef.current = requestAnimationFrame(updateAnimation);
 
     return () => {
@@ -455,8 +494,11 @@ const ShapeGrid: React.FC<ShapeGridProps> = ({
       requestRef.current = null;
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mouseleave', handleMouseLeave);
+      canvas.removeEventListener('contextlost', handleContextLost);
+      canvas.removeEventListener('contextrestored', handleContextRestored);
     };
   }, [
+    glGeneration,
     direction,
     speed,
     borderColor,

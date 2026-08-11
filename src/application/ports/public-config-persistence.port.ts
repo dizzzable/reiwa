@@ -85,75 +85,194 @@ const MAX_IMAGE_URL_LENGTH = 524_288;
 const MAX_CSS_IMAGE_LENGTH = 8_192;
 
 /**
+ * Why a snapshot was rejected: which key failed, and what was actually there.
+ *
+ * `found` is deliberately lossy — a type, a length, a bounded literal for
+ * short scalars. Enough to recognise a stale enum member or an out-of-range
+ * number at a glance, never enough to spill a logo data-URL, a gradient stack
+ * or the operator's whole payload into the log.
+ */
+export interface PublicConfigRejection {
+  /** Dotted path of the offending key, e.g. `branding.navItems`. */
+  readonly key: string;
+  /** Stable machine-readable cause, e.g. `not-an-allowed-value`. */
+  readonly reason: string;
+  /** Redacted description of the offending value. */
+  readonly found: string;
+}
+
+/**
  * Runtime structural validation shared by the route and durable adapter.
  *
  * This checks every structured field consumed by the SPA, while retaining
  * unknown fields for forward compatibility with rezeis-admin. The browser
  * snapshot reader reuses this guard so local and Redis persistence cannot
  * disagree about what is safe to render.
+ *
+ * All-or-nothing is deliberate: half-applied branding looks worse than the
+ * previous theme, so one bad key still discards the whole payload. What was
+ * NOT deliberate is doing it in silence. The rejection used to be a bare
+ * `false`; the caller threw, the cabinet went on serving the last stored
+ * snapshot for as long as the bad key survived, and nothing in the log ever
+ * named it. `describePublicConfigSnapshot` is the same decision with a reason
+ * attached, and this is its boolean face — it accepts exactly the same set of
+ * values, field for field.
  */
 export function isPublicConfigSnapshot(value: unknown): value is PublicConfigSnapshot {
-  if (!isRecord(value) || !isRecord(value["branding"])) return false;
+  return describePublicConfigSnapshot(value) === null;
+}
+
+/**
+ * The guard above, but naming the first failing key instead of returning
+ * `false`. Checks run in the original short-circuit order, so the blamed key
+ * is the first one a reader of the old `&&` chain would have reached.
+ *
+ * Keep this module free of I/O — the browser bundle imports it too. The
+ * reason is handed back to the caller; nothing is logged from here.
+ */
+export function describePublicConfigSnapshot(
+  value: unknown,
+): PublicConfigRejection | null {
+  if (!isRecord(value)) return reject("<root>", "not-an-object", value);
+  if (!isRecord(value["branding"])) {
+    return reject("branding", "not-an-object", value["branding"]);
+  }
 
   const locales = value["locales"];
+  if (!Array.isArray(locales)) return reject("locales", "not-an-array", locales);
+  if (locales.length === 0) return reject("locales", "empty", locales);
+  if (!locales.every(isNonEmptyString)) {
+    return reject("locales", "contains-a-blank-entry", locales);
+  }
+
   const defaultLocale = value["defaultLocale"];
-  if (
-    !Array.isArray(locales) ||
-    locales.length === 0 ||
-    !locales.every(isNonEmptyString) ||
-    !isNonEmptyString(defaultLocale) ||
-    !locales.includes(defaultLocale)
-  ) {
-    return false;
+  if (!isNonEmptyString(defaultLocale)) {
+    return reject("defaultLocale", "not-a-non-empty-string", defaultLocale);
+  }
+  if (!locales.includes(defaultLocale)) {
+    return reject("defaultLocale", "not-listed-in-locales", defaultLocale);
   }
 
   const branding = value["branding"];
-  return (
-    hasOptionalPresetId(branding, "themePresetId") &&
-    hasOptionalPresetVersion(branding, "themePresetVersion") &&
-    hasOptionalThemeModePolicy(branding, "themeModePolicy") &&
-    hasOptionalThemeDefaultMode(branding, "themeDefaultMode") &&
-    hasOptionalThemeVariants(branding, "themeVariants") &&
-    isNonEmptyString(branding["brandName"]) &&
-    hasOptionalStringOrNull(branding, "tagline") &&
-    isNullableImageUrl(branding["logoUrl"]) &&
-    hasOptionalImageUrlOrNull(branding, "pwaIconUrl") &&
-    isHex(branding["primary"]) &&
-    isHex(branding["primaryFg"]) &&
-    isHex(branding["bgPrimary"]) &&
-    isHex(branding["bgSecondary"]) &&
-    isSafeGradient(branding["cardGradient"]) &&
-    isNullableSafeGradient(branding["cardPattern"]) &&
-    hasOptionalSubscriptionCardText(branding, "subscriptionCardText") &&
-    hasConsistentVariantSubscriptionCardText(branding) &&
-    hasOptionalSubscriptionCardGlass(branding, "subscriptionCardGlass") &&
-    isString(branding["cardLogo"]) &&
-    isNullableImageUrl(branding["cardLogoUrl"]) &&
-    isEffectId(branding["cardEffect"]) &&
-    isRecord(branding["cardEffectProps"]) &&
-    isNumberInRange(branding["cardEffectOpacity"], 0.05, 1) &&
-    Array.isArray(branding["cardEffectsByIndex"]) &&
-    branding["cardEffectsByIndex"].length <= 20 &&
-    branding["cardEffectsByIndex"].every(isCardEffectSlot) &&
-    isAllowedString(branding["bgEffect"], BG_EFFECTS) &&
-    hasOptionalAppBackground(branding, "appBackground") &&
-    isAllowedString(branding["iconColorMode"], ICON_COLOR_MODES) &&
-    isHexRecord(branding["iconColors"]) &&
-    isAllowedString(branding["borderRadius"], BORDER_RADII) &&
-    hasOptionalCornerRadii(branding, "cornerRadii") &&
-    isString(branding["fontFamily"]) &&
-    hasOptionalSurfaceTheme(branding, "surfaceTheme") &&
-    isString(value["defaultCurrency"]) &&
-    Array.isArray(value["customIcons"]) &&
-    value["customIcons"].every(isCustomIcon) &&
-    hasOptionalNullableString(value, "botUsername") &&
-    hasOptionalNullableString(value, "supportUsername") &&
-    hasOptionalPlatformBranding(value, "platformBranding") &&
-    hasOptionalBoolean(value, "emailEnabled") &&
-    hasOptionalPlanCardStyles(branding, "planCardStyles") &&
-    hasOptionalNavItems(branding, "navItems") &&
-    hasOptionalNumberInRange(branding, "navGap", 0, 24)
-  );
+  const inBranding = (
+    key: string,
+    reason: string,
+    ok: boolean,
+  ): PublicConfigRejection | null =>
+    ok ? null : reject(`branding.${key}`, reason, branding[key]);
+  const inRoot = (
+    key: string,
+    reason: string,
+    ok: boolean,
+  ): PublicConfigRejection | null => (ok ? null : reject(key, reason, value[key]));
+
+  return firstRejection([
+    () => inBranding("themePresetId", "not-a-preset-id", hasOptionalPresetId(branding, "themePresetId")),
+    () => inBranding("themePresetVersion", "not-a-preset-version", hasOptionalPresetVersion(branding, "themePresetVersion")),
+    () => inBranding("themeModePolicy", "not-an-allowed-value", hasOptionalThemeModePolicy(branding, "themeModePolicy")),
+    () => inBranding("themeDefaultMode", "not-an-allowed-value", hasOptionalThemeDefaultMode(branding, "themeDefaultMode")),
+    () => inBranding("themeVariants", "not-a-valid-theme-variant-pair", hasOptionalThemeVariants(branding, "themeVariants")),
+    () => inBranding("brandName", "not-a-non-empty-string", isNonEmptyString(branding["brandName"])),
+    () => inBranding("tagline", "not-a-string-or-null", hasOptionalStringOrNull(branding, "tagline")),
+    () => inBranding("logoUrl", "not-an-allowed-image-url", isNullableImageUrl(branding["logoUrl"])),
+    () => inBranding("pwaIconUrl", "not-an-allowed-image-url", hasOptionalImageUrlOrNull(branding, "pwaIconUrl")),
+    () => inBranding("primary", "not-a-hex-colour", isHex(branding["primary"])),
+    () => inBranding("primaryFg", "not-a-hex-colour", isHex(branding["primaryFg"])),
+    () => inBranding("bgPrimary", "not-a-hex-colour", isHex(branding["bgPrimary"])),
+    () => inBranding("bgSecondary", "not-a-hex-colour", isHex(branding["bgSecondary"])),
+    () => inBranding("brandPaletteSource", "not-an-allowed-value", hasOptionalOwnershipSource(branding, "brandPaletteSource")),
+    () => inBranding("cardGradient", "not-a-safe-css-gradient", isSafeGradient(branding["cardGradient"])),
+    () => inBranding("cardGradientSource", "not-an-allowed-value", hasOptionalOwnershipSource(branding, "cardGradientSource")),
+    () => inBranding("cardPattern", "not-a-safe-css-gradient-or-null", isNullableSafeGradient(branding["cardPattern"])),
+    () => inBranding("subscriptionCardText", "not-a-valid-card-text-policy", hasOptionalSubscriptionCardText(branding, "subscriptionCardText")),
+    () =>
+      hasConsistentVariantSubscriptionCardText(branding)
+        ? null
+        : reject(
+            "branding.themeVariants.subscriptionCardText",
+            "does-not-match-the-root-card-text-policy",
+            branding["themeVariants"],
+          ),
+    () => inBranding("subscriptionCardGlass", "not-a-valid-glass-layer", hasOptionalSubscriptionCardGlass(branding, "subscriptionCardGlass")),
+    () => inBranding("cardLogo", "not-a-string", isString(branding["cardLogo"])),
+    () => inBranding("cardLogoUrl", "not-an-allowed-image-url", isNullableImageUrl(branding["cardLogoUrl"])),
+    () => inBranding("cardEffect", "not-an-effect-id", isEffectId(branding["cardEffect"])),
+    () => inBranding("cardEffectProps", "not-an-object", isRecord(branding["cardEffectProps"])),
+    () => inBranding("cardEffectOpacity", "out-of-range[0.05..1]", isNumberInRange(branding["cardEffectOpacity"], 0.05, 1)),
+    () => describeCardEffectSlots(branding),
+    () => inBranding("bgEffect", "not-an-allowed-value", isAllowedString(branding["bgEffect"], BG_EFFECTS)),
+    () => inBranding("appBackground", "not-a-valid-app-background", hasOptionalAppBackground(branding, "appBackground")),
+    () => inBranding("iconColorMode", "not-an-allowed-value", isAllowedString(branding["iconColorMode"], ICON_COLOR_MODES)),
+    () => inBranding("iconColors", "not-a-hex-colour-map", isHexRecord(branding["iconColors"])),
+    () => inBranding("borderRadius", "not-an-allowed-value", isAllowedString(branding["borderRadius"], BORDER_RADII)),
+    () => inBranding("cornerRadii", "not-a-valid-corner-radius-set", hasOptionalCornerRadii(branding, "cornerRadii")),
+    () => inBranding("fontFamily", "not-a-string", isString(branding["fontFamily"])),
+    () => inBranding("surfaceTheme", "not-a-valid-surface-theme", hasOptionalSurfaceTheme(branding, "surfaceTheme")),
+    () => inRoot("defaultCurrency", "not-a-string", isString(value["defaultCurrency"])),
+    () => describeCustomIcons(value),
+    () => inRoot("botUsername", "not-a-string-or-null", hasOptionalNullableString(value, "botUsername")),
+    () => inRoot("supportUsername", "not-a-string-or-null", hasOptionalNullableString(value, "supportUsername")),
+    () => inRoot("platformBranding", "not-a-valid-platform-branding", hasOptionalPlatformBranding(value, "platformBranding")),
+    () => inRoot("emailEnabled", "not-a-boolean", hasOptionalBoolean(value, "emailEnabled")),
+    () => inBranding("planCardStyles", "not-a-valid-plan-card-style-map", hasOptionalPlanCardStyles(branding, "planCardStyles")),
+    () => describeNavItems(branding),
+    () => inBranding("navGap", "out-of-range[0..24]", hasOptionalNumberInRange(branding, "navGap", 0, 24)),
+  ]);
+}
+
+function reject(
+  key: string,
+  reason: string,
+  value: unknown,
+  found?: string,
+): PublicConfigRejection {
+  return { key, reason, found: found ?? describeValue(value) };
+}
+
+function firstRejection(
+  checks: readonly (() => PublicConfigRejection | null)[],
+): PublicConfigRejection | null {
+  for (const run of checks) {
+    const rejection = run();
+    if (rejection !== null) return rejection;
+  }
+  return null;
+}
+
+/** Longest string reproduced verbatim in a rejection. */
+const MAX_QUOTED_VALUE_LENGTH = 32;
+
+/**
+ * A bounded, non-identifying description of a value.
+ *
+ * Short scalars travel verbatim because that is what makes a rejection
+ * actionable — `"rounded-md"` or `0` names the mistake outright. Anything
+ * longer or structured collapses to a shape, so a logo data-URL, a gradient
+ * stack or a whole branding record can never reach the log through here.
+ */
+function describeValue(value: unknown): string {
+  if (value === undefined) return "absent";
+  if (value === null) return "null";
+  if (Array.isArray(value)) return `array(length=${value.length})`;
+  switch (typeof value) {
+    case "string":
+      return value.length <= MAX_QUOTED_VALUE_LENGTH
+        ? `string "${redactForLog(value)}"`
+        : `string(length=${value.length})`;
+    case "number":
+      return `number ${String(value)}`;
+    case "boolean":
+      return `boolean ${String(value)}`;
+    case "object":
+      return `object(keys=${Object.keys(value as object).length})`;
+    default:
+      return typeof value;
+  }
+}
+
+/** Neutralise control characters and quotes so a value cannot forge a log line. */
+function redactForLog(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f"\\]/g, ".");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -191,6 +310,25 @@ function hasOptionalRecord(record: Record<string, unknown>, key: string): boolea
 function hasOptionalBoolean(record: Record<string, unknown>, key: string): boolean {
   const value = record[key];
   return value === undefined || typeof value === "boolean";
+}
+
+/**
+ * Shared shape of the `concept | custom` discriminators that say who owns a
+ * visual — the brand palette and the card gradient today.
+ *
+ * These are the fields that decide whether the root value or the concept's
+ * per-brightness snapshot is drawn, so a garbled one silently repaints the
+ * whole cabinet rather than breaking loudly. Snapshots written before either
+ * control existed omit the key entirely and keep resolving as `concept`,
+ * exactly as they did before; anything present but outside the pair is a
+ * corrupt snapshot and must not be served.
+ */
+function hasOptionalOwnershipSource(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  const value = record[key];
+  return value === undefined || value === "concept" || value === "custom";
 }
 
 function hasOptionalSubscriptionCardText(
@@ -353,17 +491,82 @@ function hasOptionalPlanCardStyles(record: Record<string, unknown>, key: string)
   );
 }
 
-function hasOptionalNavItems(record: Record<string, unknown>, key: string): boolean {
-  const value = record[key];
-  if (value === undefined) return true;
-  if (!Array.isArray(value) || value.length > NAV_DESTINATIONS.size || !value.every(isNavItem)) {
-    return false;
+function describeNavItems(branding: Record<string, unknown>): PublicConfigRejection | null {
+  const value = branding["navItems"];
+  if (value === undefined) return null;
+  if (!Array.isArray(value)) return reject("branding.navItems", "not-an-array", value);
+  if (value.length > NAV_DESTINATIONS.size) {
+    return reject(
+      "branding.navItems",
+      `too-many-entries[max=${NAV_DESTINATIONS.size}]`,
+      value,
+    );
+  }
+  const invalid = value.findIndex((item) => !isNavItem(item));
+  if (invalid !== -1) {
+    return reject(`branding.navItems[${invalid}]`, "not-a-valid-nav-item", value[invalid]);
   }
   const ids = value.map((item) => (item as Record<string, unknown>)["id"]);
-  const visibleCount = value.filter(
-    (item) => (item as Record<string, unknown>)["visible"] === true,
-  ).length;
-  return new Set(ids).size === ids.length && visibleCount <= 5;
+  const unique = new Set(ids).size;
+  if (unique !== ids.length) {
+    return reject(
+      "branding.navItems",
+      "duplicate-destination-id",
+      value,
+      `array(length=${ids.length}, unique=${unique})`,
+    );
+  }
+  // NO VISIBLE-COUNT LIMIT HERE, DELIBERATELY. There used to be one, and it
+  // rejected payloads the panel is entitled to send.
+  //
+  // rezeis-admin's `readNavItems` caps non-essential destinations at five, but
+  // the two essentials (`subscriptions`, `settings`) are FORCED visible and
+  // EXEMPT from the cap while still counting toward it. Order the essentials
+  // last and the cap hides nothing: five non-essentials plus two essentials
+  // leaves SEVEN visible. (Its own suite asserts `<= 6`, which is the number
+  // you get for one particular ordering, not the bound.) An operator who merely
+  // dragged `settings` down the list therefore produced a snapshot this guard
+  // threw away — and throwing it away freezes the cabinet's entire appearance
+  // on the previous snapshot, indefinitely.
+  //
+  // The deeper mistake was the category. How many items crowd a bottom nav bar
+  // is a LAYOUT question, and the answer is "it looks tight". Structural
+  // validity is what this guard decides, and its verdict costs the operator
+  // every colour, gradient and effect they have ever configured. A rule whose
+  // worst case is a crowded bar must never be enforced with that penalty.
+  // What genuinely makes `navItems` unusable is checked above and still is:
+  // wrong shape, unknown destination, duplicate id, more entries than
+  // destinations exist.
+  return null;
+}
+
+function describeCardEffectSlots(
+  branding: Record<string, unknown>,
+): PublicConfigRejection | null {
+  const slots = branding["cardEffectsByIndex"];
+  if (!Array.isArray(slots)) {
+    return reject("branding.cardEffectsByIndex", "not-an-array", slots);
+  }
+  if (slots.length > 20) {
+    return reject("branding.cardEffectsByIndex", "too-many-entries[max=20]", slots);
+  }
+  const index = slots.findIndex((slot) => !isCardEffectSlot(slot));
+  return index === -1
+    ? null
+    : reject(
+        `branding.cardEffectsByIndex[${index}]`,
+        "not-a-valid-card-effect-slot",
+        slots[index],
+      );
+}
+
+function describeCustomIcons(value: Record<string, unknown>): PublicConfigRejection | null {
+  const icons = value["customIcons"];
+  if (!Array.isArray(icons)) return reject("customIcons", "not-an-array", icons);
+  const index = icons.findIndex((icon) => !isCustomIcon(icon));
+  return index === -1
+    ? null
+    : reject(`customIcons[${index}]`, "not-a-valid-custom-icon", icons[index]);
 }
 
 function isCardEffectSlot(value: unknown): boolean {

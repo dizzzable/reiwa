@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Renderer, Program, Triangle, Mesh } from 'ogl';
 
 import { resolveBufferRatio } from './render-scale';
@@ -37,9 +37,25 @@ const RippleGrid: React.FC<Props> = ({
   const targetMouseRef = useRef({ x: 0.5, y: 0.5 });
   const mouseInfluenceRef = useRef(0);
   const uniformsRef = useRef<any>(null);
+  // Bumped by `webglcontextrestored` to re-run the build effect below. OGL keeps
+  // every GL handle inside Renderer/Program/Geometry and caches driver state on
+  // the Renderer, none of which survive a context loss and none of which it can
+  // reset — so the only honest recovery is to build the whole thing again. The
+  // rebuild reads the props it is rendered with, and repoints `uniformsRef` at
+  // the new program, so the operator's settings survive the round trip and the
+  // uniform-push effect underneath keeps writing to something live.
+  const [glGeneration, setGlGeneration] = useState(0);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    // Captured here, not read from the ref in cleanup. React detaches refs
+    // before a passive cleanup runs on unmount, so `containerRef.current` is
+    // already `null` by then and `?.removeChild(...)` silently does nothing —
+    // leaving the dead canvas in the DOM. A second mount on the same element
+    // then finds THAT canvas, backed by a context we just destroyed, and the
+    // effect never appears again. Every other repaired component in this
+    // directory captures the container for exactly this reason.
+    const ctn = containerRef.current;
 
     const hexToRgb = (hex: string): [number, number, number] => {
       const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -63,7 +79,7 @@ const RippleGrid: React.FC<Props> = ({
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.canvas.style.width = '100%';
     gl.canvas.style.height = '100%';
-    containerRef.current.appendChild(gl.canvas);
+    ctn.appendChild(gl.canvas);
 
     const vert = `
 attribute vec2 position;
@@ -192,7 +208,7 @@ void main() {
     const mesh = new Mesh(gl, { geometry, program });
 
     const resize = () => {
-      const { clientWidth: w, clientHeight: h } = containerRef.current!;
+      const { clientWidth: w, clientHeight: h } = ctn;
       // Cap the DRAWING BUFFER, never the CSS box. ogl's `setSize` writes
       // `canvas.style` from the CSS numbers below and multiplies only
       // `canvas.width/height` by `dpr`, so this lowers sampling density and
@@ -213,8 +229,8 @@ void main() {
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!mouseInteraction || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
+      if (!mouseInteraction) return;
+      const rect = ctn.getBoundingClientRect();
       const x = (e.clientX - rect.left) / rect.width;
       const y = 1.0 - (e.clientY - rect.top) / rect.height;
       targetMouseRef.current = { x, y };
@@ -232,9 +248,9 @@ void main() {
 
     window.addEventListener('resize', resize);
     if (mouseInteraction) {
-      containerRef.current.addEventListener('mousemove', handleMouseMove);
-      containerRef.current.addEventListener('mouseenter', handleMouseEnter);
-      containerRef.current.addEventListener('mouseleave', handleMouseLeave);
+      ctn.addEventListener('mousemove', handleMouseMove);
+      ctn.addEventListener('mouseenter', handleMouseEnter);
+      ctn.addEventListener('mouseleave', handleMouseLeave);
     }
     resize();
 
@@ -243,8 +259,10 @@ void main() {
     // and its canvas alive against GC, and kept calling render() on a context
     // the cleanup had already lost.
     let raf = 0;
+    let contextLost = false;
 
     const render = (t: number) => {
+      if (contextLost) return;
       uniforms.iTime.value = t * 0.001;
 
       const lerpFactor = 0.1;
@@ -261,20 +279,49 @@ void main() {
       raf = requestAnimationFrame(render);
     };
 
+    // Without preventDefault the browser never fires `webglcontextrestored`,
+    // so a recoverable loss becomes permanent.
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      cancelAnimationFrame(raf);
+    };
+    // Restarting the loop alone would draw with handles the loss detached.
+    // Re-running the effect tears this renderer down (freeing its slot) and
+    // builds a fresh one, so the count of live contexts stays flat.
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    const canvas = gl.canvas as HTMLCanvasElement;
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
     raf = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
-      if (mouseInteraction && containerRef.current) {
-        containerRef.current.removeEventListener('mousemove', handleMouseMove);
-        containerRef.current.removeEventListener('mouseenter', handleMouseEnter);
-        containerRef.current.removeEventListener('mouseleave', handleMouseLeave);
+      if (mouseInteraction) {
+        // `ctn`, not `containerRef.current`: the ref is already `null` here on
+        // unmount, so this guard was false and these three listeners were never
+        // taken off — the same detach that left the dead canvas in the DOM,
+        // three lines further down.
+        ctn.removeEventListener('mousemove', handleMouseMove);
+        ctn.removeEventListener('mouseenter', handleMouseEnter);
+        ctn.removeEventListener('mouseleave', handleMouseLeave);
       }
+      // Listeners come off before loseContext, or handleContextRestored would
+      // fire during teardown and rebuild everything we are about to free.
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
+      // Detach before destroying, the order every other component here uses:
+      // the canvas must be out of the DOM whether or not the extension is
+      // available, and a lost context on a still-attached canvas is what a
+      // remount finds.
+      if (gl.canvas.parentNode === ctn) ctn.removeChild(gl.canvas);
       renderer.gl.getExtension('WEBGL_lose_context')?.loseContext();
-      containerRef.current?.removeChild(gl.canvas);
     };
-  }, []);
+  }, [glGeneration]);
 
   useEffect(() => {
     if (!uniformsRef.current) return;

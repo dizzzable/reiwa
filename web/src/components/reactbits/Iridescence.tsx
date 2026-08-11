@@ -1,7 +1,7 @@
 import { Renderer, Program, Mesh, Color, Triangle } from 'ogl';
 
 import { resolveBufferRatio } from './render-scale';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const vertexShader = `
 attribute vec2 uv;
@@ -62,6 +62,11 @@ export default function Iridescence({
 }: IridescenceProps) {
   const ctnDom = useRef<HTMLDivElement>(null);
   const mousePos = useRef({ x: 0.5, y: 0.5 });
+  // Bumped by `webglcontextrestored` to re-run the effect below. OGL keeps every
+  // GL handle inside Renderer/Program/Geometry and caches driver state on the
+  // Renderer, none of which survive a context loss and none of which it can
+  // reset — so the only honest recovery is to build the whole thing again.
+  const [glGeneration, setGlGeneration] = useState(0);
 
   useEffect(() => {
     if (!ctnDom.current) return;
@@ -121,14 +126,33 @@ export default function Iridescence({
 
     const mesh = new Mesh(gl, { geometry, program });
     let animateId: number;
+    let contextLost = false;
 
     function update(t: number) {
+      if (contextLost) return;
       animateId = requestAnimationFrame(update);
       program.uniforms.uTime.value = t * 0.001;
       renderer.render({ scene: mesh });
     }
     animateId = requestAnimationFrame(update);
     ctn.appendChild(gl.canvas);
+
+    // Without preventDefault the browser never fires `webglcontextrestored`,
+    // so a recoverable loss becomes permanent.
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      cancelAnimationFrame(animateId);
+    };
+    // Restarting the loop alone would draw with handles the loss detached.
+    // Re-running the effect tears this renderer down (freeing its slot) and
+    // builds a fresh one, so the count of live contexts stays flat.
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    const canvas = gl.canvas as HTMLCanvasElement;
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
 
     function handleMouseMove(e: MouseEvent) {
       const rect = ctn.getBoundingClientRect();
@@ -148,10 +172,14 @@ export default function Iridescence({
       if (mouseReact) {
         ctn.removeEventListener('mousemove', handleMouseMove);
       }
+      // Listeners come off before loseContext, or handleContextRestored would
+      // fire during teardown and rebuild everything we are about to free.
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       ctn.removeChild(gl.canvas);
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
-  }, [color, speed, amplitude, mouseReact]);
+  }, [glGeneration, color, speed, amplitude, mouseReact]);
 
   return <div ref={ctnDom} className="w-full h-full" {...rest} />;
 }

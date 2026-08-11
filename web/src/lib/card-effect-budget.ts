@@ -238,7 +238,7 @@ export function useCardEffectSlot(
  * explicit `active`, so only the selected slide draws and every swipe used to
  * tear one renderer down and build the next from nothing: a new GL context, a
  * new shader compile, and — since the release that made this a bug — a fresh
- * 420 ms crossfade, during which the incoming card is the operator's flat
+ * 420 ms reveal fade, during which the incoming card is the operator's flat
  * gradient. Warming the immediate neighbours means a swipe finds the renderer
  * already running and already revealed, and it also stops the context CHURN,
  * which the note above calls the more expensive half of the problem on iOS: a

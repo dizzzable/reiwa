@@ -18,10 +18,14 @@ import { createHash } from "node:crypto";
 import type { Logger } from "pino";
 
 import {
-  isPublicConfigSnapshot,
+  describePublicConfigSnapshot,
   type PublicConfigPersistencePort,
   type PublicConfigSnapshot,
 } from "../../application/ports/public-config-persistence.port.js";
+import {
+  createPublicConfigRejectionNotifier,
+  type PublicConfigRejectionNotifier,
+} from "../../infrastructure/public-config/rejection-notifier.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 
@@ -54,38 +58,70 @@ function toCachedPayload(body: PublicConfigSnapshot): CachedPayload {
   return { body, etag: computeEtag(body), fetchedAt: Date.now() };
 }
 
+/**
+ * Silent fallback for callers that pass no notifier (tests, legacy callers).
+ * Module-scoped so suppression state survives across calls, exactly like the
+ * payload cache above.
+ */
+let fallbackNotifier: PublicConfigRejectionNotifier | null = null;
+
+function resolveNotifier(
+  notifier: PublicConfigRejectionNotifier | undefined,
+): PublicConfigRejectionNotifier {
+  if (notifier !== undefined) return notifier;
+  fallbackNotifier ??= createPublicConfigRejectionNotifier({});
+  return fallbackNotifier;
+}
+
 async function fetchFreshPayload(
   adminClient: AdminClient,
   persistence: PublicConfigPersistencePort | undefined,
+  notifier: PublicConfigRejectionNotifier,
 ): Promise<CachedPayload> {
   const body: unknown = await adminClient.branding.getReiwaPublicConfig();
-  if (!isPublicConfigSnapshot(body)) {
-    throw new Error("rezeis-admin returned an invalid public-config payload");
+  const rejection = describePublicConfigSnapshot(body);
+  if (rejection !== null) {
+    // Name the key before throwing. The throw is caught one frame up and
+    // turns into "serve the previous snapshot", which is the moment the
+    // cabinet appearance freezes — without this the freeze is unattributable.
+    notifier.rejected("upstream", rejection);
+    throw new Error(
+      `rezeis-admin returned an invalid public-config payload: ${rejection.key} (${rejection.reason}, found ${rejection.found})`,
+    );
   }
+  notifier.accepted("upstream");
+  // A null rejection is exactly what `isPublicConfigSnapshot` asserts; re-running
+  // the guard purely for the narrowing would walk the whole payload twice.
+  const snapshot = body as PublicConfigSnapshot;
 
   // This is the only save path: the body was received from a successful
   // upstream call and passed the runtime schema guard. A persistence failure
   // is intentionally non-fatal; the fresh response is still safe to serve.
   try {
-    await persistence?.save(body);
+    await persistence?.save(snapshot);
   } catch {
     // Port implementations are best-effort, but do not let a faulty test or
     // third-party adapter turn a valid upstream response into an outage.
   }
-  return toCachedPayload(body);
+  return toCachedPayload(snapshot);
 }
 
 async function loadPersistedPayload(
   persistence: PublicConfigPersistencePort | undefined,
+  notifier: PublicConfigRejectionNotifier,
 ): Promise<CachedPayload | null> {
   if (persistence === undefined) return null;
   try {
     const snapshot = await persistence.load();
+    if (snapshot === null) return null;
     // Revalidate at the route boundary even though the Redis adapter also
     // validates. This keeps injected adapters from poisoning a public route.
-    return snapshot !== null && isPublicConfigSnapshot(snapshot)
-      ? toCachedPayload(snapshot)
-      : null;
+    const rejection = describePublicConfigSnapshot(snapshot);
+    if (rejection !== null) {
+      notifier.rejected("redis-load", rejection);
+      return null;
+    }
+    return toCachedPayload(snapshot);
   } catch {
     return null;
   }
@@ -95,21 +131,22 @@ async function refreshPayload(
   adminClient: AdminClient | null,
   persistence: PublicConfigPersistencePort | undefined,
   onBgFailure: ((err: unknown) => void) | undefined,
+  notifier: PublicConfigRejectionNotifier,
 ): Promise<CachedPayload> {
   // A deployment without upstream credentials may serve only an operator
   // snapshot. Returning built-in defaults with HTTP 200 would make the
   // browser persist them over its last-known-good operator theme.
   if (adminClient === null) {
-    const persisted = await loadPersistedPayload(persistence);
+    const persisted = await loadPersistedPayload(persistence, notifier);
     if (persisted !== null) return persisted;
     throw new Error("operator public-config is unavailable");
   }
 
   try {
-    return await fetchFreshPayload(adminClient, persistence);
+    return await fetchFreshPayload(adminClient, persistence, notifier);
   } catch (err: unknown) {
     onBgFailure?.(err);
-    const persisted = await loadPersistedPayload(persistence);
+    const persisted = await loadPersistedPayload(persistence, notifier);
     if (persisted !== null) return persisted;
     throw err;
   }
@@ -125,7 +162,9 @@ export async function getPublicConfigPayload(
   adminClient: AdminClient | null,
   onBgFailure?: (err: unknown) => void,
   persistence?: PublicConfigPersistencePort,
+  rejectionNotifier?: PublicConfigRejectionNotifier,
 ): Promise<CachedPayload> {
+  const notifier = resolveNotifier(rejectionNotifier);
   const now = Date.now();
   if (cached !== null && now - cached.fetchedAt < CACHE_TTL_MS) {
     return cached;
@@ -134,7 +173,7 @@ export async function getPublicConfigPayload(
   if (cached !== null && now - cached.fetchedAt < STALE_WHILE_REVALIDATE_MS) {
     if (inflight === null) {
       const stale = cached;
-      inflight = refreshPayload(adminClient, persistence, onBgFailure)
+      inflight = refreshPayload(adminClient, persistence, onBgFailure, notifier)
         .then((fresh) => {
           cached = fresh;
           return fresh;
@@ -148,7 +187,7 @@ export async function getPublicConfigPayload(
   }
   // Cache fully expired — wait for fresh fetch (deduplicated across requests).
   if (inflight === null) {
-    inflight = refreshPayload(adminClient, persistence, onBgFailure)
+    inflight = refreshPayload(adminClient, persistence, onBgFailure, notifier)
       .then((fresh) => {
         cached = fresh;
         return fresh;
@@ -165,6 +204,13 @@ export function createBrandingRouter(deps: {
   logger?: Logger;
   /** Durable last-known-good snapshot for admin-outage / restart fallback. */
   publicConfigPersistence?: PublicConfigPersistencePort;
+  /**
+   * Operator-visible reporting for rejected snapshots. Supplied by the
+   * composition root so this router, the manifest route and the Redis adapter
+   * share one suppression state; a log-only notifier is built from `logger`
+   * when omitted.
+   */
+  publicConfigRejectionNotifier?: PublicConfigRejectionNotifier;
   /**
    * Operator support handle (`BOT_SUPPORT_USERNAME`), merged into the cabinet
    * public-config so the Support page can render a "contact support on
@@ -208,8 +254,17 @@ export function createBrandingRouter(deps: {
     }
   };
 
+  const rejectionNotifier =
+    deps.publicConfigRejectionNotifier ??
+    createPublicConfigRejectionNotifier({ logger: logger ?? undefined });
+
   const getPayload = (): Promise<CachedPayload> =>
-    getPublicConfigPayload(adminClient, logBgFailure, publicConfigPersistence);
+    getPublicConfigPayload(
+      adminClient,
+      logBgFailure,
+      publicConfigPersistence,
+      rejectionNotifier,
+    );
 
   // GET /api/v1/public-config — full payload (branding + locales)
   router.get("/public-config", async (req, res) => {
