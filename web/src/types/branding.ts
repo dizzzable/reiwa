@@ -611,7 +611,15 @@ export function resolveBrandingThemeMode(
           primaryFg: branding.primaryFg,
           bgPrimary: branding.bgPrimary,
           bgSecondary: branding.bgSecondary,
-          surfaceTheme: branding.surfaceTheme,
+          // `?? variant` is not defensive padding. `Branding.surfaceTheme` is
+          // OPTIONAL — a payload predating the field is meant to be handled
+          // gracefully — while the variant's copy is required. Taking the root
+          // unconditionally therefore made this resolver able to return
+          // `undefined` where the line it replaced always returned a value, for
+          // any install whose stored branding predates surfaces. Detaching says
+          // the operator's colours win; it cannot conjure colours they never
+          // set, and the concept's are the only ones that exist in that case.
+          surfaceTheme: branding.surfaceTheme ?? variant.surfaceTheme,
         }
       : {
           primary: variant.primary,

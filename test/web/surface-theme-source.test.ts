@@ -109,14 +109,19 @@ describe("surface theme ownership", () => {
 
       for (const mode of ["light", "dark"] as const) {
         const resolved = resolveBrandingThemeMode(branding, mode);
+        // Asserted, not asserted-away with `!`. `Branding.surfaceTheme` is
+        // optional for legacy payloads, so "there are surfaces at all" is a
+        // real question — and answering it wrong is how the resolver briefly
+        // came to return `undefined` on the detached branch.
+        expect(resolved.surfaceTheme, `${source}/${mode}: no surfaces resolved`).toBeDefined();
         const backgroundIsOperators = resolved.bgSecondary === OPERATOR_BG.bgSecondary;
         const foregroundIsOperators =
-          resolved.surfaceTheme.foreground === OPERATOR_SURFACE.foreground;
+          resolved.surfaceTheme?.foreground === OPERATOR_SURFACE.foreground;
 
         expect(
           foregroundIsOperators,
           `${source}/${mode}: background and foreground came from different owners — ` +
-            `bgSecondary=${resolved.bgSecondary}, foreground=${resolved.surfaceTheme.foreground}`,
+            `bgSecondary=${resolved.bgSecondary}, foreground=${resolved.surfaceTheme?.foreground}`,
         ).toBe(backgroundIsOperators);
       }
     }
@@ -151,8 +156,22 @@ describe("surface theme ownership", () => {
     // opacities" was a considered option.
     const branding = brandingWith({ brandPaletteSource: "custom" });
 
-    expect(resolveBrandingThemeMode(branding, "light").surfaceTheme.glassBlurPx).toBe(
+    expect(resolveBrandingThemeMode(branding, "light").surfaceTheme?.glassBlurPx).toBe(
       OPERATOR_SURFACE.glassBlurPx,
+    );
+  });
+
+  it("falls back to the concept when the operator has no surfaces at all", () => {
+    // `Branding.surfaceTheme` is optional so a payload predating the field is
+    // handled gracefully. Detaching the palette must not turn that absence into
+    // a resolved `undefined` — the variant's copy is required and is the only
+    // surfaces that exist for such an install. Caught by the type-checker after
+    // this file's own project (`web/tsconfig.test.json`, the one that owns
+    // `../test/web`) was run for the first time.
+    const branding = brandingWith({ brandPaletteSource: "custom", surfaceTheme: undefined });
+
+    expect(resolveBrandingThemeMode(branding, "light").surfaceTheme).toEqual(
+      CONCEPT_LIGHT_SURFACE,
     );
   });
 
