@@ -109,9 +109,16 @@ export default function StealthLayout() {
   const { branding } = useBranding();
   const isDesktop = useIsDesktop();
   const location = useLocation();
-  // Telemetry only needs the display mode. Do not mount the install-prompt
-  // listener for every dashboard visit: Chromium correctly reports a deferred
-  // `beforeinstallprompt` as a console warning when no install CTA is shown.
+  // Telemetry only needs the display mode, so read it directly rather than
+  // calling `useInstallPrompt()` for one field of four.
+  //
+  // This used to say "do not mount the install-prompt listener here, Chromium
+  // warns about a deferred `beforeinstallprompt` with no install CTA on screen".
+  // That trade is no longer this component's to make: the listener now lives at
+  // module scope in `main.tsx` and runs on every load anyway, because the event
+  // fires once and never waits for a route change (see
+  // `lib/install-prompt-capture.ts`). `isStandalonePwa()` is still the right
+  // call here — it reads the display mode and captures nothing.
   const isStandalone = isStandalonePwa();
 
   // Whether the operator requires Telegram users to set a web login/password

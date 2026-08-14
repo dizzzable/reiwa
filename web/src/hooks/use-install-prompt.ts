@@ -1,22 +1,30 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+import {
+  consumeDeferredInstallPrompt,
+  hasInstalledThisDocument,
+  readDeferredInstallPrompt,
+  subscribeToInstallPromptCapture,
+} from "@/lib/install-prompt-capture";
 
 /**
  * useInstallPrompt
  * ────────────────
  * Wraps the PWA install affordances across platforms:
- *   - **Android / Chromium**: captures the `beforeinstallprompt` event so the
- *     cabinet can show its own "Install app" button and trigger the native
- *     prompt on demand (`canInstall` + `promptInstall`).
+ *   - **Android / Chromium**: reads the `beforeinstallprompt` event captured at
+ *     the entry point so the cabinet can show its own "Install app" button and
+ *     trigger the native prompt on demand (`canInstall` + `promptInstall`).
  *   - **iOS Safari**: there is no programmatic prompt, so we only detect the
  *     situation (`isIos`) and the UI shows a "Share → Add to Home Screen"
  *     instruction sheet instead.
  *   - **Already installed** (`isStandalone`): everything is hidden.
+ *
+ * This hook does NOT listen for `beforeinstallprompt` itself, and must not
+ * start: the browser fires it once per page load, minutes before this hook's
+ * only consumer — the Settings page — is ever mounted. A listener registered
+ * here hears nothing, which is exactly why the install button stopped
+ * appearing. `web/src/lib/install-prompt-capture.ts` owns the listeners at
+ * module scope and holds the event; this hook is a reader of that stash.
  */
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  readonly userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-}
 
 export interface InstallPromptState {
   /** Android/Chromium native prompt is available. */
@@ -30,33 +38,41 @@ export interface InstallPromptState {
 }
 
 export function useInstallPrompt(): InstallPromptState {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isStandalone, setIsStandalone] = useState<boolean>(isStandalonePwa);
+  // `useSyncExternalStore` rather than an effect, because BOTH arrival orders
+  // are real and only one of them is an event:
+  //   - the event fired long before this hook mounted (the common case, and the
+  //     defect) — `getSnapshot` reads the stash on the very first render;
+  //   - the event arrives while the Settings page sits open (a slow install
+  //     heuristic, a manifest that only just became valid) — the subscription
+  //     pushes it.
+  // It also closes the window an effect leaves open: an event landing between
+  // the first render and the effect would be missed by a subscribe-then-read
+  // pair, whereas React re-reads the snapshot after subscribing.
+  const deferred = useSyncExternalStore(
+    subscribeToInstallPromptCapture,
+    readDeferredInstallPrompt,
+    () => null,
+  );
+  const installedThisDocument = useSyncExternalStore(
+    subscribeToInstallPromptCapture,
+    hasInstalledThisDocument,
+    () => false,
+  );
 
-  useEffect(() => {
-    const onBeforeInstall = (e: Event): void => {
-      e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
-    };
-    const onInstalled = (): void => {
-      setDeferred(null);
-      setIsStandalone(true);
-    };
-    window.addEventListener("beforeinstallprompt", onBeforeInstall);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
-
+  // `appinstalled` is what makes this true mid-session: the tab that triggered
+  // the install keeps display-mode `browser`, so `isStandalonePwa()` alone would
+  // go on offering to install an app that now exists.
+  const isStandalone = isStandalonePwa() || installedThisDocument;
   const isIos = detectIosSafari();
 
   const promptInstall = async (): Promise<boolean> => {
-    if (deferred === null) return false;
-    await deferred.prompt();
-    const choice = await deferred.userChoice;
-    setDeferred(null);
+    // Taken and cleared in one step, before the await — a prompt cannot be
+    // re-shown, and the native dialog is asynchronous, so a second tap must not
+    // find the same event still sitting there. See `consumeDeferredInstallPrompt`.
+    const event = consumeDeferredInstallPrompt();
+    if (event === null) return false;
+    await event.prompt();
+    const choice = await event.userChoice;
     return choice.outcome === "accepted";
   };
 

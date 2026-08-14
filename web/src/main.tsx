@@ -8,6 +8,7 @@ import { queryClient } from '@/lib/query-client'
 import { registerServiceWorker } from '@/lib/register-sw'
 import { installGlobalErrorReporting } from '@/lib/client-error-reporter'
 import { installIosZoomLock } from '@/lib/ios-zoom-lock'
+import { captureInstallPromptEvents } from '@/lib/install-prompt-capture'
 import { AppErrorBoundary } from '@/components/error-boundary'
 import { BrandingProvider } from '@/lib/branding-provider'
 import { resolveTelegramLaunchParams } from '@/lib/telegram-launch-params'
@@ -50,6 +51,22 @@ resolveTelegramLaunchParams()
 
 // Register service worker for PWA support
 registerServiceWorker()
+
+// Catch `beforeinstallprompt` — here, at module scope, for the same reason as
+// the launch parameters above: the event does not wait for React.
+//
+// Chromium fires it ONCE, shortly after load, and never again for a client-side
+// navigation. `useInstallPrompt` used to register the listener in its own
+// effect, and its only consumer is the Settings page — which nobody lands on,
+// they navigate there, several route changes into a session that never reloads.
+// The listener therefore came into existence minutes after the event had
+// already been dispatched to nobody, so `canInstall` was false for every user on
+// every visit and the "Install app" row rendered essentially never.
+//
+// The event has no replay and no re-fire to wait for, so the listener has to
+// already exist when it lands. Module scope in the entry chunk is the one place
+// that is guaranteed of, on every route.
+captureInstallPromptEvents()
 
 // Forward browser/Mini App runtime errors (window.onerror + unhandled
 // rejections) to the BFF so they join the bot/api/worker firehose.
