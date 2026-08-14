@@ -249,6 +249,20 @@ interface RoundTripResult {
 function roundTrip(
   styles: Record<string, StyleDraft>,
   saved: Record<string, StyleDraft> = {},
+  /**
+   * The stored global card-text policy — the baseline a tariff card inherits
+   * when it has no `text` of its own. It belongs in `saved` rather than in the
+   * patch because the operator sets it on a different tab: what matters to a
+   * plan style is what is ALREADY STORED, not what this submit changes.
+   *
+   * Defaults to the shipping default, `auto`, so every case that does not
+   * mention it is running against an installation that has never touched the
+   * global control either.
+   */
+  subscriptionCardText: { readonly mode: string; readonly color: string | null } = {
+    mode: "auto",
+    color: null,
+  },
 ): RoundTripResult {
   const schema = panelSchemaModule.createBrandingFormSchema(VALIDATION_MESSAGES);
   const baseline = panelSchemaModule.createInitialBrandingDraft({ planCardStyles: saved });
@@ -306,7 +320,7 @@ function roundTrip(
 
   // Stage 4 — persistence, over what was already stored.
   const stored = panelPersistence.mergeBrandingSettings({
-    existing: { planCardStyles: saved },
+    existing: { planCardStyles: saved, subscriptionCardText },
     patch: body,
   });
   const branding = panelPersistence.readBrandingSettings(stored);
@@ -356,8 +370,11 @@ interface SurvivedResult extends RoundTripResult {
 }
 
 /** Round-trip one plan's draft, failing with the blamed stage when it does not survive. */
-function survive(style: StyleDraft): SurvivedResult {
-  const result = roundTrip({ [PLAN_ID]: style });
+function survive(
+  style: StyleDraft,
+  subscriptionCardText?: { readonly mode: string; readonly color: string | null },
+): SurvivedResult {
+  const result = roundTrip({ [PLAN_ID]: style }, {}, subscriptionCardText);
   expect(
     result.rejectedBy,
     `${JSON.stringify(style)} was refused by the ${result.rejectedBy}: ${result.reason}`,
@@ -642,6 +659,235 @@ describe("per-plan tariff-card style round trip, panel → API → cabinet", () 
         return result.rejectedBy !== null || result.resolved?.effect !== cardEffect;
       });
       expect(lost, "effects the panel offers that do not reach the cabinet").toEqual([]);
+    });
+  });
+
+  /**
+   * The per-plan text policy, whose defining property is that MOST entries will
+   * never carry it.
+   *
+   * That makes it the exact shape of the defect this release fixed for
+   * `textureUrl`: under Zod 4 a property inside a `z.record` value object that
+   * does not declare its own optionality fails on an ABSENT key, and the
+   * failure lands at `planCardStyles.<planId>.text` where react-hook-form can
+   * attach it to no input — a Save button that silently does nothing. Half the
+   * cases below exist to keep an absent, inherited or cleared `text` boring.
+   *
+   * The other half pins the precedence: per-plan override → global
+   * `subscriptionCardText` → `auto`. The last link is what every existing
+   * installation is standing on.
+   */
+  describe.skipIf(!hasSibling)("card text", () => {
+    /** Dark artwork: automatic contrast picks light copy. */
+    const DARK_GRADIENT = "linear-gradient(90deg,#111,#222)";
+    /** Light artwork: automatic contrast picks dark copy. Proves `auto` still computes. */
+    const LIGHT_GRADIENT = "linear-gradient(90deg,#f8fafc,#e2e8f0)";
+
+    it("resolves to automatic contrast when neither control was ever touched", () => {
+      // The invariant every existing installation is standing on: no `text` key
+      // on the entry, `auto` globally, and therefore the same automatic
+      // computation as before this field existed — on artwork of either
+      // brightness, so a hard-coded foreground could not pass this.
+      const dark = survive({ gradient: DARK_GRADIENT });
+      expect(dark.persisted).toEqual({ gradient: DARK_GRADIENT });
+      expect(dark.resolved.text).toEqual({ mode: "auto", color: null });
+      expect(dark.resolved.contrast.foreground).toBe("#ffffff");
+
+      const light = survive({ gradient: LIGHT_GRADIENT });
+      expect(light.resolved.contrast.foreground).toBe("#0a0a0a");
+    });
+
+    it("carries every mode the control offers", () => {
+      const expected: Record<string, string> = {
+        // `auto` on light artwork: an explicit per-plan instruction to compute
+        // contrast from this card's own artwork, which is the only way to
+        // exempt one plan while the global policy forces a colour.
+        auto: "#0a0a0a",
+        light: "#ffffff",
+        dark: "#0a0a0a",
+      };
+      for (const [mode, foreground] of Object.entries(expected)) {
+        const result = survive({ gradient: LIGHT_GRADIENT, text: { mode, color: null } });
+        expect(result.persisted, mode).toEqual({
+          gradient: LIGHT_GRADIENT,
+          text: { mode, color: null },
+        });
+        expect(result.resolved.text, mode).toEqual({ mode, color: null });
+        expect(result.resolved.contrast.foreground, mode).toBe(foreground);
+      }
+    });
+
+    it("carries a custom colour in every hex form the two inputs can emit", () => {
+      // The swatch emits `#rrggbb`; the text box can hold either length in
+      // either case. All four must reach the cabinet as the literal the
+      // operator typed — a normalising step anywhere in the chain would show up
+      // here as a changed case or an expanded shorthand.
+      for (const color of ["#fff", "#FFF", "#22c55e", "#22C55E"]) {
+        const result = survive({ gradient: DARK_GRADIENT, text: { mode: "custom", color } });
+        expect(result.persisted, color).toEqual({
+          gradient: DARK_GRADIENT,
+          text: { mode: "custom", color },
+        });
+        expect(result.resolved.contrast.foreground, color).toBe(color);
+      }
+    });
+
+    it("refuses the colour forms the global control refuses, and no others", () => {
+      // Alpha hex is refused on both cards for one reason: a translucent
+      // foreground renders differently over every gradient, so the panel
+      // preview and the cabinet could not agree on the result. `custom` with no
+      // colour is not a decision. Both are refused in the PANEL, where the
+      // operator can still see which control produced it.
+      for (const color of ["#ffff", "#22c55eff", "#2", "not-a-colour"]) {
+        const result = roundTrip({ [PLAN_ID]: { text: { mode: "custom", color } } });
+        expect(result.rejectedBy, color).toBe("panel Zod schema");
+        expect(result.reason, color).toContain(VALIDATION_MESSAGES.hexInvalid);
+      }
+      const empty = roundTrip({ [PLAN_ID]: { text: { mode: "custom", color: null } } });
+      expect(empty.rejectedBy).toBe("panel Zod schema");
+    });
+
+    it("keeps a text-only entry, which is a fully configured plan", () => {
+      // `readPlanCardStyles` skips an entry with no usable field. A plan whose
+      // only decision is "this card gets light text" has one, and dropping it
+      // would discard the operator's choice on the very save that made it.
+      const result = survive({ text: { mode: "light", color: null } });
+      expect(result.persisted).toEqual({ text: { mode: "light", color: null } });
+      expect(result.resolved.contrast.foreground).toBe("#ffffff");
+      // No gradient was set, so the card still gets its deterministic auto one.
+      expect(result.resolved.gradient).toBe(
+        "linear-gradient(135deg, hsl(152 70% 22%), hsl(192 65% 32%))",
+      );
+    });
+
+    it("stores nothing for an entry whose only field is inherit", () => {
+      // Inherit is what an absent entry already does. Persisting it would make
+      // the payload of an operator who chose inherit differ from one who never
+      // opened the control, and would leave the row reading "custom" forever
+      // with nothing to show for it.
+      const result = roundTrip({ [PLAN_ID]: { text: { mode: "inherit", color: null } } });
+      expect(result.rejectedBy, result.reason ?? "").toBeNull();
+      expect(result.persisted).toBeUndefined();
+      expect(result.persistedMap).toEqual({});
+    });
+
+    it("drops an inherit alongside other styling instead of storing it", () => {
+      const result = survive({ gradient: DARK_GRADIENT, text: { mode: "inherit", color: null } });
+      expect(result.persisted).toEqual({ gradient: DARK_GRADIENT });
+      // And the form rebuilds an entry with no `text`, so the control reads
+      // "inherit" again from absence alone.
+      expect(result.rehydrated).toEqual({ gradient: DARK_GRADIENT });
+    });
+
+    it("inherits each global mode, whether the entry says inherit or says nothing", () => {
+      // The precedence, driven from the stored global policy. Both spellings of
+      // "no per-plan decision" have to land on the same colour, or the operator
+      // who explicitly chose inherit gets a different card from the one who
+      // never opened the control.
+      const globals: ReadonlyArray<
+        readonly [{ readonly mode: string; readonly color: string | null }, string]
+      > = [
+        // Automatic, on dark artwork.
+        [{ mode: "auto", color: null }, "#ffffff"],
+        [{ mode: "light", color: null }, "#ffffff"],
+        [{ mode: "dark", color: null }, "#0a0a0a"],
+        [{ mode: "custom", color: "#ff0000" }, "#ff0000"],
+      ];
+      for (const [subscriptionCardText, foreground] of globals) {
+        const absent = survive({ gradient: DARK_GRADIENT }, subscriptionCardText);
+        expect(absent.resolved.contrast.foreground, subscriptionCardText.mode).toBe(foreground);
+        expect(absent.resolved.text, subscriptionCardText.mode).toEqual(subscriptionCardText);
+
+        const explicit = survive(
+          { gradient: DARK_GRADIENT, text: { mode: "inherit", color: null } },
+          subscriptionCardText,
+        );
+        expect(explicit.resolved.contrast.foreground, subscriptionCardText.mode).toBe(foreground);
+        // Byte-identical payloads, not merely equivalent behaviour.
+        expect(JSON.stringify(explicit.persistedMap), subscriptionCardText.mode).toBe(
+          JSON.stringify(absent.persistedMap),
+        );
+      }
+    });
+
+    it("lets one plan override any global mode, including back to automatic", () => {
+      // The point of the feature: the global is a baseline, one plan departs
+      // from it. `auto` is in the list because it is the only way to exempt a
+      // single card while the global forces a colour — which is why it is a
+      // separate value from `inherit`.
+      const globalDark = { mode: "dark", color: null } as const;
+      expect(
+        survive({ gradient: DARK_GRADIENT, text: { mode: "light", color: null } }, globalDark)
+          .resolved.contrast.foreground,
+      ).toBe("#ffffff");
+      expect(
+        survive(
+          { gradient: DARK_GRADIENT, text: { mode: "custom", color: "#00ff00" } },
+          globalDark,
+        ).resolved.contrast.foreground,
+      ).toBe("#00ff00");
+      // Global forces dark; this one plan computes from its own dark artwork
+      // and therefore gets light copy.
+      expect(
+        survive({ gradient: DARK_GRADIENT, text: { mode: "auto", color: null } }, globalDark)
+          .resolved.contrast.foreground,
+      ).toBe("#ffffff");
+    });
+
+    it("survives the cabinet's snapshot guard when the panel is a release ahead", () => {
+      // Both halves of the forward-compatibility contract, in the one stage
+      // that punishes a mistake with the whole cabinet's appearance.
+      //
+      // The unknown KEY is the deployment-order question: a panel that writes a
+      // field this bundle has never heard of must not be able to freeze an older
+      // cabinet. `isPlanCardStyle` checks named keys only, and this holds it to
+      // that.
+      const guard = (style: Record<string, unknown>) =>
+        describePublicConfigSnapshot({
+          branding: {
+            ...(JSON.parse(
+              JSON.stringify(
+                panelPersistence.readBrandingSettings({ planCardStyles: { [PLAN_ID]: {} } }),
+              ),
+            ) as Record<string, unknown>),
+            planCardStyles: { [PLAN_ID]: style },
+          },
+          locales: ["en"],
+          defaultLocale: "en",
+          defaultCurrency: "USD",
+          customIcons: [],
+          botUsername: null,
+          supportUsername: null,
+          platformBranding: { projectName: null, webTitle: null },
+          emailEnabled: false,
+        });
+
+      expect(guard({ gradient: DARK_GRADIENT, text: { mode: "light", color: null } })).toBeNull();
+      // An explicit null: the shape a "clear this" patch produces. The
+      // normalizer drops it long before this point, but the guard is the last
+      // reader of a payload that may not have come from this panel.
+      expect(guard({ gradient: DARK_GRADIENT, text: null })).toBeNull();
+      // A mode from a newer panel: accepted, and resolved as inherit.
+      expect(guard({ text: { mode: "gradient-aware", color: null } })).toBeNull();
+      // A field from a newer panel entirely.
+      expect(guard({ text: { mode: "light", color: null }, unknownFutureField: 42 })).toBeNull();
+      // Still refused: values that cannot be a text policy at all.
+      expect(guard({ text: "light" })).not.toBeNull();
+      expect(guard({ text: { mode: 7, color: null } })).not.toBeNull();
+    });
+
+    it("treats a mode it does not recognise as inherit rather than as a colour", () => {
+      const branding = {
+        subscriptionCardText: { mode: "dark", color: null },
+        bgSecondary: "#171717",
+        primaryFg: "#0a0a0a",
+        planCardStyles: {
+          [PLAN_ID]: { gradient: DARK_GRADIENT, text: { mode: "gradient-aware", color: null } },
+        },
+      };
+      const resolved = resolvePlanCardStyle(PLAN_ID, branding as unknown as Branding);
+      expect(resolved.text).toEqual({ mode: "dark", color: null });
+      expect(resolved.contrast.foreground).toBe("#0a0a0a");
     });
   });
 

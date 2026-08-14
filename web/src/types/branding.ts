@@ -123,6 +123,33 @@ export interface PlanCardStyle {
   cardEffect?: CardEffect | null;
   cardEffectProps?: Record<string, unknown>;
   cardEffectOpacity?: number | null;
+  /**
+   * Per-plan text policy. ABSENT MEANS INHERIT: the card follows the global
+   * `Branding.subscriptionCardText`, whose own default is `auto` — the
+   * automatic contrast computation every tariff card used before this field
+   * existed. Note the deliberate contrast with `cardEffect` directly above,
+   * which does NOT inherit; the two fields answer different questions and an
+   * unset effect is genuinely "no effect", while an unset text policy is not
+   * "no policy".
+   */
+  text?: PlanCardText | null;
+}
+
+/**
+ * Per-plan tariff-card text modes: the four subscription-card modes plus
+ * `inherit`.
+ *
+ * `inherit` and `auto` are different values on purpose. `auto` is an explicit
+ * per-plan instruction to compute contrast from that card's own artwork, which
+ * is the only way to exempt one plan while the global policy is `light`, `dark`
+ * or `custom`.
+ */
+export type PlanCardTextMode = "inherit" | SubscriptionCardTextMode;
+
+export interface PlanCardText {
+  readonly mode: PlanCardTextMode;
+  /** Used only by `custom`; accepted values are opaque #rgb/#rrggbb. */
+  readonly color: string | null;
 }
 
 /** Cabinet navigation destinations (mirrors backend `NAV_DESTINATIONS`). */
@@ -724,6 +751,76 @@ export function resolveSubscriptionCardText(
     // switches deterministic across the cached public-config boundary.
     color: null,
   };
+}
+
+/**
+ * The effective text policy for ONE tariff card.
+ *
+ * PRECEDENCE — the same baseline/override rule the positional card slots use:
+ *
+ *   1. an explicit per-plan mode (`auto` / `light` / `dark` / a usable
+ *      `custom`) wins for that card alone;
+ *   2. anything else falls back to the global `subscriptionCardText`;
+ *   3. whose own default is `auto`, i.e. the automatic contrast computation
+ *      every tariff card performed before this field existed.
+ *
+ * Step 2 covers four inputs that all mean "no per-plan decision", and they are
+ * collapsed here rather than at the call site so there is exactly one place to
+ * read:
+ *
+ *   - `undefined`/`null` — the shape of EVERY entry stored before this control
+ *     shipped. This is the path that guarantees an untouched installation keeps
+ *     rendering exactly as it does today;
+ *   - `inherit` — the operator said so;
+ *   - a mode this bundle does not recognise — a panel one release ahead may
+ *     name a policy this code cannot honour. Inheriting is the conservative
+ *     reading, and unlike the snapshot guard this cannot be a hard failure: see
+ *     the `isEffectId` note in `public-config-persistence.port.ts` for what
+ *     treating open vocabulary as a closed set cost last time;
+ *   - `custom` with no usable opaque colour — the same defect
+ *     `resolveSubscriptionCardText` guards below. Falling back to the global
+ *     policy (rather than to `auto`) keeps the card on the operator's most
+ *     recent workable decision.
+ */
+export function resolvePlanCardText(
+  value: PlanCardText | null | undefined,
+  global: SubscriptionCardText | null | undefined,
+): SubscriptionCardText {
+  const inherited = resolveSubscriptionCardText(global);
+  if (!value || value.mode === "inherit") return inherited;
+  if (value.mode === "auto" || value.mode === "light" || value.mode === "dark") {
+    // A colour belongs to `custom` alone; drop any stale one, exactly as the
+    // global normalizer does, so the two cards cannot diverge.
+    return { mode: value.mode, color: null };
+  }
+  if (value.mode === "custom") {
+    // Rebuilt rather than passed through: `PlanCardText` is the wider type, and
+    // reusing the global normalizer is what keeps the accepted colour forms
+    // (opaque #rgb/#rrggbb, trimmed) identical on both cards.
+    const normalized = resolveSubscriptionCardText({
+      mode: "custom",
+      color: value.color,
+    });
+    return normalized.mode === "custom" ? normalized : inherited;
+  }
+  return inherited;
+}
+
+/**
+ * The literal foreground an operator decision forces, or `null` when the card
+ * computes its own contrast (`auto`).
+ *
+ * Shared by the subscription card and the tariff card BECAUSE they must agree:
+ * a tariff card inherits this decision from the subscription card, so two
+ * copies of the light/dark hex pair would let "inherit" quietly mean something
+ * different on each card.
+ */
+export function resolveCardTextForeground(
+  text: SubscriptionCardText,
+): string | null {
+  if (text.mode === "light") return "#ffffff";
+  if (text.mode === "dark") return "#0a0a0a";
+  return text.mode === "custom" ? text.color : null;
 }
 
 /**

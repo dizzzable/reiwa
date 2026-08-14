@@ -16,7 +16,11 @@ import {
   resolveCardContrast,
   type CardContrast,
 } from "@/lib/card-contrast";
-import type { Branding } from "@/types/branding";
+import {
+  resolveCardTextForeground,
+  resolvePlanCardText,
+} from "@/types/branding";
+import type { Branding, SubscriptionCardText } from "@/types/branding";
 
 /**
  * Deterministic gradient from a plan id. Same hash the WEB Reiwa configurator
@@ -36,6 +40,13 @@ export interface ResolvedPlanCardStyle {
   readonly gradient: string;
   /** Computed foreground + supporting veil for this exact artwork. */
   readonly contrast: CardContrast;
+  /**
+   * The text policy this card ended up on, already resolved through
+   * per-plan → global → `auto`. Exposed for the same reason the subscription
+   * card exposes its own: it is what the card was told, as opposed to what the
+   * contrast resolver made of it.
+   */
+  readonly text: SubscriptionCardText;
   /** Accent hex for price/name, or `null` to use the brand primary. */
   readonly accent: string | null;
   /** Operator-uploaded texture image URL (cover overlay), or `null`. */
@@ -97,9 +108,29 @@ export function resolvePlanCardStyle(planId: string, branding: Branding): Resolv
   const drawsOverlay =
     effect !== "NONE" && isKnownCardEffect(effect) && textureUrl === null;
   const clampedEffectOpacity = Math.min(1, Math.max(0, effectOpacity));
+  /**
+   * The operator's text decision for THIS card: the per-plan override if there
+   * is one, otherwise the global subscription-card policy. See
+   * `resolvePlanCardText` for the full precedence and why absence means
+   * inherit rather than `auto`.
+   *
+   * The invariant that has to survive every future edit here: an installation
+   * that has touched neither control has no `text` key on any entry and a
+   * global policy of `auto`, so `forcedForeground` is `null` — and a `null`
+   * forced foreground is exactly what `resolveCardContrast` does when the
+   * option is absent (it parses `options.forcedForeground ?? ""`, which yields
+   * no colour). The call below is therefore identical to the one that shipped,
+   * option for option, for every installation that has not opted in.
+   *
+   * `preferredForeground` stays where it is and keeps its old meaning: it is a
+   * tiebreaker for the automatic path, not a decision, and it is ignored
+   * outright once a foreground is forced.
+   */
+  const text = resolvePlanCardText(style?.text, branding.subscriptionCardText);
   const contrast = resolveCardContrast(gradient, {
     fallbackBackground: branding.bgSecondary,
     preferredForeground: branding.primaryFg,
+    forcedForeground: resolveCardTextForeground(text),
     minimumVeilOpacity: drawsOverlay ? 0.18 + clampedEffectOpacity * 0.12 : 0.12,
     overlayArtwork: drawsOverlay
       ? resolveCardEffectOutputColors(effect, effectProps).join(" ")
@@ -124,6 +155,7 @@ export function resolvePlanCardStyle(planId: string, branding: Branding): Resolv
   return {
     gradient,
     contrast,
+    text,
     accent,
     textureUrl,
     textureImage,

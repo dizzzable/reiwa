@@ -597,7 +597,54 @@ function isPlanCardStyle(value: unknown): boolean {
     hasOptionalImageUrlOrNull(value, "textureUrl") &&
     hasOptionalEffectIdOrNull(value, "cardEffect") &&
     hasOptionalRecord(value, "cardEffectProps") &&
-    hasOptionalNullableNumberInRange(value, "cardEffectOpacity", 0.05, 1)
+    hasOptionalNullableNumberInRange(value, "cardEffectOpacity", 0.05, 1) &&
+    hasOptionalPlanCardText(value, "text")
+  );
+}
+
+/**
+ * Per-plan card text policy. Absent (or null) is the overwhelmingly common
+ * case — it means "inherit the global `subscriptionCardText`" and it is the
+ * shape of every entry written before the control existed.
+ *
+ * DELIBERATELY LOOSER THAN `hasOptionalSubscriptionCardText`, in two places,
+ * and the asymmetry is the point rather than an oversight:
+ *
+ *   - an UNKNOWN MODE is accepted. rezeis-admin is allowed to ship a fifth
+ *     policy before this deployment knows it — the same forward-compatibility
+ *     promise `isEffectId` makes a few lines down, for the same reason and
+ *     after the same outage. The consumer resolves an unrecognised mode to
+ *     inherit, so the worst case is one card wearing the global policy;
+ *   - a COLOUR THAT IS NOT AN OPAQUE HEX is accepted as long as it is a short
+ *     string. `resolvePlanCardText` treats an unusable custom colour as no
+ *     decision and falls back to the global policy, which is a visible but
+ *     survivable result.
+ *
+ * What is still refused is a value that cannot be a text policy at all: a
+ * string, an array, a number, or a mode that is not a string. Those indicate a
+ * corrupt writer rather than a newer one.
+ *
+ * The penalty for refusing decides all of this. This guard is one
+ * first-rejection-wins chain over the WHOLE public config: a single unusable
+ * entry discards the entire branding snapshot, and the cabinet then serves the
+ * previous one indefinitely — every colour, logo and text — while the panel
+ * keeps reporting successful saves. That has already happened twice, over
+ * `navItems` and over `cardEffect`; see the notes on both. A `planCardStyles`
+ * map holds up to 500 independently written entries, so it is the single most
+ * likely place for one stale value to meet a stricter reader — five hundred
+ * chances to freeze the cabinet over one card's text colour.
+ */
+function hasOptionalPlanCardText(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key];
+  if (value === undefined || value === null) return true;
+  if (!isRecord(value)) return false;
+  const mode = value["mode"];
+  if (typeof mode !== "string" || mode.length === 0 || mode.length > 32) return false;
+  const color = value["color"];
+  return (
+    color === undefined ||
+    color === null ||
+    (typeof color === "string" && color.length <= 32)
   );
 }
 

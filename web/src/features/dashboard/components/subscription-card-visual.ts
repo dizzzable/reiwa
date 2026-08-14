@@ -6,6 +6,7 @@ import {
 import { isKnownCardEffect } from "../../../components/reactbits/card-effect-catalog";
 import { resolveCardEffectOutputColors } from "../../../components/reactbits/card-effect-runtime";
 import {
+  resolveCardTextForeground,
   resolveSubscriptionCardGlass,
   resolveSubscriptionCardText,
 } from "../../../types/branding";
@@ -63,11 +64,12 @@ function validSlotIndex(index: number | undefined): number | null {
     : null;
 }
 
-function resolveCardTextForeground(text: SubscriptionCardText): string | null {
-  if (text.mode === "light") return "#ffffff";
-  if (text.mode === "dark") return "#0a0a0a";
-  return text.mode === "custom" ? text.color : null;
-}
+/*
+ * `resolveCardTextForeground` used to live here as a private helper. It moved
+ * to `types/branding.ts` when the tariff card gained the same setting: a tariff
+ * card INHERITS this decision from the subscription card, so a second copy of
+ * the light/dark hex pair would let "inherit" mean two different colours.
+ */
 
 /**
  * `brandAuroraStops` intentionally supports the common #rgb/#rrggbb forms.
