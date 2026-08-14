@@ -126,8 +126,20 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
       ?.catch(() => null);
     const isPartner = (status as { isActive?: boolean } | null | undefined)?.isActive === true;
 
+    // The three early-return branches below build their own single-button
+    // keyboard instead of going through `appendBackToMenuRow` (a leading
+    // `.row()` on a fresh keyboard leaves a dangling empty row). They still owe
+    // the operator the same "back" rendering the hubs give it, so each resolves
+    // the label through `renderSystemButton` with the shared 'back' system key.
+    const backButton = (): { text: string } | { text: string; icon_custom_emoji_id: string } => {
+      const back = renderSystemButton(backLabel, 'back', botCfg);
+      return back.iconCustomEmojiId !== undefined
+        ? { text: back.text, icon_custom_emoji_id: back.iconCustomEmojiId }
+        : { text: back.text };
+    };
+
     if (!isPartner && !botCfg.features.referralsEnabled) {
-      const kb = new InlineKeyboard().text(backLabel, 'menu:main');
+      const kb = new InlineKeyboard().text(backButton(), 'menu:main');
       // Still the invite slot — render with its banner (own / global / none)
       // so we never leave the previous screen's banner lingering here.
       await renderScreenOrEdit(ctx, deps, botCfg.visual, {
@@ -170,7 +182,7 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
     // permanent state dressed up as a glitch. The link no longer requires an
     // invite, so check the flag the summary already reports and say plainly why.
     if (summary?.programAvailable === false) {
-      const kb = new InlineKeyboard().text(backLabel, 'menu:main');
+      const kb = new InlineKeyboard().text(backButton(), 'menu:main');
       await renderScreenOrEdit(ctx, deps, botCfg.visual, {
         overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
         text: translator.t('referral.invited_only', lang),
@@ -184,7 +196,7 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
         { telegramId, hasPublicUrl: urls.publicWebUrl !== null },
         'invite: link unavailable — no bot username and no public web URL configured',
       );
-      const kb = new InlineKeyboard().text(backLabel, 'menu:main');
+      const kb = new InlineKeyboard().text(backButton(), 'menu:main');
       await renderScreenOrEdit(ctx, deps, botCfg.visual, {
         overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
         text: translator.t('referral.link_unavailable', lang),

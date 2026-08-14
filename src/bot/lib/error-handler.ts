@@ -25,6 +25,7 @@ import type { ErrorReporter } from '../../infrastructure/error-reporter/index.js
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
 import type { BotConfig } from '../../infrastructure/bot-config/types.js';
+import { renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import { coerceLocale } from '../pages/coerce-locale.js';
 import { resolveSupportDeepLink } from '../widgets/main-keyboard.js';
 import type { BotContext, UserLocaleSyncCache } from '../pages/types.js';
@@ -106,16 +107,29 @@ async function buildSupportKeyboard(
   deps: BotErrorHandlerDeps,
   lang: SupportedLocale,
 ): Promise<InlineKeyboard | null> {
-  let supportUsername = '';
+  let cfg: BotConfig | null = null;
   try {
-    const cfg = await deps.getConfig();
-    supportUsername = cfg.visual.supportUsername ?? '';
+    cfg = await deps.getConfig();
   } catch {
     /* config unavailable — fall back to the env handle below */
   }
-  const adminHandle = supportUsername.replace(/^@+/, '').trim();
+  const adminHandle = (cfg?.visual.supportUsername ?? '').replace(/^@+/, '').trim();
   const handle = adminHandle.length > 0 ? adminHandle : (deps.envSupportUsername ?? '').trim();
   const url = resolveSupportDeepLink(handle, deps.translator.t('help.contact_prefill', lang));
   if (url === null) return null;
-  return new InlineKeyboard().url(deps.translator.t('help.contact_button', lang), url);
+  // Same `help_contact` system button the help screens render — resolve the
+  // operator's emoji tokens through the same path, or the one button a user
+  // sees when something already went wrong shows a raw `:slug:`. An empty cfg
+  // (upstream unavailable) is a valid input: nothing to substitute, no icon.
+  const contact = renderSystemButton(
+    deps.translator.t('help.contact_button', lang),
+    'help_contact',
+    cfg ?? {},
+  );
+  return new InlineKeyboard().url(
+    contact.iconCustomEmojiId !== undefined
+      ? { text: contact.text, icon_custom_emoji_id: contact.iconCustomEmojiId }
+      : contact.text,
+    url,
+  );
 }

@@ -64,10 +64,30 @@ export const registerHelpCommandPage: PageRegistrar = (bot, deps) => {
         );
         kb.row();
       }
-      // #2 contact support chat + #3 back to main menu
-      kb.url(deps.translator.t('help.contact_button', lang), supportUrl)
+      // #2 contact support chat + #3 back to main menu.
+      // Both are the SAME system buttons the `help` callback screen renders
+      // (`help-callback.ts`), so they resolve through `renderSystemButton` with
+      // the same system keys — otherwise the operator's `:slug:` renders on the
+      // keyboard-button screen and leaks raw on the `/help` command screen.
+      const contactBtn = renderSystemButton(
+        deps.translator.t('help.contact_button', lang),
+        'help_contact',
+        botCfg,
+      );
+      const backBtn = renderSystemButton(backLabel, 'back', botCfg);
+      kb.url(
+        contactBtn.iconCustomEmojiId !== undefined
+          ? { text: contactBtn.text, icon_custom_emoji_id: contactBtn.iconCustomEmojiId }
+          : contactBtn.text,
+        supportUrl,
+      )
         .row()
-        .text(backLabel, 'menu:main');
+        .text(
+          backBtn.iconCustomEmojiId !== undefined
+            ? { text: backBtn.text, icon_custom_emoji_id: backBtn.iconCustomEmojiId }
+            : backBtn.text,
+          'menu:main',
+        );
       await replyWithOptionalBanner(ctx, deps, botCfg, { text: title, replyMarkup: kb });
       return;
     }
@@ -86,7 +106,13 @@ export const registerHelpCommandPage: PageRegistrar = (bot, deps) => {
       );
       kb.row();
     }
-    kb.text(backLabel, 'menu:main');
+    const fallbackBack = renderSystemButton(backLabel, 'back', botCfg);
+    kb.text(
+      fallbackBack.iconCustomEmojiId !== undefined
+        ? { text: fallbackBack.text, icon_custom_emoji_id: fallbackBack.iconCustomEmojiId }
+        : fallbackBack.text,
+      'menu:main',
+    );
     await replyWithOptionalBanner(ctx, deps, botCfg, { text: fallbackBody, replyMarkup: kb });
   });
 };

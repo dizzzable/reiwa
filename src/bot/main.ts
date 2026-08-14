@@ -322,6 +322,9 @@ async function startBot(): Promise<void> {
     adminClient,
     translator,
     logger,
+    // Card labels are operator-editable i18n keys, so they may carry `:slug:` /
+    // `{{KEY}}` emoji tokens that have to be resolved before Telegram sees them.
+    getConfig: pageDeps.getConfig,
   });
 
   // Developer-only credits card (open-core attribution + project links).
@@ -330,6 +333,7 @@ async function startBot(): Promise<void> {
     devId: config.BOT_DEV_ID,
     translator,
     logger,
+    getConfig: pageDeps.getConfig,
   });
 
   // Polling lifecycle with self-healing on 409 / network blips.

@@ -12,8 +12,50 @@ import type { Bot } from 'grammy';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { REIWA_VERSION } from '../../core/version.js';
 import type { AdminClient } from '../../lib/admin-client.js';
+import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
+import type { BotConfig } from '../../infrastructure/bot-config/types.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import type { BotContext, PageDeps } from '../pages/types.js';
+
+/**
+ * The operator can rewrite every label on these cards through the panel's text
+ * editor (they are ordinary i18n keys, so `translations` overrides them), which
+ * means they can carry `:slug:` pack tokens and `{{KEY}}` placeholders just like
+ * any other button copy. These are plain link/callback buttons with no
+ * per-button icon slot in the panel, so `renderButtonLabel` is the right
+ * renderer — not `renderSystemButton`.
+ *
+ * `botCfg` is optional because the cards are best-effort startup pings: a
+ * missing config must never keep them from being sent. With no config there is
+ * nothing to substitute, and the label is passed through unchanged.
+ */
+function cardButton(
+  label: string,
+  botCfg: BotConfig | null,
+): { text: string } | { text: string; icon_custom_emoji_id: string } {
+  if (botCfg === null) return { text: label };
+  const rendered = renderButtonLabel(
+    label,
+    botCfg.botEmojis,
+    botCfg.customEmojis,
+    botCfg.botEmojiOwnerHasPremium ?? true,
+  );
+  return rendered.iconCustomEmojiId !== undefined
+    ? { text: rendered.text, icon_custom_emoji_id: rendered.iconCustomEmojiId }
+    : { text: rendered.text };
+}
+
+/** Best-effort config read — a failure degrades the labels, never the card. */
+async function loadCardConfig(
+  getConfig: (() => Promise<BotConfig>) | undefined,
+): Promise<BotConfig | null> {
+  if (getConfig === undefined) return null;
+  try {
+    return await getConfig();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Developer-credits card links + crypto wallets. These point at the open-core
@@ -37,6 +79,8 @@ export async function notifyOperatorBotStarted(opts: {
   readonly adminClient: AdminClient | null;
   readonly translator: PageDeps['translator'];
   readonly logger: PageDeps['logger'];
+  /** Bot config source for resolving operator emoji tokens on the button. */
+  readonly getConfig?: PageDeps['getConfig'];
 }): Promise<void> {
   const { bot, devId, adminClient, translator, logger } = opts;
   if (devId === undefined) return;
@@ -57,7 +101,11 @@ export async function notifyOperatorBotStarted(opts: {
   const accessLabel = translator.t('bot_event.access_mode', lang);
   const modeValue = translator.t(`bot_event.mode.${modeKey}`, lang);
   const text = `#EventBotStarted\n\n${title}\n\n• ${accessLabel}: ${modeValue}`;
-  const keyboard = new InlineKeyboard().text(translator.t('bot_event.close', lang), 'close');
+  const botCfg = await loadCardConfig(opts.getConfig);
+  const keyboard = new InlineKeyboard().text(
+    cardButton(translator.t('bot_event.close', lang), botCfg),
+    'close',
+  );
 
   try {
     await bot.api.sendMessage(devId, text, { reply_markup: keyboard });
@@ -79,6 +127,8 @@ export async function notifyDeveloperCredits(opts: {
   readonly devId: number | undefined;
   readonly translator: PageDeps['translator'];
   readonly logger: PageDeps['logger'];
+  /** Bot config source for resolving operator emoji tokens on the buttons. */
+  readonly getConfig?: PageDeps['getConfig'];
 }): Promise<void> {
   const { bot, devId, translator, logger } = opts;
   if (devId === undefined) return;
@@ -106,19 +156,20 @@ export async function notifyDeveloperCredits(opts: {
     `BNB: <code>${CREDITS_WALLET_BNB}</code>`,
   ].join('\n');
 
+  const botCfg = await loadCardConfig(opts.getConfig);
   const keyboard = new InlineKeyboard();
   // GitHub + Telegram share one row.
   if (isTelegramSafeButtonUrl(CREDITS_GITHUB_URL)) {
-    keyboard.url(translator.t('bot_event.credits.github', lang), CREDITS_GITHUB_URL);
+    keyboard.url(cardButton(translator.t('bot_event.credits.github', lang), botCfg), CREDITS_GITHUB_URL);
   }
   if (isTelegramSafeButtonUrl(CREDITS_TELEGRAM_URL)) {
-    keyboard.url(translator.t('bot_event.credits.telegram', lang), CREDITS_TELEGRAM_URL);
+    keyboard.url(cardButton(translator.t('bot_event.credits.telegram', lang), botCfg), CREDITS_TELEGRAM_URL);
   }
   keyboard.row();
   if (isTelegramSafeButtonUrl(CREDITS_SUPPORT_URL)) {
-    keyboard.url(translator.t('bot_event.credits.support', lang), CREDITS_SUPPORT_URL).row();
+    keyboard.url(cardButton(translator.t('bot_event.credits.support', lang), botCfg), CREDITS_SUPPORT_URL).row();
   }
-  keyboard.text(translator.t('bot_event.close', lang), 'close');
+  keyboard.text(cardButton(translator.t('bot_event.close', lang), botCfg), 'close');
 
   try {
     await bot.api.sendMessage(devId, text, {

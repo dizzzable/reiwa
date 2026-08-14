@@ -459,6 +459,34 @@ function parseAdCode(payload: string): string | null {
   return /^[A-Za-z0-9_-]{3,32}$/.test(code) ? code : null;
 }
 
+/**
+ * Build the object-form text for an inline button: resolves the operator's
+ * `{{KEY}}` / `:slug:` tokens to glyphs and promotes a LEADING premium token to
+ * `icon_custom_emoji_id` (premium owners only). Inline-button captions cannot
+ * carry `custom_emoji` entities, so this is the only way a pack emoji renders
+ * on one — and the only thing that keeps a raw `:slug:` out of the caption.
+ *
+ * Every keyboard built on this page goes through it. The channel-gate branch
+ * used to carry its own copy of this while the quest deep-link and
+ * payment-return branches passed `translator.t(...)` straight into grammy, so
+ * the same operator label rendered on one screen and leaked `:slug:` on
+ * another.
+ */
+function inlineButton(
+  label: string,
+  botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
+): { text: string } | { text: string; icon_custom_emoji_id: string } {
+  const rendered = renderButtonLabel(
+    label,
+    botCfg.botEmojis,
+    botCfg.customEmojis,
+    botCfg.botEmojiOwnerHasPremium ?? true,
+  );
+  return rendered.iconCustomEmojiId !== undefined
+    ? { text: rendered.text, icon_custom_emoji_id: rendered.iconCustomEmojiId }
+    : { text: rendered.text };
+}
+
 export const registerStartPage: PageRegistrar = (bot, deps) => {
   // ── /start command — cold path with bootstrap + banner ────────────────────
   bot.command('start', async (ctx) => {
@@ -491,15 +519,22 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
         await ctx.reply(deps.translator.t('quests.channel.retry', lang));
         return;
       }
+      // Same two labels the channel gate renders below — resolve their operator
+      // emoji tokens the same way, or the quest deep-link screen shows a raw
+      // `:slug:` on buttons that look correct on the gate screen.
+      const questCfg = await deps.getConfig();
       try {
         const target = (await deps.adminClient.quests.channelTarget({
           telegramId: String(tgUser.id),
           questId,
         })) as { joinUrl: string };
         const keyboard = new InlineKeyboard()
-          .url(deps.translator.t('channel.join_button', lang), target.joinUrl)
+          .url(inlineButton(deps.translator.t('channel.join_button', lang), questCfg), target.joinUrl)
           .row()
-          .text(deps.translator.t('channel.check_button', lang), `quest_channel:${questId}`);
+          .text(
+            inlineButton(deps.translator.t('channel.check_button', lang), questCfg),
+            `quest_channel:${questId}`,
+          );
         await ctx.reply(deps.translator.t('quests.channel.prompt', lang), {
           reply_markup: keyboard,
         });
@@ -521,13 +556,15 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       const keyboard = new InlineKeyboard();
       const miniAppUrl = deps.urls.miniAppUrl;
       const publicWebUrl = deps.urls.publicWebUrl;
+      const returnCfg = await deps.getConfig();
+      const openAppLabel = inlineButton(
+        deps.translator.t('payment_return.open_app', lang),
+        returnCfg,
+      );
       if (isTelegramSafeButtonUrl(miniAppUrl)) {
-        keyboard.webApp(deps.translator.t('payment_return.open_app', lang), miniAppUrl as string);
+        keyboard.webApp(openAppLabel, miniAppUrl as string);
       } else if (isTelegramSafeButtonUrl(publicWebUrl)) {
-        keyboard.url(
-          deps.translator.t('payment_return.open_app', lang),
-          `${publicWebUrl}/payment-return`,
-        );
+        keyboard.url(openAppLabel, `${publicWebUrl}/payment-return`);
       }
       await ctx.reply(deps.translator.t('payment_return.title', lang), {
         // Only attach the keyboard when a safe button URL exists; otherwise
@@ -698,29 +735,19 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
               if (!isSubscribedStatus(member.status)) {
                 const joinUrl = resolveChannelJoinUrl(policy);
                 // Resolve premium custom-emoji tokens (`:slug:`) on the gate
-                // button labels the same way every other keyboard does — a
-                // leading token is promoted to `icon_custom_emoji_id` (premium
-                // owners) with a unicode fallback, so operators can put a pack
-                // emoji on "Перейти в канал" / "Я подписался" without the raw
-                // `:slug:` leaking into the caption.
-                const renderGate = (
-                  label: string,
-                ): { text: string; icon_custom_emoji_id?: string } => {
-                  const r = renderButtonLabel(
-                    label,
-                    botCfg.botEmojis,
-                    botCfg.customEmojis,
-                    botCfg.botEmojiOwnerHasPremium ?? true,
-                  );
-                  return r.iconCustomEmojiId !== undefined
-                    ? { text: r.text, icon_custom_emoji_id: r.iconCustomEmojiId }
-                    : { text: r.text };
-                };
+                // button labels the same way every other keyboard does — via
+                // the shared `inlineButton` helper, so this screen and the
+                // quest deep-link screen can never drift apart again.
                 const keyboard = new InlineKeyboard();
                 if (joinUrl !== null) {
-                  keyboard.url(renderGate(deps.translator.t('channel.join_button', lang)), joinUrl).row();
+                  keyboard
+                    .url(inlineButton(deps.translator.t('channel.join_button', lang), botCfg), joinUrl)
+                    .row();
                 }
-                keyboard.text(renderGate(deps.translator.t('channel.check_button', lang)), 'check_channel');
+                keyboard.text(
+                  inlineButton(deps.translator.t('channel.check_button', lang), botCfg),
+                  'check_channel',
+                );
                 await ctx.reply(deps.translator.t('channel.required', lang), {
                   reply_markup: keyboard,
                 });
