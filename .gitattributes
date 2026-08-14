@@ -1,3 +1,11 @@
+# Everything is stored with LF in the repository, whatever a clone's
+# `core.autocrlf` happens to be. This normalises the INDEX only — working
+# trees keep the platform's own convention, so no clone gets rewritten.
+#
+# Kept first so the rule below still wins where line endings are content
+# rather than convention.
+* text=auto
+
 # The landing kit is the source of truth for a copy vendored into rezeis-admin,
 # where a sha256 manifest fails the build on any mismatch. Line endings are
 # content to a hash, so both sides must agree on LF regardless of the checkout's
