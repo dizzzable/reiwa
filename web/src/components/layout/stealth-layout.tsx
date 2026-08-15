@@ -33,6 +33,7 @@ import { getPlatformPolicy } from "@/lib/api-client";
 import { ensurePushSubscription } from "@/lib/push";
 import { nextDestinationQuery } from "@/lib/next-destination";
 import { readTelegramLaunchInitData } from "@/lib/telegram-launch-params";
+import { resolveAppBackgroundKind } from "@/types/branding";
 
 type Surface = "tma" | "pwa" | "browser";
 type FormFactor = "mobile" | "tablet" | "desktop";
@@ -171,10 +172,20 @@ export default function StealthLayout() {
     void ensurePushSubscription();
   }, [session]);
 
-  // When the operator configured a custom app background it takes precedence
-  // over the default ambient `NetworkBg` (single WebGL context, no double FX).
+  // Which of the two background renderers this shell mounts.
+  //
+  // `none` is the BUILT-IN background — `<NetworkBg>` — and it is the default.
+  // It is not "no background": the operator who picks it gets the brand-tinted
+  // glows, dot grid and diagonals this cabinet has always drawn. The mode that
+  // really means "just the flat colour" is `plain`, which `<AppBackground>`
+  // renders by drawing nothing over `--brand-bg-primary`.
+  //
+  // Anything this build does not recognise resolves to `none` as well
+  // (`resolveAppBackgroundKind`), so a panel released ahead of this cabinet
+  // degrades to the familiar default instead of a blank shell.
+  const appBackgroundKind = resolveAppBackgroundKind(branding.appBackground?.kind);
   const hasAppBackground =
-    branding.appBackground !== undefined && branding.appBackground.kind !== "none";
+    branding.appBackground !== undefined && appBackgroundKind !== "none";
 
   // Subscribe to per-user realtime events while the session is open.
   // The hook is a no-op until `isAuthenticated` becomes true, and tears

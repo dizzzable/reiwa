@@ -648,6 +648,21 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       });
       let raf = 0;
       let contextLost = false;
+      // EVERY scheduling site goes through here, and the write-back is the
+      // whole point. `raf` is a closure local that `animate` reassigns on each
+      // frame, while both teardowns — the reinit branch and the unmount
+      // cleanup — cancel `threeRef.current.raf`. Publishing only the FIRST id
+      // (which it did) meant every cancel targeted a frame that had already
+      // run one frame later, so the loop outlived unmount and kept calling
+      // `composer.render()` into a context `forceContextLoss()` had just
+      // handed back — holding the scene, composer, touch texture and detached
+      // canvas alive for the rest of the session. Caught by
+      // `reactbits-repaired-lifecycle.test.tsx` only after `gl-stub.ts` stopped
+      // refusing to count draws issued against a lost context.
+      const schedule = () => {
+        raf = requestAnimationFrame(animate);
+        if (threeRef.current) threeRef.current.raf = raf;
+      };
       const animate = () => {
         if (contextLost) return;
         // A backgrounded tab is off screen too. Read inline rather than through
@@ -662,7 +677,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
           // and restarting. The loop already has one owner of `raf` that stops
           // and restarts it — the context-loss path above — and a second,
           // independent one is where the "it never came back" bugs live.
-          raf = requestAnimationFrame(animate);
+          schedule();
           return;
         }
         uniforms.uTime.value = timeOffset + clock.getElapsedTime() * speedRef.current;
@@ -684,7 +699,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
           });
           composer.render();
         } else renderer.render(scene, camera);
-        raf = requestAnimationFrame(animate);
+        schedule();
       };
       // three registers its own `webglcontextlost` handler and calls
       // preventDefault there, and rebuilds every GL resource it owns on
@@ -698,8 +713,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       const onContextRestored = () => {
         contextLost = false;
         setSize();
-        raf = requestAnimationFrame(animate);
-        if (threeRef.current) threeRef.current.raf = raf;
+        schedule();
       };
       renderer.domElement.addEventListener('webglcontextlost', onContextLost);
       renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);

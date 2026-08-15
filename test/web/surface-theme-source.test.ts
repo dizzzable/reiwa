@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BRANDING,
   resolveBrandingThemeMode,
+  type AppBackground,
   type Branding,
 } from "../../web/src/types/branding.js";
 
@@ -50,6 +51,27 @@ const CONCEPT_LIGHT_SURFACE = { foreground: "#0a0a0a", glassBlurPx: 8 };
 const CONCEPT_DARK_SURFACE = { foreground: "#fafafa", glassBlurPx: 16 };
 const OPERATOR_SURFACE = { foreground: "#f5f5f4", glassBlurPx: 24 };
 
+/**
+ * The concept's site background. Not this suite's subject, and not a sentinel
+ * either — a variant carries a complete `AppBackground` OBJECT, and this
+ * fixture used to put the string `"NONE"` in its place, which the surrounding
+ * `as unknown as` cast swallowed silently.
+ */
+const CONCEPT_APP_BACKGROUND: AppBackground = {
+  kind: "gradient",
+  effect: "NONE",
+  props: {},
+  opacity: 1,
+  gradient: "linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%)",
+  texture: {
+    pattern: "dots",
+    color: "#5eead4",
+    background: "#0b0b0f",
+    scale: 24,
+    opacity: 0.15,
+  },
+};
+
 function brandingWith(overrides: Partial<Branding>): Branding {
   const variant = {
     ...CONCEPT_DARK_BG,
@@ -58,7 +80,7 @@ function brandingWith(overrides: Partial<Branding>): Branding {
     cardGradient: "linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%)",
     cardPattern: null,
     bgEffect: "NONE",
-    appBackground: "NONE",
+    appBackground: CONCEPT_APP_BACKGROUND,
     surfaceTheme: CONCEPT_DARK_SURFACE,
   } as unknown as NonNullable<Branding["themeVariants"]>["dark"];
 

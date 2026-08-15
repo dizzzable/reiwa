@@ -51,7 +51,13 @@ export interface BrandingPayload {
   }>;
   readonly bgEffect: 'NONE' | 'MESH' | 'PARTICLES' | 'NOISE' | 'AURORA';
   readonly appBackground?: {
-    readonly kind: 'none' | 'gradient' | 'texture' | 'effect';
+    /**
+     * `string`, not a union, and for the same reason `effect` below is: the
+     * panel owns this vocabulary and ships ahead of the cabinet. `none` is the
+     * built-in background, `plain` the flat colour; anything unrecognised is
+     * resolved to `none` by `resolveAppBackgroundKind`, never rejected.
+     */
+    readonly kind: string;
     readonly effect: string;
     readonly props: Record<string, unknown>;
     readonly opacity: number;

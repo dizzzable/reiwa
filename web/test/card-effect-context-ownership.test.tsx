@@ -73,8 +73,18 @@ import Thunderstrike from "../src/components/reactbits/originkit/Thunderstrike";
 interface FakeContext {
   readonly canvas: HTMLCanvasElement;
   isContextLost(): boolean;
-  /** How many draw calls this context has actually executed. */
+  /**
+   * How many draw calls this context has RECEIVED — counted unconditionally,
+   * lost or not. Do not gate this on `!lost`. Every assertion in this file
+   * reads it against a live context, so nothing here is unfailable today, but
+   * the gated form makes "stopped drawing after the loss" true by construction
+   * for any implementation, and the identical shape in the panel's harness hid
+   * a render loop that outlived unmount and drew into a released context for a
+   * whole session. Real WebGL no-ops such a draw; it does not un-receive it.
+   */
   drawCount(): number;
+  /** The subset of `drawCount()` received while `isContextLost()` was true. */
+  drawsWhileLost(): number;
   [key: string]: unknown;
 }
 
@@ -91,6 +101,7 @@ const contexts: FakeContext[] = [];
 function createFakeContext(canvas: HTMLCanvasElement): FakeContext {
   let lost = false;
   let draws = 0;
+  let drawsWhileLost = 0;
   const alive = <T,>(value: T): T | null => (lost ? null : value);
 
   const gl: FakeContext = {
@@ -111,6 +122,7 @@ function createFakeContext(canvas: HTMLCanvasElement): FakeContext {
 
     isContextLost: () => lost,
     drawCount: () => draws,
+    drawsWhileLost: () => drawsWhileLost,
 
     // A lost context creates nothing and validates nothing. This is the whole
     // model of the failure: not an exception, just null handles and `false`
@@ -147,7 +159,8 @@ function createFakeContext(canvas: HTMLCanvasElement): FakeContext {
     uniform2f: () => undefined,
     uniform3f: () => undefined,
     drawArrays: () => {
-      if (!lost) draws += 1;
+      draws += 1;
+      if (lost) drawsWhileLost += 1;
     },
 
     getExtension: (name: string) =>

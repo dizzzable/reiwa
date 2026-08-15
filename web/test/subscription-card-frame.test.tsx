@@ -144,6 +144,47 @@ describe("SubscriptionCardFrame visual containment", () => {
     expect(markup).toContain(`--card-foreground:${visual.contrast.foreground}`);
   });
 
+  it("mounts nothing at all on a card a positional slot switched off", () => {
+    /*
+     * The operator's third off switch — "turn THIS card off" — reaching the
+     * DOM. `subscription-card-motion` pins the resolver's answer; this is the
+     * card actually built from it, because a GPU context mounted for a card
+     * the operator darkened is the cost the switch exists to avoid.
+     *
+     * The neighbour is the control: both cards come from ONE branding payload,
+     * so a frame that had simply stopped mounting effects fails here.
+     */
+    const branding = {
+      ...DEFAULT_BRANDING,
+      cardEffect: "aurora" as CardEffect,
+      // Structurally complete, as `isCardEffectSlot` in the public-config
+      // guard requires of an override slot even when its effect is `NONE`.
+      cardEffectsByIndex: [
+        {
+          mode: "override" as const,
+          cardEffect: "NONE",
+          cardEffectProps: {},
+          cardEffectOpacity: 1,
+        },
+      ],
+    };
+    const render = (index: number) =>
+      renderToStaticMarkup(
+        <SubscriptionCardFrame
+          visual={resolveSubscriptionCardVisual(branding, index)}
+          effectActive
+        />,
+      );
+
+    const silenced = render(0);
+    const neighbour = render(1);
+
+    expect(silenced).toContain('data-subscription-card-artwork="static"');
+    expect(silenced).not.toContain("data-card-effect-source");
+    expect(neighbour).toContain('data-subscription-card-artwork="animated"');
+    expect(neighbour).toContain('data-card-effect-source="aurora"');
+  });
+
   it("keeps vivid artwork copy clean without per-field capsules", () => {
     const markup = renderToStaticMarkup(
       <SubscriptionCardContent

@@ -3,7 +3,12 @@
  * ─────────────
  * Site-wide background rendered BEHIND the whole cabinet, driven by the
  * operator's `branding.appBackground`. A `kind` discriminator selects:
- *   - `none`     → nothing (the plain `--brand-bg-primary` colour shows).
+ *   - `none`     → nothing HERE, because the built-in `<NetworkBg>` is drawn
+ *     instead by `StealthLayout`; this component is not even mounted for it.
+ *     `none` is the default and it is a real picture (brand glows + dot grid +
+ *     diagonals), not a blank colour — see `AppBackgroundKind`.
+ *   - `plain`    → nothing at all: the flat `--brand-bg-primary` colour shows.
+ *     This is the mode that means "no background artwork".
  *   - `gradient` → a static CSS gradient (free, no flicker).
  *   - `texture`  → a static, tiled SVG pattern over a base colour (free).
  *   - `effect`   → an animated ReactBits effect via `CardEffectLayer`.
@@ -31,10 +36,16 @@ import { buildTextureCss } from "@/lib/app-texture";
 import { resolveAppBackgroundReadability } from "@/lib/app-background-contrast";
 import { clearBootstrapAppBackground } from "@/lib/branding-document";
 import { useBranding } from "@/lib/branding-provider";
+import { resolveAppBackgroundKind } from "@/types/branding";
 
 export function AppBackground() {
   const { branding } = useBranding();
   const appBg = branding.appBackground;
+  // A kind this build does not know resolves to `none`, i.e. "the built-in
+  // background", which `StealthLayout` draws instead of mounting this. So
+  // reaching the paint paths below with an unrecognised kind is impossible, and
+  // the early `none` return keeps it that way if this is ever mounted directly.
+  const kind = resolveAppBackgroundKind(appBg?.kind);
   // StealthLayout rerenders on every route change. The readability resolver
   // samples the full concept palette and is intentionally expensive, so only
   // recompute it when the operator's branding actually changes.
@@ -44,15 +55,15 @@ export function AppBackground() {
   );
 
   useLayoutEffect(() => {
-    if (!appBg || appBg.kind === "none") return;
+    if (!appBg || kind === "none" || kind === "plain") return;
     // The static bootstrap layer remains visible through session loading and
     // is removed only after this equivalent React layer exists in the DOM.
     clearBootstrapAppBackground();
-  }, [appBg]);
+  }, [appBg, kind]);
 
-  if (!appBg || appBg.kind === "none") return null;
+  if (!appBg || kind === "none" || kind === "plain") return null;
 
-  if (appBg.kind === "gradient") {
+  if (kind === "gradient") {
     const texture = appBg.texture;
     const conceptTexture =
       typeof branding.themePresetId === "string" &&
@@ -94,7 +105,7 @@ export function AppBackground() {
     );
   }
 
-  if (appBg.kind === "texture") {
+  if (kind === "texture") {
     const css = buildTextureCss(appBg.texture);
     return (
       <div

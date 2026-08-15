@@ -4,6 +4,7 @@ import {
   DEFAULT_BRANDING,
   resolveBrandPaletteSource,
   resolveBrandingThemeMode,
+  type AppBackground,
   type Branding,
 } from "../../web/src/types/branding.js";
 
@@ -42,13 +43,34 @@ const OPERATOR = {
   bgSecondary: "#292524",
 };
 
+/**
+ * The concept's site background. Not this suite's subject, and not a sentinel
+ * either — a variant carries a complete `AppBackground` OBJECT, and this
+ * fixture used to put the string `"NONE"` in its place, which the surrounding
+ * `as unknown as` cast swallowed silently.
+ */
+const CONCEPT_APP_BACKGROUND: AppBackground = {
+  kind: "gradient",
+  effect: "NONE",
+  props: {},
+  opacity: 1,
+  gradient: "linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%)",
+  texture: {
+    pattern: "dots",
+    color: "#5eead4",
+    background: "#0b0b0f",
+    scale: 24,
+    opacity: 0.15,
+  },
+};
+
 function brandingWith(overrides: Partial<Branding>): Branding {
   const variant = {
     ...CONCEPT_DARK,
     cardGradient: "linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%)",
     cardPattern: null,
     bgEffect: "NONE",
-    appBackground: "NONE",
+    appBackground: CONCEPT_APP_BACKGROUND,
     surfaceTheme: "dark",
   } as unknown as NonNullable<Branding["themeVariants"]>["dark"];
 

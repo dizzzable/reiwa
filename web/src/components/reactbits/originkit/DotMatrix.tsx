@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mesh, Plane, Program, RenderTarget, Renderer, Texture } from 'ogl';
 import type { OGLRenderingContext } from 'ogl';
 
@@ -382,6 +382,11 @@ export default function DotMatrix({
     glyphCfgRef.current = { effectiveCharacters, fontFamily, fontWeight, fontSizePx };
   });
 
+  // Bumped by the restore handler so the effect below re-runs and builds a
+  // fresh renderer. Restarting the loop alone would draw through handles the
+  // loss detached. Same shape as `Plasma`/`Grainient`.
+  const [glGeneration, setGlGeneration] = useState(0);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -583,8 +588,10 @@ export default function DotMatrix({
 
     let rafId: number | null = null;
     let lastTime = 0;
+    let contextLost = false;
 
     const update = (time: number) => {
+      if (contextLost) return;
       rafId = requestAnimationFrame(update);
       if (time - lastTime < FRAME_INTERVAL) return;
       lastTime = time;
@@ -595,9 +602,47 @@ export default function DotMatrix({
     };
 
     syncResolution();
-    renderer.render({ scene: perlinMesh, target: renderTarget });
-    renderer.render({ scene: dotMesh });
+    // THE FIRST PAINT RUNS INSIDE THE EFFECT, which makes it the one place in
+    // this file where a throw escapes into React's commit instead of into a rAF
+    // callback the browser merely reports to `window.onerror`.
+    //
+    // A context can be lost DURING this build — WebKit gives a web-content
+    // process sixteen and recycles the oldest — and ogl's `Program` constructor
+    // early-returns half-built when linking fails: `ogl/src/core/Program.js:84`
+    // returns before assigning `uniformLocations`, which `Program.use()` then
+    // dereferences. Both calls below go through it, so both throw a TypeError.
+    //
+    // Escaping HERE is what makes it permanent: the `webglcontextlost` and
+    // `webglcontextrestored` listeners are registered further down, so a throw
+    // at this line skips them, and the restore that heals every sibling effect
+    // is never heard — the card stays blank until the subscriber reloads.
+    // Skipping one frame costs a frame; throwing costs the session. Measured
+    // across all 22 WebGL card effects: this file and its sibling
+    // `ChromaticWaves` are the only two that paint synchronously, and were the
+    // only two that did not recover.
+    if (!gl.isContextLost()) {
+      renderer.render({ scene: perlinMesh, target: renderTarget });
+      renderer.render({ scene: dotMesh });
+    }
     rafId = requestAnimationFrame(update);
+
+    // OGL does not handle context loss (`ogl/src/core/Renderer.js`: "TODO:
+    // Handle context loss"), unlike three.js, whose `WebGLRenderer` installs
+    // its own. Without `preventDefault()` here the browser never fires
+    // `webglcontextrestored` at all — so the recoverable loss WebKit produces
+    // when it recycles the oldest of its 16 per-process contexts becomes a
+    // permanently blank card for the rest of the session, with the loop still
+    // issuing draw calls against dead handles.
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
 
     let resizePending = false;
     const resizeObserver = new ResizeObserver(() => {
@@ -613,6 +658,10 @@ export default function DotMatrix({
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
+      // Listeners come off before loseContext, or the restore handler would
+      // fire during teardown and rebuild everything we are about to free.
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       applyAtlasRef.current = null;
       perlinProgramRef.current = null;
       dotProgramRef.current = null;
@@ -640,7 +689,7 @@ export default function DotMatrix({
       // back immediately rather than waiting for the GC to notice the canvas.
       loseContext();
     };
-  }, []);
+  }, [glGeneration]);
 
   useEffect(() => {
     const perlin = perlinProgramRef.current;

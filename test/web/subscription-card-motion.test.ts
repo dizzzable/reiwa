@@ -12,6 +12,7 @@ import {
   DEFAULT_BRANDING,
   resolveSubscriptionCardText,
   type Branding,
+  type CardEffectSlot,
 } from "../../web/src/types/branding.js";
 
 function branding(overrides: Partial<Branding> = {}): Branding {
@@ -360,6 +361,170 @@ describe("subscription card visual resolver", () => {
     );
     expect(visual.slotIndex).toBeNull();
     expect(visual.cardEffect).toBe("silk");
+  });
+});
+
+/**
+ * The third off switch: "turn THIS card off".
+ *
+ * The operator has three of them and they are not interchangeable. The global
+ * `cardEffect: "NONE"` stops every card; a tariff's `planCardStyles[id]`
+ * answers for one plan's card; and a positional slot marked `override` with
+ * `cardEffect: "NONE"` darkens the Nth subscription card WHILE the global
+ * effect keeps running on all the others. Only the third one can express that,
+ * so nothing else in the suite can stand in for it.
+ *
+ * It was the only one of the three with no test at all. `override + NONE`
+ * could be made to fall through to the global effect — one added condition in
+ * `subscription-card-visual.ts` — and every card-effect suite stayed green:
+ * the existing positional tests all name a real effect in the slot, which
+ * takes the same branch whether or not `NONE` is excluded from it.
+ *
+ * Each case below is written against its own neighbour: the silenced card is
+ * always checked next to a card that is NOT silenced, so none of these can pass
+ * on a resolver that simply stopped reading slots.
+ */
+describe("positional slot as the per-card off switch", () => {
+  /** Ships in this bundle, and paints an opaque white — see `card-visual-effect-overlay`. */
+  const LIT = "threads";
+  const DARK_GRADIENT = "linear-gradient(135deg, #101014 0%, #17171d 100%)";
+  /**
+   * "This card off", in the shape the panel actually publishes it.
+   *
+   * The props and the opacity are not padding: `isCardEffectSlot` in the
+   * public-config guard requires an `override` slot to be structurally
+   * complete even when its effect is `NONE`, so a slot without them describes
+   * a payload the cabinet can never be served.
+   */
+  const SILENCED_SLOT: CardEffectSlot = {
+    mode: "override",
+    cardEffect: "NONE",
+    cardEffectProps: {},
+    cardEffectOpacity: 1,
+  };
+
+  function card(index: number, overrides: Partial<Branding>) {
+    return resolveSubscriptionCardVisual(
+      branding({ cardGradient: DARK_GRADIENT, ...overrides }),
+      index,
+    );
+  }
+
+  it("silences its own card while the global effect keeps the neighbours", () => {
+    const source: Partial<Branding> = {
+      cardEffect: "aurora",
+      cardEffectProps: { amplitude: 7 },
+      cardEffectOpacity: 1,
+      cardEffectsByIndex: [SILENCED_SLOT],
+    };
+
+    const silenced = card(0, source);
+    const neighbour = card(1, source);
+
+    expect(silenced.cardEffect).toBe("NONE");
+    // Not merely a different name: nothing of the global effect may be left on
+    // this card. Aurora injects its brand-derived stops on the way through, so
+    // a card that fell back to it carries them even where the id is corrected
+    // afterwards.
+    expect(silenced.cardEffectProps).toEqual({});
+    expect(neighbour.cardEffect).toBe("aurora");
+    expect(neighbour.cardEffectProps["colorStops"]).toHaveLength(3);
+    expect(neighbour.cardEffectProps["amplitude"]).toBe(7);
+  });
+
+  it("keeps the artwork it is not wearing out of its contrast decision", () => {
+    // The invisible half. `threads` is an opaque white shader, so a card that
+    // wears it takes DARK copy over this near-black gradient. A silenced card
+    // that still handed the effect to contrast would read as light-on-light
+    // artwork it never draws.
+    const source: Partial<Branding> = {
+      cardEffect: LIT,
+      cardEffectsByIndex: [SILENCED_SLOT],
+    };
+
+    const silenced = card(0, source);
+    const neighbour = card(1, source);
+    const globallyOff = card(0, { cardEffect: "NONE" });
+
+    expect(silenced.contrast).toEqual(globallyOff.contrast);
+    expect(silenced.contrast.foregroundTone).toBe("light");
+    // The control: without it the line above would also pass on a resolver
+    // that had stopped giving effects to contrast altogether.
+    expect(neighbour.contrast).not.toEqual(globallyOff.contrast);
+    expect(neighbour.contrast.foregroundTone).toBe("dark");
+  });
+
+  it("lights its own card while the global effect is off", () => {
+    // The same switch used the other way round, and the reason "a slot may
+    // only narrow the global effect" is not the rule here.
+    const source: Partial<Branding> = {
+      cardEffect: "NONE",
+      cardEffectsByIndex: [
+        {
+          mode: "override",
+          cardEffect: LIT,
+          cardEffectProps: { amplitude: 2 },
+          cardEffectOpacity: 0.6,
+        },
+      ],
+    };
+
+    const lit = card(0, source);
+
+    expect(lit).toMatchObject({ cardEffect: LIT, cardEffectOpacity: 0.6 });
+    expect(lit.cardEffectProps).toEqual({ amplitude: 2 });
+    expect(card(1, source).cardEffect).toBe("NONE");
+  });
+
+  it("lets an inherit slot follow a later global edit, whatever it still holds", () => {
+    // A concept used to populate every slot, so live installs carry slots full
+    // of values the operator never chose. `inherit` means the global controls
+    // are authoritative again — including when the stale copy says `NONE`,
+    // which must not switch a card off the operator did not switch off.
+    const source: Partial<Branding> = {
+      cardEffect: "silk",
+      cardEffectProps: { speed: 4 },
+      cardEffectOpacity: 0.9,
+      cardEffectsByIndex: [
+        {
+          mode: "inherit",
+          cardEffect: "aurora",
+          cardEffectProps: { amplitude: 3 },
+          cardEffectOpacity: 0.1,
+        },
+        { mode: "inherit", cardEffect: "NONE" },
+      ],
+    };
+
+    for (const index of [0, 1]) {
+      const visual = card(index, source);
+      expect(visual).toMatchObject({
+        slotIndex: index,
+        cardEffect: "silk",
+        cardEffectOpacity: 0.9,
+      });
+      expect(visual.cardEffectProps).toEqual({ speed: 4 });
+    }
+  });
+
+  it("takes the global effect for every card past the last configured slot", () => {
+    // A silenced first card must not silence the list. Slots are positional,
+    // and the array simply ends.
+    const source: Partial<Branding> = {
+      cardEffect: "silk",
+      cardEffectProps: { speed: 4 },
+      cardEffectOpacity: 0.77,
+      cardEffectsByIndex: [SILENCED_SLOT],
+    };
+
+    expect(card(0, source).cardEffect).toBe("NONE");
+    for (const index of [1, 2, 9]) {
+      expect(card(index, source)).toMatchObject({
+        slotIndex: index,
+        cardEffect: "silk",
+        cardEffectOpacity: 0.77,
+      });
+    }
   });
 });
 

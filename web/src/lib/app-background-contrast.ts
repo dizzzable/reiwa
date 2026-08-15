@@ -30,6 +30,7 @@ export function resolveAppBackgroundReadability(
     !foreground ||
     !mutedForeground ||
     appBackground.kind === "none" ||
+    appBackground.kind === "plain" ||
     appBackground.kind === "effect"
   ) {
     return null;
@@ -74,8 +75,25 @@ interface VeilCandidate {
   readonly veilOpacity: number;
 }
 
+/**
+ * Every colour the app background can put under the direct copy, INCLUDING the
+ * cross-position blends of the textured product that the veil maths below no
+ * longer enumerates. Nothing in the app calls this — it is the specification
+ * the readability guard asserts against, kept here rather than re-derived in a
+ * test so that the two cannot drift apart.
+ *
+ * See `resolveSoftLightTextureSamples` for what the extra blends are and why
+ * choosing the veil stopped walking them.
+ */
+export function resolveAppBackgroundPaintedSamples(
+  branding: Pick<Branding, "appBackground" | "bgPrimary" | "themePresetId">,
+): readonly Rgb[] {
+  return resolveBackgroundSamples(branding, true);
+}
+
 function resolveBackgroundSamples(
   branding: Pick<Branding, "appBackground" | "bgPrimary" | "themePresetId">,
+  includeCrossPositionBlends = false,
 ): Rgb[] {
   const appBackground = branding.appBackground;
   if (!appBackground) return [];
@@ -85,7 +103,7 @@ function resolveBackgroundSamples(
     parseCssColor(appBackground.kind === "texture" ? texture?.background ?? branding.bgPrimary : branding.bgPrimary)?.rgb ??
     null;
 
-  if (appBackground.kind === "none") return [];
+  if (appBackground.kind === "none" || appBackground.kind === "plain") return [];
   if (appBackground.kind === "texture") {
     const textureBackground = parseCssColor(appBackground.texture.background)?.rgb;
     const textureColor = parseCssColor(appBackground.texture.color)?.rgb;
@@ -121,6 +139,7 @@ function resolveBackgroundSamples(
           gradientSamples,
           textureColor,
           clamp(texture.opacity, 0, 1),
+          includeCrossPositionBlends,
         ),
       );
     }
@@ -234,10 +253,30 @@ function resolveGradientSamples(
   ]);
 }
 
+/**
+ * The gradient seen through the concept's soft-light texture, at four strengths
+ * up to its configured opacity.
+ *
+ * `includeCrossPositionBlends` adds the 25/50/75% blends BETWEEN those textured
+ * colours. Choosing the veil does not ask for them, and that is deliberate: a
+ * blend of the textured colour at one point of the gradient with the textured
+ * colour at another is not a colour the browser paints anywhere — every pixel
+ * carries one gradient colour under one texture alpha — and `baseSamples`
+ * already carries the gradient's own interpolation, so the textured colours at
+ * every position in between are present already.
+ *
+ * Enumerating them anyway cost 40x the whole resolver: 108,187,317 pair blends
+ * on `concept-cu` against 3,483 without. Dropping them moved 12 of the 104
+ * concept presets, every one DOWNWARD and by at most 0.008 of veil opacity, and
+ * every one still clears AA against the full model above — which is what
+ * `keeps every concept preset's veil AA-safe against the full painted
+ * background` in the panel's `theme-presets.test.ts` exists to keep true.
+ */
 function resolveSoftLightTextureSamples(
   baseSamples: readonly Rgb[],
   textureColor: Rgb,
   opacity: number,
+  includeCrossPositionBlends: boolean,
 ): Rgb[] {
   if (opacity <= 0) return [];
   const alphaStates = [0.25, 0.5, 0.75, 1]
@@ -252,22 +291,67 @@ function resolveSoftLightTextureSamples(
       ),
     ),
   );
+  if (!includeCrossPositionBlends) return uniqueRgb(textured);
   return uniqueRgb([
     ...textured,
-    ...interpolateRgbStates(textured),
+    // Interpolate the DEDUPED product. `textured` repeats a colour whenever two
+    // gradient samples land on the same value under the same alpha state, and
+    // the blends of a deduped set are the same set: a pair of equal samples
+    // blends to itself, and that value is already in `textured` above. Same
+    // colours, a third fewer pairs — 169,670,790 down to 108,187,317 on
+    // `concept-cu`.
+    ...interpolateRgbStates(uniqueRgb(textured)),
   ]);
 }
 
+/**
+ * The 25/50/75% blends between every pair of samples — the colours the browser
+ * paints BETWEEN two stops, which a stop-only reading never sees.
+ *
+ * The dedupe happens DURING generation, not after. Collecting every blend into
+ * one array and calling `uniqueRgb` at the end is quadratic in memory as well
+ * as in time, and the duplicate ratio is brutal: for the `concept-cu` preset
+ * this loop pushed 169,670,790 three-element arrays so that the texture stage
+ * could keep the 67,418 distinct colours it actually yields. That did not
+ * merely stall a phone — the array never finished being built. On a default
+ * heap the process died on "Ineffective mark-compacts near heap limit"; given
+ * 12 GB it got further and threw `RangeError: Invalid array length` out of
+ * `Array.push`. Either way `resolveAppBackgroundReadability` never returned, so
+ * the cabinet's app background failed outright on that preset rather than being
+ * slow on it.
+ *
+ * Skipping a blend already seen bounds the array to the distinct colours.
+ * `uniqueRgb` keeps the FIRST occurrence of each colour and so does this,
+ * walking the pairs in the same order, so the array returned is unchanged —
+ * this is a memory fix, not a change of answer.
+ */
 function interpolateRgbStates(samples: readonly Rgb[]): Rgb[] {
   const blended: Rgb[] = [];
-  for (let left = 0; left < samples.length; left += 1) {
-    for (let right = left + 1; right < samples.length; right += 1) {
-      blended.push(mixRgb(samples[left]!, samples[right]!, 0.25));
-      blended.push(mixRgb(samples[left]!, samples[right]!, 0.5));
-      blended.push(mixRgb(samples[left]!, samples[right]!, 0.75));
+  // One bit per 24-bit colour: 2 MB flat, and worth it over a Set keyed on the
+  // same packed colour, which was measurably the bottleneck once the array was
+  // gone (`concept-cu`: 16.7 s with the Set, 4.2 s with the bitmap).
+  const seen = new Uint8Array(1 << 21);
+  const count = samples.length;
+  for (let left = 0; left < count; left += 1) {
+    const lower = samples[left]!;
+    for (let right = left + 1; right < count; right += 1) {
+      const upper = samples[right]!;
+      // step/4 is exactly 0.25, 0.5, 0.75, in that order.
+      for (let step = 1; step < 4; step += 1) {
+        const alpha = step / 4;
+        const red = mixChannel(lower[0], upper[0], alpha);
+        const green = mixChannel(lower[1], upper[1], alpha);
+        const blue = mixChannel(lower[2], upper[2], alpha);
+        const key = (red << 16) | (green << 8) | blue;
+        const slot = key >> 3;
+        const mask = 1 << (key & 7);
+        if ((seen[slot]! & mask) !== 0) continue;
+        seen[slot] = seen[slot]! | mask;
+        blended.push([red, green, blue]);
+      }
     }
   }
-  return uniqueRgb(blended);
+  return blended;
 }
 
 function softLightBlend(source: Rgb, backdrop: Rgb): Rgb {
@@ -295,12 +379,14 @@ function softLightCurve(value: number): number {
   return Math.sqrt(value);
 }
 
-function mixRgb(left: Rgb, right: Rgb, alpha: number): Rgb {
-  return [
-    Math.round(left[0] * (1 - alpha) + right[0] * alpha),
-    Math.round(left[1] * (1 - alpha) + right[1] * alpha),
-    Math.round(left[2] * (1 - alpha) + right[2] * alpha),
-  ];
+/**
+ * One blended channel. `interpolateRgbStates` is the only caller and needs the
+ * three channels separately, so that it can key the dedupe on them and build
+ * the tuple only for a colour it has not already emitted; this keeps the
+ * rounding rule in one place rather than inlined at the call site.
+ */
+function mixChannel(left: number, right: number, alpha: number): number {
+  return Math.round(left * (1 - alpha) + right * alpha);
 }
 
 function extractCssColors(value: string): Rgba[] {
@@ -454,13 +540,32 @@ function contrastRatio(left: Rgb, right: Rgb): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-function relativeLuminance(rgb: Rgb): number {
-  const [r, g, b] = rgb.map((channel) => {
+/**
+ * The sRGB transfer of each of the 256 possible 8-bit channel values.
+ *
+ * The same expression as before, evaluated 256 times at module load instead of
+ * once per lookup — a table, not an approximation, so every luminance below is
+ * bit-identical to the one this module used to compute. It earns its place
+ * because this is the hottest arithmetic here: `requiredVeilOpacity` bisects 18
+ * times for every (sample, text colour) pair that fails, and `concept-am` alone
+ * evaluated the two `**` calls about 14 million times for one veil.
+ */
+const CHANNEL_LUMINANCE = (() => {
+  const table = new Float64Array(256);
+  for (let channel = 0; channel < 256; channel += 1) {
     const normalized = channel / 255;
-    return normalized <= 0.04045
-      ? normalized / 12.92
-      : ((normalized + 0.055) / 1.055) ** 2.4;
-  });
+    table[channel] =
+      normalized <= 0.04045
+        ? normalized / 12.92
+        : ((normalized + 0.055) / 1.055) ** 2.4;
+  }
+  return table;
+})();
+
+function relativeLuminance(rgb: Rgb): number {
+  const r = CHANNEL_LUMINANCE[rgb[0]]!;
+  const g = CHANNEL_LUMINANCE[rgb[1]]!;
+  const b = CHANNEL_LUMINANCE[rgb[2]]!;
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 

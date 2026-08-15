@@ -66,13 +66,54 @@ export interface CardEffectSlot {
 
 /**
  * Site-wide app background — rendered behind the whole cabinet (mirrors backend
- * `AppBackgroundSettings`). A `kind` discriminator selects a plain colour
- * (`none`), a static gradient, a static tiled texture, or an animated effect.
- * Reuses the card-effect catalog (`components/reactbits/card-effect-catalog.ts`,
- * with its component map in `card-effect-manifest.ts`) for `effect`, mounted
- * once at the shell.
+ * `AppBackgroundSettings`). A `kind` discriminator selects:
+ *
+ *   - `none`     — the BUILT-IN background: `<NetworkBg>`, the brand-tinted
+ *     glows + dot grid + diagonals this cabinet has always drawn behind every
+ *     authenticated screen. It is the default and it is NOT a blank colour.
+ *     The panel used to call it "None" and describe it as the plain background
+ *     colour in three separate places; the picture was never plain, and the
+ *     operator who switched the background off saw an empty panel preview and a
+ *     patterned cabinet. The name was the lie, so the name changed — the value
+ *     stayed `none` and draws exactly what it always drew, because renaming the
+ *     stored value would have restyled every existing installation.
+ *   - `plain`    — the flat `bgPrimary` colour and nothing else. This is what
+ *     "None" used to promise; operators who want it now have it.
+ *   - `gradient` — a static CSS gradient,
+ *   - `texture`  — a static tiled SVG pattern over a base colour,
+ *   - `effect`   — an animated effect. Reuses the card-effect catalog
+ *     (`components/reactbits/card-effect-catalog.ts`, with its component map in
+ *     `card-effect-manifest.ts`), mounted once at the shell.
  */
-export type AppBackgroundKind = "none" | "gradient" | "texture" | "effect";
+export type AppBackgroundKind = "none" | "plain" | "gradient" | "texture" | "effect";
+
+/**
+ * Resolve a `kind` that arrived over the wire into one this build can draw.
+ *
+ * rezeis-admin owns the vocabulary and ships ahead of the cabinet, so an
+ * unrecognised kind is a NORMAL event, not corruption — the snapshot guard
+ * (`isAppBackgroundKind` in `src/application/ports/public-config-persistence.port.ts`)
+ * deliberately lets any short string through rather than discarding the whole
+ * branding payload over one decorative field. This is the other half of that
+ * contract: everything unknown resolves to `none`, the built-in background this
+ * deployment was already showing, so a panel release the cabinet has not caught
+ * up with degrades to the familiar default instead of a blank screen.
+ *
+ * `undefined` also resolves to `none`: pre-`kind` payloads carry only
+ * `effect`/`props`/`opacity`, and callers infer `effect` from those themselves
+ * before consulting this.
+ */
+export function resolveAppBackgroundKind(kind: string | undefined): AppBackgroundKind {
+  switch (kind) {
+    case "plain":
+    case "gradient":
+    case "texture":
+    case "effect":
+      return kind;
+    default:
+      return "none";
+  }
+}
 
 export type AppBackgroundTexture =
   | "dots"
@@ -93,7 +134,15 @@ export interface AppBackgroundTextureSettings {
 }
 
 export interface AppBackground {
-  kind: AppBackgroundKind;
+  /**
+   * Deliberately `string` rather than `AppBackgroundKind`, for the same reason
+   * `CardEffect` is: the panel publishes this name and releases separately, so
+   * the value that actually arrives may be a mode this build cannot draw. The
+   * snapshot guard lets it through on purpose; narrowing the type here would
+   * only move the lie one layer down. `resolveAppBackgroundKind` is where the
+   * question "can we draw this one?" is answered, and every consumer asks it.
+   */
+  kind: string;
   /** Animated effect (kind === "effect"). */
   effect: CardEffect;
   props: Record<string, unknown>;

@@ -39,7 +39,8 @@ const HEX_PATTERN = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 // extension a silent outage. `bgEffect` below is a closed legacy set that has
 // not gained a member since it was introduced, so it stays checked.
 const BG_EFFECTS = new Set(["NONE", "MESH", "PARTICLES", "NOISE", "AURORA"]);
-const APP_BACKGROUND_KINDS = new Set(["none", "gradient", "texture", "effect"]);
+// `appBackground.kind` used to be a Set here too, and it is gone for the same
+// reason the card-effect vocabulary is — see `isAppBackgroundKind`.
 const APP_BACKGROUND_TEXTURES = new Set([
   "dots",
   "grid",
@@ -457,7 +458,7 @@ function hasOptionalAppBackground(record: Record<string, unknown>, key: string):
       : isAppBackgroundTexture(texture);
 
   return (
-    isAllowedString(kind, APP_BACKGROUND_KINDS) &&
+    isAppBackgroundKind(kind) &&
     isEffectId(effect) &&
     isRecord(value["props"]) &&
     isNumberInRange(value["opacity"], 0.05, 1) &&
@@ -860,6 +861,34 @@ function isAllowedString(value: unknown, allowed: ReadonlySet<string>): value is
  * lookup.
  */
 function isEffectId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 64;
+}
+
+/**
+ * `appBackground.kind` — an OPEN vocabulary, exactly like `isEffectId` above
+ * and for exactly the same reason.
+ *
+ * rezeis-admin decides what background modes exist and releases on its own
+ * cadence, so a `kind` arriving here may name a mode this build has never
+ * heard of. A closed Set would turn every such release into the outage that
+ * has already happened twice in this guard: one unrecognised decorative field
+ * fails the whole first-rejection-wins chain, `fetchFreshPayload` throws before
+ * it can `save`, and `src/api/routes/branding.ts` falls back to the previous
+ * snapshot — indefinitely, for every branding field at once, while the panel
+ * keeps reporting successful saves.
+ *
+ * The escape is the same as for effect ids: accept the name, resolve it where
+ * it is used. `resolveAppBackgroundKind` in `web/src/types/branding.ts` maps an
+ * unrecognised kind to `"none"`, which is the cabinet's built-in background —
+ * the picture this deployment was already showing. Rendering the familiar
+ * default for a mode we cannot draw is a blemish; a configuration frozen for
+ * good is an outage.
+ *
+ * What is still refused is a value that cannot be a kind at all: a non-string,
+ * an empty string, or one longer than any identifier. Those mean a corrupt
+ * writer, not a newer one.
+ */
+function isAppBackgroundKind(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 64;
 }
 

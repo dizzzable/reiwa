@@ -150,4 +150,64 @@ describe("AppBackground concept contract", () => {
       "data-app-background-concept-texture",
     );
   });
+
+  /**
+   * `plain` is the mode the panel used to describe under the name "None" while
+   * the cabinet drew `<NetworkBg>` instead. It now exists for real, and its
+   * whole promise is that NOTHING is painted over `--brand-bg-primary`:
+   * `StealthLayout` hands it to this component precisely so that the built-in
+   * pattern is skipped, and this component then paints nothing.
+   *
+   * A readability veil would be a background of its own, so the resolver has to
+   * decline as well — over a flat colour there is nothing to veil, and a veil
+   * would tint the very colour the operator picked.
+   */
+  it("paints nothing at all for the plain colour mode", () => {
+    // `effect` is deliberately a real effect id and not `NONE`. An operator who
+    // configured an animation and then switched to the plain colour leaves that
+    // id in the payload — the panel only changes `kind` — so a `plain` that is
+    // not stopped explicitly falls through to the animated branch and the
+    // abandoned effect comes back. With `effect: "NONE"` this test passes even
+    // without the guard, because the animated branch declines on its own.
+    const markup = renderBackground({
+      appBackground: {
+        ...DEFAULT_BRANDING.appBackground!,
+        kind: "plain",
+        effect: "aurora",
+        gradient: "linear-gradient(135deg, #101820, #263747)",
+      },
+    });
+
+    expect(markup).toBe("");
+  });
+
+  it("resolves no readability veil for the plain colour mode", () => {
+    const branding = {
+      ...DEFAULT_BRANDING,
+      themePresetId: "concept-am",
+      themePresetVersion: 1,
+      appBackground: {
+        ...DEFAULT_BRANDING.appBackground!,
+        kind: "plain",
+        gradient: "linear-gradient(180deg, #DFA98B 0%, #8E6D72 100%)",
+      },
+    } as Branding;
+
+    expect(resolveAppBackgroundReadability(branding)).toBeNull();
+  });
+
+  it("paints nothing for the built-in mode, which the shell draws instead", () => {
+    // Guards the division of labour. If this component ever started painting
+    // for `none`, the cabinet would show the built-in pattern twice — once from
+    // `<NetworkBg>` and once from here.
+    const markup = renderBackground({
+      appBackground: {
+        ...DEFAULT_BRANDING.appBackground!,
+        kind: "none",
+        effect: "aurora",
+      },
+    });
+
+    expect(markup).toBe("");
+  });
 });

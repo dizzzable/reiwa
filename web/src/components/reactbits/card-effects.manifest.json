@@ -4,8 +4,8 @@
   "sourcePath": "rezeis-admin/web/src/components/reactbits",
   "targetRepo": "dizzzable/reiwa",
   "targetPath": "web/src/components/reactbits",
-  "sourceCommit": "cd68746740d87c50e82a1c70fab01bdbbc3ede68-dirty",
-  "syncedAt": "2026-08-11T06:31:02.459Z",
+  "sourceCommit": "47a02915f109f54f4a085792c710bd636077a789-dirty",
+  "syncedAt": "2026-08-15T17:00:04.683Z",
   "excluded": {
     "paper.tsx": "hand-written per repo in each repo's house style; see its header",
     "Aurora.tsx": "the two apps draw this effect from DIFFERENT files: the cabinet renders components/ui/aurora, eagerly, because aurora is the default card and splitting it would put a round trip in front of the commonest card in the product. Copying this file over that one would replace a deliberate eager component with a lazy one. The divergence predates this script and is named here so it is a decision rather than a gap."
@@ -28,7 +28,7 @@
     "LiquidChrome.tsx": "bda08f7015351433549d66c2a1c37c8edfc601ea21e6d03f56941fe712c3c70b",
     "MagicRings.tsx": "436e07c65517e669e4ae34d7167ace3615e0d098c1119b85a8a6a2a451b9f967",
     "Particles.tsx": "d5ca6a8f8a3b4a1b879bbf8d50b6a670b6c77b3b80212262f1e160dda2662785",
-    "PixelBlast.tsx": "874d57731b2d0a451415a58ca6c932b5cbc275320d96bae168c173e3a4751ae4",
+    "PixelBlast.tsx": "4ee5ea9de49ffddb60bdb5002a28176774ed95ec336e1d8f89530c8d4af7cc12",
     "Plasma.tsx": "c8d5b70c8c0831082c73cf028ff8ffa6ebdb4d8cda5f591ea3251b3d2bda92d6",
     "PlasmaWave.tsx": "2c2df6b52cded9fa0b68e0aa65d36d6ad414990cc748fbc11ec9c544534ae066",
     "PrismaticBurst.tsx": "58eadb50599e9063ad43dab586c0b1174c743326d0b8295a36a87d1d316ef0a2",

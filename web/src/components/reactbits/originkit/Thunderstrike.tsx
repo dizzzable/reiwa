@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { resolveBufferRatio } from '../render-scale';
 
@@ -245,6 +245,12 @@ export default function Thunderstrike({
     propsRef.current = { lightningColor, backgroundColor, xOffset, speed, intensity, size, angle };
   });
 
+  // Bumped by the restore handler so the effect below re-runs and rebuilds
+  // the program on the revived context. Same shape as its direct sibling
+  // `CosmicOrb`, which re-inits in place; here the whole effect owns the
+  // canvas, so re-running it is the equivalent.
+  const [glGeneration, setGlGeneration] = useState(0);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -286,6 +292,7 @@ export default function Thunderstrike({
     if (!gl) return;
 
     let destroyed = false;
+    let contextLost = false;
     let rafId = 0;
 
     const compile = (source: string, type: number): WebGLShader | null => {
@@ -371,7 +378,7 @@ export default function Thunderstrike({
     const startTime = performance.now();
 
     const render = () => {
-      if (destroyed) return;
+      if (destroyed || contextLost) return;
       gl.viewport(0, 0, canvas.width, canvas.height);
 
       const p = propsRef.current;
@@ -399,10 +406,33 @@ export default function Thunderstrike({
 
     rafId = requestAnimationFrame(render);
 
+    // `webglcontextlost` is not a touch or wheel event: preventDefault here
+    // is what asks the browser to restore the context, and blocks no gesture.
+    // Without it the browser never fires `webglcontextrestored` at all — so
+    // the recoverable loss WebKit produces when it recycles the oldest of its
+    // 16 per-process contexts becomes a permanently blank card for the rest
+    // of the session, with the loop still issuing draw calls against dead
+    // handles. `CosmicOrb`, the sibling on the same raw WebGL, already does
+    // this; this file was the one that did not.
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+    const handleContextRestored = () => {
+      setGlGeneration(generation => generation + 1);
+    };
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
     return () => {
       destroyed = true;
       if (rafId) cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
+      // Listeners come off before disposeGl, or the restore handler would
+      // fire during teardown and rebuild everything we are about to free.
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       // The element goes before the context does. A detached canvas is not a
       // presentation, and the card layer's canvas observer reads exactly that:
       // a `webglcontextlost` on a canvas still in the document is a fault, one
@@ -414,7 +444,7 @@ export default function Thunderstrike({
       }
       disposeGl();
     };
-  }, []);
+  }, [glGeneration]);
 
   return <div ref={containerRef} className="absolute inset-0 h-full w-full overflow-hidden" />;
 }

@@ -17,8 +17,42 @@ export interface TextureCss {
   readonly backgroundSize: string;
 }
 
+/**
+ * Fold an operator-supplied opacity into the 0…1 that CSS and SVG accept.
+ *
+ * The failure being prevented is not a wrong colour, it is a DROPPED
+ * DECLARATION: `rgba(170,29,139,1.7)` and `rgba(170,29,139,NaN)` are not valid
+ * values, so the browser discards the entire `fill`/`stroke` and the element
+ * keeps whatever it inherited. Nothing is logged and nothing on screen points
+ * back at the opacity control, which makes it read as "the setting did nothing".
+ *
+ * NaN maps to 1, not to 0. `Number()` over a settings blob yields NaN from a
+ * missing key or a non-numeric string, and between the two failure modes an
+ * over-visible pattern is one the operator can see and report, while an
+ * invisible one is indistinguishable from the bug above. `Number.isNaN` rather
+ * than `!Number.isFinite` so that ±Infinity still clamps by magnitude — -Infinity
+ * means "as transparent as possible" and answering 1 would invert it.
+ *
+ * The explicit NaN test is load-bearing: `Math.min(Math.max(NaN, 0), 1)` is NaN,
+ * so a clamp on its own does not cover it.
+ *
+ * This side needs it most: the cabinet passes `branding.appBackground.texture`
+ * from the API payload straight into `buildTextureCss`, with no schema or
+ * normaliser in between — unlike the panel, where `branding-form-schema.ts`
+ * bounds the draft first.
+ */
+function clampAlpha(alpha: number): number {
+  if (Number.isNaN(alpha)) return 1;
+  return Math.min(Math.max(alpha, 0), 1);
+}
+
 /** Convert `#rrggbb` (or shorthand) + alpha → `rgba(...)`. Falls back safely. */
 function hexToRgba(hex: string, alpha: number): string {
+  // Clamped once, up front, so BOTH exits below are covered. The unparseable
+  // -colour fallback used to interpolate the raw `alpha`, which meant the
+  // branch whose whole job is to keep the tile visible emitted the invalid
+  // declaration instead.
+  const a = clampAlpha(alpha);
   let h = hex.trim().replace(/^#/, "");
   if (h.length === 3) {
     h = h
@@ -26,11 +60,10 @@ function hexToRgba(hex: string, alpha: number): string {
       .map((c) => c + c)
       .join("");
   }
-  if (!/^[0-9a-fA-F]{6}$/.test(h)) return `rgba(255,255,255,${alpha})`;
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return `rgba(255,255,255,${a})`;
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
-  const a = Math.min(Math.max(alpha, 0), 1);
   return `rgba(${r},${g},${b},${a})`;
 }
 
@@ -59,7 +92,7 @@ function patternSvg(
       return (
         `<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" result="noise"/>` +
         `<feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.75 0" result="mask"/>` +
-        `<feFlood flood-color="${stroke}" flood-opacity="${Math.min(Math.max(opacity, 0), 1)}" result="tint"/>` +
+        `<feFlood flood-color="${stroke}" flood-opacity="${clampAlpha(opacity)}" result="tint"/>` +
         `<feComposite in="tint" in2="mask" operator="in"/></filter>` +
         `<rect width="40" height="40" filter="url(#n)"/>`
       );

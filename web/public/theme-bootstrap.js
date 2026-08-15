@@ -10,6 +10,7 @@
   "use strict";
 
   var STORAGE_KEY = "reiwa_public_config_snapshot_v1";
+  var THEME_MODE_STORAGE_PREFIX = "reiwa_theme_mode";
   var MAX_SNAPSHOT_LENGTH = 512000;
   var MAX_CSS_IMAGE_LENGTH = 8192;
   var HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -32,6 +33,161 @@
 
   function isFiniteNumber(value) {
     return typeof value === "number" && Number.isFinite(value);
+  }
+
+  /**
+   * The complete semantic surface payload. Extracted so the brightness
+   * resolution below can require exactly what the paint step requires: a
+   * variant whose surfaces would be skipped must not displace root surfaces
+   * that would not be.
+   */
+  function isSurfaceTheme(surface) {
+    return (
+      isRecord(surface) &&
+      isHex(surface.foreground) &&
+      isHex(surface.mutedForeground) &&
+      isHex(surface.surface) &&
+      isHex(surface.surfaceHigh) &&
+      isHex(surface.borderSoft) &&
+      isHex(surface.borderStrong) &&
+      isFiniteNumber(surface.surfaceOpacity) &&
+      isFiniteNumber(surface.surfaceHighOpacity) &&
+      isFiniteNumber(surface.borderSoftOpacity) &&
+      isFiniteNumber(surface.borderStrongOpacity) &&
+      isFiniteNumber(surface.glassBlurPx)
+    );
+  }
+
+  /**
+   * Where `BrandingProvider` keeps the subscriber's brightness choice. The key
+   * carries the preset identity AND its version, so raising a preset's version
+   * resets every stored choice. Deriving it from the snapshot's own version is
+   * what makes this script reset with the application instead of painting one
+   * navigation behind it.
+   */
+  function themeModeStorageKey(branding) {
+    var presetId =
+      typeof branding.themePresetId === "string"
+        ? branding.themePresetId.trim()
+        : "";
+    if (!presetId || presetId.indexOf("concept-") !== 0) return null;
+    var version = branding.themePresetVersion;
+    return (
+      THEME_MODE_STORAGE_PREFIX +
+      ":" +
+      presetId +
+      ":" +
+      (version === null || version === undefined ? 1 : version)
+    );
+  }
+
+  /**
+   * The second storage read this file performs, guarded on its own rather than
+   * by the outer handler: the snapshot is already parsed by the time this runs,
+   * and a browser that throws on this key must cost the page its brightness,
+   * never its whole theme.
+   */
+  function readStoredThemeMode(key) {
+    if (key === null) return null;
+    try {
+      var value = window.localStorage.getItem(key);
+      return value === "light" || value === "dark" ? value : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  /**
+   * Mirrors `canChooseThemeMode` in `branding-provider.tsx`: the stored choice
+   * counts only while the operator has unlocked the chooser for a concept that
+   * actually ships both renderings. Anything else paints the operator default.
+   */
+  function resolveThemeMode(branding) {
+    var defaultMode = branding.themeDefaultMode === "light" ? "light" : "dark";
+    if (
+      branding.themeModePolicy !== "user-selectable" ||
+      !isRecord(branding.themeVariants)
+    ) {
+      return defaultMode;
+    }
+    return readStoredThemeMode(themeModeStorageKey(branding)) || defaultMode;
+  }
+
+  /**
+   * Own-property copy. `Object.assign` would push a JSON `"__proto__"` key
+   * through the target's prototype setter, and nothing a browser owner can
+   * write into storage gets to reshape the object this file then reads.
+   */
+  function shallowClone(source) {
+    var copy = {};
+    var keys = Object.keys(source);
+    for (var index = 0; index < keys.length; index += 1) {
+      if (keys[index] === "__proto__") continue;
+      copy[keys[index]] = source[keys[index]];
+    }
+    return copy;
+  }
+
+  /**
+   * Pre-paint mirror of `resolveBrandingThemeMode` (web/src/types/branding.ts).
+   *
+   * The runtime function cannot be imported here — this file is served verbatim
+   * and runs before the first module — so the duplication is deliberate, and
+   * `test/web/theme-bootstrap.test.ts` carries a parity block that drives one
+   * snapshot through both paths and compares the painted tokens.
+   *
+   * Ownership is the runtime's, field for field:
+   *   - palette and surfaces come from the variant, unless the operator
+   *     hand-picked the colours (`brandPaletteSource: "custom"`), and they move
+   *     as ONE unit — a background from one design under a foreground from
+   *     another is not a degraded result but an unreadable one;
+   *   - the card gradient and pattern come from the variant, unless the
+   *     operator wrote their own (`cardGradientSource: "custom"`);
+   *   - the app background always comes from the variant;
+   *   - geometry, typeface, preset identity and brand name always stay on the
+   *     root, because none of them means anything per brightness.
+   *
+   * The one addition is validation. The runtime reads a server payload; this
+   * path reads a file the browser owner can edit, so a variant failing the
+   * checks the root already passed is skipped whole rather than half-painted.
+   */
+  function resolveThemeVariant(branding, mode) {
+    var variants = isRecord(branding.themeVariants)
+      ? branding.themeVariants
+      : null;
+    var variant =
+      variants !== null && isRecord(variants[mode]) ? variants[mode] : null;
+    if (variant === null) return branding;
+
+    var effective = shallowClone(branding);
+    var paletteIsOperators = branding.brandPaletteSource === "custom";
+    if (
+      !paletteIsOperators &&
+      isHex(variant.primary) &&
+      isHex(variant.primaryFg) &&
+      isHex(variant.bgPrimary) &&
+      isHex(variant.bgSecondary) &&
+      isSurfaceTheme(variant.surfaceTheme)
+    ) {
+      effective.primary = variant.primary;
+      effective.primaryFg = variant.primaryFg;
+      effective.bgPrimary = variant.bgPrimary;
+      effective.bgSecondary = variant.bgSecondary;
+      effective.surfaceTheme = variant.surfaceTheme;
+    } else if (
+      paletteIsOperators &&
+      (branding.surfaceTheme === null || branding.surfaceTheme === undefined)
+    ) {
+      // The operator's colours win, but a payload predating surfaces has none
+      // to keep, and the concept's are then the only ones that exist.
+      effective.surfaceTheme = variant.surfaceTheme;
+    }
+    if (branding.cardGradientSource !== "custom") {
+      effective.cardGradient = variant.cardGradient;
+      effective.cardPattern = variant.cardPattern;
+    }
+    effective.appBackground = variant.appBackground;
+    return effective;
   }
 
   /**
@@ -695,6 +851,12 @@
       return;
     }
 
+    // Resolve the brightness BEFORE anything is painted. Every token below —
+    // including the `dark` class and the scheme attribute, which are the flash
+    // itself rather than a detail of it — then comes from the rendering the
+    // application is about to settle on, not from the concept's root palette.
+    branding = resolveThemeVariant(branding, resolveThemeMode(branding));
+
     var root = document.documentElement;
     var style = root.style;
     var set = style.setProperty.bind(style);
@@ -715,20 +877,7 @@
     }
 
     var surface = branding.surfaceTheme;
-    if (
-      isRecord(surface) &&
-      isHex(surface.foreground) &&
-      isHex(surface.mutedForeground) &&
-      isHex(surface.surface) &&
-      isHex(surface.surfaceHigh) &&
-      isHex(surface.borderSoft) &&
-      isHex(surface.borderStrong) &&
-      isFiniteNumber(surface.surfaceOpacity) &&
-      isFiniteNumber(surface.surfaceHighOpacity) &&
-      isFiniteNumber(surface.borderSoftOpacity) &&
-      isFiniteNumber(surface.borderStrongOpacity) &&
-      isFiniteNumber(surface.glassBlurPx)
-    ) {
+    if (isSurfaceTheme(surface)) {
       set("--brand-foreground", surface.foreground);
       set("--brand-muted-foreground", surface.mutedForeground);
       set("--brand-surface", surface.surface);
