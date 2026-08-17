@@ -2,16 +2,39 @@
 # Provide certs/fullchain.pem + certs/privkey.key next to the compose file:
 #   ../gen-self-signed-cert.sh app.example.com certs
 #
-# `default` makes this cert the fallback for any SNI, so a connection with
-# a non-matching hostname still gets a valid-format TLS response served with
-# this cert rather than leaking that a specific vhost exists.
+# There is deliberately NO `stores.default.defaultCertificate` block here.
+#
+# This file used to set the real fullchain.pem as the default certificate,
+# with a comment claiming that stopped the hostname leaking to IP scans. It
+# did the exact opposite: a scanner connecting to the bare IP with no SNI (or
+# a non-matching one) completed a handshake and was handed the operator's
+# REAL certificate, whose CN/SAN names the domain. That is precisely the
+# disclosure the comment claimed to prevent — served on request, to anyone.
+#
+# With no store configured, Traefik falls back to its documented default and
+# generates its own self-signed certificate for unmatched SNI. That cert names
+# nothing, so scanning the IP reveals no hostname. This matches what the caddy
+# stack does (`tls internal` + empty 204).
+#
+# Who is affected: only clients that send NO SNI or a non-matching SNI. They
+# now receive an untrusted self-signed cert instead of a valid one naming the
+# domain. Every TLS 1.3 client sends SNI, as does every browser and every
+# modern HTTP library, so real users reaching the correct hostname are
+# unaffected — the certificate below is still matched and served normally.
+#
+# If you want the harder nginx/angie behaviour (`ssl_reject_handshake on`:
+# refuse the handshake outright rather than answering with a self-signed
+# cert), add the option block instead of restoring the store:
+#
+#   tls:
+#     options:
+#       default:
+#         sniStrict: true
+#
+# Do NOT re-add a defaultCertificate. Suppressing the leak with sniStrict
+# leaves the leaking cert one config edit away from being served again.
 
 tls:
   certificates:
     - certFile: /certs/fullchain.pem
       keyFile: /certs/privkey.key
-  stores:
-    default:
-      defaultCertificate:
-        certFile: /certs/fullchain.pem
-        keyFile: /certs/privkey.key

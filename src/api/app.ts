@@ -15,13 +15,13 @@ import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
 import { resolveReiwaPublicUrl, resolveRezeisAdminUrl } from "../config.js";
-import { REIWA_VERSION } from "../core/version.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
 import { apiLimiter } from "./middleware/rate-limit.js";
 import { createCsrfProtection } from "./middleware/csrf-protection.js";
 import { createContextDetectionMiddleware } from "./middleware/context-detection.js";
 import { createAdCaptureMiddleware } from "./middleware/ad-capture.js";
 import { createAuthRouter } from "./routes/auth.js";
+import { createHealthRouter } from "./routes/health.js";
 import { createBrandingRouter, getPublicConfigPayload } from "./routes/branding.js";
 import {
   createLandingRouter,
@@ -112,13 +112,33 @@ export function createApp(deps: CreateAppDeps) {
           ],
           // The SPA loads the Telegram Mini App SDK from telegram.org, so
           // it must be allowed as a script source (default is 'self' only).
-          "script-src": ["'self'", "https://telegram.org"],
-          "script-src-elem": ["'self'", "https://telegram.org"],
+          // `challenges.cloudflare.com` serves the Turnstile loader injected by
+          // the guest-support page when the operator configures a Turnstile
+          // key; without it the widget never loads, no token is produced and
+          // every guest conversation is refused with `captcha_failed`.
+          "script-src": ["'self'", "https://telegram.org", "https://challenges.cloudflare.com"],
+          "script-src-elem": [
+            "'self'",
+            "https://telegram.org",
+            "https://challenges.cloudflare.com",
+          ],
           // The service worker fetches the Telegram SDK via the Fetch API,
           // which is governed by connect-src (not script-src). Allow the
           // same-origin API (SSE/XHR) plus telegram.org so the SW can pull
-          // the SDK without a CSP violation.
-          "connect-src": ["'self'", "https://telegram.org"],
+          // the SDK without a CSP violation. Turnstile posts the challenge
+          // result back to its own origin over XHR from inside the widget.
+          "connect-src": ["'self'", "https://telegram.org", "https://challenges.cloudflare.com"],
+          // Both third-party widgets render inside an iframe, and `frame-src`
+          // has no default of its own — it falls back to `default-src 'self'`,
+          // which blocks them. Turnstile frames challenges.cloudflare.com; the
+          // Telegram Login Widget (script from telegram.org) frames
+          // oauth.telegram.org. `'self'` is kept so the previously inherited
+          // same-origin allowance is not narrowed.
+          "frame-src": [
+            "'self'",
+            "https://challenges.cloudflare.com",
+            "https://oauth.telegram.org",
+          ],
           // The SDK is also pulled into the document; allow telegram.org as
           // a generic default-src source for any sub-resource it triggers.
           // `https:` + `blob:` let operator-configured brand logos
@@ -159,8 +179,9 @@ export function createApp(deps: CreateAppDeps) {
           return "info";
         },
         // Don't log the high-frequency health/readiness probes — the Docker
-        // healthcheck hits `/api/v1/health` every few seconds and would
-        // otherwise drown the log stream in noise.
+        // healthcheck hits `/api/v1/ready` every 10s (and `/api/v1/health` is
+        // still polled by the panel's update-checker), which would otherwise
+        // drown the log stream in noise.
         autoLogging: {
           ignore: (req) => {
             const url = (req.url ?? "").split("?")[0];
@@ -259,10 +280,14 @@ export function createApp(deps: CreateAppDeps) {
     }),
   );
 
-  // ── Health ────────────────────────────────────────────────────────────────
-  app.get("/api/v1/health", (_req, res) => {
-    res.json({ status: "ok", service: "reiwa-api", version: REIWA_VERSION });
-  });
+  // ── Health / liveness / readiness ─────────────────────────────────────────
+  // `/health` keeps its unconditional 200 for existing callers (the panel's
+  // update-checker reads `version` from it). `/live` and `/ready` are the
+  // probes; see `routes/health.ts` for why they check different things.
+  app.use(
+    "/api/v1",
+    createHealthRouter({ webSessionStore: deps.webSessionStore, config }),
+  );
 
   // Stash adminClient on `app.locals` so the access-mode middleware
   // (which accepts per-request locals — not deps) can read it without

@@ -15,7 +15,9 @@ services:
     environment:
       - TZ=UTC
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # No docker.sock: this stack uses the file provider only (see
+      # traefik.yml `providers.file`). Mounting the socket would hand the
+      # edge proxy root-equivalent control of the host for no benefit.
       - ./traefik.yml:/traefik.yml:ro
       - ./config:/config:ro
       - ./certs:/certs:ro

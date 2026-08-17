@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.7.8-blue" alt="Version" /></a>
+  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.7.9-blue" alt="Version" /></a>
   <a href="https://github.com/dizzzable/reiwa/pkgs/container/reiwa"><img src="https://img.shields.io/badge/ghcr.io-reiwa-2496ED?logo=docker&logoColor=white" alt="GHCR" /></a>
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js" />
@@ -56,10 +56,10 @@ GitHub Container Registry публикует **единый** образ при 
 docker pull ghcr.io/dizzzable/reiwa:latest
 
 # Pin to a specific release
-docker pull ghcr.io/dizzzable/reiwa:v0.9.7.8
+docker pull ghcr.io/dizzzable/reiwa:v0.9.7.9
 ```
 
-Доступные теги: `latest` (актуальный main), `v0.9.7.8` (тег релиза), плюс `sha-<short>` для каждого коммита в `main`. Прод-`docker-compose.yml` использует `latest`.
+Доступные теги: `latest` (актуальный main), `v0.9.7.9` (тег релиза), плюс `sha-<short>` для каждого коммита в `main`. Прод-`docker-compose.yml` использует `latest`.
 
 > Один образ обслуживает всё: API на `REIWA_PORT` (по умолчанию `node dist/api/main.js`) раздаёт собранную SPA из `/app/web`, бот — `dist/bot/main.js`, воркер — `dist/worker/main.js`. Роль выбирается командой запуска контейнера.
 
@@ -83,15 +83,20 @@ curl -fsSL -o .env               https://raw.githubusercontent.com/dizzzable/rei
 #    не создал — нужна для связи reiwa ↔ rezeis по имени `rezeis:8000`):
 docker network create remnawave-network 2>/dev/null || true
 
-# 4. Сгенерировать секреты прямо в .env (создаются на месте):
+# 4. Сгенерировать ЛОКАЛЬНЫЙ секрет прямо в .env (он нужен только reiwa):
 sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$(openssl rand -hex 16)|" .env
-sed -i "s|^REZEIS_INTERNAL_SHARED_SECRET=.*|REZEIS_INTERNAL_SHARED_SECRET=$(openssl rand -hex 24)|" .env
 
 # 5. Дозаполнить вручную:
 #      REIWA_DOMAIN            публичный домен кабинета (app.example.com)
 #      REZEIS_HOST=rezeis      имя контейнера админки на одном VPS (или panel.example.com при split)
-#      REZEIS_TOKEN            API-токен, созданный в админке rezeis
+#      REZEIS_TOKEN            API-токен, созданный в админке rezeis (Настройки → API-токены)
 #      REZEIS_WEBHOOK_SECRET   = WEBHOOK_SECRET_HEADER из rezeis (если включаете push)
+#      REZEIS_INTERNAL_SHARED_SECRET
+#                              = REZEIS_INTERNAL_SHARED_SECRET из rezeis, тот же
+#                              самый. НЕ генерируйте его здесь: панель проверяет
+#                              этим значением подпись каждого запроса от reiwa.
+#                              Сгенерируйте один раз (openssl rand -hex 32) и
+#                              вставьте одну и ту же строку в ОБА .env.
 #      BOT_TOKEN, BOT_USERNAME от @BotFather
 nano .env
 
@@ -307,7 +312,7 @@ reiwa/
 | `BOT_MINI_APP`, `BOT_SUPPORT_USERNAME` | — | Режим Mini App и контакт поддержки |
 | `REZEIS_HOST`, `REZEIS_PORT` | ✅ | Адрес внутреннего API `rezeis-admin` (источник истины) |
 | `REZEIS_TOKEN` | ✅ | Bearer для вызовов rezeis-admin |
-| `REZEIS_INTERNAL_SHARED_SECRET` | — | HMAC-подпись внутренних хопов reiwa→admin и reiwa-api→bot (≥32 симв.) |
+| `REZEIS_INTERNAL_SHARED_SECRET` | ✅ (prod) | HMAC-подпись запросов reiwa→admin и хопа reiwa-api→bot (≥32 симв.). **Должен быть идентичен** одноимённой переменной в rezeis — панель проверяет подпись именно им |
 | `REZEIS_WEBHOOK_SECRET` | ✅ | Проверка входящих вебхуков от rezeis-admin (`X-Rezeis-Signature`) |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_NAME`, `REDIS_PASSWORD` | ✅ | Redis для сессий / rate-limit / FSM бота |
 | `REIWA_COOKIE_SECURE` | `true` в production | `Secure`-флаг session-cookie; cookie хранит opaque UUID, валидируемый через Redis |

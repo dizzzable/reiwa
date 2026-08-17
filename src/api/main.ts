@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { loadConfig, resolveRezeisAdminUrl } from "../config.js";
+import { warnOnUnreachableCrossHostUrls } from "../core/config/index.js";
 import { AdminClient } from "../lib/admin-client.js";
 import { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore } from "../infrastructure/redis/session.js";
@@ -95,6 +96,12 @@ async function start(): Promise<void> {
     );
     // Success banner — printed only once the HTTP server is actually listening.
     printReiwaBanner("api");
+    // Split-VPS guard: warn (never fail) when REZEIS_HOST still names a docker
+    // service that does not resolve from this host. Runs on the api process
+    // only — bot and worker share the same .env, so a second and third copy of
+    // the same warning would add noise, not information. Returns immediately;
+    // the probes run on unref'd timers over the next five minutes.
+    warnOnUnreachableCrossHostUrls(config, logger);
   });
 
   // Report our running version to the admin panel so its "Updates" widget

@@ -11,10 +11,61 @@
 {
 	# We don't bind :80 — disable the automatic HTTP->HTTPS redirect vhost.
 	auto_https disable_redirects
+
+	# Real client IP — not needed today, REQUIRED if you ever put a CDN
+	# (Cloudflare) in front of this VPS.
+	#
+	# Today this box terminates TLS directly, so the peer address IS the
+	# client. Behind a CDN, every request arrives from an edge address; if
+	# Caddy has not been told which peers to trust, the app treats that
+	# edge as the client and:
+	#   - the cabinet bans an offending IP for 24 HOURS — one abuser behind
+	#     a given Cloudflare datacentre locks out every legitimate user
+	#     routed through it, for a day;
+	#   - the rezeis panel auto-blocks for 30 MINUTES on repeated failed
+	#     logins — same blast radius, shorter fuse.
+	# Rate limiting, abuse heuristics and audit logs all go wrong the same
+	# way, invisibly, until users complain.
+	#
+	# To enable: fetch the CURRENT ranges from Cloudflare's published list
+	# at https://www.cloudflare.com/ips/ (IPv4 and IPv6 — they change) and
+	# list them after `static`. Never use 0.0.0.0/0: that trusts every peer
+	# and lets any client forge its own address.
+	#
+	# servers {
+	# 	trusted_proxies static <cloudflare-cidr> <cloudflare-cidr> ...
+	# 	client_ip_headers CF-Connecting-IP
+	# }
+	#
+	# The sibling stacks need their own equivalent:
+	#   nginx/angie — `set_real_ip_from` + `real_ip_header CF-Connecting-IP`
+	#   traefik     — `entryPoints.https.forwardedHeaders.trustedIPs`
+	# Traefik is the worst of the four here: when the peer is NOT trusted it
+	# STRIPS every X-Forwarded-* header instead of shifting/appending, so the
+	# client address is destroyed outright rather than merely wrong. Caddy
+	# and nginx/angie leave a wrong-but-present value; Traefik leaves none.
 }
 
 https://REPLACE_WITH_YOUR_DOMAIN {
 	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.key
+
+	# HSTS — one year. After one visit, browsers refuse plaintext HTTP to
+	# this host until the max-age expires.
+	#
+	# `includeSubDomains` is a commitment, not just a hardening flag: it
+	# pins HTTPS for EVERY name under this one. If this host ever shares an
+	# apex with another (e.g. app.example.com and panel.example.com both
+	# under example.com), the header served from either one applies to the
+	# whole example.com tree — including subdomains that have no cert yet,
+	# which then become unreachable in any browser that saw the header, for
+	# a year. If your DNS layout makes that risky, drop `includeSubDomains`;
+	# the max-age alone still protects this host.
+	#
+	# Deliberately NOT `preload`. Preload is a one-way submission to browser
+	# vendors — removal takes months and rides browser release trains. Add
+	# it only as a separate, conscious decision.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
 	reverse_proxy * http://reiwa:5000 {
 		# Keep the realtime SSE stream (/api/v1/realtime/stream) flowing.
 		flush_interval -1

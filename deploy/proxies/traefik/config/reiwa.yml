@@ -8,7 +8,36 @@ http:
       entrypoints:
         - https
       tls: {}
+      middlewares:
+        - hsts
       service: reiwa
+
+  middlewares:
+    # HSTS — one year. After one visit, browsers refuse plaintext HTTP to
+    # this host until the max-age expires.
+    #
+    # `stsIncludeSubdomains` is a commitment, not just a hardening flag: it
+    # pins HTTPS for EVERY name under this one. If this host ever shares an
+    # apex with another (e.g. app.example.com and panel.example.com both
+    # under example.com), the header served from either one applies to the
+    # whole example.com tree — including subdomains that have no cert yet,
+    # which then become unreachable in any browser that saw the header, for
+    # a year. If your DNS layout makes that risky, set this to false; the
+    # stsSeconds max-age alone still protects this host.
+    #
+    # `stsPreload` is deliberately omitted (it defaults to false). Preload
+    # is a one-way submission to browser vendors — removal takes months and
+    # rides browser release trains. Add it only as a separate, conscious
+    # decision.
+    #
+    # No `forceSTSHeader` needed: the https entrypoint is TLS-only, and
+    # Traefik emits the header on TLS requests without it. This middleware
+    # must stay attached to the router above — an unattached middleware is
+    # silently inert, which is how HSTS most often goes missing in Traefik.
+    hsts:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
 
   services:
     reiwa:

@@ -85,9 +85,18 @@ const schema = z.object({
   // ── Connection to rezeis-admin ────────────────────────────────────────
   REZEIS_HOST: z.string().trim().min(1).optional(),
   REZEIS_PORT: z.coerce.number().int().positive().default(8000),
+  /**
+   * Bearer token for reiwa → rezeis-admin calls. ISSUED BY THE PANEL
+   * (Settings → API tokens) — rezeis verifies it as a JWT and then looks the
+   * row up in its `api_tokens` table, so an operator-invented string can never
+   * authenticate. See `.env.example`.
+   */
   REZEIS_TOKEN: optionalString,
-  REZEIS_CADDY_TOKEN: optionalString,
-  REZEIS_COOKIE: optionalString,
+  // REZEIS_CADDY_TOKEN / REZEIS_COOKIE used to live here. They were declared
+  // and never read anywhere in src/, so they configured nothing. Removed rather
+  // than left as decoration: this object does not reject unknown keys (plain
+  // `z.object`, so `safeParse` strips them), which means an existing .env that
+  // still sets them keeps loading exactly as before.
   /**
    * Optional HMAC shared secret for request signing. Independent of the
    * Bearer token — when set, every AdminClient request adds

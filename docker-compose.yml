@@ -57,12 +57,19 @@ services:
         condition: service_healthy
     healthcheck:
       # node:alpine ships no curl/wget — use node's own http client.
+      #
+      # Probes /ready, not /health: /health answers 200 unconditionally, so it
+      # stayed green through a post-boot Redis outage while every Redis limiter
+      # was answering 503 and no session could resolve. /ready returns 503 when
+      # Redis is unreachable, which is the outage this container can actually
+      # have. It deliberately does NOT reflect rezeis-admin — the panel is on
+      # another VPS and its outage must not mark reiwa unhealthy.
       test:
         [
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:'+(process.env.REIWA_PORT||5000)+'/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:'+(process.env.REIWA_PORT||5000)+'/api/v1/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 10s
       timeout: 5s

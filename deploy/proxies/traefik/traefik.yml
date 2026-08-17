@@ -3,12 +3,51 @@
 # file provider (see config/tls.yml).
 
 api:
-  dashboard: true
-  debug: true
+  dashboard: false
+  debug: false
 
 entryPoints:
   https:
     address: ":443"
+    # Real client IP — not needed today, REQUIRED if you ever put a CDN
+    # (Cloudflare) in front of this VPS.
+    #
+    # Today this box terminates TLS directly, so the peer address IS the
+    # client. Behind a CDN, every request arrives from an edge address. If
+    # the app then treats that edge as the client:
+    #   - the cabinet bans an offending IP for 24 HOURS — one abuser behind
+    #     a given Cloudflare datacentre locks out every legitimate user
+    #     routed through it, for a day;
+    #   - the rezeis panel auto-blocks for 30 MINUTES on repeated failed
+    #     logins — same blast radius, shorter fuse.
+    # Rate limiting, abuse heuristics and audit logs all go wrong the same
+    # way, invisibly, until users complain.
+    #
+    # TRAEFIK IS THE WORST OF THE FOUR STACKS HERE. nginx, angie and caddy
+    # forward a wrong-but-present client address when they have not been
+    # told whom to trust. Traefik, when the peer is NOT in trustedIPs,
+    # STRIPS every X-Forwarded-* header instead of shifting/appending them
+    # — so the client address is destroyed outright, not merely wrong, and
+    # there is nothing downstream for the app to recover it from.
+    #
+    # Traefik also has no equivalent of nginx's `real_ip_header
+    # CF-Connecting-IP`: it only understands X-Forwarded-For. Behind
+    # Cloudflare you must trust the CF ranges below and rely on the
+    # X-Forwarded-For that Cloudflare sets.
+    #
+    # To enable: fetch the CURRENT ranges from Cloudflare's published list
+    # at https://www.cloudflare.com/ips/ (IPv4 and IPv6 — they change over
+    # time). Never use 0.0.0.0/0: that trusts every peer and lets any
+    # client forge its own address.
+    #
+    # forwardedHeaders:
+    #   trustedIPs:
+    #     - "<cloudflare-cidr>"
+    #     - "<cloudflare-cidr>"
+    #
+    # The sibling stacks need their own equivalent:
+    #   nginx/angie — `set_real_ip_from` + `real_ip_header CF-Connecting-IP`
+    #   caddy       — `servers { trusted_proxies static <ranges> }`
 
 serversTransport:
   insecureSkipVerify: true

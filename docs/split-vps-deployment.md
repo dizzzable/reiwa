@@ -49,31 +49,81 @@ subdomain is needed.
 ```dotenv
 REIWA_DOMAIN=app.example.com           # public, what users open
 REZEIS_HOST=panel.example.com          # admin's public host (with a dot
-                                       # → reiwa picks https://, ignores port)
-REZEIS_TOKEN=<api token issued in the panel>
+                                       # → reiwa picks https://, ignores port).
+                                       # NOT the docker service name `rezeis` —
+                                       # that resolves to nothing on this host.
+REZEIS_TOKEN=<api token issued in the panel: Settings → API tokens>
 REZEIS_WEBHOOK_SECRET=<64-hex>         # MUST match admin's WEBHOOK_SECRET_HEADER
-REZEIS_INTERNAL_SHARED_SECRET=<32+>    # internal-only: signs reiwa→admin REST/SSE
-                                       # and the reiwa-api→reiwa-bot relay (same VPS).
-                                       # Does NOT need to match anything on admin.
+REZEIS_INTERNAL_SHARED_SECRET=<32+>    # MUST match admin's value of the SAME name
 ```
 
-Everything else (Redis, cookies, etc.) is the same as same-VPS.
+Everything else (Redis, cookies, etc.) is the same as same-VPS. In particular
+`REIWA_BOT_INTERNAL_URL` (default `http://reiwa-bot:5100`) stays a docker
+service name on both topologies — reiwa-api and reiwa-bot are always on the
+same host.
 
 ### VPS-B: admin `.env`
 
 ```dotenv
 REZEIS_DOMAIN=panel.example.com        # public, what operators open
-REIWA_URL=https://app.example.com      # where to deliver webhooks
+REIWA_URL=https://app.example.com      # where to deliver webhooks. NOT the
+                                       # default http://reiwa:5000 — that is a
+                                       # docker service name and dies here.
 WEBHOOK_SECRET_HEADER=<64-hex>         # MUST match REZEIS_WEBHOOK_SECRET above
+REZEIS_INTERNAL_SHARED_SECRET=<32+>    # MUST match reiwa's value of the SAME name
+REZEIS_INTERNAL_SIGNATURE_MODE=log     # keep `log` until the log is clean; see below
 ```
 
-The two secrets are **different** by design:
+Three shared values, and only one of them is a *pair of different names*:
 
 | variable | role | scope |
 |---|---|---|
-| `WEBHOOK_SECRET_HEADER` ↔ `REZEIS_WEBHOOK_SECRET` | sign/verify admin → reiwa webhooks | crosses the public internet |
-| `REZEIS_INTERNAL_SHARED_SECRET` | sign internal reiwa-api → reiwa-bot relay + reiwa→admin REST/SSE | reiwa-only |
-| `REZEIS_TOKEN` | Bearer auth for reiwa → admin API pulls (issued in the panel) | reiwa-only |
+| `WEBHOOK_SECRET_HEADER` ↔ `REZEIS_WEBHOOK_SECRET` | sign/verify admin → reiwa webhooks | **identical on both hosts**; crosses the public internet |
+| `REZEIS_INTERNAL_SHARED_SECRET` | reiwa signs reiwa→admin REST/SSE with it and **admin verifies with it**; also signs the internal reiwa-api → reiwa-bot relay | **identical on both hosts**; crosses the public internet |
+| `REZEIS_TOKEN` | Bearer auth for reiwa → admin API pulls | issued in the panel (Settings → API tokens), pasted into reiwa only |
+
+> **`REZEIS_INTERNAL_SHARED_SECRET` must be the same string on both hosts.**
+> Earlier revisions of this document and of `reiwa/.env.example` said the
+> opposite ("reiwa-only", "does not need to match anything on admin"). That was
+> wrong. `rezeis-admin` reads the variable in
+> `src/common/config/auth.config.ts` and verifies reiwa's `x-request-signature`
+> with it in `InternalAdminAuthGuard`.
+>
+> A mismatch behaves differently in each mode of the admin's
+> `REZEIS_INTERNAL_SIGNATURE_MODE`:
+>
+> | mode | what a mismatch does |
+> |---|---|
+> | `off` | nothing is verified; the second factor does not run |
+> | `log` (**default**) | every request is **allowed**, and admin logs `internal signature ... allowed (mode=log)` for each one. Nothing breaks, so the mismatch is invisible and can survive for months |
+> | `require` | **every** reiwa → admin request is rejected with 401. Sign-in, subscriptions, payments, support and the bot all stop at once |
+>
+> The dangerous sequence is therefore: deploy with mismatched secrets (works
+> fine, `log`), harden the panel to `require` weeks later, take the whole
+> cabinet down and have no reason to suspect the change. Fix the secrets first;
+> only flip the mode once the admin log has no `mode=log` signature lines left.
+
+### Docker service names do not survive the split
+
+Both `.env.example` files ship defaults aimed at the single-host topology,
+where every service shares one docker network. On two hosts those names resolve
+to nothing, and none of the affected paths fails loudly:
+
+| variable | side | single-host default | split-VPS value |
+|---|---|---|---|
+| `REZEIS_HOST` | reiwa | `rezeis` | `panel.example.com` |
+| `REIWA_URL` | admin | `http://reiwa:5000` | `https://app.example.com` |
+| `REZEIS_SUBPAGE_URL` | admin | `http://rezeis-subpage:3010` | `https://<subpage-domain>` |
+| `REIWA_BOT_INTERNAL_URL` | reiwa | `http://reiwa-bot:5100` | **unchanged** — same host either way |
+
+Both services now print one warning at boot per unresolvable name, e.g.
+
+```
+REIWA_URL points at "reiwa", which does not resolve from this host ...
+```
+
+The check only fires when the hostname genuinely fails to resolve, so a correct
+single-host install stays silent.
 
 ## Sanity checks
 
@@ -93,6 +143,20 @@ After bringing both stacks up:
 3. **Telegram delivery works.** Trigger anything that produces a user
    notification (e.g. activate a promo). The user should receive a
    Telegram DM from the bot within seconds.
+4. **The shared secret actually matches.** Do this even though everything
+   above already works — in the default `log` mode a wrong secret changes
+   nothing you can see. In the admin log, search for:
+   ```
+   internal signature
+   ```
+   Any hit means `REZEIS_INTERNAL_SHARED_SECRET` differs between the two hosts
+   (or a caller is not signing at all). Fix it now: it costs nothing today and
+   costs the whole cabinet the day someone sets
+   `REZEIS_INTERNAL_SIGNATURE_MODE=require`.
+5. **No boot warnings about docker service names.** Both stacks print a
+   warning at startup if a cross-host URL still points at a name this host
+   cannot resolve. Check the first seconds of `docker compose logs` on each
+   VPS for `REZEIS_HOST`, `REIWA_URL` and `REZEIS_SUBPAGE_URL`.
 
 ## Hardening (optional)
 

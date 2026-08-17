@@ -39,12 +39,11 @@ rezeis-admin, что важно для продакшена, и какой compo
 
 | Переменная | Назначение | Обяз. | Прод |
 |---|---|---|---|
-| `REZEIS_HOST` | Хост админки. **Без точки** → docker-имя → `http://host:port` (один VPS, должно быть `rezeis` — имя контейнера). **Частный адрес** (loopback, `10.`/`192.168.`/`172.16-31.`, `localhost`) → тоже `http://host:port`. **Домен или маршрутизируемый IP** → `https://host` (split). | **да** | один VPS: `rezeis`; split: `panel.example.com` |
+| `REZEIS_HOST` | Хост админки. **Без точки** → docker-имя → `http://host:port` (один VPS, должно быть `rezeis` — имя контейнера). **Частный адрес** (loopback, `10.`/`192.168.`/`172.16-31.`, `localhost`) → тоже `http://host:port`. **Домен или маршрутизируемый IP** → `https://host` (split). При split оставленное `rezeis` = DNS-ошибка на каждом запросе и 503 в кабинете, **при пустом логе панели** (запросы до неё не доходят); reiwa-api один раз при старте пишет предупреждение. | **да** | один VPS: `rezeis`; split: `panel.example.com` |
 | `REZEIS_PORT` | Порт админки (для домена и публичного IP игнорируется). | — | `8000` |
-| `REZEIS_TOKEN` | Bearer-токен для вызовов reiwa→rezeis API. **Создаётся в админке rezeis** (раздел API-токенов) и вставляется сюда. | **да** | JWT из панели, **секрет** |
-| `REZEIS_CADDY_TOKEN` / `REZEIS_COOKIE` | Доп. заголовок/cookie, если rezeis за Caddy-auth. | — | пусто |
-| `REZEIS_INTERNAL_SHARED_SECRET` | HMAC (≥32 симв.): подписывает исходящие reiwa→rezeis запросы и релей reiwa-api→reiwa-bot. **Живёт только в reiwa**, админке не нужен. | рек. | свой ≥32, **секрет** |
-| `REZEIS_WEBHOOK_SECRET` | Секрет для ПРОВЕРКИ входящих вебхуков от rezeis. **Должен совпадать** с `WEBHOOK_SECRET_HEADER` админки. Пусто → приём вебхуков отключён. | для пушей | 64-симв., **= админскому** |
+| `REZEIS_TOKEN` | Bearer-токен для вызовов reiwa→rezeis API. **Выдаётся панелью** (rezeis-admin → Настройки → API-токены), показывается один раз при создании. Панель проверяет его как JWT и ищет строку в таблице `api_tokens`, поэтому придуманная вручную строка не заработает никогда — 401 на каждом запросе. | **да** | JWT из панели, **секрет** |
+| `REZEIS_INTERNAL_SHARED_SECRET` | HMAC (≥32 симв.): подписывает исходящие reiwa→rezeis запросы (`x-request-signature`) и релей reiwa-api→reiwa-bot. **Должен быть идентичен** одноимённой переменной в rezeis-admin — панель проверяет подпись именно им. См. раздел 3. | **да** (прод) | тот же ≥32, что в админке, **секрет** |
+| `REZEIS_WEBHOOK_SECRET` | Секрет для ПРОВЕРКИ входящих вебхуков от rezeis. **Должен совпадать** с `WEBHOOK_SECRET_HEADER` админки. Формат по контракту панели: 64–256 символов `[a-zA-Z0-9]` (`openssl rand -hex 32`). reiwa формат НЕ проверяет — примет любую непустую строку. Пусто → приём вебхуков отключён. | для пушей | 64 симв., **= админскому** |
 
 ### Бот
 
@@ -54,7 +53,8 @@ rezeis-admin, что важно для продакшена, и какой compo
 | `BOT_SUPPORT_USERNAME` | Хэндл поддержки (fallback, если в админке не задан). `@` убирается. | — | `@YourSupport` |
 | `BOT_DEV_ID` | Telegram id разработчика/оператора для внутренних алертов. | — | ваш id |
 | `BOT_USERNAME` | Username бота без `@` (для deep-link `?start=payment_return`). | да | `RezeisBot` |
-| `BOT_INVALIDATE_PORT` | Порт приватного listener бота (релей вебхуков). | — | `5100` (закомментирован) |
+| `BOT_INVALIDATE_PORT` | Порт, который СЛУШАЕТ приватный listener бота (релей вебхуков). | — | `5100` (закомментирован) |
+| `REIWA_BOT_INTERNAL_URL` | Адрес, на который reiwa-api ШЛЁТ этот релей. Всегда docker-имя внутри своего хоста — **не меняется при split**, reiwa-api и reiwa-bot всегда рядом. Меняете `BOT_INVALIDATE_PORT` — поменяйте порт и здесь. | — | `http://reiwa-bot:5100` (дефолт, закомментирован) |
 
 > Mini App включается **из админки** (`features.miniAppEnabled`), не через env.
 > Команды бота ставятся автоматически (`setMyCommands`). Поэтому
@@ -84,11 +84,25 @@ rezeis-admin, что важно для продакшена, и какой compo
 | reiwa (`.env`) | rezeis (`.env`) | Совпадение | Зачем |
 |---|---|---|---|
 | `REZEIS_WEBHOOK_SECRET` | `WEBHOOK_SECRET_HEADER` | **идентично** | проверка подписи вебхуков admin→reiwa |
+| `REZEIS_INTERNAL_SHARED_SECRET` | `REZEIS_INTERNAL_SHARED_SECRET` | **идентично** | reiwa подписывает исходящие запросы, панель проверяет подпись этим же значением |
 | `REZEIS_TOKEN` | — (создаётся в панели) | токен из админки | Bearer reiwa→rezeis |
 | `REZEIS_HOST` | `REZEIS_DOMAIN` | согласованно | reiwa должен «видеть» rezeis |
 | `REIWA_DOMAIN` | `REIWA_URL` | согласованно | куда rezeis шлёт вебхуки |
 
-> `REZEIS_INTERNAL_SHARED_SECRET` — **только reiwa**, в админке не нужен.
+> **`REZEIS_INTERNAL_SHARED_SECRET` должен быть одинаковым на обоих хостах.**
+> Прежние версии этого файла и `.env.example` утверждали обратное («только
+> reiwa, админке не нужен») — это было неверно. Панель читает переменную в
+> `src/common/config/auth.config.ts` и проверяет ею заголовок
+> `x-request-signature` в `InternalAdminAuthGuard`.
+>
+> Что делает несовпадение — зависит от `REZEIS_INTERNAL_SIGNATURE_MODE` в
+> админке: при `log` (значение по умолчанию) все запросы **проходят**, в лог
+> панели пишется `internal signature ... allowed (mode=log)` — внешне ничего не
+> ломается, и расхождение может жить месяцами. При `require` **каждый** запрос
+> reiwa→rezeis получает 401: кабинет, оплаты, поддержка и бот встают
+> одновременно. Поэтому сначала сверяют секреты, и только потом переключают
+> режим.
+>
 > Redis-пароли проектов **разные** (у каждого свой Redis).
 
 ---
