@@ -115,7 +115,12 @@ export default function GuestSupportPage(): JSX.Element {
   })
 
   return (
-    <div className="min-h-dvh bg-(--brand-bg-primary) px-4 py-8">
+    // Outside `StealthLayout`, so this page has to be its own scroller —
+    // same reason as `/legal`, see the note there. `#root` clips at 100dvh,
+    // and `min-h-dvh` only grew the box past the cut instead of letting
+    // anyone reach it: the submit button under the captcha, and the foot of
+    // an open ticket thread, were both below the fold with no way down.
+    <div className="scroll-area h-dvh bg-(--brand-bg-primary) px-4 py-8">
       <div className="mx-auto w-full max-w-2xl">
         <header className="mb-6">
           <h1 className="text-xl font-semibold text-foreground">{t('guestSupport.title')}</h1>

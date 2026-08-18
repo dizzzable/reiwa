@@ -20,7 +20,19 @@ export default function LegalPage() {
   const { documents, isLoading, failed } = useLegalDocuments();
 
   return (
-    <div className="min-h-full pb-10">
+    // This page renders OUTSIDE `StealthLayout`, so nothing above it
+    // scrolls: `#root` is `height: 100dvh; overflow: hidden` (index.css) and
+    // the shell's `<main class="scroll-area">` belongs to the protected
+    // routes only. Without the pair below, everything past the first screen
+    // is unreachable — no scrollbar, no touch scroll, nothing — and on THIS
+    // page that is the operator's agreement and offer, linked from the
+    // sign-up form and from the bot, which a subscriber is asked to accept.
+    //
+    // `scroll-area h-dvh` is the pair the six entry screens already use.
+    // `h-dvh` is the load-bearing half and not decoration: a scroll
+    // container that sizes to its content never scrolls, it just grows past
+    // the clip. `min-h-full` was exactly that shape.
+    <div className="scroll-area h-dvh pb-10">
       <div className="flex items-center gap-3 px-5 pt-6 pb-4">
         <BackButton fallback="/welcome" label={t("common.back")} />
         <h1 className="text-lg font-semibold">{t("privacy.legalDocuments")}</h1>

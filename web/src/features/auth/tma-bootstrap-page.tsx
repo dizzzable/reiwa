@@ -160,10 +160,38 @@ export default function BootstrapPage() {
   }, [phase, retryAfter])
 
   return (
-    <div className="relative flex h-dvh flex-col items-center justify-center bg-(--brand-bg-primary) overflow-hidden">
+    // Outside `StealthLayout`, so this page has to be its own scroller —
+    // same reason as `/legal` and `/support/guest`, see the note there. It
+    // was bounded (`h-dvh`) but sealed (`overflow-hidden`): the
+    // `phase === 'error'` branch carries a `whitespace-pre-line` message
+    // that the BFF may extend with a multi-line `[dev]` block (up to 500
+    // characters of upstream body, `bootstrapClientError` in
+    // `src/api/routes/auth.ts`) plus the retry button under it. Measured
+    // in Chrome with such a message: the column is 526px, so at 375x360 it
+    // started at -83px and the retry button ended 66px below the fold with
+    // a user scroll range of 0.
+    //
+    // `scroll-area` ALONE on the old root would not have fixed it, and
+    // that is why the shape below is the entry screens’ and not a one-word
+    // change. The root centred its own child (`flex ... justify-center`),
+    // and a flex container that centres overflows at BOTH ends — but only
+    // the end-edge overflow joins the scrollable region. Same viewport,
+    // same message, `overflow-hidden` swapped for `scroll-area`: scroll
+    // range 83px, retry reachable, and the brand tile still frozen at
+    // -83px with no way up. Moving the centring INTO a `min-h-full` column
+    // puts the whole column back inside the scrollable box: scroll range
+    // 230px, both ends reachable, and while the content fits the column is
+    // exactly 100dvh so the centring is unchanged.
+    //
+    // `overflow-x-hidden` keeps the promoted cross axis sealed:
+    // `overflow-y: auto` turns a `visible` `overflow-x` into `auto`, and a
+    // `[dev]` dump can carry an unbreakable JSON token wider than the
+    // screen (measured: a 461px word inside a 311px column). Clipping it
+    // is what the root already did; a horizontal scrollbar would be new.
+    <div className="scroll-area relative h-dvh overflow-x-hidden bg-(--brand-bg-primary)">
       <NetworkBg intensity="medium" />
 
-      <div className="relative z-10 flex flex-col items-center gap-8 px-8 text-center">
+      <div className="relative z-10 flex min-h-full flex-col items-center justify-center gap-8 px-8 py-8 text-center">
         {/* Logo/brand */}
         <EntryBrandTile size="lg" />
 

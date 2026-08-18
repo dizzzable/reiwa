@@ -232,7 +232,33 @@ export default function PaymentReturnPage() {
   }, [state, navigate]);
 
   return (
-    <div className="relative flex h-dvh flex-col items-center justify-center overflow-hidden bg-(--brand-bg-primary) px-8 text-center">
+    // Outside `StealthLayout`, so this page has to be its own scroller —
+    // same reason as `/legal` and `/support/guest`, see the note there. It
+    // was bounded (`h-dvh`) but sealed (`overflow-hidden`), which is the
+    // worse half of the defect: the `failed` / `timeout` branch stacks a
+    // 96px icon, a title, a hint and up to FOUR full-width buttons, and
+    // anything past the viewport was cut with nothing to reach it.
+    // Measured in Chrome at 375x360: card 384px, top edge at -12px, last
+    // button ending 12px below the fold, user scroll range 0.
+    //
+    // `scroll-area` ALONE on the old root would not have fixed it, and this
+    // is why the shape below is the entry screens’ and not a one-word
+    // change. The root centred its own child (`flex ... justify-center`),
+    // and a flex container that centres overflows at BOTH ends — but only
+    // the end-edge overflow joins the scrollable region. Same viewport,
+    // same content, `overflow-hidden` swapped for `scroll-area`: scroll
+    // range 12px, last button reachable, and the X icon still frozen at
+    // -12px with no way up. Moving the centring INTO a `min-h-full` column
+    // puts the whole card back inside the scrollable box: scroll range
+    // 88px, both ends reachable, and while the card fits the column is
+    // exactly 100dvh so the centring is byte-identical to before.
+    //
+    // `overflow-x-hidden` is not decoration. `overflow-y: auto` promotes a
+    // `visible` cross axis to `auto`, and this page moves content sideways
+    // on purpose: the failure card shakes +/-4px on x and the success
+    // confetti flies +/-100px. That was a horizontal scrollbar; the old
+    // `overflow-hidden` is what used to absorb it.
+    <div className="scroll-area relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-8 text-center">
       {/* Ambient background glow */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -246,28 +272,35 @@ export default function PaymentReturnPage() {
         }}
       />
 
-      <AnimatePresence mode="wait">
-        {state === "processing" && (
-          <ProcessingState
-            key="processing"
-            checkoutUrl={checkoutUrl}
-            onOpenPayment={openPayment}
-          />
-        )}
-        {state === "success" && <SuccessState key="success" primary={branding.primary} label={purchaseLabel} />}
-        {(state === "failed" || state === "timeout") && (
-          <FailedState
-            key="failed"
-            isTimeout={state === "timeout"}
-            checkoutUrl={checkoutUrl}
-            onOpenPayment={openPayment}
-            onRetry={() => navigate(retryTo)}
-            onHome={() => navigate("/dashboard", { replace: true })}
-            onAbandon={abandonRefused ? undefined : handleAbandon}
-            abandoning={abandoning}
-          />
-        )}
-      </AnimatePresence>
+      {/* The centring lives here and not on the scroller: see the note on
+          the root. `min-h-full` resolves against the scroller’s content box
+          (100dvh — the scroller carries only horizontal padding, so nothing
+          shrinks it), so this column is exactly one screen tall while the
+          card fits and grows with the card when it does not. */}
+      <div className="flex min-h-full flex-col items-center justify-center py-8">
+        <AnimatePresence mode="wait">
+          {state === "processing" && (
+            <ProcessingState
+              key="processing"
+              checkoutUrl={checkoutUrl}
+              onOpenPayment={openPayment}
+            />
+          )}
+          {state === "success" && <SuccessState key="success" primary={branding.primary} label={purchaseLabel} />}
+          {(state === "failed" || state === "timeout") && (
+            <FailedState
+              key="failed"
+              isTimeout={state === "timeout"}
+              checkoutUrl={checkoutUrl}
+              onOpenPayment={openPayment}
+              onRetry={() => navigate(retryTo)}
+              onHome={() => navigate("/dashboard", { replace: true })}
+              onAbandon={abandonRefused ? undefined : handleAbandon}
+              abandoning={abandoning}
+            />
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

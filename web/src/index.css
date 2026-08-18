@@ -414,6 +414,46 @@ body {
   }
 }
 
+/* ─── Floating bottom navigation ─────────────────────────────────────────
+   The navigation must NOT be an in-flow child of `.app-shell`. The shell is a
+   flex column, so an in-flow child cuts itself a full-width row out of it —
+   the scroller ends above that row, and the last ~78px of the screen become
+   bare app background from edge to edge with the `w-fit` capsule floating in
+   the middle. Nothing paints that band; it is reserved space, which is why
+   removing paint (`app-background-contrast.ts` already dropped the veil's
+   bottom ramp for the same complaint) could never remove it.
+
+   Out of flow, the shell has exactly one in-flow child left — the scroller —
+   so content runs edge to edge all the way down and the pill is the only
+   chrome at the foot of the screen. The room the content needs in order to
+   still scroll CLEAR of the pill is given back to the scroller as bottom
+   padding, sized from `bottom-nav-metrics.ts`.
+
+   Full width (`inset-inline: 0`) rather than a centred shrink-to-fit box,
+   because the capsule's `max-w-[calc(100%-1.5rem)]` resolves against this
+   element: sized to its content it would clamp the pill 24px narrower than the
+   pill, and centred with `left: 50%` the available width would be half the
+   shell and the tabs would wrap.
+
+   Full width is also why `pointer-events` is split. This layer sits over the
+   scroller, so without `none` here every scroll gesture and every tap landing
+   beside the pill would be swallowed by a transparent bar. `auto` goes back on
+   the capsule alone, which is the only part that is actually there.
+
+   Nothing in here may paint. No background, no blur, no shadow, no border:
+   this element spans the width of the screen and any paint on it is exactly
+   the "footer around the navbar" the layout change exists to remove. The pill
+   carries its own glass. */
+.bottom-nav-floating {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+.bottom-nav-floating .bottom-nav-pill {
+  pointer-events: auto;
+}
+
 /* dvh height helpers (Tailwind v4 has h-dvh, but keep a class for raw CSS) */
 .h-dvh   { height: 100dvh; }
 .min-h-dvh { min-height: 100dvh; }

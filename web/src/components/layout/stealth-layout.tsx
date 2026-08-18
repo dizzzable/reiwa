@@ -17,6 +17,7 @@ import { Navigate, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
+import { BOTTOM_NAV_CONTENT_INSET } from "@/components/layout/bottom-nav-metrics";
 import { SideNav } from "@/components/layout/side-nav";
 import { PageTransition } from "@/components/layout/page-transition";
 import { RouteContentBoundary } from "@/components/layout/route-content-boundary";
@@ -274,6 +275,13 @@ export default function StealthLayout() {
       <OnboardingTourProvider>
         <div className="relative flex h-dvh w-full overflow-hidden bg-(--brand-bg-primary) text-foreground">
           {hasAppBackground ? <AppBackground /> : <NetworkBg />}
+          {/* IN FLOW, unlike the mobile branch below, and deliberately so:
+              this shell is a flex ROW and the sidebar is a column of it, so
+              the space it takes is the layout rather than a band of dead
+              background. There is no floating pill here to free it from.
+              The tour anchor follows the same rule as mobile — it sits on
+              the element the spotlight should ring, and here that element
+              is this slot, which hugs `<SideNav>` exactly. */}
           <div className="relative z-20 shrink-0" data-tour="bottom-nav">
             <SideNav />
           </div>
@@ -299,17 +307,85 @@ export default function StealthLayout() {
         {hasAppBackground ? <AppBackground /> : <NetworkBg />}
 
         <div className="app-shell z-10 flex flex-col overflow-hidden">
-          {/* Scrollable main content; route changes render synchronously. */}
-          <main className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto">
+          {/* Scrollable main content; route changes render synchronously.
+
+              The bottom padding is the room the floating navigation would
+              otherwise have taken as a row of its own. It is the pill's own
+              height plus the home indicator, computed in one place
+              (`bottom-nav-metrics.ts`) so a resize of the pill cannot drift
+              from the room kept for it.
+
+              What it does is SIZE the scroller, and that alone: a page that
+              fits stops above the capsule because of it. A page that does not
+              fit overflows `<PageTransition>` and runs straight past this
+              padding — the trailing box further down is the other half, and
+              the reason that page still ends above the capsule too. */}
+          <main
+            className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto"
+            style={{
+              paddingBottom: BOTTOM_NAV_CONTENT_INSET,
+              // The same length again, as the scrollport's "keep this clear"
+              // margin. The browser scrolls a focused field into view by
+              // aligning it with the nearest scrollport EDGE, and this
+              // scrollport now runs underneath the capsule: measured in
+              // Chrome, an input near the foot of a long page (the new-ticket
+              // form, the promo field) came to rest flush with the bottom of
+              // the scroller with the whole pill on top of it. With the
+              // padding declared here it stops exactly at the capsule's top
+              // edge instead. The row layout never needed this: its scrollport
+              // ended where the navigation began.
+              scrollPaddingBottom: BOTTOM_NAV_CONTENT_INSET,
+            }}
+          >
             <PageTransition>
               <RouteContentBoundary>
                 <Outlet />
               </RouteContentBoundary>
+              {/* The pill's room, a SECOND time, and not a duplicate of the
+                  scroller's padding above — the other half of the same
+                  reservation.
+
+                  A scroll container puts its bottom padding after its own
+                  CONTENT box. `<PageTransition>` is `h-full`, a FIXED height,
+                  and every page taller than the screen overflows it — so that
+                  padding lands at the fold, not after the page. Measured in
+                  Chrome on this exact box tree: a long page ended 40px above
+                  the floor while the capsule needs 78 plus the home indicator,
+                  which put the last row of /settings, /plans and the devices
+                  list — buttons included — permanently under the glass, with
+                  no scroll left to reach it. The old layout could not have
+                  this defect: the navigation was a row, so the scroller simply
+                  ended above it.
+
+                  Only a box in the PAGE's own flow follows that overflow, so
+                  the room is taken here as well. It costs a page that FITS
+                  nothing: this box lands inside the padding the scroller has
+                  already reserved, so the chat and the centred screens neither
+                  scroll nor move (verified — their scroll range stays 0). */}
+              <div
+                aria-hidden
+                data-bottom-nav-room
+                style={{ height: BOTTOM_NAV_CONTENT_INSET }}
+              />
             </PageTransition>
           </main>
 
-          {/* Bottom navigation (floating pill) */}
-          <div className="relative z-20 shrink-0" data-tour="bottom-nav">
+          {/* Bottom navigation — a floating pill, and nothing else.
+
+              This slot is OUT OF FLOW (`.bottom-nav-floating`). As an
+              in-flow `shrink-0` child of this flex column it cut itself a
+              full-width row: the scroller ended above it and the last ~78px
+              of the screen were bare app background from edge to edge, with
+              the `w-fit` capsule floating in the middle of it. That band is
+              the "footer around the navbar" — no file paints it, it is
+              reserved space, which is why the earlier removal of the veil's
+              bottom ramp (`app-background-contrast.ts`) did not end it.
+
+              The tour anchor moved onto the capsule itself, inside
+              `<BottomNav>`: this slot now spans the width of the screen, and
+              `SpotlightOverlay` rings whatever `[data-tour="bottom-nav"]`
+              measures. Left here it would ring the whole width. */}
+          <div className="bottom-nav-floating z-20">
             <BottomNav />
           </div>
         </div>

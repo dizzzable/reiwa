@@ -32,6 +32,12 @@ import { NavLink, useLocation } from "react-router";
 
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
+import {
+  BOTTOM_NAV_CAPSULE_BORDER_PX,
+  BOTTOM_NAV_CAPSULE_OFFSET_PX,
+  BOTTOM_NAV_CAPSULE_PADDING_Y_PX,
+  BOTTOM_NAV_ITEM_HEIGHT_PX,
+} from "@/components/layout/bottom-nav-metrics";
 import { resolveActiveTabTo, useNavTabs } from "@/components/layout/use-nav-tabs";
 
 export function BottomNav() {
@@ -45,12 +51,33 @@ export function BottomNav() {
     <LazyMotion features={domMax} strict>
     <nav
       aria-label="Primary"
-      className="relative shrink-0"
+      className="relative"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
       {/* Outer glass capsule — hugs its content (width grows with the number
           of tabs) and stays centered, instead of stretching full-width. */}
-      <div className="mx-auto mb-3 w-fit max-w-[calc(100%-1.5rem)] rounded-3xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-1 py-1.5 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.18)]">
+      {/* `bottom-nav-pill` is what takes taps back: the slot this nav hangs
+          in is full-width and click-through, so without it the capsule
+          would be inert (`.bottom-nav-floating` in index.css). It also
+          carries the tour anchor, because the spotlight rings the element
+          it finds and on the slot it would ring the width of the screen.
+
+          The box comes from `bottom-nav-metrics.ts` instead of `mb-3 border
+          py-1.5` + `min-h-[52px]`, because the scroller's bottom inset is
+          computed from those same numbers and the two must not drift. Only
+          the paint is left to utilities — the border WIDTH is not among
+          them: Tailwind reads `border-[var(--color-border-soft)]` as a
+          colour, so the hairline exists only because of the width below. */}
+      <div
+        data-tour="bottom-nav"
+        className="bottom-nav-pill mx-auto w-fit max-w-[calc(100%-1.5rem)] rounded-3xl border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-1 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.18)]"
+        style={{
+          marginBottom: `${BOTTOM_NAV_CAPSULE_OFFSET_PX}px`,
+          borderWidth: `${BOTTOM_NAV_CAPSULE_BORDER_PX}px`,
+          paddingTop: `${BOTTOM_NAV_CAPSULE_PADDING_Y_PX}px`,
+          paddingBottom: `${BOTTOM_NAV_CAPSULE_PADDING_Y_PX}px`,
+        }}
+      >
         <ul className="relative flex" style={{ gap: `${navGap}px` }}>
           {tabs.map((tab) => {
             const isActive = tab.to === activeTo;
@@ -63,11 +90,12 @@ export function BottomNav() {
                   data-testid={tab.testId}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
-                    "relative z-10 flex min-h-[52px] w-16 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 font-medium transition-colors duration-200 select-none",
+                    "relative z-10 flex w-16 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 font-medium transition-colors duration-200 select-none",
                     isActive
                       ? "text-(--brand-primary-fg)"
                       : "text-[var(--brand-muted-foreground)] hover:text-[var(--brand-foreground)]",
                   )}
+                  style={{ minHeight: `${BOTTOM_NAV_ITEM_HEIGHT_PX}px` }}
                 >
                   {/* Animated active-tab pill — slides between tabs via layoutId. */}
                   {isActive && (
