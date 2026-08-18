@@ -21,6 +21,11 @@
  *     pages that read those keys auto-refetch when something happens.
  *   - Optional `onEvent` callback for components that want the raw
  *     stream (e.g. a notifications drawer with a toast on every event).
+ *   - `realtime.unavailable` (reiwa's own control-plane frame, sent when the
+ *     panel is unreachable) is registered explicitly. A TYPED SSE event is
+ *     delivered ONLY to a listener registered under that exact name, so an
+ *     unregistered name is written by the server, parsed by the browser and
+ *     then dropped on the floor — which is what used to happen to this one.
  */
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -157,8 +162,26 @@ export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
       });
     }
 
+    // Transport-state frame from reiwa itself — the panel is unreachable
+    // (rejected the stream, refused the connection, or went silent long
+    // enough to trip reiwa's upstream idle watchdog).
+    //
+    // Deliberately NOT routed through `handle()`. A control-plane frame must
+    // not run the ALWAYS_INVALIDATE refetches, or an outage turns a reconnect
+    // storm into a refetch storm on top of it. Reconnection needs nothing
+    // from us either: reiwa closes the stream, and the browser reconnects
+    // after the `retry:` interval reiwa sent with the frame.
+    function onUnavailable(messageEvent: MessageEvent): void {
+      const event = parse(messageEvent.data);
+      if (event) onEventRef.current?.(event);
+    }
+
     eventSource.addEventListener("message", onMessage);
     eventSource.addEventListener("user.deleted", onUserDeleted);
+    eventSource.addEventListener(
+      "realtime.unavailable",
+      onUnavailable as EventListener,
+    );
     // Server sends each event with a `event: <type>` line; register the
     // wildcard listeners for all whitelisted types. Browser dispatches
     // them on the matching listener, the generic `message` handler is

@@ -49,23 +49,40 @@ export function resolveAppBackgroundReadability(
   candidates.sort((left, right) => left.rawOpacity - right.rawOpacity);
   const chosen = candidates[0]!;
   const channels = rgbChannels(chosen.veilRgb);
-  const edgeOpacity = roundOpacity(
-    clamp(chosen.veilOpacity + 0.12, 0, MAX_VEIL_OPACITY),
-  );
 
+  /**
+   * ONE opacity, edge to edge — a flat colour, not a gradient.
+   *
+   * This used to return `linear-gradient(180deg, edge 0%, veil 16% … 84%, edge
+   * 100%)` with `edge = veilOpacity + 0.12`, on a layer that is
+   * `absolute inset-0` over the whole `100dvh` shell. The bottom ramp therefore
+   * painted the bottom 16% of the VIEWPORT — about 130px on a phone — darker
+   * (or, on a white veil, lighter) than the rest of the page, full-bleed across
+   * it. That is exactly where the floating bottom-nav pill sits, and the pill is
+   * `w-fit`, so the ramp read as a skirt around it that stuck out to its left
+   * and right. It showed on 101 of the 104 concept presets, because every one of
+   * them ships `appBackground.kind === "gradient"` and so reaches this resolver,
+   * and the panel's branding preview reproduced it faithfully by rendering this
+   * same string.
+   *
+   * Removing it costs no readability. AA is carried ENTIRELY by
+   * `chosen.veilOpacity`: `resolveVeilCandidate` returns a candidate only when
+   * `supportsContrast` clears 4.5:1 for both text colours against every painted
+   * sample at that opacity, so the flat middle of the old gradient already WAS
+   * the guarantee and the two end stops were decorative headroom above it. It is
+   * also what the guards measure — `app-background-contrast.test.ts` asserts
+   * against `weakestZoneOpacity()`, the smallest alpha appearing in this value,
+   * and the panel's `theme-presets.test.ts` asserts against `veilOpacity`
+   * itself. Both keep reading the same number they read before.
+   *
+   * Keep this a single colour. Any position-dependent alpha here puts a band
+   * back under the navigation, and this layer has no way to know where the
+   * navigation is.
+   */
   return {
     veilRgb: channels,
     veilOpacity: chosen.veilOpacity,
-    overlayBackground:
-      `linear-gradient(180deg, ` +
-      `rgb(${channels} / ${edgeOpacity}) 0%, ` +
-      `rgb(${channels} / ${chosen.veilOpacity}) 16%, ` +
-      `rgb(${channels} / ${chosen.veilOpacity}) 28%, ` +
-      `rgb(${channels} / ${chosen.veilOpacity}) 40%, ` +
-      `rgb(${channels} / ${chosen.veilOpacity}) 60%, ` +
-      `rgb(${channels} / ${chosen.veilOpacity}) 72%, ` +
-      `rgb(${channels} / ${chosen.veilOpacity}) 84%, ` +
-      `rgb(${channels} / ${edgeOpacity}) 100%)`,
+    overlayBackground: `rgb(${channels} / ${chosen.veilOpacity})`,
   };
 }
 

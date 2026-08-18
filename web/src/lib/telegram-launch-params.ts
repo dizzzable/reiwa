@@ -442,3 +442,46 @@ export function readTelegramLaunchStartParam(): string | null {
   const startParam = resolveTelegramLaunchParams()?.tgWebAppStartParam
   return isUsableLaunchValue(startParam) ? startParam : null
 }
+
+/**
+ * Is this document running inside a Telegram client's webview?
+ *
+ * A different question from `readTelegramLaunchInitData()`, and the difference
+ * is the whole reason this exists. That reader answers "are we holding a payload
+ * the server can be asked to validate", and this flow deliberately DESTROYS that
+ * payload — `forgetTelegramLaunchPayload()` when the server refuses it,
+ * `isSpentLaunchPayload` once the server's own window has closed. Neither event
+ * makes a webview stop being a webview. Asking the payload would report a live
+ * Mini App as a plain browser precisely on the sessions that have already had
+ * one thing go wrong, which is the worst possible moment to start guessing.
+ *
+ * So the launch parameters are consulted as a SET, not through the payload:
+ * `tgWebAppPlatform` and `tgWebAppVersion` describe the CLIENT, are what
+ * `forgetTelegramLaunchPayload()` and `scrubLaunchPayloadFromUrl()` leave behind
+ * on purpose, and travel by the same three carriers as everything else here —
+ * this document's URL, the in-memory capture, the SDK's session mirror.
+ *
+ * The bridge and the loader's flag come last, in that order, for the reason the
+ * rest of this module exists: `window.Telegram` appears only after ~100 KB has
+ * been fetched from telegram.org, and this product sells VPN, so telegram.org is
+ * exactly the host its customers cannot reach. They are here for the tail the
+ * three carriers cannot cover on their own — an embedder that hands the payload
+ * straight to the bridge, and a document whose `sessionStorage` throws (a
+ * partitioned iframe on Telegram Web) after a navigation has already taken the
+ * URL copy away. `public/telegram-webapp-loader.js` sets `__reiwaTelegramSdkState`
+ * BEFORE it issues the request and leaves it set when the request fails, so it
+ * still answers on the blocked networks the bridge itself never survives.
+ *
+ * Used by `hooks/use-install-prompt.ts`. The user agent cannot answer this:
+ * Telegram for iOS ships its webview with Safari's own UA and appends no token
+ * of its own (TelegramMessenger/Telegram-iOS#736, still open), so every
+ * UA-shaped iOS test — including `detectIosSafari()` next door — says "iPhone
+ * Safari" inside the Mini App and offers a Share → Add to Home Screen menu that
+ * webview does not have.
+ */
+export function isTelegramMiniAppSurface(): boolean {
+  if (typeof window === 'undefined') return false
+  if (resolveTelegramLaunchParams() !== null) return true
+  if (window.Telegram?.WebApp !== undefined) return true
+  return window.__reiwaTelegramSdkState !== undefined
+}

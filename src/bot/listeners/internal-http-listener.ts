@@ -149,11 +149,13 @@ interface BroadcastDocumentPayload {
 }
 
 interface DevNotifyPayload {
+  readonly eventId?: unknown;
   readonly text?: unknown;
   readonly parseMode?: unknown;
 }
 
 interface DevNotifyDocumentPayload {
+  readonly eventId?: unknown;
   readonly filename?: unknown;
   readonly content?: unknown;
   readonly caption?: unknown;
@@ -246,6 +248,36 @@ class IdempotencyCache {
 }
 
 const IDEMPOTENCY_CACHE = new IdempotencyCache(1024, 24 * 60 * 60 * 1000);
+
+/**
+ * Claim an OPTIONAL dedup key for one of the two dev-fallback endpoints.
+ * Returns `false` when this exact delivery has already been made and the
+ * caller should ack without sending again.
+ *
+ * Two things differ from `/notify`, `/notify-broadcast` and
+ * `/notify-broadcast-document`, which read `eventId` inline and 400 without it:
+ *
+ * 1. A MISSING key is accepted and simply skips the dedup. rezeis only started
+ *    stamping these two events after the relay queue landed; a panel older than
+ *    that sends `{ text, parseMode }` with no id at all, and 400-ing it would
+ *    silence the dev firehose during the incident it exists to report. That's
+ *    the same delivery this endpoint made before the key existed, so an old
+ *    panel keeps working unchanged — it just keeps the duplicate it had.
+ *
+ * 2. The key is SCOPED to the endpoint. The cache is one keyspace shared by all
+ *    five senders, and the card and its attached `.txt` report are two halves of
+ *    one system event — if the panel ever stamps both halves with that event’s
+ *    id (the operator pair suffixes them, `<id>:error-report`, but nothing
+ *    forces that here), an unscoped claim would let the card swallow the
+ *    document. Scoping cannot cost a dedup: a replay of one endpoint still
+ *    collides with itself.
+ */
+function claimDevEvent(scope: string, eventId: unknown): boolean {
+  if (typeof eventId !== 'string') return true;
+  const trimmed = eventId.trim();
+  if (trimmed.length === 0) return true;
+  return IDEMPOTENCY_CACHE.claim(`${scope}:${trimmed}`);
+}
 
 function readBody(req: http.IncomingMessage, max: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -620,6 +652,16 @@ async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
     res.end();
     return;
   }
+  // Replay guard. rezeis relays this event off a BullMQ queue with 4 attempts
+  // (15s -> 30s -> 60s), so the same card can arrive up to four times; without
+  // this the operator gets four identical cards for one incident. Claimed AFTER
+  // the payload checks above so a 400 never burns the id, and BEFORE the send so
+  // two overlapping retries cannot both get through.
+  if (!claimDevEvent('notify-dev', payload.eventId)) {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
   // Universal "Close" button so the dev can dismiss a handled event card
   // (routed by the shared `close` callback → deletes the message).
@@ -670,6 +712,13 @@ async function handleNotifyDevDocument(opts: DevNotifyHandlerOptions): Promise<v
   const content = typeof payload.content === 'string' ? payload.content : null;
   if (content === null || content.length === 0) {
     res.statusCode = 400;
+    res.end();
+    return;
+  }
+  // Replay guard — see `/notify-dev` above. Same queue, same 4 attempts, and a
+  // duplicate here costs the operator a whole second copy of the error report.
+  if (!claimDevEvent('notify-dev-document', payload.eventId)) {
+    res.statusCode = 204;
     res.end();
     return;
   }

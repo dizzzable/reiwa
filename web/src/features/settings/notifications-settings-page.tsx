@@ -22,6 +22,7 @@ import {
   type PushSupportStatus,
 } from "@/lib/push";
 import { getPushPublicKey } from "@/lib/api-client";
+import { isTelegramMiniAppSurface } from "@/lib/telegram-launch-params";
 
 export default function NotificationsSettingsPage() {
   const { t } = useTranslation();
@@ -138,6 +139,14 @@ function BrowserPushSection() {
   };
 
   const isIOS = support === "unsupported-ios-not-installed";
+  // `detectPushSupport()` reaches this verdict from the UA plus display-mode,
+  // and both are satisfied inside the Telegram Mini App on iPhone — Telegram
+  // for iOS sends Safari's own user agent unchanged. The verdict itself is
+  // right there (iOS web push really does require an installed PWA); the
+  // remedy printed underneath it was not, because that webview has no Share →
+  // Add to Home Screen menu to open. Same defect as the Settings install row,
+  // same authoritative signal.
+  const inTelegram = isTelegramMiniAppSurface();
   const isPermissionDenied = support === "permission-denied";
   const interactiveDisabled = isIOS || isPermissionDenied || busy;
 
@@ -173,7 +182,11 @@ function BrowserPushSection() {
             <Smartphone className="h-4 w-4 mt-0.5 text-amber-400 shrink-0" aria-hidden />
             <div className="text-xs text-amber-200/90 space-y-0.5">
               <p>{t("notifications.pushIosInstall")}</p>
-              <p className="text-amber-200/70">{t("notifications.pushIosInstallHow")}</p>
+              <p className="text-amber-200/70">
+                {inTelegram
+                  ? t("notifications.pushIosInstallHowTelegram")
+                  : t("notifications.pushIosInstallHow")}
+              </p>
             </div>
           </div>
         )}

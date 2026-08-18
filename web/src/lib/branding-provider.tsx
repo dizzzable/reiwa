@@ -18,7 +18,7 @@
  *    are served from cache between mounts.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useContext,
@@ -26,6 +26,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
@@ -37,9 +38,14 @@ import {
   writePublicConfigSnapshot,
 } from "@/lib/public-config-snapshot";
 import {
+  publicConfigRefetchInBackground,
+  publicConfigRefetchInterval,
   selectBrandingProviderConfig,
   shouldPersistPublicConfig,
+  shouldRefetchOnReturn,
+  shouldReportDefaultsPaint,
 } from "@/lib/branding-provider-policy";
+import { reportClientError } from "@/lib/client-error-reporter";
 import {
   DEFAULT_BRANDING,
   DEFAULT_PUBLIC_CONFIG,
@@ -111,10 +117,12 @@ function readStoredThemeMode(key: string | null): BrandingThemeMode | null {
 export function BrandingProvider({ children }: PropsWithChildren) {
   const { i18n } = useTranslation();
   const [snapshot] = useState(readPublicConfigSnapshot);
+  const queryClient = useQueryClient();
 
   const {
     data,
     dataUpdatedAt,
+    isError,
     isLoading,
     isPlaceholderData,
     isSuccess,
@@ -124,30 +132,101 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     queryFn: getReiwaPublicConfig,
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
-    retry: 2,
+    // NO in-query retries. This is not a reduction in effort, it is the
+    // difference between retrying and hanging.
+    //
+    // React Query's retryer sleeps for the retry delay and then asks
+    // `canContinue()`, which is
+    //
+    //   focusManager.isFocused() && (networkMode === "always" || onlineManager.isOnline()) && canRun()
+    //
+    // (`@tanstack/query-core/.../retryer.js`), and `focusManager.isFocused()`
+    // is `document.visibilityState !== "hidden"`. When that reads `hidden` the
+    // retryer does not fail — it PARKS, in `fetchStatus: "paused"`, and only a
+    // focus or online EVENT can release it. Note the focus term is outside the
+    // `networkMode` parenthesis: no query option can opt out of it.
+    //
+    // Parked is worse than failed in every direction that matters here:
+    //   - `status` stays `pending`, so `isError` never becomes true and
+    //     `shouldReportDefaultsPaint` below can never fire — the cabinet paints
+    //     the built-in Reiwa identity and reports nothing;
+    //   - `isPlaceholderData` stays true, so `isLoading` never clears;
+    //   - and it cannot be restarted. `Query.fetch()` on a parked query returns
+    //     the parked promise (`query.js`, `else if (this.#retryer) { … return
+    //     this.#retryer.promise }`), so the poll below and the `refetch()` in
+    //     the return listener both resolve to the same dead thenable.
+    //
+    // A Mini App is "backgrounded constantly" on a phone (see
+    // `components/reactbits/card-effect-layer.tsx`), and the same file records
+    // that a return can arrive with NO visibility event at all — so on that
+    // surface the release condition is one the product cannot count on. One
+    // lost bootstrap request therefore used to cost the whole session its
+    // operator identity, silently, with no way back short of a reload the
+    // subscriber has no reason to perform.
+    //
+    // Failing fast instead makes the poll below the ONE retry policy this query
+    // has, and it is a policy that cannot park. The cost is stated plainly: a
+    // blip that the old 1s/2s attempts would have papered over now shows the
+    // built-in identity until the next tick.
+    retry: false,
     refetchOnWindowFocus: false,
+    // Keep trying for as long as the cabinet has nothing but its built-in
+    // identity to show. With `retry: false` above this is the query's ONLY
+    // retry, and that is deliberate — it is the one that cannot be parked by a
+    // platform signal. A blip here is ordinary: a carrier hiccup on a launch
+    // that has not reached the VPN yet, a 429 out of the shared `/api` budget,
+    // an upstream still warming. Self-terminating: `query.state.data` sees only
+    // real fetched payloads, because `placeholderData` is never written to
+    // the cache, so the polling stops for good on the first one that lands.
+    refetchInterval: (query) => publicConfigRefetchInterval(query.state.data),
+    // Poll REGARDLESS of what the platform claims about visibility, for as long
+    // as the cabinet has never received an operator payload. Without this the
+    // line above is decorative on the surface it was written for: React Query
+    // only issues the tick when `refetchIntervalInBackground` is set OR
+    // `focusManager.isFocused()` — i.e. `document.visibilityState !== "hidden"`
+    // — so on a client whose Page Visibility never says "visible", the timer
+    // fires and the request does not. `publicConfigRefetchInBackground` reads
+    // the same cached payload the cadence above reads, so both switch off
+    // together on the first real response and a healthy launch never polls in
+    // the background at all.
+    refetchIntervalInBackground: publicConfigRefetchInBackground(
+      queryClient.getQueryData<PublicConfig>(["public-config"]),
+    ),
     // A valid browser snapshot is used only until the request resolves. With
     // no snapshot (or unavailable storage), this preserves the built-in first
     // paint defaults exactly as before.
     placeholderData: selectBrandingProviderConfig(undefined, snapshot),
   });
 
-  // Refetch branding when the tab / Mini App regains visibility so an open
+  // Refetch branding when the tab / Mini App is presented again, so an open
   // session picks up operator theme edits without a manual reload. Throttled
-  // so rapid tab switches don't hammer the endpoint (the server-side cache
-  // makes each call cheap regardless).
+  // so rapid switches don't hammer the endpoint (the server-side cache makes
+  // each call cheap regardless).
+  //
+  // `pageshow` is here for the same reason `card-effect-layer.tsx` had to add
+  // it: going back to this app does not always re-run the document, and a
+  // thaw out of the frozen/back-forward state arrives with NO
+  // `visibilitychange` — the document never became hidden as far as that event
+  // is concerned, it stopped existing and started again. A listener bound to
+  // `visibilitychange` alone therefore never runs on exactly the return this
+  // recovery exists for. Both events share one handler and one throttle;
+  // `shouldRefetchOnReturn` carries the difference between them.
   useEffect(() => {
     let lastRefetch = 0;
     const THROTTLE_MS = 15_000;
-    const onVisible = (): void => {
-      if (document.visibilityState !== "visible") return;
+    const onReturn = (event: Event): void => {
+      if (!shouldRefetchOnReturn(event.type, document.visibilityState)) return;
       const now = Date.now();
       if (now - lastRefetch < THROTTLE_MS) return;
       lastRefetch = now;
       void refetch();
     };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("pageshow", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("pageshow", onReturn);
+    };
   }, [refetch]);
 
   const config = selectBrandingProviderConfig(data, snapshot);
@@ -209,6 +288,26 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     if (!shouldPersistPublicConfig(data, dataUpdatedAt, isPlaceholderData, isSuccess)) return;
     writePublicConfigSnapshot(data);
   }, [data, dataUpdatedAt, isPlaceholderData, isSuccess]);
+
+  // Report the one bootstrap outcome the cabinet cannot present honestly: the
+  // fetch failed AND no stored snapshot exists, so the subscriber is looking
+  // at the built-in Reiwa identity — stock palette, stock mark, the name
+  // `Reiwa`, and the three-item fallback navigation instead of the operator's.
+  // It renders as a perfectly working cabinet, which is precisely why this
+  // reached production unreported. The report carries the user agent, so the
+  // operator can see WHICH clients cannot reach their own configuration
+  // rather than having to reproduce it on a device they may not own.
+  const reportedDefaultsPaint = useRef(false);
+  useEffect(() => {
+    if (reportedDefaultsPaint.current) return;
+    if (!shouldReportDefaultsPaint(isError, data, snapshot)) return;
+    reportedDefaultsPaint.current = true;
+    reportClientError({
+      message:
+        "public-config unavailable and no local snapshot: cabinet is painting built-in default branding",
+      kind: "branding.defaults-painted",
+    });
+  }, [isError, data, snapshot]);
 
   // Set the document (browser tab) title from the operator's webTitle,
   // falling back to projectName, then the brand name.

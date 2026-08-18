@@ -41,6 +41,60 @@ const NON_REPORTABLE_PATTERNS: readonly RegExp[] = [
   /the node (to be removed|before which the new node is to be inserted) is not a child of this node/i,
 ];
 
+/**
+ * URL schemes a browser uses for code IT injected, not code we shipped.
+ *
+ * Deliberately omits Safari's `webkit-masked-url://`: Safari hides more than
+ * extensions behind it, so treating it as foreign would silently discard real
+ * reports from our own bundle. A false negative here costs noise; a false
+ * positive costs a crash nobody hears about.
+ */
+const EXTENSION_URL_SCHEMES: readonly string[] = [
+  'chrome-extension://',
+  'moz-extension://',
+  'safari-web-extension://',
+  'safari-extension://',
+  'ms-browser-extension://',
+  'opera-extension://',
+]
+
+/** Every `scheme://host/...` token in a string, in order. */
+const URL_IN_STACK = /\b[a-z][a-z0-9.+-]*:\/\/[^\s)]+/gi
+
+/**
+ * Did this error come out of a browser extension AND nowhere else?
+ *
+ * Wallet extensions in particular throw on almost every page load — two of them
+ * racing to define `window.ethereum`, or to register a Solana provider, is a
+ * daily event on any desktop with a crypto wallet installed. Those exceptions
+ * reach `window.onerror` on OUR page, so without this they arrive in the
+ * operator's error feed carrying our service name, our version and our commit,
+ * and they crowd out the reports that are actually ours — worst of all during
+ * an incident, when the feed is the thing being read.
+ *
+ * The bar is EVERY located frame, not any. An extension that calls into our
+ * code and trips a bug there produces a stack with both origins in it, and that
+ * one is ours to fix. Likewise an error with no URL anywhere (`<anonymous>`
+ * frames only, or no stack at all) is kept: unattributable is not the same as
+ * foreign, and guessing in that direction loses real crashes.
+ */
+export function isExtensionOriginError(input: {
+  readonly filename?: string
+  readonly stack?: string
+}): boolean {
+  const urls: string[] = []
+  const filename = normalizeString(input.filename, 2_000)
+  if (filename !== undefined) urls.push(filename)
+  if (typeof input.stack === 'string') {
+    for (const match of input.stack.matchAll(URL_IN_STACK)) urls.push(match[0])
+  }
+  if (urls.length === 0) return false
+  return urls.every((url) => {
+    const lower = url.toLowerCase()
+    return EXTENSION_URL_SCHEMES.some((scheme) => lower.startsWith(scheme))
+  })
+}
+
 const recent = new Map<string, number>();
 let windowStart = Date.now();
 let windowCount = 0;
@@ -66,6 +120,14 @@ export function reportClientError(input: ClientErrorInput): void {
     // Drop transient/benign browser noise (service-worker churn, RO loop) so it
     // never lands in the operator's error feed as an ERROR event.
     if (NON_REPORTABLE_PATTERNS.some((re) => re.test(message))) return;
+
+    // Same idea, by ORIGIN rather than by wording. Extension exceptions carry
+    // ordinary messages ("t is not a function"), so no pattern list can catch
+    // them; what gives them away is that every frame lives under an extension
+    // scheme. Checked BEFORE the dedup and rate-limit bookkeeping below, so a
+    // page full of wallet noise cannot spend the per-minute budget that a real
+    // crash needs.
+    if (isExtensionOriginError(input)) return;
 
     const now = Date.now();
     const key = `${input.kind ?? 'error'}:${message}`.slice(0, 200);

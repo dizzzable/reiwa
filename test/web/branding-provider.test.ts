@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { applyBrandingToDocument } from "../../web/src/lib/branding-document.js";
 import {
+  PUBLIC_CONFIG_RETRY_INTERVAL_MS,
+  publicConfigRefetchInterval,
   selectBrandingProviderConfig,
   shouldPersistPublicConfig,
+  shouldReportDefaultsPaint,
 } from "../../web/src/lib/branding-provider-policy.js";
 import {
   DEFAULT_PUBLIC_CONFIG,
@@ -35,6 +38,60 @@ describe("BrandingProvider snapshot fallback", () => {
     expect(shouldPersistPublicConfig(undefined, 0, true, false)).toBe(false);
     expect(shouldPersistPublicConfig(STORED_SNAPSHOT, Date.now(), true, true)).toBe(false);
     expect(shouldPersistPublicConfig(STORED_SNAPSHOT, Date.now(), false, true)).toBe(true);
+  });
+
+  it("falls all the way to the built-in identity only when BOTH carriers are empty", () => {
+    // The state in the field report: a client with no stored snapshot whose
+    // fetch did not land shows the cabinet's own brand, not the operator's.
+    // A client that merely lost the fetch keeps the operator identity, which
+    // is why the same install can look correct on one device and stock on
+    // another without anything being wrong with the device.
+    expect(selectBrandingProviderConfig(undefined, null)).toBe(DEFAULT_PUBLIC_CONFIG);
+    expect(selectBrandingProviderConfig(undefined, STORED_SNAPSHOT)).not.toBe(
+      DEFAULT_PUBLIC_CONFIG,
+    );
+  });
+});
+
+describe("public-config recovery after a failed bootstrap", () => {
+  it("keeps retrying while no operator payload has ever arrived", () => {
+    expect(publicConfigRefetchInterval(undefined)).toBe(PUBLIC_CONFIG_RETRY_INTERVAL_MS);
+    // A cadence of zero/false here is the defect this exists to prevent: the
+    // query has no retryer of its own any more (`retry: false` — React Query's
+    // parks rather than fails whenever the platform reports the document
+    // hidden), so this poll is the only thing that re-triggers the request for
+    // the life of the document.
+    expect(PUBLIC_CONFIG_RETRY_INTERVAL_MS).toBeGreaterThan(0);
+  });
+
+  it("stops retrying for good once a payload is in the cache", () => {
+    expect(publicConfigRefetchInterval(STORED_SNAPSHOT)).toBe(false);
+    // Even a payload that happens to equal the built-in shape counts: it came
+    // from the server, so it is the operator's answer and not a fallback.
+    expect(publicConfigRefetchInterval(DEFAULT_PUBLIC_CONFIG)).toBe(false);
+  });
+});
+
+describe("painting built-in defaults is reported, never silent", () => {
+  it("reports once the fetch has actually failed with nothing to fall back on", () => {
+    expect(shouldReportDefaultsPaint(true, undefined, null)).toBe(true);
+  });
+
+  it("stays silent during the ordinary first paint", () => {
+    // While the query is pending the provider renders DEFAULT_PUBLIC_CONFIG
+    // through `placeholderData`. That is the designed first frame, not an
+    // outage, and reporting it would bury the real signal in noise.
+    expect(shouldReportDefaultsPaint(false, DEFAULT_PUBLIC_CONFIG, null)).toBe(false);
+  });
+
+  it("stays silent when a stored snapshot is still carrying the operator identity", () => {
+    // The failure is real, but the subscriber sees the right cabinet — this
+    // is the case that hid the defect on returning devices.
+    expect(shouldReportDefaultsPaint(true, undefined, STORED_SNAPSHOT)).toBe(false);
+  });
+
+  it("stays silent when the payload arrived", () => {
+    expect(shouldReportDefaultsPaint(false, STORED_SNAPSHOT, null)).toBe(false);
   });
 });
 

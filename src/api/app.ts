@@ -29,6 +29,7 @@ import {
   buildLandingMetaHead,
 } from "./routes/landing.js";
 import {
+  applyBrandingHead,
   buildWebManifest,
   getBrandingAssetCache,
   isSafeBrandingFile,
@@ -508,26 +509,99 @@ export function createApp(deps: CreateAppDeps) {
       }
       return indexHtmlTemplate;
     };
-    app.get(["/", "/welcome"], (req: Request, res: Response, next: NextFunction) => {
+    // Every SPA document is rendered through here so the icon / app-title tags
+    // baked into `web/index.html` arrive ALREADY carrying the operator brand.
+    // `branding-provider.tsx` patches the same tags, but from a React effect —
+    // i.e. after the bundle has run. Anything that reads the delivered bytes
+    // rather than the live DOM (iOS "Add to Home Screen", crawlers, social
+    // unfurlers) sees the stock Reiwa icon unless the server writes it in.
+    // Shares the 60s public-config cache with `/manifest.webmanifest`, so an
+    // SPA document costs no extra upstream call.
+    // The landing lookup and this public-config lookup are independent upstream
+    // calls, so an SPA document starts BOTH before awaiting either. With the
+    // panel on its own VPS an outage now costs one headers timeout (~10s)
+    // instead of two in series (~20s).
+    //
+    // `beginPublicConfig` resolves to a settled result rather than rejecting.
+    // The caller consumes it only after the landing lookup finishes, and a
+    // rejection left unattended in that window would reach Node's
+    // unhandled-rejection handler (fatal by default). Awaiting inside the async
+    // body attaches the handler synchronously, so no such window exists.
+    type SettledPublicConfig =
+      | {
+          readonly ok: true;
+          readonly payload: Awaited<ReturnType<typeof getPublicConfigPayload>>;
+        }
+      | { readonly ok: false; readonly error: unknown };
+    const beginPublicConfig = async (): Promise<SettledPublicConfig> => {
+      try {
+        const payload = await getPublicConfigPayload(
+          deps.adminClient,
+          (err) => logger?.debug?.({ err }, "spa head branding refresh failed"),
+          publicConfigPersistence,
+          publicConfigRejectionNotifier,
+        );
+        return { ok: true, payload };
+      } catch (error: unknown) {
+        return { ok: false, error };
+      }
+    };
+    const renderSpaDocument = async (
+      extraHead: string | null,
+      publicConfig: Promise<SettledPublicConfig>,
+    ): Promise<string> => {
+      const template = readIndexTemplate();
+      const withHead =
+        extraHead === null
+          ? template
+          : template.replace("</head>", `${extraHead}</head>`);
+      const settled = await publicConfig;
+      // Re-thrown so `sendSpaDocument` keeps ONE fallback path: a branding
+      // failure still serves the unbranded shell, exactly as before.
+      if (!settled.ok) throw settled.error;
+      const branding = (settled.payload.body as { branding?: unknown }).branding;
+      return applyBrandingHead(
+        withHead,
+        branding as Parameters<typeof applyBrandingHead>[1],
+      );
+    };
+    const sendSpaDocument = (
+      res: Response,
+      next: NextFunction,
+      extraHead: string | null,
+      // Defaulted so the plain SPA-fallback route below starts its own lookup
+      // at exactly the moment it always did.
+      publicConfig: Promise<SettledPublicConfig> = beginPublicConfig(),
+    ): void => {
       void (async () => {
+        // Set before any send: `res.sendFile` only supplies its own
+        // `public, max-age=0` when the header is still absent.
+        res.setHeader("Cache-Control", "no-cache");
         try {
-          const body = await getEffectiveLandingCached(deps.adminClient);
-          const head = buildLandingMetaHead(body);
-          if (head === null) {
-            res.setHeader("Cache-Control", "no-cache");
-            res.sendFile(indexHtml, (err) => {
-              if (err) next(err);
-            });
-            return;
-          }
-          const html = readIndexTemplate().replace("</head>", `${head}</head>`);
-          res.setHeader("Cache-Control", "no-cache");
-          res.type("html").send(html);
+          res.type("html").send(await renderSpaDocument(extraHead, publicConfig));
         } catch {
+          // Operator config unavailable (admin down, cold cache, no upstream
+          // configured) or the template is unreadable. The unbranded shell is
+          // still a working cabinet, and the React head effects recover the
+          // icon once the SPA boots — never fail a document over a favicon.
           res.sendFile(indexHtml, (err) => {
             if (err) next(err);
           });
         }
+      })();
+    };
+    app.get(["/", "/welcome"], (_req: Request, res: Response, next: NextFunction) => {
+      void (async () => {
+        // Started first, awaited last: the landing lookup below now runs
+        // alongside the public-config lookup instead of in front of it.
+        const publicConfig = beginPublicConfig();
+        let head: string | null = null;
+        try {
+          head = buildLandingMetaHead(await getEffectiveLandingCached(deps.adminClient));
+        } catch {
+          // Landing lookup failed — the shell (still branded) is the fallback.
+        }
+        sendSpaDocument(res, next, head, publicConfig);
       })();
     });
     // A stale entry document can request a hashed chunk that a new release has
@@ -544,9 +618,7 @@ export function createApp(deps: CreateAppDeps) {
         next();
         return;
       }
-      res.sendFile(indexHtml, (err) => {
-        if (err) next(err);
-      });
+      sendSpaDocument(res, next, null);
     });
     if (logger) {
       logger.info({ webDist }, "serving SPA from API (single-image mode)");

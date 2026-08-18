@@ -46,6 +46,24 @@
 	# and nginx/angie leave a wrong-but-present value; Traefik leaves none.
 }
 
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │  UPSTREAM PORT IS HARD-CODED — THE 5000 BELOW IS NOT READ FROM .env      │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# The cabinet's docker-compose.yml publishes `${REIWA_PORT:-5000}` and the app
+# listens on `PORT ?? REIWA_PORT`, so the port IS a variable there. Here it is
+# a literal, and the proxy stacks in this folder load no .env at all.
+#
+# Change REIWA_PORT in the cabinet's .env and this file still dials 5000. The
+# port is closed, so every request dies at the edge with a 502; the app logs
+# NOTHING, because no request ever reaches it; and `docker compose ps` reports
+# both containers healthy. Nothing in either log points at the cause.
+#
+# This is deliberately NOT solved with an environment variable: this project
+# keeps its settings in the panel and adds nothing to .env. If you change the
+# port, change it BY HAND here — in BOTH `reverse_proxy` lines below — and in
+# every other file listed under "Upstream port" in ../README.md.
+
 https://REPLACE_WITH_YOUR_DOMAIN {
 	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.key
 
@@ -66,9 +84,68 @@ https://REPLACE_WITH_YOUR_DOMAIN {
 	# it only as a separate, conscious decision.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
-	reverse_proxy * http://reiwa:5000 {
-		# Keep the realtime SSE stream (/api/v1/realtime/stream) flowing.
-		flush_interval -1
+	# ── The ONE long-lived route ──────────────────────────────────────
+	#
+	# `GET /api/v1/realtime/stream` is the only streaming endpoint this app
+	# has (`text/event-stream`, held open for hours). There are no
+	# WebSockets anywhere in the cabinet — grep for them and you find none,
+	# and nothing in the app ever answers a 101.
+	#
+	# `flush_interval -1` used to sit on `reverse_proxy *`, i.e. on
+	# EVERYTHING. Splitting it out is what lets the catch-all below carry a
+	# FINITE wait, which is the defect that actually mattered: with no
+	# `response_header_timeout` anywhere, an upstream that accepts the
+	# connection and then never answers holds the request — and the browser
+	# tab — open forever, logging nothing on either side.
+	#
+	# It matters most in the split-VPS layout this repo supports: the SPA
+	# document calls the panel on ANOTHER HOST before its first byte, so a
+	# panel outage turns every page load into a slow request. The edge must
+	# cut those off quickly. It must not cut off the stream.
+	#
+	# Ordering is not left to chance: Caddy sorts `handle` blocks by matcher
+	# specificity and sorts the matcher-less block LAST, so this one stays
+	# ahead of the catch-all whatever order they are written in. An inline
+	# path with no trailing `*` is an EXACT match — `/foo` matches only
+	# `/foo` — the equivalent of nginx's `location = /...`.
+	handle /api/v1/realtime/stream {
+		reverse_proxy http://reiwa:5000 {
+			# Low-latency mode: every write goes to the client as it
+			# arrives. Caddy does not buffer response bodies by default,
+			# but without this it never flushes early either, so a
+			# subscriber sees nothing until some buffer happens to fill.
+			#
+			# Deliberately no `transport http` block: this is the one route
+			# allowed to wait indefinitely.
+			flush_interval -1
+		}
+	}
+
+	# Everything else: ordinary buffered proxying, bounded wait.
+	handle {
+		reverse_proxy http://reiwa:5000 {
+			transport http {
+				# The directive that was missing. Caddy's default is NO
+				# TIMEOUT. 60s is the ceiling for producing a response —
+				# the SPA document legitimately takes seconds when the
+				# panel is slow, so this is generous, but it is FINITE.
+				#
+				# `dial_timeout` is deliberately left alone: Caddy already
+				# defaults to 3s, tighter than the 5s the nginx and angie
+				# templates have to set by hand.
+				#
+				# There is no `read_timeout` or `write_timeout` in
+				# `transport http` — do not invent them, Caddy refuses to
+				# start on an unrecognised sub-directive. The client-side
+				# write deadline exists only as the global
+				# `servers { timeouts { write } }`, and it is deliberately
+				# NOT set: that block is server-wide with no per-route
+				# override, so any value there would also apply to the
+				# stream above and cut every subscriber off at exactly
+				# that age.
+				response_header_timeout 60s
+			}
+		}
 	}
 }
 

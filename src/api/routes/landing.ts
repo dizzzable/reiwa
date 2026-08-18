@@ -57,7 +57,9 @@ async function fetchFresh(adminClient: AdminClient | null): Promise<CachedLandin
 /**
  * Cached accessor (60s TTL + single-flight). On upstream failure returns the
  * last-known-good payload, or the disabled sentinel when nothing is cached —
- * the route never throws to the visitor.
+ * the route never throws to the visitor. Both outcomes land in `cached`, so a
+ * panel outage costs one upstream wait per TTL window instead of one per
+ * request.
  */
 async function getLandingPayload(
   adminClient: AdminClient | null,
@@ -82,11 +84,18 @@ async function getLandingPayload(
           cached = { ...cached, fetchedAt: Date.now() };
           return cached;
         }
-        return {
+        // Remember the miss for the TTL. Leaving `cached` null meant the
+        // failure was never recorded, so EVERY following request paid another
+        // upstream timeout — with the panel on its own VPS that is ~10s per
+        // visitor, indefinitely. `fetchedAt` is now, so the TTL still expires
+        // and the request after it goes upstream again: the sentinel cannot
+        // outlive the outage. `resetLandingCache()` still drops it at once.
+        cached = {
           body: DISABLED_SENTINEL,
           etag: computeEtag(DISABLED_SENTINEL),
           fetchedAt: Date.now(),
         };
+        return cached;
       });
   }
   return inflight;

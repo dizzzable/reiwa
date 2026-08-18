@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { openExternalUrl, startCheckoutRedirect } from "../src/lib/utils";
+import { __resetTelegramLaunchCaptureForTests } from "../src/lib/telegram-launch-params";
 
 /**
  * The lost-payments bug: the checkout link was built correctly, the buyer
@@ -24,6 +25,8 @@ import { openExternalUrl, startCheckoutRedirect } from "../src/lib/utils";
 
 const TELEGRAM = "Telegram" as const;
 const SDK_STATE = "__reiwaTelegramSdkState" as const;
+/** Where the Telegram SDK mirrors the launch parameters. */
+const LAUNCH_PARAMS_KEY = "__telegram__initParams" as const;
 
 /** A Telegram Stars checkout URL, i.e. what `createInvoiceLink` returns. */
 const STARS_INVOICE = "https://t.me/$sTaRs-InVoIcE_1=";
@@ -89,6 +92,8 @@ function stubAssign(): ReturnType<typeof vi.fn> {
 afterEach(() => {
   withTelegram(false);
   withSdkState(undefined);
+  window.sessionStorage.clear();
+  __resetTelegramLaunchCaptureForTests();
   vi.restoreAllMocks();
 });
 
@@ -142,6 +147,35 @@ describe("checkout redirect", () => {
     const assign = stubAssign();
 
     expect(startCheckoutRedirect("https://pay.example/abc")).toBe(false);
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("treats a Telegram launch as Telegram when only the launch parameters survive", () => {
+    // The gap the private `isTelegramLaunch()` left. It asked two questions —
+    // is the bridge here, did the loader stamp its flag — and BOTH can be
+    // absent on a live Mini App. The bridge needs ~100 KB from telegram.org,
+    // the host this product's customers buy a VPN to reach; the loader stamps
+    // only on a document where it found the parameters itself, so a reload deep
+    // inside the Mini App, or a partitioned iframe whose `sessionStorage` threw
+    // while the loader ran, leaves both answers empty.
+    //
+    // The parameters outlive all of that: `tgWebAppPlatform`/`tgWebAppVersion`
+    // describe the CLIENT and are what the payload teardown deliberately leaves
+    // behind. `isTelegramMiniAppSurface()` reads them FIRST, so it still says
+    // "Mini App" here.
+    //
+    // On the old detector this fails the loud way, which is the point: `assign`
+    // is called and the Mini App container is navigated to the gateway origin,
+    // with no way back — the exact outcome the whole function exists to avoid.
+    withTelegram(false);
+    withSdkState(undefined);
+    window.sessionStorage.setItem(
+      LAUNCH_PARAMS_KEY,
+      JSON.stringify({ tgWebAppPlatform: "ios", tgWebAppVersion: "9.6" }),
+    );
+    const assign = stubAssign();
+
+    expect(startCheckoutRedirect(WEB_GATEWAY)).toBe(false);
     expect(assign).not.toHaveBeenCalled();
   });
 

@@ -205,6 +205,38 @@ describe("promptInstall", () => {
     ).toHaveBeenCalledTimes(1);
   });
 
+  it("calls prompt() inside the click's own turn, before the gesture is spent", async () => {
+    // `prompt()` is gated on TRANSIENT USER ACTIVATION. Chromium honours it from
+    // inside the click's task and refuses it afterwards — the same rule that
+    // already cost this project a working payment redirect. `promptInstall` is
+    // `async`, so everything ahead of its first `await` still runs in the
+    // handler's task; that property is the whole reason `settings-page.tsx` can
+    // write `onClick={() => void install.promptInstall()}` and get a native
+    // dialog. Put ONE `await` above the call — a feature check, a telemetry
+    // ping, a branding read — and the button stops installing on every real
+    // device while every other case in this file, all of which await the whole
+    // call, stays green.
+    //
+    // The count is therefore read in the same synchronous turn the call returns
+    // in. Reading it after an `await` would answer a different question.
+    captureInstallPromptEvents();
+    const { event, prompt } = makeInstallPromptEvent("accepted");
+    window.dispatchEvent(event);
+    await mountProbe();
+
+    let calledDuringGesture: number | null = null;
+    await act(async () => {
+      const pending = state?.promptInstall();
+      calledDuringGesture = prompt.mock.calls.length;
+      await pending;
+    });
+
+    expect(
+      calledDuringGesture,
+      "prompt() had not been called by the time the click handler yielded — the user gesture is gone and the browser refuses the install dialog",
+    ).toBe(1);
+  });
+
   it("reports a dismissed prompt as declined", async () => {
     captureInstallPromptEvents();
     window.dispatchEvent(makeInstallPromptEvent("dismissed").event);

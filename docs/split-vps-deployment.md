@@ -24,7 +24,13 @@ network setup, which is the default.
 Two cross-internet hops, both on `:443` with TLS:
 
 1. **reiwa → admin (PULL).** reiwa-api/bot/worker fetch business data from
-   the admin internal API (`/api/internal/...`).
+   the admin internal API (`/api/internal/...`). One of those pulls is not a
+   request but a **stream**: reiwa opens
+   `GET /api/internal/user/<userRef>/stream` (`text/event-stream`) and holds
+   it open for hours, across the internet, through BOTH proxies. Every proxy
+   template in this repo carves that one path out of its ordinary timeouts —
+   if you hand-roll a proxy instead, carve it out too, or the cabinet's
+   realtime feed dies silently at whatever your generic read timeout is.
 2. **admin → reiwa (PUSH webhooks).** admin delivers operator events
    (bot-config changed, per-user notifications, broadcasts) to reiwa.
    reiwa-api verifies the signature and relays the action to reiwa-bot
@@ -36,11 +42,31 @@ Each VPS gets its own reverse proxy stack (Caddy / nginx / Angie /
 Traefik) — the operator picks one. Configs ship in:
 
 - `reiwa/deploy/proxies/` — fronts `reiwa:5000` (cabinet + `/api/*`).
-- `rezeis/rezeis-admin/deploy/proxies/` — fronts `rezeis:8000` (admin).
+- `rezeis/deploy/proxies/` — fronts `rezeis:8000` (admin).
 
-Both are `:443`-only, bring-your-own certificate; details and a
-self-signed helper are in each stack's local README. No bot-specific
+Use those two paths and no others. `rezeis/rezeis-admin/deploy/proxies/` also
+exists and is a **legacy/reference copy** — its own parent README says so — and
+it is NOT interchangeable: several stacks there (`caddy-auto/`, `traefik/`)
+publish **port 80** and issue certificates via ACME, and `nginx/` there wants
+8443 open for TLS-ALPN-01. The only thing the legacy tree still has that the
+canonical one does not is the `*-combined/` stacks, which front both services
+from one proxy — and those are for a SINGLE VPS, i.e. the exact topology this
+document is not about.
+
+The two canonical trees are `:443`-only, bring-your-own certificate; details
+and a self-signed helper are in each stack's local README. No bot-specific
 subdomain is needed.
+
+> ### ⚠️ The panel's certificate must be publicly trusted
+>
+> Self-signed is fine for the cabinet in local testing. For the **panel** in
+> this topology it is never fine, and it fails in a way that points at the
+> wrong machine: reiwa calls the panel with Node's default trust store — no
+> custom CA, no `NODE_EXTRA_CA_CERTS`, no verification bypass — so a
+> self-signed panel certificate fails **every** cabinet → panel call at the
+> TLS handshake. The cabinet keeps serving pages from its Redis snapshot and
+> merely looks "empty", so the obvious conclusion is that the panel is down.
+> Use a public CA, or a Cloudflare Origin cert with the domain proxied.
 
 ## Environment
 
@@ -163,9 +189,17 @@ After bringing both stacks up:
 - **IP-allowlist** the admin VPS source IP at the reiwa reverse proxy
   for `POST /api/v1/webhooks/rezeis`. The signature already protects
   authenticity; allowlist is a defence-in-depth.
-- **Rotate** `WEBHOOK_SECRET_HEADER` periodically. Update both `.env`
-  files, restart admin first, then reiwa, with a brief overlap (deliveries
-  during the gap will fail and be retried by the dispatcher).
+- **Rotate** `WEBHOOK_SECRET_HEADER` during a quiet window — **nothing
+  retries across the gap.** While the two `.env` files disagree, reiwa answers
+  every delivery with `401` and the panel drops it on the floor:
+  `BotNotifierClient` (4s) and `ReiwaCacheInvalidatorService` (3s) each make
+  exactly one attempt and record a failure with nothing but a `logger.warn` on
+  the panel host. Every Telegram notification, broadcast message and cache
+  invalidation raised during the gap is lost for good, and the panel UI shows
+  no sign of it. Backup delivery is the only path that inspects the outcome,
+  and it classifies `401` as permanent — so it alerts rather than retrying.
+  Restart admin first, then reiwa, and keep the window to seconds; avoid
+  rotating while a broadcast is running or an expiry sweep is due.
 - Run reiwa and admin on **different domains/subdomains** (this guide
   uses `app.example.com` and `panel.example.com`); do not co-locate them
   on the same hostname with a path prefix.

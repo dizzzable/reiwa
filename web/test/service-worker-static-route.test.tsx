@@ -29,7 +29,11 @@ interface CapturedRoute {
 const captured = vi.hoisted(() => ({ routes: [] as unknown[] }));
 
 vi.mock("workbox-precaching", () => ({
-  precacheAndRoute: () => undefined,
+  // Split since the precache ROUTE is registered after the navigation route
+  // (see `service-worker-navigation-precedence.test.tsx`); this file only
+  // needs both halves to exist so `sw.ts` imports cleanly.
+  precache: () => undefined,
+  addRoute: () => undefined,
   cleanupOutdatedCaches: () => undefined,
 }));
 
@@ -130,6 +134,35 @@ describe("service worker static-asset route", () => {
     expect(staticRoute.match(fetchOf(`${origin}/icons/icon-192x192.png`, "image"))).toBe(true);
   });
 
+  it("never cache-firsts an operator-uploaded asset", () => {
+    // The route's ONLY justification is stated above it: "Vite fingerprints the
+    // filename, so the bytes behind a URL never change". Everything under
+    // `/uploads/` is the one same-origin family that is not ours and not
+    // fingerprinted — it is proxied straight off the operator panel, and the
+    // operator edits it from a form, on a schedule that has nothing to do with
+    // a redeploy.
+    //
+    // The branding icon is the case that hurts. `GET /uploads/branding/<file>`
+    // answers a 302 to `/icons/icon-512x512.png` — the STOCK REIWA ICON —
+    // whenever the panel is unreachable and the disk mirror is cold
+    // (`src/api/app.ts`, the branding proxy). CacheFirst stores that followed
+    // 200 under the operator's own icon URL for 30 days, so one restart of the
+    // panel at the wrong moment replaces the operator's brand with Reiwa's for
+    // a month, on a device the operator cannot reach: evicting the server-side
+    // mirror through `reiwa.branding.invalidate` does not touch CacheStorage in
+    // somebody else's browser.
+    const origin = self.location.origin;
+
+    for (const route of cacheFirstRoutes()) {
+      expect(
+        route.match(fetchOf(`${origin}/uploads/branding/9f8e7d.png`, "image")),
+        "the operator's PWA icon is pinned for 30 days — a stock-Reiwa fallback served during one panel outage outlives the outage by a month",
+      ).toBe(false);
+      expect(route.match(fetchOf(`${origin}/uploads/icons/plan-pro.png`, "image"))).toBe(false);
+      expect(route.match(fetchOf(`${origin}/uploads/emoji/wave.png`, "image"))).toBe(false);
+    }
+  });
+
   it("renames the static cache so an already-poisoned generation is purged", () => {
     // The `activate` handler deletes every `static-assets-*` cache that is not
     // the current one, so the rename IS the cleanup for clients that already
@@ -139,5 +172,12 @@ describe("service worker static-asset route", () => {
 
     expect(staticRoute.cacheName).toMatch(/^static-assets-v\d+$/);
     expect(staticRoute.cacheName).not.toBe("static-assets-v2");
+    // Same argument, one generation later: v3 is the generation that stored
+    // `/uploads/**`, so shipping the exclusion above without renaming would fix
+    // new entries while every already-pinned stock icon kept being served.
+    expect(
+      staticRoute.cacheName,
+      "the /uploads exclusion ships, but the generation holding the already-pinned entries is never dropped",
+    ).not.toBe("static-assets-v3");
   });
 });

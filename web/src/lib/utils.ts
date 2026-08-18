@@ -1,6 +1,8 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+import { isTelegramMiniAppSurface } from "./telegram-launch-params";
+
 export { brandAuroraStops } from "./brand-colors";
 
 /**
@@ -166,23 +168,6 @@ export function openExternalUrl(url: string): void {
 }
 
 /**
- * Was this page opened as a Telegram Mini App?
- *
- * Not `window.Telegram?.WebApp` alone: that object only exists once the SDK has
- * been fetched from telegram.org, which a share of our users cannot reach. On
- * those networks a real Mini App looks exactly like a plain browser — and
- * "plain browser" here means navigating the container away to the gateway,
- * killing the Mini App with no way back. The loader stamps
- * `__reiwaTelegramSdkState` before it issues that request and keeps it set when
- * the request fails, and it stamps it only when Telegram launch parameters are
- * present — so it answers the question the SDK's presence cannot.
- */
-function isTelegramLaunch(): boolean {
-  if (window.Telegram?.WebApp !== undefined) return true;
-  return window.__reiwaTelegramSdkState !== undefined;
-}
-
-/**
  * Sends the buyer to the payment gateway.
  *
  * Deliberately NOT `openExternalUrl`. That opens a new tab, and a new tab is a
@@ -236,7 +221,25 @@ export function startCheckoutRedirect(url: string): boolean {
   }
   if (target.protocol !== "https:") return false;
 
-  if (isTelegramLaunch()) {
+  // The SURFACE question, asked through the shared detector rather than a
+  // private one. This used to be a local `isTelegramLaunch()` here that
+  // consulted only `window.Telegram` and the loader's flag;
+  // `isTelegramMiniAppSurface()` checks the launch parameters FIRST and keeps
+  // both of those as fallbacks, so it is a strict superset: it can only move a
+  // document from "browser" to "Mini App", never the other way.
+  //
+  // That direction is the safe one, and it is the whole point. Read a Mini App
+  // as a browser and the last line of this function navigates the container
+  // away to a gateway origin, killing the Mini App with no way back. Read a
+  // browser as a Mini App and the buyer gets the manual "Open payment" button
+  // one step early. The rationale for the carriers it consults lives with the
+  // detector in `telegram-launch-params.ts`; do not re-derive it here.
+  //
+  // Note this asks about the SURFACE, not the bridge. The bridge is consulted
+  // separately below and is optional: a Mini App on a network that cannot
+  // reach telegram.org still must not be navigated away, even though
+  // `window.Telegram` will never appear on it.
+  if (isTelegramMiniAppSurface()) {
     // Still ask Telegram to open it. Mobile clients honour these bridges
     // without a fresh gesture and this is the path that used to work for them;
     // Desktop enforces the gesture and will decline. Report `false` either way,

@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
+import { addRoute as addPrecacheRoute, cleanupOutdatedCaches, precache } from 'workbox-precaching'
 import { registerRoute, Route, setCatchHandler } from 'workbox-routing'
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
@@ -23,7 +23,17 @@ declare let self: ServiceWorkerGlobalScope
 // `static-assets-*` generation that is no longer the current one — installed
 // clients therefore lose the poisoned entries on their next load, with no
 // separate migration step to forget.
-const STATIC_CACHE = 'static-assets-v3'
+const STATIC_CACHE = 'static-assets-v4'
+// v4 is the same kind of purge as v3, one URL family over: until it, the
+// static route also swallowed `/uploads/**` — the operator's branding icon,
+// plan icons and custom emoji, proxied off the panel and NOT fingerprinted.
+// `GET /uploads/branding/<file>` answers a 302 to `/icons/icon-512x512.png`
+// (the stock Reiwa icon) while the panel is unreachable and the disk mirror is
+// cold, so a single restart at the wrong moment pinned Reiwa's own icon under
+// the operator's icon URL for 30 days. `reiwa.branding.invalidate` drops the
+// server's mirror; it cannot reach CacheStorage in a subscriber's browser.
+// Renaming is what deletes those entries — the `activate` handler above drops
+// every `static-assets-*` generation that is no longer current.
 // v4 drops FAQ responses from the service-worker cache. FAQ is edited live in
 // the operator panel; a stale-while-revalidate hit could otherwise hide a new
 // answer or attachment for the rest of the session (React Query would accept
@@ -114,9 +124,14 @@ self.addEventListener('install', () => {
 })
 
 // ─── Precaching (Application Shell) ───────────────────────────────────────────
-// Workbox injects the precache manifest here at build time.
-// This caches HTML, CSS, JS bundles — the application shell.
-precacheAndRoute(self.__WB_MANIFEST)
+// Workbox injects the precache manifest here at build time. This caches HTML,
+// CSS, JS bundles — the application shell.
+//
+// `precache()` alone: it installs the shell and must be called during this
+// initial evaluation (it adds install/activate listeners). The ROUTE that
+// answers requests from that precache is registered further down, on purpose —
+// see `addPrecacheRoute()` below the navigation route.
+precache(self.__WB_MANIFEST)
 
 // ─── Navigations (HTML): Network-First ────────────────────────────────────────
 // CRITICAL: HTML navigations MUST be network-first, never cache-first. An SPA's
@@ -137,6 +152,27 @@ const navigationRoute = new Route(
 )
 
 registerRoute(navigationRoute)
+
+// ─── Precache responses ───────────────────────────────────────────────────────
+// Registered AFTER the navigation route, and that ordering is the whole point.
+// Workbox answers with the FIRST registered route whose matcher accepts the
+// request, and `PrecacheRoute` resolves `/` to the precached `index.html` via
+// its `directoryIndex` default. The usual `precacheAndRoute()` one-liner
+// registers this route before everything else, so the entry document — the
+// single most important URL on the origin — was served CACHE-FIRST, quietly
+// contradicting the rule stated in capitals directly above.
+//
+// The visible cost was the document head. The API now injects the operator's
+// PWA icon and app title into the served `index.html`, so a returning visitor
+// landing on `/` kept receiving the build-time head — stock Reiwa icon, stock
+// title — and would keep receiving it until the next deploy replaced the
+// precache. Branding changes ship on their own schedule; deploys do not.
+//
+// Everything else in the precache is fingerprinted, so nothing but navigations
+// changes behaviour: those now go network-first with the offline fallbacks
+// already wired below (`NAV_CACHE`, then the precached shell in the catch
+// handler).
+addPrecacheRoute()
 
 // ─── Static Assets: Cache-First Strategy ──────────────────────────────────────
 // Matches hashed build assets (JS, CSS, fonts, images) on THIS origin. These
@@ -161,6 +197,16 @@ const staticAssetsRoute = new Route(
     // Third-party assets now simply fall through to the network, where the
     // browser's own HTTP cache still applies.
     if (url.origin !== self.location.origin) return false
+    // Same-origin, and still not ours. Everything under `/uploads/` is
+    // operator-uploaded content proxied off the admin panel: the branding /
+    // PWA icon, plan icons, custom emoji. The fingerprint argument that
+    // licenses cache-first everywhere else is simply false for them — the
+    // operator replaces the bytes from a form, on a schedule that has nothing
+    // to do with a redeploy, and the branding proxy can answer with the STOCK
+    // Reiwa icon (a 302 to `/icons/icon-512x512.png`) during a panel outage.
+    // Cache-first would pin either of those for 30 days. They fall through to
+    // the network, where the proxy's own `max-age=86400` + ETag still apply.
+    if (url.pathname.startsWith('/uploads/')) return false
     // Match assets directory
     if (url.pathname.startsWith('/assets/')) return true
     // Match static file types (JS, CSS, images, fonts)

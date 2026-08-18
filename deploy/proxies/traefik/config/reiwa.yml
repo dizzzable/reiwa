@@ -1,10 +1,58 @@
 # Traefik dynamic configuration for the reiwa user app (443-only, BYO cert).
 # Replace REPLACE_WITH_YOUR_DOMAIN with the app hostname.
+#
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │  UPSTREAM PORT IS HARD-CODED — THE 5000 BELOW IS NOT READ FROM .env      │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# The cabinet's docker-compose.yml publishes `${REIWA_PORT:-5000}` and the app
+# listens on `PORT ?? REIWA_PORT`, so the port IS a variable there. Here it is
+# a literal, and the proxy stacks in this folder load no .env at all.
+#
+# Change REIWA_PORT in the cabinet's .env and this file still dials 5000. The
+# port is closed, so every request dies at the edge; the app logs NOTHING,
+# because no request ever reaches it; and `docker compose ps` reports both
+# containers healthy. Nothing in either log points at the cause.
+#
+# This is deliberately NOT solved with an environment variable: this project
+# keeps its settings in the panel and adds nothing to .env. If you change the
+# port, change it BY HAND here — in BOTH `servers[].url` entries below — and
+# in every other file listed under "Upstream port" in ../../README.md.
 
 http:
   routers:
+    # ── The ONE long-lived route ───────────────────────────────────
+    #
+    # `GET /api/v1/realtime/stream` is the only streaming endpoint this app
+    # has (`text/event-stream`, held open for hours). There are no WebSockets
+    # anywhere in the cabinet — grep for them and you find none, and nothing
+    # in the app ever answers a 101.
+    #
+    # It is split off the catch-all so the ordinary route can carry a FINITE
+    # backend deadline (see `serversTransport` in ../traefik.yml) without that
+    # deadline ever applying to the stream.
+    #
+    # Traefik already orders routers by RULE LENGTH, and this rule is longer
+    # than the bare `Host()` below, so it would win unprompted. Both
+    # priorities are pinned anyway: length-based ordering quietly depends on
+    # how long the operator's domain happens to be, which is not something
+    # anyone should have to reason about when two rules overlap.
+    reiwa-stream:
+      rule: "Host(`REPLACE_WITH_YOUR_DOMAIN`) && Path(`/api/v1/realtime/stream`)"
+      priority: 100
+      entrypoints:
+        - https
+      tls: {}
+      # `hsts` is repeated here ON PURPOSE. Traefik middlewares attach per
+      # router and are inherited from nowhere — omit it and this one path
+      # becomes the single hole in the HSTS coverage.
+      middlewares:
+        - hsts
+      service: reiwa-stream
+
     reiwa:
       rule: "Host(`REPLACE_WITH_YOUR_DOMAIN`)"
+      priority: 1
       entrypoints:
         - https
       tls: {}
@@ -39,8 +87,62 @@ http:
         stsSeconds: 31536000
         stsIncludeSubdomains: true
 
+  serversTransports:
+    # Backend deadlines for the stream ONLY. Everything else uses the default
+    # transport configured in ../traefik.yml.
+    #
+    # Be precise about what this buys, because it is less than it looks:
+    #
+    #   - `responseHeaderTimeout: 0s` (0 means no timeout) is the ONLY field
+    #     that genuinely differs from the 60s default. Today the difference
+    #     would not even show: reiwa flushes the SSE response headers to the
+    #     browser BEFORE it opens the upstream, so headers are never what this
+    #     stream waits on (see src/api/routes/realtime-proxy.ts). It is
+    #     written down so that tightening the shared default later — or the
+    #     app dropping that pre-flush — cannot silently cap the stream.
+    #
+    #   - `idleConnTimeout` governs IDLE POOLED connections, not an active
+    #     stream, so it changes nothing for SSE either way. It is repeated
+    #     because a named transport inherits NOTHING from the static default:
+    #     omit a field here and you get Traefik's own value, not the one
+    #     configured next door.
+    #
+    # Note what is absent. Traefik has no backend read/body deadline at all,
+    # which is why an SSE response survives here without the
+    # `proxy_read_timeout 3600s` that the nginx and angie templates need.
+    reiwa-stream:
+      forwardingTimeouts:
+        dialTimeout: 5s
+        responseHeaderTimeout: 0s
+        idleConnTimeout: 90s
+
   services:
+    reiwa-stream:
+      loadBalancer:
+        serversTransport: reiwa-stream
+        # The stream must not be buffered on its way to the browser. Traefik
+        # already gets this right unprompted: it detects a streaming response
+        # (Content-Type text/event-stream) and flushes every write
+        # immediately, IGNORING flushInterval for exactly those responses.
+        # 100ms is Traefik's own default, pinned here only so this template
+        # says out loud what the other three in this folder say — caddy
+        # `flush_interval -1`, nginx and angie `proxy_buffering off`. Silence
+        # was the only difference.
+        #
+        # Do NOT set a negative value to "align" this with Caddy. It buys SSE
+        # nothing it does not already have, and copied onto the `reiwa`
+        # service below it would cost a flush per write on every SPA bundle,
+        # image and JSON response.
+        responseForwarding:
+          flushInterval: 100ms
+        servers:
+          - url: "http://reiwa:5000"
+
     reiwa:
       loadBalancer:
+        # No `serversTransport` here on purpose: this service takes the
+        # DEFAULT transport from ../traefik.yml, whose `forwardingTimeouts`
+        # are bounded. Anything added to this file later inherits those
+        # bounds unless it deliberately opts out the way reiwa-stream does.
         servers:
           - url: "http://reiwa:5000"

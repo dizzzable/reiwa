@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import http from 'node:http';
 
 import {
   createLandingRouter,
+  getEffectiveLandingCached,
   resetLandingCache,
   buildLandingMetaHead,
 } from '../../../src/api/routes/landing.js';
@@ -106,6 +107,61 @@ describe('landing public route', () => {
     expect(getEffective).toHaveBeenCalledTimes(1);
     resetLandingCache();
     await get(app, '/api/v1/landing');
+    expect(getEffective).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * Panel-outage caching for the accessor the SPA index handler uses.
+ *
+ * The cabinet and the panel now run on separate hosts, so an unreachable
+ * panel costs a full headers timeout (10s) per upstream call — and `GET /`
+ * blocks on this lookup before it can answer. The fallback sentinel therefore
+ * has to be cached like a real answer: without it the failure is never
+ * recorded and every single visitor pays that timeout again.
+ */
+describe('landing cache during a panel outage', () => {
+  beforeEach(() => resetLandingCache());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('caches the fallback sentinel — a second request costs no second upstream call', async () => {
+    const getEffective = vi.fn(async () => {
+      throw new Error('admin down');
+    });
+    const adminClient = { landing: { getEffective } } as never;
+
+    const first = await getEffectiveLandingCached(adminClient);
+    const second = await getEffectiveLandingCached(adminClient);
+
+    expect(first).toEqual({ enabled: false });
+    expect(second).toEqual({ enabled: false });
+    expect(getEffective).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries upstream once the TTL over the cached sentinel expires', async () => {
+    let now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    let reachable = false;
+    const getEffective = vi.fn(async () => {
+      if (!reachable) throw new Error('admin down');
+      return ENABLED_CONFIG;
+    });
+    const adminClient = { landing: { getEffective } } as never;
+
+    expect(await getEffectiveLandingCached(adminClient)).toEqual({ enabled: false });
+    expect(getEffective).toHaveBeenCalledTimes(1);
+
+    // Inside the TTL the cached sentinel answers without touching upstream,
+    // even though the panel is already back.
+    now += 59_000;
+    reachable = true;
+    expect(await getEffectiveLandingCached(adminClient)).toEqual({ enabled: false });
+    expect(getEffective).toHaveBeenCalledTimes(1);
+
+    // Past it the panel is consulted again — the sentinel must not stick
+    // around once the outage is over.
+    now += 2_000;
+    expect(await getEffectiveLandingCached(adminClient)).toMatchObject({ enabled: true });
     expect(getEffective).toHaveBeenCalledTimes(2);
   });
 });

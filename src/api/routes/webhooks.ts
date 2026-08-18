@@ -16,6 +16,63 @@ import {
   buildInternalSignature,
 } from "../../lib/internal-hmac.js";
 
+/**
+ * Total deadline for a bot relay that produces a Telegram *message*.
+ *
+ * 8s matches the only other bound on the same underlying call: the worker's
+ * own `sendMessage` fetch (`worker/main.ts`). This hop is that call one
+ * process further out (reiwa -> bot over the docker hop -> api.telegram.org),
+ * and it sits alongside the request path's other outbound fetch, Turnstile at
+ * 5s. Without a signal the only ceiling is undici's 300s default, so a wedged
+ * bot pins an express handler for five minutes -- long after rezeis gave up
+ * at 10s (`RELAY_MESSAGE_TIMEOUT_MS`), meaning nobody is even waiting for the
+ * answer being held.
+ *
+ * THE ORDER IS AN INVARIANT, and it spans both repositories: this deadline
+ * must stay strictly BELOW the panel's for the same route, so the cabinet is
+ * always the side that gives up first. Invert it and the panel abandons a hop
+ * the cabinet is still serving, reads its own timeout as a delivery failure,
+ * and the relay queue retries an event that WAS being delivered -- a second
+ * operator card, or a second document. That is not hypothetical: the panel
+ * used to bound every route at 10s including the 30s document routes, and a
+ * document slower than ten seconds produced exactly that duplicate.
+ *
+ * `PANEL_RELAY_TIMEOUTS_MS` below mirrors the panel's numbers so the ordering
+ * can be tested here. The panel remains the source of truth.
+ */
+export const BOT_RELAY_TIMEOUT_MS = 8_000;
+
+/**
+ * Same, for the relays that carry an INLINE document: the bot has to upload
+ * those bytes to Telegram before it answers, so the message budget is too
+ * tight. `documentContentSchema` caps the payload at 1 MB, for which 30s is
+ * generous, and it is still four orders of magnitude below "forever".
+ */
+export const BOT_RELAY_DOCUMENT_TIMEOUT_MS = 30_000;
+
+/**
+ * The panel's half of the same two hops, restated by hand.
+ *
+ * These are deliberately NOT imported. The two repositories build, version and
+ * deploy separately and share no package, so there is nothing to import from;
+ * a mirrored constant plus a test is the strongest link available. Change a
+ * number on the panel and this copy has to follow -- `bot-relay-timeout-order`
+ * is what makes forgetting fail loudly instead of quietly duplicating an
+ * operator card months later.
+ *
+ * Source of truth:
+ * `rezeis-admin/src/modules/notifications/services/bot-notifier.client.ts`
+ * (`RELAY_MESSAGE_TIMEOUT_MS`, `RELAY_DOCUMENT_TIMEOUT_MS`,
+ * `relayRequestTimeoutMs`). `null` there and here means the same thing: no
+ * total deadline, because cutting a multi-gigabyte backup upload mid-flight
+ * costs a 502, a queue retry, and a duplicate copy of those gigabytes.
+ */
+export const PANEL_RELAY_TIMEOUTS_MS = {
+  message: 10_000,
+  document: 35_000,
+  backupDocument: null,
+} as const;
+
 const parseModeSchema = z.enum(["HTML", "MarkdownV2"]);
 // The notify button contract mirrors what the reiwa-bot listener actually
 // renders (see `internal-http-listener.ts`): a label plus exactly one target —
@@ -67,6 +124,30 @@ const buttonsSchema = z
     return kept.length > 0 ? kept : undefined;
   });
 const eventIdSchema = z.string().trim().min(1).max(128);
+/**
+ * The same dedup key, OPTIONAL, for the two dev-fallback events.
+ *
+ * The three subscriber/operator events below REQUIRE `eventId`, and that stays
+ * right for them: the panel mints it as `UserNotificationEvent.id` and
+ * `BotNotifierClient.notifyUser` / `notifyBroadcast` / `notifyBroadcastDocument`
+ * all declare `eventId: string` as a required argument, so no shipped panel can
+ * produce one of those payloads without it.
+ *
+ * `notifyDev` / `notifyDevDocument` have no such argument — today's panel sends
+ * these two with `{ text, parseMode }` / `{ filename, content, caption,
+ * parseMode }` and nothing else (the panel records the gap itself, in
+ * `modules/notifications/reiwa-relay.policy.ts`: `botDedupKeyed: false`, "the fix
+ * is cabinet-side"). Requiring the field here would 400 every dev alert coming
+ * from a panel that predates the field — and these two are the firehose that
+ * only matters while something is already broken, so the rejection would land
+ * exactly during the incident it exists to report.
+ *
+ * `.catch(undefined)` for the same reason a malformed `bannerUrl` is dropped
+ * rather than fatal: a key that fails the shape check degrades this event to
+ * "delivered, not deduped" — one extra card for the operator to glance past —
+ * whereas rejecting it loses the alert outright.
+ */
+const optionalEventIdSchema = eventIdSchema.optional().catch(undefined);
 // Upper bound is deliberately generous, NOT Telegram's 4096: that limit counts
 // RENDERED characters, while what arrives here is HTML. rezeis composes
 // `<b>title</b>\n\n<body>` from a title of up to 500 and a body of up to 8000
@@ -156,8 +237,33 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
  *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
  *   - `reiwa.channel.broadcast.document` → POST bot `/notify-broadcast-document` { eventId, chatId, content, filename?, caption?, topicThreadId?, parseMode? }
+ *   - `reiwa.dev.notify`        → POST bot `/notify-dev`            { eventId?, text, parseMode? }
+ *   - `reiwa.dev.notify.document` → POST bot `/notify-dev-document` { eventId?, content, filename?, caption?, parseMode? }
  *   - `reiwa.backup.document`   → POST bot `/notify-backup-document` { recordId, token, chatId, filename?, caption?, topicThreadId? }
- * Unknown event types are ack'd (204) so the admin dispatcher doesn't retry.
+ * Unknown event types are ack'd (204).
+ *
+ * RETRIES — these webhooks ARE retried, which was not true when this block was
+ * first written. The panel now puts them through `ReiwaRelayQueueService`
+ * (BullMQ): durable events get 4 attempts on a 15s -> 30s -> 60s backoff,
+ * bounded ones 2 attempts at a fixed 10s. Deadlines per route are
+ * `relayRequestTimeoutMs` — 10s for messages, 35s for inline documents, none
+ * for `reiwa.backup.document`.
+ *
+ * A handler here can therefore see the SAME event more than once, and must not
+ * treat a second arrival as news. That is what `eventId` is for: every event
+ * above except the four cache invalidations carries one, and the bot claims it
+ * through `IDEMPOTENCY_CACHE` before acting. The invalidations need no key —
+ * dropping a cache twice is dropping it once.
+ *
+ * Not to be confused with the panel's OTHER retrying dispatcher
+ * (`modules/webhooks/services/webhook-dispatcher.service.ts`), which serves the
+ * OPERATOR-facing external webhook system and never touches this path.
+ *
+ * The one exception is `reiwa.backup.document`: its caller (`BackupService`)
+ * inspects the outcome and re-runs on a BullMQ job with `attempts: 3`. So the
+ * 4xx-vs-502 split below changes what actually happens only for that event.
+ * For every other event a 502 means the message is simply lost — the panel
+ * writes one `logger.warn` and moves on.
  *
  * Response contract: the two events whose delivery rezeis has to record —
  * `reiwa.user.notify` and `reiwa.backup.document` — answer `200 { messageId }`,
@@ -238,8 +344,13 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // Auto dev-fallback: deliver a system-event card to the bot's
           // BOT_DEV_ID (the bot knows it; rezeis doesn't). Used when no
           // operator group/topic is configured. Best-effort.
-          const parsed = parseRelayMetadata(z.object({ text: textSchema, parseMode: parseModeSchema.optional() }), meta);
+          const parsed = parseRelayMetadata(z.object({ text: textSchema, eventId: optionalEventIdSchema, parseMode: parseModeSchema.optional() }), meta);
+          // Forward the dedup key when the panel sent one: the panel now relays
+          // this event off a BullMQ queue with 4 attempts (15s/30s/60s backoff),
+          // so the bot can see the same card up to four times. Omit the field
+          // entirely when absent, so the bot tells "no key" apart from "empty key".
           await relayToBot("/notify-dev", {
+            ...(parsed.eventId ? { eventId: parsed.eventId } : {}),
             text: parsed.text,
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
           });
@@ -249,13 +360,14 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // Auto dev-fallback (errors): deliver the full `.txt` error report as
           // a Telegram document to the bot's BOT_DEV_ID, with the sectioned
           // card as caption + a Close button. Best-effort.
-          const parsed = parseRelayMetadata(z.object({ content: documentContentSchema, filename: filenameSchema.optional(), caption: captionSchema.optional(), parseMode: parseModeSchema.optional() }), meta);
+          const parsed = parseRelayMetadata(z.object({ content: documentContentSchema, eventId: optionalEventIdSchema, filename: filenameSchema.optional(), caption: captionSchema.optional(), parseMode: parseModeSchema.optional() }), meta);
           await relayToBot("/notify-dev-document", {
+            ...(parsed.eventId ? { eventId: parsed.eventId } : {}),
             content: parsed.content,
             ...(parsed.filename ? { filename: parsed.filename } : {}),
             ...(parsed.caption ? { caption: parsed.caption } : {}),
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
-          });
+          }, BOT_RELAY_DOCUMENT_TIMEOUT_MS);
           break;
         }
         case "reiwa.channel.broadcast": {
@@ -280,7 +392,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.caption ? { caption: parsed.caption } : {}),
             ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
-          });
+          }, BOT_RELAY_DOCUMENT_TIMEOUT_MS);
           break;
         }
         case "reiwa.backup.document": {
@@ -288,6 +400,21 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // the backup file from rezeis (docker hop) and uploads it to the
           // configured chat/topic. No bytes travel through this webhook.
           const parsed = parseRelayMetadata(z.object({ recordId: eventIdSchema, token: z.string().trim().min(1).max(2048), chatId: chatIdSchema, filename: filenameSchema.optional(), caption: captionSchema.optional(), topicThreadId: topicThreadIdSchema.optional() }), meta);
+          // The `null` deadline below is DELIBERATE — this is the only relay
+          // without one. The bot answers this call only AFTER streaming the
+          // backup out of rezeis and up to Telegram, and that file can be
+          // gigabytes (the bot budgets for 2 GB via a Local Bot API Server).
+          // `AbortSignal.timeout` is a TOTAL deadline, so any value small
+          // enough to be useful against a wedged bot is also small enough to
+          // cut a legitimately slow upload — and cutting it lands in the one
+          // state the bot's handler documents as unsafe to repeat: the abort
+          // surfaces here as a 502, which is the single signal BackupService
+          // DOES retry (BullMQ `attempts: 3`), so one slow backup becomes two
+          // or three multi-gigabyte copies in the operator's topic. Bounding
+          // it safely needs an IDLE timeout, which global `fetch` cannot
+          // express; it stays on undici's 300s idle default. This relay also
+          // runs on a backup schedule rather than per notification, so the
+          // handler-pinning cost the other six paths carry barely applies.
           const relayed = await relayToBot("/notify-backup-document", {
             recordId: parsed.recordId,
             token: parsed.token,
@@ -295,7 +422,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.filename ? { filename: parsed.filename } : {}),
             ...(parsed.caption ? { caption: parsed.caption } : {}),
             ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
-          });
+          }, null);
           // Surface the Telegram message id back to admin — same shape as
           // `reiwa.user.notify` above. A 2xx only proves this relay instruction
           // was accepted; the bot fetches and uploads afterwards, so the id is
@@ -336,7 +463,8 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           break;
         }
         default:
-          // Unknown/irrelevant event — ack so the dispatcher stops retrying.
+          // Unknown/irrelevant event — ack. Nothing retries this path (see the
+          // RETRIES note in the file header); the ack only avoids a bogus 5xx.
           res.status(204).end();
           return;
       }
@@ -349,8 +477,9 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
       if (err instanceof BotRelayError && err.status >= 400 && err.status < 500) {
         // The bot rejected the payload as permanently invalid (4xx) — e.g. a
         // telegramId that isn't a Telegram numeric id, or empty text. A retry
-        // can never succeed, so ack (2xx) to stop the admin dispatcher from
-        // re-firing, and log the details for diagnosis instead of a 502.
+        // could never succeed, so ack (2xx) and log the details for diagnosis
+        // instead of returning a 502. (Nothing retries `reiwa.user.notify`
+        // either way — see the RETRIES note in the file header.)
         getRequestLogger(req).warn(
           { event, botStatus: err.status, path: err.path },
           "rezeis webhook: bot rejected payload as invalid (permanent); dropping",
@@ -359,8 +488,10 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
         return;
       }
       getRequestLogger(req).error({ err, event }, "rezeis webhook relay failed");
-      // 502 so the admin dispatcher retries with backoff (transient bot 5xx /
-      // network — a recoverable condition, unlike a 4xx bad payload above).
+      // 502 = transient (bot 5xx / network), unlike the 4xx bad payload above.
+      // Only `reiwa.backup.document` is actually retried on this signal
+      // (BackupService re-runs it on a BullMQ job, `attempts: 3`). For every
+      // other event this 502 is recorded and dropped — see the file header.
       res.status(502).json({ message: "relay failed" });
     }
   });
@@ -372,8 +503,17 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
    *
    * Returns the bot's `messageId` when it replies with one (the `/notify`
    * endpoint does on success); `null` for 204 acks or bodies without an id.
+   *
+   * `timeoutMs` is a TOTAL deadline (`AbortSignal.timeout`), not an idle one,
+   * and it covers reading the response body as well as the round-trip. Pass
+   * `null` only where a correct call can legitimately outrun any fixed budget
+   * — today that is the backup relay alone, and its call site says why.
    */
-  async function relayToBot(path: string, body: unknown): Promise<{ messageId: number | null }> {
+  async function relayToBot(
+    path: string,
+    body: unknown,
+    timeoutMs: number | null = BOT_RELAY_TIMEOUT_MS,
+  ): Promise<{ messageId: number | null }> {
     const bodyStr = JSON.stringify(body);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (!relaySecret) throw new Error("bot relay authentication is not configured");
@@ -384,6 +524,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
       method: "POST",
       headers,
       body: bodyStr,
+      ...(timeoutMs === null ? {} : { signal: AbortSignal.timeout(timeoutMs) }),
     });
     if (!resp.ok && resp.status !== 204) {
       throw new BotRelayError(path, resp.status);
@@ -408,7 +549,8 @@ function str(value: unknown): string | undefined {
 /**
  * Thrown by `relayToBot` on a non-2xx/204 bot response. Carries the bot's HTTP
  * status so the webhook can distinguish a permanent 4xx (bad payload — ack &
- * drop) from a transient 5xx/network error (502 & let the dispatcher retry).
+ * drop) from a transient 5xx/network error (502). Only the backup relay has a
+ * caller that retries on that 502 — see the RETRIES note in the file header.
  */
 class BotRelayError extends Error {
   public constructor(

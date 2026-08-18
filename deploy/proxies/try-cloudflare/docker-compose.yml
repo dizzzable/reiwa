@@ -7,6 +7,42 @@
 # Outbound tunnel: binds no inbound port. After `docker compose up -d`,
 # watch the logs for the generated https://*.trycloudflare.com URL.
 
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │  UPSTREAM PORT IS HARD-CODED — THE 5000 BELOW IS NOT READ FROM .env      │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# The cabinet's docker-compose.yml publishes `${REIWA_PORT:-5000}` and the app
+# listens on `PORT ?? REIWA_PORT`, so the port IS a variable there. In the
+# `--url` below it is a literal, and this stack loads no .env at all.
+#
+# Change REIWA_PORT in the cabinet's .env and cloudflared still dials 5000. It
+# comes up, registers the tunnel and prints a working *.trycloudflare.com URL
+# — the failure only shows on the first request, as a 502 from Cloudflare's
+# edge. The app logs nothing, because no request ever reaches it.
+#
+# This is deliberately NOT solved with an environment variable: this project
+# keeps its settings in the panel and adds nothing to .env. Change the port BY
+# HAND in the `command:` below, and in every other file listed under "Upstream
+# port" in ../README.md.
+#
+# ── On timeouts: this stack does NOT have the defect the other four had ──
+#
+# The sibling configs all shipped an unbounded wait on every path, so a hung
+# app left the browser tab spinning instead of failing fast. Nothing here needs
+# the same fix, and no timeout flags belong in the command below:
+#
+#   • cloudflared bounds the origin connect itself (`connectTimeout`,
+#     30s by default), so a closed port fails quickly rather than hanging.
+#   • Cloudflare's edge enforces its own origin-response deadline on top of
+#     that — error 524, 125s by default — which no local config can disable.
+#     A hung app therefore produces a Cloudflare error page, not an hour of
+#     silence.
+#   • The SSE stream survives it: Cloudflare Tunnel buffers responses by
+#     default but streams them as they arrive when the origin sends
+#     `Content-Type: text/event-stream`, which reiwa's realtime route does.
+#
+# What this stack IS still unfit for is production — see the DANGER note above.
+
 services:
   reiwa-try-cloudflare:
     container_name: reiwa-try-cloudflare

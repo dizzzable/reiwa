@@ -120,6 +120,13 @@ export default function SettingsPage() {
 
   const statusText = t("settings.statusActive");
 
+  // The address the install instructions inside Telegram point at. `origin`, not
+  // `href`: the user is going to retype or copy this into another browser, and
+  // the current route is neither where they need to land nor short enough to
+  // read. Empty outside a browser, which is unreachable here (this file is only
+  // ever rendered client-side) but keeps the expression total.
+  const cabinetOrigin = typeof window === "undefined" ? "" : window.location.origin;
+
   // Resolve a menu icon's colour from the branding strategy:
   //   default → the icon's own accent (Tailwind class kept by the caller),
   //   theme   → brand primary, custom → per-icon colour (fallback: primary).
@@ -259,13 +266,22 @@ export default function SettingsPage() {
           sublabel={t("settings.faqSub")}
           onClick={() => navigate("/settings/faq")}
         />
-        {install.canInstall || install.isIos ? (
+        {install.canInstall || install.isIos || install.isTelegramWebview ? (
           <MenuItem
             icon={<Download className="h-5 w-5" />}
             iconBg="bg-(--brand-primary)/10 text-(--brand-primary)"
             tint={iconTint("install")}
             label={t("settings.installApp")}
-            sublabel={t("settings.installAppSub")}
+            sublabel={
+              // Inside Telegram the row must not promise the home screen: that
+              // webview has no native prompt to fire and no Share sheet to add
+              // from. `canInstall` still wins over it, because a captured event
+              // is a browser's own verdict and outranks our inference — see
+              // `useInstallPrompt`.
+              install.isTelegramWebview && !install.canInstall
+                ? t("settings.installAppSubTelegram")
+                : t("settings.installAppSub")
+            }
             onClick={() => {
               if (install.canInstall) {
                 void install.promptInstall();
@@ -360,24 +376,63 @@ export default function SettingsPage() {
 
       <Dialog open={showInstallHelp} onOpenChange={setShowInstallHelp}>
         <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle>{t("settings.installIosTitle", { brand: branding.brandName })}</DialogTitle>
-            <DialogDescription>{t("settings.installIosIntro")}</DialogDescription>
-          </DialogHeader>
-          <ol className="space-y-3 py-1 text-sm text-[color:var(--brand-muted-foreground)]">
-            <li className="flex items-center gap-2">
-              <Share className="h-4 w-4 shrink-0 text-(--brand-primary)" />
-              <span>{t("settings.installIosStep1")}</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Download className="h-4 w-4 shrink-0 text-(--brand-primary)" />
-              <span>{t("settings.installIosStep2")}</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-(--brand-primary)" />
-              <span>{t("settings.installIosStep3")}</span>
-            </li>
-          </ol>
+          {install.isTelegramWebview ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {t("settings.installTelegramTitle", { brand: branding.brandName })}
+                </DialogTitle>
+                <DialogDescription>{t("settings.installTelegramIntro")}</DialogDescription>
+              </DialogHeader>
+              <ol className="space-y-3 py-1 text-sm text-[color:var(--brand-muted-foreground)]">
+                <li className="flex items-start gap-2">
+                  <Globe className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <span>
+                    {t("settings.installTelegramStep1")}
+                    {/*
+                      The address as TEXT, not as a link, and not behind an
+                      "open in browser" button. Every route out of here leads
+                      back in: `window.open` is unreliable in this webview, and
+                      Telegram's own `openLink` bridge opens Telegram's in-app
+                      browser — the very context that cannot install. A control
+                      that returns the user to where they already are would be a
+                      second lie on top of the one this dialog exists to undo.
+                    */}
+                    <span className="mt-1 block font-mono text-xs break-all text-[var(--brand-foreground)]">
+                      {cabinetOrigin}
+                    </span>
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Download className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <span>{t("settings.installTelegramStep2")}</span>
+                </li>
+              </ol>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {t("settings.installIosTitle", { brand: branding.brandName })}
+                </DialogTitle>
+                <DialogDescription>{t("settings.installIosIntro")}</DialogDescription>
+              </DialogHeader>
+              <ol className="space-y-3 py-1 text-sm text-[color:var(--brand-muted-foreground)]">
+                <li className="flex items-center gap-2">
+                  <Share className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <span>{t("settings.installIosStep1")}</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Download className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <span>{t("settings.installIosStep2")}</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <span>{t("settings.installIosStep3")}</span>
+                </li>
+              </ol>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

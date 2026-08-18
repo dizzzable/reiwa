@@ -79,11 +79,45 @@ async function post(
 }
 
 /**
+ * The genuine `AbortSignal.timeout`, captured before any spy replaces it.
+ *
+ * A total deadline cannot be read back OFF an `AbortSignal` — the object does
+ * not carry the ms it was minted with, and `signal` was therefore the one part
+ * of the relay call this file used to drop on the floor. The deadline
+ * assertions below read the budget off the MINT instead: `relay` spies on
+ * `AbortSignal.timeout`, records what the router asked for, and hands back a
+ * real signal produced by this function, so a deadline can still actually fire.
+ *
+ * Vitest's fake timers are no lever here. `AbortSignal.timeout` schedules on
+ * libuv's own timer rather than the `setTimeout` the fake clock patches, so
+ * `vi.advanceTimersByTime` never reaches it — the mint is the only thing that
+ * can be shortened, and `relayAgainstWedgedBot` below is where that is done.
+ */
+const realAbortTimeout = AbortSignal.timeout.bind(AbortSignal);
+
+/** What one relay asked of `AbortSignal.timeout`, and what reached `fetch`. */
+interface RelayDeadline {
+  /** Every ms handed to `AbortSignal.timeout` during the relay, in order. */
+  readonly requestedMs: readonly number[];
+  /** The signals those calls produced, in the same order. */
+  readonly minted: readonly AbortSignal[];
+  /** Whether the fetch init carried a `signal` key at all. */
+  readonly attached: boolean;
+  /** The value under that key — `undefined` when the router set none. */
+  readonly signal: AbortSignal | null | undefined;
+}
+
+/**
  * Post a `{ event, metadata }` webhook, capturing the payload the router
  * relays to the bot. Returns the HTTP status plus the relayed path + body so a
  * test can assert both that the webhook accepted the payload (not 400) and that
  * it forwarded the exact contract the bot expects. `response` is what the
  * webhook itself answered with — the half rezeis reads back.
+ *
+ * `deadline` is the third part of that call: which total budget the router
+ * minted, and whether the resulting signal is the one it handed to `fetch`.
+ * Minting the right number and then not attaching it is as broken as minting
+ * the wrong one, so both halves are reported rather than only the first.
  */
 async function relay(
   event: string,
@@ -95,7 +129,18 @@ async function relay(
   url: string | null;
   body: Record<string, unknown> | null;
   response: string;
+  deadline: RelayDeadline;
 }> {
+  const requestedMs: number[] = [];
+  const minted: AbortSignal[] = [];
+  const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+    requestedMs.push(ms);
+    // Real signal, real duration: this helper only WATCHES the mint, so a test
+    // that asserts on the relayed body behaves exactly as it did before.
+    const signal = realAbortTimeout(ms);
+    minted.push(signal);
+    return signal;
+  });
   const fetchMock = vi
     .spyOn(globalThis, 'fetch')
     .mockResolvedValue(new Response(botBody === null ? null : JSON.stringify(botBody), { status: botStatus }));
@@ -104,14 +149,110 @@ async function relay(
     const body = { event, metadata };
     const { status, text } = await post(app, body, sign(JSON.stringify(body)));
     const call = fetchMock.mock.calls[0] as [string, RequestInit] | undefined;
+    const init = call ? (call[1] as RequestInit) : undefined;
     return {
       status,
       url: call ? String(call[0]) : null,
       body: call ? (JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>) : null,
       response: text,
+      deadline: {
+        requestedMs,
+        minted,
+        attached: init !== undefined && Object.hasOwn(init, 'signal'),
+        signal: init?.signal,
+      },
     };
   } finally {
     fetchMock.mockRestore();
+    timeoutSpy.mockRestore();
+  }
+}
+
+/** How long the shortened fuse burns for in `relayAgainstWedgedBot`. */
+const FAST_DEADLINE_MS = 25;
+/** How long that helper waits for an answer before calling the relay wedged. */
+const WEDGED_WINDOW_MS = 400;
+
+/**
+ * Post one webhook at a bot that never answers, and report what the webhook did
+ * within `WEDGED_WINDOW_MS` — a status if a deadline cut the call short, `null`
+ * if the handler is still holding.
+ *
+ * The `fetch` stub honours an `AbortSignal` the way undici does (reject with the
+ * signal's reason on abort) and otherwise NEVER settles, so the only thing that
+ * can end one of these calls is a deadline the router attached itself.
+ *
+ * `AbortSignal.timeout` is re-pointed at `FAST_DEADLINE_MS` for the duration.
+ * Fake timers cannot advance the real one (see `realAbortTimeout` above) and no
+ * spec may sit out the genuine 8s/30s budgets. The router still asks for its own
+ * numbers — `requestedMs` reports them, and the mint assertions above pin them —
+ * this only shortens the fuse so the firing itself is observable.
+ */
+async function relayAgainstWedgedBot(
+  event: string,
+  metadata: Record<string, unknown>,
+): Promise<{ status: number | null; requestedMs: readonly number[] }> {
+  const requestedMs: number[] = [];
+  const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+    requestedMs.push(ms);
+    return realAbortTimeout(FAST_DEADLINE_MS);
+  });
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+    const signal = init?.signal;
+    return new Promise<Response>((_resolve, reject) => {
+      // No signal — the wedged bot holds the handler for as long as the far end
+      // stays silent, which is precisely what an absent total deadline means.
+      if (signal === undefined || signal === null) return;
+      if (signal.aborted) {
+        reject(signal.reason as Error);
+        return;
+      }
+      signal.addEventListener('abort', () => reject(signal.reason as Error), { once: true });
+    });
+  });
+
+  const server = http.createServer(buildApp());
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  const raw = JSON.stringify({ event, metadata });
+  let settle!: (value: number | null) => void;
+  const answered = new Promise<number | null>((resolve) => {
+    settle = resolve;
+  });
+  const giveUp = setTimeout(() => settle(null), WEDGED_WINDOW_MS);
+  // `agent: false` + `connection: close` keep the socket from lingering so the
+  // teardown below settles even while the handler is still stuck.
+  const req = http.request(
+    {
+      host: '127.0.0.1',
+      port,
+      path: '/api/v1/webhooks/rezeis',
+      method: 'POST',
+      agent: false,
+      headers: {
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(raw),
+        connection: 'close',
+        'x-rezeis-signature': sign(raw),
+      },
+    },
+    (res) => {
+      res.resume();
+      settle(res.statusCode ?? 0);
+    },
+  );
+  // The give-up `destroy()` below lands here; by then `answered` has settled.
+  req.on('error', () => settle(null));
+  req.end(raw);
+  try {
+    return { status: await answered, requestedMs };
+  } finally {
+    clearTimeout(giveUp);
+    req.destroy();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    fetchMock.mockRestore();
+    timeoutSpy.mockRestore();
   }
 }
 
@@ -413,6 +554,88 @@ describe('Rezeis webhook relay', () => {
     expect(body?.buttons).toEqual([{ text: 'Промо', webAppPath: '/promo?code=X' }]);
   });
 
+  // ── dev fallback: the dedup key rezeis may or may not have ────────────────
+  //
+  // `reiwa.dev.notify` / `reiwa.dev.notify.document` are the firehose that only
+  // matters while something is already broken, and rezeis now relays them off a
+  // BullMQ queue with 4 attempts (15s/30s/60s). So this webhook has to satisfy
+  // two rules at once: forward the `eventId` the bot dedups on when the panel
+  // sends one, and never turn its absence into a rejection — a panel older than
+  // the field sends `{ text, parseMode }` and nothing else, and a 400 there
+  // loses the only notice anyone gets about the outage.
+
+  it('forwards the dedup key on a dev card so the bot can suppress the retry', async () => {
+    const { status, url, body } = await relay('reiwa.dev.notify', {
+      eventId: 'sysevt:reiwa.error:2026-08-18T09:00:00.000Z',
+      text: '<b>Сбой</b> очереди',
+      parseMode: 'HTML',
+    });
+
+    expect(status).toBe(204);
+    expect(url).toBe('http://reiwa-bot:5100/notify-dev');
+    expect(body).toMatchObject({
+      eventId: 'sysevt:reiwa.error:2026-08-18T09:00:00.000Z',
+      text: '<b>Сбой</b> очереди',
+      parseMode: 'HTML',
+    });
+  });
+
+  it('forwards the dedup key on a dev error report', async () => {
+    const { status, url, body } = await relay('reiwa.dev.notify.document', {
+      eventId: 'sysevt:reiwa.error:2026-08-18T09:00:00.000Z:error-report',
+      content: 'full error report',
+      filename: 'error_0.txt',
+      caption: '<b>Сбой</b>',
+    });
+
+    expect(status).toBe(204);
+    expect(url).toBe('http://reiwa-bot:5100/notify-dev-document');
+    expect(body).toMatchObject({
+      eventId: 'sysevt:reiwa.error:2026-08-18T09:00:00.000Z:error-report',
+      content: 'full error report',
+      filename: 'error_0.txt',
+    });
+  });
+
+  it('still relays a dev card from a panel that sends no eventId', async () => {
+    // The shape every shipped panel sends today. Must relay, not 400.
+    const { status, url, body } = await relay('reiwa.dev.notify', { text: 'старая панель' });
+
+    expect(status).toBe(204);
+    expect(url).toBe('http://reiwa-bot:5100/notify-dev');
+    expect(body).toEqual({ text: 'старая панель' });
+    // Absent, not `undefined`/`null` — the bot distinguishes "no key" (deliver,
+    // no dedup) from a key it should claim, and a null would have to be special
+    // -cased on the far side.
+    expect(Object.hasOwn(body ?? {}, 'eventId')).toBe(false);
+  });
+
+  it('still relays a dev error report from a panel that sends no eventId', async () => {
+    const { status, url, body } = await relay('reiwa.dev.notify.document', {
+      content: 'full error report',
+      filename: 'error_0.txt',
+    });
+
+    expect(status).toBe(204);
+    expect(url).toBe('http://reiwa-bot:5100/notify-dev-document');
+    expect(Object.hasOwn(body ?? {}, 'eventId')).toBe(false);
+    expect(body?.content).toBe('full error report');
+  });
+
+  it('drops an unusable dev eventId instead of dropping the alert', async () => {
+    // A key that fails the shape check degrades this event to "delivered, not
+    // deduped" — one card the operator glances past. Rejecting it would lose
+    // the alert, which is the one outcome this event cannot afford.
+    const { status, body } = await relay('reiwa.dev.notify', {
+      eventId: 'x'.repeat(400),
+      text: 'важное',
+    });
+
+    expect(status).toBe(204);
+    expect(Object.hasOwn(body ?? {}, 'eventId')).toBe(false);
+    expect(body?.text).toBe('важное');
+  });
+
   // ── backup relay: the message id is the delivery receipt ───────────────────
   //
   // A 2xx from this webhook only proves the relay INSTRUCTION was accepted —
@@ -483,5 +706,161 @@ describe('Rezeis webhook relay', () => {
     const invalidate = await relay('reiwa.bot.invalidate', { reason: 'test' });
     expect(invalidate.status).toBe(204);
     expect(invalidate.response).toBe('');
+  });
+});
+
+/**
+ * The relay deadline — the one part of the outbound call nothing used to watch.
+ *
+ * Two opposite mistakes live here, and they are the SAME edit seen from either
+ * side. Drop the budget from the message relays and a wedged bot pins an express
+ * handler on undici's 300s default, long after rezeis stopped waiting for the
+ * answer being held. Put one on `/notify-backup-document` and a legitimately
+ * slow multi-gigabyte upload gets cut mid-flight; the abort surfaces as a 502,
+ * which is the single signal `BackupService` DOES retry (BullMQ `attempts: 3`),
+ * so one slow backup becomes two or three copies of the same gigabytes in the
+ * operator's topic.
+ *
+ * Both were provably invisible: swapping the two — no deadline on messages, the
+ * document deadline on the backup — left every spec in this file and in
+ * `test/bot/internal-backup-relay.test.ts` green, because the fetch spy read
+ * only the URL and the body.
+ *
+ * The numbers themselves (8s / 30s) are asserted as literals rather than
+ * imported from the router: importing them would let the constants and the
+ * assertions drift together and still agree, which is how this hole opened.
+ */
+describe('Bot relay deadlines', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Relays that produce a Telegram MESSAGE — bounded by the 8s budget. */
+  const MESSAGE_RELAYS = [
+    { path: '/invalidate', event: 'reiwa.bot.invalidate', metadata: { reason: 'test' } },
+    {
+      path: '/notify',
+      event: 'reiwa.user.notify',
+      metadata: { eventId: 'dl-1', telegramId: '123456789', text: 'сообщение' },
+    },
+    { path: '/notify-dev', event: 'reiwa.dev.notify', metadata: { text: 'алерт' } },
+    {
+      path: '/notify-broadcast',
+      event: 'reiwa.channel.broadcast',
+      metadata: { eventId: 'dl-2', chatId: '-1001234567890', text: 'всем' },
+    },
+  ] as const;
+
+  /** Relays that carry INLINE document bytes — bounded by the 30s budget. */
+  const DOCUMENT_RELAYS = [
+    {
+      path: '/notify-dev-document',
+      event: 'reiwa.dev.notify.document',
+      metadata: { content: 'full error report', filename: 'error_0.txt' },
+    },
+    {
+      path: '/notify-broadcast-document',
+      event: 'reiwa.channel.broadcast.document',
+      metadata: { eventId: 'dl-3', chatId: '-1001234567890', content: 'full error report' },
+    },
+  ] as const;
+
+  it('bounds every message relay at the 8s budget', async () => {
+    for (const { path, event, metadata } of MESSAGE_RELAYS) {
+      const { status, url, deadline } = await relay(event, metadata);
+
+      // Self-check: without this a route that 400'd before ever reaching the
+      // relay would satisfy an "attached nothing wrong" reading for free.
+      expect(url, path).toBe(`http://reiwa-bot:5100${path}`);
+      expect(status, path).toBeLessThan(400);
+      expect(deadline.requestedMs, path).toEqual([8_000]);
+      // Minted AND attached. A budget computed and then left off the request is
+      // no budget at all, and the two are separate edits.
+      expect(deadline.attached, path).toBe(true);
+      expect(deadline.signal, path).toBe(deadline.minted[0]);
+    }
+  });
+
+  it('gives the document relays the wider 30s budget instead', async () => {
+    for (const { path, event, metadata } of DOCUMENT_RELAYS) {
+      const { status, url, deadline } = await relay(event, metadata);
+
+      expect(url, path).toBe(`http://reiwa-bot:5100${path}`);
+      expect(status, path).toBeLessThan(400);
+      // The message budget is too tight here: the bot uploads these bytes to
+      // Telegram before it answers. Asserting the exact value, not merely
+      // "larger than a message", so a silent fall back to the 8s default fails.
+      expect(deadline.requestedMs, path).toEqual([30_000]);
+      expect(deadline.attached, path).toBe(true);
+      expect(deadline.signal, path).toBe(deadline.minted[0]);
+    }
+  });
+
+  it('sends the backup relay with NO total deadline at all', async () => {
+    const { status, url, deadline } = await relay(
+      'reiwa.backup.document',
+      { ...BACKUP_METADATA },
+      200,
+      { messageId: 4242 },
+    );
+
+    expect(url).toBe('http://reiwa-bot:5100/notify-backup-document');
+    expect(status).toBe(200);
+    // ABSENCE, asserted three ways rather than as "some value":
+    // 1. no total deadline was minted at all during this relay…
+    expect(deadline.requestedMs).toEqual([]);
+    // 2. …the request carried no `signal` key…
+    expect(deadline.attached).toBe(false);
+    // 3. …and nothing arrived under it by another route (an AbortController's
+    //    signal would pass 1 and 2's spirit but not this).
+    expect(deadline.signal).toBeUndefined();
+  });
+
+  // ── the budget has to FIRE, not merely be attached ─────────────────────────
+  //
+  // Everything above proves a signal with the right duration reaches `fetch`.
+  // None of it proves the call actually ends: an already-aborted signal, or one
+  // whose fuse never burns, would satisfy all of it. These two drive the router
+  // against a bot that never answers and watch which calls come back.
+
+  it('cuts a wedged bot off instead of holding the handler open', async () => {
+    for (const { label, event, metadata, expectedMs } of [
+      {
+        label: 'message relay',
+        event: 'reiwa.user.notify',
+        metadata: { eventId: 'dl-9', telegramId: '123456789', text: 'сообщение' },
+        expectedMs: 8_000,
+      },
+      {
+        label: 'document relay',
+        event: 'reiwa.channel.broadcast.document',
+        metadata: { eventId: 'dl-10', chatId: '-1001234567890', content: 'report' },
+        expectedMs: 30_000,
+      },
+    ]) {
+      const { status, requestedMs } = await relayAgainstWedgedBot(event, metadata);
+
+      // The stub never resolves, so nothing but the router's own deadline can
+      // end this call — and it asked for its real budget before the fuse was
+      // shortened, which keeps this test honest about what it exercised.
+      expect(requestedMs, label).toEqual([expectedMs]);
+      // 502 = transient, the answer rezeis is waiting on. `null` here means the
+      // handler is still held — the five-minute undici default, unbounded.
+      expect(status, label).toBe(502);
+    }
+  });
+
+  it('lets a slow backup upload outrun every message budget', async () => {
+    // The mirror of the test above, and the reason `/notify-backup-document`
+    // passes `null`: with the fuse shortened to 25ms, ANY total deadline on this
+    // path would have fired long before the window closes and answered 502 —
+    // the one status BackupService retries, i.e. a second copy of the same
+    // gigabytes. Still pending is the correct outcome.
+    const { status, requestedMs } = await relayAgainstWedgedBot('reiwa.backup.document', {
+      ...BACKUP_METADATA,
+    });
+
+    expect(requestedMs).toEqual([]);
+    expect(status).toBeNull();
   });
 });

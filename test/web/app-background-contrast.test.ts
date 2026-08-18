@@ -149,6 +149,55 @@ describe("app background readability", () => {
     expect(ratio(hexRgb("#8A807B"), supportedWeakestZone)).toBeGreaterThanOrEqual(4.5);
   });
 
+  /**
+   * ONE opacity from the top of the shell to the bottom.
+   *
+   * This value used to be a `linear-gradient(180deg, …)` carrying
+   * `veilOpacity + 0.12` at its 0% and 100% stops. The element that receives it
+   * is `absolute inset-0` over the whole `100dvh` shell (`app-background.tsx`),
+   * so the bottom ramp painted the bottom 16% of the VIEWPORT — about 130px on
+   * a phone — darker than the rest of the page and full-bleed across it. That
+   * is exactly where the floating bottom-nav pill sits, and the pill is
+   * `w-fit`, so it read as a skirt around the pill sticking out to its left and
+   * right. 101 of the 104 concept presets resolve to a veil, so operators saw it
+   * on effectively every concept theme, and the panel's branding preview
+   * reproduced it by rendering this same string.
+   *
+   * A stop position reappearing in this value is that band reappearing.
+   */
+  it("paints one opacity edge to edge, so nothing bands behind the bottom nav", () => {
+    const result = resolveAppBackgroundReadability(
+      branding({
+        themePresetId: "concept-am",
+        themePresetVersion: 1,
+        appBackground: {
+          ...DEFAULT_BRANDING.appBackground!,
+          kind: "gradient",
+          gradient:
+            "linear-gradient(180deg, #DFA98B 0%, #DFA98B 18%, #8E6D72 100%)",
+          texture: {
+            pattern: "diagonal",
+            color: "#8f5b54",
+            background: "#DFA98B",
+            scale: 28,
+            opacity: 0.14,
+          },
+        },
+        surfaceTheme: {
+          ...DEFAULT_BRANDING.surfaceTheme!,
+          foreground: "#FFF7EF",
+          mutedForeground: "#D6B7AD",
+        },
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(result!.overlayBackground).toBe(
+      `rgb(${result!.veilRgb} / ${result!.veilOpacity})`,
+    );
+    expect(result!.overlayBackground).not.toMatch(/\d+%/);
+  });
+
   it("stays out of already-readable dark shells", () => {
     const result = resolveAppBackgroundReadability(
       branding({
