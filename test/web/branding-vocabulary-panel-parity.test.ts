@@ -295,6 +295,7 @@ const panel = skipCrossRepo
         "CARD_EFFECT_SLOT_MODES",
       ),
       cardLogoPresets: readStringArrayConst(PANEL_INTERFACE_PATH, "CARD_LOGO_PRESETS"),
+      brandLogoFrames: readStringArrayConst(PANEL_INTERFACE_PATH, "BRAND_LOGO_FRAMES"),
       navDestinations: readStringArrayConst(PANEL_INTERFACE_PATH, "NAV_DESTINATIONS"),
       navEssentials: readStringArrayConst(
         PANEL_INTERFACE_PATH,
@@ -1096,6 +1097,41 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
         [...readLiteralUnionType(CABINET_BRANDING_TYPES_PATH, "CardLogoPreset")].sort(),
         "`CardLogoPreset` in the cabinet and `CARD_LOGO_PRESETS` in the panel have diverged",
       ).toEqual([...fromPanel().cardLogoPresets].sort());
+    });
+  });
+
+  /**
+   * BRAND_LOGO_FRAMES — FALLBACK, and it is the right shape here.
+   *
+   * The plate behind the brand mark is painted by CSS this bundle contains, not
+   * by a component the panel can ship ahead of us, so the vocabulary is closed
+   * on this side. `resolveBrandLogo` answers an unknown frame with `glass` —
+   * the look every deployment had before the setting existed — rather than
+   * discarding the branding payload over a decorative field. Visible and safe,
+   * and, again, not what the operator picked, which is what the second case is
+   * for.
+   */
+  describe("BRAND_LOGO_FRAMES", () => {
+    it.skipIf(skipCrossRepo)("never freezes the snapshot over a frame name", () => {
+      const frames = [...fromPanel().brandLogoFrames, "frame-from-a-future-panel"];
+      const accepted = acceptedByCabinet(frames, (frame) =>
+        withBranding({ brandLogo: { size: 1, fill: 0.58, frame, radius: null, glow: 1 } }),
+      );
+      expect(
+        accepted,
+        "a brand-mark plate became a closed set in the snapshot guard — a decorative field must never be able to discard the operator's whole identity",
+      ).toEqual(frames);
+    });
+
+    it.skipIf(skipCrossRepo)("can draw every frame the panel offers", () => {
+      // The cabinet's union is the list of plates it knows how to paint; the
+      // panel's is the list its picker offers. A frame in the picker that is
+      // not in the union is an operator choosing a plate every subscriber
+      // silently sees as `glass`.
+      expect(
+        [...readLiteralUnionType(CABINET_BRANDING_TYPES_PATH, "BrandLogoFrame")].sort(),
+        "`BrandLogoFrame` in the cabinet and `BRAND_LOGO_FRAMES` in the panel have diverged — the picker offers a plate this build cannot draw, and every such choice degrades silently to glass",
+      ).toEqual([...fromPanel().brandLogoFrames].sort());
     });
   });
 

@@ -174,7 +174,9 @@ export function SubscriptionSelectCard({
       <CardWatermark
         preset={branding.cardLogo}
         customUrl={branding.cardLogoUrl}
-        className="pointer-events-none absolute -right-3 -bottom-5 h-24 w-24"
+        style={branding.cardLogoStyle}
+        basePx={96}
+        className="pointer-events-none absolute -right-3 -bottom-5"
       />
 
       {/* Header: control + identity + trailing (price) */}

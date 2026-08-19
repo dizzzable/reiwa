@@ -19,6 +19,35 @@ const RADIUS_TOKENS: Readonly<
 };
 
 /**
+ * The px value the document's `--radius` carries — the operator's item radius,
+ * or the legacy class's, exactly as `applyBrandingToDocument` resolves it.
+ *
+ * Exported because the brand tile needs the same number: its corners used to be
+ * `rounded-3xl`, i.e. `calc(var(--radius) * 2.2)`, so they FOLLOWED the theme.
+ * Reproducing that from a component means reading the same source, and reading
+ * it from a second copy of these branches is how the tile would quietly stop
+ * agreeing with every other rounded surface in the cabinet.
+ * `branding-document-radius.test.ts` pins the two together.
+ */
+export function resolveItemRadiusPx(
+  branding: Pick<Branding, "cornerRadii" | "borderRadius">,
+): number {
+  if (branding.cornerRadii) {
+    return Math.min(32, Math.max(0, branding.cornerRadii.itemPx));
+  }
+  const token = RADIUS_TOKENS[branding.borderRadius] ?? RADIUS_TOKENS["rounded-2xl"];
+  return cssLengthToPx(token!.item);
+}
+
+/** `0.875rem` / `14px` → 14. Only ever fed the literals in `RADIUS_TOKENS`. */
+function cssLengthToPx(value: string): number {
+  const rem = /^([\d.]+)rem$/.exec(value);
+  if (rem) return Number(rem[1]) * 16;
+  const px = /^([\d.]+)px$/.exec(value);
+  return px ? Number(px[1]) : 0;
+}
+
+/**
  * Finish the synchronous `<head>` background handoff after a matching React
  * background layer has committed.
  */

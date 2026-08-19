@@ -14,6 +14,7 @@ import type {
   Branding,
   CardEffect,
   CardLogoPreset,
+  CardLogoStyle,
   SubscriptionCardGlass,
   SubscriptionCardText,
 } from "../../../types/branding";
@@ -40,6 +41,7 @@ export interface ResolvedSubscriptionCardVisual {
   readonly cardEffectOpacity: number;
   readonly cardLogo: CardLogoPreset;
   readonly cardLogoUrl: string | null;
+  readonly cardLogoStyle: CardLogoStyle | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -224,5 +226,8 @@ export function resolveSubscriptionCardVisual(
       typeof branding.cardLogoUrl === "string"
         ? branding.cardLogoUrl
         : null,
+    // Passed through unresolved on purpose: `CardWatermark` normalizes it, and
+    // resolving it twice would give this file a second copy of the bounds.
+    cardLogoStyle: branding.cardLogoStyle,
   };
 }

@@ -20,6 +20,14 @@ export interface BrandingPayload {
   readonly logoUrl: string | null;
   /** Square PNG for PWA install (home-screen icon). Falls back to logoUrl. */
   readonly pwaIconUrl?: string | null;
+  /** Presentation of that mark on the entry screens; absent on older panels. */
+  readonly brandLogo?: {
+    readonly size: number;
+    readonly fill: number;
+    readonly frame: string;
+    readonly radius: number;
+    readonly glow: number;
+  };
   readonly primary: string;
   readonly primaryFg: string;
   readonly bgPrimary: string;
@@ -39,6 +47,11 @@ export interface BrandingPayload {
   };
   readonly cardLogo: string;
   readonly cardLogoUrl: string | null;
+  /** Size and weight of the card watermark; absent on older panels. */
+  readonly cardLogoStyle?: {
+    readonly scale: number;
+    readonly opacity: number;
+  };
   readonly cardEffect: string;
   readonly cardEffectProps: Record<string, unknown>;
   readonly cardEffectOpacity: number;

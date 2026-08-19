@@ -195,6 +195,13 @@ export function describePublicConfigSnapshot(
             branding["themeVariants"],
           ),
     () => inBranding("subscriptionCardGlass", "not-a-valid-glass-layer", hasOptionalSubscriptionCardGlass(branding, "subscriptionCardGlass")),
+    // `brandLogo` and `cardLogoStyle` are deliberately absent from this list.
+    // A failing check here discards the ENTIRE branding payload — name,
+    // palette, navigation — and both are decorative numbers that the SPA
+    // clamps at the point of use (`resolveBrandLogo`, `resolveCardLogoStyle`
+    // in `web/src/types/branding.ts`). A malformed one costs a default-looking
+    // logo; rejecting the snapshot over it would cost the operator their whole
+    // identity. Do not "complete" the list.
     () => inBranding("cardLogo", "not-a-string", isString(branding["cardLogo"])),
     () => inBranding("cardLogoUrl", "not-an-allowed-image-url", isNullableImageUrl(branding["cardLogoUrl"])),
     () => inBranding("cardEffect", "not-an-effect-id", isEffectId(branding["cardEffect"])),

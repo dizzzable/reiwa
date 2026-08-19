@@ -15,13 +15,22 @@
  * 1408×768 canvas) so the component scales as a tight square badge.
  */
 
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 
 interface ReiwaLogoProps {
   /** Tailwind sizing/colour classes. Colour is applied via `currentColor`. */
   readonly className?: string;
+  /** Inline sizing, for callers whose size is a number rather than a class. */
+  readonly style?: CSSProperties;
   /** Accessible label; omit to mark the SVG decorative (`aria-hidden`). */
   readonly title?: string;
+  /**
+   * Test/CSS hook, forwarded explicitly because this component takes no rest
+   * props. `CardWatermark` tags its image and glyph branches; without this the
+   * branch reached by the SHIPPED DEFAULT preset carried no tag at all, so a
+   * `[data-card-watermark]` selector silently skipped the commonest case.
+   */
+  readonly "data-card-watermark"?: string;
 }
 
 // Glyph bounds inside the original 1408×768 artboard.
@@ -37,11 +46,18 @@ const FACETS: ReadonlyArray<{ readonly d: string; readonly opacity: number }> = 
   },
 ];
 
-export const ReiwaLogo = memo(function ReiwaLogo({ className, title }: ReiwaLogoProps) {
+export const ReiwaLogo = memo(function ReiwaLogo({
+  className,
+  style,
+  title,
+  "data-card-watermark": dataCardWatermark,
+}: ReiwaLogoProps) {
   return (
     <svg
       viewBox={VIEW_BOX}
       className={className}
+      style={style}
+      data-card-watermark={dataCardWatermark}
       role={title ? "img" : undefined}
       aria-hidden={title ? undefined : true}
       aria-label={title}

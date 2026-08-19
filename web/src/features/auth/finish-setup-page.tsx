@@ -155,7 +155,11 @@ export default function FinishSetupPage() {
           animate={{ opacity: 1, y: 0 }}
           className="mb-8 flex flex-col items-center"
         >
-          <BrandLogo className="mb-5 h-10 w-auto" />
+          {/* `rounded-xl` was applied inside BrandLogo until the entry tile began
+              supplying its own radius. It is spelled out here so this screen keeps
+              the corners it always had — visible on an opaque square logo, and on
+              nothing else. */}
+          <BrandLogo className="mb-5 h-10 w-auto rounded-xl" />
           <div
             className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
             style={{

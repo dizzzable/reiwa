@@ -54,10 +54,20 @@ const FORM_SCREENS = [
 const SPLASH_SCREENS = ["web-home-page", "tma-bootstrap-page"];
 const ENTRY_SCREENS = [...FORM_SCREENS, ...SPLASH_SCREENS];
 
+/**
+ * Read WITHOUT comments, exactly like `authSource`. The rules below look for
+ * tokens — `backdropFilter`, a hard-coded box — and the comments in that file
+ * discuss both at length; reading it raw would let a comment satisfy a
+ * `toContain` or trip a `not.toMatch`, in either direction.
+ */
 const ENTRY_TILE_SOURCE = readFileSync(
   new URL("../../web/src/components/ui/entry-brand-tile.tsx", import.meta.url),
   "utf8",
-);
+)
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .split("\n")
+  .filter((line) => !line.trim().startsWith("//"))
+  .join("\n");
 
 /** Motion props that move or resize an element, as opposed to fading it. */
 const GEOMETRY_PROPERTIES = /\b(scale|rotate|x|y)\s*:/;
@@ -121,9 +131,16 @@ const BLURRED_MARKERS = ["glass-input", "<EntryBrandTile", "<GuestSupportLink"];
 
 describe("entry screens never animate geometry on a blurred backdrop", () => {
   it("keeps the shared brand tile opacity-only", () => {
-    // `backdrop-blur-xl` lives here now, so this is the one place a spring can
-    // do the damage — and the one place it has to stay out of.
-    expect(ENTRY_TILE_SOURCE).toContain("backdrop-blur-xl");
+    // The backdrop filter lives here, so this is the one place a spring can do
+    // the damage — and the one place it has to stay out of. Asserted as the
+    // DECLARATION rather than as the utility class it used to be: the tile now
+    // paints from operator settings, and `glass` is one of four frames it can
+    // resolve to. The rule stops being load-bearing the day no frame blurs, so
+    // this guard has to fail then rather than pass vacuously.
+    expect(
+      ENTRY_TILE_SOURCE,
+      "EntryBrandTile no longer declares a backdrop filter — if that is deliberate this whole rule is moot and should go with it, not stay green",
+    ).toContain("backdropFilter");
     for (const prop of ["initial={{", "animate={{"]) {
       const start = ENTRY_TILE_SOURCE.indexOf(prop);
       expect(start, `EntryBrandTile lost its ${prop} entrance`).toBeGreaterThanOrEqual(0);
@@ -148,12 +165,59 @@ describe("entry screens never animate geometry on a blurred backdrop", () => {
         `${screen} builds its own brand tile again instead of using EntryBrandTile`,
       ).toContain("<EntryBrandTile");
     }
-    // Visual parity with the four originals: 80px/rounded-3xl + 44px mark on
-    // the form screens, 96px/28px-radius + 56px mark on the splash screens.
-    expect(ENTRY_TILE_SOURCE).toContain("h-24 w-24 rounded-[28px]");
-    expect(ENTRY_TILE_SOURCE).toContain("h-20 w-20 rounded-3xl");
-    expect(ENTRY_TILE_SOURCE).toContain("h-14 w-14");
-    expect(ENTRY_TILE_SOURCE).toContain("h-11 w-11");
+    // The tile's sizes used to be four Tailwind literals pinned here. They are
+    // now operator settings resolved through one shared module, so what this
+    // file can still usefully pin is that the tile asks that module rather than
+    // growing its own arithmetic — a second copy of the geometry is exactly how
+    // the panel's preview and this cabinet would start disagreeing.
+    //
+    // The NUMBERS (80/46.4 on a form screen, 96/55.68 on a splash) are pinned
+    // by `web/test/brand-logo-presentation.test.tsx`, which renders the tile
+    // and reads the resulting style, and which is mutation-proven against a
+    // drifted default.
+    // The CALL, not the name: matching the bare identifier also matches the
+    // import line, so a tile that imports the module and then hard-codes its
+    // own numbers passed this rule.
+    expect(ENTRY_TILE_SOURCE).toContain("resolveBrandLogoGeometry({");
+    expect(ENTRY_TILE_SOURCE).toContain("itemRadiusPx: resolveItemRadiusPx(branding)");
+    // Every spelling of a hard-coded box, not just the `h-20 w-20` pair this
+    // file used to carry: Tailwind v4's arbitrary values (`h-[80px]`), its
+    // `size-*` shorthand, the two halves written apart, and any rounding class.
+    // A rule that knows only the one spelling it replaced forbids nothing an
+    // author would actually reach for next.
+    for (const forbidden of [/\bh-\[?\d/, /\bw-\[?\d/, /\bsize-\[?\d/, /\brounded-/]) {
+      expect(
+        ENTRY_TILE_SOURCE,
+        `EntryBrandTile hard-codes its own geometry (${String(forbidden)}) instead of taking it from the shared module — the panel's preview computes from that module, so the two would stop agreeing silently`,
+      ).not.toMatch(forbidden);
+    }
+  });
+
+  it("keeps a rounding on every mark the tile does not size", () => {
+    // `BrandLogo` applied `rounded-xl` unconditionally until `EntryBrandTile`
+    // started supplying its own radius. The screens that render the mark
+    // WITHOUT the tile pass no `style`, so dropping that class silently
+    // squared off an operator's opaque logo on two live routes — invisible for
+    // a transparent SVG, conspicuous for a square PNG, and covered by nothing.
+    const bare = ["claim-page", "finish-setup-page"];
+    for (const screen of bare) {
+      const source = authSource(screen);
+      const usage = /<BrandLogo className="([^"]*)"/.exec(source);
+      expect(usage, `${screen} no longer renders <BrandLogo> with a className`).not.toBeNull();
+      expect(
+        usage![1],
+        `${screen} renders <BrandLogo> with no rounding — BrandLogo stopped supplying one when the entry tile began setting its own, so this mark now has square corners`,
+      ).toMatch(/\brounded-/);
+    }
+
+    // And the scan has to be looking at the right screens: if these stop using
+    // the bare form the rule above is vacuous rather than satisfied.
+    for (const screen of bare) {
+      expect(
+        authSource(screen),
+        `${screen} switched to EntryBrandTile — move it out of this rule instead of leaving the rule pointing at nothing`,
+      ).not.toContain("<EntryBrandTile");
+    }
   });
 
   it("leaves no backdrop-filter element on an entry screen outside that tile", () => {

@@ -209,7 +209,9 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
       <CardWatermark
         preset={branding.cardLogo}
         customUrl={branding.cardLogoUrl}
-        className="absolute -right-5 -bottom-7 h-32 w-32 text-[color:var(--card-foreground)] opacity-10 @sm:h-36 @sm:w-36"
+        style={branding.cardLogoStyle}
+        basePx={128}
+        className="absolute -right-5 -bottom-7 text-[color:var(--card-foreground)] [--card-watermark-base:128px] @sm:[--card-watermark-base:144px]"
       />
 
       {/* Selection check badge */}

@@ -310,6 +310,110 @@ export const DEFAULT_SUBSCRIPTION_CARD_GLASS: SubscriptionCardGlass = {
 };
 
 /**
+ * The plate behind the brand mark on the entry screens. Deliberately a union
+ * of the four the panel offers rather than a bare `string`, unlike
+ * `CardEffect`: the vocabulary is closed — a plate is painted by CSS this
+ * bundle contains, not by a component the panel can ship ahead of us — and
+ * `resolveBrandLogo` below resolves an unknown value to `glass`, the look
+ * every deployment had before the setting existed.
+ */
+export type BrandLogoFrame = "glass" | "solid" | "outline" | "none";
+
+/** How the operator's `logoUrl` is presented on the entry screens. */
+export interface BrandLogo {
+  /** Whole-tile size multiplier, 1–1.75. */
+  readonly size: number;
+  /** Fraction of the tile the mark fills, 0.4–1. */
+  readonly fill: number;
+  readonly frame: BrandLogoFrame;
+  /**
+   * Tile rounding as a percentage of its width, 0–50 — or `null`, meaning
+   * "follow the theme's item radius", which is what the tile did before this
+   * setting existed and is therefore the default. See
+   * `brand-logo-geometry.ts` for the factors.
+   */
+  readonly radius: number | null;
+  /** Brand glow behind the tile, 0–1. */
+  readonly glow: number;
+}
+
+/**
+ * Reproduces the rendering that preceded the setting: an 80 px tile on the form
+ * screens and a 96 px one on the splash, their corners following the theme, and
+ * a mark filling 58 % of each. One fill ratio serves both, so one of the two
+ * moves: 0.58 keeps the splash within a third of a pixel (56 → 55.68) and grows
+ * the sign-in mark by 2.4 px (44 → 46.4), which is the direction an operator
+ * complaining about a small mark wants anyway.
+ */
+export const DEFAULT_BRAND_LOGO: BrandLogo = {
+  size: 1,
+  fill: 0.58,
+  frame: "glass",
+  radius: null,
+  glow: 1,
+};
+
+/** Size and weight of the subscription-card watermark. */
+export interface CardLogoStyle {
+  /** Size multiplier over the card's default watermark box, 0.5–2. */
+  readonly scale: number;
+  /** Watermark opacity, 0.02–0.4. */
+  readonly opacity: number;
+}
+
+export const DEFAULT_CARD_LOGO_STYLE: CardLogoStyle = {
+  scale: 1,
+  opacity: 0.1,
+};
+
+const BRAND_LOGO_FRAMES: ReadonlySet<string> = new Set([
+  "glass",
+  "solid",
+  "outline",
+  "none",
+]);
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(max, Math.max(min, value))
+    : fallback;
+}
+
+/**
+ * Resolves a `brandLogo` payload, tolerating absence entirely: a cabinet
+ * talking to a panel older than this setting receives nothing here, and must
+ * render exactly as it did before.
+ */
+export function resolveBrandLogo(value: unknown): BrandLogo {
+  if (typeof value !== "object" || value === null) return DEFAULT_BRAND_LOGO;
+  const raw = value as Record<string, unknown>;
+  return {
+    size: clampNumber(raw["size"], 1, 1.75, DEFAULT_BRAND_LOGO.size),
+    fill: clampNumber(raw["fill"], 0.4, 1, DEFAULT_BRAND_LOGO.fill),
+    frame:
+      typeof raw["frame"] === "string" && BRAND_LOGO_FRAMES.has(raw["frame"])
+        ? (raw["frame"] as BrandLogoFrame)
+        : DEFAULT_BRAND_LOGO.frame,
+    // `null` is a value here, not an absence: it is the operator saying
+    // "follow the theme". Only a usable number overrides it.
+    radius:
+      typeof raw["radius"] === "number" && Number.isFinite(raw["radius"])
+        ? Math.min(50, Math.max(0, raw["radius"]))
+        : null,
+    glow: clampNumber(raw["glow"], 0, 1, DEFAULT_BRAND_LOGO.glow),
+  };
+}
+
+export function resolveCardLogoStyle(value: unknown): CardLogoStyle {
+  if (typeof value !== "object" || value === null) return DEFAULT_CARD_LOGO_STYLE;
+  const raw = value as Record<string, unknown>;
+  return {
+    scale: clampNumber(raw["scale"], 0.5, 2, DEFAULT_CARD_LOGO_STYLE.scale),
+    opacity: clampNumber(raw["opacity"], 0.02, 0.4, DEFAULT_CARD_LOGO_STYLE.opacity),
+  };
+}
+
+/**
  * Resolved visual values for the same conceptual preset. It intentionally has
  * no preset id or brand identity, preventing this payload from becoming a
  * user-facing theme catalogue.
@@ -374,6 +478,12 @@ export interface Branding {
   logoUrl: string | null;
   /** Square PNG for PWA install (home-screen icon). Falls back to logoUrl. */
   pwaIconUrl?: string | null;
+  /**
+   * How the mark above is presented on the entry screens. Absent from any
+   * payload written by a panel older than the setting; `resolveBrandLogo`
+   * turns that absence into the previous rendering.
+   */
+  brandLogo?: BrandLogo;
   primary: string;
   primaryFg: string;
   bgPrimary: string;
@@ -445,6 +555,8 @@ export interface Branding {
   cardLogo: CardLogoPreset;
   /** Custom card watermark image (same-origin upload, HTTPS, or data image); overrides cardLogo. */
   cardLogoUrl: string | null;
+  /** Size and weight of that watermark; absent in legacy payloads. */
+  cardLogoStyle?: CardLogoStyle;
   /** Animated effect behind the card (NONE = plain gradient). */
   cardEffect: CardEffect;
   /** Tunable params for the chosen effect (merged over its defaults). */
@@ -553,6 +665,7 @@ export const DEFAULT_BRANDING: Branding = {
   tagline: null,
   logoUrl: null,
   pwaIconUrl: null,
+  brandLogo: DEFAULT_BRAND_LOGO,
   primary: "#22c55e",
   primaryFg: "#0a0a0a",
   bgPrimary: "#0a0a0a",
@@ -569,6 +682,7 @@ export const DEFAULT_BRANDING: Branding = {
   subscriptionCardGlass: DEFAULT_SUBSCRIPTION_CARD_GLASS,
   cardLogo: "DEFAULT",
   cardLogoUrl: null,
+  cardLogoStyle: DEFAULT_CARD_LOGO_STYLE,
   cardEffect: "aurora",
   cardEffectProps: {},
   cardEffectOpacity: 1,

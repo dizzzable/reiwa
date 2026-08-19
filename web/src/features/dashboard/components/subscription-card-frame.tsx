@@ -145,7 +145,9 @@ export const SubscriptionCardFrame = forwardRef<
     <CardWatermark
       preset={visual.cardLogo}
       customUrl={visual.cardLogoUrl}
-      className="absolute -right-6 -bottom-8 h-40 w-40 text-[color:var(--card-foreground)] opacity-10 @sm:h-44 @sm:w-44"
+      style={visual.cardLogoStyle}
+      basePx={160}
+      className="absolute -right-6 -bottom-8 text-[color:var(--card-foreground)] [--card-watermark-base:160px] @sm:[--card-watermark-base:176px]"
     />
   );
 
