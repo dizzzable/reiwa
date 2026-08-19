@@ -43,7 +43,16 @@
   height: 100dvh;
   overflow-y: auto;
   overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+  /* No `-webkit-overflow-scrolling: touch` here, and it must not come back.
+     It has been a no-op since iOS 13 made momentum scrolling the default for
+     every scroller, and both build floors are far past that: `build.target` is
+     unset in reiwa's `web/vite.config.ts` AND in the admin's, so Vite 8 applies
+     `baseline-widely-available` = chrome111 / edge111 / firefox114 / safari16.4
+     / ios16.4 in both. That matters here specifically: this rule is vendored
+     into rezeis-admin's landing preview, so the floor had to hold on BOTH
+     toolchains before it could go. Before iOS 13 it was not free either — it
+     forced the element onto its own compositing layer and carried the
+     stale-scroll-size class of bugs with it (WebKit bug 158342). */
 }
 
 /* ── Background layer ─────────────────────────────────────────────────────── */

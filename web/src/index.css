@@ -180,7 +180,18 @@ body {
 /* ─── Scrollable areas ─────────────────────────────────────────────────────── */
 .scroll-area {
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  /* No `-webkit-overflow-scrolling: touch` here, and it must not come
+     back. It has been a no-op since iOS 13 made momentum scrolling the
+     default for every scroller, and the build floor is far past that:
+     `build.target` is unset in `web/vite.config.ts`, so Vite 8 applies
+     `baseline-widely-available` = chrome111 / edge111 / firefox114 /
+     safari16.4 / ios16.4. Before iOS 13 it was not free either: it
+     forced the element onto its own compositing layer and carried the
+     stale-scroll-size class of bugs with it (WebKit bug 158342). That
+     cost used to ride on a handful of elements; `.scroll-area` is now
+     the root of five out-of-shell pages, the shell's own `<main>`, the
+     six entry screens, the modals and two inner lists, so the property
+     would be pure liability across the app and buys nothing anywhere. */
   scrollbar-width: none;
 }
 .scroll-area::-webkit-scrollbar { display: none; }

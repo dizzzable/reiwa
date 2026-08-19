@@ -224,7 +224,33 @@ export default function BootstrapPage() {
           ) : phase === 'error' ? (
             <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-6 py-4 text-sm text-red-400">
               <p className="font-medium">{t('bootstrap.loginError')}</p>
-              <p className="mt-1 text-xs text-red-500/80 whitespace-pre-line">{errorMsg}</p>
+              {/* `wrap-anywhere` (`overflow-wrap: anywhere`), NOT `break-words`.
+                  The BFF may extend this message with a `[dev]` block holding up
+                  to 500 characters of raw upstream body (`resolveBootstrapError`
+                  below, fed by `debug: upstream 403: ${body.slice(0, 500)}` in
+                  `src/api/routes/auth.ts`), and those bodies are JSON: one
+                  unbreakable word a few hundred characters long is the ordinary
+                  case here. The card above is a shrink-to-fit flex item, so that
+                  word IS its width — measured in Chrome at 375px, a 231-char
+                  body made the card 742px inside a 309px column, and the root's
+                  `overflow-x-hidden` clipped the rest away with no scrollbar.
+
+                  `break-words` would NOT fix that. Its break opportunities are
+                  excluded from min-content intrinsic size (CSS Text 3 §5.5), and
+                  min-content is exactly what sizes this box: measured, the card
+                  stays 742px with it. `anywhere` is the value whose
+                  opportunities count — 309px, fits. `break-all` also fits but
+                  chops ordinary words mid-character, mangling the readable first
+                  line.
+
+                  This is NOT an argument against the plain `break-words` used
+                  elsewhere in the app. The support bubbles and the settings rows
+                  carry a width CAP (`max-w-[80%]`, `max-w-[220px]`), and once a
+                  cap bounds the box its min-content contribution stops deciding
+                  anything — `break-word` then wraps the token inside the cap just
+                  fine. This card has no cap, which is the whole difference.
+                  Guarded by `web/test/tma-error-message-wrapping.test.tsx`. */}
+              <p className="mt-1 text-xs text-red-500/80 whitespace-pre-line wrap-anywhere">{errorMsg}</p>
               <button
                 onClick={() => {
                   calledRef.current = false
