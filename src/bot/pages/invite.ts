@@ -7,7 +7,11 @@
  * previous screen. Branches on the user's partner status:
  *
  *   • Active partner  → partner hub: balance / earned / referred summary +
- *     editable description + share link + deep-link to the cabinet partner page.
+ *     editable description + share link + deep-link to the cabinet partner page,
+ *     plus — only while the balance is above zero — the referral points they
+ *     earned before the appointment and the deep-link to spend them. That hub
+ *     replaces the referral one, so without those two lines a partner has no
+ *     way left to see or spend points they still own.
  *   • Otherwise       → referral hub: invited / subscribed / pending / points
  *     summary + editable description + share link + deep-links to the cabinet
  *     referrals + points-exchange pages.
@@ -72,6 +76,13 @@ interface ReferralSummaryShape {
 interface PartnerInfoShape {
   readonly balance?: number;
   readonly totalEarned?: number;
+  /**
+   * Referral points (`User.points`) — a dimensionless integer, NOT money and
+   * not convertible to `balance` (minor units of currency). The panel sends
+   * it on every partner payload, `0` included; an older panel sends nothing,
+   * which is why this stays optional and is read through `num`.
+   */
+  readonly referralPoints?: number;
 }
 
 function num(value: unknown): number | null {
@@ -317,10 +328,25 @@ async function renderPartnerHub(
   const balance = num(info?.balance);
   const earned = num(info?.totalEarned);
   const referred = num(referrals?.total);
+  // Referral points the user earned BEFORE the partner appointment. A partner
+  // accrues no new ones — the panel stops creating referral rewards for them —
+  // but the ones already earned stay spendable, and this hub REPLACED the
+  // referral hub, which was the only place in the bot that showed them or
+  // offered the exchange. Show the line only while there is something left to
+  // spend: a counter that can never move again reads as noise at a permanent
+  // zero. Absent is not zero — `num` maps a missing field and a non-number
+  // alike to null, and null is silence here, never a rendered 0.
+  //
+  // Points are a DIMENSIONLESS integer and reuse the referral hub's own
+  // `count` string. They are never added to `balance` and never formatted
+  // like it: two units, no conversion between them.
+  const points = num(info?.referralPoints);
+  const hasPoints = points !== null && points > 0;
   const stats: string[] = [];
   if (balance !== null) stats.push(t('partner.hub.stat_balance', { amount: balance }));
   if (earned !== null) stats.push(t('partner.hub.stat_earned', { amount: earned }));
   if (referred !== null) stats.push(t('partner.hub.stat_referred', { count: referred }));
+  if (hasPoints) stats.push(t('referral.hub.stat_points', { count: points }));
   if (stats.length > 0) parts.push(stats.join('\n'));
 
   const kb = new InlineKeyboard();
@@ -345,6 +371,16 @@ async function renderPartnerHub(
   if (isTelegramSafeButtonUrl(urls.publicWebUrl)) {
     if (inviteLink !== null) kb.row();
     kb.webApp(hubButton(t('partner.hub.open_cabinet'), botCfg), `${urls.publicWebUrl}/partner`);
+    // The cabinet has ONE nav slot for both programs and the Partner tab took
+    // it, so /referrals/exchange is reachable from nowhere for a partner.
+    // This is the way back — the referral hub's own button, same wording key
+    // and same destination, not a parallel partner-flavoured copy of it.
+    if (hasPoints) {
+      kb.row().webApp(
+        hubButton(t('referral.hub.open_exchange'), botCfg),
+        `${urls.publicWebUrl}/referrals/exchange`,
+      );
+    }
   }
   const back = renderSystemButton(backLabel, 'back', botCfg);
   appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);

@@ -11,8 +11,9 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Info, Trophy, Users, Wallet } from "lucide-react";
+import { Info, Star, Trophy, Users, Wallet } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router";
 
 import { getPartnerInfo, getPartnerEarnings, getPartnerWithdrawals } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
@@ -32,6 +33,7 @@ export default function PartnerPage() {
   const { t } = useTranslation();
   const { session } = useSession();
   const { branding, botUsername } = useBranding();
+  const navigate = useNavigate();
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
   const { data: partnerInfo, isLoading } = useQuery({
@@ -50,6 +52,26 @@ export default function PartnerPage() {
   const balance = info?.balance ?? 0;
   const totalEarned = info?.totalEarned ?? 0;
   const totalWithdrawn = info?.totalWithdrawn ?? 0;
+
+  // Referral points (`User.points`) the partner earned BEFORE the
+  // appointment. A DIFFERENT POT from `balance`: points are a dimensionless
+  // integer, the balance is minor units of currency. No conversion between
+  // them exists, so this value is never added to the balance, never divided
+  // by 100 and never printed with a currency symbol — it gets its own row.
+  //
+  // A partner accrues no new points (the panel stops creating referral
+  // rewards for them) but keeps whatever they had, and the Partner tab took
+  // the single nav slot that used to lead to the exchange. Hence the row
+  // below and its way in. It appears only while there is something left to
+  // spend: at zero the counter can never move again, so it is noise.
+  //
+  // Absent is NOT zero. A partner served by an older panel, or a request
+  // that failed, leaves this undefined — and an undefined renders nothing at
+  // all rather than a "0" this surface cannot actually vouch for.
+  const rawPoints = info?.referralPoints;
+  const referralPoints =
+    typeof rawPoints === "number" && Number.isFinite(rawPoints) ? rawPoints : null;
+  const hasReferralPoints = referralPoints !== null && referralPoints > 0;
 
   // Build invite links. Bot username comes from the public config
   // (reiwa `BOT_USERNAME`); the web origin is this SPA's own domain.
@@ -126,6 +148,36 @@ export default function PartnerPage() {
           onClick={() => setActiveSheet("info")}
         />
       </div>
+
+      {/* Referral points carried over from before the partner appointment —
+          its own row, in its own unit, and the only remaining entry point to
+          the exchange now that the Partner tab has replaced the Referral tab
+          in the bottom nav. Rendered only while the balance is above zero. */}
+      {hasReferralPoints && (
+        <div className="mx-5 mt-5" data-testid="partner-referral-points">
+          <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Star className="h-4 w-4 text-amber-400" />
+                <span className="text-sm font-medium">{t("referrals.points")}</span>
+              </div>
+              {/* Bare integer. No division, no currency — see the note above. */}
+              <span className="text-xl font-bold" data-testid="partner-referral-points-value">
+                {referralPoints}
+              </span>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">{t("partner.pointsHint")}</p>
+            <Button
+              className="mt-3 w-full"
+              style={{ backgroundColor: "var(--brand-primary)", color: "var(--brand-primary-fg)" }}
+              data-testid="partner-exchange-points"
+              onClick={() => navigate("/referrals/exchange")}
+            >
+              {t("referrals.exchangePoints")}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Referred users list */}
       <div className="mx-5 mt-5">

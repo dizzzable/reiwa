@@ -21,6 +21,19 @@ import {
   type SubscriptionCardText,
   type SubscriptionCardTextMode,
 } from "@/types/branding";
+import {
+  BRANDING_VOCABULARY_SURFACE,
+  CANONICAL_FIXTURE,
+  CANONICAL_FIXTURE_DIGEST,
+  CANONICAL_FIXTURE_FORM,
+  canonicalise,
+  digestDriftMessage,
+  digestOf,
+  EMPTY_ARRAY_DIGEST,
+  EMPTY_INPUT_DIGEST,
+  EMPTY_OBJECT_DIGEST,
+} from "../support/panel-parity-digest.js";
+import { PANEL_BRANDING_VOCABULARY } from "../support/panel-parity-manifest.js";
 
 /**
  * Every closed vocabulary in the branding contract, checked against the panel
@@ -99,21 +112,34 @@ const CABINET_CARD_WATERMARK_PATH = fileURLToPath(
   new URL("../../web/src/components/ui/card-watermark.tsx", import.meta.url),
 );
 
-// Only meaningful on a machine holding both checkouts side by side, which is
-// the working setup here. reiwa's CI clones reiwa alone, so there the
-// cross-repo cases skip.
+// The sibling checkout only exists on a machine holding both trees. reiwa's CI
+// clones reiwa alone, so there it is absent — and every cross-repo case below
+// USED to skip, which is 43 guards guarding a laptop.
 //
-// A skipped guard guards nothing, so the skip is as narrow as it can be made:
-// allowed ONLY when the whole sibling repository is absent. If the repo is
-// there and a file is not, it moved, and the first case below turns that into a
-// red test rather than a silent skip that goes on reporting "skipped" for as
-// long as it takes anyone to notice.
+// The panel's vocabularies are therefore committed in
+// `test/support/panel-parity-manifest.ts` and pinned by
+// `BRANDING_VOCABULARY_DIGEST` below, whose identical twin lives in
+// `rezeis-admin/test/reiwa-parity-digest.spec.ts` and is computed there from
+// the panel's LIVE sources. The cases now run everywhere. The sibling, when
+// present, is still read and still wins: comparing against the real files is
+// what catches an edit at the moment it is made, and it can name the value
+// that differs, which a hash cannot.
 const hasPanelRepo = existsSync(PANEL_REPO_PATH);
 const hasPanelSources =
   existsSync(PANEL_INTERFACE_PATH) &&
   existsSync(PANEL_DTO_PATH) &&
   existsSync(PANEL_FORM_SCHEMA_PATH);
 const skipCrossRepo = !hasPanelSources;
+
+/**
+ * SHA-256 of the canonical form of `PANEL_BRANDING_VOCABULARY`.
+ *
+ * WRITTEN DOWN FIRST, and identical to `BRANDING_VOCABULARY_DIGEST` in
+ * `rezeis-admin/test/reiwa-parity-digest.spec.ts`. Changing this line is a
+ * two-repository change; the failure message says how.
+ */
+const BRANDING_VOCABULARY_DIGEST =
+  "d54362979e50c22b44cd11c46ef892728f8b204dba56ca00eb72f5ca55356c59";
 
 /* ────────────────────────────── source reading ───────────────────────────── */
 
@@ -275,7 +301,7 @@ function readLiteralUnionType(path: string, name: string): readonly string[] {
  * Read once, eagerly, so a parse that silently returned nothing cannot make a
  * later `toEqual` compare two empty lists and pass.
  */
-const panel = skipCrossRepo
+const livePanel = skipCrossRepo
   ? null
   : {
       bgEffects: readStringArrayConst(PANEL_INTERFACE_PATH, "BG_EFFECTS"),
@@ -351,9 +377,56 @@ const panel = skipCrossRepo
       ),
     };
 
-/** Non-null accessor, so a `skipIf` that stops working fails loudly. */
-function fromPanel(): NonNullable<typeof panel> {
-  if (panel === null) throw new Error("panel sources are absent; this case must have skipped");
+/**
+ * The same vocabularies, out of the committed manifest.
+ *
+ * Named field by field rather than spread from the record, so a vocabulary that
+ * disappeared from the manifest is a loud failure at module load instead of an
+ * `undefined` that a later `toEqual` would quietly compare against nothing.
+ */
+function vocabulary(name: string): readonly string[] {
+  const values = PANEL_BRANDING_VOCABULARY.vocabularies[name];
+  if (values === undefined || values.length === 0) {
+    throw new Error(
+      `\`${name}\` is missing or empty in test/support/panel-parity-manifest.ts — the committed copy of the panel's vocabularies has lost a list, and every case that reads it would be comparing against nothing`,
+    );
+  }
+  return values;
+}
+
+const committedPanel = {
+  bgEffects: vocabulary("bgEffects"),
+  appBackgroundKinds: vocabulary("appBackgroundKinds"),
+  appBackgroundTextures: vocabulary("appBackgroundTextures"),
+  iconColorModes: vocabulary("iconColorModes"),
+  subscriptionCardTextModes: vocabulary("subscriptionCardTextModes"),
+  planCardTextModes: vocabulary("planCardTextModes"),
+  cardEffectSlotModes: vocabulary("cardEffectSlotModes"),
+  cardLogoPresets: vocabulary("cardLogoPresets"),
+  brandLogoFrames: vocabulary("brandLogoFrames"),
+  navDestinations: vocabulary("navDestinations"),
+  navEssentials: vocabulary("navEssentials"),
+  brandPaletteSources: vocabulary("brandPaletteSources"),
+  cardGradientSources: vocabulary("cardGradientSources"),
+  borderRadiusClasses: vocabulary("borderRadiusClasses"),
+  formBgEffects: vocabulary("formBgEffects"),
+  formIconColorModes: vocabulary("formIconColorModes"),
+  formSubscriptionCardTextModes: vocabulary("formSubscriptionCardTextModes"),
+  formPlanCardTextModes: vocabulary("formPlanCardTextModes"),
+  formAppBackgroundKinds: vocabulary("formAppBackgroundKinds"),
+  formAppBackgroundTextures: vocabulary("formAppBackgroundTextures"),
+  formNavDestinations: vocabulary("formNavDestinations"),
+  formBorderRadiusClasses: vocabulary("formBorderRadiusClasses"),
+};
+
+/**
+ * What every case below compares against: the LIVE panel when the sibling is
+ * here, the committed copy otherwise. Never null, so no case can silently
+ * become a no-op.
+ */
+const panel: typeof committedPanel = livePanel ?? committedPanel;
+
+function fromPanel(): typeof committedPanel {
   return panel;
 }
 
@@ -426,27 +499,108 @@ function acceptedByCabinet(
 /* ────────────────────────────────── cases ────────────────────────────────── */
 
 describe("branding vocabulary parity with the rezeis-admin panel", () => {
+  it("states the branding digest before computing it, over something", () => {
+    // THE ANSWER, restated — so silencing a failure by editing the constant
+    // above has to be done twice, in two places that read differently.
+    expect(BRANDING_VOCABULARY_DIGEST).toBe(
+      "d54362979e50c22b44cd11c46ef892728f8b204dba56ca00eb72f5ca55356c59",
+    );
+
+    // The canonicaliser itself: keys SORTED (so neither side has to write its
+    // vocabularies in the other's order), array order KEPT (a picker's order is
+    // something an operator sees).
+    expect(canonicalise(CANONICAL_FIXTURE)).toBe(CANONICAL_FIXTURE_FORM);
+    expect(digestOf(CANONICAL_FIXTURE)).toBe(CANONICAL_FIXTURE_DIGEST);
+
+    // NON-VACUITY. A reader that returned nothing, or a normalisation that
+    // swallowed its input, hashes to one of the three below and would then
+    // agree with itself forever.
+    const form = canonicalise(PANEL_BRANDING_VOCABULARY);
+    expect(form.length, "the canonical branding vocabulary came out empty").toBeGreaterThan(1200);
+    expect(Object.keys(PANEL_BRANDING_VOCABULARY.vocabularies).length).toBe(22);
+    for (const [name, values] of Object.entries(PANEL_BRANDING_VOCABULARY.vocabularies)) {
+      expect(values.length, `\`${name}\` in the committed manifest is empty`).toBeGreaterThan(0);
+    }
+    expect(
+      PANEL_BRANDING_VOCABULARY.dtoIsInVocabularies.length,
+      "the DTO's inline @IsIn vocabularies read back as none",
+    ).toBeGreaterThan(1);
+    for (const vacuous of [EMPTY_INPUT_DIGEST, EMPTY_OBJECT_DIGEST, EMPTY_ARRAY_DIGEST]) {
+      expect(
+        BRANDING_VOCABULARY_DIGEST,
+        "the pinned digest is the digest of nothing — this guard is hashing an empty input",
+      ).not.toBe(vacuous);
+    }
+
+    // … and only then the committed content, against the answer.
+    const computed = digestOf(PANEL_BRANDING_VOCABULARY);
+    expect(
+      computed,
+      digestDriftMessage(BRANDING_VOCABULARY_SURFACE, computed, "reiwa"),
+    ).toBe(BRANDING_VOCABULARY_DIGEST);
+  });
+
   it("finds the panel's vocabularies wherever the sibling checkout exists", () => {
-    // Not a parity assertion — an assertion about this file's own reach, and
-    // the only case here that always runs. It says in the log which mode the
-    // run is in, and fails outright in the one situation where a skip would be
-    // a lie: the sibling repo is present but its sources are not where this
-    // test looks.
+    // Not a parity assertion — an assertion about this file's own reach. It
+    // says in the log which mode the run is in, and fails outright in the one
+    // situation where a skip would be a lie: the sibling repo is present but
+    // its sources are not where this test looks.
     console.info(
       hasPanelSources
         ? `branding vocabulary parity: reading the panel at ${PANEL_REPO_PATH}`
-        : `branding vocabulary parity: no sibling checkout at ${PANEL_REPO_PATH} — cross-repo cases skip`,
+        : `branding vocabulary parity: no sibling checkout at ${PANEL_REPO_PATH} — running against the committed manifest`,
     );
     if (hasPanelRepo) {
       expect(
         hasPanelSources,
-        `the rezeis-admin checkout is at ${PANEL_REPO_PATH} but its branding sources are not where this test looks (${PANEL_INTERFACE_PATH}, ${PANEL_DTO_PATH}, ${PANEL_FORM_SCHEMA_PATH}) — they moved, and every case below is skipping instead of guarding`,
+        `the rezeis-admin checkout is at ${PANEL_REPO_PATH} but its branding sources are not where this test looks (${PANEL_INTERFACE_PATH}, ${PANEL_DTO_PATH}, ${PANEL_FORM_SCHEMA_PATH}) — they moved, and the live comparison below is skipping`,
       ).toBe(true);
     }
     // Anchors the fixture: every case builds on this snapshot being valid, and
     // an invalid baseline would make the `false` expectations below pass for
     // the wrong reason.
     expect(isPublicConfigSnapshot(DEFAULT_PUBLIC_CONFIG)).toBe(true);
+  });
+
+  // THE LOCAL EXTRA — the only case in this file that skips. It names the
+  // vocabulary and the value that differ, which the digest cannot. The digest
+  // is the floor and runs everywhere.
+  it.skipIf(skipCrossRepo)("still matches the LIVE panel sources, when the sibling is here", () => {
+    const live = livePanel;
+    expect(live, "the sibling is present but its vocabularies read back as nothing").not.toBeNull();
+
+    const differences: string[] = [];
+    for (const [name, committed] of Object.entries(committedPanel)) {
+      const actual = (live as unknown as Record<string, readonly string[]>)[name];
+      expect(actual, `the live panel has no \`${name}\``).toBeDefined();
+      const added = actual.filter((value) => !committed.includes(value));
+      const removed = committed.filter((value) => !actual.includes(value));
+      if (added.length > 0) differences.push(`${name}: live adds ${added.join(", ")}`);
+      if (removed.length > 0) differences.push(`${name}: live dropped ${removed.join(", ")}`);
+      // Order too, which the set difference above cannot see.
+      if (added.length === 0 && removed.length === 0 && actual.join("\x00") !== committed.join("\x00")) {
+        differences.push(`${name}: reordered — live [${actual.join(", ")}]`);
+      }
+    }
+    expect(
+      differences,
+      "the live panel's branding vocabularies have drifted from the committed copy in test/support/panel-parity-manifest.ts — regenerate it and update BRANDING_VOCABULARY_DIGEST in BOTH repositories",
+    ).toEqual([]);
+
+    const computed = digestOf({
+      vocabularies: Object.fromEntries(
+        Object.entries(live as unknown as Record<string, readonly string[]>).map(
+          ([name, values]) => [name, [...values]],
+        ),
+      ),
+      navMaxVisible: PANEL_BRANDING_VOCABULARY.navMaxVisible,
+      dtoBorderRadius: PANEL_BRANDING_VOCABULARY.dtoBorderRadius,
+      dtoIsInVocabularies: PANEL_BRANDING_VOCABULARY.dtoIsInVocabularies.map((v) => [...v]),
+    });
+    expect(
+      computed,
+      digestDriftMessage(BRANDING_VOCABULARY_SURFACE, computed, "reiwa"),
+    ).toBe(BRANDING_VOCABULARY_DIGEST);
   });
 
   /**
@@ -465,7 +619,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    *      one layer further down.
    */
   describe("NAV_DESTINATIONS", () => {
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel destination", () => {
+    it("survives the snapshot guard for every panel destination", () => {
       const destinations = fromPanel().navDestinations;
       expect(destinations.length).toBeGreaterThan(5);
 
@@ -478,7 +632,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(destinations);
     });
 
-    it.skipIf(skipCrossRepo)("survives a full navItems array, not just a single entry", () => {
+    it("survives a full navItems array, not just a single entry", () => {
       // The realistic payload: `readNavItems` on the panel always returns ALL
       // destinations, hidden ones appended. A per-entry check would miss the
       // array-level rules (length cap, duplicate detection).
@@ -490,7 +644,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toBe(true);
     });
 
-    it.skipIf(skipCrossRepo)("keeps every panel destination through normalizeNavItems", () => {
+    it("keeps every panel destination through normalizeNavItems", () => {
       const destinations = fromPanel().navDestinations;
       expect(
         [...CABINET_NAV_DESTINATIONS].sort(),
@@ -502,7 +656,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       expect([...kept].sort()).toEqual([...destinations].sort());
     });
 
-    it.skipIf(skipCrossRepo)("has a route, icon and label for every panel destination", () => {
+    it("has a route, icon and label for every panel destination", () => {
       // Layer three. Typed `Record<NavDestinationId, NavTab>`, so the compiler
       // enforces it against the CABINET's list — which is exactly the list that
       // can be the stale one. Read the keys directly instead.
@@ -513,14 +667,14 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual([...fromPanel().navDestinations].sort());
     });
 
-    it.skipIf(skipCrossRepo)("agrees with the panel about which destinations are essential", () => {
+    it("agrees with the panel about which destinations are essential", () => {
       // Essentials are force-shown on BOTH sides. Disagreement is not an
       // outage, it is a nav bar with a destination the operator cannot remove
       // in one place and cannot keep in the other.
       expect([...fromPanel().navEssentials].sort()).toEqual(["settings", "subscriptions"]);
     });
 
-    it.skipIf(skipCrossRepo)("offers the same destinations in the panel's own picker", () => {
+    it("offers the same destinations in the panel's own picker", () => {
       const { navDestinations, formNavDestinations } = fromPanel();
       expect(
         [...formNavDestinations].sort(),
@@ -561,16 +715,23 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
 
       expect(optional.length, "the cabinet's optional-destination cap moved").toBe(3);
       expect(visible.length, "the cabinet's total visible-tab count moved").toBe(5);
+      // `NAV_MAX_VISIBLE` is a number, not a list, so it is carried in the
+      // manifest as one. It must stay 5: it is the TOTAL, and the panel derives
+      // its optional budget by subtracting the essentials from it. A change
+      // here has to be re-checked against the cabinet's two numbers above.
+      expect(
+        PANEL_BRANDING_VOCABULARY.navMaxVisible,
+        "the panel's NAV_MAX_VISIBLE changed — re-check it against the cabinet's cap of 3 optional destinations above",
+      ).toBe(5);
       if (!skipCrossRepo) {
-        // `NAV_MAX_VISIBLE` is a number, not a list, so it is asserted rather
-        // than parsed. It must stay 5: it is the TOTAL, and the panel derives
-        // its optional budget by subtracting the essentials from it. A change
-        // here has to be re-checked against the cabinet's two numbers above.
+        // … and the live panel still says so, when it is here to be asked.
         const panelSource = readFileSync(PANEL_INTERFACE_PATH, "utf8");
         expect(
           panelSource,
-          "the panel's NAV_MAX_VISIBLE changed — re-check it against the cabinet's cap of 3 optional destinations above",
-        ).toContain("export const NAV_MAX_VISIBLE = 5");
+          "the live panel's NAV_MAX_VISIBLE differs from the committed manifest — regenerate it and update BRANDING_VOCABULARY_DIGEST in BOTH repositories",
+        ).toContain(
+          `export const NAV_MAX_VISIBLE = ${PANEL_BRANDING_VOCABULARY.navMaxVisible}`,
+        );
       }
     });
   });
@@ -587,7 +748,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * silent substitution.
    */
   describe("APP_BACKGROUND_TEXTURES", () => {
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel pattern", () => {
+    it("survives the snapshot guard for every panel pattern", () => {
       const patterns = fromPanel().appBackgroundTextures;
       expect(patterns.length).toBeGreaterThan(4);
 
@@ -598,7 +759,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(patterns);
     });
 
-    it.skipIf(skipCrossRepo)("survives it as a per-plan texturePreset too", () => {
+    it("survives it as a per-plan texturePreset too", () => {
       // The same vocabulary, checked a second time in `isPlanCardStyle`. A
       // `planCardStyles` map holds up to 500 independently written entries, so
       // it is the likeliest place for one stale value to meet a stricter reader.
@@ -612,7 +773,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(patterns);
     });
 
-    it.skipIf(skipCrossRepo)("draws a distinct tile for every pattern the panel offers", () => {
+    it("draws a distinct tile for every pattern the panel offers", () => {
       // `patternSvg` answers an unknown id with the DOTS tile. That is the
       // right degradation and `app-texture.test.ts` pins it — but it also means
       // a pattern the panel gained and the renderer never learned is
@@ -664,7 +825,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * which is a readable card rather than an invisible one.
    */
   describe("SUBSCRIPTION_CARD_TEXT_MODES", () => {
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel mode", () => {
+    it("survives the snapshot guard for every panel mode", () => {
       const modes = fromPanel().subscriptionCardTextModes;
       expect(modes.length).toBeGreaterThan(2);
 
@@ -683,7 +844,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(modes);
     });
 
-    it.skipIf(skipCrossRepo)("survives it inside a brightness variant", () => {
+    it("survives it inside a brightness variant", () => {
       // Variants may carry a transport copy, and it must equal the root or the
       // snapshot is refused. So the mode has to be accepted in both places at
       // once, which is a stricter question than either alone.
@@ -705,7 +866,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       expect(accepted).toEqual(modes);
     });
 
-    it.skipIf(skipCrossRepo)("keeps every panel mode through the resolver", () => {
+    it("keeps every panel mode through the resolver", () => {
       // Acceptance is not enough: a mode the guard lets through and the
       // resolver collapses to `auto` is an operator decision quietly discarded.
       const modes = fromPanel().subscriptionCardTextModes;
@@ -722,7 +883,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual([]);
     });
 
-    it.skipIf(skipCrossRepo)("offers the same modes in the panel's own form", () => {
+    it("offers the same modes in the panel's own form", () => {
       const { subscriptionCardTextModes, formSubscriptionCardTextModes } = fromPanel();
       expect([...formSubscriptionCardTextModes].sort()).toEqual(
         [...subscriptionCardTextModes].sort(),
@@ -749,7 +910,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * card inheriting the global policy. These cases hold that decision in place.
    */
   describe("PLAN_CARD_TEXT_MODES", () => {
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel mode", () => {
+    it("survives the snapshot guard for every panel mode", () => {
       const modes = fromPanel().planCardTextModes;
       const accepted = acceptedByCabinet(modes, (mode) =>
         withBranding({
@@ -761,7 +922,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       expect(accepted).toEqual(modes);
     });
 
-    it.skipIf(skipCrossRepo)("honours every per-plan mode the panel can set", () => {
+    it("honours every per-plan mode the panel can set", () => {
       const modes = fromPanel().planCardTextModes;
       const global = { mode: "dark", color: null } satisfies SubscriptionCardText;
       const resolved = modes.map((mode) =>
@@ -818,7 +979,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * i.e. the `default` look the cabinet had before the control existed.
    */
   describe("ICON_COLOR_MODES", () => {
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel mode", () => {
+    it("survives the snapshot guard for every panel mode", () => {
       const modes = fromPanel().iconColorModes;
       expect(modes.length).toBeGreaterThan(1);
 
@@ -831,7 +992,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(modes);
     });
 
-    it.skipIf(skipCrossRepo)("matches the cabinet's own inline union", () => {
+    it("matches the cabinet's own inline union", () => {
       // The union is what every consumer narrows against. Nothing imports it
       // from the panel and nothing checks it, so it is exactly the kind of copy
       // that goes stale without leaving a mark.
@@ -841,7 +1002,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual([...fromPanel().iconColorModes].sort());
     });
 
-    it.skipIf(skipCrossRepo)("offers the same modes in the panel's own form", () => {
+    it("offers the same modes in the panel's own form", () => {
       expect([...fromPanel().formIconColorModes].sort()).toEqual(
         [...fromPanel().iconColorModes].sort(),
       );
@@ -862,7 +1023,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * asymmetry is worth knowing when the sixth name is proposed.
    */
   describe("BG_EFFECTS", () => {
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel effect", () => {
+    it("survives the snapshot guard for every panel effect", () => {
       const effects = fromPanel().bgEffects;
       expect(effects.length).toBeGreaterThan(3);
 
@@ -873,7 +1034,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(effects);
     });
 
-    it.skipIf(skipCrossRepo)("survives it inside both brightness variants", () => {
+    it("survives it inside both brightness variants", () => {
       // Theme presets are the only writer, and a preset writes `bgEffect` into
       // each variant as well as the root, so a new name arrives three times per
       // snapshot.
@@ -884,14 +1045,14 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       expect(accepted).toEqual(effects);
     });
 
-    it.skipIf(skipCrossRepo)("matches the cabinet's own inline union", () => {
+    it("matches the cabinet's own inline union", () => {
       expect(
         [...readLiteralUnionType(CABINET_BRANDING_TYPES_PATH, "BgEffect")].sort(),
         "`BgEffect` in the cabinet and `BG_EFFECTS` in the panel have diverged",
       ).toEqual([...fromPanel().bgEffects].sort());
     });
 
-    it.skipIf(skipCrossRepo)("offers the same effects in the panel's own form", () => {
+    it("offers the same effects in the panel's own form", () => {
       expect([...fromPanel().formBgEffects].sort()).toEqual([...fromPanel().bgEffects].sort());
     });
   });
@@ -911,7 +1072,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * So this describe guards the panel's decorator as well as the list.
    */
   describe("borderRadius", () => {
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel class", () => {
+    it("survives the snapshot guard for every panel class", () => {
       const classes = fromPanel().borderRadiusClasses;
       expect(classes.length).toBeGreaterThan(3);
 
@@ -924,7 +1085,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(classes);
     });
 
-    it.skipIf(skipCrossRepo)("survives it inside both brightness variants", () => {
+    it("survives it inside both brightness variants", () => {
       const classes = fromPanel().borderRadiusClasses;
       const accepted = acceptedByCabinet(classes, (borderRadius) =>
         withThemeVariants({ borderRadius }),
@@ -932,14 +1093,14 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       expect(accepted).toEqual(classes);
     });
 
-    it.skipIf(skipCrossRepo)("is offered as the same list by the panel's radius dropdown", () => {
+    it("is offered as the same list by the panel's radius dropdown", () => {
       expect(
         [...fromPanel().formBorderRadiusClasses].sort(),
         "the panel's radius dropdown and its request DTO disagree about the classes that exist",
       ).toEqual([...fromPanel().borderRadiusClasses].sort());
     });
 
-    it.skipIf(skipCrossRepo)("is still validated at the panel's writing stage", () => {
+    it("is still validated at the panel's writing stage", () => {
       // This used to say the DTO was the panel's ENTIRE defence, because
       // `readBrandingSettings` passed the field through unchecked
       // (`readString`) on the root and on each brightness variant. That was
@@ -957,16 +1118,30 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       // repaired on read instead of refused on write: the panel stops
       // disagreeing with the operator, which is how a typo becomes a
       // permanent, invisible substitution.
-      const dto = readFileSync(PANEL_DTO_PATH, "utf8");
-      const declarations = dto.match(/public borderRadius[!?]?:/g) ?? [];
+      //
+      // Counted rather than parsed, because a decorator's PRESENCE is the fact
+      // being guarded. The counts live in the manifest so this runs in CI, and
+      // the live DTO is re-counted below when the sibling is here.
+      const committedDeclarations = PANEL_BRANDING_VOCABULARY.dtoBorderRadius.declarations;
+      const committedValidators = PANEL_BRANDING_VOCABULARY.dtoBorderRadius.validators;
       expect(
-        declarations.length,
+        committedDeclarations,
         "the panel's DTO no longer declares borderRadius where this guard expects it",
       ).toBeGreaterThanOrEqual(2);
       expect(
-        (dto.match(/@IsBorderRadiusClass\(\)/g) ?? []).length,
+        committedValidators,
         "a `borderRadius` property in the panel's DTO lost `@IsBorderRadiusClass()` — the read side would now silently substitute the default instead of refusing the write, so an operator's typo becomes an invisible, permanent substitution",
-      ).toBeGreaterThanOrEqual(declarations.length);
+      ).toBeGreaterThanOrEqual(committedDeclarations);
+
+      if (!skipCrossRepo) {
+        const dto = readFileSync(PANEL_DTO_PATH, "utf8");
+        const declarations = (dto.match(/public borderRadius[!?]?:/g) ?? []).length;
+        const validators = (dto.match(/@IsBorderRadiusClass\(\)/g) ?? []).length;
+        expect(
+          { declarations, validators },
+          "the live panel DTO's borderRadius decorators differ from the committed manifest — regenerate it and update BRANDING_VOCABULARY_DIGEST in BOTH repositories",
+        ).toEqual({ declarations: committedDeclarations, validators: committedValidators });
+      }
     });
 
     it("refuses a radius class outside the six, on purpose", () => {
@@ -989,7 +1164,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * silently not what the operator picked.
    */
   describe("APP_BACKGROUND_KINDS", () => {
-    it.skipIf(skipCrossRepo)("draws every kind the panel's picker offers", () => {
+    it("draws every kind the panel's picker offers", () => {
       const kinds = fromPanel().appBackgroundKinds;
       expect(kinds.length).toBeGreaterThan(3);
 
@@ -1000,19 +1175,19 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual([]);
     });
 
-    it.skipIf(skipCrossRepo)("matches the cabinet's own inline union", () => {
+    it("matches the cabinet's own inline union", () => {
       expect(
         [...readLiteralUnionType(CABINET_BRANDING_TYPES_PATH, "AppBackgroundKind")].sort(),
       ).toEqual([...fromPanel().appBackgroundKinds].sort());
     });
 
-    it.skipIf(skipCrossRepo)("offers the same kinds in the panel's own picker", () => {
+    it("offers the same kinds in the panel's own picker", () => {
       expect([...fromPanel().formAppBackgroundKinds].sort()).toEqual(
         [...fromPanel().appBackgroundKinds].sort(),
       );
     });
 
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel kind", () => {
+    it("survives the snapshot guard for every panel kind", () => {
       const kinds = fromPanel().appBackgroundKinds;
       const accepted = acceptedByCabinet(kinds, (kind) =>
         // `texture` is the one kind that requires its own block to be present
@@ -1031,7 +1206,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * third value outright, so a panel that gained one would freeze the cabinet.
    */
   describe("CARD_EFFECT_SLOT_MODES", () => {
-    it.skipIf(skipCrossRepo)("survives the snapshot guard for every panel mode", () => {
+    it("survives the snapshot guard for every panel mode", () => {
       const modes = fromPanel().cardEffectSlotModes;
       const accepted = acceptedByCabinet(modes, (mode) =>
         withBranding({
@@ -1046,7 +1221,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(modes);
     });
 
-    it.skipIf(skipCrossRepo)("matches the cabinet's inline union on the slot type", () => {
+    it("matches the cabinet's inline union on the slot type", () => {
       // Declared inline on `CardEffectSlot.mode`, so it has no type alias to
       // read. Read the interface member's own union instead.
       const source = readFileSync(CABINET_BRANDING_TYPES_PATH, "utf8");
@@ -1069,7 +1244,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * case below is for.
    */
   describe("CARD_LOGO_PRESETS", () => {
-    it.skipIf(skipCrossRepo)("never freezes the snapshot over a preset name", () => {
+    it("never freezes the snapshot over a preset name", () => {
       const presets = [...fromPanel().cardLogoPresets, "PRESET_FROM_A_FUTURE_PANEL"];
       const accepted = acceptedByCabinet(presets, (cardLogo) => withBranding({ cardLogo }));
       expect(
@@ -1078,7 +1253,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(presets);
     });
 
-    it.skipIf(skipCrossRepo)("has a glyph for every preset the panel offers", () => {
+    it("has a glyph for every preset the panel offers", () => {
       // `DEFAULT` and `NONE` are handled before the map is consulted, so they
       // are not expected to appear in it.
       const drawnSeparately = new Set(["DEFAULT", "NONE"]);
@@ -1092,7 +1267,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual([]);
     });
 
-    it.skipIf(skipCrossRepo)("matches the cabinet's own inline union", () => {
+    it("matches the cabinet's own inline union", () => {
       expect(
         [...readLiteralUnionType(CABINET_BRANDING_TYPES_PATH, "CardLogoPreset")].sort(),
         "`CardLogoPreset` in the cabinet and `CARD_LOGO_PRESETS` in the panel have diverged",
@@ -1112,7 +1287,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * for.
    */
   describe("BRAND_LOGO_FRAMES", () => {
-    it.skipIf(skipCrossRepo)("never freezes the snapshot over a frame name", () => {
+    it("never freezes the snapshot over a frame name", () => {
       const frames = [...fromPanel().brandLogoFrames, "frame-from-a-future-panel"];
       const accepted = acceptedByCabinet(frames, (frame) =>
         withBranding({ brandLogo: { size: 1, fill: 0.58, frame, radius: null, glow: 1 } }),
@@ -1123,7 +1298,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(frames);
     });
 
-    it.skipIf(skipCrossRepo)("can draw every frame the panel offers", () => {
+    it("can draw every frame the panel offers", () => {
       // The cabinet's union is the list of plates it knows how to paint; the
       // panel's is the list its picker offers. A frame in the picker that is
       // not in the union is an operator choosing a plate every subscriber
@@ -1147,7 +1322,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * degrade to.
    */
   describe("ownership discriminators", () => {
-    it.skipIf(skipCrossRepo)("accept and resolve every source the panel can write", () => {
+    it("accept and resolve every source the panel can write", () => {
       const { brandPaletteSources, cardGradientSources } = fromPanel();
       expect([...brandPaletteSources].sort()).toEqual(["concept", "custom"]);
       expect([...cardGradientSources].sort()).toEqual(["concept", "custom"]);
@@ -1171,7 +1346,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       }
     });
 
-    it.skipIf(skipCrossRepo)("match the cabinet's own inline unions", () => {
+    it("match the cabinet's own inline unions", () => {
       expect(
         [...readLiteralUnionType(CABINET_BRANDING_TYPES_PATH, "BrandPaletteSource")].sort(),
       ).toEqual([...fromPanel().brandPaletteSources].sort());
@@ -1191,13 +1366,38 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * spells them out inline rather than as a named vocabulary.
    */
   describe("theme mode discriminators", () => {
-    it.skipIf(skipCrossRepo)("accept the two policies and the two modes the panel writes", () => {
-      const dto = readFileSync(PANEL_DTO_PATH, "utf8");
+    it("accept the two policies and the two modes the panel writes", () => {
+      // The DTO spells these two inline, so the manifest carries every
+      // `@IsIn([...])` vocabulary it declares. Each list is sorted, and so is
+      // the outer list: `@IsIn` is a set membership test, so the order the
+      // decorator writes its members in changes nothing anyone can see.
+      const inline = PANEL_BRANDING_VOCABULARY.dtoIsInVocabularies.map((values) =>
+        [...values].sort().join(","),
+      );
       expect(
-        dto,
+        inline,
         "the panel's theme-mode policy vocabulary moved; this comparison no longer reads it",
-      ).toContain("@IsIn(['fixed', 'user-selectable'] as const)");
-      expect(dto).toContain("@IsIn(['light', 'dark'] as const)");
+      ).toContain("fixed,user-selectable");
+      expect(inline).toContain("dark,light");
+
+      if (!skipCrossRepo) {
+        // … and the live DTO still declares exactly those, when it is here.
+        const dto = readFileSync(PANEL_DTO_PATH, "utf8");
+        const live = [...dto.matchAll(/@IsIn\(\[([^\]]*)\]/g)]
+          .map((match) =>
+            match[1]
+              .split(",")
+              .map((piece) => piece.trim().replace(/^['"`]|['"`]$/g, ""))
+              .filter((piece) => piece.length > 0)
+              .sort()
+              .join(","),
+          )
+          .sort();
+        expect(
+          live,
+          "the live panel DTO's inline @IsIn vocabularies differ from the committed manifest — regenerate it and update BRANDING_VOCABULARY_DIGEST in BOTH repositories",
+        ).toEqual([...inline].sort());
+      }
 
       expect(
         acceptedByCabinet(["fixed", "user-selectable"], (themeModePolicy) =>
@@ -1211,7 +1411,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
       ).toEqual(["light", "dark"]);
     });
 
-    it.skipIf(skipCrossRepo)("match the cabinet's own inline unions", () => {
+    it("match the cabinet's own inline unions", () => {
       expect(
         [...readLiteralUnionType(CABINET_BRANDING_TYPES_PATH, "BrandingThemeMode")].sort(),
       ).toEqual(["dark", "light"]);

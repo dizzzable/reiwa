@@ -464,6 +464,7 @@ export const en: RuDict = {
     recentEarnings: 'Recent earnings',
     referralsList: 'Referred users',
     referralsEmpty: 'No one referred yet',
+    pointsHint: 'Points earned before you became a partner. No new ones accrue — exchange what is left.',
   },
   partnerAds: {
     title: 'Advertising',

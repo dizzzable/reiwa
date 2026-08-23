@@ -244,4 +244,116 @@ describe('registerInvitePage (hub)', () => {
     const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
     expect(text).toContain('ru:partner.hub.title');
   });
+
+  /**
+   * Referral points a partner earned BEFORE the appointment.
+   *
+   * The panel stops creating referral rewards once someone is a partner, so
+   * the counter can never move again — but the points already earned are
+   * still spendable, and this hub REPLACED the referral hub, which was the
+   * only place in the bot that showed them or offered the exchange. Hence:
+   * one line and one button, and only while there is something left to spend.
+   *
+   * The absence cases below assert the rest of the hub is still on screen.
+   * A bare `not.toContain` passes just as happily when nothing rendered at
+   * all, which would hide the very defect this feature is about.
+   */
+  it('shows the points a partner still owns, and the way to spend them', async () => {
+    const getStatus = vi.fn().mockResolvedValue({ isActive: true });
+    const getInfo = vi
+      .fn()
+      .mockResolvedValue({ balance: 100, totalEarned: 300, referralPoints: 40 });
+    const getReferrals = vi.fn().mockResolvedValue({ total: 7 });
+    const adminClient = {
+      referrals: {},
+      partner: { getStatus, getInfo, getReferrals },
+    } as unknown as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: 'https://reiwa.example',
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx({ from: { id: 9 } });
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+
+    const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
+    // The referral hub's own wording, not a partner-flavoured copy of it.
+    expect(text).toContain('ru:referral.hub.stat_points(count=40)');
+    // Two pots, two units. 40 points is a dimensionless integer; the balance
+    // is minor units of currency. Nothing divides the points by 100 and
+    // nothing routes them through the money line.
+    expect(text).toContain('ru:partner.hub.stat_balance(amount=100)');
+    expect(text).not.toContain('stat_points(count=0.4)');
+    expect(text).not.toContain('stat_balance(amount=40)');
+
+    const buttons = buttonsOf(ctx);
+    expect(
+      buttons.some((b) => b.web_app?.url === 'https://reiwa.example/referrals/exchange'),
+    ).toBe(true);
+    expect(buttons.some((b) => b.web_app?.url === 'https://reiwa.example/partner')).toBe(true);
+  });
+
+  it('says nothing about points once the partner has spent the last one', async () => {
+    const getStatus = vi.fn().mockResolvedValue({ isActive: true });
+    const getInfo = vi
+      .fn()
+      .mockResolvedValue({ balance: 100, totalEarned: 300, referralPoints: 0 });
+    const getReferrals = vi.fn().mockResolvedValue({ total: 7 });
+    const adminClient = {
+      referrals: {},
+      partner: { getStatus, getInfo, getReferrals },
+    } as unknown as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: 'https://reiwa.example',
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx({ from: { id: 9 } });
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+
+    const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
+    // The hub rendered — so the absences below are decisions, not a blank.
+    expect(text).toContain('ru:partner.hub.title');
+    expect(text).toContain('ru:partner.hub.stat_balance(amount=100)');
+    expect(text).not.toContain('referral.hub.stat_points');
+
+    const buttons = buttonsOf(ctx);
+    expect(buttons.some((b) => b.web_app?.url === 'https://reiwa.example/partner')).toBe(true);
+    expect(
+      buttons.some((b) => b.web_app?.url === 'https://reiwa.example/referrals/exchange'),
+    ).toBe(false);
+  });
+
+  it('treats a missing points field as nothing to say, not as a zero', async () => {
+    // An older panel sends no such key. Absent is not a number, and a hub that
+    // printed one would be inventing the customer's data.
+    const getStatus = vi.fn().mockResolvedValue({ isActive: true });
+    const getInfo = vi.fn().mockResolvedValue({ balance: 100, totalEarned: 300 });
+    const getReferrals = vi.fn().mockResolvedValue({ total: 7 });
+    const adminClient = {
+      referrals: {},
+      partner: { getStatus, getInfo, getReferrals },
+    } as unknown as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: 'https://reiwa.example',
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx({ from: { id: 9 } });
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+
+    const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
+    expect(text).toContain('ru:partner.hub.title');
+    expect(text).toContain('ru:partner.hub.stat_referred(count=7)');
+    expect(text).not.toContain('referral.hub.stat_points');
+
+    const buttons = buttonsOf(ctx);
+    expect(buttons.some((b) => b.web_app?.url === 'https://reiwa.example/partner')).toBe(true);
+    expect(
+      buttons.some((b) => b.web_app?.url === 'https://reiwa.example/referrals/exchange'),
+    ).toBe(false);
+  });
 });

@@ -56,6 +56,7 @@ import { createRezeisWebhookRouter } from "./routes/webhooks.js";
 import { createInternalMetricsRouter } from "./routes/internal-metrics.js";
 import { createClientErrorsRouter } from "./routes/client-errors.js";
 import { createAiChatRouter } from "./routes/ai-chat.js";
+import { applyUploadRelayHeaders } from "./lib/upload-relay-headers.js";
 
 export interface CreateAppDeps {
   adminClient: AdminClient | null;
@@ -381,6 +382,10 @@ export function createApp(deps: CreateAppDeps) {
       const contentType = upstream.headers.get("content-type");
       if (contentType) res.setHeader("Content-Type", contentType);
       res.setHeader("Cache-Control", "public, max-age=86400");
+      // Upstream headers are NOT blanket-copied (that would relay headers which
+      // should not cross an origin boundary); the three protective ones are set
+      // explicitly here. See `lib/upload-relay-headers.ts`.
+      applyUploadRelayHeaders(res, file);
       const buffer = Buffer.from(await upstream.arrayBuffer());
       res.end(buffer);
     } catch (err: unknown) {
@@ -407,6 +412,7 @@ export function createApp(deps: CreateAppDeps) {
       const contentType = upstream.headers.get("content-type");
       if (contentType) res.setHeader("Content-Type", contentType);
       res.setHeader("Cache-Control", "public, max-age=86400");
+      applyUploadRelayHeaders(res, file);
       const buffer = Buffer.from(await upstream.arrayBuffer());
       res.end(buffer);
     } catch (err: unknown) {
@@ -436,6 +442,12 @@ export function createApp(deps: CreateAppDeps) {
     }
     res.setHeader("Content-Type", asset.contentType);
     res.setHeader("Cache-Control", "public, max-age=86400");
+    // The single byte-serving point for BOTH branches of the cache — the
+    // fetch-from-admin branch and the serve-from-disk branch — so the mirrored
+    // copy that survives an admin outage carries the same policy as the
+    // freshly fetched one. Fixing only the fetch branch would leave the
+    // longest-lived copy of an operator SVG bare.
+    applyUploadRelayHeaders(res, file);
     res.end(asset.buffer);
   });
 

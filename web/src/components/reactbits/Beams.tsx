@@ -16,26 +16,7 @@ import { Canvas, useFrame, RootState } from '@react-three/fiber';
 import { PerspectiveCamera } from '@react-three/drei';
 import { degToRad } from 'three/src/math/MathUtils.js';
 
-import { BudgetedDpr, type FiberDpr } from './fiber-render-scale';
-
-/**
- * Delete the GPU objects hanging off a scene before the context that owns them
- * goes away. Losing the context frees the driver allocations but leaves every
- * three.js wrapper — geometry buffers, material programs — attached to the
- * renderer's internal maps.
- */
-const releaseSceneResources = (scene: THREE.Object3D): void => {
-  scene.traverse(object => {
-    const mesh = object as Partial<THREE.Mesh>;
-    mesh.geometry?.dispose();
-    const material = mesh.material;
-    if (Array.isArray(material)) {
-      for (const entry of material) entry.dispose();
-    } else {
-      material?.dispose();
-    }
-  });
-};
+import { BudgetedDpr, releaseFiberRoot, type FiberDpr } from './fiber-render-scale';
 
 type UniformValue = THREE.IUniform<unknown> | unknown;
 
@@ -265,23 +246,16 @@ const Beams: FC<BeamsProps> = ({
   const meshRef = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>>(null!);
   const rootRef = useRef<RootState | null>(null);
 
-  // React Three Fiber does release the context on unmount, but from inside a
-  // 500 ms setTimeout and without ever calling gl.dispose(). Half a second is
-  // several slides of a carousel swipe, and WebKit allows only 16 live WebGL
-  // contexts per web-content process before it starts recycling the oldest and
-  // handing out an unrecoverable SyntheticLostContext. Release it here instead,
-  // synchronously, while unmounting.
+  // Hand the context back synchronously while unmounting rather than leaving it
+  // to fiber's 500 ms setTimeout. `releaseFiberRoot` carries the WebKit ceiling
+  // that makes half a second too long, and the reason fiber's deferred call
+  // must not repeat the release afterwards — one owner, one place.
   useEffect(
     () => () => {
       const root = rootRef.current;
       rootRef.current = null;
       if (root === null) return;
-      releaseSceneResources(root.scene);
-      // dispose() detaches THREE.WebGLRenderer's own webglcontextlost /
-      // webglcontextrestored listeners, so the loss below cannot re-enter the
-      // restore path and rebuild what we are freeing.
-      root.gl.dispose();
-      root.gl.forceContextLoss();
+      releaseFiberRoot(root);
     },
     []
   );

@@ -12,6 +12,19 @@ import {
   CARD_EFFECT_NUMERIC_BOUNDS,
   clampCardEffectProps,
 } from "@/components/reactbits/card-effect-bounds";
+import {
+  CANONICAL_FIXTURE,
+  CANONICAL_FIXTURE_DIGEST,
+  CANONICAL_FIXTURE_FORM,
+  CARD_EFFECT_SURFACE,
+  canonicalise,
+  digestDriftMessage,
+  digestOf,
+  EMPTY_ARRAY_DIGEST,
+  EMPTY_INPUT_DIGEST,
+  EMPTY_OBJECT_DIGEST,
+} from "../support/panel-parity-digest.js";
+import { PANEL_CARD_EFFECTS } from "../support/panel-parity-manifest.js";
 
 /**
  * The cabinet's catalog and the panel's catalog must describe the same effects.
@@ -233,17 +246,79 @@ function readPanelCatalog(): Map<string, PanelEntry> {
   return entries;
 }
 
-// Only meaningful on a machine holding both checkouts side by side, which is
-// the working setup here. reiwa's CI clones reiwa alone, so there these cases
-// skip.
+// The sibling checkout is only there on a machine holding both trees. reiwa's
+// CI clones reiwa alone, so there it is absent — and every case below USED to
+// skip, which is a guard that guarded a laptop.
 //
-// A skipped guard guards nothing, so the skip is made as narrow as it can be:
-// it is allowed ONLY when the whole sibling repository is absent. If the repo
-// is there and the catalog is not, the file moved or was renamed, and the case
-// below turns that into a red test instead of a silent skip that would go on
-// reporting "skipped" for as long as it took anyone to notice.
+// The panel's half of this surface is therefore committed in
+// `test/support/panel-parity-manifest.ts` and pinned by
+// `CARD_EFFECT_PARITY_DIGEST` below, whose identical twin lives in
+// `rezeis-admin/test/reiwa-parity-digest.spec.ts` and is computed there from
+// the panel's LIVE catalog. The cases now run everywhere; the sibling, when
+// present, is read as well and gives the better message — it can say WHICH
+// effect differs, which a hash cannot.
 const hasSiblingRepo = existsSync(PANEL_REPO_PATH);
 const hasSibling = existsSync(PANEL_CATALOG_PATH);
+
+/**
+ * SHA-256 of the canonical form of `PANEL_CARD_EFFECTS`.
+ *
+ * WRITTEN DOWN FIRST, and identical to `CARD_EFFECT_PARITY_DIGEST` in
+ * `rezeis-admin/test/reiwa-parity-digest.spec.ts`. Changing this line is a
+ * two-repository change; the failure message says how.
+ */
+const CARD_EFFECT_PARITY_DIGEST =
+  "69ffc62564630a2eb08bc5973930057b0599d573cc1896c4f46fd603de459ba2";
+
+/** The committed panel catalog, in the shape `readPanelCatalog` returns. */
+function committedPanelCatalog(): Map<string, PanelEntry> {
+  const entries = new Map<string, PanelEntry>();
+  for (const [id, entry] of Object.entries(PANEL_CARD_EFFECTS)) {
+    entries.set(id, {
+      renderer: entry.renderer,
+      fullOutputGamut: entry.fullOutputGamut,
+      sliders: new Map(
+        Object.entries(entry.sliders).map(([prop, slider]) => [
+          prop,
+          { min: slider.min, max: slider.max, default: slider.default },
+        ]),
+      ),
+    });
+  }
+  return entries;
+}
+
+/**
+ * The panel catalog the parity cases compare against: the LIVE sibling when it
+ * is there, the committed copy otherwise.
+ *
+ * Live wins deliberately. The committed copy is the CI floor — it cannot go
+ * stale unnoticed, because moving it moves the digest — but on a machine where
+ * the real file is available, comparing against the real file is what catches
+ * the edit at the moment it is made.
+ */
+function panelCatalog(): Map<string, PanelEntry> {
+  return hasSibling ? readPanelCatalog() : committedPanelCatalog();
+}
+
+/** The canonical form of a catalog map, for hashing. */
+function canonicalCatalog(
+  entries: ReadonlyMap<string, PanelEntry>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [id, entry] of entries) {
+    const sliders: Record<string, unknown> = {};
+    for (const [prop, slider] of entry.sliders) {
+      sliders[prop] = { min: slider.min, max: slider.max, default: slider.default };
+    }
+    out[id] = {
+      renderer: entry.renderer,
+      fullOutputGamut: entry.fullOutputGamut,
+      sliders,
+    };
+  }
+  return out;
+}
 
 /**
  * The catalog is declared with `satisfies`, so each entry keeps its literal
@@ -255,29 +330,112 @@ const cabinetEntries = (): readonly (readonly [string, CardEffectEntry])[] =>
   Object.entries(CARD_EFFECT_CATALOG) as (readonly [string, CardEffectEntry])[];
 
 describe("card effect catalog parity with the rezeis-admin panel", () => {
+  it("states the card-effect digest before computing it, over something", () => {
+    // THE ANSWER, restated — so editing the constant above to silence a failure
+    // has to be done twice, in two places that read differently.
+    expect(CARD_EFFECT_PARITY_DIGEST).toBe(
+      "69ffc62564630a2eb08bc5973930057b0599d573cc1896c4f46fd603de459ba2",
+    );
+
+    // The canonicaliser itself: keys SORTED (so the two sides may write their
+    // fields in any order), array order KEPT.
+    expect(canonicalise(CANONICAL_FIXTURE)).toBe(CANONICAL_FIXTURE_FORM);
+    expect(digestOf(CANONICAL_FIXTURE)).toBe(CANONICAL_FIXTURE_DIGEST);
+
+    // NON-VACUITY. A catalog that read back empty hashes to one of these three
+    // and would agree with itself forever.
+    const form = canonicalise(PANEL_CARD_EFFECTS);
+    expect(form.length, "the canonical panel catalog came out empty").toBeGreaterThan(5000);
+    expect(form).toContain('"renderer"');
+    expect(form).toContain('"fullOutputGamut"');
+    expect(form).toContain('"sliders"');
+    expect(Object.keys(PANEL_CARD_EFFECTS).length).toBeGreaterThan(20);
+    for (const vacuous of [EMPTY_INPUT_DIGEST, EMPTY_OBJECT_DIGEST, EMPTY_ARRAY_DIGEST]) {
+      expect(
+        CARD_EFFECT_PARITY_DIGEST,
+        "the pinned digest is the digest of nothing — this guard is hashing an empty input",
+      ).not.toBe(vacuous);
+    }
+
+    // … and only then the committed content, against the answer.
+    const computed = digestOf(PANEL_CARD_EFFECTS);
+    expect(
+      computed,
+      digestDriftMessage(CARD_EFFECT_SURFACE, computed, "reiwa"),
+    ).toBe(CARD_EFFECT_PARITY_DIGEST);
+  });
+
   it("finds the panel catalog wherever the sibling checkout exists", () => {
-    // Not an assertion about parity — an assertion about this file's own reach,
-    // and the only case here that always runs. It says in the log which of the
-    // two modes the run is in, and it fails outright in the one situation a
-    // skip would be a lie: the sibling repo is present but its catalog is not
-    // where this test looks.
+    // Not an assertion about parity — an assertion about this file's own reach.
+    // It says in the log which of the two modes the run is in, and it fails
+    // outright in the one situation a skip would be a lie: the sibling repo is
+    // present but its catalog is not where this test looks.
     console.info(
       hasSibling
         ? `card-effect parity: reading the panel catalog at ${PANEL_CATALOG_PATH}`
-        : `card-effect parity: no sibling checkout at ${PANEL_REPO_PATH} — parity cases skip`,
+        : `card-effect parity: no sibling checkout at ${PANEL_REPO_PATH} — running against the committed manifest`,
     );
     expect(Object.keys(CARD_EFFECT_CATALOG).length).toBeGreaterThan(20);
 
     if (hasSiblingRepo) {
       expect(
         hasSibling,
-        `the rezeis-admin checkout is at ${PANEL_REPO_PATH} but its card effect catalog is not at ${PANEL_CATALOG_PATH} — it moved, and every parity case below is skipping instead of guarding`,
+        `the rezeis-admin checkout is at ${PANEL_REPO_PATH} but its card effect catalog is not at ${PANEL_CATALOG_PATH} — it moved, and the live comparison below is skipping`,
       ).toBe(true);
     }
   });
 
-  it.skipIf(!hasSibling)("offers exactly the same effect ids", () => {
-    const panel = [...readPanelCatalog().keys()].sort();
+  // THE LOCAL EXTRA — the only case here that skips. It names the effect that
+  // differs, which the digest cannot; the digest is the floor and runs
+  // everywhere.
+  it.skipIf(!hasSibling)("still matches the LIVE panel catalog, when the sibling is here", () => {
+    const live = readPanelCatalog();
+    expect(live.size, "the live panel catalog read back empty").toBeGreaterThan(20);
+
+    const committed = committedPanelCatalog();
+    const liveIds = [...live.keys()].sort();
+    const committedIds = [...committed.keys()].sort();
+    expect(
+      liveIds,
+      "the live panel catalog offers effects the committed manifest has never heard of, or the reverse — regenerate test/support/panel-parity-manifest.ts and update CARD_EFFECT_PARITY_DIGEST in BOTH repositories",
+    ).toEqual(committedIds);
+
+    const differences: string[] = [];
+    for (const id of liveIds) {
+      const a = live.get(id)!;
+      const b = committed.get(id)!;
+      if (a.renderer !== b.renderer) {
+        differences.push(`${id}.renderer: live=${a.renderer} manifest=${b.renderer}`);
+      }
+      if (a.fullOutputGamut !== b.fullOutputGamut) {
+        differences.push(
+          `${id}.fullOutputGamut: live=${a.fullOutputGamut} manifest=${b.fullOutputGamut}`,
+        );
+      }
+      for (const prop of new Set([...a.sliders.keys(), ...b.sliders.keys()])) {
+        const x = a.sliders.get(prop);
+        const y = b.sliders.get(prop);
+        const show = (slider: PanelSlider | undefined): string =>
+          slider === undefined
+            ? "absent"
+            : `[${slider.min}, ${slider.max}] default=${String(slider.default)}`;
+        if (show(x) !== show(y)) differences.push(`${id}.${prop}: live=${show(x)} manifest=${show(y)}`);
+      }
+    }
+    expect(
+      differences,
+      "the live panel catalog has drifted from the committed manifest — regenerate test/support/panel-parity-manifest.ts and update CARD_EFFECT_PARITY_DIGEST in BOTH repositories",
+    ).toEqual([]);
+
+    const computed = digestOf(canonicalCatalog(live));
+    expect(
+      computed,
+      digestDriftMessage(CARD_EFFECT_SURFACE, computed, "reiwa"),
+    ).toBe(CARD_EFFECT_PARITY_DIGEST);
+  });
+
+  it("offers exactly the same effect ids", () => {
+    const panel = [...panelCatalog().keys()].sort();
     const cabinet = Object.keys(CARD_EFFECT_CATALOG).sort();
 
     // Anchors both sides: without it a parse that returned nothing would
@@ -292,8 +450,8 @@ describe("card effect catalog parity with the rezeis-admin panel", () => {
     ).toEqual(cabinet);
   });
 
-  it.skipIf(!hasSibling)("agrees on the renderer each effect needs", () => {
-    const panel = readPanelCatalog();
+  it("agrees on the renderer each effect needs", () => {
+    const panel = panelCatalog();
     const shared = cabinetEntries().filter(([id]) => panel.has(id));
     expect(shared.length).toBeGreaterThan(20);
 
@@ -304,8 +462,8 @@ describe("card effect catalog parity with the rezeis-admin panel", () => {
     expect(disagreements).toEqual([]);
   });
 
-  it.skipIf(!hasSibling)("mirrors every slider range the panel declares", () => {
-    const panel = readPanelCatalog();
+  it("mirrors every slider range the panel declares", () => {
+    const panel = panelCatalog();
     const mirrored: Readonly<
       Record<string, Readonly<Record<string, readonly [number, number]>>>
     > = CARD_EFFECT_NUMERIC_BOUNDS;
@@ -351,8 +509,8 @@ describe("card effect catalog parity with the rezeis-admin panel", () => {
     ).toEqual(fromPanel);
   });
 
-  it.skipIf(!hasSibling)("clamps none of the panel's own slider defaults", () => {
-    const panel = readPanelCatalog();
+  it("clamps none of the panel's own slider defaults", () => {
+    const panel = panelCatalog();
 
     // Every default the panel ships, through the real clamp. This is the
     // widest available statement that the clamp is invisible: the cabinet's own
@@ -391,8 +549,8 @@ describe("card effect catalog parity with the rezeis-admin panel", () => {
     ).toEqual([]);
   });
 
-  it.skipIf(!hasSibling)("agrees on which effects escape their palette", () => {
-    const panel = readPanelCatalog();
+  it("agrees on which effects escape their palette", () => {
+    const panel = panelCatalog();
     const shared = cabinetEntries().filter(([id]) => panel.has(id));
     expect(shared.length).toBeGreaterThan(20);
 

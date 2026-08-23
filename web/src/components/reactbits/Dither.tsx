@@ -4,29 +4,10 @@ import { EffectComposer, wrapEffect } from '@react-three/postprocessing';
 import { Effect, type EffectComposer as EffectComposerImpl } from 'postprocessing';
 import * as THREE from 'three';
 
-import { BudgetedDpr, type FiberDpr } from './fiber-render-scale';
+import { BudgetedDpr, releaseFiberRoot, type FiberDpr } from './fiber-render-scale';
 
 /** What the Canvas asked for before the device-pixel budget. */
 const BASE_DPR: FiberDpr = 1;
-
-/**
- * Delete the GPU objects hanging off a scene before the context that owns them
- * goes away. Losing the context frees the driver allocations but leaves every
- * three.js wrapper — geometry buffers, material programs — attached to the
- * renderer's internal maps.
- */
-const releaseSceneResources = (scene: THREE.Object3D): void => {
-  scene.traverse(object => {
-    const mesh = object as Partial<THREE.Mesh>;
-    mesh.geometry?.dispose();
-    const material = mesh.material;
-    if (Array.isArray(material)) {
-      for (const entry of material) entry.dispose();
-    } else {
-      material?.dispose();
-    }
-  });
-};
 
 const waveVertexShader = `
 precision highp float;
@@ -369,12 +350,10 @@ export default function Dither({
     );
   }, []);
 
-  // React Three Fiber does release the context on unmount, but from inside a
-  // 500 ms setTimeout and without ever calling gl.dispose(). Half a second is
-  // several slides of a carousel swipe, and WebKit allows only 16 live WebGL
-  // contexts per web-content process before it starts recycling the oldest and
-  // handing out an unrecoverable SyntheticLostContext. Release it here instead,
-  // synchronously, while unmounting.
+  // Hand the context back synchronously while unmounting rather than leaving it
+  // to fiber's 500 ms setTimeout. `releaseFiberRoot` carries the WebKit ceiling
+  // that makes half a second too long, and the reason fiber's deferred call
+  // must not repeat the release afterwards — one owner, one place.
   useEffect(
     () => () => {
       const root = rootRef.current;
@@ -385,12 +364,7 @@ export default function Dither({
       // that @react-three/postprocessing never frees, so it goes first.
       composer?.dispose();
       if (root === null) return;
-      releaseSceneResources(root.scene);
-      // dispose() detaches THREE.WebGLRenderer's own webglcontextlost /
-      // webglcontextrestored listeners, so the loss below cannot re-enter the
-      // restore path and rebuild what we are freeing.
-      root.gl.dispose();
-      root.gl.forceContextLoss();
+      releaseFiberRoot(root);
     },
     []
   );

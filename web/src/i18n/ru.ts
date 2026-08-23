@@ -461,6 +461,7 @@ export const ru = {
     recentEarnings: 'Последние начисления',
     referralsList: 'Приглашённые',
     referralsEmpty: 'Пока никого не приглашено',
+    pointsHint: 'Баллы, накопленные до партнёрства. Новые не начисляются — обменяйте оставшиеся.',
   },
   partnerAds: {
     title: 'Реклама',

@@ -7,6 +7,7 @@ import { requireMode } from "../middleware/access-mode.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { applyUploadRelayHeaders } from "../lib/upload-relay-headers.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 
 const FAQ_UPLOAD_PREFIX = "/uploads/faq/";
@@ -196,7 +197,14 @@ export function createContentRouter(deps: {
       if (file.etag) res.setHeader("ETag", file.etag);
       if (file.lastModified) res.setHeader("Last-Modified", file.lastModified);
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      res.setHeader("X-Content-Type-Options", "nosniff");
+      // Same `/uploads` policy as the icons / emoji / branding relays — these
+      // bytes come out of the rezeis `/uploads/faq/` directory too. Header-only,
+      // so the 206 status, `Content-Range` and `Content-Length` set above are
+      // untouched and partial responses keep working. `Content-Disposition`
+      // cannot fire here today (`FAQ_MEDIA_FILE_NAME` admits no markup
+      // extension), and that is exactly why the policy is applied rather than
+      // reasoned about: the day that allow-list grows, this stays correct.
+      applyUploadRelayHeaders(res, fileName);
 
       file.body.on("error", (streamError: unknown) => {
         getRequestLogger(req).warn(

@@ -4,18 +4,18 @@
   "sourcePath": "rezeis-admin/web/src/components/reactbits",
   "targetRepo": "dizzzable/reiwa",
   "targetPath": "web/src/components/reactbits",
-  "sourceCommit": "47a02915f109f54f4a085792c710bd636077a789-dirty",
-  "syncedAt": "2026-08-15T17:00:04.683Z",
+  "sourceCommit": "e40a5e9e65784df0ec0dc67ee83f87dacef410db-dirty",
+  "syncedAt": "2026-08-21T21:29:29.072Z",
   "excluded": {
     "paper.tsx": "hand-written per repo in each repo's house style; see its header",
     "Aurora.tsx": "the two apps draw this effect from DIFFERENT files: the cabinet renders components/ui/aurora, eagerly, because aurora is the default card and splitting it would put a round trip in front of the commonest card in the product. Copying this file over that one would replace a deliberate eager component with a lazy one. The divergence predates this script and is named here so it is a decision rather than a gap."
   },
   "files": {
-    "Antigravity.tsx": "46ffee5da87f89004c10e7ede1f7950c0cc2596917f92a999aca707897d8f59a",
+    "Antigravity.tsx": "03869a76b6462f1a0ee064d716ec7428eede8428cb5072a4623429964b139a3b",
     "Balatro.tsx": "29ed8bea2f82f35095cceb3b33ff2c55f540dbd2f0a78e9571f82e568b6243d5",
-    "Beams.tsx": "73557d67736d2aad330cc0f89539827b9cc036771660b749fe4dda3b83d34eb8",
+    "Beams.tsx": "6e7159d6400442bdfa31485848fea6720bc9de5bdfa377fce336173e611f19c3",
     "ColorBends.tsx": "909ac45f1cfdfe4883400f434b7adb0743d7eff0759bfad7045328e83b29f7f2",
-    "Dither.tsx": "fe54b4b8ae0db2111f50a91c927bcf7a5ef2c8d2545c19968db1f449102a05fd",
+    "Dither.tsx": "37fb20460f38c9c198bfa1e05161229926dd04602ef5bc23769f6cd1a708ee81",
     "EvilEye.tsx": "50dfa0bd3a4147ac6c9ade3edd458203ddf5f3f7932100d21cb800b58d417718",
     "FaultyTerminal.tsx": "6ee9d6e6f7388429650f7d6e9410df8d93356e4ea09957bb8cf314e4f77f4c55",
     "Galaxy.tsx": "0556bae1d7cd25d8a9110231d109bf9d2e2e9e89349de7d05d728e53f61ab97b",
@@ -35,11 +35,11 @@
     "Radar.tsx": "a9c8118b2ffb0399d4326195bcef2c22bd65c2184a9c7a10d334546a5ab26cab",
     "RippleGrid.tsx": "da6fbb09264645b4c09fe99c981a0fdb250d99ab9253abf7c5499625fff222c9",
     "ShapeGrid.tsx": "582c8077a8153e619b5c11a370094bf070caea40e2da5f4f8c329d71b70b3706",
-    "Silk.tsx": "34a56b3dc7ff02aa1f4a03c4aefadbf7189da90d693be5e94b7b983135fb1915",
+    "Silk.tsx": "627b9aee35a1997ab1560323552adaa21620e861009e9f0405ee930beb464b34",
     "SoftAurora.tsx": "5b81e87a4b1722945cdd34e0a91178e3556aad3266b5fd9983e147fab766b418",
     "Threads.tsx": "d1b5134887c95918e92d3485ec132215539fb8c16ad97b04cf3cb2895d7775e0",
     "Waves.tsx": "cc63cba086efb1afdc0ee267f0cb975dfd1d73ebca9a7a40ef2525681729a87f",
-    "fiber-render-scale.tsx": "839934a9ba79cdcb1e61f9513d8871dc0defd5840266a3d0cca4be355b42f1fe",
+    "fiber-render-scale.tsx": "366a420506ae9977188b5234301d09f176e57568517ddd004f0c60c8e67533a8",
     "render-scale.ts": "d8d65144a1d39a932dd3138e8bdba01b515141900ae0c83c65dfe4d106363dc7"
   }
 }
