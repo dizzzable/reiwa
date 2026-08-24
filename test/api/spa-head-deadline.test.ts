@@ -1,10 +1,10 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
 import { REDIS_CLIENT_OPTIONS } from '../../src/lib/redis-client-options.js';
 import { SPA_HEAD_DEADLINE_MS, withHeadDeadline } from '../../src/api/spa-head-deadline.js';
+import { sourceFiles, stripComments } from '../support/source-scan.js';
 
 /**
  * WHAT THIS FILE GUARDS, AND WHY IT IS NOT THE OBVIOUS THING.
@@ -109,34 +109,7 @@ describe('the SPA document survives a head lookup that never answers', () => {
   });
 });
 
-/** Every `.ts` file under `src/`, so a new Redis client cannot hide from this. */
-function sourceFiles(dir: string, found: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) sourceFiles(full, found);
-    else if (entry.endsWith('.ts')) found.push(full);
-  }
-  return found;
-}
 
-
-/**
- * Removes comments so prose about `new Redis(...)` is not read as a call.
- *
- * Deliberately conservative: block comments go, and so do lines that are
- * ENTIRELY a line comment — but a `//` appearing mid-line is left alone. The
- * naive version cuts every line at its first `//`, which turns
- * `new Redis("redis://host", …)` into `new Redis("redis:` and makes the one
- * offender shaped most like real code invisible. A guard that misses the
- * thing it guards is worse than no guard.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*(\/\/|\*)/.test(line))
-    .join('\n');
-}
 
 describe('no Redis client can be built without a command deadline', () => {
   it('sets a finite command timeout and a keep-alive on the shared options', () => {

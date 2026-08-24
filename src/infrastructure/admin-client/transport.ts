@@ -39,6 +39,74 @@ const DEFAULT_POOL_CONNECTIONS = 50;
 const DEFAULT_HEADERS_TIMEOUT_MS = 10_000;
 const DEFAULT_BODY_TIMEOUT_MS = 30_000;
 const DEFAULT_KEEP_ALIVE_TIMEOUT_MS = 60_000;
+/**
+ * Ceiling on CONCURRENT LIVE FEEDS, not on subscribers. Every open cabinet
+ * tab holds one connection here for as long as it stays open — production
+ * has shown single streams alive for 106 minutes. Past this ceiling new
+ * feeds queue and eventually fail their headers timeout, which is a
+ * degraded live feed and NOT a degraded API. Buying that separation is the
+ * entire point of the second pool.
+ */
+const DEFAULT_STREAM_POOL_CONNECTIONS = 100;
+
+/**
+ * HTTP/2 IS DISABLED ON BOTH POOLS, DELIBERATELY AND EXPLICITLY.
+ *
+ * undici enables it by default — its own source reads
+ * `// We validate only if allowH2 is enabled or null (enabled by default)`.
+ * Nothing in this repository ever asked for it: the transport arrived with
+ * a dependency upgrade, and it quietly invalidated the reasoning the pool
+ * was built on.
+ *
+ * That reasoning is `connections: 50` — fifty INDEPENDENT connections, so a
+ * connection that goes bad costs one request. Under HTTP/2 the setting is
+ * decorative: everything multiplexes onto a single TCP connection, and the
+ * unit of contention becomes the stream. On 2026-08-24 production showed
+ * exactly what that costs:
+ *
+ *   14:49:25  requests begin failing `UND_ERR_HEADERS_TIMEOUT` after 10s
+ *   14:49:52  FOUR `/realtime/stream` feeds end in the same millisecond,
+ *             each about 106 minutes old
+ *
+ * One connection went bad and took every in-flight API call and every live
+ * feed with it. Under HTTP/1.1 that same fault costs one request.
+ *
+ * For a BFF this is not a close call. The traffic is a fan-out of short
+ * calls plus a handful of hours-long streams, over a private hop where
+ * handshake cost is irrelevant. Failure ISOLATION is worth more than
+ * multiplexing, and head-of-line blocking confined to one connection is a
+ * feature here rather than a limitation.
+ *
+ * Written out rather than left to the default so the next upgrade cannot
+ * change the transport without someone editing this line.
+ */
+export const ADMIN_POOL_OPTIONS = {
+  connections: DEFAULT_POOL_CONNECTIONS,
+  pipelining: 1,
+  keepAliveTimeout: DEFAULT_KEEP_ALIVE_TIMEOUT_MS,
+  headersTimeout: DEFAULT_HEADERS_TIMEOUT_MS,
+  bodyTimeout: DEFAULT_BODY_TIMEOUT_MS,
+  allowH2: false,
+} as const;
+
+/**
+ * The SAME upstream, on its own connections.
+ *
+ * A feed that lives 106 minutes and a call that lives 20 ms have no
+ * business sharing a connection budget: whichever pool is exhausted or
+ * broken, only its own kind of traffic suffers. `bodyTimeout: 0` is what
+ * makes a stream a stream, and it is also why these must never sit in the
+ * pool that serves ordinary calls — a shared pool would hand that
+ * unbounded body timeout to requests that need a bounded one.
+ */
+export const ADMIN_STREAM_POOL_OPTIONS = {
+  connections: DEFAULT_STREAM_POOL_CONNECTIONS,
+  pipelining: 1,
+  keepAliveTimeout: DEFAULT_KEEP_ALIVE_TIMEOUT_MS,
+  headersTimeout: DEFAULT_HEADERS_TIMEOUT_MS,
+  bodyTimeout: 0,
+  allowH2: false,
+} as const;
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -74,6 +142,8 @@ export class AdminTransport {
   private readonly apiKey: string;
   private readonly sharedSecret: string | null;
   private readonly pool: Pool;
+  /** Long-lived SSE bodies only. See `ADMIN_STREAM_POOL_OPTIONS`. */
+  private readonly streamPool: Pool;
 
   constructor(options: AdminTransportOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
@@ -83,13 +153,8 @@ export class AdminTransport {
     this.sharedSecret = options.sharedSecret ?? null;
     // `Pool` is keyed by origin (scheme + host + port). Any path component
     // on baseUrl is preserved separately and prepended on every call.
-    this.pool = new Pool(parsed.origin, {
-      connections: DEFAULT_POOL_CONNECTIONS,
-      pipelining: 1,
-      keepAliveTimeout: DEFAULT_KEEP_ALIVE_TIMEOUT_MS,
-      headersTimeout: DEFAULT_HEADERS_TIMEOUT_MS,
-      bodyTimeout: DEFAULT_BODY_TIMEOUT_MS,
-    });
+    this.pool = new Pool(parsed.origin, ADMIN_POOL_OPTIONS);
+    this.streamPool = new Pool(parsed.origin, ADMIN_STREAM_POOL_OPTIONS);
   }
 
   /**
@@ -97,7 +162,9 @@ export class AdminTransport {
    * in-flight requests finish before the process exits.
    */
   async close(): Promise<void> {
-    await this.pool.close();
+    // Both, and in parallel: a stream pool left open holds the process
+    // through SIGTERM for as long as one subscriber keeps a tab open.
+    await Promise.all([this.pool.close(), this.streamPool.close()]);
   }
 
   async request<T>(
@@ -158,7 +225,9 @@ export class AdminTransport {
     const fullPath = `${this.basePath}${path}`;
     const signingHeaders = this.buildSigningHeaders('GET', path);
     const traceHeaders = this.buildTraceHeaders();
-    const response = await this.pool.request({
+    // The stream pool, not the request pool — see the note on
+    // `ADMIN_STREAM_POOL_OPTIONS`.
+    const response = await this.streamPool.request({
       method: 'GET',
       path: fullPath,
       headers: {
