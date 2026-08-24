@@ -335,6 +335,20 @@ interface WebPushPayload {
   readonly title?: string
   readonly body?: string
   readonly url?: string
+  /**
+   * The operator brand mark, sent by the panel because THIS FILE CANNOT
+   * KNOW IT. A service worker is a static asset built long before the
+   * operator uploaded anything, so every notification carried the stock
+   * bundle icon no matter what was configured — reported from production
+   * on 2026-08-24 with a screenshot of a notification reading `Reiwa`.
+   *
+   * Absent whenever the panel has nothing the notification shade can
+   * actually decode: it filters `data:` URIs (they blow the ~4 KB push
+   * payload budget and the push is then rejected outright) and SVG (the
+   * shade takes raster only, so an SVG icon renders as nothing at all).
+   * Absent therefore means "use the bundled mark", not "the panel forgot".
+   */
+  readonly icon?: string
 }
 
 self.addEventListener('push', (event) => {
@@ -356,10 +370,19 @@ self.addEventListener('push', (event) => {
     ? data.url
     : '/dashboard'
 
+  const icon = typeof data.icon === 'string' && data.icon.length > 0
+    ? data.icon
+    : '/icons/icon-192x192.png'
+
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: '/icons/icon-192x192.png',
+      icon,
+      // The BADGE deliberately stays the bundled mark. Android draws it as
+      // a monochrome silhouette at roughly 24px: an arbitrary operator logo
+      // becomes a grey blob there, which is worse than the shape that was
+      // designed for it. The icon above is the one a subscriber actually
+      // reads as branding.
       badge: '/icons/icon-192x192.png',
       data: { url },
       // Tag so successive pushes for the same notification type

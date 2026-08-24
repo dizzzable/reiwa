@@ -23,18 +23,41 @@ export function sourceFiles(dir: string, found: string[] = []): string[] {
 /**
  * Removes comments so prose ABOUT a call is not read as the call.
  *
- * Deliberately conservative: block comments go, and so do lines that are
- * ENTIRELY a line comment — but a `//` appearing mid-line is left alone. The
- * naive version cuts every line at its first `//`, which turns
- * `new Redis("redis://host", …)` into `new Redis("redis:` and makes the one
- * offender shaped most like real code invisible. A guard that misses the thing
- * it guards is worse than no guard, and this exact false negative was found by
- * running it.
+ * ── Order matters, and getting it wrong blinds every guard built on this ────
+ *
+ * Line comments are removed FIRST. The obvious implementation strips block
+ * comments first, and on 2026-08-24 that silently ate half of `web/src/sw.ts`:
+ * the file documents its routes in a line comment reading
+ * `//   /support, /linking/*, /push/*, /realtime/*.`, and each of those globs
+ * opens a block comment as far as a regex is concerned. The file held SEVEN
+ * `/*` against ONE `*​/`, so the strip ran from the first glob to the only real
+ * terminator and took the `WebPushPayload` interface with it.
+ *
+ * What makes that worse than a wrong answer is the DIRECTION of the wrong
+ * answer: a guard that scans code it has accidentally deleted reports no
+ * offenders and passes. It was caught only because a spec asserted something
+ * had to be PRESENT — the presence check is what turned a silent blindness
+ * into a red test, which is why one is kept in each guard.
+ *
+ * ── What is still not handled ───────────────────────────────────────────────
+ *
+ * A `/*` inside a string literal on a line of real code will still hijack the
+ * block strip. Nothing in these repositories does that today, and handling it
+ * properly means tokenising rather than matching. Recorded rather than
+ * pretended away: if a guard here ever reports zero offenders in a file you
+ * know contains one, look here first.
  */
 export function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+  // ONLY `//` lines here — never ` *` continuation lines. Filtering those too
+  // removes the ` *​/` that TERMINATES every JSDoc block, which leaves each
+  // `/**` opener unpaired and sends the block strip below hunting for the next
+  // terminator anywhere in the file. That deleted whole classes out of
+  // `transport.ts` on the first attempt at this fix. Continuation lines need no
+  // special handling: they are inside a block comment, and the block strip
+  // takes them with it.
+  const withoutLineComments = source
     .split(/\r?\n/)
-    .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+    .filter((line) => !/^\s*\/\//.test(line))
     .join('\n');
+  return withoutLineComments.replace(/\/\*[\s\S]*?\*\//g, '');
 }
