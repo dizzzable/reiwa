@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { LoggerPort } from "../../application/ports/logger.port.js";
 
 import { sessionKey, TTL } from "./keys.js";
+import { REDIS_CLIENT_OPTIONS } from "../../lib/redis-client-options.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ export class WebSessionStore {
   private logger: LoggerPort | undefined;
 
   constructor(redisUrl: string, options: WebSessionStoreOptions = {}) {
-    this.redis = new Redis(redisUrl, { lazyConnect: true });
+    this.redis = new Redis(redisUrl, { ...REDIS_CLIENT_OPTIONS, lazyConnect: true });
     this.logger = options.logger;
     this.redis.on("error", (err: Error) => {
       if (this.logger) {

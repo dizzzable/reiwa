@@ -2,6 +2,7 @@ import { Redis } from "ioredis";
 import { v4 as uuidv4 } from "uuid";
 
 import type { LoggerPort } from "../application/ports/logger.port.js";
+import { REDIS_CLIENT_OPTIONS } from "./redis-client-options.js";
 
 export interface ReiwaSession {
   telegramId: string;
@@ -28,7 +29,7 @@ export class SessionStore {
   private logger: LoggerPort | undefined;
 
   constructor(redisUrl: string, options: SessionStoreOptions = {}) {
-    this.redis = new Redis(redisUrl, { lazyConnect: true });
+    this.redis = new Redis(redisUrl, { ...REDIS_CLIENT_OPTIONS, lazyConnect: true });
     this.logger = options.logger;
     this.redis.on("error", (err: Error) => {
       if (this.logger) {

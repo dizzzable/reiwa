@@ -55,6 +55,10 @@ import { createContentRouter } from "./routes/content.js";
 import { createRezeisWebhookRouter } from "./routes/webhooks.js";
 import { createInternalMetricsRouter } from "./routes/internal-metrics.js";
 import { createClientErrorsRouter } from "./routes/client-errors.js";
+import {
+  SPA_HEAD_DEADLINE_MS,
+  withHeadDeadline,
+} from "./spa-head-deadline.js";
 import { createAiChatRouter } from "./routes/ai-chat.js";
 import { applyUploadRelayHeaders } from "./lib/upload-relay-headers.js";
 
@@ -558,6 +562,24 @@ export function createApp(deps: CreateAppDeps) {
         return { ok: false, error };
       }
     };
+
+    // The document may WAIT for the operator head; it may not HANG for it.
+    // The full account of why — and why 1500 ms serves both a same-host and a
+    // split-VPS deployment — lives in `spa-head-deadline.ts`.
+    const DEADLINE_MISSED: SettledPublicConfig = {
+      ok: false,
+      error: new Error(`spa head lookup exceeded ${SPA_HEAD_DEADLINE_MS}ms`),
+    };
+    const onHeadDeadline = (what: string) => (): void => {
+      // WARN, not silence. The 2026-08-24 outage stayed invisible for two
+      // days precisely because a hang produces no error to report: the
+      // request simply never finished. A document served without the
+      // operator head is a working cabinet AND a signal.
+      logger?.warn?.(
+        { what, deadlineMs: SPA_HEAD_DEADLINE_MS },
+        "spa head lookup missed its deadline; serving the unbranded shell",
+      );
+    };
     const renderSpaDocument = async (
       extraHead: string | null,
       publicConfig: Promise<SettledPublicConfig>,
@@ -583,7 +605,11 @@ export function createApp(deps: CreateAppDeps) {
       extraHead: string | null,
       // Defaulted so the plain SPA-fallback route below starts its own lookup
       // at exactly the moment it always did.
-      publicConfig: Promise<SettledPublicConfig> = beginPublicConfig(),
+      publicConfig: Promise<SettledPublicConfig> = withHeadDeadline(
+        beginPublicConfig(),
+        DEADLINE_MISSED,
+        onHeadDeadline("public-config"),
+      ),
     ): void => {
       void (async () => {
         // Set before any send: `res.sendFile` only supplies its own
@@ -604,15 +630,31 @@ export function createApp(deps: CreateAppDeps) {
     };
     app.get(["/", "/welcome"], (_req: Request, res: Response, next: NextFunction) => {
       void (async () => {
-        // Started first, awaited last: the landing lookup below now runs
+        // Started first, awaited last: the landing lookup below runs
         // alongside the public-config lookup instead of in front of it.
-        const publicConfig = beginPublicConfig();
-        let head: string | null = null;
-        try {
-          head = buildLandingMetaHead(await getEffectiveLandingCached(deps.adminClient));
-        } catch {
-          // Landing lookup failed — the shell (still branded) is the fallback.
-        }
+        // BOTH deadline clocks therefore start on the same tick, so the
+        // document's worst case is one deadline, not two in series.
+        const publicConfig = withHeadDeadline(
+          beginPublicConfig(),
+          DEADLINE_MISSED,
+          onHeadDeadline("public-config"),
+        );
+        const head = await withHeadDeadline(
+          (async (): Promise<string | null> => {
+            try {
+              return buildLandingMetaHead(
+                await getEffectiveLandingCached(deps.adminClient),
+              );
+            } catch {
+              // Landing lookup FAILED — the shell (still branded) is the
+              // fallback. A landing lookup that never answers is the case
+              // this catch could not see; the deadline around it can.
+              return null;
+            }
+          })(),
+          null,
+          onHeadDeadline("landing-meta"),
+        );
         sendSpaDocument(res, next, head, publicConfig);
       })();
     });

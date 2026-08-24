@@ -20,6 +20,7 @@ import type { ConfigPersistencePort } from '../../application/ports/config-persi
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 
 import type { BotConfig } from './types.js';
+import { REDIS_CLIENT_OPTIONS } from "../../lib/redis-client-options.js";
 
 const KEY = 'reiwa:botconfig:last-known-good';
 const TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
@@ -52,7 +53,7 @@ export class RedisConfigPersistence implements ConfigPersistencePort {
   private readonly logger: LoggerPort | undefined;
 
   constructor(redisUrl: string, options: RedisConfigPersistenceOptions = {}) {
-    this.redis = new Redis(redisUrl, { lazyConnect: true });
+    this.redis = new Redis(redisUrl, { ...REDIS_CLIENT_OPTIONS, lazyConnect: true });
     this.key = options.key ?? KEY;
     this.ttlSeconds = options.ttlSeconds ?? TTL_SECONDS;
     this.logger = options.logger;
