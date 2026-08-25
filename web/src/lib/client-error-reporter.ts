@@ -24,7 +24,7 @@ const MAX_PER_MIN = 10;
  * `sw.js` hash changes) or on flaky mobile networks, and `ResizeObserver loop`
  * is a harmless layout warning. Mirrors the rezeis admin client-logger filter.
  */
-const NON_REPORTABLE_PATTERNS: readonly RegExp[] = [
+export const NON_REPORTABLE_PATTERNS: readonly RegExp[] = [
   /failed to (update|register|unregister) a serviceworker/i,
   /an unknown error occurred when fetching the script/i,
   /the script resource is behind a redirect/i,
@@ -35,6 +35,15 @@ const NON_REPORTABLE_PATTERNS: readonly RegExp[] = [
   /script .*\bload failed/i,
   /sw\.js.*\bload failed/i,
   /resizeobserver loop/i,
+  // A WebGL effect losing a race to bind its own internal noise texture,
+  // reported from iOS 18.7 on 2026-08-24 as an unhandled rejection on every
+  // page view. The texture belongs to `@paper-design/shaders` and is loaded
+  // inside it — nothing here passes an image — so there is no version of
+  // this the operator can act on, and the cost when it happens is one card
+  // effect not painting on that device. Filtered rather than fixed, and
+  // said plainly: the effect really is missing for that subscriber, this
+  // only stops it from arriving as an operator ERROR once per view.
+  /paper shaders: image for uniform .* must be fully loaded/i,
   // React vs. 3rd-party/extension DOM reconciliation races (most often a
   // browser translation extension mutating React's tree) — not an app bug.
   /failed to execute '(removechild|insertbefore)' on 'node'/i,

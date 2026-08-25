@@ -56,6 +56,10 @@ import { createRezeisWebhookRouter } from "./routes/webhooks.js";
 import { createInternalMetricsRouter } from "./routes/internal-metrics.js";
 import { createClientErrorsRouter } from "./routes/client-errors.js";
 import {
+  TransientReportThrottle,
+  transientUpstreamCode,
+} from "./transient-upstream.js";
+import {
   SPA_HEAD_DEADLINE_MS,
   withHeadDeadline,
 } from "./spa-head-deadline.js";
@@ -680,6 +684,9 @@ export function createApp(deps: CreateAppDeps) {
   }
 
   // ── Global error handler ──────────────────────────────────────────────────
+  // One throttle per app instance, not per module: a test that builds two
+  // apps must not inherit the first one's quiet window.
+  const transientReportThrottle = new TransientReportThrottle();
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
     // Prefer the per-request child logger attached by `pino-http`; it
     // already carries the request-id binding so the error line is
@@ -704,6 +711,38 @@ export function createApp(deps: CreateAppDeps) {
       }
       if (!res.headersSent) {
         res.status(499).end();
+      }
+      return;
+    }
+
+    // An upstream that was briefly unreachable is not a bug in this
+    // cabinet, and saying `500` claims it is. See `transient-upstream.ts`
+    // for the whole argument; the short version is that `EAI_AGAIN` means
+    // "ask again", the subscriber deserves a retryable answer, and the
+    // operator deserves one line per outage rather than one per request.
+    const transient = transientUpstreamCode(err);
+    if (transient !== null) {
+      if (reqLogger) {
+        reqLogger.warn({ err, code: transient }, "Upstream temporarily unreachable");
+      } else if (logger) {
+        logger.warn({ err, code: transient }, "Upstream temporarily unreachable");
+      }
+      // Throttled, never suppressed: the first sighting always reports, so
+      // a real outage is loud at its start and merely periodic after that.
+      if (transientReportThrottle.shouldReport(transient)) {
+        errorReporter.report({
+          message: err.message,
+          stack: err.stack,
+          context: {
+            scope: 'api.upstream-unreachable',
+            path: (req.path ?? '').split('?')[0],
+            code: transient,
+          },
+        });
+      }
+      if (!res.headersSent) {
+        res.setHeader("Retry-After", "5");
+        res.status(503).json({ message: "Upstream temporarily unavailable" });
       }
       return;
     }
