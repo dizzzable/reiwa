@@ -6,6 +6,7 @@ import type { SessionStore } from "../../lib/session-store.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
 import { diagnoseTelegramInitData, parseUnverifiedTelegramInitData, validateTelegramInitData, validateTelegramWidget } from "../../lib/telegram-auth.js";
+import { LEGAL_DOCUMENT_KEYS } from "../../infrastructure/admin-client/namespaces/legal-documents.js";
 import { requireMode } from "../middleware/access-mode.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
@@ -117,8 +118,12 @@ const registerSchema = z.object({
    * can be bypassed by posting here directly.
    */
   acceptedLegalDocuments: z
-    .array(z.enum(["USER_AGREEMENT", "OFFER"]))
-    .max(2)
+    // Derived from the shared list rather than restated. Both the members
+    // AND the cap used to be literals here, so adding a document to the
+    // panel would have refused every registration that ticked it — the
+    // enum on the value and the `.max()` on the length, twice over.
+    .array(z.enum(LEGAL_DOCUMENT_KEYS))
+    .max(LEGAL_DOCUMENT_KEYS.length)
     .optional(),
 });
 

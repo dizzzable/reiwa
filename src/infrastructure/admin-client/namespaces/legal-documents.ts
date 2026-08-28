@@ -12,7 +12,20 @@
  */
 import type { AdminTransport } from '../transport.js';
 
-export type LegalDocumentKey = 'USER_AGREEMENT' | 'OFFER';
+/**
+ * The documents an operator can switch on, in the order every surface
+ * renders them: what the service is, what it does with your data, what you
+ * are paying for.
+ *
+ * A CONSTANT and not a bare union, because the registration route validates
+ * the accepted list against it. When the panel gained a third document and
+ * this had only two, the validator would refuse every registration that
+ * ticked the new one — a total sign-up outage caused by an operator
+ * publishing a privacy policy.
+ */
+export const LEGAL_DOCUMENT_KEYS = ['USER_AGREEMENT', 'PRIVACY_POLICY', 'OFFER'] as const;
+
+export type LegalDocumentKey = (typeof LEGAL_DOCUMENT_KEYS)[number];
 
 export interface LegalDocument {
   readonly key: LegalDocumentKey;

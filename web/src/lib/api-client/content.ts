@@ -28,8 +28,22 @@ export const getFaq = (locale?: string) =>
  * else: this type is reachable from the pre-login registration bundle, which
  * deliberately ships without a sanitizer.
  */
+/**
+ * Mirrors `LEGAL_DOCUMENT_KEYS` in
+ * `src/infrastructure/admin-client/namespaces/legal-documents.ts`, which the
+ * edge validates the registration payload against.
+ *
+ * Restated rather than imported: this module is in the browser bundle and
+ * that one is server code. `legal-document-keys-parity.test.ts` compares the
+ * two files so the copy cannot drift silently — a cabinet that omits a key
+ * the panel serves ticks a box the edge then rejects.
+ */
+export const LEGAL_DOCUMENT_KEYS = ["USER_AGREEMENT", "PRIVACY_POLICY", "OFFER"] as const;
+
+export type LegalDocumentKey = (typeof LEGAL_DOCUMENT_KEYS)[number];
+
 export interface LegalDocument {
-  key: "USER_AGREEMENT" | "OFFER";
+  key: LegalDocumentKey;
   title: string;
   body: string;
 }
