@@ -47,7 +47,7 @@ import {
   notifyOperatorBotStopped,
 } from './lib/startup-notice.js';
 import { installBotShutdownHandlers } from './lib/shutdown.js';
-import { applyBotProfile } from './lib/apply-bot-profile.js';
+import { applyBotSettings } from './lib/apply-bot-settings.js';
 import { runQuestChannelRecheck } from './lib/quest-channel-recheck.js';
 import { printReiwaBanner } from '../core/banner.js';
 import { createErrorReporter } from '../infrastructure/error-reporter/index.js';
@@ -337,9 +337,17 @@ async function startBot(): Promise<void> {
   // description). Fire-and-forget like the startup notices: it is up to six
   // Bot API round trips and none of them may hold up polling.
   void getBotConfig(adminClient)
-    .then((cfg) => applyBotProfile({ bot, config: cfg, logger }))
+    .then((cfg) =>
+      applyBotSettings({
+        bot,
+        config: cfg,
+        logger,
+        translator,
+        miniAppUrl: reiwaWebAppUrl,
+      }),
+    )
     .catch((err: unknown) => {
-      logger.warn({ err }, 'bot/profile: startup apply failed');
+      logger.warn({ err }, 'bot/settings: startup apply failed');
     });
 
   // Operator startup notice (snoups-style): ping BOT_DEV_ID with the current
@@ -405,7 +413,13 @@ async function startBot(): Promise<void> {
     // Both are no-ops when nothing they care about changed.
     onConfigApplied: async (fresh) => {
       commandSignature = await registerSlashCommands(bot, logger, commandSignature);
-      await applyBotProfile({ bot, config: fresh, logger });
+      await applyBotSettings({
+        bot,
+        config: fresh,
+        logger,
+        translator,
+        miniAppUrl: reiwaWebAppUrl,
+      });
     },
     onUserBlocked: async (telegramId: string) => {
       if (adminClient === null) return;

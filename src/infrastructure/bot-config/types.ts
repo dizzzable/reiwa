@@ -88,6 +88,27 @@ export interface BotProfileConfig {
   name?: string
   description?: string
   shortDescription?: string
+  /**
+   * English variants, applied with `language_code: "en"`. Absent or empty
+   * means "no dedicated English version" — which is what Telegram does when
+   * the parameter is omitted, so the default covers English too.
+   */
+  nameEn?: string
+  descriptionEn?: string
+  shortDescriptionEn?: string
+}
+
+/**
+ * The button beside the message input (`setChatMenuButton`).
+ *
+ * OPTIONAL as a whole: a panel older than this field sends nothing, and
+ * "nothing" must leave the button exactly as Telegram has it rather than
+ * resetting it to the default — the operator may have set it by hand.
+ */
+export interface BotMenuButtonConfig {
+  kind?: 'commands' | 'web_app'
+  /** Label for the `web_app` kind. Empty → the bot uses its own localised one. */
+  text?: string
 }
 
 export interface BotMenuButton {
@@ -128,6 +149,8 @@ export interface BotConfig {
   features: BotFeatures
   /** Additive: absent on a panel older than the bot-profile field. */
   profile?: BotProfileConfig
+  /** Additive: absent on a panel older than the menu-button field. */
+  menuButton?: BotMenuButtonConfig
   botEmojis: BotEmojiMap
   menuTextCustomEmojiIds: MenuTextEmojiIds
   /**
