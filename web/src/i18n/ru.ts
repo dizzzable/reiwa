@@ -440,6 +440,18 @@ export const ru = {
     inviteSlots: 'Слоты приглашений',
     inviteSlotsRemaining: 'Доступно ещё: {{count}}',
     inviteSlotsFull: 'Все слоты использованы',
+    // Карточка в боковой панели на десктопе. Единицу награды выбирает
+    // оператор, поэтому вариантов два, и ни один не подставляется по
+    // умолчанию — панель присылает тип.
+    cardTitle: 'Пригласите друга',
+    cardRewardPoints_one: '+{{count}} балл за друга',
+    cardRewardPoints_few: '+{{count}} балла за друга',
+    cardRewardPoints_many: '+{{count}} баллов за друга',
+    cardRewardPoints_other: '+{{count}} баллов за друга',
+    cardRewardDays_one: '+{{count}} день подписки за друга',
+    cardRewardDays_few: '+{{count}} дня подписки за друга',
+    cardRewardDays_many: '+{{count}} дней подписки за друга',
+    cardRewardDays_other: '+{{count}} дней подписки за друга',
   },
   partner: {
     title: 'Партнёрка',

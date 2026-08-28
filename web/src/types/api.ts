@@ -295,9 +295,50 @@ export interface PresentedNotification {
 }
 
 // ─── Referrals ───────────────────────────────────────────────────────────────
+/**
+ * Terms of the referral program itself, as the panel reports them.
+ *
+ * Distinct from `programAvailable` on the summary, which answers a different
+ * question: whether THIS user may take part (the invited-only gate). A client
+ * needs both — the first decides whether to advertise the program at all, the
+ * second whether this person can act on it.
+ */
+export interface ReferralProgram {
+  /**
+   * Operator kill-switch, mirroring the payout engine: only an explicit
+   * `false` in `referralSettings` disables accrual, an absent flag leaves it
+   * on. The panel resolves that, so this is already the engine’s answer.
+   */
+  enabled: boolean;
+  /**
+   * Level-1 reward, or `null` when the engine would create nothing for a
+   * qualifying referral — which is what a zero amount means to
+   * `createConfiguredRewards`, not “0 points”.
+   *
+   * The UNIT is the operator’s choice. Rendering “days” for `POINTS` (or the
+   * reverse) is not a cosmetic slip — it promises a different thing than the
+   * one that gets granted.
+   */
+  reward: { type: 'POINTS' | 'EXTRA_DAYS'; amount: number } | null;
+}
+
 export interface ReferralSummary {
   totalReferrals: number;
   qualifiedReferrals: number;
+  pointsBalance: number;
+  /** Whether the invited-only gate lets THIS user take part. */
+  programAvailable: boolean;
+  /** Permanent, reusable share code (the reiwa_id) — not an invite token. */
+  referralCode: string | null;
+  /** Under INVITED access a minted token is required to admit a sign-up. */
+  admissionRequiresInvite?: boolean;
+  /**
+   * OPTIONAL because a panel older than this field omits it entirely, and a
+   * missing key must stay distinguishable from `{ enabled: false }`: one means
+   * “the operator turned it off”, the other “this panel cannot say”. Treating
+   * them alike is how a working program would silently stop being advertised.
+   */
+  program?: ReferralProgram;
 }
 
 export interface ReferralInvite {

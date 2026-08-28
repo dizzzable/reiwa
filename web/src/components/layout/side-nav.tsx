@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { resolveActiveTabTo, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
+import { ReferralInviteCard } from "@/components/layout/referral-invite-card";
 import { SignOutConfirmDialog } from "@/components/layout/sign-out-confirm-dialog";
 import { useSignOut } from "@/features/auth/use-sign-out";
 
@@ -54,6 +55,11 @@ export function SideNav() {
           : [tab],
       );
 
+  // Present only when the operator surfaced the referral destination AND the
+  // user is not an active partner — `useNavTabs` swaps this slot for
+  // `/partner` in that case, so one lookup answers both questions.
+  const referralsInNav = tabs.some((tab) => tab.to === "/referrals");
+
   return (
     <LazyMotion features={domMax} strict>
     <nav
@@ -75,7 +81,7 @@ export function SideNav() {
       </div>
 
       {/* Primary destinations */}
-      <ul className="flex flex-col gap-1">
+      <ul className="flex min-h-0 flex-col gap-1 overflow-y-auto">
         {(() => {
           const activeTo = resolveActiveTabTo(tabs, location.pathname);
           return tabs.map((tab) => {
@@ -117,26 +123,39 @@ export function SideNav() {
       </ul>
 
       {/*
-        Sign out, pinned to the bottom.
-        ───────────────────────────────
+        Footer: the referral promo, then sign out.
+        ───────────────────────────────────────────
         `mt-auto` rather than a spacer: the nav is already `h-full flex-col`,
         so the footer claims the leftover height and stays put whether the
         operator surfaced three destinations or eight.
 
-        DESKTOP ONLY, and MOVED rather than duplicated — the Settings screen
-        hides its own copy at this breakpoint. Two live sign-out controls on
-        one screen is not redundancy, it is two things to keep in step: the
-        moment one grows a confirmation the other lacks, the same action means
-        two different things depending on which door was used.
+        SIGN OUT is DESKTOP ONLY, and MOVED rather than duplicated — the
+        Settings screen hides its own copy at this breakpoint. Two live
+        sign-out controls on one screen is not redundancy, it is two things to
+        keep in step: the moment one grows a confirmation the other lacks, the
+        same action means two different things depending on which door was
+        used. Its colour is `--color-destructive`, not a Tailwind red scale —
+        one fixed value in both themes, which is right for an irreversible
+        action, but a NAMED one, so a palette that ever needs its own red has
+        somewhere to say so. The control this replaced used `red-500/5` +
+        `text-red-400`, which reads as an accident on a light ground and
+        cannot be overridden at all.
 
-        The destructive colour is `--color-destructive`, not a Tailwind red
-        scale. It resolves to one fixed value in both themes, which is the
-        right call for an irreversible action — but it is a NAMED one, so a
-        palette that ever needs its own red has somewhere to say so. The
-        control this replaces used `red-500/5` + `text-red-400`, which reads
-        as an accident on a light ground and cannot be overridden at all.
+        THE REFERRAL CARD is gated on `referralsInNav`, read off the SAME tab
+        list this sidebar renders rather than re-derived from
+        `branding.navItems`, and that one lookup settles two questions. The
+        operator can hide the referral destination, and advertising it here
+        would contradict that. And an active PARTNER gets `/partner` in that
+        slot instead — for them the card would be an outright lie, because
+        `createConfiguredRewards` creates nothing when the referrer is an
+        active partner: the two programs deliberately never pay twice.
+        Re-deriving either rule from a second source is how the sidebar would
+        start disagreeing with its own navigation. Whether the program is
+        switched on at all, and what it pays, is the card’s own business —
+        those answers exist only upstream.
       */}
-      <div className="mt-auto pt-3">
+      <div className="mt-auto flex shrink-0 flex-col gap-3 pt-3">
+        {referralsInNav && <ReferralInviteCard />}
         <button
           type="button"
           onClick={() => setShowSignOut(true)}

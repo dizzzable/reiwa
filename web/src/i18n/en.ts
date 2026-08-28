@@ -443,6 +443,19 @@ export const en: RuDict = {
     inviteSlots: 'Invite slots',
     inviteSlotsRemaining: '{{count}} remaining',
     inviteSlotsFull: 'All slots used',
+    // Desktop sidebar card. The reward unit is the operator’s choice, so
+    // both forms exist and neither is a default.
+    cardTitle: 'Invite a friend',
+    cardRewardPoints_one: '+{{count}} point per friend',
+    // `_few` / `_many` exist here only because `RuDict` is the contract and
+    // Russian needs them; English resolves `_other` for both.
+    cardRewardPoints_few: '+{{count}} points per friend',
+    cardRewardPoints_many: '+{{count}} points per friend',
+    cardRewardPoints_other: '+{{count}} points per friend',
+    cardRewardDays_one: '+{{count}} subscription day per friend',
+    cardRewardDays_few: '+{{count}} subscription days per friend',
+    cardRewardDays_many: '+{{count}} subscription days per friend',
+    cardRewardDays_other: '+{{count}} subscription days per friend',
   },
   partner: {
     title: 'Partner',
