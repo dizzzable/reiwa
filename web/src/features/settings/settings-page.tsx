@@ -18,7 +18,7 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import {
@@ -43,19 +43,20 @@ import {
 
 import { useSession } from "@/hooks/use-session";
 import { useInstallPrompt } from "@/hooks/use-install-prompt";
-import { signOut, updateLanguage, getNotifications } from "@/lib/api-client";
+import { updateLanguage, getNotifications } from "@/lib/api-client";
 import { setLocale } from "@/i18n/i18n";
 import { useBranding } from "@/lib/branding-provider";
 import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
+import { useSignOut } from "@/features/auth/use-sign-out";
+import { SignOutConfirmDialog } from "@/components/layout/sign-out-confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { StadiumButton } from "@/components/ui/stadium-button";
 import { FlagIcon } from "@/components/ui/flag-icon";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { session } = useSession();
   const { branding, themeMode, canChooseThemeMode, setThemeMode } = useBranding();
   const { replayTour } = useOnboardingContext();
@@ -81,17 +82,15 @@ export default function SettingsPage() {
     (n) => n.type === "support_reply" && !n.readAt,
   ).length;
 
-  const signOutMutation = useMutation({
-    mutationFn: signOut,
-    onSuccess: () => {
-      queryClient.clear();
-      navigate("/bootstrap", { replace: true });
-    },
-    onError: () => {
-      queryClient.clear();
-      navigate("/bootstrap", { replace: true });
-    },
-  });
+  // Signing out lives in `useSignOut` because the sidebar offers it too on
+  // desktop, and the two must mean exactly the same thing — including on the
+  // error branch, where the cache still has to be cleared for somebody who
+  // asked to leave.
+  const signOutMutation = useSignOut();
+  // Desktop moves this control into the sidebar. Hidden here rather than
+  // removed, because mobile and the Telegram Mini App have no sidebar at all
+  // — `useIsDesktop` returns false inside a Mini App by design.
+  const isDesktop = useIsDesktop();
 
   function changeLang(lang: "en" | "ru") {
     setLocale(lang);
@@ -305,7 +304,8 @@ export default function SettingsPage() {
         />
       </motion.div>
 
-      {/* ── Logout ── */}
+      {/* ── Logout (mobile / Mini App only — desktop has it in the sidebar) ── */}
+      {!isDesktop && (
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -320,6 +320,7 @@ export default function SettingsPage() {
           <span className="text-sm font-medium">{t("settings.signOut")}</span>
         </button>
       </motion.div>
+      )}
 
       {/* ── Language Dialog (centered) ── */}
       <Dialog open={showLangDialog} onOpenChange={setShowLangDialog}>
@@ -436,35 +437,13 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Logout Dialog ── */}
-      <Dialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
-        <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle>{t("settings.signOut")}</DialogTitle>
-            <DialogDescription>{t("settings.signOutConfirm")}</DialogDescription>
-          </DialogHeader>
-          <div className="mt-2 flex flex-col gap-2">
-            <StadiumButton
-              variant="danger"
-              size="lg"
-              fullWidth
-              loading={signOutMutation.isPending}
-              icon={<LogOut className="h-5 w-5" />}
-              onClick={() => signOutMutation.mutate()}
-            >
-              {t("settings.signOut")}
-            </StadiumButton>
-            <StadiumButton
-              variant="ghost"
-              size="md"
-              fullWidth
-              onClick={() => setShowLogoutDialog(false)}
-            >
-              {t("common.cancel")}
-            </StadiumButton>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* ── Logout Dialog (shared with the desktop sidebar) ── */}
+      <SignOutConfirmDialog
+        open={showLogoutDialog}
+        onOpenChange={setShowLogoutDialog}
+        onConfirm={signOutMutation.signOut}
+        isPending={signOutMutation.isPending}
+      />
     </div>
   );
 }

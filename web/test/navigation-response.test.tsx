@@ -34,6 +34,15 @@ vi.mock("motion/react", () => ({
   },
 }));
 
+// `SideNav` gained a sign-out control, and with it a `useMutation` —
+// rendering it now needs a QueryClient. This file is about which route a tab
+// commits, so the mutation is stubbed rather than a provider added: a real
+// one would let a stray render fire an actual sign-out request, and the
+// placement of the control is covered by `sign-out-placement.test.tsx`.
+vi.mock("@/features/auth/use-sign-out", () => ({
+  useSignOut: () => ({ signOut: () => undefined, isPending: false }),
+}));
+
 import { BottomNav } from "../src/components/layout/bottom-nav";
 import { SideNav } from "../src/components/layout/side-nav";
 

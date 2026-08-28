@@ -14,17 +14,22 @@
 import { domMax, LazyMotion, m } from "motion/react";
 import { NavLink, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
-import { MessageSquare } from "lucide-react";
+import { LogOut, MessageSquare } from "lucide-react";
+import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-provider";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { resolveActiveTabTo, useNavTabs, type NavTab } from "@/components/layout/use-nav-tabs";
+import { SignOutConfirmDialog } from "@/components/layout/sign-out-confirm-dialog";
+import { useSignOut } from "@/features/auth/use-sign-out";
 
 export function SideNav() {
   const location = useLocation();
   const { t } = useTranslation();
   const { branding } = useBranding();
+  const [showSignOut, setShowSignOut] = useState(false);
+  const signOut = useSignOut();
   const baseTabs = useNavTabs();
 
   const supportTab: NavTab = {
@@ -110,6 +115,45 @@ export function SideNav() {
           });
         })()}
       </ul>
+
+      {/*
+        Sign out, pinned to the bottom.
+        ───────────────────────────────
+        `mt-auto` rather than a spacer: the nav is already `h-full flex-col`,
+        so the footer claims the leftover height and stays put whether the
+        operator surfaced three destinations or eight.
+
+        DESKTOP ONLY, and MOVED rather than duplicated — the Settings screen
+        hides its own copy at this breakpoint. Two live sign-out controls on
+        one screen is not redundancy, it is two things to keep in step: the
+        moment one grows a confirmation the other lacks, the same action means
+        two different things depending on which door was used.
+
+        The destructive colour is `--color-destructive`, not a Tailwind red
+        scale. It resolves to one fixed value in both themes, which is the
+        right call for an irreversible action — but it is a NAMED one, so a
+        palette that ever needs its own red has somewhere to say so. The
+        control this replaces used `red-500/5` + `text-red-400`, which reads
+        as an accident on a light ground and cannot be overridden at all.
+      */}
+      <div className="mt-auto pt-3">
+        <button
+          type="button"
+          onClick={() => setShowSignOut(true)}
+          data-testid="side-sign-out"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[var(--color-destructive)] transition-colors duration-200 select-none hover:bg-[color-mix(in_oklab,var(--color-destructive)_12%,transparent)]"
+        >
+          <LogOut className="size-5 shrink-0" strokeWidth={1.75} />
+          <span className="truncate">{t("settings.signOut")}</span>
+        </button>
+      </div>
+
+      <SignOutConfirmDialog
+        open={showSignOut}
+        onOpenChange={setShowSignOut}
+        onConfirm={signOut.signOut}
+        isPending={signOut.isPending}
+      />
     </nav>
     </LazyMotion>
   );
