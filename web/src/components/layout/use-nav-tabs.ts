@@ -71,6 +71,24 @@ export function useNavTabs(): readonly NavTab[] {
     if (!visible.has("activity")) settingsPrefix.push("/activity");
     if (!visible.has("promo")) settingsPrefix.push("/promo");
     if (!visible.has("support")) settingsPrefix.push("/support");
+    // Referrals is the one POLYMORPHIC destination: the same slot resolves to
+    // `/partner` for an active partner and `/referrals` for everyone else. So
+    // it owns one of the two routes at a time and the other is always
+    // orphaned — hidden or not.
+    //
+    // Hidden: neither route has an owner, which is the case this was missing
+    // entirely. Visible: the variant the user is NOT on still has none, and a
+    // partner reaches `/referrals` by direct link often enough to matter —
+    // the points exchange lives there and the partner hub does not link to it.
+    //
+    // Both fold into Settings, which is where every non-purchase destination
+    // folds. Note what folding does and does not claim: it decides which tab
+    // lights up on a route, not that the route is reachable from that tab.
+    if (!visible.has("referrals")) {
+      settingsPrefix.push("/referrals", "/partner");
+    } else {
+      settingsPrefix.push(partner.isActive ? "/referrals" : "/partner");
+    }
 
     const registry: Record<NavDestinationId, NavTab> = {
       subscriptions: {
