@@ -105,6 +105,31 @@ export const registerPaymentsPage: PageRegistrar = (bot, deps) => {
     }
   });
 
+  /**
+   * A refund, arriving the same way the payment did.
+   *
+   * Telegram sends `refunded_payment` as a service message when support
+   * reverses a Stars purchase. Nothing listened for it, so the update was
+   * dropped — while the panel had the whole reversal path built and working: it
+   * maps the event to CANCELED and unwinds partner accruals, referral rewards,
+   * tax income and ad conversions. All of it was unreachable for want of these
+   * few lines.
+   *
+   * The consequence was not cosmetic. A refunded customer kept their
+   * subscription, and every payout booked on money that had gone back stayed
+   * booked.
+   *
+   * No reply is sent: the refund is Telegram's own conversation with the buyer,
+   * and a second message from us would only muddle it.
+   */
+  bot.on('message:refunded_payment', async (ctx) => {
+    const refund = ctx.message.refunded_payment;
+    await forwardWithRetries(deps, ctx.update, {
+      paymentId: refund.invoice_payload,
+      chargeId: refund.telegram_payment_charge_id,
+    });
+  });
+
   bot.on('message:successful_payment', async (ctx) => {
     const lang = localeOf(ctx.from?.id);
     const payment = ctx.message.successful_payment;

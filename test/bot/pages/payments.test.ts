@@ -66,7 +66,22 @@ function successCtx(over: { payload?: string; chargeId?: string } = {}) {
   };
 }
 
-function run(deps: PageDeps, filter: 'pre_checkout_query' | 'message:successful_payment') {
+function refundCtx(over: { payload?: string; chargeId?: string } = {}) {
+  const message = {
+    refunded_payment: {
+      invoice_payload: over.payload ?? 'pay_123',
+      telegram_payment_charge_id: over.chargeId ?? 'charge_abc',
+      total_amount: 150,
+      currency: 'XTR',
+    },
+  };
+  return { from: { id: 42 }, message, update: { update_id: 8, message } };
+}
+
+function run(
+  deps: PageDeps,
+  filter: 'pre_checkout_query' | 'message:successful_payment' | 'message:refunded_payment',
+) {
   const bot = buildFakeBot();
   registerPaymentsPage(bot as unknown as Parameters<typeof registerPaymentsPage>[0], deps);
   const handler = bot.updateHandlers.get(filter);
@@ -261,5 +276,42 @@ describe('successful payment', () => {
       expect.stringContaining('NOT recorded'),
     );
     expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received_delayed');
+  });
+});
+
+describe('a refunded Stars payment reaches the panel', () => {
+  it('forwards the raw refund update', async () => {
+    // Nothing listened for `refunded_payment`, so the update was dropped —
+    // while the panel had the whole reversal path built and working. The
+    // customer kept their subscription and every payout booked on money that
+    // had gone back stayed booked.
+    const forwardWebhook = vi.fn(async () => undefined);
+    const { deps } = depsWith({ forwardWebhook });
+    const ctx = refundCtx();
+
+    await run(deps, 'message:refunded_payment')(ctx as unknown as BotContext);
+
+    expect(forwardWebhook).toHaveBeenCalledOnce();
+    // The RAW update, exactly as for a payment: the panel parses the Telegram
+    // envelope itself, and a projection here would be a second parser over the
+    // same money.
+    expect(forwardWebhook).toHaveBeenCalledWith('TELEGRAM_STARS', ctx.update);
+  });
+
+  it('reports a refund the panel never accepted, with the charge id', async () => {
+    // Same noise level as a lost payment, and for the same reason: a reversal
+    // that did not land leaves payouts standing on returned money, and the
+    // charge id is what a human reconciles by.
+    const forwardWebhook = vi.fn(async () => {
+      throw new Error('panel down');
+    });
+    const { deps, logger } = depsWith({ forwardWebhook });
+
+    await run(deps, 'message:refunded_payment')(refundCtx() as unknown as BotContext);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ chargeId: 'charge_abc', paymentId: 'pay_123' }),
+      expect.stringContaining('NOT recorded'),
+    );
   });
 });
