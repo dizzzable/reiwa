@@ -231,6 +231,16 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'bot_event.mode.REG_BLOCKED': '🚫 Регистрация отключена',
   'bot_event.mode.RESTRICTED': '🛠 Ограниченный режим',
   'bot_event.close': '❌ Закрыть',
+  'bot_event.stopped': '🌙 Событие: Бот остановлен',
+  'bot_event.stopped.signal': 'Сигнал',
+  'bot_event.stopped.uptime': 'Время работы',
+  'bot_event.stopped.version': 'Версия',
+  // Суффиксы времени работы. Отдельными ключами, потому что это слова:
+  // оператор с английской панелью не должен читать «4ч».
+  'bot_event.unit.d': 'д',
+  'bot_event.unit.h': 'ч',
+  'bot_event.unit.m': 'м',
+  'bot_event.unit.s': 'с',
   // ── Developer credits card ────────────────────────────────────────────────────
   'bot_event.credits.intro':
     'REIWA использует открытое ядро от dizzzable. Поскольку проект полностью БЕСПЛАТНЫЙ и с открытым исходным кодом, он существует только благодаря вашей поддержке.',

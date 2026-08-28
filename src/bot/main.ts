@@ -39,7 +39,12 @@ import {
   registerStartPage,
   registerAiSupportPage,
 } from './pages/index.js';
-import { notifyOperatorBotStarted, notifyDeveloperCredits } from './lib/startup-notice.js';
+import {
+  notifyOperatorBotStarted,
+  notifyDeveloperCredits,
+  notifyOperatorBotStopped,
+} from './lib/startup-notice.js';
+import { installBotShutdownHandlers } from './lib/shutdown.js';
 import { runQuestChannelRecheck } from './lib/quest-channel-recheck.js';
 import { printReiwaBanner } from '../core/banner.js';
 import { createErrorReporter } from '../infrastructure/error-reporter/index.js';
@@ -121,6 +126,9 @@ async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig>
 // ── Bot startup ───────────────────────────────────────────────────────────────
 
 async function startBot(): Promise<void> {
+  // Stamped before anything can fail, so the farewell notice reports how long
+  // this process actually lived rather than how long it managed to serve.
+  const startedAt = Date.now();
   const missingBotTokenError = getMissingBotTokenError({
     nodeEnv: process.env.NODE_ENV,
     botToken: config.BOT_TOKEN,
@@ -283,7 +291,7 @@ async function startBot(): Promise<void> {
   // doesn't pay the upstream round-trip.
 
   const CONFIG_REFRESH_MS = 5 * 60 * 1000;
-  setInterval(() => {
+  const configRefreshTimer = setInterval(() => {
     getBotConfig(adminClient).catch((err: unknown) => {
       logger.warn({ err }, 'Background bot-config refresh failed');
     });
@@ -296,9 +304,10 @@ async function startBot(): Promise<void> {
   // getChatMember and reports the result. A user who left the channel loses
   // claimability until they re-subscribe. Skipped entirely in degraded mode
   // (no adminClient). Best-effort: failures are logged, never fatal.
+  let questRecheckTimer: NodeJS.Timeout | null = null;
   if (adminClient !== null) {
     const CHANNEL_RECHECK_MS = 10 * 60 * 1000;
-    setInterval(() => {
+    questRecheckTimer = setInterval(() => {
       void runQuestChannelRecheck({ adminClient, api: bot.api, logger }).catch((err: unknown) => {
         logger.warn({ err }, 'Quest channel recheck tick failed');
       });
@@ -363,7 +372,7 @@ async function startBot(): Promise<void> {
   //   - POST /invalidate         — force-refresh BotConfigCache (Wave 8)
   //   - POST /notify              — deliver a per-user message (Wave B)
   //   - POST /notify-broadcast    — deliver to a chat / topic (Wave B)
-  startInternalHttpListener({
+  const internalListener = startInternalHttpListener({
     bot: bot as unknown as Bot<Context>,
     cache: botConfigCache,
     secret: config.REZEIS_INTERNAL_SHARED_SECRET ?? null,
@@ -380,6 +389,36 @@ async function startBot(): Promise<void> {
         logger.warn({ err, telegramId }, 'Notify: failed to mark user as bot-blocked');
       }
     },
+  });
+
+  // ── Graceful shutdown ─────────────────────────────────────────────────
+  //
+  // Registered LAST, once every handle it has to release exists. Until this
+  // was here the process had no signal handler at all, so `docker stop` killed
+  // it mid-`getUpdates` — which is precisely the "previous instance crashed"
+  // case the polling loop below apologises for. Every restart was one. See
+  // `lib/shutdown.ts` for the ordering and the budgets it runs against.
+  installBotShutdownHandlers({
+    startedAt,
+    logger,
+    clearTimers: () => {
+      clearInterval(configRefreshTimer);
+      if (questRecheckTimer !== null) clearInterval(questRecheckTimer);
+    },
+    stopPolling: () => bot.stop(),
+    farewell: (signal, uptimeMs) =>
+      notifyOperatorBotStopped({
+        bot,
+        devId: config.BOT_DEV_ID,
+        translator,
+        logger,
+        signal,
+        uptimeMs,
+      }),
+    closeServer:
+      internalListener === null
+        ? null
+        : () => new Promise<void>((done) => internalListener.close(() => done())),
   });
 }
 

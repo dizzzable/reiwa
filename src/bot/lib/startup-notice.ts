@@ -1,5 +1,5 @@
 /**
- * Bot-started operator notice.
+ * Bot lifecycle notices for the operator (BOT_DEV_ID).
  *
  * On startup the bot pings the operator (BOT_DEV_ID) with an "#EventBotStarted"
  * card showing the current platform access mode + a "Close" button — mirroring
@@ -10,6 +10,7 @@ import { InlineKeyboard } from 'grammy';
 import type { Bot } from 'grammy';
 
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
+import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import { REIWA_VERSION } from '../../core/version.js';
 import type { AdminClient } from '../../lib/admin-client.js';
 import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
@@ -179,5 +180,89 @@ export async function notifyDeveloperCredits(opts: {
     });
   } catch (err: unknown) {
     logger?.warn({ err, devId }, 'bot/startup: developer credits send failed');
+  }
+}
+
+/**
+ * Compact uptime, at most two units, largest first: `3д 4ч`, `12м 7с`, `41с`.
+ *
+ * Exported so it can be tested on its own. The unit suffixes come from the
+ * translator rather than being written into this function, because they are
+ * words — an operator running the panel in English should not read `4ч`.
+ */
+export function formatUptime(
+  uptimeMs: number,
+  translator: PageDeps['translator'],
+  lang: SupportedLocale,
+): string {
+  const totalSeconds = Math.max(0, Math.floor(uptimeMs / 1000));
+  const parts: ReadonlyArray<readonly [number, string]> = [
+    [Math.floor(totalSeconds / 86_400), 'd'],
+    [Math.floor((totalSeconds % 86_400) / 3_600), 'h'],
+    [Math.floor((totalSeconds % 3_600) / 60), 'm'],
+    [totalSeconds % 60, 's'],
+  ];
+  const render = ([value, unit]: readonly [number, string]): string =>
+    `${value}${translator.t(`bot_event.unit.${unit}`, lang)}`;
+
+  const firstIndex = parts.findIndex(([value]) => value > 0);
+  // A bot that lived less than a second still ran; `0с` says so, an empty
+  // string would read as a missing field.
+  if (firstIndex === -1) return render(parts[parts.length - 1] as readonly [number, string]);
+
+  const head = parts[firstIndex] as readonly [number, string];
+  const next = parts[firstIndex + 1];
+  return next !== undefined && next[0] > 0 ? `${render(head)} ${render(next)}` : render(head);
+}
+
+/**
+ * Bot-stopped operator notice — the mirror of {@link notifyOperatorBotStarted},
+ * sent from the SIGTERM/SIGINT path in `bot/lib/shutdown.ts`.
+ *
+ * Carries the signal, how long the process lived and which version just left,
+ * which together answer the question a farewell is actually useful for: was
+ * this a deploy, or is something restarting the container in a loop.
+ *
+ * NO BUTTONS, unlike the startup card. By the time this is sent the polling
+ * loop has already been stopped — that ordering is deliberate, see
+ * `shutdown.ts` — so nothing is left to receive a callback query. A Close
+ * button here would be a control that visibly does nothing.
+ *
+ * Best-effort in the same way as its sibling: any failure is logged and
+ * swallowed. It is also bounded by the caller, because the process is running
+ * against Docker's SIGKILL timer while this is in flight.
+ */
+export async function notifyOperatorBotStopped(opts: {
+  readonly bot: Bot<BotContext>;
+  readonly devId: number | undefined;
+  readonly translator: PageDeps['translator'];
+  readonly logger: PageDeps['logger'];
+  readonly signal: string;
+  readonly uptimeMs: number;
+}): Promise<void> {
+  const { bot, devId, translator, logger, signal, uptimeMs } = opts;
+  if (devId === undefined) return;
+
+  // Operator-facing notice — Russian, exactly as the startup card.
+  const lang = 'ru';
+  const title = translator.t('bot_event.stopped', lang);
+  const signalLabel = translator.t('bot_event.stopped.signal', lang);
+  const uptimeLabel = translator.t('bot_event.stopped.uptime', lang);
+  const versionLabel = translator.t('bot_event.stopped.version', lang);
+
+  const text = [
+    '#EventBotStopped',
+    '',
+    title,
+    '',
+    `• ${signalLabel}: ${signal}`,
+    `• ${uptimeLabel}: ${formatUptime(uptimeMs, translator, lang)}`,
+    `• ${versionLabel}: v${REIWA_VERSION}`,
+  ].join('\n');
+
+  try {
+    await bot.api.sendMessage(devId, text);
+  } catch (err: unknown) {
+    logger?.warn({ err, devId }, 'bot/shutdown: operator notice send failed');
   }
 }

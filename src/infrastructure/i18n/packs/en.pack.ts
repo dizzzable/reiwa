@@ -229,6 +229,14 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'bot_event.mode.REG_BLOCKED': '🚫 Registration disabled',
   'bot_event.mode.RESTRICTED': '🛠 Restricted mode',
   'bot_event.close': '❌ Close',
+  'bot_event.stopped': '🌙 Event: Bot stopped',
+  'bot_event.stopped.signal': 'Signal',
+  'bot_event.stopped.uptime': 'Uptime',
+  'bot_event.stopped.version': 'Version',
+  'bot_event.unit.d': 'd',
+  'bot_event.unit.h': 'h',
+  'bot_event.unit.m': 'm',
+  'bot_event.unit.s': 's',
   // ── Developer credits card ────────────────────────────────────────────────────
   'bot_event.credits.intro':
     'REIWA is powered by the open core by dizzzable. Since the project is completely FREE and open-source, it exists only thanks to your support.',
