@@ -34,6 +34,7 @@ import {
   registerInlineSharePage,
   registerInvitePage,
   registerLangPage,
+  registerPaymentsPage,
   registerPaySupportPage,
   registerMenuPage,
   registerQuestChannelPage,
@@ -269,6 +270,11 @@ async function startBot(): Promise<void> {
   registerHelpCallbackPage(bot, pageDeps);
   registerHelpCommandPage(bot, pageDeps);
   registerPaySupportPage(bot, pageDeps);
+  // Telegram Stars. Registered BEFORE the AI-support catch-all: a
+  // `successful_payment` message carries no text so `bot.hears` would not
+  // match it anyway, but the ordering is the guarantee rather than the
+  // accident of another page’s filter.
+  registerPaymentsPage(bot, pageDeps);
   registerMenuPage(bot, pageDeps);
   registerStartPage(bot, pageDeps);
   registerQuestChannelPage(bot, pageDeps);

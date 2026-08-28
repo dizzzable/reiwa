@@ -6,7 +6,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { requireMode } from "../middleware/access-mode.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
-import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
 
 /**
@@ -229,7 +229,7 @@ export function createSubscriptionRouter(deps: {
       try {
         const { subscriptionIds, gatewayType, durations, plans } = (req.body ?? {}) as Record<string, unknown>;
         const context = req.context ?? "web";
-        const channel = context === "tma" ? "TMA" : "WEB";
+        const channel = resolvePurchaseChannel(context);
         const subscriptionIdsValid =
           Array.isArray(subscriptionIds) &&
           subscriptionIds.every((id) => typeof id === "string" && id.length > 0);

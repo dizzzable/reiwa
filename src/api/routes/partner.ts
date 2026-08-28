@@ -3,7 +3,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
-import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 import { extractSubscriptionLimitCode } from "./payments-errors.js";
@@ -36,7 +36,7 @@ export function createPartnerRouter(deps: {
         res.status(400).json({ message: "purchaseType, planId and durationDays are required" });
         return;
       }
-      const channel = req.context === "tma" ? "TMA" : "WEB";
+      const channel = resolvePurchaseChannel(req.context);
       const result = await adminClient?.payments.payWithPartnerBalance(resolveUserIdentity(req), {
         purchaseType: String(purchaseType) as "NEW" | "ADDITIONAL" | "RENEW" | "UPGRADE",
         planId: String(planId),

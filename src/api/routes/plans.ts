@@ -6,6 +6,7 @@ import { createOptionalSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity, hasUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { resolvePurchaseChannel } from "../middleware/user-identity.js";
 
 export function createPlansRouter(deps: {
   adminClient: AdminClient | null;
@@ -35,9 +36,12 @@ export function createPlansRouter(deps: {
     try {
       // Drop gateways that can't operate in the caller's context. In the
       // browser cabinet (`web`) this hides TELEGRAM_STARS, which only
-      // works inside a Telegram invoice. TMA callers still get Stars.
+      // works inside a Telegram invoice. Mini App callers do get Stars —
+      // which was the intent all along, but the channel used to be spelled
+      // `"TMA"`, a value `PurchaseChannel` has never had, so rezeis fell back
+      // to `WEB` and filtered Stars out under this very comment.
       const ctx = (req as { context?: string }).context;
-      const channel = ctx === "tma" ? "TMA" : "WEB";
+      const channel = resolvePurchaseChannel(ctx);
       const gateways = await adminClient?.payments.getEnabledGateways(channel);
       res.json(gateways ?? []);
     } catch (e: unknown) {

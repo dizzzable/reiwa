@@ -22,6 +22,9 @@
  *                   rendering the same admin-managed rules screen.
  *  - `paysupport`— `/paysupport`, which Telegram expects from a bot that
  *                   takes payments; points at support.
+ *  - `payments`  — Telegram Stars: the pre-checkout answer and the
+ *                   successful-payment hand-off to rezeis. Only this
+ *                   process receives those updates.
  *  - `lang`      — `/lang` callback picker for the user's locale
  *                   (admin-managed translations follow the choice).
  *  - `dynamic-screen` — universal `screen:<shortId>` callback that
@@ -35,6 +38,7 @@ export { registerHelpCommandPage } from './help.js';
 export { registerInlineSharePage } from './inline-share.js';
 export { registerInvitePage } from './invite.js';
 export { registerLangPage } from './lang.js';
+export { registerPaymentsPage } from './payments.js';
 export { registerPaySupportPage } from './paysupport.js';
 export { registerMenuPage } from './menu.js';
 export { registerQuestChannelPage } from './quest-channel.js';

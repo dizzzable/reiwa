@@ -20,6 +20,18 @@ export interface CreateCheckoutOptions {
 
 export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
 
+/**
+ * Verdict on a Telegram Stars pre-checkout query, decided by rezeis.
+ *
+ * The reason is a CODE, not prose: the bot renders it in the buyer’s own
+ * language, and a Russian string from the panel would reach an English buyer
+ * untouched.
+ */
+export interface StarsPreCheckoutVerdict {
+  readonly approve: boolean;
+  readonly reason: 'OK' | 'UNKNOWN_PAYMENT' | 'NOT_PAYABLE';
+}
+
 export type PaymentTransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED' | 'FAILED';
 
 export type SubscriptionProvisioningStatus =
@@ -71,7 +83,13 @@ function identityQuery(identity: UserIdentity): string {
 export class PaymentsNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
-  getEnabledGateways(channel: 'WEB' | 'TMA' | 'BOT' = 'WEB'): Promise<unknown> {
+  /**
+   * `PurchaseChannel` on the rezeis side has two members, `WEB` and
+   * `TELEGRAM`. `TMA` and `BOT` were never among them — rezeis answers an
+   * unrecognised channel here by silently falling back to `WEB`, which is how
+   * Telegram Stars stayed invisible in the Mini App.
+   */
+  getEnabledGateways(channel: 'WEB' | 'TELEGRAM' = 'WEB'): Promise<unknown> {
     return this.transport.request(
       'GET',
       `/api/internal/payments/gateways?channel=${encodeURIComponent(channel)}`,
@@ -84,13 +102,19 @@ export class PaymentsNamespace {
     planId: string,
     durationDays: number,
     gatewayType: string,
-    options: CreateCheckoutOptions & { subscriptionId?: string } = {},
+    options: CreateCheckoutOptions & { subscriptionId?: string; channel?: 'WEB' | 'TELEGRAM' } = {},
   ): Promise<unknown> {
     const payload: Record<string, unknown> = {
       purchaseType,
       planId,
       durationDays,
       gatewayType,
+      // rezeis defaults an ABSENT channel to `WEB`, and `WEB` is exactly the
+      // one value that makes it reject Telegram Stars
+      // (`PAYMENT_GATEWAY_CHANNEL_UNSUPPORTED`). This method never sent the
+      // field, so the main purchase path could not buy with Stars at all —
+      // while renewal and add-ons, which do send it, could.
+      channel: options.channel ?? 'WEB',
     };
     if (typeof identity.userId === 'string' && identity.userId.length > 0) {
       payload['userId'] = identity.userId;
@@ -181,6 +205,24 @@ export class PaymentsNamespace {
       'POST',
       `/api/internal/payments/webhooks/${encodeURIComponent(gatewayType)}`,
       rawPayload,
+    );
+  }
+
+  /**
+   * Ask rezeis whether a Telegram Stars pre-checkout query may be approved.
+   *
+   * The bot answers Telegram, rezeis decides — the split is forced by long
+   * polling, which makes the bot the only recipient of the query, while the
+   * transaction it is about lives in the panel.
+   *
+   * Telegram allows ten seconds end to end, so the CALLER must bound this and
+   * refuse on timeout.
+   */
+  resolveStarsPreCheckout(paymentId: string): Promise<StarsPreCheckoutVerdict> {
+    return this.transport.request<StarsPreCheckoutVerdict>(
+      'POST',
+      '/api/internal/payments/telegram-stars/pre-checkout',
+      { paymentId },
     );
   }
 

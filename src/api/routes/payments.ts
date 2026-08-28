@@ -6,7 +6,7 @@ import type { ReiwaConfig } from "../../config.js";
 import { requireMode, type AccessModeGate } from "../middleware/access-mode.js";
 import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
-import { resolveUserIdentity } from "../middleware/user-identity.js";
+import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
@@ -118,6 +118,9 @@ export function createPaymentsRouter(deps: {
           {
             successUrl,
             failUrl,
+            // Already computed above for the return URL, and needed here too:
+            // it is what tells rezeis a Stars invoice is allowed.
+            channel: resolvePurchaseChannel(context),
             ...(typeof deviceType === "string" ? { deviceType } : {}),
             ...(subscriptionId !== undefined ? { subscriptionId: String(subscriptionId) } : {}),
             ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0

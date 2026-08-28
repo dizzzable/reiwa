@@ -82,6 +82,14 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'rules.intro': '📜 Service rules\n\nTap the button below to open the full text:',
   'rules.open_button': '📜 Open rules',
   'menu_button.cabinet': 'Cabinet',
+  'payments.stars.unknown_invoice': 'Invoice not found. Please start the payment again.',
+  'payments.stars.already_handled':
+    'This invoice has already been handled. Start a new payment if you still need it.',
+  'payments.stars.unavailable':
+    'Could not confirm the payment. No stars were charged — please try again.',
+  'payments.stars.received': '⭐️ Payment received. Your subscription is being activated.',
+  'payments.stars.received_delayed':
+    '⭐️ Payment received, but activation is delayed. We already know about it — contact support if nothing changes in a few minutes.',
   'paysupport.body':
     '💳 Payment questions\n\nPayments and refunds are handled by support by hand. Write to us — include the date and the payment method and we will answer faster.',
   'paysupport.unavailable':
