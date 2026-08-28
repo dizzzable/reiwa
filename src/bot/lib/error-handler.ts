@@ -91,7 +91,16 @@ async function replyWithError(
 ): Promise<void> {
   // Only message-bearing updates have a chat to reply into; inline queries /
   // poll answers / etc. have nowhere to send a notice.
-  if (ctx.chat?.id === undefined && ctx.from?.id === undefined) return;
+  //
+  // The condition used to be `ctx.chat?.id === undefined && ctx.from?.id ===
+  // undefined`, which is not what the sentence above says. An inline query HAS
+  // a `from` and no chat, so the `&&` never held and execution fell through to
+  // `ctx.reply`, which throws 'Missing information for API call to sendMessage'.
+  // That throw is caught below and logged as a failed apology, so every error
+  // raised inside an inline handler was reported as a delivery problem instead
+  // of as itself. The chat alone decides: `from` is who asked, not where to
+  // answer.
+  if (ctx.chat?.id === undefined) return;
   try {
     const keyboard = await buildSupportKeyboard(deps, lang);
     await ctx.reply(deps.translator.t('error.unknown', lang), {

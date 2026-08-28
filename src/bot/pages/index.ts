@@ -16,6 +16,8 @@
  *  - `help`      — `/help` slash-command surfacing the same fallback.
  *  - `invite`    — `invite` callback emitting the share link;
  *                   stats card lives in the cabinet.
+ *  - `inline-share` — inline mode: `@bot …` in any chat offers the
+ *                   sender’s referral link. Enabled in @BotFather.
  *  - `rules`     — `rules` callback rendering admin-managed rules
  *                   screen with a back-to-menu CTA.
  *  - `lang`      — `/lang` callback picker for the user's locale
@@ -28,6 +30,7 @@ export { registerAiSupportPage } from './ai-support.js';
 export { registerClosePage } from './close.js';
 export { registerHelpCallbackPage } from './help-callback.js';
 export { registerHelpCommandPage } from './help.js';
+export { registerInlineSharePage } from './inline-share.js';
 export { registerInvitePage } from './invite.js';
 export { registerLangPage } from './lang.js';
 export { registerMenuPage } from './menu.js';

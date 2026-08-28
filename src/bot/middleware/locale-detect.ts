@@ -41,7 +41,14 @@ export function createLocaleDetectMiddleware(
     if (tgUser !== undefined && !deps.cache.hasSync(tgUser.id)) {
       const detected = deps.detect(tgUser.language_code);
       deps.cache.setSync(tgUser.id, detected);
-      if (deps.adminClient !== null) {
+      // The local adopt above happens for every update type, because the
+      // handler downstream has to render in SOMETHING. The push upstream does
+      // not: an inline query can arrive from anyone who typed `@bot` in any
+      // chat, including people with no account here, so this would be a write
+      // to rezeis for a telegramId it has never seen, triggered by a
+      // stranger’s keystroke. Nothing is lost for real users — `/start`
+      // carries the language into `user.bootstrap` anyway.
+      if (deps.adminClient !== null && ctx.inlineQuery === undefined) {
         deps.adminClient.user
           .updateLanguage({ telegramId: String(tgUser.id) }, detected.toUpperCase())
           .catch(() => {

@@ -31,6 +31,7 @@ import {
   registerClosePage,
   registerHelpCallbackPage,
   registerHelpCommandPage,
+  registerInlineSharePage,
   registerInvitePage,
   registerLangPage,
   registerMenuPage,
@@ -256,6 +257,12 @@ async function startBot(): Promise<void> {
   };
   registerLangPage(bot, pageDeps);
   registerInvitePage(bot, pageDeps);
+  // Inline mode. Registered like any other page, but it is the only handler
+  // here that answers an update with no chat behind it — see the header of
+  // `pages/inline-share.ts`. Needs no `allowed_updates` change: none is set,
+  // and Telegram delivers `inline_query` under the default set. It DOES need
+  // `/setinline` in @BotFather, which no API method can do for us.
+  registerInlineSharePage(bot, pageDeps);
   registerRulesPage(bot, pageDeps);
   registerHelpCallbackPage(bot, pageDeps);
   registerHelpCommandPage(bot, pageDeps);

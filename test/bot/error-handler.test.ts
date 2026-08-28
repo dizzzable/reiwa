@@ -99,4 +99,23 @@ describe('createBotErrorHandler', () => {
     expect(report).toHaveBeenCalledTimes(1);
     expect(reply).toHaveBeenCalledTimes(1);
   });
+
+  it('does not try to apologise into an update that has no chat', async () => {
+    // An inline query has a `from` and no chat. The guard used to require BOTH
+    // to be missing, so this fell through to `ctx.reply`, which throws
+    // 'Missing information for API call to sendMessage'. The throw is caught
+    // and logged as a failed apology — turning every error raised inside an
+    // inline handler into a report about the apology instead of about itself.
+    const { deps, report, reply, logger } = buildDeps();
+    const inlineCtx = { from: { id: 42 }, inlineQuery: { id: 'iq-1', query: '' }, reply } as never;
+    const handler = createBotErrorHandler(deps);
+
+    await handler(botError(new Error('kaboom'), inlineCtx));
+
+    // Positive control: the error still reaches the dev firehose. Skipping the
+    // apology must not turn into skipping the report.
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(reply).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
 });

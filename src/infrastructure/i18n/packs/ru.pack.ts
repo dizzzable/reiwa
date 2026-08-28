@@ -70,6 +70,17 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'invite.share_button': '📤 Поделиться в Telegram',
   'invite.copy_button': '📋 Скопировать ссылку',
   'invite.share_prompt': 'Привет! Попробуй Rezeis VPN — быстрый и надёжный.',
+  // Инлайн-режим: @бот в любом чате. Два набора, потому что отправитель
+  // может быть человеком без учётной записи — тогда ссылка обычная, без
+  // реферального кода, и обещать за неё бонус нельзя.
+  'inline.share.title': '🔗 Поделиться реферальной ссылкой',
+  'inline.share.description': 'Друг получит доступ, вы — бонус',
+  'inline.share.message': '🔗 Присоединяйся — быстрый и надёжный VPN.',
+  'inline.share.title_plain': '🔗 Поделиться ботом',
+  'inline.share.description_plain': 'Отправить ссылку на бота',
+  'inline.share.message_plain': '🔗 Попробуй — быстрый и надёжный VPN.',
+  'inline.share.open': '🚀 Открыть',
+  'inline.share.start': 'Запустите бота, чтобы получить свою ссылку',
   'rules.intro': '📜 Правила сервиса\n\nНажмите кнопку ниже чтобы открыть полный текст:',
   'rules.open_button': '📜 Открыть правила',
   'rules.unavailable': '📜 Правила сервиса пока готовятся. Если у вас есть вопрос — напишите в поддержку.',

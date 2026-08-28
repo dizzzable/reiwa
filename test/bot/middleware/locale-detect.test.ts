@@ -42,6 +42,11 @@ function buildCtx(from?: { id: number; language_code?: string }): BotContext {
   return ({ from } as unknown) as BotContext;
 }
 
+/** An inline-query update: same `from`, but no chat and no account implied. */
+function buildInlineCtx(from: { id: number; language_code?: string }): BotContext {
+  return ({ from, inlineQuery: { id: 'iq-1', query: '' } } as unknown) as BotContext;
+}
+
 describe('createLocaleDetectMiddleware', () => {
   it('adopts the detected locale on cache miss + calls admin with uppercase code', async () => {
     const cache = buildCache();
@@ -153,5 +158,29 @@ describe('createLocaleDetectMiddleware', () => {
     // does throw, `next` is NOT called (avoid double-handling).
     await expect(mw(buildCtx({ id: 1 }), next)).rejects.toThrow('cache exploded');
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('adopts an inline sender’s language locally but never pushes it upstream', async () => {
+    // An inline query arrives from anyone who typed `@bot` in any chat,
+    // including people with no account here. The local adopt has to happen —
+    // the results are rendered in that language — but the push would be a
+    // write to rezeis for a telegramId it has never seen, and one per unique
+    // stranger per restart. Real users lose nothing: `/start` carries the
+    // language into `user.bootstrap`.
+    const cache = buildCache();
+    const updateLanguage = vi.fn().mockResolvedValue(null);
+    const detect = vi.fn().mockReturnValue('en');
+    const next = vi.fn().mockResolvedValue(undefined);
+    const mw = createLocaleDetectMiddleware({
+      cache,
+      detect,
+      adminClient: buildAdmin(updateLanguage),
+    } as LocaleDetectDeps);
+
+    await mw(buildInlineCtx({ id: 42, language_code: 'en-GB' }), next);
+
+    expect(cache.store.get(42)).toBe('en');
+    expect(updateLanguage).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });

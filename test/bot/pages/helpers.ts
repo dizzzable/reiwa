@@ -24,21 +24,35 @@ export interface FakeBot {
     matcher: string | RegExp;
     handler: (ctx: BotContext) => Promise<void>;
   }>;
+  /**
+   * Handlers registered through `bot.on(<filter>)`. Inline mode is the first
+   * page to use it, and it is kept separate from `commandHandlers` on purpose:
+   * `bot.on` takes an update FILTER, not a command name, and collapsing the two
+   * would let a page register `bot.on("message")` and have this fixture report
+   * it as a command.
+   */
+  updateHandlers: Map<string, (ctx: BotContext) => Promise<void>>;
   command(name: string, handler: (ctx: BotContext) => Promise<void>): void;
   callbackQuery(matcher: string | RegExp, handler: (ctx: BotContext) => Promise<void>): void;
+  on(filter: string, handler: (ctx: BotContext) => Promise<void>): void;
 }
 
 export function buildFakeBot(): FakeBot {
   const commandHandlers = new Map<string, (ctx: BotContext) => Promise<void>>();
+  const updateHandlers = new Map<string, (ctx: BotContext) => Promise<void>>();
   const callbackHandlers: FakeBot['callbackHandlers'] = [];
   return {
     commandHandlers,
+    updateHandlers,
     callbackHandlers,
     command(name, handler) {
       commandHandlers.set(name, handler);
     },
     callbackQuery(matcher, handler) {
       callbackHandlers.push({ matcher, handler });
+    },
+    on(filter, handler) {
+      updateHandlers.set(filter, handler);
     },
   };
 }
@@ -55,6 +69,9 @@ export interface FakeContext {
   chat?: { id: number };
   me?: { username: string };
   api: { sendMessage: ReturnType<typeof vi.fn> };
+  /** Present only on inline-query contexts. */
+  inlineQuery?: { query: string; id: string };
+  answerInlineQuery: ReturnType<typeof vi.fn>;
 }
 
 export function buildFakeCtx(over: Partial<FakeContext> = {}): FakeContext {
@@ -70,9 +87,36 @@ export function buildFakeCtx(over: Partial<FakeContext> = {}): FakeContext {
     editMessageCaption: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
     callbackQuery: over.callbackQuery,
+    // NOTE the `??`: passing `chat: undefined` explicitly still yields the
+    // default. Inline-query contexts must be built with `buildFakeInlineCtx`,
+    // which omits it outright — a page that read `ctx.chat` would otherwise
+    // find one where Telegram sends none.
     chat: over.chat ?? { id: 99 },
     me: over.me ?? { username: 'reiwa_test_bot' },
     api: { sendMessage: vi.fn().mockResolvedValue(undefined) },
+    answerInlineQuery: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+/**
+ * A context shaped like a real `inline_query` update: a `from`, no `chat`, and
+ * no session. Built by omission rather than by overriding `buildFakeCtx`,
+ * because that helper's `??` defaults would put a chat back.
+ */
+export function buildFakeInlineCtx(
+  over: { from?: { id: number }; query?: string; me?: { username: string } } = {},
+): FakeContext {
+  return {
+    from: over.from ?? { id: 42 },
+    inlineQuery: { query: over.query ?? '', id: 'iq-1' },
+    me: over.me ?? { username: 'reiwa_test_bot' },
+    reply: vi.fn().mockResolvedValue(undefined),
+    answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+    editMessageText: vi.fn().mockResolvedValue(undefined),
+    editMessageCaption: vi.fn().mockResolvedValue(undefined),
+    deleteMessage: vi.fn().mockResolvedValue(undefined),
+    api: { sendMessage: vi.fn().mockResolvedValue(undefined) },
+    answerInlineQuery: vi.fn().mockResolvedValue(undefined),
   };
 }
 

@@ -67,6 +67,17 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'invite.share': '🔗 Referral program\n\nShare this link with your friends — for every one who subscribes, you earn a bonus.\n\nYour link:\n{{link}}',
   'invite.share_button': '📤 Share on Telegram',
   'invite.copy_button': '📋 Copy link',
+  // Inline mode: @bot in any chat. Two sets, because the sender may be
+  // somebody with no account here — then the link is the plain bot link with
+  // no referral code, and no bonus can be promised for it.
+  'inline.share.title': '🔗 Share your referral link',
+  'inline.share.description': 'Your friend gets access, you get a bonus',
+  'inline.share.message': '🔗 Join me — fast and reliable VPN.',
+  'inline.share.title_plain': '🔗 Share the bot',
+  'inline.share.description_plain': 'Send a link to the bot',
+  'inline.share.message_plain': '🔗 Try it — fast and reliable VPN.',
+  'inline.share.open': '🚀 Open',
+  'inline.share.start': 'Start the bot to get your own link',
   'invite.share_prompt': 'Hey! Try Rezeis VPN — fast and reliable.',
   'rules.intro': '📜 Service rules\n\nTap the button below to open the full text:',
   'rules.open_button': '📜 Open rules',
