@@ -18,8 +18,10 @@
  *                   stats card lives in the cabinet.
  *  - `inline-share` — inline mode: `@bot …` in any chat offers the
  *                   sender’s referral link. Enabled in @BotFather.
- *  - `rules`     — `rules` callback rendering admin-managed rules
- *                   screen with a back-to-menu CTA.
+ *  - `rules`     — `rules` callback AND the `/rules` command, both
+ *                   rendering the same admin-managed rules screen.
+ *  - `paysupport`— `/paysupport`, which Telegram expects from a bot that
+ *                   takes payments; points at support.
  *  - `lang`      — `/lang` callback picker for the user's locale
  *                   (admin-managed translations follow the choice).
  *  - `dynamic-screen` — universal `screen:<shortId>` callback that
@@ -33,6 +35,7 @@ export { registerHelpCommandPage } from './help.js';
 export { registerInlineSharePage } from './inline-share.js';
 export { registerInvitePage } from './invite.js';
 export { registerLangPage } from './lang.js';
+export { registerPaySupportPage } from './paysupport.js';
 export { registerMenuPage } from './menu.js';
 export { registerQuestChannelPage } from './quest-channel.js';
 export { registerRulesPage } from './rules.js';

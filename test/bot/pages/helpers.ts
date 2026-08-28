@@ -35,6 +35,12 @@ export interface FakeBot {
   command(name: string, handler: (ctx: BotContext) => Promise<void>): void;
   callbackQuery(matcher: string | RegExp, handler: (ctx: BotContext) => Promise<void>): void;
   on(filter: string, handler: (ctx: BotContext) => Promise<void>): void;
+  /**
+   * Recorded but not indexed. Only `ai-support` uses it, as a catch-all, and
+   * no test drives it through this fixture — it exists so a spec can register
+   * EVERY page against one fake bot without the catch-all page throwing.
+   */
+  hears(matcher: string | RegExp, handler: (ctx: BotContext) => Promise<void>): void;
 }
 
 export function buildFakeBot(): FakeBot {
@@ -53,6 +59,9 @@ export function buildFakeBot(): FakeBot {
     },
     on(filter, handler) {
       updateHandlers.set(filter, handler);
+    },
+    hears() {
+      /* recorded nowhere on purpose — see the interface */
     },
   };
 }

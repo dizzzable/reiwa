@@ -47,6 +47,18 @@ function rememberFileId(url: string, sent: unknown): string | undefined {
 export interface OptionalBannerReply {
   readonly text: string;
   readonly entities?: readonly TgCustomEmojiEntity[];
+  /**
+   * Set when the copy is operator-authored HTML (a Bot Studio screen with
+   * `parseMode: 'html'`). Mutually exclusive with `entities` — Telegram
+   * accepts one or the other, and the callers build one or the other.
+   *
+   * This existed on the edit path (`renderScreenOrEdit`) long before it
+   * existed here, which was fine while only `/help` and `/lang` used this
+   * helper — neither renders operator markup. `/rules` does, and without
+   * this the command would have shown raw `<b>` tags to the user while the
+   * keyboard-button route to the same screen rendered it correctly.
+   */
+  readonly parseMode?: 'HTML';
   readonly replyMarkup?: InlineKeyboard;
 }
 
@@ -61,8 +73,11 @@ export async function replyWithOptionalBanner(
   botCfg: BotConfig,
   opts: OptionalBannerReply,
 ): Promise<void> {
+  const html = opts.parseMode === 'HTML';
+  // Entities and `parse_mode` are alternatives, not companions: sending both
+  // makes Telegram ignore one of them silently.
   const entities =
-    opts.entities && opts.entities.length > 0 ? [...opts.entities] : undefined;
+    !html && opts.entities && opts.entities.length > 0 ? [...opts.entities] : undefined;
 
   const visual = botCfg.visual;
   const wantBanner = visual.bannerApplyAll === true;
@@ -93,6 +108,7 @@ export async function replyWithOptionalBanner(
       try {
         const sent = await ctx.replyWithPhoto(source, {
           caption: opts.text,
+          parse_mode: html ? 'HTML' : undefined,
           caption_entities: entities,
           reply_markup: opts.replyMarkup,
         });
@@ -111,5 +127,18 @@ export async function replyWithOptionalBanner(
     }
   }
 
-  await ctx.reply(opts.text, { entities, reply_markup: opts.replyMarkup });
+  try {
+    await ctx.reply(opts.text, {
+      parse_mode: html ? 'HTML' : undefined,
+      entities,
+      reply_markup: opts.replyMarkup,
+    });
+  } catch (err: unknown) {
+    if (!html) throw err;
+    // Operator-authored markup can be malformed, and Telegram rejects the
+    // whole message for it. Resend without a parse mode rather than leave the
+    // user with nothing: the tags read badly, an empty screen reads as broken.
+    deps.logger?.warn({ err }, 'reply-with-banner: HTML rejected; resending as plain text');
+    await ctx.reply(opts.text, { reply_markup: opts.replyMarkup });
+  }
 }

@@ -81,6 +81,11 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'invite.share_prompt': 'Hey! Try Rezeis VPN — fast and reliable.',
   'rules.intro': '📜 Service rules\n\nTap the button below to open the full text:',
   'rules.open_button': '📜 Open rules',
+  'paysupport.body':
+    '💳 Payment questions\n\nPayments and refunds are handled by support by hand. Write to us — include the date and the payment method and we will answer faster.',
+  'paysupport.unavailable':
+    '💳 Payment questions\n\nNo support contact is configured yet. Write through the cabinet — your payment history is there too.',
+  'paysupport.prefill': 'Hello! I have a question about a payment.',
   'rules.unavailable': '📜 Service rules are still being prepared. If you have a question — message support.',
   'help.contact_support': 'Contact support: @{{username}}',
   'help.contact_button': '🆘 Message support',

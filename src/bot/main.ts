@@ -34,6 +34,7 @@ import {
   registerInlineSharePage,
   registerInvitePage,
   registerLangPage,
+  registerPaySupportPage,
   registerMenuPage,
   registerQuestChannelPage,
   registerRulesPage,
@@ -267,6 +268,7 @@ async function startBot(): Promise<void> {
   registerRulesPage(bot, pageDeps);
   registerHelpCallbackPage(bot, pageDeps);
   registerHelpCommandPage(bot, pageDeps);
+  registerPaySupportPage(bot, pageDeps);
   registerMenuPage(bot, pageDeps);
   registerStartPage(bot, pageDeps);
   registerQuestChannelPage(bot, pageDeps);
