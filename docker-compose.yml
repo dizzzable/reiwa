@@ -84,6 +84,12 @@ services:
     container_name: reiwa-bot
     hostname: reiwa-bot
     restart: unless-stopped
+    # Docker's implicit default is 10s, and the bot's shutdown now DRAINS the
+    # handler still running before it exits. The longest such handler forwards a
+    # Stars payment to the panel (four retries against a 10s timeout), and being
+    # SIGKILLed through that loses a payment Telegram has already been told was
+    # delivered. Only a stop that lands on one pays the wait.
+    stop_grace_period: 60s
     command: ["node", "dist/bot/main.js"]
     env_file:
       - .env

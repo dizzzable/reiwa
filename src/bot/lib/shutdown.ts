@@ -18,10 +18,10 @@
  *
  * Timing is not advisory here. No `stop_grace_period` is configured anywhere in
  * the compose files, so Docker's implicit default applies: SIGTERM, then
- * SIGKILL ten seconds later. Every step is therefore bounded, and the budgets
- * add up to less than that with room to spare — an unbounded `await` on a
- * network call would simply be killed halfway, which is the behaviour we set
- * out to remove.
+ * SIGKILL ten seconds later — so the bot service sets `stop_grace_period: 60s`.
+ * Every step is bounded, and the budgets add up to less than the grace with
+ * room to spare — an unbounded `await` on a network call would simply be
+ * killed halfway, which is the behaviour we set out to remove.
  *
  * Deliberately NOT covered: crashes. `uncaughtException` exits through
  * `process-guards`, not through a signal, so no farewell is sent for one. That
@@ -29,7 +29,29 @@
  * message that also appeared on every crash would stop carrying that meaning.
  */
 
-/** Bound on releasing the Telegram polling slot. */
+/**
+ * Bound on releasing the Telegram polling slot AND draining the handler still
+ * running behind it.
+ *
+ * Three seconds was a bound on `bot.stop()` alone, which returns almost at
+ * once. It now also covers the drain, and the drain has to outlast the longest
+ * thing a handler does: forwarding a Stars payment to the panel, which retries
+ * four times against a ten-second transport timeout with backoff — about
+ * forty-two seconds in the worst case. A budget shorter than that abandons the
+ * forward after Telegram has already been told the update was delivered, which
+ * is a debited payment with no record anywhere.
+ *
+ * It costs nothing in the ordinary case: the drain resolves the moment the
+ * middleware stack is empty, so a bot with nothing in flight still stops in
+ * milliseconds. Only a shutdown that lands on a payment pays the seconds, and
+ * that is exactly the shutdown worth waiting for.
+ *
+ * `stop_grace_period: 60s` on the bot service is what makes the budget real —
+ * Docker's implicit default is ten seconds, and a budget larger than the grace
+ * is a number the SIGKILL ignores.
+ */
+const DRAIN_BUDGET_MS = 45_000;
+/** Bound on closing the internal HTTP listener. */
 const STOP_BUDGET_MS = 3_000;
 /** Bound on the operator notice. Best-effort by design. */
 const NOTICE_BUDGET_MS = 4_000;
@@ -104,7 +126,7 @@ export async function runBotShutdown(
   steps.clearTimers();
 
   // Second, because this is the step with a consequence outside this process.
-  await withinBudget('stopPolling', STOP_BUDGET_MS, steps.stopPolling, logger);
+  await withinBudget('stopPolling', DRAIN_BUDGET_MS, steps.stopPolling, logger);
 
   // Third — by now the slot is free, so a slow send costs nothing but our own
   // remaining seconds.

@@ -47,6 +47,7 @@ import {
   notifyDeveloperCredits,
   notifyOperatorBotStopped,
 } from './lib/startup-notice.js';
+import { createPollingController } from './lib/polling-controller.js';
 import { installBotShutdownHandlers } from './lib/shutdown.js';
 import { applyBotSettings } from './lib/apply-bot-settings.js';
 import { runQuestChannelRecheck } from './lib/quest-channel-recheck.js';
@@ -390,11 +391,14 @@ async function startBot(): Promise<void> {
   //
   // We solve this in-process: wrap `bot.start()` in an exponential
   // backoff loop and log every retry so operators can see when we're
-  // waiting for a stale session to clear. `dropPendingUpdates` on the
-  // first attempt lets us reset the offset cleanly on cold start; the
-  // retry attempts keep it false so we don't lose any updates that
-  // arrived after the previous crash.
-  void runPollingLoop(bot, logger);
+  // waiting for a stale session to clear.
+  //
+  // The loop is held rather than fired and forgotten, because shutdown
+  // needs both halves of it: something to tell the retry loop to stop, and
+  // something to WAIT for while the last handler finishes. See
+  // `createPollingController`.
+  const polling = createPollingController(bot, logger, () => printReiwaBanner('bot'));
+  void polling.run();
 
   // ── Cache invalidate + notify HTTP listener ───────────────────────────
   //
@@ -451,7 +455,11 @@ async function startBot(): Promise<void> {
       clearInterval(configRefreshTimer);
       if (questRecheckTimer !== null) clearInterval(questRecheckTimer);
     },
-    stopPolling: () => bot.stop(),
+    // Releases the slot AND waits for the handler still running behind it.
+    // `bot.stop()` alone acknowledges the in-flight update to Telegram and
+    // returns, so exiting on its heels destroys work Telegram will never send
+    // again — a debited Stars payment among it. See `createPollingController`.
+    stopPolling: () => polling.stop(),
     farewell: (signal, uptimeMs) =>
       notifyOperatorBotStopped({
         bot,
@@ -468,61 +476,6 @@ async function startBot(): Promise<void> {
   });
 }
 
-async function runPollingLoop(
-  bot: Bot<BotContext>,
-  logger: ReturnType<typeof createLogger>,
-): Promise<void> {
-  let attempt = 0;
-  // Maximum interval between retries (5 minutes). Telegram's stale
-  // polling slots clear in ~30s; anything longer is paranoia.
-  const MAX_BACKOFF_MS = 5 * 60 * 1000;
-
-  while (true) {
-    try {
-      await bot.start({
-        drop_pending_updates: attempt === 0,
-        // Short timeout means we cycle through getUpdates more often,
-        // which gives us more chances to win the polling slot when a
-        // rogue / staging deployment is competing for the same token.
-        // 5 seconds is the sweet spot: long enough that Telegram's
-        // long-poll mechanism still saves us most of the round-trips,
-        // short enough that we'll grab the slot within ~5s of a rival
-        // releasing it. Default would be 30s.
-        timeout: 5,
-        onStart: (info) => {
-          logger.info(
-            { username: info.username, attempt },
-            attempt === 0 ? 'reiwa-bot started' : 'reiwa-bot resumed polling',
-          );
-          // Success banner — printed once, on the first successful poll start.
-          if (attempt === 0) printReiwaBanner('bot');
-        },
-      });
-      // bot.start() returns when the polling loop terminates cleanly
-      // (e.g. .stop() called). Treat that as a graceful shutdown rather
-      // than reconnect-on-success.
-      logger.info('reiwa-bot polling loop exited cleanly');
-      return;
-    } catch (err: unknown) {
-      attempt += 1;
-      // Aggressive race-back-in strategy: the first 5 attempts use a
-      // short fixed delay (200ms) so we re-enter Telegram's polling
-      // queue almost immediately after losing the slot. After that we
-      // fall back to exponential backoff up to 5 minutes — this only
-      // kicks in if the rogue poller is permanently winning, in which
-      // case spamming Telegram won't help us.
-      const isFastRetry = attempt <= 5;
-      const backoffMs = isFastRetry
-        ? 200
-        : Math.min(2_000 * 2 ** Math.min(attempt - 6, 7), MAX_BACKOFF_MS);
-      logger.warn(
-        { err, attempt, backoffMs },
-        'bot.start() failed — retrying after backoff',
-      );
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
-    }
-  }
-}
 
 /**
  * Register the canonical slash-command list with Telegram (RU + EN

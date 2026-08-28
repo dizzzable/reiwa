@@ -122,9 +122,17 @@ describe('runBotShutdown', () => {
       const s = steps({ stopPolling: hangForever, farewell: hangForever, closeServer });
 
       const done = runBotShutdown('SIGTERM', s);
-      // Past both budgets (3s + 4s) with room to spare, still inside Docker's
-      // ten. If either step were unbounded this never settles.
-      await vi.advanceTimersByTimeAsync(10_000);
+      // Past both budgets (45s drain + 4s farewell) with room to spare, still
+      // inside the 60s `stop_grace_period` the bot service declares. If either
+      // step were unbounded this never settles.
+      //
+      // The drain budget is the one that grew, and it grew for a reason worth
+      // keeping next to the number: `stopPolling` now waits for the handler
+      // still running behind the polling slot, and the longest of those forwards
+      // a Stars payment to the panel — about forty-two seconds at its worst.
+      // Abandoning that mid-flight loses a payment Telegram has already been
+      // told was delivered.
+      await vi.advanceTimersByTimeAsync(55_000);
       await expect(done).resolves.toBeUndefined();
 
       expect(closeServer).toHaveBeenCalledOnce();
