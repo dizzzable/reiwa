@@ -77,6 +77,32 @@ export class UserNamespace {
     );
   }
 
+  /**
+   * Reports the browser device signals the cabinet computed.
+   *
+   * Takes a bare `userId` rather than a `UserIdentity`, and that is the whole
+   * contract: the upstream keys observations on the canonical reiwa_id, and a
+   * Telegram-only caller has no observation to make — the bot surface already
+   * has a Telegram id to refuse, which is a far stronger signal than anything
+   * a browser can derive.
+   *
+   * The answer carries nothing. It is `{ ok: true }` whether the signals were
+   * stored, rejected, or matched a machine belonging to a blocked account and
+   * marked this one for an operator — a distinguishable answer would let
+   * somebody probe which signal identifies them.
+   */
+  reportDeviceSignals(input: {
+    readonly userId: string;
+    readonly installId?: string | null;
+    readonly deviceHash?: string | null;
+  }): Promise<{ ok: boolean }> {
+    return this.transport.request<{ ok: boolean }>(
+      'POST',
+      '/api/internal/user/device-signals',
+      input,
+    );
+  }
+
   getSession(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',

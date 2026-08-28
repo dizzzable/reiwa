@@ -240,6 +240,9 @@ export {
   type LegalDocument,
 } from "./content.js";
 
+// Device signals (quiet ban-evasion observation; never surfaced to the user)
+export { reportDeviceSignals, type DeviceSignalsPayload } from "./device-signals.js";
+
 // Advertising (click ingest + partner self-service)
 export {
   recordAdClick,

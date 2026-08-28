@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation, useParams } from "react-router";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
 import { useAdAttribution } from "@/hooks/use-ad-attribution";
+import { useDeviceSignals } from "@/hooks/use-device-signals";
 import { useTelegramWebApp } from "@/hooks/use-telegram-webapp";
 
 /**@/features/auth/tma-bootstrap-page
@@ -103,6 +104,7 @@ export default function App() {
   // Covers every Mini App entry path, including a direct /dashboard launch.
   useTelegramWebApp();
   useAdAttribution();
+  useDeviceSignals();
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
