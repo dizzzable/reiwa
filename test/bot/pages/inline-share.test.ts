@@ -205,4 +205,49 @@ describe('inline share', () => {
 
     await expect(handlerFor(deps)(ctx as never)).resolves.toBeUndefined();
   });
+
+  it('offers no referral link once the program itself is switched off', async () => {
+    // The gate used to read the BOT CARD's `features.referralsEnabled`, which
+    // is a different operator switch from the one the payout engine consults.
+    // Pausing the program on the Referrals settings page — the ordinary way to
+    // stop paying — clears the engine's switch and leaves the bot toggle alone:
+    // the cabinet card correctly disappeared while inline mode kept answering
+    // "your friend gets access, you get a bonus" with a live link. Those get
+    // pasted into chats and channels and stay there, and every friend who signs
+    // up through one creates a referral that is never rewarded.
+    const getSummary = vi.fn(async () => ({
+      referralCode: 'ref-code-1',
+      program: { enabled: false },
+    }));
+    const { deps } = buildDeps({ adminOverrides: { referrals: { getSummary } } });
+    const ctx = buildFakeInlineCtx({ from: { id: 7 } });
+
+    await handlerFor(deps)(ctx as never);
+
+    const [results] = ctx.answerInlineQuery.mock.calls[0] as [
+      ReadonlyArray<Record<string, unknown>>,
+    ];
+    // It still ANSWERS — silence would look like a broken bot to everyone in
+    // the chat — but with the plain bot link rather than a referral promise.
+    expect(results).toHaveLength(1);
+    expect(JSON.stringify(results)).not.toContain('ref-code-1');
+  });
+
+  it('still offers the link while the program is paying', async () => {
+    // Positive control: the refusal has to be about the switch, not about the
+    // fixture having drifted into refusing everything.
+    const getSummary = vi.fn(async () => ({
+      referralCode: 'ref-code-1',
+      program: { enabled: true },
+    }));
+    const { deps } = buildDeps({ adminOverrides: { referrals: { getSummary } } });
+    const ctx = buildFakeInlineCtx({ from: { id: 7 } });
+
+    await handlerFor(deps)(ctx as never);
+
+    const [results] = ctx.answerInlineQuery.mock.calls[0] as [
+      ReadonlyArray<Record<string, unknown>>,
+    ];
+    expect(JSON.stringify(results)).toContain('ref-code-1');
+  });
 });

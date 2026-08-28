@@ -27,6 +27,44 @@ import { resolveBannerSource, type BannerPhotoSource } from './banner-resolver.j
 
 const TELEGRAM_CAPTION_MAX = 1024;
 
+/**
+ * Telegram's own ceiling on message text. Longer and `sendMessage` answers
+ * `400 message is too long`.
+ *
+ * The caption cap above was honoured from the start; this one was not, and the
+ * difference showed on screens whose body an operator types. `BotFlowScreen`
+ * text has no maximum in its DTO, so a long rules document pasted into the
+ * editor produced a command that failed every time it was used — and failed
+ * TWICE, because the HTML-recovery path below resends the same text without a
+ * parse mode, which does nothing for a length error. The user got the generic
+ * apology instead of the rules.
+ */
+const TELEGRAM_TEXT_MAX = 4096;
+
+/**
+ * Splits text at the last line break before the ceiling, so a long screen
+ * arrives as several messages rather than as an error.
+ *
+ * Cut on a boundary the reader can see: a paragraph break first, then a line
+ * break, and only mid-line when a single line is itself longer than the
+ * ceiling. Splitting blind would break a word, and worse, could split an HTML
+ * tag in half — which turns one rejected message into two.
+ */
+function splitForTelegram(text: string, limit: number): readonly string[] {
+  if (text.length <= limit) return [text];
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit);
+    const cut = Math.max(window.lastIndexOf('\n\n'), window.lastIndexOf('\n'));
+    const at = cut > limit / 2 ? cut : limit;
+    parts.push(rest.slice(0, at));
+    rest = rest.slice(at).replace(/^\n+/, '');
+  }
+  if (rest.length > 0) parts.push(rest);
+  return parts;
+}
+
 // Telegram file_id cache for the resolved global banner, keyed by the banner
 // URL. Mirrors the bounded cache `start.ts` keeps for the welcome banner so
 // repeated commands don't re-download the bytes from rezeis.
@@ -73,6 +111,21 @@ export async function replyWithOptionalBanner(
   botCfg: BotConfig,
   opts: OptionalBannerReply,
 ): Promise<void> {
+  // NOTHING TO SEND IS NOT AN ERROR TO SHOW.
+  //
+  // `BotFlowScreen.textRu` defaults to an empty string and its DTO enforces no
+  // minimum, so a screen whose body is only `{{rulesLink}}` on an install with
+  // no active legal document resolves to `''`. `ctx.reply('')` earns
+  // `400 message text is empty`, which reaches the user as the generic
+  // apology — the same outcome as a crash, for a screen the operator simply
+  // has not filled in.
+  if (opts.text.trim().length === 0) {
+    deps.logger?.warn(
+      'reply-with-banner: refusing to send an empty message; the screen has no text',
+    );
+    return;
+  }
+
   const html = opts.parseMode === 'HTML';
   // Entities and `parse_mode` are alternatives, not companions: sending both
   // makes Telegram ignore one of them silently.
@@ -127,18 +180,24 @@ export async function replyWithOptionalBanner(
     }
   }
 
-  try {
-    await ctx.reply(opts.text, {
-      parse_mode: html ? 'HTML' : undefined,
-      entities,
-      reply_markup: opts.replyMarkup,
-    });
-  } catch (err: unknown) {
-    if (!html) throw err;
-    // Operator-authored markup can be malformed, and Telegram rejects the
-    // whole message for it. Resend without a parse mode rather than leave the
-    // user with nothing: the tags read badly, an empty screen reads as broken.
-    deps.logger?.warn({ err }, 'reply-with-banner: HTML rejected; resending as plain text');
-    await ctx.reply(opts.text, { reply_markup: opts.replyMarkup });
+  // The keyboard rides the LAST part, so a split document still ends with its
+  // buttons rather than putting them in the middle.
+  const parts = splitForTelegram(opts.text, TELEGRAM_TEXT_MAX);
+  for (const [index, part] of parts.entries()) {
+    const last = index === parts.length - 1;
+    try {
+      await ctx.reply(part, {
+        parse_mode: html ? 'HTML' : undefined,
+        entities: last ? entities : undefined,
+        reply_markup: last ? opts.replyMarkup : undefined,
+      });
+    } catch (err: unknown) {
+      if (!html) throw err;
+      // Operator-authored markup can be malformed, and Telegram rejects the
+      // whole message for it. Resend without a parse mode rather than leave the
+      // user with nothing: the tags read badly, an empty screen reads as broken.
+      deps.logger?.warn({ err }, 'reply-with-banner: HTML rejected; resending as plain text');
+      await ctx.reply(part, { reply_markup: last ? opts.replyMarkup : undefined });
+    }
   }
 }

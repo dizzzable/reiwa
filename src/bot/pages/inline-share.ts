@@ -62,6 +62,15 @@ const ANSWER_CACHE_SECONDS = 20;
 interface ShareSummary {
   readonly referralCode?: unknown;
   readonly admissionRequiresInvite?: unknown;
+  /**
+   * The referral program's own switch, as the PAYOUT ENGINE reads it.
+   *
+   * Not the same thing as the bot card's `features.referralsEnabled`, which is
+   * what this page used to gate on. Those are two different operator switches:
+   * pausing the program on the Referrals settings page clears this one and
+   * leaves the bot feature toggle alone — the ordinary way to stop paying.
+   */
+  readonly program?: { readonly enabled?: unknown };
 }
 
 interface CachedLink {
@@ -87,6 +96,18 @@ async function resolveShareLink(
   // See the header: a permanent code is refused at registration in this mode,
   // and minting here would spend the user's quota on a keystroke.
   if (summary?.admissionRequiresInvite === true) return null;
+
+  // NO LINK WHEN THE PROGRAM IS NOT PAYING, and this is read from the summary
+  // rather than from the bot card because the summary mirrors the engine.
+  //
+  // The gate used to be `features.referralsEnabled` — a different operator
+  // switch entirely. An operator pausing the program on the Referrals settings
+  // page clears `program.enabled` and leaves the bot toggle alone, which is the
+  // ordinary way to pause. The cabinet card correctly disappeared; inline mode
+  // kept answering «Друг получит доступ, вы — бонус» with a live link. People
+  // paste those into chats and channels where they stay indefinitely, and every
+  // friend who signs up through one creates a referral that is never rewarded.
+  if (summary?.program?.enabled === false) return null;
 
   const code = typeof summary?.referralCode === 'string' ? summary.referralCode : '';
   if (code.length === 0) return null;
