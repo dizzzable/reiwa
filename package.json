@@ -30,7 +30,7 @@
     "dayjs": "1.11.20",
     "express": "5.2.1",
     "express-rate-limit": "8.5.2",
-    "grammy": "1.42.0",
+    "grammy": "1.46.0",
     "helmet": "8.1.0",
     "ioredis": "5.10.1",
     "openai": "^4.104.0",
