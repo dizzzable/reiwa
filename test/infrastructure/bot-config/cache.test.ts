@@ -226,7 +226,7 @@ describe('BotConfigCache persistence (Workstream 4)', () => {
   it('seeds from persistence on a cold-start fetch failure', async () => {
     const persisted: BotConfig = {
       ...DEFAULT_BOT_CONFIG,
-      visual: { ...DEFAULT_BOT_CONFIG.visual, botDescription: 'persisted' },
+      visual: { ...DEFAULT_BOT_CONFIG.visual, welcomeMessage: 'persisted' },
     };
     const fetcher = vi.fn(async () => {
       throw new Error('upstream down');

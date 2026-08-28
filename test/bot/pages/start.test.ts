@@ -228,10 +228,7 @@ describe('registerStartPage', () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps({
       adminOverrides: adminClient as unknown as Record<string, unknown>,
-      config: {
-        ...DEFAULT_BOT_CONFIG,
-        visual: { ...DEFAULT_BOT_CONFIG.visual, channelUsername: '@rezeis_news' },
-      },
+      config: DEFAULT_BOT_CONFIG,
     });
     registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
     const ctx = buildStartCtx({
@@ -249,10 +246,7 @@ describe('registerStartPage', () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps({
       adminOverrides: adminClient as unknown as Record<string, unknown>,
-      config: {
-        ...DEFAULT_BOT_CONFIG,
-        visual: { ...DEFAULT_BOT_CONFIG.visual, channelUsername: '@rezeis_news' },
-      },
+      config: DEFAULT_BOT_CONFIG,
     });
     registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
     const ctx = buildStartCtx({
@@ -275,10 +269,7 @@ describe('registerStartPage', () => {
     const bot = buildFakeBot();
     const { deps } = buildDeps({
       adminOverrides: adminClient as unknown as Record<string, unknown>,
-      config: {
-        ...DEFAULT_BOT_CONFIG,
-        visual: { ...DEFAULT_BOT_CONFIG.visual, channelUsername: '@rezeis_news' },
-      },
+      config: DEFAULT_BOT_CONFIG,
     });
     registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
     const ctx = buildStartCtx({

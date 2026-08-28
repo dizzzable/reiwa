@@ -72,7 +72,7 @@ import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import { renderButtonLabel, renderBotCopy, renderBotCopyHtml } from '../../infrastructure/bot-config/emoji-utils.js';
-import type { BotEmojiMap, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
+import type { BotConfig, BotEmojiMap, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 import { resolveBannerSource } from '../pages/banner-resolver.js';
 import {
   REQUEST_SIGNATURE_HEADER,
@@ -184,6 +184,17 @@ interface ListenerOptions {
    * ever knowing the dev id. `undefined` → `/notify-dev` is a no-op.
    */
   readonly devId?: number;
+  /**
+   * Called with the freshly fetched config after a successful `/invalidate`.
+   * This is where anything that has to be PUSHED to Telegram on a config
+   * change belongs — the bot profile, the slash-command list — because a cache
+   * refresh alone changes what the bot READS, not what Telegram already holds.
+   *
+   * Invoked after the 204 is written, and never awaited: rezeis gives the
+   * synchronous variant of this call a five-second budget, and Bot API round
+   * trips have no business inside it.
+   */
+  readonly onConfigApplied?: (config: BotConfig) => void | Promise<void>;
   /**
    * Invoked when Telegram returns 403 Forbidden during a `/notify`
    * delivery. Lets the host record `isBotBlocked: true` on the user
@@ -456,7 +467,7 @@ function renderNotifyBody(
  * the ephemeral port (`port: 0`) and to close the socket afterwards.
  */
 export function startInternalHttpListener(opts: ListenerOptions): http.Server | null {
-  const { bot, cache, secret, port, logger, onUserBlocked, devId, rezeisAdminUrl, keyboardUrls } = opts;
+  const { bot, cache, secret, port, logger, onUserBlocked, devId, rezeisAdminUrl, keyboardUrls, onConfigApplied } = opts;
   if (secret === null || secret.length === 0) {
     logger.info(
       'Internal HTTP listener disabled (REZEIS_INTERNAL_SHARED_SECRET unset)',
@@ -499,7 +510,7 @@ export function startInternalHttpListener(opts: ListenerOptions): http.Server | 
 
     try {
       if (url === '/invalidate') {
-        await handleInvalidate(cache, logger, res);
+        await handleInvalidate(cache, logger, res, onConfigApplied);
         return;
       }
       if (url === '/notify') {
@@ -585,6 +596,7 @@ async function handleInvalidate(
   cache: BotConfigCache | null,
   logger: ReturnType<typeof createLogger>,
   res: http.ServerResponse,
+  onConfigApplied?: (config: BotConfig) => void | Promise<void>,
 ): Promise<void> {
   if (cache === null) {
     logger.warn('Cache-invalidate: bot config cache not initialised yet');
@@ -598,6 +610,16 @@ async function handleInvalidate(
     res.statusCode = 204;
     res.end();
     logger.info({ hadRefresh: fresh !== null }, 'Cache-invalidate: succeeded');
+    // After the ack, never before. See `onConfigApplied` on ListenerOptions.
+    if (fresh !== null && onConfigApplied !== undefined) {
+      void (async () => {
+        try {
+          await onConfigApplied(fresh);
+        } catch (err: unknown) {
+          logger.warn({ err }, 'Cache-invalidate: post-refresh apply failed');
+        }
+      })();
+    }
   } catch (err: unknown) {
     logger.error({ err }, 'Cache-invalidate: forceInvalidate threw');
     res.statusCode = 500;

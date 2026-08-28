@@ -46,6 +46,7 @@ import {
   notifyOperatorBotStopped,
 } from './lib/startup-notice.js';
 import { installBotShutdownHandlers } from './lib/shutdown.js';
+import { applyBotProfile } from './lib/apply-bot-profile.js';
 import { runQuestChannelRecheck } from './lib/quest-channel-recheck.js';
 import { printReiwaBanner } from '../core/banner.js';
 import { createErrorReporter } from '../infrastructure/error-reporter/index.js';
@@ -328,7 +329,16 @@ async function startBot(): Promise<void> {
   // form so the autocompletion descriptions follow the user's Telegram
   // language. Failures are non-fatal — the bot still works without
   // command suggestions.
-  await registerSlashCommands(bot, logger);
+  let commandSignature = await registerSlashCommands(bot, logger);
+
+  // Push the operator’s Telegram profile (name / description / short
+  // description). Fire-and-forget like the startup notices: it is up to six
+  // Bot API round trips and none of them may hold up polling.
+  void getBotConfig(adminClient)
+    .then((cfg) => applyBotProfile({ bot, config: cfg, logger }))
+    .catch((err: unknown) => {
+      logger.warn({ err }, 'bot/profile: startup apply failed');
+    });
 
   // Operator startup notice (snoups-style): ping BOT_DEV_ID with the current
   // access mode + a Close button. Best-effort, never blocks startup.
@@ -388,6 +398,13 @@ async function startBot(): Promise<void> {
     logger,
     rezeisAdminUrl,
     keyboardUrls: { miniAppUrl: reiwaWebAppUrl, publicWebUrl: reiwaUrlButtonUrl },
+    // A config push changes what the bot READS immediately; these two are the
+    // things Telegram holds a copy of, so they have to be pushed on as well.
+    // Both are no-ops when nothing they care about changed.
+    onConfigApplied: async (fresh) => {
+      commandSignature = await registerSlashCommands(bot, logger, commandSignature);
+      await applyBotProfile({ bot, config: fresh, logger });
+    },
     onUserBlocked: async (telegramId: string) => {
       if (adminClient === null) return;
       try {
@@ -497,8 +514,27 @@ async function runPollingLoop(
 async function registerSlashCommands(
   bot: Bot<BotContext>,
   logger: ReturnType<typeof createLogger>,
-): Promise<void> {
+  previousSignature?: string,
+): Promise<string> {
   const { SUPPORTED_LOCALES } = await import('../core/enums/locale.enum.js');
+
+  // Descriptions come from the translator, so an operator edit to a
+  // `commands.*.description` row changes them. This function is called again
+  // on every config invalidation for exactly that reason — but Telegram is
+  // told only when the resolved text actually differs, because a bot-card save
+  // that reordered a button has no business issuing three `setMyCommands`
+  // calls.
+  // The default scope is registered with the RU descriptions, so iterating the
+  // supported locales covers every string this function can send.
+  const signature = SUPPORTED_LOCALES.map((lang) =>
+    BOT_COMMANDS.map(
+      (command) => `${command}=${translator.t(`commands.${command}.description`, lang)}`,
+    ).join('|'),
+  ).join('||');
+  if (previousSignature !== undefined && previousSignature === signature) {
+    logger.info('Bot slash-commands unchanged — not re-registering');
+    return signature;
+  }
 
   // Default scope (catches users whose Telegram language isn't one of
   // the per-locale entries below — unlikely with ru/en covering most
@@ -552,6 +588,7 @@ async function registerSlashCommands(
     { commandCount: BOT_COMMANDS.length, scopes: SUPPORTED_LOCALES.length + 1 },
     'Bot slash-commands registered',
   );
+  return signature;
 }
 
 startBot().catch((err: unknown) => {

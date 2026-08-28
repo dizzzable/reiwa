@@ -16,9 +16,18 @@ export interface BotVisualConfig {
    * (RU) greeting to everyone.
    */
   welcomeMessageEn?: string | null
-  botDescription: string
+  /**
+   * Operator override for the support handle, from the panel bot card.
+   * Always present, possibly empty — an empty value means "use my own
+   * `BOT_SUPPORT_USERNAME`", which is why every reader trims and falls back
+   * rather than treating it as authoritative.
+   *
+   * `botDescription` and `channelUsername` used to sit here and were read by
+   * NOTHING. The first is now `BotProfileConfig.description`, which actually
+   * reaches Telegram; the second was a dead copy of the platform policy's
+   * channel, which is what `channel-gate.ts` really consults.
+   */
   supportUsername: string
-  channelUsername: string
   subscriptionInfoFormat: 'full' | 'compact' | 'minimal'
   /**
    * URL of the banner image sent before the welcome message on `/start`.
@@ -44,13 +53,41 @@ export interface BotVisualConfig {
   bannerFileId?: string | null
 }
 
+/**
+ * Feature switches from the panel.
+ *
+ * Two of these are read here and are operator-controlled; the other four are
+ * constants on the panel side and are read NOWHERE in this repo. Before
+ * building anything on one of them, grep first — the panel has no control for
+ * them precisely because a switch with no reader is worse than no switch.
+ */
 export interface BotFeatures {
+  /** Read by the invite hub and inline mode. */
   referralsEnabled: boolean
-  promoCodesEnabled: boolean
-  trialEnabled: boolean
+  /** Read by `/start` and the menu. */
   miniAppEnabled: boolean
+  /** Not read anywhere in reiwa. */
+  promoCodesEnabled: boolean
+  /** Not read anywhere in reiwa. */
+  trialEnabled: boolean
+  /** Not read anywhere in reiwa. */
   activityFeedEnabled: boolean
+  /** Not read anywhere in reiwa. */
   partnersEnabled: boolean
+}
+
+/**
+ * The bot's own Telegram profile as the operator set it in the panel.
+ *
+ * OPTIONAL as a whole, because a panel older than this field sends nothing —
+ * and each string is optional for the same reason. An EMPTY value means
+ * "leave what Telegram already has": an install that never opened the bot
+ * card must not wipe a profile someone wrote in @BotFather.
+ */
+export interface BotProfileConfig {
+  name?: string
+  description?: string
+  shortDescription?: string
 }
 
 export interface BotMenuButton {
@@ -89,6 +126,8 @@ export interface BotConfig {
   buttons: BotMenuButton[]
   visual: BotVisualConfig
   features: BotFeatures
+  /** Additive: absent on a panel older than the bot-profile field. */
+  profile?: BotProfileConfig
   botEmojis: BotEmojiMap
   menuTextCustomEmojiIds: MenuTextEmojiIds
   /**
