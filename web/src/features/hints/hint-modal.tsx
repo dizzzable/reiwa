@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { CabinetHint } from "@/lib/api-client/hints";
-import { cn } from "@/lib/utils";
+import { cn, openExternalUrl } from "@/lib/utils";
 
 /**
  * One operator-authored hint, on screen.
@@ -40,43 +40,41 @@ const TONE_RULE: Record<CabinetHint["tone"], string> = {
 
 export function HintModal({
   hint,
-  surface,
   onAct,
   onDismiss,
 }: {
   readonly hint: CabinetHint;
-  /** Decides how an external link is opened — see `openExternal` below. */
-  readonly surface: "tma" | "pwa" | "browser";
   readonly onAct: () => void;
   readonly onDismiss: () => void;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  function openExternal(url: string): void {
-    // Inside Telegram a plain `window.open` is either swallowed or drops the
-    // customer into an in-app browser they cannot get back from. The Mini App
-    // bridge is the supported way out, and the cabinet already knows which of
-    // the three surfaces it is on — see `stealth-layout`.
-    const webApp = (window as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } })
-      .Telegram?.WebApp;
-    if (surface === "tma" && typeof webApp?.openLink === "function") {
-      webApp.openLink(url);
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-
   function act(): void {
     if (hint.ctaKind === "ROUTE" && hint.ctaTarget) {
       void navigate(hint.ctaTarget);
     } else if (hint.ctaKind === "EXTERNAL" && hint.ctaTarget) {
-      openExternal(hint.ctaTarget);
+      // THE SHARED OPENER, not a local re-implementation. This file had one,
+      // and it got Telegram wrong in the way this codebase has documented
+      // twice: `openLink` on a `t.me` address shows the landing page in an
+      // in-app browser instead of resolving it natively — and "open our bot" is
+      // the most likely external destination an operator will ever author.
+      // `openExternalUrl` classifies the link and picks `openTelegramLink` for
+      // those, and it is the only copy of that decision.
+      openExternalUrl(hint.ctaTarget);
     }
     onAct();
   }
 
-  const hasCta = hint.ctaKind !== "NONE" && hint.ctaTarget !== null && hint.ctaLabel !== null;
+  // `ROUTE` and `EXTERNAL` only. A kind a newer panel introduces would
+  // otherwise render a full-width primary button that does nothing, closes the
+  // modal and reports `acted` — a dead control counted as the hint working.
+  const hasCta =
+    (hint.ctaKind === "ROUTE" || hint.ctaKind === "EXTERNAL") &&
+    typeof hint.ctaTarget === "string" &&
+    hint.ctaTarget.length > 0 &&
+    typeof hint.ctaLabel === "string" &&
+    hint.ctaLabel.length > 0;
 
   return (
     <Dialog
@@ -89,7 +87,12 @@ export function HintModal({
       }}
     >
       <DialogContent className="max-w-sm">
-        <div className={cn("mb-1 h-1 w-10 rounded-full", TONE_RULE[hint.tone])} aria-hidden />
+        {/* Falls back rather than rendering a colourless stripe: a tone this
+            build has not heard of is a newer panel, not a broken hint. */}
+        <div
+          className={cn("mb-1 h-1 w-10 rounded-full", TONE_RULE[hint.tone] ?? TONE_RULE.INFO)}
+          aria-hidden
+        />
         <DialogHeader>
           <DialogTitle>{hint.title}</DialogTitle>
           <DialogDescription className="whitespace-pre-line text-left">
@@ -103,9 +106,12 @@ export function HintModal({
             </Button>
           )}
           <Button variant="ghost" className="w-full" onClick={onDismiss}>
-            {/* Named "later", not "close": the hint may come back if it has not
-                expired, and a label that promised otherwise would be a lie. */}
-            {t("hints.later", { defaultValue: "Позже" })}
+            {/* Named "later", not "close": the hint may come back if it has
+                not expired, and a label promising otherwise would be a lie.
+                The key is DEFINED now — it was not, so i18next fell through to
+                its default and every English customer read a Russian word on
+                the one button this dialog always has. */}
+            {t("hints.later")}
           </Button>
         </DialogFooter>
       </DialogContent>

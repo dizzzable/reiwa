@@ -131,6 +131,9 @@ export const en: RuDict = {
     // `debug` for BOT_DEV_ID from the server).
     accessDenied: 'Could not sign in. Try again later or contact support.',
   },
+  hints: {
+    later: 'Maybe later',
+  },
   dashboard: {
     title: 'Dashboard',
     welcome: 'Welcome, {{name}}!',

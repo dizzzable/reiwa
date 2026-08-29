@@ -119,6 +119,23 @@ export function createSupportGuestRouter(deps: {
       res.status(413).json({ error: "Subject or message too long" });
       return;
     }
+    // ── The optional field that could fail the whole conversation ──────────
+    //
+    // `email` is optional here and validated with `@IsEmail()` on the panel, so
+    // a visitor who typed `john@` had it forwarded verbatim, got a 400 back
+    // from the panel, and — because the catch below only recognises 404 — met
+    // "Failed to start conversation" as a 500. They could not open a support
+    // conversation at all, were never told which field was at fault, and the
+    // refusal was booked as a server error in our own metrics.
+    //
+    // Checked here rather than made stricter there: the address is a courtesy
+    // for the resume link, and nothing about it is worth failing a support
+    // request over.
+    const trimmedEmail = email?.trim() ?? "";
+    if (trimmedEmail.length > 0 && !/^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(trimmedEmail)) {
+      res.status(400).json({ error: "invalid_email" });
+      return;
+    }
     // Panel-managed gate + captcha. When disabled, the feature is off (404).
     const cfg = await runtimeConfig();
     if (cfg && !cfg.enabled) {
@@ -156,6 +173,21 @@ export function createSupportGuestRouter(deps: {
       // itself stays in the httpOnly cookie and is never exposed again.
       res.json({ resumeCode: result.resumeCode, ticket: result.ticket });
     } catch (err: unknown) {
+      // A 404 from the panel is either "support is switched off" or "this
+      // device was silenced by an operator", and the panel answers both
+      // identically ON PURPOSE. Falling through to a 500 undid that: a
+      // disabled surface answered 404 while a silenced device answered 500,
+      // and `GET /support/guest/config` says `enabled: true` — so one request
+      // told whoever was testing which of their machines we know. That is the
+      // oracle that makes churning through devices cheap, which is the entire
+      // thing the silence feature exists to make expensive.
+      //
+      // It also stops booking a 5xx in our own error metrics for a refusal we
+      // meant to make.
+      if (isUpstreamStatus(err, 404)) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
       sendSafeError(req, res, err, 500, "Failed to start conversation", "support/guest/create");
     }
   });

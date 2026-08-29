@@ -77,7 +77,19 @@ const PUBLIC_PATHS = [
 // stale session must not turn it into a hard bounce to /sign-in out from under a
 // user who is reading their dashboard. Only the click path — a 401 on the other
 // /advertising/* endpoints is a real signed-out state worth redirecting on.
-const BENIGN_401_PATHS = ["/session", "/auth/", "/advertising/click"];
+const BENIGN_401_PATHS = [
+  "/session",
+  "/auth/",
+  "/advertising/click",
+  // Hints, for the same reason `/advertising/click` is here: fire-and-forget
+  // calls behind a session guard. `/hints/next` runs on every cabinet entry and
+  // `/hints/closed` runs while the customer is reading the modal, so a session
+  // blip on the least important request on the page would otherwise replace the
+  // whole document with the sign-in screen and discard whatever they were
+  // doing. The route's own "failures are silent" contract is enforced in the
+  // handler; a 401 never reaches it.
+  "/hints/",
+];
 
 let redirectingToSignIn = false;
 

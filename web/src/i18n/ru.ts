@@ -129,6 +129,9 @@ export const ru = {
     // `debug` for BOT_DEV_ID from the server).
     accessDenied: 'Не удалось войти. Попробуйте позже или напишите в поддержку.',
   },
+  hints: {
+    later: 'Позже',
+  },
   dashboard: {
     title: 'Главная',
     welcome: 'Добро пожаловать, {{name}}!',

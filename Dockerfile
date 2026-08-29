@@ -58,7 +58,26 @@ FROM node:24-alpine AS runtime
 # is shipping known-vulnerable libraries on purpose so that rebuilds match.
 #
 # `--no-cache` keeps the package index out of the layer.
-RUN apk upgrade --no-cache
+#
+# ── WHY THIS LAYER MUST NOT BE A CACHE HIT ────────────────────────────────
+#
+# It is the first instruction of the stage, so its cache key is just the base
+# image plus this literal command — and the build passes `cache-from: type=gha`.
+# Left alone, the layer restored verbatim on every later build: the step added
+# to patch twenty CVEs would have quietly re-shipped the exact `libssl3` it was
+# written to replace, with `CACHED` in the log and Trivy re-reporting the same
+# advisories after the push, failing nothing.
+#
+# `SECURITY_REFRESH` carries the commit sha, so the key changes whenever the
+# source does and the upgrade genuinely re-runs. It costs a few seconds and it
+# is the only thing making this layer mean what it says.
+#
+# Scope, stated plainly: this upgrades apk-managed packages within the base
+# image's pinned Alpine branch — patch level only, never a new major. Node
+# itself is not an apk package here, so Node's own CVEs still arrive with the
+# base tag.
+ARG SECURITY_REFRESH=dev
+RUN echo "security refresh ${SECURITY_REFRESH}" && apk upgrade --no-cache
 WORKDIR /app
 # No default on purpose: an unset build-arg leaves REIWA_VERSION empty, which
 # version.ts intentionally treats as "fall back to package.json". SHA/branch

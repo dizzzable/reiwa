@@ -16,6 +16,7 @@ import {
 } from "@/lib/api-client";
 import {
   clearSubscriptionProvisioningReceipt,
+  notifySubscriptionProvisioningCompleted,
   ensureSubscriptionProvisioningReceipt,
   isTrialSubscriptionProvisioningReceipt,
   listSubscriptionProvisioningReceipts,
@@ -310,6 +311,10 @@ export function useSubscriptionProvisioning(): SubscriptionProvisioningState {
   const completeHandoff = useCallback(
     (paymentId: string) => {
       clearSubscriptionProvisioningReceipt(paymentId);
+      // The one place a purchase is known to have SUCCEEDED. The receipt is
+      // cleared here and on three failure paths alike, so anything downstream
+      // that needs "the subscription is ready" has to hear it from here.
+      notifySubscriptionProvisioningCompleted();
       setReceipts((current) =>
         current.filter((receipt) => receipt.paymentId !== paymentId),
       );

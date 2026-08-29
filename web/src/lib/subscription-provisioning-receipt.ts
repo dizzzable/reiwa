@@ -19,6 +19,31 @@ export const SUBSCRIPTION_PROVISIONING_RECEIPT_MAX_ENTRIES = 8;
 export const SUBSCRIPTION_PROVISIONING_RECEIPTS_CHANGED_EVENT =
   "reiwa:subscription-provisioning-receipts-changed";
 
+/**
+ * A purchase finished and the subscription is usable.
+ *
+ * ── Why the receipts event cannot carry this ──────────────────────────────
+ *
+ * A receipt is cleared for four different reasons — the payment succeeded and
+ * the handoff completed, the payment FAILED, it was CANCELED, or the stored map
+ * was corrupt and got dropped — and the receipts event reports only whether ANY
+ * receipt is still pending. Anything reading a true→false transition off it
+ * therefore treats a declined card exactly like a completed purchase, and it
+ * misses a real completion whenever a second, abandoned receipt is still
+ * sitting in the map.
+ *
+ * This one fires from the success path only, and carries nothing: a listener
+ * that needs the subscription reads it from the query cache.
+ */
+export const SUBSCRIPTION_PROVISIONING_COMPLETED_EVENT =
+  "reiwa:subscription-provisioning-completed";
+
+/** Announces a completed handoff. Safe to call outside a browser. */
+export function notifySubscriptionProvisioningCompleted(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(SUBSCRIPTION_PROVISIONING_COMPLETED_EVENT));
+}
+
 export type SubscriptionCreationPurchaseType = "NEW" | "ADDITIONAL";
 export type SubscriptionProvisioningReceiptPhase =
   | "AWAITING_PAYMENT"
