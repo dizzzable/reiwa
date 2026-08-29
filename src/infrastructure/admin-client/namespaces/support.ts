@@ -89,13 +89,28 @@ export class SupportNamespace {
     readonly message: string;
     readonly email?: string | null;
     readonly clientIp?: string | null;
+    /**
+     * Browser device signals from the visitor opening the conversation.
+     *
+     * Forwarded so the panel can tell somebody appealing a ban from somebody
+     * an operator already silenced. Both surfaces are anonymous, so without a
+     * signal that survives a fresh incognito window they are the same visitor.
+     */
+    readonly installId?: string | null;
+    readonly deviceHash?: string | null;
   }): Promise<GuestTicketResponse> {
     const headers: Record<string, string> = {};
     if (input.clientIp) headers['x-support-client-ip'] = input.clientIp;
     return this.transport.request<GuestTicketResponse>(
       'POST',
       '/api/internal/support/guest',
-      { subject: input.subject, message: input.message, email: input.email ?? undefined },
+      {
+        subject: input.subject,
+        message: input.message,
+        email: input.email ?? undefined,
+        installId: input.installId ?? undefined,
+        deviceHash: input.deviceHash ?? undefined,
+      },
       headers,
     );
   }

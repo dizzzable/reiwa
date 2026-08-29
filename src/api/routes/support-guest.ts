@@ -25,6 +25,21 @@ import type { GuestRuntimeConfig } from "../../infrastructure/admin-client/names
  * caller in `app.ts`; this router stays transport-only.
  */
 const COOKIE_NAME = "reiwa_support";
+
+/**
+ * One device signal out of the request body, or `null`.
+ *
+ * Bounded here as well as upstream so an oversized value is dropped at the edge
+ * rather than relayed. The panel validates the shape properly; this only keeps
+ * obvious junk off the wire.
+ */
+function readSignal(body: unknown, key: "installId" | "deviceHash"): string | null {
+  if (body === null || typeof body !== "object") return null;
+  const value = (body as Record<string, unknown>)[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 128 ? trimmed : null;
+}
 const DEFAULT_TTL_HOURS = 72;
 const MAX_SUBJECT = 200;
 const MAX_CONTENT = 10_000;
@@ -124,6 +139,12 @@ export function createSupportGuestRouter(deps: {
         message: message.trim(),
         email: email?.trim() || null,
         clientIp: resolveClientIp(req),
+        // Read from the body, because only the browser can compute them — and
+        // read leniently, because a visitor who blocks them is a visitor with
+        // an unmarked conversation, which is what any unrecognised visitor
+        // gets anyway. Nothing here is worth failing a support request over.
+        installId: readSignal(req.body, "installId"),
+        deviceHash: readSignal(req.body, "deviceHash"),
       });
       if (!result) {
         res.status(503).json({ error: "unavailable" });

@@ -1,6 +1,7 @@
 /**
  * Support tickets namespace.
  */
+import { collectDeviceSignals } from "@/lib/device-signals";
 import { apiClient } from "./transport.js";
 
 export interface SupportTicket {
@@ -92,15 +93,46 @@ export const getGuestSupportConfig = () =>
     .get<{ enabled: boolean; turnstileSiteKey: string | null }>("/support/guest/config")
     .then((r) => r.data);
 
-export const createGuestTicket = (input: {
+/**
+ * Opens an anonymous support conversation.
+ *
+ * ── Why device signals go with it ─────────────────────────────────────────
+ *
+ * This is the one surface with no identity at all, which is the point — it is
+ * how somebody appeals a ban, or reaches us when their account is broken. It is
+ * also, for the same reason, where a banned person comes back: a fresh
+ * incognito window is a fresh visitor, and a captcha stops robots rather than a
+ * motivated human.
+ *
+ * The signals let the panel tell those two apart. They do NOT refuse anybody by
+ * themselves — a match only marks the conversation for an operator, and the
+ * decision to silence a device stays with a person. Collected here and nowhere
+ * else on this surface: only when a conversation is actually opened, never
+ * while somebody is reading.
+ *
+ * Failing to collect them is not an error. A visitor who blocks them gets an
+ * unmarked conversation, which is what any unrecognised visitor gets.
+ */
+export const createGuestTicket = async (input: {
   subject: string;
   message: string;
   email?: string;
   captchaToken?: string;
-}) =>
-  apiClient
-    .post<{ resumeCode: string; ticket: GuestTicket }>("/support/guest", input)
-    .then((r) => r.data);
+}) => {
+  const signals = await collectDeviceSignals().catch(() => ({
+    installId: null,
+    deviceHash: null,
+  }));
+  const response = await apiClient.post<{ resumeCode: string; ticket: GuestTicket }>(
+    "/support/guest",
+    {
+      ...input,
+      installId: signals.installId ?? undefined,
+      deviceHash: signals.deviceHash ?? undefined,
+    },
+  );
+  return response.data;
+};
 
 export const getGuestConversation = (resume?: string) =>
   apiClient
