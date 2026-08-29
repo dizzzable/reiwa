@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
+import { resolveClientIp } from "../lib/client-ip.js";
 import { createFlexibleSessionMiddleware, createOptionalSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity, hasUserIdentity } from "../middleware/user-identity.js";
@@ -129,6 +130,11 @@ export function createProfileRouter(deps: {
         surface,
         formFactor,
         os,
+        // Only the edge can see it — the panel's own peer on a split
+        // deployment is this service. Whether it is recorded at all is the
+        // panel's call: on a VPN product most sightings are our own exit
+        // nodes and are refused.
+        clientIp: resolveClientIp(req),
       });
     } catch (err: unknown) {
       // The cabinet must never break on this, so the response stays a 200 —

@@ -7,6 +7,7 @@ import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { sendSafeError } from "../lib/error-response.js";
 import { isUpstreamStatus } from "../lib/upstream-error.js";
 import { createRedisRateLimiter } from "../middleware/rate-limit.js";
+import { resolveClientIp } from "../lib/client-ip.js";
 import { verifyTurnstile } from "../lib/turnstile.js";
 import type { GuestRuntimeConfig } from "../../infrastructure/admin-client/namespaces/support.js";
 
@@ -342,22 +343,4 @@ export function createSupportGuestRouter(deps: {
 
   return router;
 
-  /**
-   * Client IP for the Turnstile `remoteip` hint and the `clientIp` stored on
-   * the ticket the operator reads.
-   *
-   * `req.ip` and nothing else. Express resolves it against `trust proxy` (set
-   * to 1 in `app.ts` for the single bundled reverse proxy): it trusts one hop,
-   * the socket peer, and so returns the RIGHTMOST `X-Forwarded-For` entry —
-   * the one that proxy appended via `$proxy_add_x_forwarded_for`.
-   *
-   * Reading the header directly and taking `split(",")[0]` returned the
-   * LEFTMOST entry instead — the one segment a visitor fully controls, since
-   * the proxy appends to whatever the browser sent rather than replacing it.
-   * Any guest could send `X-Forwarded-For: 1.2.3.4` and have that address
-   * stored on their ticket and handed to Turnstile as their origin.
-   */
-  function resolveClientIp(req: Request): string | undefined {
-    return req.ip ?? undefined;
-  }
 }

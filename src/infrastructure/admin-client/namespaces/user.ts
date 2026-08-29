@@ -192,14 +192,29 @@ export class UserNamespace {
    * milestone server-side and refreshes the latest-seen snapshot powering the
    * admin usage analytics.
    */
+  /**
+   * Reports the surface a cabinet session is running on.
+   *
+   * `clientIp` travels with it because only the edge can see it: on a split
+   * deployment the panel's own peer is reiwa, so reading the socket there would
+   * record one address for every customer in the world. Whether it is kept at
+   * all is the panel's decision — on a VPN product most sightings are our own
+   * exit nodes and are refused.
+   */
   recordSurfaceSeen(
     identity: UserIdentity,
-    input: { surface: string; formFactor: string; os: string },
+    input: { surface: string; formFactor: string; os: string; clientIp?: string | null },
   ): Promise<{ ok: true }> {
     return this.transport.request<{ ok: true }>(
       'POST',
       '/api/internal/user/surface-seen',
-      { ...identityBody(identity), surface: input.surface, formFactor: input.formFactor, os: input.os },
+      {
+        ...identityBody(identity),
+        surface: input.surface,
+        formFactor: input.formFactor,
+        os: input.os,
+        clientIp: input.clientIp ?? undefined,
+      },
     );
   }
 }
