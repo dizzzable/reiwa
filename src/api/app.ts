@@ -40,6 +40,7 @@ import { createSubscriptionRouter } from "./routes/subscription.js";
 import { createPaymentsRouter } from "./routes/payments.js";
 import { createActivityRouter } from "./routes/activity.js";
 import { createDeviceSignalsRouter } from "./routes/device-signals.js";
+import { createUserHintsRouter } from "./routes/user-hints.js";
 import { createPromoRouter } from "./routes/promo.js";
 import { createReferralsRouter } from "./routes/referrals.js";
 import { createDevicesRouter } from "./routes/devices.js";
@@ -326,6 +327,7 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createPaymentsRouter(deps));
   app.use("/api/v1", createActivityRouter(deps));
   app.use("/api/v1", createDeviceSignalsRouter(deps));
+  app.use("/api/v1", createUserHintsRouter(deps));
   app.use("/api/v1", createPromoRouter(deps));
   app.use("/api/v1", createReferralsRouter(deps));
   app.use("/api/v1/devices", createDevicesRouter(deps));

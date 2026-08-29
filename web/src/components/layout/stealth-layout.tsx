@@ -12,7 +12,7 @@
  * checking on its own.
  */
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -30,6 +30,7 @@ import { isStandalonePwa } from "@/hooks/use-install-prompt";
 import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
 import { reportSurface } from "@/lib/api-client";
+import { HintController } from "@/features/hints/hint-controller";
 import { getPlatformPolicy } from "@/lib/api-client";
 import { ensurePushSubscription } from "@/lib/push";
 import { nextDestinationQuery } from "@/lib/next-destination";
@@ -158,6 +159,21 @@ export default function StealthLayout() {
     const surface: Surface = detectTma() ? "tma" : isStandalone ? "pwa" : "browser";
     void reportSurface({ surface, formFactor: detectFormFactor(), os: detectOs() });
   }, [session, isStandalone]);
+
+  // The same three probes the surface report above uses, kept as ONE value so
+  // there is no second detector to drift from the first. Null until the session
+  // resolves: a hint fetched for nobody would be discarded, and asking costs a
+  // round trip.
+  const hintAudience = useMemo(
+    () =>
+      session
+        ? {
+            surface: (detectTma() ? "tma" : isStandalone ? "pwa" : "browser") as Surface,
+            formFactor: detectFormFactor(),
+          }
+        : null,
+    [session, isStandalone],
+  );
 
   // Heal a rotated / pruned web-push subscription once per session (no prompt;
   // only when permission is already granted). Repairs the "push silently stops
@@ -295,6 +311,7 @@ export default function StealthLayout() {
             </div>
           </main>
         </div>
+        <HintController audience={hintAudience} />
       </OnboardingTourProvider>
     );
   }
@@ -390,6 +407,7 @@ export default function StealthLayout() {
           </div>
         </div>
       </div>
+      <HintController audience={hintAudience} />
     </OnboardingTourProvider>
   );
 }
