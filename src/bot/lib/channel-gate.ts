@@ -9,6 +9,8 @@
  * relaxed (non-re-check) mode.
  */
 
+import { sweepExpired } from './bounded-map.js';
+
 export interface ChannelGatePolicy {
   readonly channelRequired?: boolean;
   readonly channelLink?: string | null;
@@ -80,8 +82,20 @@ export function isChannelGateActive(policy: ChannelGatePolicy): boolean {
 const PASS_TTL_MS = 24 * 60 * 60 * 1000;
 const passedAt = new Map<number, number>();
 
+/**
+ * When the map is swept. Below this it is left alone, so the ordinary path is
+ * one `Map.set`; a bot with more than this many gate passes live at once is
+ * large enough that one O(size) walk per write is not worth noticing.
+ */
+const PASS_SWEEP_THRESHOLD = 5_000;
+
 export function markChannelPassed(userId: number): void {
   passedAt.set(userId, Date.now());
+  // Entries used to expire only when the SAME user was read again, so anybody
+  // who passed the gate once and never came back left a row for the lifetime of
+  // the process. The map grew with everyone who had ever touched the bot rather
+  // than with who was using it — invisible because a deploy resets it.
+  sweepExpired(passedAt, PASS_SWEEP_THRESHOLD, (ts) => Date.now() - ts > PASS_TTL_MS);
 }
 
 export function hasRecentlyPassedChannel(userId: number): boolean {

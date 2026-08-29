@@ -40,6 +40,7 @@ import { InlineKeyboard } from 'grammy';
 import type { InlineQueryResultArticle } from '@grammyjs/types';
 
 import { coerceLocale } from './coerce-locale.js';
+import { sweepExpired } from '../lib/bounded-map.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import type { PageDeps, PageRegistrar } from './types.js';
 
@@ -72,6 +73,12 @@ interface ShareSummary {
    */
   readonly program?: { readonly enabled?: unknown };
 }
+
+/**
+ * When the link cache is swept. Below this it is left alone, so the ordinary
+ * inline query stays a single `Map.set`.
+ */
+const LINK_CACHE_MAX = 5_000;
 
 interface CachedLink {
   readonly link: string | null;
@@ -146,6 +153,10 @@ export const registerInlineSharePage: PageRegistrar = (bot, deps) => {
         } else {
           link = await resolveShareLink(deps, telegramId, botUsername);
           linkCache.set(from.id, { link, expiresAt: Date.now() + LINK_CACHE_TTL_MS });
+          // Entries used to expire only when the SAME user queried again, so
+          // anybody who used inline mode once left a row for the lifetime of
+          // the process. Same shape, and same sweep, as the channel gate.
+          sweepExpired(linkCache, LINK_CACHE_MAX, (cached) => cached.expiresAt <= Date.now());
         }
       }
 
