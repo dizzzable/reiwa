@@ -94,7 +94,6 @@ function FaqAccordionItem({ item }: { item: FaqItem }) {
   const triggerId = `${accordionId}-trigger`;
   const panelId = `${accordionId}-panel`;
   const mediaUrls = normalizeFaqMediaUrls(item.mediaUrls);
-  const viewer = useMediaViewer();
 
   // Only what the viewer can actually show. A format the cabinet does not know
   // renders its fallback card in the grid and is skipped here, so the index a
@@ -112,6 +111,7 @@ function FaqAccordionItem({ item }: { item: FaqItem }) {
       },
     ];
   });
+  const viewer = useMediaViewer(viewable);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]">
@@ -162,7 +162,7 @@ function FaqAccordionItem({ item }: { item: FaqItem }) {
                       question={item.question}
                       onOpen={() => {
                         const at = viewable.findIndex((entry) => entry.url === url);
-                        if (at >= 0) viewer.open(viewable, at);
+                        if (at >= 0) viewer.open(at);
                       }}
                     />
                   ))}

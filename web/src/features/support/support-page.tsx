@@ -230,6 +230,19 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
     queryClient.invalidateQueries({ queryKey: ['notifications'] })
   }, [ticket?.id, queryClient])
 
+  // Thread-wide, so paging reaches a screenshot that arrived in a later reply.
+  //
+  // ABOVE the early returns, both of them. Placed after the loading branch this
+  // is a conditional hook: the spinner render has fewer hooks than the render
+  // that follows it, React throws "Rendered more hooks than during the previous
+  // render", and the root error boundary takes the WHOLE cabinet down on the
+  // way to opening a ticket. `web/` has no eslint, so `rules-of-hooks` never
+  // ran here and neither types nor tests could see it.
+  const viewable = collectViewableAttachments(ticket?.messages, (att) =>
+    supportAttachmentUrl(ticketId, att.id),
+  )
+  const viewer = useMediaViewer(viewable)
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -237,13 +250,6 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
       </div>
     )
   }
-
-  const viewer = useMediaViewer()
-
-  // Thread-wide, so paging reaches a screenshot that arrived in a later reply.
-  const viewable = collectViewableAttachments(ticket?.messages, (att) =>
-    supportAttachmentUrl(ticketId, att.id),
-  )
 
   if (!ticket) return null
 
@@ -293,7 +299,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
                         ticketId={ticketId}
                         attachment={att}
                         isUser={isUser}
-                        onOpen={at >= 0 ? () => viewer.open(viewable, at) : null}
+                        onOpen={at >= 0 ? () => viewer.open(at) : null}
                       />
                       )
                     })}

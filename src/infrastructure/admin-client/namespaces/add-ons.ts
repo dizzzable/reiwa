@@ -180,11 +180,16 @@ export class AddOnsNamespace {
   async claimFreeTrafficReset(
     subscriptionId: string,
     addOnId: string,
+    owner: { readonly userId?: string; readonly telegramId?: string },
   ): Promise<{ readonly ok: boolean; readonly reason: string | null }> {
+    // The identity travels with the write. It is not decoration: the panel
+    // refuses a subscription that does not belong to this caller, and the
+    // first version of this call sent none — which made the route a reset
+    // button for anybody else's subscription id.
     const raw = await this.transport.request<unknown>(
       'POST',
       `/api/internal/add-ons/subscriptions/${encodeURIComponent(subscriptionId)}/reset-traffic`,
-      { addOnId },
+      { addOnId, ...owner },
     );
     const body = (raw ?? {}) as Record<string, unknown>;
     return {

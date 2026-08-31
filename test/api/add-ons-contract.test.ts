@@ -45,7 +45,69 @@ const VALID_CHECKOUT = {
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
+/**
+ * A traffic reset, exactly as the panel emits it.
+ *
+ * Three fields differ from every other add-on and all three were rejected by the
+ * first version of the schema: the type itself, a `null` lifetime (a reset
+ * grants nothing, so it expires at no time), and the `freeAllowance` block. A
+ * rejected payload does not degrade — zod throws and the WHOLE options screen
+ * goes blank for every customer, the moment an operator creates their first
+ * reset add-on.
+ */
+const RESET_ELIGIBILITY = {
+  ...VALID_ELIGIBILITY,
+  addOns: [
+    {
+      id: 'addon-reset',
+      revision: 1,
+      name: 'Сброс трафика',
+      description: null,
+      type: 'RESET_TRAFFIC',
+      icon: '🔄',
+      value: 0,
+      lifetime: 'UNTIL_SUBSCRIPTION_END',
+      eligibility: {
+        eligible: true,
+        activation: 'NOW',
+        expiresAt: null,
+        explanationCode: 'RESET_TRAFFIC_IMMEDIATE',
+      },
+      freeAllowance: { freeUsesPerTerm: 1, usedThisTerm: 0, freeRemaining: 1, isFree: true },
+      prices: [{ currency: 'USD', price: '1.00' }],
+    },
+  ],
+};
+
 describe('AddOnsNamespace v2 contract (T-014)', () => {
+  it('parses a traffic reset: new type, null expiry, free allowance', async () => {
+    const { namespace } = namespaceWith(async () => RESET_ELIGIBILITY);
+
+    const result = await namespace.listForSubscription('sub-1', {});
+
+    expect(result.addOns[0]?.type).toBe('RESET_TRAFFIC');
+    expect(result.addOns[0]?.eligibility.expiresAt).toBeNull();
+    expect(result.addOns[0]?.freeAllowance?.isFree).toBe(true);
+  });
+
+  it('still parses a reset from a panel that predates the allowance field', async () => {
+    // The two ship as separate images. A cabinet newer than its API must show a
+    // price rather than blank the screen.
+    const older = {
+      ...RESET_ELIGIBILITY,
+      addOns: [
+        Object.fromEntries(
+          Object.entries(RESET_ELIGIBILITY.addOns[0]!).filter(([k]) => k !== 'freeAllowance'),
+        ),
+      ],
+    };
+    const { namespace } = namespaceWith(async () => older);
+
+    const result = await namespace.listForSubscription('sub-1', {});
+
+    expect(result.addOns[0]?.type).toBe('RESET_TRAFFIC');
+  });
+
   it('parses a valid v2 eligibility payload and hits the subscription-scoped path', async () => {
     const { namespace, calls } = namespaceWith(async () => VALID_ELIGIBILITY);
     const result = await namespace.listForSubscription('sub-1');

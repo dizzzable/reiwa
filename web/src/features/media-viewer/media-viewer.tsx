@@ -34,6 +34,12 @@ const DOUBLE_TAP_SLOP_PX = 24;
 const DISMISS_FADE_PX = 260;
 
 /**
+ * How long after a touch a `click`/`dblclick` is treated as the engine's own
+ * synthesis of that touch rather than a real mouse.
+ */
+const SYNTHETIC_CLICK_WINDOW_MS = 700;
+
+/**
  * Full-screen viewer for the images and videos the cabinet shows.
  *
  * ── Why a layer and not the Fullscreen API ────────────────────────────────
@@ -69,15 +75,26 @@ export function MediaViewer({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const videoRefs = useRef(new Map<number, HTMLVideoElement>());
+  // EVERY moving part of a gesture lives here, not in React state.
+  //
+  // The release path used to read the drag offset out of the render closure
+  // while reading the intent out of this ref. When a `touchmove` and the
+  // `touchend` that follows it land in the same turn — an ordinary flick —
+  // there is no render between them, the two disagree, and the swipe is
+  // silently swallowed. `dx`/`dy` below are the authoritative offsets; the
+  // React state exists only to paint them.
   const gesture = useRef({
     startX: 0,
     startY: 0,
+    dx: 0,
+    dy: 0,
     intent: null as DragIntent | null,
     pinchDistance: 0,
     pinchScale: 1,
     lastTapAt: 0,
     lastTapX: 0,
     lastTapY: 0,
+    lastTouchAt: 0,
   });
 
   const item = current >= 0 ? items[current] : undefined;
@@ -145,21 +162,41 @@ export function MediaViewer({
     };
   }, []);
 
-  const onTouchStart = (event: React.TouchEvent) => {
-    const touches = Array.from(event.touches);
+  /**
+   * Starts a fresh gesture from whatever fingers are on the glass right now.
+   *
+   * Called on every touch START and on every touch END that leaves a finger
+   * behind. That second call is the fix for a whole family of defects: the
+   * origin used to survive a change in finger count, so lifting one finger
+   * after a pinch left the surviving finger measuring its movement from where
+   * some other finger began — a 5 px nudge threw the picture 45 px, and a pinch
+   * whose two fingers landed together (the normal way people pinch) measured
+   * from an origin of 0,0 and slammed the image into a corner. It also left
+   * `intent` stuck on "PAN", so paging and dismissing were dead until every
+   * finger left the glass.
+   */
+  const beginGesture = (touches: readonly React.Touch[]) => {
     const g = gesture.current;
+    g.dx = 0;
+    g.dy = 0;
+    g.intent = null;
+    g.pinchDistance = 0;
+    const first = touches[0];
+    if (first) {
+      g.startX = first.clientX;
+      g.startY = first.clientY;
+    }
     if (touches.length === 2) {
       g.intent = "PAN";
       g.pinchDistance = touchDistance(touches);
       g.pinchScale = zoom.scale;
-      return;
     }
-    const touch = touches[0];
-    if (!touch) return;
-    g.startX = touch.clientX;
-    g.startY = touch.clientY;
-    g.intent = null;
-    g.pinchDistance = 0;
+  };
+
+  const onTouchStart = (event: React.TouchEvent) => {
+    gesture.current.lastTouchAt = event.timeStamp;
+    beginGesture(Array.from(event.touches));
+    setDrag(null);
   };
 
   const onTouchMove = (event: React.TouchEvent) => {
@@ -195,33 +232,49 @@ export function MediaViewer({
       setZoom((prev) => panBy(prev, dx, dy, bounds));
       return;
     }
+    g.dx = dx;
+    g.dy = dy;
     setDrag({ intent: g.intent, dx, dy });
   };
 
   const onTouchEnd = (event: React.TouchEvent) => {
     const g = gesture.current;
-    if (event.touches.length > 0) return;
+    g.lastTouchAt = event.timeStamp;
 
-    const committed = drag;
-    setDrag(null);
+    // Fingers left on the glass mean the gesture changed shape rather than
+    // ended — start a new one from what remains instead of waiting for the
+    // hand to leave, which is what used to strand the state machine.
+    if (event.touches.length > 0) {
+      beginGesture(Array.from(event.touches));
+      setDrag(null);
+      return;
+    }
+
+    const released = event.changedTouches[0];
+    // The release point off the event beats both the ref's last move and the
+    // render closure: it is where the finger actually left, so a swipe that
+    // crosses the threshold on its final move still counts.
+    const dx = released ? released.clientX - g.startX : g.dx;
+    const dy = released ? released.clientY - g.startY : g.dy;
     const intent = g.intent;
     g.intent = null;
     g.pinchDistance = 0;
+    g.dx = 0;
+    g.dy = 0;
+    setDrag(null);
 
     if (intent === "PAGE") {
-      if (committed) {
-        goto(pageStepFromDrag({ dx: committed.dx, viewportWidth: readBounds().viewportWidth }));
-      }
+      goto(pageStepFromDrag({ dx, viewportWidth: readBounds().viewportWidth }));
       return;
     }
     if (intent === "DISMISS") {
-      if (committed && shouldDismissFromDrag({ dy: committed.dy })) onClose();
+      if (shouldDismissFromDrag({ dy })) onClose();
       return;
     }
     if (intent !== null) return;
 
     // No intent means the finger never travelled: this was a tap.
-    const touch = event.changedTouches[0];
+    const touch = released;
     if (!touch || item?.kind !== "image") return;
     const now = event.timeStamp;
     const isDouble =
@@ -237,7 +290,17 @@ export function MediaViewer({
     }
   };
 
+  /**
+   * Double click, for a mouse.
+   *
+   * Ignored right after a touch. `touch-action: none` switches off the
+   * browser's own double-tap-to-zoom, and that is exactly the condition under
+   * which the engine still synthesises a `dblclick` from a double tap — so the
+   * touch path zoomed in and this handler immediately toggled it back out,
+   * making the gesture look like it did nothing at all.
+   */
   const onDoubleClick = (event: React.MouseEvent) => {
+    if (event.timeStamp - gesture.current.lastTouchAt < SYNTHETIC_CLICK_WINDOW_MS) return;
     if (item?.kind !== "image") return;
     const focus = toFocus(event.clientX, event.clientY);
     const bounds = readBounds();

@@ -266,12 +266,21 @@ export function createContentRouter(deps: {
   // FREE traffic reset from the subscription's allowance.
   //
   // Separate from `/add-ons/purchase` because it is not a purchase: no
-  // transaction, no gateway, no settlement. Behind `requireSession` like every
-  // other subscription-scoped route; the backend scopes the subscription to its
-  // owner and re-checks the allowance itself, so this forwards and nothing more.
+  // transaction, no gateway, no settlement.
+  //
+  // The IDENTITY is forwarded, exactly as the sibling GET does. `requireSession`
+  // proves only that some session exists; it says nothing about whose
+  // subscription this is, and without the identity the panel has no way to
+  // refuse. Shipped without it, this route zeroed any subscription id a caller
+  // typed and burned that owner's free allowance.
+  //
+  // `subscription.mutate` is the access mode gate for this class of action: a
+  // free reset is not a purchase, but it IS a real write to the panel, and an
+  // operator who has put the platform in RESTRICTED has stopped exactly that.
   router.post(
     "/add-ons/subscriptions/:subscriptionId/reset-traffic",
     requireSession,
+    requireMode('subscription.mutate'),
     async (req: AuthRequest, res) => {
       try {
         const subscriptionId = String(req.params["subscriptionId"]);
@@ -280,7 +289,11 @@ export function createContentRouter(deps: {
           res.status(400).json({ message: "addOnId is required" });
           return;
         }
-        const result = await adminClient?.addOns.claimFreeTrafficReset(subscriptionId, addOnId);
+        const result = await adminClient?.addOns.claimFreeTrafficReset(
+          subscriptionId,
+          addOnId,
+          resolveUserIdentity(req),
+        );
         res.json(result ?? { ok: false, reason: "unavailable" });
       } catch (e: unknown) {
         sendSafeError(req, res, e, 502, "Traffic reset unavailable", "add-ons/reset-traffic");

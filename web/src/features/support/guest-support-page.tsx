@@ -280,12 +280,12 @@ function ChatView(props: {
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
-  const viewer = useMediaViewer()
 
   // Thread-wide, so paging reaches a screenshot from a later reply.
   const viewable = collectViewableAttachments(props.ticket.messages, (att) =>
     supportGuestAttachmentUrl(att.id),
   )
+  const viewer = useMediaViewer(viewable)
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -371,7 +371,7 @@ function MessageBubble({
 }: {
   message: GuestTicket['messages'][number]
   viewable: readonly ViewableAttachment[]
-  onOpen: (items: readonly ViewableAttachment[], index: number) => void
+  onOpen: (index: number) => void
 }): JSX.Element {
   const { t } = useTranslation()
   const mine = message.authorType === 'user'
@@ -405,7 +405,7 @@ function MessageBubble({
                   key={attachment.id}
                   attachment={attachment}
                   mine={mine}
-                  onOpen={at >= 0 ? () => onOpen(viewable, at) : null}
+                  onOpen={at >= 0 ? () => onOpen(at) : null}
                 />
               )
             })}

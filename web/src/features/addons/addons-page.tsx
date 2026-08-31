@@ -388,10 +388,20 @@ function SelectAddOn() {
                   <p className="mt-0.5 line-clamp-2 text-xs text-[color:var(--brand-muted-foreground)]">{addOn.description}</p>
                 )}
               </div>
-              {price && (
+              {/* A reset covered by the allowance says so instead of showing a
+                  price. Gating this on "all prices are zero" put 99 ₽ next to
+                  the words "бесплатно ещё 1 раз" on the very configuration the
+                  setting exists for. */}
+              {isFreeResetTraffic(addOn) ? (
                 <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
-                  {free ? t("addons.free") : formatPrice(price.price, price.currency)}
+                  {t("addons.free")}
                 </span>
+              ) : (
+                price && (
+                  <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
+                    {free ? t("addons.free") : formatPrice(price.price, price.currency)}
+                  </span>
+                )
               )}
             </button>
           );
@@ -591,10 +601,17 @@ function ReviewStep() {
     : priceRow
       ? formatPrice(priceRow.price, priceRow.currency)
       : "—";
+  // EVERY type, named. A two-way ternary put a traffic reset in the devices
+  // branch, so the last screen before "Перейти к оплате" read "+1 устройство"
+  // above the total — the customer paying on a screen describing a different
+  // product. `value` is forced to at least 1 by the panel, so there was no
+  // nonsense number to notice it by.
   const valueLabel =
     selectedAddOn.type === "EXTRA_TRAFFIC"
       ? t("addons.extraTraffic", { value: selectedAddOn.value })
-      : t("addons.extraDevices", { count: selectedAddOn.value });
+      : selectedAddOn.type === "RESET_TRAFFIC"
+        ? t("addons.resetTraffic")
+        : t("addons.extraDevices", { count: selectedAddOn.value });
 
   return (
     <div className="space-y-4">

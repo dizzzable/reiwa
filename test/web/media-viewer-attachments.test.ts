@@ -106,7 +106,7 @@ describe('the FAQ grid opens the viewer', () => {
   const faq = source('features/settings/faq-page.tsx');
 
   it('pages through the answer media, skipping formats it cannot show', () => {
-    expect(faq).toContain('viewer.open(viewable, at)');
+    expect(faq).toContain('viewer.open(at)');
     expect(faq).toContain('if (kind === "unsupported") return [];');
   });
 
