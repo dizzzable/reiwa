@@ -10,7 +10,7 @@
  * - POST /api/v1/auth/change-password
  */
 
-import { describe, it, mock } from "node:test";
+import { describe, it, vi } from "vitest";
 import assert from "node:assert/strict";
 import express, { type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
@@ -18,28 +18,41 @@ import http from "node:http";
 
 // ── Mock Dependencies ───────────────────────────────────────────────────────
 
+/**
+ * The admin client, in the NAMESPACED shape `src/api/routes/auth.ts` calls.
+ *
+ * It used to be flat — `webAuthRegister`, `getRegistrationToggle` and so on —
+ * the shape the client had before it was split into namespaces. The routes
+ * moved and this fake did not, and nothing noticed, because this whole file
+ * was collected by vitest and executed by nobody (it was written for
+ * `node:test`). Every route answered 500 the moment it was finally run.
+ */
 function createMockAdminClient() {
   return {
-    webAuthRegister: mock.fn(async () => ({
-      userId: "user-123",
-      webAccountId: "wa-456",
-    })),
-    webAuthLogin: mock.fn(async () => ({
-      userId: "user-123",
-      requiresPasswordChange: false,
-      telegramLinked: true,
-      emailVerified: false,
-    })),
-    webAuthRecover: mock.fn(async () => ({
-      method: "telegram" as const,
-      challengeId: "challenge-789",
-    })),
-    webAuthChangePassword: mock.fn(async () => ({
-      success: true,
-    })),
-    getRegistrationToggle: mock.fn(async () => ({
-      enabled: true,
-    })),
+    webAuth: {
+      register: vi.fn(async () => ({
+        userId: "user-123",
+        webAccountId: "wa-456",
+      })),
+      login: vi.fn(async () => ({
+        userId: "user-123",
+        requiresPasswordChange: false,
+        telegramLinked: true,
+        emailVerified: false,
+      })),
+      recover: vi.fn(async () => ({
+        method: "telegram" as const,
+        challengeId: "challenge-789",
+      })),
+      changePassword: vi.fn(async () => ({
+        success: true,
+      })),
+    },
+    system: {
+      getRegistrationToggle: vi.fn(async () => ({
+        enabled: true,
+      })),
+    },
   };
 }
 
@@ -50,23 +63,36 @@ function createMockAdminClient() {
 function createMockRedis() {
   const store = new Map<string, string>();
   return {
-    get: mock.fn(async (key: string) => store.get(key) ?? null),
-    set: mock.fn(async (key: string, value: string, ..._args: unknown[]) => {
+    get: vi.fn(async (key: string) => store.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string, ..._args: unknown[]) => {
       store.set(key, value);
       return "OK";
     }),
-    incr: mock.fn(async (key: string) => {
+    incr: vi.fn(async (key: string) => {
       const current = parseInt(store.get(key) ?? "0", 10);
       const next = current + 1;
       store.set(key, String(next));
       return next;
     }),
-    expire: mock.fn(async () => 1),
-    ttl: mock.fn(async () => 900),
-    del: mock.fn(async (key: string) => { store.delete(key); return 1; }),
-    pipeline: mock.fn(() => ({
-      set: mock.fn(() => ({})),
-      exec: mock.fn(async () => []),
+    expire: vi.fn(async () => 1),
+    // The rate limiter counts through a Lua script, so the fake has to answer
+    // the way that script does: `[newCount, ttl]`, both integers. It OBEYS the
+    // key and window it is handed rather than answering from its own state —
+    // a middleware that counted under the wrong key would otherwise be
+    // invisible here. Without this the limiter threw, every route answered
+    // 503, and 23 of these tests failed on a defect that was in the fake.
+    eval: vi.fn(
+      async (_script: string, _numKeys: number, key: string, windowSeconds: number) => {
+        const next = Number.parseInt(store.get(key) ?? '0', 10) + 1;
+        store.set(key, String(next));
+        return [next, windowSeconds];
+      },
+    ),
+    ttl: vi.fn(async () => 900),
+    del: vi.fn(async (key: string) => { store.delete(key); return 1; }),
+    pipeline: vi.fn(() => ({
+      set: vi.fn(() => ({})),
+      exec: vi.fn(async () => []),
     })),
   };
 }
@@ -74,15 +100,15 @@ function createMockRedis() {
 function createMockWebSessionStore(mockRedis?: ReturnType<typeof createMockRedis>) {
   const redis = mockRedis ?? createMockRedis();
   return {
-    create: mock.fn(async (data: { userId: string }) => {
+    create: vi.fn(async (data: { userId: string }) => {
       return `session-${Date.now()}`;
     }),
-    get: mock.fn(async () => null),
-    destroy: mock.fn(async () => {}),
-    touch: mock.fn(async () => {}),
-    getRedis: mock.fn(() => redis),
-    connect: mock.fn(async () => {}),
-    disconnect: mock.fn(async () => {}),
+    get: vi.fn(async () => null),
+    destroy: vi.fn(async () => {}),
+    touch: vi.fn(async () => {}),
+    getRedis: vi.fn(() => redis),
+    connect: vi.fn(async () => {}),
+    disconnect: vi.fn(async () => {}),
   };
 }
 
@@ -240,7 +266,7 @@ describe("POST /api/v1/auth/register", () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
     assert.equal(res.body.redirectUrl, "/dashboard");
-    assert.equal(adminClient.webAuthRegister.mock.callCount(), 1);
+    assert.equal(adminClient.webAuth.register.mock.calls.length, 1);
   });
 
   it("returns 503 when adminClient is null", async () => {
@@ -267,7 +293,7 @@ describe("POST /api/v1/auth/login", () => {
 
   it("returns generic error on invalid credentials", async () => {
     const adminClient = createMockAdminClient();
-    adminClient.webAuthLogin = mock.fn(async () => {
+    adminClient.webAuth.login = vi.fn(async () => {
       throw new Error("AdminClient: POST /api/internal/web-auth/login → 401: Invalid credentials");
     });
     const { app } = await buildApp({ adminClient });
@@ -295,7 +321,7 @@ describe("POST /api/v1/auth/login", () => {
 
   it("redirects to change-password when requiresPasswordChange is true", async () => {
     const adminClient = createMockAdminClient();
-    adminClient.webAuthLogin = mock.fn(async () => ({
+    adminClient.webAuth.login = vi.fn(async () => ({
       userId: "user-123",
       requiresPasswordChange: true,
       telegramLinked: false,
@@ -398,7 +424,7 @@ describe("GET /api/v1/auth/status", () => {
 
   it("returns registration disabled when toggle is off", async () => {
     const adminClient = createMockAdminClient();
-    adminClient.getRegistrationToggle = mock.fn(async () => ({ enabled: false }));
+    adminClient.system.getRegistrationToggle = vi.fn(async () => ({ enabled: false }));
     const { app } = await buildApp({ adminClient });
     const res = await request(app, {
       method: "GET",
@@ -459,6 +485,6 @@ describe("POST /api/v1/auth/change-password", () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
     assert.equal(res.body.redirectUrl, "/dashboard");
-    assert.equal(adminClient.webAuthChangePassword.mock.callCount(), 1);
+    assert.equal(adminClient.webAuth.changePassword.mock.calls.length, 1);
   });
 });

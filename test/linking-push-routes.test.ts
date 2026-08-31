@@ -6,10 +6,10 @@
  * - POST /api/v1/link/email/initiate
  * - POST /api/v1/link/email/verify
  * - POST /api/v1/push/subscribe
- * - DELETE /api/v1/push/unsubscribe
+ * - POST /api/v1/push/unsubscribe
  */
 
-import { describe, it, mock } from "node:test";
+import { describe, it, vi } from "vitest";
 import assert from "node:assert/strict";
 import express, { type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
@@ -17,29 +17,46 @@ import http from "node:http";
 
 // ── Mock Dependencies ───────────────────────────────────────────────────────
 
+/**
+ * The admin client, in the NAMESPACED shape the routes actually call.
+ *
+ * It used to be flat — `linkTelegramGenerate`, `pushSubscribe` and so on —
+ * which is the shape the client had before it was split into namespaces. The
+ * routes moved; this fake did not, and nothing noticed, because this whole
+ * file was collected by vitest and executed by nobody (it was written for
+ * `node:test`). Every route here answered 500 on `Cannot read properties of
+ * undefined` the moment it was finally run.
+ */
 function createMockAdminClient() {
   return {
-    linkTelegramGenerate: mock.fn(async () => ({
-      code: "AB12CD34",
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    })),
-    linkEmailInitiate: mock.fn(async () => ({
-      success: true,
-      message: "Verification code sent to your email",
-    })),
-    linkEmailVerify: mock.fn(async () => ({
-      success: true,
-      verified: true,
-    })),
-    pushSubscribe: mock.fn(async () => ({
-      success: true,
-    })),
-    pushUnsubscribe: mock.fn(async () => ({
-      success: true,
-    })),
-    getBotConfig: mock.fn(async () => ({
-      telegramBotUsername: "@rezeis_bot",
-    })),
+    linking: {
+      telegram: {
+        generate: vi.fn(async () => ({
+          code: "AB12CD34",
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        })),
+      },
+      email: {
+        initiate: vi.fn(async () => ({
+          success: true,
+          message: "Verification code sent to your email",
+        })),
+        verify: vi.fn(async () => ({
+          success: true,
+          verified: true,
+        })),
+      },
+    },
+    push: {
+      getPublicKey: vi.fn(async () => ({ publicKey: "test-vapid-public-key" })),
+      subscribe: vi.fn(async () => ({ success: true })),
+      unsubscribe: vi.fn(async () => ({ success: true })),
+    },
+    branding: {
+      getBotConfig: vi.fn(async () => ({
+        telegramBotUsername: "@rezeis_bot",
+      })),
+    },
   };
 }
 
@@ -231,7 +248,7 @@ describe("POST /api/v1/link/email/initiate", () => {
     });
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
-    assert.equal(adminClient.linkEmailInitiate.mock.callCount(), 1);
+    assert.equal(adminClient.linking.email.initiate.mock.calls.length, 1);
   });
 
   it("rejects empty email", async () => {
@@ -286,7 +303,7 @@ describe("POST /api/v1/link/email/verify", () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
     assert.equal(res.body.verified, true);
-    assert.equal(adminClient.linkEmailVerify.mock.callCount(), 1);
+    assert.equal(adminClient.linking.email.verify.mock.calls.length, 1);
   });
 });
 
@@ -333,7 +350,7 @@ describe("POST /api/v1/push/subscribe", () => {
     });
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
-    assert.equal(adminClient.pushSubscribe.mock.callCount(), 1);
+    assert.equal(adminClient.push.subscribe.mock.calls.length, 1);
   });
 
   it("rejects subscription with missing keys", async () => {
@@ -352,11 +369,14 @@ describe("POST /api/v1/push/subscribe", () => {
   });
 });
 
-describe("DELETE /api/v1/push/unsubscribe", () => {
+// POST, not DELETE. The route and the cabinet client (`web/src/lib/api-client/
+// push.ts`) both use POST; this block asked for DELETE and got 404 on every
+// case, which nobody saw because the file never ran.
+describe("POST /api/v1/push/unsubscribe", () => {
   it("returns 401 when not authenticated", async () => {
     const { app } = await buildPushApp({ authenticated: false });
     const res = await request(app, {
-      method: "DELETE",
+      method: "POST",
       path: "/api/v1/push/unsubscribe",
       body: { endpoint: "https://fcm.googleapis.com/fcm/send/abc123" },
     });
@@ -366,7 +386,7 @@ describe("DELETE /api/v1/push/unsubscribe", () => {
   it("validates endpoint is a valid URL", async () => {
     const { app } = await buildPushApp({ authenticated: true });
     const res = await request(app, {
-      method: "DELETE",
+      method: "POST",
       path: "/api/v1/push/unsubscribe",
       body: { endpoint: "not-a-url" },
     });
@@ -376,19 +396,19 @@ describe("DELETE /api/v1/push/unsubscribe", () => {
   it("returns success on valid unsubscribe", async () => {
     const { app, adminClient } = await buildPushApp({ authenticated: true });
     const res = await request(app, {
-      method: "DELETE",
+      method: "POST",
       path: "/api/v1/push/unsubscribe",
       body: { endpoint: "https://fcm.googleapis.com/fcm/send/abc123" },
     });
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
-    assert.equal(adminClient.pushUnsubscribe.mock.callCount(), 1);
+    assert.equal(adminClient.push.unsubscribe.mock.calls.length, 1);
   });
 
   it("retains subscription data when removal fails", async () => {
     const failingClient = createMockAdminClient();
-    failingClient.pushUnsubscribe = mock.fn(async () => {
-      throw new Error("AdminClient: DELETE /api/internal/push/unsubscribe → 500: Internal error");
+    failingClient.push.unsubscribe = vi.fn(async () => {
+      throw new Error("AdminClient: POST /api/internal/push/unsubscribe → 500: Internal error");
     });
 
     const testApp = express();
@@ -410,7 +430,7 @@ describe("DELETE /api/v1/push/unsubscribe", () => {
     }));
 
     const res = await request(testApp, {
-      method: "DELETE",
+      method: "POST",
       path: "/api/v1/push/unsubscribe",
       body: { endpoint: "https://fcm.googleapis.com/fcm/send/abc123" },
     });
@@ -420,8 +440,8 @@ describe("DELETE /api/v1/push/unsubscribe", () => {
 
   it("treats 404 (already removed) as success", async () => {
     const notFoundClient = createMockAdminClient();
-    notFoundClient.pushUnsubscribe = mock.fn(async () => {
-      throw new Error("AdminClient: DELETE /api/internal/push/unsubscribe → 404: Not found");
+    notFoundClient.push.unsubscribe = vi.fn(async () => {
+      throw new Error("AdminClient: POST /api/internal/push/unsubscribe → 404: Not found");
     });
 
     const testApp = express();
@@ -443,7 +463,7 @@ describe("DELETE /api/v1/push/unsubscribe", () => {
     }));
 
     const res = await request(testApp, {
-      method: "DELETE",
+      method: "POST",
       path: "/api/v1/push/unsubscribe",
       body: { endpoint: "https://fcm.googleapis.com/fcm/send/abc123" },
     });
