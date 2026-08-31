@@ -4,6 +4,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Send, X, Copy, Check, Paperclip } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { useMediaViewer } from '@/features/media-viewer/use-media-viewer'
+import {
+  collectViewableAttachments,
+  indexOfAttachment,
+  type ViewableAttachment,
+} from '@/features/media-viewer/support-attachments'
+
 import {
   createGuestTicket,
   getGuestConversation,
@@ -273,6 +280,12 @@ function ChatView(props: {
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const viewer = useMediaViewer()
+
+  // Thread-wide, so paging reaches a screenshot from a later reply.
+  const viewable = collectViewableAttachments(props.ticket.messages, (att) =>
+    supportGuestAttachmentUrl(att.id),
+  )
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -310,9 +323,12 @@ function ChatView(props: {
         {props.ticket.messages.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">{t('guestSupport.chat.empty')}</p>
         ) : (
-          props.ticket.messages.map((m) => <MessageBubble key={m.id} message={m} />)
+          props.ticket.messages.map((m) => (
+            <MessageBubble key={m.id} message={m} viewable={viewable} onOpen={viewer.open} />
+          ))
         )}
       </div>
+      {viewer.element}
 
       <div className="flex gap-2">
         <textarea
@@ -350,8 +366,12 @@ function ChatView(props: {
 
 function MessageBubble({
   message,
+  viewable,
+  onOpen,
 }: {
   message: GuestTicket['messages'][number]
+  viewable: readonly ViewableAttachment[]
+  onOpen: (items: readonly ViewableAttachment[], index: number) => void
 }): JSX.Element {
   const { t } = useTranslation()
   const mine = message.authorType === 'user'
@@ -378,9 +398,17 @@ function MessageBubble({
         )}
         {message.attachments && message.attachments.length > 0 && (
           <div className={message.content ? 'mt-1.5 space-y-1.5' : 'space-y-1.5'}>
-            {message.attachments.map((attachment) => (
-              <GuestAttachmentView key={attachment.id} attachment={attachment} mine={mine} />
-            ))}
+            {message.attachments.map((attachment) => {
+              const at = indexOfAttachment(viewable, attachment.id)
+              return (
+                <GuestAttachmentView
+                  key={attachment.id}
+                  attachment={attachment}
+                  mine={mine}
+                  onOpen={at >= 0 ? () => onOpen(viewable, at) : null}
+                />
+              )
+            })}
           </div>
         )}
       </div>
@@ -396,21 +424,25 @@ function MessageBubble({
 function GuestAttachmentView({
   attachment,
   mine,
+  onOpen,
 }: {
   attachment: SupportAttachmentMeta
   mine: boolean
+  onOpen: (() => void) | null
 }): JSX.Element {
   const url = supportGuestAttachmentUrl(attachment.id)
-  if (attachment.mimeType.startsWith('image/')) {
+  if (onOpen) {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl">
+      <button type="button" onClick={onOpen} className="block overflow-hidden rounded-xl">
         <img
           src={url}
           alt={attachment.filename}
           loading="lazy"
-          className="max-h-64 w-auto max-w-full rounded-xl object-cover"
+          // `contain`, not `cover` — see the signed-in page for why cropping a
+          // screenshot preview is the wrong default in a support thread.
+          className="max-h-64 w-auto max-w-full cursor-zoom-in rounded-xl object-contain"
         />
-      </a>
+      </button>
     )
   }
   return (

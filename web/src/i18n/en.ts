@@ -879,6 +879,14 @@ export const en: RuDict = {
     expires: 'Expires',
     devices: 'up to {{count}} devices',
   },
+  mediaViewer: {
+    counter: '{{current}} of {{total}}',
+    close: 'Close',
+    previous: 'Previous',
+    next: 'Next',
+    expand: 'Expand',
+    openImage: 'Open full screen: {{label}}',
+  },
   addons: {
     title: 'Add-ons',
     description: 'Top up traffic or devices for your current subscription.',

@@ -5,6 +5,8 @@ import { useSearchParams, useNavigate } from 'react-router'
 import { motion } from 'motion/react'
 import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, Sparkles, X } from 'lucide-react'
 import { getTickets, getTicket, createTicket, replyToTicket, supportAttachmentUrl } from '@/lib/api-client'
+import { useMediaViewer } from '@/features/media-viewer/use-media-viewer'
+import { collectViewableAttachments, indexOfAttachment } from '@/features/media-viewer/support-attachments'
 import type { SupportTicket, SupportAttachmentMeta } from '@/lib/api-client'
 import { getAiChatConfig } from '@/lib/api-client/ai-chat'
 import { BackButton } from '@/components/ui/back-button'
@@ -27,32 +29,41 @@ function formatBytes(bytes: number): string {
 }
 
 /**
- * Renders one support-message attachment: an inline image preview (tap to open
- * full-size) for image types, or a download chip with filename + size for
+ * Renders one support-message attachment: an inline image preview that opens
+ * the full-screen viewer, or a download chip with filename + size for
  * everything else. The binary streams from the same-origin permissioned
  * endpoint (session cookie sent automatically).
+ *
+ * The preview used to be an `<a target="_blank">`. Inside the Telegram mini
+ * app that is the pattern `openExternalUrl` exists to avoid — a new tab from a
+ * sandboxed webview is unreliable, and the destination here is a session-bound
+ * endpoint the external browser may not be able to fetch at all. Tapping a
+ * screenshot in a ticket now stays inside the app, where it always works.
  */
 function SupportAttachmentView({
   ticketId,
   attachment,
   isUser,
+  onOpen,
 }: {
   ticketId: string
   attachment: SupportAttachmentMeta
   isUser: boolean
+  onOpen: (() => void) | null
 }) {
   const url = supportAttachmentUrl(ticketId, attachment.id)
-  const isImage = attachment.mimeType.startsWith('image/')
-  if (isImage) {
+  if (onOpen) {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl">
+      <button type="button" onClick={onOpen} className="block overflow-hidden rounded-xl">
         <img
           src={url}
           alt={attachment.filename}
           loading="lazy"
-          className="max-h-64 w-auto max-w-full rounded-xl object-cover"
+          // `contain`, not `cover`. Cropping the one preview a person gets of
+          // their own screenshot hid exactly the corner they were pointing at.
+          className="max-h-64 w-auto max-w-full cursor-zoom-in rounded-xl object-contain"
         />
-      </a>
+      </button>
     )
   }
   return (
@@ -227,10 +238,18 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
     )
   }
 
+  const viewer = useMediaViewer()
+
+  // Thread-wide, so paging reaches a screenshot that arrived in a later reply.
+  const viewable = collectViewableAttachments(ticket?.messages, (att) =>
+    supportAttachmentUrl(ticketId, att.id),
+  )
+
   if (!ticket) return null
 
   return (
     <div className="flex flex-col h-full">
+      {viewer.element}
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-[color:var(--color-border-soft)] px-5 py-4">
         <button onClick={onBack} aria-label={t('common.back')} className="flex h-9 w-9 items-center justify-center rounded-full glass-icon-btn">
@@ -266,9 +285,18 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
                 )}
                 {msg.attachments && msg.attachments.length > 0 && (
                   <div className={cn('space-y-2', msg.content ? 'mt-2' : '')}>
-                    {msg.attachments.map((att) => (
-                      <SupportAttachmentView key={att.id} ticketId={ticketId} attachment={att} isUser={isUser} />
-                    ))}
+                    {msg.attachments.map((att) => {
+                      const at = indexOfAttachment(viewable, att.id)
+                      return (
+                      <SupportAttachmentView
+                        key={att.id}
+                        ticketId={ticketId}
+                        attachment={att}
+                        isUser={isUser}
+                        onOpen={at >= 0 ? () => viewer.open(viewable, at) : null}
+                      />
+                      )
+                    })}
                   </div>
                 )}
                 <p className={cn('mt-1 text-[10px]', isUser ? 'opacity-50' : 'text-[color:var(--brand-muted-foreground)]')}>

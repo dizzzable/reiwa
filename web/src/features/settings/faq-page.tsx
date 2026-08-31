@@ -8,7 +8,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ChevronDown, ExternalLink } from "lucide-react";
+import { AlertTriangle, ChevronDown, ExternalLink, Maximize2 } from "lucide-react";
 import { useId, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { getFaq, type FaqItem } from "@/lib/api-client";
 import { getFaqMediaKind, normalizeFaqMediaUrls } from "./faq-media";
 import { FaqMediaElement } from "./faq-media-element";
+import { useMediaViewer } from "@/features/media-viewer/use-media-viewer";
+import type { MediaViewerItem } from "@/features/media-viewer/media-viewer";
 import { resolveFaqViewState } from "./faq-state";
 
 export default function FaqPage() {
@@ -92,6 +94,24 @@ function FaqAccordionItem({ item }: { item: FaqItem }) {
   const triggerId = `${accordionId}-trigger`;
   const panelId = `${accordionId}-panel`;
   const mediaUrls = normalizeFaqMediaUrls(item.mediaUrls);
+  const viewer = useMediaViewer();
+
+  // Only what the viewer can actually show. A format the cabinet does not know
+  // renders its fallback card in the grid and is skipped here, so the index a
+  // thumbnail hands over always lines up with what is being paged through.
+  const viewable: MediaViewerItem[] = mediaUrls.flatMap((url) => {
+    const kind = getFaqMediaKind(url);
+    if (kind === "unsupported") return [];
+    return [
+      {
+        url,
+        kind,
+        label: t(kind === "image" ? "faq.mediaImageAlt" : "faq.mediaVideoLabel", {
+          question: item.question,
+        }),
+      },
+    ];
+  });
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]">
@@ -136,7 +156,15 @@ function FaqAccordionItem({ item }: { item: FaqItem }) {
                   aria-label={t("faq.mediaGroupLabel", { question: item.question })}
                 >
                   {mediaUrls.map((url) => (
-                    <FaqMedia key={url} url={url} question={item.question} />
+                    <FaqMedia
+                      key={url}
+                      url={url}
+                      question={item.question}
+                      onOpen={() => {
+                        const at = viewable.findIndex((entry) => entry.url === url);
+                        if (at >= 0) viewer.open(viewable, at);
+                      }}
+                    />
                   ))}
                 </div>
               )}
@@ -144,11 +172,20 @@ function FaqAccordionItem({ item }: { item: FaqItem }) {
           </motion.div>
         )}
       </AnimatePresence>
+      {viewer.element}
     </div>
   );
 }
 
-function FaqMedia({ url, question }: { url: string; question: string }) {
+function FaqMedia({
+  url,
+  question,
+  onOpen,
+}: {
+  url: string;
+  question: string;
+  onOpen: () => void;
+}) {
   const { t } = useTranslation();
   const [failed, setFailed] = useState(false);
   const kind = getFaqMediaKind(url);
@@ -168,12 +205,33 @@ function FaqMedia({ url, question }: { url: string; question: string }) {
 
   return (
     <figure className="min-w-0 overflow-hidden rounded-xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)]">
-      <FaqMediaElement
-        kind={kind}
-        url={url}
-        label={label}
-        onError={() => setFailed(true)}
-      />
+      {kind === "image" ? (
+        // A button, not a click handler on the image: the grid is the only way
+        // to reach the viewer, so it has to be reachable from a keyboard and
+        // announce itself to a screen reader as something that opens.
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={t("mediaViewer.openImage", { label })}
+          className="block w-full cursor-zoom-in"
+        >
+          <FaqMediaElement kind={kind} url={url} label={label} onError={() => setFailed(true)} />
+        </button>
+      ) : (
+        <>
+          <FaqMediaElement kind={kind} url={url} label={label} onError={() => setFailed(true)} />
+          {/* Video keeps its own controls, so the way to full screen is a
+              separate control rather than a tap that would fight play/pause. */}
+          <button
+            type="button"
+            onClick={onOpen}
+            className="flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs text-[color:var(--brand-muted-foreground)] transition-colors hover:text-[color:var(--brand-foreground)]"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+            {t("mediaViewer.expand")}
+          </button>
+        </>
+      )}
     </figure>
   );
 }

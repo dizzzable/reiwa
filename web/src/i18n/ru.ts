@@ -876,6 +876,14 @@ export const ru = {
     expires: 'Истекает',
     devices: 'до {{count}} устр.',
   },
+  mediaViewer: {
+    counter: '{{current}} из {{total}}',
+    close: 'Закрыть',
+    previous: 'Предыдущее',
+    next: 'Следующее',
+    expand: 'Развернуть',
+    openImage: 'Открыть на весь экран: {{label}}',
+  },
   addons: {
     title: 'Дополнительные опции',
     description: 'Докупите трафик или устройства к текущей подписке.',
