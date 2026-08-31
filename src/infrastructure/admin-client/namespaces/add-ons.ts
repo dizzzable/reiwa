@@ -41,7 +41,14 @@ const addOnPriceSchema = z.object({
 const eligibilityInfoSchema = z.object({
   eligible: z.literal(true),
   activation: z.enum(['NOW', 'TERM_START']),
-  expiresAt: z.string(),
+  // NULLABLE, because `RESET_TRAFFIC` grants nothing and so has no lifetime.
+  // Left as a bare `z.string()` this schema would have REFUSED the whole
+  // eligibility response the moment an operator created a reset add-on — and
+  // the cabinet's options screen would have gone blank for every customer, not
+  // just for the one add-on it could not read. This repository has paid for
+  // that exact shape before, parsing a healthy panel's response with a schema
+  // from the wrong era.
+  expiresAt: z.string().nullable(),
   explanationCode: z.string(),
 });
 
@@ -50,11 +57,27 @@ const eligibleAddOnSchema = z.object({
   revision: z.number(),
   name: z.string(),
   description: z.string().nullable(),
-  type: z.enum(['EXTRA_TRAFFIC', 'EXTRA_DEVICES']),
+  type: z.enum(['EXTRA_TRAFFIC', 'EXTRA_DEVICES', 'RESET_TRAFFIC']),
   icon: z.string().nullable(),
   value: z.number(),
   lifetime: z.enum(['UNTIL_NEXT_RESET', 'UNTIL_SUBSCRIPTION_END']),
   eligibility: eligibilityInfoSchema,
+  /**
+   * `RESET_TRAFFIC` only; absent or null on every other type.
+   *
+   * Optional as well as nullable so a cabinet build can meet a backend that
+   * predates the field — the two ship as separate images, and a required key
+   * here would blank the screen against an older panel rather than simply
+   * showing a price.
+   */
+  freeAllowance: z
+    .object({
+      freeUsesPerTerm: z.number(),
+      freeRemaining: z.number(),
+      isFree: z.boolean(),
+    })
+    .nullable()
+    .optional(),
   prices: z.array(addOnPriceSchema),
 });
 
@@ -144,6 +167,30 @@ export class AddOnsNamespace {
       }`,
     );
     return addOnEligibilityResultSchema.parse(raw);
+  }
+
+  /**
+   * Takes a FREE traffic reset from the subscription's allowance.
+   *
+   * Not a checkout, and deliberately a different call: a free reset mints no
+   * transaction, chooses no gateway and settles nothing. The backend re-checks
+   * the allowance itself — the offer's `freeAllowance` is what the screen shows,
+   * never what it decides, so two open tabs cannot each spend the last free use.
+   */
+  async claimFreeTrafficReset(
+    subscriptionId: string,
+    addOnId: string,
+  ): Promise<{ readonly ok: boolean; readonly reason: string | null }> {
+    const raw = await this.transport.request<unknown>(
+      'POST',
+      `/api/internal/add-ons/subscriptions/${encodeURIComponent(subscriptionId)}/reset-traffic`,
+      { addOnId },
+    );
+    const body = (raw ?? {}) as Record<string, unknown>;
+    return {
+      ok: body.ok === true,
+      reason: typeof body.reason === 'string' ? body.reason : null,
+    };
   }
 
   /**

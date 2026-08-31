@@ -21,6 +21,13 @@ const addOns = [
   },
 ];
 
+const resetAddOn = {
+  id: 'reset-1',
+  type: 'RESET_TRAFFIC' as const,
+  value: 0,
+  prices: [{ currency: 'USD', price: '1.00' }],
+};
+
 const historyBase = {
   subscriptionId: 'sub-1',
   addOnId: 'traffic-10' as string | null,
@@ -33,6 +40,24 @@ const historyBase = {
 const now = new Date('2026-07-14T00:00:00.000Z');
 
 describe('selectRenewalReoffer', () => {
+  it('never re-offers a traffic reset, even one the history somehow carries', () => {
+    // Renewal opens a new term with fresh traffic, so a reset bought alongside it
+    // buys nothing. A reset grants no entitlement and so cannot reach history
+    // today — this pins the behaviour for the day entitlement history widens.
+    const result = selectRenewalReoffer({
+      subscriptionId: 'sub-1',
+      currency: 'USD',
+      history: [
+        { ...historyBase, addOnId: 'reset-1' },
+        { ...historyBase, addOnId: 'traffic-10' },
+      ],
+      eligibleAddOns: [resetAddOn, ...addOns],
+      now,
+    });
+
+    expect(result.map((a) => a.id)).toEqual(['traffic-10']);
+  });
+
   it('returns only currently eligible, gateway-priced add-ons active for this subscription', () => {
     const result = selectRenewalReoffer({
       subscriptionId: 'sub-1',

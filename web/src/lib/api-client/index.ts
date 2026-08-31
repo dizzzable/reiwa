@@ -229,6 +229,7 @@ export {
 
 // Content (FAQ + add-ons)
 export {
+  claimFreeTrafficReset,
   getFaq,
   getLegalDocuments,
   getSubscriptionAddOns,

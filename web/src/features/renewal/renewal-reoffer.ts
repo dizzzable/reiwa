@@ -9,7 +9,7 @@ export interface RenewalReofferHistoryEntry {
 
 export interface RenewalReofferEligibleAddOn {
   readonly id: string;
-  readonly type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES";
+  readonly type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES" | "RESET_TRAFFIC";
   readonly value: number;
   readonly prices: readonly { readonly currency: string }[];
 }
@@ -44,6 +44,11 @@ export function selectRenewalReoffer<T extends RenewalReofferEligibleAddOn>(inpu
 
   return input.eligibleAddOns.filter(
     (addOn) =>
+      // A traffic reset is never re-offered at renewal: the renewal itself opens a
+      // new term with fresh traffic, so buying a reset alongside it buys nothing.
+      // It also grants no entitlement, so it cannot reach `liveHistory` today —
+      // this is the guard that keeps that true if entitlement history ever widens.
+      addOn.type !== "RESET_TRAFFIC" &&
       addOn.prices.some((price) => price.currency === input.currency) &&
       liveHistory.some((entry) =>
         entry.addOnId === null

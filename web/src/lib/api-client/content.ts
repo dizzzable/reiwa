@@ -89,16 +89,27 @@ export interface EligibleAddOn {
   revision: number;
   name: string;
   description: string | null;
-  type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES";
+  type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES" | "RESET_TRAFFIC";
   icon: string | null;
   value: number;
   lifetime: "UNTIL_NEXT_RESET" | "UNTIL_SUBSCRIPTION_END";
   eligibility: {
     eligible: true;
     activation: "NOW" | "TERM_START";
-    expiresAt: string;
+    /** `null` for `RESET_TRAFFIC`, which grants nothing and so has no lifetime. */
+    expiresAt: string | null;
     explanationCode: string;
   };
+  /**
+   * `RESET_TRAFFIC` only. Optional as well as nullable: the cabinet and the API
+   * ship as separate images, so this build can meet a backend that predates the
+   * field — and must then simply show a price rather than break.
+   */
+  freeAllowance?: {
+    freeUsesPerTerm: number;
+    freeRemaining: number;
+    isFree: boolean;
+  } | null;
   prices: { currency: string; price: string }[];
 }
 
@@ -117,4 +128,20 @@ export interface AddOnEligibilityResult {
 export const getSubscriptionAddOns = (subscriptionId: string) =>
   apiClient
     .get<AddOnEligibilityResult>(`/add-ons/subscriptions/${encodeURIComponent(subscriptionId)}`)
+    .then((r) => r.data);
+
+/**
+ * Takes a FREE traffic reset from the subscription's allowance.
+ *
+ * Not a purchase: no gateway, no transaction, no checkout — which is why it has
+ * its own route rather than a zero-priced trip through `purchaseAddOn`. The
+ * allowance is re-counted server-side, so `ok: false` with a `reason` is the
+ * normal answer for a stale tab whose free use was already spent elsewhere.
+ */
+export const claimFreeTrafficReset = (subscriptionId: string, addOnId: string) =>
+  apiClient
+    .post<{ ok: boolean; reason: string | null }>(
+      `/add-ons/subscriptions/${encodeURIComponent(subscriptionId)}/reset-traffic`,
+      { addOnId },
+    )
     .then((r) => r.data);

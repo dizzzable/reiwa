@@ -8,14 +8,15 @@
  *   3. Pick a payment gateway (skipped for free add-ons — applied instantly).
  *   4. Checkout → provider redirect, or instant success for free add-ons.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router";
-import { Gauge, Plus, Smartphone } from "lucide-react";
+import { Gauge, Plus, RotateCcw, Smartphone } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import {
+  claimFreeTrafficReset,
   getAllSubscriptions,
   getEnabledGateways,
   getSubscriptionAddOns,
@@ -39,6 +40,12 @@ import { useAddOnStore } from "@/stores/addons.store";
 import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
+import {
+  freeResetsLeftAfter,
+  isFreeResetTraffic,
+  resolveAddOnPickPath,
+} from "@/features/addons/reset-traffic-policy";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -85,6 +92,8 @@ function isGatewayOfferable(
 function isFree(addOn: EligibleAddOn): boolean {
   return addOn.prices.length > 0 && addOn.prices.every((p) => Number(p.price) === 0);
 }
+
+
 
 export default function AddOnsPage() {
   const { t } = useTranslation();
@@ -200,7 +209,10 @@ function SelectSubscription() {
 function SelectAddOn() {
   const { t } = useTranslation();
   const { customIcons } = useBranding();
+  const queryClient = useQueryClient();
   const { selectedSubscriptionId, selectAddOn, selectGateway, setStep } = useAddOnStore();
+  // The free reset the user is being asked to confirm — `null` = no dialog.
+  const [resetTarget, setResetTarget] = useState<EligibleAddOn | null>(null);
 
   // v2 authoritative eligibility: the backend computes what's offerable against
   // THIS subscription's active-term baseline (finite-limit gating + plan
@@ -224,7 +236,41 @@ function SelectAddOn() {
 
   const isTma = !!window.Telegram?.WebApp?.initData;
 
+  /**
+   * Takes a free reset. Deliberately NOT a checkout: no gateway, no
+   * transaction, nothing to settle.
+   *
+   * The allowance is re-counted by the backend, so `ok: false` is an expected
+   * answer — a second tab, or a reset taken on another device — and is shown as
+   * a plain message. Either way the eligibility query is invalidated so the card
+   * stops claiming a free use the user no longer has.
+   */
+  const freeReset = useMutation({
+    mutationFn: (addOn: EligibleAddOn) =>
+      claimFreeTrafficReset(selectedSubscriptionId ?? "", addOn.id),
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["add-ons-eligibility", selectedSubscriptionId],
+      });
+      // Consumed traffic changed — the dashboard's gauge is now stale.
+      void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.root });
+      setResetTarget(null);
+    },
+    onSuccess: (result) => {
+      if (result.ok) toast.success(t("addons.resetTrafficDone"));
+      else toast.error(t("addons.resetTrafficFailed"));
+    },
+    onError: () => toast.error(t("addons.resetTrafficFailed")),
+  });
+
   const onPick = (addOn: EligibleAddOn) => {
+    // A free reset never enters the wizard: there is no gateway to pick and no
+    // checkout to review, so the confirmation IS the whole flow. A paid one
+    // falls through and is bought like any other add-on.
+    if (resolveAddOnPickPath(addOn) === "FREE_RESET") {
+      setResetTarget(addOn);
+      return;
+    }
     // Free add-on: skip gateway selection only when an OFFERABLE gateway
     // carries the zero-priced row (channel-compatible + matching currency).
     // Otherwise fall through to the (filtered) gateway step rather than
@@ -294,7 +340,12 @@ function SelectAddOn() {
           const customId = customIconId(addOn.icon);
           const custom = customId ? customIcons.find((c) => c.id === customId) : undefined;
           const BuiltIn = resolveBuiltInIcon(addOn.icon);
-          const TypeFallback = addOn.type === "EXTRA_TRAFFIC" ? Gauge : Smartphone;
+          const TypeFallback =
+            addOn.type === "EXTRA_TRAFFIC"
+              ? Gauge
+              : addOn.type === "RESET_TRAFFIC"
+                ? RotateCcw
+                : Smartphone;
           return (
             <button
               key={addOn.id}
@@ -317,8 +368,22 @@ function SelectAddOn() {
                 <p className="text-xs text-[color:var(--brand-muted-foreground)]">
                   {addOn.type === "EXTRA_TRAFFIC"
                     ? t("addons.extraTraffic", { value: addOn.value })
-                    : t("addons.extraDevices", { count: addOn.value })}
+                    : addOn.type === "RESET_TRAFFIC"
+                      ? isFreeResetTraffic(addOn)
+                        ? t("addons.resetTrafficFree", {
+                            count: addOn.freeAllowance?.freeRemaining ?? 0,
+                          })
+                        : t("addons.resetTraffic")
+                      : t("addons.extraDevices", { count: addOn.value })}
                 </p>
+                {addOn.type === "RESET_TRAFFIC" && (
+                  /* Said on the CARD, not only in a confirmation the customer
+                     may dismiss without reading: a reset that took their bought
+                     gigabytes would be the obvious fear, and it does not. */
+                  <p className="mt-0.5 text-[11px] text-[color:var(--brand-muted-foreground)]">
+                    {t("addons.resetTrafficNote")}
+                  </p>
+                )}
                 {addOn.description && (
                   <p className="mt-0.5 line-clamp-2 text-xs text-[color:var(--brand-muted-foreground)]">{addOn.description}</p>
                 )}
@@ -337,7 +402,73 @@ function SelectAddOn() {
           {t("addons.back")}
         </StadiumButton>
       </div>
+      <ResetTrafficConfirmDialog
+        addOn={resetTarget}
+        onOpenChange={(open) => {
+          if (!open && !freeReset.isPending) setResetTarget(null);
+        }}
+        onConfirm={() => {
+          if (resetTarget) freeReset.mutate(resetTarget);
+        }}
+        isPending={freeReset.isPending}
+      />
     </div>
+  );
+}
+
+/**
+ * The confirmation shown before a free traffic reset is taken.
+ *
+ * It exists because the action cannot be undone and cannot be refunded: it
+ * spends one of a finite number of free resets, and there is no path back. So
+ * it states plainly what changes (consumed traffic → zero), what does NOT
+ * change (the plan's limit, and any extra gigabytes already bought, which keep
+ * running to their own expiry), and how many free resets are left afterwards.
+ */
+function ResetTrafficConfirmDialog(props: {
+  readonly addOn: EligibleAddOn | null;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onConfirm: () => void;
+  readonly isPending: boolean;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const leftAfter = props.addOn ? freeResetsLeftAfter(props.addOn) : 0;
+
+  return (
+    <Dialog open={props.addOn !== null} onOpenChange={props.onOpenChange}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader>
+          <DialogTitle>{props.addOn?.name ?? t("addons.resetTrafficTitle")}</DialogTitle>
+          <DialogDescription>{t("addons.resetTrafficConfirm")}</DialogDescription>
+        </DialogHeader>
+        <p className="text-xs text-[color:var(--brand-muted-foreground)]">
+          {t("addons.resetTrafficKeeps")}
+        </p>
+        <p className="text-xs text-[color:var(--brand-muted-foreground)]">
+          {t("addons.resetTrafficRemaining", { count: leftAfter })}
+        </p>
+        <div className="mt-2 flex flex-col gap-2">
+          <StadiumButton
+            size="lg"
+            fullWidth
+            loading={props.isPending}
+            icon={<RotateCcw className="h-5 w-5" />}
+            onClick={props.onConfirm}
+          >
+            {t("addons.resetTrafficAction")}
+          </StadiumButton>
+          <StadiumButton
+            variant="ghost"
+            size="md"
+            fullWidth
+            disabled={props.isPending}
+            onClick={() => props.onOpenChange(false)}
+          >
+            {t("common.cancel")}
+          </StadiumButton>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

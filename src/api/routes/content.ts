@@ -262,6 +262,32 @@ export function createContentRouter(deps: {
     },
   );
 
+  // POST /api/v1/add-ons/subscriptions/:subscriptionId/reset-traffic — take a
+  // FREE traffic reset from the subscription's allowance.
+  //
+  // Separate from `/add-ons/purchase` because it is not a purchase: no
+  // transaction, no gateway, no settlement. Behind `requireSession` like every
+  // other subscription-scoped route; the backend scopes the subscription to its
+  // owner and re-checks the allowance itself, so this forwards and nothing more.
+  router.post(
+    "/add-ons/subscriptions/:subscriptionId/reset-traffic",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const subscriptionId = String(req.params["subscriptionId"]);
+        const { addOnId } = (req.body ?? {}) as Record<string, unknown>;
+        if (typeof addOnId !== "string" || addOnId.length === 0) {
+          res.status(400).json({ message: "addOnId is required" });
+          return;
+        }
+        const result = await adminClient?.addOns.claimFreeTrafficReset(subscriptionId, addOnId);
+        res.json(result ?? { ok: false, reason: "unavailable" });
+      } catch (e: unknown) {
+        sendSafeError(req, res, e, 502, "Traffic reset unavailable", "add-ons/reset-traffic");
+      }
+    },
+  );
+
   // POST /api/v1/add-ons/purchase — checkout an add-on top-up for an
   // existing subscription. Context-aware return URLs mirror the payments
   // route (TMA deep link vs web origin).
