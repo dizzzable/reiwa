@@ -12,6 +12,7 @@
  *   - cap: at most `MAX_PER_MIN` reports per rolling minute.
  *   - fire-and-forget: uses `fetch(keepalive)` and never throws.
  */
+import { CancelledError } from '@tanstack/react-query';
 import { getClientSource } from './client-source';
 
 const ENDPOINT = '/api/v1/client-errors';
@@ -226,6 +227,40 @@ function isOpaqueCrossOriginScriptError(event: ErrorEvent): boolean {
   )
 }
 
+/**
+ * A refetch that was superseded is not a fault.
+ *
+ * ── Why this is filtered ──────────────────────────────────────────────────
+ *
+ * TanStack Query cancels an in-flight fetch whenever a newer one supersedes it,
+ * and the abandoned promise rejects with `CancelledError`. Every
+ * `invalidateQueries` call in this app is fire-and-forget (`void ...`), so that
+ * rejection has no handler and surfaces as `unhandledrejection`.
+ *
+ * It happens on completely ordinary use: pulling to refresh twice, leaving a
+ * screen while its data is loading, a mutation invalidating a query that is
+ * already fetching. Nothing is broken — the newer fetch is the one that wins,
+ * which is the point of cancelling the older one.
+ *
+ * Reported, it raised an ERROR-level operator card with a Telegram message and
+ * an attached stack trace for a user who tapped refresh twice on a phone. An
+ * alert that fires on routine behaviour is an alert the operator learns to
+ * scroll past, and it would bury the reports that do mean something.
+ *
+ * `AbortError` is the same fact one layer down: a `fetch` deliberately
+ * abandoned through an AbortSignal, which is how the query cancels it.
+ */
+function isAbandonedRequest(reason: unknown): boolean {
+  if (reason instanceof CancelledError) return true;
+  // A DOMException carries the name; a plain fetch abort in some engines
+  // arrives as an Error whose name is set the same way.
+  return (
+    typeof reason === 'object' &&
+    reason !== null &&
+    (reason as { name?: unknown }).name === 'AbortError'
+  );
+}
+
 let installed = false;
 
 /**
@@ -252,10 +287,15 @@ export function installGlobalErrorReporting(): void {
 
   window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
     const reason: unknown = event.reason;
+    if (isAbandonedRequest(reason)) return;
     reportClientError({
       message: reason instanceof Error ? reason.message : String(reason),
       stack: reason instanceof Error ? reason.stack : undefined,
       kind: 'unhandledrejection',
+      // Sent here too. It was omitted, so every rejection report reached the
+      // operator with an empty "Type" field — the one line that would have said
+      // at a glance what class of failure this was.
+      errorName: getErrorName(reason),
     });
   });
 }
