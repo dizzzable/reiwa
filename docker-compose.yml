@@ -52,6 +52,28 @@ services:
       # rezeis-admin. Lets the brand survive an admin-panel outage. Set
       # BRANDING_CACHE_DIR=/data/branding-cache in .env to use this mount.
       - reiwa-branding-cache:/data/branding-cache
+    # ── ЕСЛИ ПАНЕЛЬ НА ДРУГОМ VPS: DNS В КРИТИЧЕСКОМ ПУТИ ──────────────────
+    #
+    # При раздельных хостах REZEIS_HOST — публичный домен, и каждый вызов к
+    # панели начинается с обращения к DNS. Сбой резолвера (`EAI_AGAIN`) кладёт
+    # ВСЕ бизнес-операции разом: запросы висят до таймаута и отвечают 503, а в
+    # логе панели при этом пусто — они до неё не дошли.
+    #
+    # ЧИНИТСЯ НА ХОСТЕ, а не здесь. В /etc/docker/daemon.json на VPS кабинета:
+    #
+    #     { "dns": ["1.1.1.1", "8.8.8.8"] }   →   systemctl restart docker
+    #
+    # Встроенный резолвер Docker (127.0.0.11) при этом ОСТАЁТСЯ и продолжает
+    # разрешать имена сервисов — он лишь пересылает всё остальное новым
+    # адресам. Поэтому одиночная установка с `REZEIS_HOST=rezeis` не ломается,
+    # а починка накрывает и панель, и api.telegram.org.
+    #
+    # НЕ ставьте `dns:` здесь, в compose: этот ключ ЗАМЕЩАЕТ резолвер Docker
+    # целиком, и на одном VPS панель перестанет находиться вообще.
+    #
+    # Если резолвер провайдера ненадёжен и у панели статический адрес, его
+    # можно закрепить — см. docker-compose.pin-panel.yml. Там же сказано, чем
+    # за это платят.
     depends_on:
       reiwa-redis:
         condition: service_healthy
@@ -93,6 +115,10 @@ services:
     command: ["node", "dist/bot/main.js"]
     env_file:
       - .env
+    # Бот ходит к панели САМ (в том числе пересылает платежи Stars), поэтому
+    # всё, что сказано про DNS у сервиса `reiwa` выше, касается и его. Оверлей
+    # docker-compose.pin-panel.yml закрепляет адрес сразу обоим — именно потому,
+    # что пин только у API оставил бы бота падать на том же DNS.
     depends_on:
       reiwa-redis:
         condition: service_healthy
