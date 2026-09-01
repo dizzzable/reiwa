@@ -248,6 +248,19 @@ class IdempotencyCache {
     return true;
   }
 
+  /**
+   * Gives a claim back after the work it guarded failed transiently.
+   *
+   * A claim taken BEFORE the send and never released turns the retry policy
+   * into a single attempt: the second delivery of the same event finds the id
+   * present, skips the send, and answers as though it had done the work. The
+   * claim exists to stop a DUPLICATE send, not to stop a RETRY of one that
+   * never happened.
+   */
+  public release(eventId: string): void {
+    this.store.delete(eventId);
+  }
+
   private evictExpired(now: number): void {
     // Single pass: Map iterators preserve insertion order, so the
     // first non-expired entry tells us when to stop.
@@ -1214,28 +1227,46 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     : undefined;
 
   try {
-    await bot.api.sendMessage(chatId, body.text, {
+    const sent = await bot.api.sendMessage(chatId, body.text, {
       parse_mode: body.parseMode,
       entities: body.entities,
       reply_markup,
       message_thread_id: messageThreadId,
     });
-    res.statusCode = 204;
-    res.end();
+    // ECHO TELEGRAM'S OWN MESSAGE ID, as `handleNotify` already does. A bodiless
+    // 204 is classified by the panel as `unconfirmed` — "the instruction was
+    // accepted, nothing is claimed about what happened to it" — and the relay
+    // policy then treated that as delivered. The id is the only evidence in
+    // this exchange that anything reached Telegram, and without it a channel
+    // post could never be told apart from one that silently went nowhere.
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ messageId: sent.message_id }));
   } catch (err: unknown) {
     // Permanent client errors (chat not found / bot not in chat / bad topic
     // id) won't be fixed by a retry — they mean the operator's Chat ID / topic
-    // is wrong. Ack (204) so the admin side doesn't escalate to a 502 cascade,
-    // and log a concise warning instead of a full stack trace.
+    // is wrong.
+    //
+    // ANSWER 422, NOT 204. The original reasoning — "ack so the admin side
+    // doesn't escalate to a 502 cascade" — was right about not retrying and
+    // wrong about how to say it: a 204 means `unconfirmed` upstream, which the
+    // relay policy reads as DELIVERED. So a channel the bot is not an admin of
+    // produced a warning in this container's log and a green "posted" in the
+    // panel. A 4xx is classified `rejected` — terminal, NOT delivered, and it
+    // raises the operator alert that names the chat id. No retry either way.
     if (err instanceof GrammyError && err.error_code >= 400 && err.error_code < 500) {
       logger.warn(
         { eventId, chatId, code: err.error_code, description: err.description },
         'Broadcast: permanent delivery failure — check Chat ID / topic id / bot membership',
       );
-      res.statusCode = 204;
-      res.end();
+      res.statusCode = 422;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: err.description ?? 'Telegram rejected the channel post' }));
       return;
     }
+    // Transient: give the claim back so the retry can actually re-send. Held,
+    // it would answer the second attempt without sending anything.
+    IDEMPOTENCY_CACHE.release(eventId);
     logger.error({ err, eventId, chatId }, 'Broadcast: sendMessage failed');
     res.statusCode = 502;
     res.end();
