@@ -227,7 +227,18 @@ interface ListenerOptions {
 class IdempotencyCache {
   private readonly maxSize: number;
   private readonly ttlMs: number;
-  private readonly store = new Map<string, number>();
+  /**
+   * `at` is when the id was claimed; `messageId` is Telegram's own id once
+   * the send succeeded.
+   *
+   * Remembering the id is what lets a REPLAY answer with proof. Without it
+   * a replay answered a bodiless 204, the panel read that as "accepted,
+   * nothing claimed", and its rule for a user notification — which demands
+   * proof — recorded a FAILURE for somebody who had already received the
+   * message. A relay hiccup therefore wrote off every recipient it had in
+   * flight, permanently, and pressing "retry" only reproduced it.
+   */
+  private readonly store = new Map<string, { at: number; messageId?: number }>();
 
   public constructor(maxSize: number, ttlMs: number) {
     this.maxSize = maxSize;
@@ -244,8 +255,20 @@ class IdempotencyCache {
       const oldestKey = this.store.keys().next().value;
       if (oldestKey !== undefined) this.store.delete(oldestKey);
     }
-    this.store.set(eventId, now);
+    this.store.set(eventId, { at: now });
     return true;
+  }
+
+  /** Records what Telegram gave back, so a replay can answer with it. */
+  public remember(eventId: string, messageId: number): void {
+    const entry = this.store.get(eventId);
+    if (entry === undefined) return;
+    entry.messageId = messageId;
+  }
+
+  /** Telegram's message id for an already-delivered event, if it is still held. */
+  public deliveredMessageId(eventId: string): number | undefined {
+    return this.store.get(eventId)?.messageId;
   }
 
   /**
@@ -264,8 +287,8 @@ class IdempotencyCache {
   private evictExpired(now: number): void {
     // Single pass: Map iterators preserve insertion order, so the
     // first non-expired entry tells us when to stop.
-    for (const [key, ts] of this.store) {
-      if (now - ts < this.ttlMs) break;
+    for (const [key, entry] of this.store) {
+      if (now - entry.at < this.ttlMs) break;
       this.store.delete(key);
     }
   }
@@ -1099,8 +1122,18 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     return;
   }
   if (!IDEMPOTENCY_CACHE.claim(eventId)) {
-    // Replay — admin re-fired but we already delivered. Tell the
-    // caller success so they don't retry forever.
+    // Replay — we already delivered this one. Answer with the message id we
+    // kept, because the caller's bar for a user notification is proof: a
+    // bodiless 204 here was read as "not delivered" and wrote the recipient
+    // down as failed, even though they had the message in hand. Only a replay
+    // whose id has aged out of the cache still falls back to 204.
+    const delivered = IDEMPOTENCY_CACHE.deliveredMessageId(eventId);
+    if (delivered !== undefined) {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ messageId: delivered }));
+      return;
+    }
     res.statusCode = 204;
     res.end();
     return;
@@ -1154,6 +1187,10 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
         // disable_notification.
       });
     }
+    // Kept, so a replay of this same event can answer with the id instead of a
+    // bodiless ack the caller reads as "not delivered".
+    IDEMPOTENCY_CACHE.remember(eventId, sent.message_id);
+
     // Return the Telegram message id so admin can persist it and later
     // edit/delete the message within Telegram's 48h edit window.
     res.statusCode = 200;
