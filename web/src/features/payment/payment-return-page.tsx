@@ -45,6 +45,14 @@ const MAX_POLLS = 30;
 const POLL_INTERVAL_MS = 2000;
 const AUTO_REDIRECT_MS = 3500;
 const PROVISIONING_REDIRECT_MS = 900;
+/**
+ * Success screens that also announce credited loyalty points hold longer.
+ * 3500 ms is sized for "paid, now go back"; the cashback line arrives with a
+ * number to read and a button to consider, and at 3500 ms (900 ms for a fresh
+ * subscription) the page is gone before either registers. This is the only
+ * reason the delay differs — nothing else on the screen changed.
+ */
+const CASHBACK_REDIRECT_MS = 6000;
 
 /**
  * Every successful payment can change both the subscription snapshot and its
@@ -73,8 +81,13 @@ export default function PaymentReturnPage() {
 
   const paymentId = searchParams.get("paymentId") ?? "";
   const [state, setState] = useState<PaymentState>("processing");
+  // Loyalty points credited for THIS payment, straight from the status object
+  // (the only place it exists — it is not on any other query). `null` = the
+  // panel said nothing worth showing.
+  const [cashbackPoints, setCashbackPoints] = useState<number | null>(null);
   const pollCountRef = useRef(0);
   const provisioningSuccessRef = useRef(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // The provider URL stashed by the flow that created this checkout. Two
   // different flows arrive here needing the button below, so it is not
@@ -185,6 +198,14 @@ export default function PaymentReturnPage() {
         }
         if (result === "success") {
           clearPendingCheckout(paymentId);
+          // Only a real, positive number is worth a sentence. Absent, null, 0
+          // and NaN from an older panel all collapse to "say nothing".
+          const credited = status.cashbackPoints;
+          setCashbackPoints(
+            typeof credited === "number" && Number.isFinite(credited) && credited > 0
+              ? credited
+              : null,
+          );
           provisioningSuccessRef.current = isSubscriptionCreation;
           setState("success");
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
@@ -221,15 +242,35 @@ export default function PaymentReturnPage() {
   }, [paymentId, navigate, queryClient, checkoutUrl, retryTo]);
 
   // ── Auto-redirect on success ──────────────────────────────────────────────
+  // The handle is kept in a ref so the cashback button can cancel the pending
+  // hop before taking the user somewhere else — otherwise the timer would fire
+  // behind the exchange page and replace it with the dashboard.
   useEffect(() => {
     if (state !== "success") return;
+    const delay =
+      cashbackPoints !== null
+        ? CASHBACK_REDIRECT_MS
+        : provisioningSuccessRef.current
+          ? PROVISIONING_REDIRECT_MS
+          : AUTO_REDIRECT_MS;
     const timer = setTimeout(() => {
+      redirectTimerRef.current = null;
       navigate("/dashboard", { replace: true });
-    }, provisioningSuccessRef.current
-      ? PROVISIONING_REDIRECT_MS
-      : AUTO_REDIRECT_MS);
-    return () => clearTimeout(timer);
-  }, [state, navigate]);
+    }, delay);
+    redirectTimerRef.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (redirectTimerRef.current === timer) redirectTimerRef.current = null;
+    };
+  }, [state, navigate, cashbackPoints]);
+
+  const handleExchangeCashback = (): void => {
+    if (redirectTimerRef.current !== null) {
+      clearTimeout(redirectTimerRef.current);
+      redirectTimerRef.current = null;
+    }
+    navigate("/referrals/exchange");
+  };
 
   return (
     // Outside `StealthLayout`, so this page has to be its own scroller —
@@ -286,7 +327,15 @@ export default function PaymentReturnPage() {
               onOpenPayment={openPayment}
             />
           )}
-          {state === "success" && <SuccessState key="success" primary={branding.primary} label={purchaseLabel} />}
+          {state === "success" && (
+            <SuccessState
+              key="success"
+              primary={branding.primary}
+              label={purchaseLabel}
+              cashbackPoints={cashbackPoints}
+              onExchange={handleExchangeCashback}
+            />
+          )}
           {(state === "failed" || state === "timeout") && (
             <FailedState
               key="failed"
@@ -395,7 +444,18 @@ function ProcessingState({
 
 // ─── Success ────────────────────────────────────────────────────────────────
 
-function SuccessState({ primary, label }: { primary: string; label?: string | null }) {
+function SuccessState({
+  primary,
+  label,
+  cashbackPoints,
+  onExchange,
+}: {
+  primary: string;
+  label?: string | null;
+  /** Points credited by this payment, or `null` to say nothing about them. */
+  cashbackPoints?: number | null;
+  onExchange: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <motion.div
@@ -452,6 +512,24 @@ function SuccessState({ primary, label }: { primary: string; label?: string | nu
         <p className="mt-2 text-sm text-muted-foreground">
           {t("paymentAnim.successHint")}
         </p>
+        {/* Reward line. Kept inside the same live region as the rest of the
+            success copy so it is announced with it, and appended under the
+            hint rather than beside anything — the layout above is load-bearing
+            (see the note on the page root) and is untouched. */}
+        {cashbackPoints != null && cashbackPoints > 0 ? (
+          <div className="mt-3 flex flex-col items-center gap-1">
+            <p className="text-sm font-medium text-amber-400">
+              {t("paymentAnim.cashbackCredited", { count: cashbackPoints })}
+            </p>
+            <button
+              type="button"
+              onClick={onExchange}
+              className="text-xs font-semibold text-(--brand-primary) underline underline-offset-4"
+            >
+              {t("paymentAnim.cashbackExchange")}
+            </button>
+          </div>
+        ) : null}
       </div>
     </motion.div>
   );

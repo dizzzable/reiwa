@@ -49,6 +49,13 @@ export interface PlanDuration {
   id: string | number;
   days: number;
   prices: PlanPrice[];
+  /**
+   * Loyalty points the buyer earns for this duration at the price shown above
+   * (already discount-aware — the panel computes it from the effective price).
+   * Absent / `null` / `0` all mean "show nothing": an older panel, cashback
+   * switched off, or a buyer who is excluded from it (a partner).
+   */
+  cashbackPoints?: number | null;
 }
 
 export interface Plan {
@@ -219,6 +226,11 @@ export interface PaymentStatus {
   subscriptionId: string | null;
   subscriptionProvisioningStatus: SubscriptionProvisioningStatus;
   subscriptionProvisioningFailureCode: "PROFILE_SYNC_FAILED" | null;
+  /**
+   * Loyalty points credited for THIS payment. The panel sends it only when it
+   * is worth showing (> 0), so absent / `null` means "say nothing".
+   */
+  cashbackPoints?: number | null;
   updatedAt: string;
 }
 
@@ -339,6 +351,14 @@ export interface ReferralSummary {
    * them alike is how a working program would silently stop being advertised.
    */
   program?: ReferralProgram;
+  /**
+   * Whether the operator pays points back on the customer's OWN purchases,
+   * not just on invited friends. OPTIONAL for the same reason `program` is:
+   * a panel older than the field omits it, and `undefined` must not be read
+   * as `false` — it only means "this panel cannot say". It changes one
+   * sentence of copy, so the safe reading is the narrower promise.
+   */
+  cashbackEnabled?: boolean;
 }
 
 export interface ReferralInvite {

@@ -3,9 +3,10 @@ import type { ComponentType, SVGProps } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
-import { Coins, Calendar, Zap, Tag, HardDrive, Loader2, Check, Copy, ArrowLeft } from 'lucide-react'
+import { Coins, Calendar, Zap, Tag, HardDrive, History, Loader2, Check, Copy, ArrowLeft } from 'lucide-react'
 import { useNavigate } from 'react-router'
-import { getAllSubscriptions, getPointsExchangeOptions, exchangePoints } from '@/lib/api-client'
+import { getAllSubscriptions, getPointsExchangeOptions, exchangePoints, getReferralSummary } from '@/lib/api-client'
+import { PointsHistoryDialog } from './components/points-history-dialog'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
@@ -32,6 +33,7 @@ export default function PointsExchangePage() {
   const [copied, setCopied] = useState(false)
   const [targetSubscriptionId, setTargetSubscriptionId] = useState<string | null>(null)
   const [exchangeIntentKey, setExchangeIntentKey] = useState(() => createIdempotencyKey())
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const typeLabel = (type: string) => t(`pointsExchange.types.${type}.label`, { defaultValue: type })
   const typeUnit = (type: string) => t(`pointsExchange.types.${type}.unit`, { defaultValue: '' })
@@ -43,6 +45,14 @@ export default function PointsExchangePage() {
   const { data: allSubscriptions } = useQuery({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
+    staleTime: 30_000,
+  })
+  // Shares the referrals page's cache entry (same key, same staleTime), so
+  // arriving from there costs no request. It is read for one thing only:
+  // whether the history dialog may say points come from own purchases too.
+  const { data: referralSummary } = useQuery({
+    queryKey: ['referrals', 'summary'],
+    queryFn: getReferralSummary,
     staleTime: 30_000,
   })
   const activeSubscriptions = useMemo(
@@ -176,22 +186,43 @@ export default function PointsExchangePage() {
         <h1 className="text-lg font-semibold">{t('pointsExchange.title')}</h1>
       </div>
 
-      {/* Balance */}
-      <div className="px-5 mb-6">
+      {/* Balance + history */}
+      <div className="px-5 mb-6 grid grid-cols-2 gap-3">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card p-5 flex items-center gap-4"
+          className="glass-card p-4 flex items-center gap-3"
         >
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/20">
-            <Coins className="h-6 w-6 text-amber-400" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20">
+            <Coins className="h-5 w-5 text-amber-400" />
           </div>
-          <div>
-            <p className="text-xs text-[var(--brand-muted-foreground)] uppercase tracking-wide">{t('pointsExchange.yourPoints')}</p>
-            <p className="text-2xl font-bold text-[var(--brand-foreground)]">{options.pointsBalance}</p>
+          <div className="min-w-0">
+            <p className="text-[10px] text-[var(--brand-muted-foreground)] uppercase tracking-wide">{t('pointsExchange.yourPoints')}</p>
+            <p className="text-xl font-bold text-[var(--brand-foreground)] truncate">{options.pointsBalance}</p>
           </div>
         </motion.div>
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          onClick={() => setHistoryOpen(true)}
+          className="glass-card p-4 flex items-center gap-3 text-left active:scale-[0.98] transition-transform"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-surface-high)]">
+            <History className="h-5 w-5 text-[var(--brand-muted-foreground)]" />
+          </div>
+          <p className="min-w-0 truncate text-sm font-semibold text-[var(--brand-foreground)]">{t('pointsExchange.history')}</p>
+        </motion.button>
       </div>
+
+      {/* The exchange button is hidden here — it would lead back to this page. */}
+      <PointsHistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        balance={options.pointsBalance}
+        cashbackEnabled={referralSummary?.cashbackEnabled === true}
+        showExchangeButton={false}
+      />
 
       {!selectedType ? (
         /* Type selection */

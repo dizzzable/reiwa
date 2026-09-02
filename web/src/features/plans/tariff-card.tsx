@@ -82,6 +82,23 @@ export function getLowestPlanPrice(
   };
 }
 
+/**
+ * Best loyalty cashback on offer across a plan's durations, in points.
+ *
+ * The card summarises the WHOLE plan (it never picks a duration), so the only
+ * honest single number here is the maximum — the badge says "up to". `0` means
+ * "render nothing": no panel field, cashback switched off, or a buyer excluded
+ * from it. Non-finite values from the wire are ignored rather than trusted.
+ */
+export function getMaxPlanCashbackPoints(plan: Plan): number {
+  return plan.durations.reduce((best, duration) => {
+    const points = duration.cashbackPoints;
+    return typeof points === "number" && Number.isFinite(points) && points > best
+      ? points
+      : best;
+  }, 0);
+}
+
 interface TariffCardProps {
   readonly plan: Plan;
   readonly onClick: () => void;
@@ -96,6 +113,7 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
   const { branding, defaultCurrency, customIcons } = useBranding();
 
   const price = getLowestPlanPrice(plan, defaultCurrency);
+  const cashbackPoints = getMaxPlanCashbackPoints(plan);
   const customId = customIconId(plan.icon);
   const custom = customId ? customIcons.find((c) => c.id === customId) : undefined;
   const Icon = resolvePlanIcon(plan.icon, plan.type);
@@ -253,47 +271,68 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
         </div>
       </div>
 
-      {/* Bottom: duration options (left) + lowest price (right) */}
+      {/* Bottom: duration options (left) + cashback / lowest price (right).
+          The right column is rendered unconditionally — the cashback pill has
+          to survive a plan the operator priced only in the panel (no gateway
+          and no display price, so `price` is null). With neither pill it is a
+          zero-width empty flex box and the row is byte-identical to before.
+          Both pills stay INSIDE this `relative` row on purpose: see the z-0
+          note on the background layers — an element outside a content row is
+          not painted on iOS Safari inside this container. */}
       <div className="relative flex items-end justify-between gap-2">
         <p className="min-w-0 truncate text-[11px] tracking-wider uppercase opacity-[0.55]">
           {t("plans.durationOptions", { count: plan.durations.length })}
         </p>
-        {price && (
-          <div className="flex shrink-0 flex-col items-end gap-0.5">
-            {price.discountPercent > 0 && price.discountSource !== "NONE" && (
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 py-0.5 text-[10px] font-bold ring-1",
-                    contrast.foregroundTone === "dark"
-                      ? "bg-emerald-500/15 text-emerald-800 ring-emerald-700/30"
-                      : "bg-emerald-500/20 text-emerald-300 ring-emerald-400/30",
-                  )}
-                >
-                  −{price.discountPercent}%
-                </span>
-                <span className="text-[11px] line-through opacity-[0.45]">
-                  {CURRENCY_SYMBOLS[price.currency] ?? ""}
-                  {price.originalAmount.toFixed(2)}
-                </span>
-              </div>
-            )}
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          {cashbackPoints > 0 && (
             <span
-              className="rounded-full border px-2.5 py-0.5 text-[15px] font-bold backdrop-blur-sm drop-shadow"
-              style={{
-                color: readableAccent,
-                backgroundColor: contrast.supportBackground,
-                borderColor: `rgb(${contrast.foregroundRgb} / 0.12)`,
-              }}
+              className={cn(
+                "rounded-full px-1.5 py-0.5 text-[10px] font-bold ring-1",
+                contrast.foregroundTone === "dark"
+                  ? "bg-amber-500/15 text-amber-800 ring-amber-700/30"
+                  : "bg-amber-500/20 text-amber-300 ring-amber-400/30",
+              )}
             >
-              {t("plans.from")} {CURRENCY_SYMBOLS[price.currency] ?? ""}
-              {price.amount.toFixed(2)}
+              {t("plans.cashbackUpTo", { count: cashbackPoints })}
             </span>
-            <span className="text-[11px] opacity-[0.60]">
-              {t("plans.fromDuration", { count: price.days })}
-            </span>
-          </div>
-        )}
+          )}
+          {price && (
+            <>
+              {price.discountPercent > 0 && price.discountSource !== "NONE" && (
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px] font-bold ring-1",
+                      contrast.foregroundTone === "dark"
+                        ? "bg-emerald-500/15 text-emerald-800 ring-emerald-700/30"
+                        : "bg-emerald-500/20 text-emerald-300 ring-emerald-400/30",
+                    )}
+                  >
+                    −{price.discountPercent}%
+                  </span>
+                  <span className="text-[11px] line-through opacity-[0.45]">
+                    {CURRENCY_SYMBOLS[price.currency] ?? ""}
+                    {price.originalAmount.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              <span
+                className="rounded-full border px-2.5 py-0.5 text-[15px] font-bold backdrop-blur-sm drop-shadow"
+                style={{
+                  color: readableAccent,
+                  backgroundColor: contrast.supportBackground,
+                  borderColor: `rgb(${contrast.foregroundRgb} / 0.12)`,
+                }}
+              >
+                {t("plans.from")} {CURRENCY_SYMBOLS[price.currency] ?? ""}
+                {price.amount.toFixed(2)}
+              </span>
+              <span className="text-[11px] opacity-[0.60]">
+                {t("plans.fromDuration", { count: price.days })}
+              </span>
+            </>
+          )}
+        </div>
       </div>
     </motion.button>
   );

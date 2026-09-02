@@ -124,6 +124,7 @@ export {
   getInviteCapacity,
   getInvitedUsers,
   getPointsExchangeOptions,
+  getPointsLedger,
   getReferralInvites,
   getReferralRewards,
   getReferralSummary,
@@ -132,6 +133,9 @@ export {
   type InvitedUser,
   type InvitedUsersResponse,
   type PointsExchangeOptions,
+  type PointsLedgerEntry,
+  type PointsLedgerPage,
+  type PointsLedgerSource,
 } from "./referrals.js";
 
 // Devices

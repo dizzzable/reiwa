@@ -53,7 +53,14 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   XTR: "⭐",
 };
 
-function SelectDuration({
+/**
+ * Exported for `web/test/purchase-duration-cashback.test.tsx`: this step is a
+ * self-contained presentational unit, and reaching it through `PurchasePage`
+ * would mean standing up the store, the access-mode gate, react-query and the
+ * whole checkout chain to assert one pill. Same precedent as
+ * `invalidatePaymentReturnSuccessQueries`.
+ */
+export function SelectDuration({
   plan,
   preferredCurrency,
   onSelect,
@@ -83,6 +90,12 @@ function SelectDuration({
           const usdPrice = dur.prices.find((p) => p.currency === "USD");
           const rubPrice = dur.prices.find((p) => p.currency === "RUB");
           const displayPrice = preferred ?? usdPrice ?? rubPrice ?? dur.prices[0];
+          // Absent / null / 0 / a non-number from an older panel all mean the
+          // same thing here: say nothing about points for this duration.
+          const cashbackPoints =
+            typeof dur.cashbackPoints === "number" && Number.isFinite(dur.cashbackPoints)
+              ? dur.cashbackPoints
+              : 0;
           return (
             <button
               key={dur.id}
@@ -101,33 +114,45 @@ function SelectDuration({
                       : t("purchase.duration.days", { count: dur.days })}
                 </p>
               </div>
-              {displayPrice && (() => {
-                const hasDiscount =
-                  (displayPrice.discountPercent ?? 0) > 0 &&
-                  displayPrice.discountSource !== undefined &&
-                  displayPrice.discountSource !== "NONE" &&
-                  displayPrice.originalPrice !== undefined;
-                const sym = CURRENCY_SYMBOLS[displayPrice.currency] ?? "";
-                return (
-                  <div className="flex flex-col items-end gap-0.5">
-                    {hasDiscount && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-400/30">
-                          −{displayPrice.discountPercent}%
-                        </span>
-                        <span className="text-[11px] text-muted-foreground line-through">
-                          {sym}
-                          {Number(displayPrice.originalPrice).toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                    <p className="text-(--brand-primary) font-semibold">
-                      {sym}
-                      {Number(displayPrice.price).toFixed(2)}
-                    </p>
-                  </div>
-                );
-              })()}
+              {/* The price column also carries the loyalty cashback for THIS
+                  duration — the exact number, unlike the "up to" summary on
+                  the tariff card. It sits outside the `displayPrice` guard so
+                  a duration the operator priced without a gateway still shows
+                  what it earns. */}
+              <div className="flex flex-col items-end gap-0.5">
+                {displayPrice && (() => {
+                  const hasDiscount =
+                    (displayPrice.discountPercent ?? 0) > 0 &&
+                    displayPrice.discountSource !== undefined &&
+                    displayPrice.discountSource !== "NONE" &&
+                    displayPrice.originalPrice !== undefined;
+                  const sym = CURRENCY_SYMBOLS[displayPrice.currency] ?? "";
+                  return (
+                    <>
+                      {hasDiscount && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-400/30">
+                            −{displayPrice.discountPercent}%
+                          </span>
+                          <span className="text-[11px] text-muted-foreground line-through">
+                            {sym}
+                            {Number(displayPrice.originalPrice).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      <p className="text-(--brand-primary) font-semibold">
+                        {sym}
+                        {Number(displayPrice.price).toFixed(2)}
+                      </p>
+                    </>
+                  );
+                })()}
+                {cashbackPoints > 0 && (
+                  <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 ring-1 ring-amber-400/30">
+                    {t("purchase.duration.cashback", { count: cashbackPoints })}
+                  </span>
+                )}
+              </div>
             </button>
           );
         })}

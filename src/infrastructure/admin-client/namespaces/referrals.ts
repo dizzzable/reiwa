@@ -82,6 +82,30 @@ export class ReferralsNamespace {
     );
   }
 
+  /**
+   * Keyset-paginated points ledger (newest first). `cursor` is the opaque
+   * `nextCursor` from the previous page — it is only sent when non-empty,
+   * because an empty `cursor=` on the wire is NOT the same as "start from
+   * the top" upstream and would page from nowhere.
+   *
+   * A panel older than this route answers 404; the caller turns that into
+   * the "no points history here" signal rather than a failure.
+   */
+  getPointsLedger(
+    identity: UserIdentity,
+    cursor?: string | null,
+    limit = 20,
+  ): Promise<unknown> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (typeof cursor === 'string' && cursor.length > 0) {
+      params.set('cursor', cursor);
+    }
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/referrals/points/ledger?${params.toString()}`,
+    );
+  }
+
   revokeInvite(identity: UserIdentity, inviteId: string): Promise<unknown> {
     return this.transport.request(
       'POST',

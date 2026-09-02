@@ -11,7 +11,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Star, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
 
 import { getReferralSummary, getInviteCapacity } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
@@ -24,11 +23,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StadiumButton } from "@/components/ui/stadium-button";
 
 import { InviteLinkHero } from "./components/invite-link-hero";
 import { StatRow } from "./components/stat-row";
 import { InvitedUsersList } from "./components/invited-users-list";
+import { PointsHistoryDialog } from "./components/points-history-dialog";
 
 type ActiveSheet = "invited" | "points" | "info" | null;
 
@@ -36,7 +35,6 @@ export default function ReferralsPage() {
   const { t } = useTranslation();
   const { session } = useSession();
   const { branding, botUsername } = useBranding();
-  const navigate = useNavigate();
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
   const { data: summary, isLoading } = useQuery({
@@ -164,32 +162,13 @@ export default function ReferralsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={activeSheet === "points"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t("referrals.points")}</DialogTitle>
-            <DialogDescription>{t("referrals.pointsHint")}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-1">
-            <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-5 text-center">
-              <p className="text-3xl font-bold">{pointsBalance}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{t("referrals.pointsBalance")}</p>
-            </div>
-            <StadiumButton
-              fullWidth
-              size="lg"
-              glow
-              icon={<Star className="h-5 w-5" />}
-              onClick={() => {
-                setActiveSheet(null);
-                navigate("/referrals/exchange");
-              }}
-            >
-              {t("referrals.exchangePoints")}
-            </StadiumButton>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PointsHistoryDialog
+        open={activeSheet === "points"}
+        onOpenChange={(open) => !open && setActiveSheet(null)}
+        balance={pointsBalance}
+        cashbackEnabled={summary?.cashbackEnabled === true}
+        showExchangeButton
+      />
 
       <Dialog open={activeSheet === "info"} onOpenChange={(open) => !open && setActiveSheet(null)}>
         <DialogContent className="max-w-sm">

@@ -7,6 +7,7 @@ import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { isUpstreamStatus } from "../lib/upstream-error.js";
 
 export function createReferralsRouter(deps: {
   adminClient: AdminClient | null;
@@ -91,6 +92,45 @@ export function createReferralsRouter(deps: {
     async (req: AuthRequest, res) => {
       const result = await adminClient?.referrals.getRewards(resolveUserIdentity(req));
       res.json(result ?? { rewards: [] });
+    },
+  );
+
+  // GET /api/v1/referrals/points/ledger — keyset-paginated points history
+  //
+  // A panel older than this route has no such endpoint and answers 404. That
+  // 404 is forwarded rather than flattened into an empty page: an empty page
+  // reads to the SPA as "you have earned nothing yet" and it would draw an
+  // empty-state under a heading, where the honest answer is to draw nothing
+  // at all. The two cases are only distinguishable by the status.
+  router.get(
+    "/referrals/points/ledger",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        const rawCursor = req.query["cursor"];
+        const cursor =
+          typeof rawCursor === "string" && rawCursor.length > 0 ? rawCursor : undefined;
+        const limit = Number(req.query["limit"]) || 20;
+        const result = await adminClient?.referrals.getPointsLedger(
+          resolveUserIdentity(req),
+          cursor,
+          limit,
+        );
+        res.json(result ?? { items: [], nextCursor: null });
+      } catch (e: unknown) {
+        if (isUpstreamStatus(e, 404)) {
+          res.status(404).json({ message: "Points history not available" });
+          return;
+        }
+        sendSafeError(
+          req,
+          res,
+          e,
+          500,
+          "Failed to load points history",
+          "referrals/points-ledger",
+        );
+      }
     },
   );
 

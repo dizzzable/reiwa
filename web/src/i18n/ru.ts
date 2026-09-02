@@ -235,6 +235,13 @@ export const ru = {
     fromDuration_few: 'от {{count}} дней',
     fromDuration_many: 'от {{count}} дней',
     fromDuration_other: 'от {{count}} дней',
+    // Кэшбэк баллами. Карточка описывает ВЕСЬ тариф целиком, поэтому здесь
+    // максимум по срокам — отсюда «до». Точное число за конкретный срок
+    // показывает шаг выбора срока в покупке.
+    cashbackUpTo_one: 'до +{{count}} балл',
+    cashbackUpTo_few: 'до +{{count}} балла',
+    cashbackUpTo_many: 'до +{{count}} баллов',
+    cashbackUpTo_other: 'до +{{count}} баллов',
   },
   purchase: {
     label: 'Покупка',
@@ -250,6 +257,11 @@ export const ru = {
       months_many: '{{count}} мес.',
       months_other: '{{count}} мес.',
       year: '1 год',
+      // Баллы за ЭТОТ срок по показанной (уже со скидкой) цене.
+      cashback_one: '+{{count}} балл',
+      cashback_few: '+{{count}} балла',
+      cashback_many: '+{{count}} баллов',
+      cashback_other: '+{{count}} баллов',
     },
     device: {
       title: 'На каком устройстве?',
@@ -438,6 +450,10 @@ export const ru = {
     points: 'Баллы',
     pointsBalance: 'Ваш баланс баллов',
     pointsHint: 'Баллы начисляются когда приглашённый друг оплачивает подписку. Обменивайте их на дни подписки, скидки и другие бонусы.',
+    // Оператор может включить кэшбэк за СОБСТВЕННЫЕ покупки. Пока панель не
+    // подтвердила это флагом, обещаем меньшее — иначе строка сулит начисления,
+    // которых у конкретной установки нет.
+    pointsHintCashback: 'Баллы начисляются за покупки и за приглашённых друзей. Обменивайте их на дни подписки, скидки и другие бонусы.',
     qualifiedHint: 'Квалифицированные — это друзья, которые оплатили подписку после регистрации по вашей ссылке.',
     exchangePoints: 'Обменять баллы',
     inviteSlots: 'Слоты приглашений',
@@ -1063,6 +1079,11 @@ export const ru = {
     failedHint: 'Попробуйте ещё раз или выберите другой способ оплаты.',
     openPayment: 'Открыть страницу оплаты',
     openPaymentHint: 'Если страница оплаты не открылась автоматически, нажмите кнопку ниже.',
+    cashbackCredited_one: 'Начислен +{{count}} балл',
+    cashbackCredited_few: 'Начислено +{{count}} балла',
+    cashbackCredited_many: 'Начислено +{{count}} баллов',
+    cashbackCredited_other: 'Начислено +{{count}} баллов',
+    cashbackExchange: 'Обменять баллы',
   },
   privacy: {
     changePassword: 'Сменить пароль',
@@ -1263,11 +1284,67 @@ export const ru = {
     giftCodeTitle: 'Промокод создан',
     giftCodeHint: 'Передайте этот промокод другу — он активирует подписку.',
     giftFixedHint: 'Фиксированная стоимость: {{cost}} баллов = 1 промокод.',
+    history: 'История',
     types: {
       SUBSCRIPTION_DAYS: { label: 'Дни подписки', unit: 'дней' },
       GIFT_SUBSCRIPTION: { label: 'Подарочная подписка', unit: 'промокод' },
       DISCOUNT: { label: 'Скидка', unit: '%' },
       TRAFFIC: { label: 'Трафик', unit: 'GB' },
+    },
+  },
+  /**
+   * История баллов. Названия источников — единственное, что видит подписчик у
+   * правки оператора: `note` и `adminId` из деталей не показываются НИКОГДА,
+   * это внутренняя переписка операторов, а не сообщение клиенту.
+   */
+  pointsHistory: {
+    title: 'История баллов',
+    empty: 'Пока никаких начислений',
+    loadError: 'Не удалось загрузить историю',
+    retry: 'Повторить',
+    showMore: 'Показать ещё',
+    balanceAfter_one: 'остаток {{count}} балл',
+    balanceAfter_few: 'остаток {{count}} балла',
+    balanceAfter_many: 'остаток {{count}} баллов',
+    balanceAfter_other: 'остаток {{count}} баллов',
+    sources: {
+      CASHBACK: 'Кэшбэк за покупку',
+      CASHBACK_REVERSED: 'Возврат платежа',
+      REFERRAL_REWARD: 'За приглашённого друга',
+      REFERRAL_REWARD_REVOKED: 'Отзыв награды за друга',
+      QUEST_REWARD: 'Задание',
+      EXCHANGE: 'Обмен баллов',
+      MANUAL_ADJUSTMENT: 'Правка оператора',
+      ACCOUNT_MERGE: 'Объединение аккаунтов',
+      IMPORT: 'Перенос',
+      OPENING_BALANCE: 'Начальный остаток',
+    },
+    reasons: {
+      COMPENSATION: 'Компенсация',
+      PROMOTION: 'Акция',
+      CORRECTION: 'Исправление',
+      VIOLATION: 'Нарушение правил',
+      OTHER: 'Другое',
+    },
+    exchange: {
+      SUBSCRIPTION_DAYS: 'дни подписки',
+      GIFT_SUBSCRIPTION: 'подарочная подписка',
+      DISCOUNT: 'скидка',
+      TRAFFIC: 'трафик',
+    },
+    details: {
+      cashback: '{{what}} · оплачено {{amount}}',
+      days_one: '{{count}} день',
+      days_few: '{{count}} дня',
+      days_many: '{{count}} дней',
+      days_other: '{{count}} дней',
+      reversal: 'списано {{applied}} из {{requested}}',
+      shortfall_one: 'недостача {{count}} балл',
+      shortfall_few: 'недостача {{count}} балла',
+      shortfall_many: 'недостача {{count}} баллов',
+      shortfall_other: 'недостача {{count}} баллов',
+      quest: 'задание: {{title}}',
+      exchange: 'обмен: {{type}}',
     },
   },
   support: {
