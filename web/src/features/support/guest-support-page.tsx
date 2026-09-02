@@ -433,14 +433,16 @@ function GuestAttachmentView({
   const url = supportGuestAttachmentUrl(attachment.id)
   if (onOpen) {
     return (
-      <button type="button" onClick={onOpen} className="block overflow-hidden rounded-xl">
+      // `h-64` on the button — see the signed-in page for why the strip
+      // reserves its height instead of growing into it when the bytes land.
+      <button type="button" onClick={onOpen} className="block h-64 overflow-hidden rounded-xl">
         <img
           src={url}
           alt={attachment.filename}
           loading="lazy"
           // `contain`, not `cover` — see the signed-in page for why cropping a
           // screenshot preview is the wrong default in a support thread.
-          className="max-h-64 w-auto max-w-full cursor-zoom-in rounded-xl object-contain"
+          className="h-full w-auto max-w-full cursor-zoom-in rounded-xl object-contain"
         />
       </button>
     )

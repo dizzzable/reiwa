@@ -11,6 +11,11 @@ export function FaqMediaElement({
   label: string;
   onError: () => void;
 }) {
+  // `aspect-video`, and not just a max height, because the operator's file has
+  // no dimensions we know before it arrives. Without a reserved box the slot is
+  // 0 tall until the bytes land and then jumps to 320, moving the answer text
+  // the reader is in the middle of. `object-contain` keeps the reservation from
+  // cropping or stretching anything that is not 16/9.
   if (kind === "image") {
     return (
       <img
@@ -19,7 +24,7 @@ export function FaqMediaElement({
         loading="lazy"
         decoding="async"
         onError={onError}
-        className="max-h-80 w-full object-contain"
+        className="aspect-video max-h-80 w-full object-contain"
       />
     );
   }
@@ -32,7 +37,7 @@ export function FaqMediaElement({
       playsInline
       preload="metadata"
       onError={onError}
-      className="max-h-80 w-full bg-black object-contain"
+      className="aspect-video max-h-80 w-full bg-black object-contain"
     />
   );
 }

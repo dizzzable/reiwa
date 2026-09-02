@@ -138,7 +138,11 @@ export function TrustLogosSection({ section, locale, defaultLocale }: Props) {
               alt={alt}
               loading="lazy"
               decoding="async"
-              className="h-8 w-auto sm:h-10"
+              // The height was reserved, the width was not, so each logo was
+              // zero wide until it loaded and then shoved its neighbours along
+              // the row. `min-w` holds a plausible slot; `object-contain` keeps
+              // a narrow mark from being stretched to fill it.
+              className="h-8 w-auto min-w-16 object-contain sm:h-10 sm:min-w-20"
             />
           );
           return (

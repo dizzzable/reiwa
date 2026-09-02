@@ -41,6 +41,34 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    // ── No `<link rel="modulepreload">` ───────────────────────────────────────
+    //
+    // Vite emits one per static import of the entry chunk — a dozen vendor
+    // chunks. With this service worker every one of them is DISCARDED, and
+    // Chrome says so out loud: "a preload is found, but is not used because it
+    // is a cross-world service worker resource mismatch", once per chunk, plus
+    // "preloaded ... but not used within a few seconds" for each again.
+    //
+    // The cause is ours and deliberate elsewhere: `sw.ts` calls `skipWaiting()`
+    // on install and `clients.claim()` on activate, so a new worker takes over
+    // a page that is already loading. The preloads went out before the claim
+    // and the module requests after it, and a preload fetched in one "world"
+    // cannot be matched to a request made in the other. That happens on every
+    // first visit and after every deploy — exactly the loads a preload was
+    // meant to help.
+    //
+    // The bytes barely matter: `/assets/*` is immutable for a year, so the
+    // second fetch is a cache read. What it cost was the optimisation itself,
+    // which never applied, and ~130 warnings per load that buried real console
+    // errors. Turning the hints off leaves the vendor chunks to the service
+    // worker's own cache-first route, which serves them from Cache Storage for
+    // everyone except a first-ever visitor — who now pays one extra round trip
+    // of waterfall instead of a preload that was going to be thrown away.
+    //
+    // Keeping the claim and dropping the hints, rather than the reverse: an
+    // update that lands on the next navigation is worth more than a marginally
+    // faster first paint.
+    modulePreload: false,
     // The largest chunk is the three.js / react-three-fiber bundle used by a
     // handful of WebGL card effects. Every effect is `React.lazy`, so that
     // bundle is ONLY fetched when a card actually mounts such an effect — it

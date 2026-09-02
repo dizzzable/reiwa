@@ -44,7 +44,12 @@ export default function HowItWorksSection({ section, locale, defaultLocale }: Pr
                   alt={mediaAlt}
                   loading="lazy"
                   decoding="async"
-                  className="mt-4 rounded-xl border border-[color:var(--ls-border)]"
+                  // The operator's file, whose size the page cannot know before
+                  // it arrives. Unsized it carried no box at all, so every step
+                  // card grew when its picture landed and pushed the ones below
+                  // it down the landing page. `object-contain` inside the
+                  // reserved 16/9 slot crops nothing.
+                  className="mt-4 aspect-video w-full rounded-xl border border-[color:var(--ls-border)] object-contain"
                 />
               )}
             </li>

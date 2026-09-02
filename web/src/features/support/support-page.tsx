@@ -54,14 +54,19 @@ function SupportAttachmentView({
   const url = supportAttachmentUrl(ticketId, attachment.id)
   if (onOpen) {
     return (
-      <button type="button" onClick={onOpen} className="block overflow-hidden rounded-xl">
+      // `h-64` on the button, not `max-h-64` on the image: a screenshot has no
+      // dimensions the thread knows before it loads, so the bubble was 0 tall
+      // and then jumped to 256, shoving every message below it down while the
+      // reader was looking at them. The strip is now the same height whatever
+      // arrives, and the image is contained inside it.
+      <button type="button" onClick={onOpen} className="block h-64 overflow-hidden rounded-xl">
         <img
           src={url}
           alt={attachment.filename}
           loading="lazy"
           // `contain`, not `cover`. Cropping the one preview a person gets of
           // their own screenshot hid exactly the corner they were pointing at.
-          className="max-h-64 w-auto max-w-full cursor-zoom-in rounded-xl object-contain"
+          className="h-full w-auto max-w-full cursor-zoom-in rounded-xl object-contain"
         />
       </button>
     )
