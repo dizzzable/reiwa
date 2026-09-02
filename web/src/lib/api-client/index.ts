@@ -46,6 +46,16 @@ export {
   type SectorUnavailable,
 } from "./wheel.js";
 
+// Contests
+export {
+  getContests,
+  enterContest,
+  type ContestView,
+  type ContestStatus,
+  type ContestEntryRefusal,
+  type ContestPrizeView,
+} from "./contests.js";
+
 // Auth
 export {
   bootstrapTelegram,

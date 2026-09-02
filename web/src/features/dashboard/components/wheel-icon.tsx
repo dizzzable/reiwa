@@ -14,7 +14,7 @@ import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CircleDot } from "lucide-react";
 
-import { getWheel } from "@/lib/api-client";
+import { getContests, getWheel } from "@/lib/api-client";
 
 export function WheelIcon() {
   const { t } = useTranslation();
@@ -25,18 +25,24 @@ export function WheelIcon() {
     queryFn: getWheel,
     staleTime: 60_000,
   });
+  const contests = useQuery({
+    queryKey: ["contests"],
+    queryFn: getContests,
+    staleTime: 60_000,
+  });
 
-  if (!data?.enabled) return null;
+  const hasContest = (contests.data ?? []).some((contest) => contest.status === "ACTIVE");
+  if (!data?.enabled && !hasContest) return null;
 
   return (
     <button
       type="button"
-      onClick={() => navigate("/wheel")}
-      aria-label={t("wheel.title")}
+      onClick={() => navigate("/events")}
+      aria-label={t("events.title")}
       className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-all hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
     >
       <CircleDot className="h-4 w-4" />
-      {data.canSpin ? (
+      {data?.canSpin ? (
         <span
           aria-hidden
           className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[color:var(--brand-accent,#fbbf24)]"
