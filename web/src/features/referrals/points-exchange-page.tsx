@@ -12,6 +12,7 @@ import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
 import { useSafeBack } from '@/hooks/use-safe-back'
 import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
+import { createIdempotencyKey } from '@/lib/idempotency-key'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -32,7 +33,7 @@ export default function PointsExchangePage() {
   const [giftCode, setGiftCode] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [targetSubscriptionId, setTargetSubscriptionId] = useState<string | null>(null)
-  const [exchangeIntentKey, setExchangeIntentKey] = useState(() => createIdempotencyKey())
+  const [exchangeIntentKey, setExchangeIntentKey] = useState(() => createIdempotencyKey('points'))
   const [historyOpen, setHistoryOpen] = useState(false)
 
   const typeLabel = (type: string) => t(`pointsExchange.types.${type}.label`, { defaultValue: type })
@@ -68,7 +69,7 @@ export default function PointsExchangePage() {
   }, [activeSubscriptions, targetSignature, targetSubscriptionId])
 
   useEffect(() => {
-    setExchangeIntentKey(createIdempotencyKey())
+    setExchangeIntentKey(createIdempotencyKey('points'))
   }, [selectedType, points, targetSubscriptionId])
 
   const mutation = useMutation({
@@ -97,7 +98,7 @@ export default function PointsExchangePage() {
       }
       setSelectedType(null)
       setPoints('')
-      setExchangeIntentKey(createIdempotencyKey())
+      setExchangeIntentKey(createIdempotencyKey('points'))
     },
     onError: () => toast.error(t('pointsExchange.error')),
   })
@@ -348,11 +349,4 @@ export default function PointsExchangePage() {
       )}
     </div>
   )
-}
-
-function createIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `points-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
