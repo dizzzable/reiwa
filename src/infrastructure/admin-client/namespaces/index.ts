@@ -50,6 +50,7 @@ export { PromocodesNamespace } from './promocodes.js';
 export { PushNamespace } from './push.js';
 export type { WebPushSubscriptionPayload } from './push.js';
 export { QuestsNamespace } from './quests.js';
+export { WheelNamespace } from './wheel.js';
 export { UserHintsNamespace } from './user-hints.js';
 export type { CabinetHint, HintAudienceInput } from './user-hints.js';
 export { ReferralsNamespace } from './referrals.js';

@@ -35,6 +35,7 @@ import { DevicesList } from "./components/devices-list";
 import { resolveDevicesViewState } from "@/lib/devices-view-state";
 import { NotificationBell } from "./components/notification-bell";
 import { QuestsIcon } from "./components/quests-icon";
+import { WheelIcon } from "./components/wheel-icon";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
 import { TrialCta } from "./components/trial-cta";
 import {
@@ -339,6 +340,7 @@ export default function DashboardPage() {
             <TicketPercent className="h-4 w-4" />
           </button>
           <QuestsIcon />
+          <WheelIcon />
           <NotificationBell />
         </div>
       </div>

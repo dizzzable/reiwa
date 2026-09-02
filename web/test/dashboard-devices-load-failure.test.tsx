@@ -74,6 +74,11 @@ vi.mock("../src/features/dashboard/components/notification-bell", () => ({
 vi.mock("../src/features/dashboard/components/quests-icon", () => ({
   QuestsIcon: () => null,
 }));
+// Stubbed like every other header widget: this file is about the device
+// card, and a real wheel icon would need `getWheel` on the api mock.
+vi.mock("../src/features/dashboard/components/wheel-icon", () => ({
+  WheelIcon: () => null,
+}));
 vi.mock("../src/features/dashboard/components/empty-subscription-cta", () => ({
   EmptySubscriptionCta: () => null,
 }));

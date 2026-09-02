@@ -28,6 +28,24 @@ export {
   type QuestRewardType,
 } from "./quests.js";
 
+// Wheel of fortune
+export {
+  getWheel,
+  getWheelHistory,
+  spinWheel,
+  buySpins,
+  type WheelView,
+  type WheelSector,
+  type WheelSectorKind,
+  type WheelRarity,
+  type WheelSpinResult,
+  type WheelSpinStatus,
+  type WheelPrize,
+  type WheelHistoryItem,
+  type WheelHistoryPage,
+  type SectorUnavailable,
+} from "./wheel.js";
+
 // Auth
 export {
   bootstrapTelegram,

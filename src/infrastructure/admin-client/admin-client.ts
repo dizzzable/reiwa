@@ -37,6 +37,7 @@ import {
   PromocodesNamespace,
   PushNamespace,
   QuestsNamespace,
+  WheelNamespace,
   UserHintsNamespace,
   ReferralsNamespace,
   SubscriptionNamespace,
@@ -71,6 +72,7 @@ export class AdminClient {
   readonly linking: LinkingNamespace;
   readonly push: PushNamespace;
   readonly quests: QuestsNamespace;
+  readonly wheel: WheelNamespace;
   readonly userHints: UserHintsNamespace;
   readonly events: EventsNamespace;
   readonly support: SupportNamespace;
@@ -101,6 +103,7 @@ export class AdminClient {
     this.linking = new LinkingNamespace(this.transport);
     this.push = new PushNamespace(this.transport);
     this.quests = new QuestsNamespace(this.transport);
+    this.wheel = new WheelNamespace(this.transport);
     this.userHints = new UserHintsNamespace(this.transport);
     this.events = new EventsNamespace(this.transport);
     this.support = new SupportNamespace(this.transport);
