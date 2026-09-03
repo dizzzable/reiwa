@@ -1067,6 +1067,7 @@ export const ru = {
       sampleExpiry: 'Истекает через 30 дней',
       sampleTraffic: '12 / 50 ГБ',
       sampleDevices: '2 из 5 устройств',
+      keptInHistory: 'Код сохранён в истории прокрутов — не потеряется.',
       close: 'Понятно',
     },
   },

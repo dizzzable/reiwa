@@ -32,7 +32,9 @@ export default function EventsPage() {
       if (result.entered) {
         toast.success(t('events.entered'))
       } else {
-        toast.error(t(`events.refusal.${result.reason ?? 'NOT_OPEN'}`))
+        toast.error(
+          t(`events.refusal.${result.reason ?? 'NOT_OPEN'}`, t('events.refusal.NOT_OPEN')),
+        )
       }
     },
     onError: () => toast.error(t('events.enterFailed')),
@@ -141,7 +143,9 @@ function ContestCard({
       ) : contest.entered ? (
         <p className="text-sm font-medium">{t('events.youAreIn')}</p>
       ) : contest.closed !== null ? (
-        <p className="text-sm text-muted-foreground">{t(`events.refusal.${contest.closed}`)}</p>
+        <p className="text-sm text-muted-foreground">
+          {t(`events.refusal.${contest.closed}`, t('events.refusal.NOT_OPEN'))}
+        </p>
       ) : (
         <StadiumButton className="w-full" disabled={entering} onClick={onEnter}>
           {t('events.enter')}

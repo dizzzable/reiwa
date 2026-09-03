@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { WheelDisc, rotationForIndex } from '@/features/wheel/components/wheel-disc'
+import { WheelDisc } from '@/features/wheel/components/wheel-disc'
+import { rotationForIndex } from '@/features/wheel/wheel-motion'
 import type { WheelSector } from '@/lib/api-client'
 
 /**
@@ -9,7 +10,7 @@ import type { WheelSector } from '@/lib/api-client'
  *
  * The property worth guarding is not how it looks — it is that it says
  * NOTHING about the odds. Slices drawn in weight proportion would show them
- * geometrically: the jackpot a hairline, "не повезло" two thirds of the
+ * geometrically: the jackpot a hairline, the losing slice two thirds of the
  * circle, readable by anybody with a screenshot. The disc divides evenly, and
  * this file is what stops a well-meaning "make it proportional" edit.
  */
@@ -31,21 +32,22 @@ function sector(id: string, overrides: Partial<WheelSector> = {}): WheelSector {
 const label = (s: WheelSector) => s.title.ru ?? s.id
 
 function markup(sectors: readonly WheelSector[]): string {
-  return renderToStaticMarkup(
-    <WheelDisc sectors={sectors} rotation={0} spinning={false} label={label} />,
-  )
+  return renderToStaticMarkup(<WheelDisc sectors={sectors} label={label} />)
 }
 
 /**
  * The angle each slice actually spans.
  *
- * Each path is `M cx cy L x1 y1 A r r 0 flag 1 x2 y2 Z`; the two endpoints
+ * Each slice is `M cx cy L x1 y1 A r r 0 flag 1 x2 y2 Z`; the two endpoints
  * against the centre give the sweep. Measuring the geometry rather than
  * trusting a prop is the point — a proportional edit would still pass a test
  * that only checked the inputs.
+ *
+ * Only elements carrying `data-slice` are measured: the glyphs drawn inside
+ * each slice are paths too, and this test is about the pie, not the icons.
  */
 function arcAngles(html: string): number[] {
-  return [...html.matchAll(/ d="([^"]+)"/g)].map((match) => {
+  return [...html.matchAll(/<path data-slice="[^"]*"[^>]*?\sd="([^"]+)"/g)].map((match) => {
     const numbers = (match[1] ?? '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? []
     const [cx, cy, x1, y1] = numbers
     const x2 = numbers[9]
@@ -84,12 +86,27 @@ describe('the wheel disc', () => {
       sector('taken', { available: false, unavailable: 'ALREADY_WON' }),
     ])
 
-    const opacities = [...html.matchAll(/opacity="([\d.]+)"/g)].map((match) => match[1])
-    expect(opacities).toEqual(['1', '0.35'])
+    const dimmed = [...html.matchAll(/<path data-slice="[^"]*"[^>]*?\sopacity="([\d.]+)"/g)].map(
+      (match) => match[1],
+    )
+    expect(dimmed).toEqual(['1', '0.32'])
   })
 
   it('renders nothing at all when there is nothing to spin', () => {
     expect(markup([])).toBe('')
+  })
+
+  it('says not one word about the odds', () => {
+    // Belt and braces for the decision above: whatever else the markup
+    // grows, none of the fields that WOULD disclose the odds may reach it.
+    // Named exactly — `font-weight` and `stroke-width` are drawing, not
+    // chance, and a test that cannot tell the difference gets deleted by the
+    // first person it annoys.
+    const html = markup([sector('a', { rarity: 'LEGENDARY' }), sector('b', { kind: 'NOTHING' })])
+
+    for (const leak of [/chancePercent/i, /wonCount/i, /maxWins/i, /probabilit/i, /"weight"/i]) {
+      expect(html).not.toMatch(leak)
+    }
   })
 })
 

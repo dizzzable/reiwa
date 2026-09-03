@@ -1063,6 +1063,7 @@ export const en: RuDict = {
       sampleExpiry: 'Expires in 30 days',
       sampleTraffic: '12 / 50 GB',
       sampleDevices: '2 of 5 devices',
+      keptInHistory: 'The code is kept in your spin history — you cannot lose it.',
       close: 'Got it',
     },
   },

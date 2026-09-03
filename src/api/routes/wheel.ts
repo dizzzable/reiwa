@@ -44,22 +44,34 @@ export function createWheelRouter(deps: {
     return trimmed;
   };
 
+  /** What a cabinet running ahead of its panel sees: a wheel that is off. */
+  const WHEEL_OFF = {
+    enabled: false,
+    sectors: [],
+    spinBalance: 0,
+    pointsBalance: 0,
+    freeSpin: { available: false, availableAt: null },
+    spinPricePoints: null,
+    canSpin: false,
+  };
+
   // GET /api/v1/wheel — sectors, balances, the free spin. Never the odds.
   router.get("/wheel", requireSession, async (req: AuthRequest, res) => {
     try {
       const result = await adminClient?.wheel.view(resolveUserIdentity(req));
-      res.json(
-        result ?? {
-          enabled: false,
-          sectors: [],
-          spinBalance: 0,
-          pointsBalance: 0,
-          freeSpin: { available: false, availableAt: null },
-          spinPricePoints: null,
-          canSpin: false,
-        },
-      );
+      res.json(result ?? WHEEL_OFF);
     } catch (err: unknown) {
+      // A panel that predates the wheel answers 404, and this endpoint is
+      // called on every dashboard render — turning that into a 500 would make
+      // ordinary traffic look like an outage in the logs and the error rate,
+      // for the whole window between the two deployments. An absent wheel is
+      // a wheel that is off, which is exactly what the screen already knows
+      // how to draw.
+      if (isUpstreamStatus(err, 404)) {
+        getRequestLogger(req).warn("GET /wheel: panel does not have the wheel yet");
+        res.json(WHEEL_OFF);
+        return;
+      }
       getRequestLogger(req).error({ err }, "GET /wheel failed");
       res.status(500).json({ error: "internal" });
     }
@@ -76,6 +88,10 @@ export function createWheelRouter(deps: {
       });
       res.json(result ?? { items: [], nextCursor: null });
     } catch (err: unknown) {
+      if (isUpstreamStatus(err, 404)) {
+        res.json({ items: [], nextCursor: null });
+        return;
+      }
       getRequestLogger(req).error({ err }, "GET /wheel/history failed");
       res.status(500).json({ error: "internal" });
     }

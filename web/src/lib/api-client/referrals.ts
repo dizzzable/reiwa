@@ -86,6 +86,8 @@ export type PointsLedgerSource =
   | "REFERRAL_REWARD"
   | "REFERRAL_REWARD_REVOKED"
   | "QUEST_REWARD"
+  | "WHEEL_PRIZE"
+  | "CONTEST_PRIZE"
   | "EXCHANGE"
   | "MANUAL_ADJUSTMENT"
   | "ACCOUNT_MERGE"

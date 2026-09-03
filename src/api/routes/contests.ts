@@ -31,6 +31,14 @@ export function createContestsRouter(deps: {
       const result = await adminClient?.contests.list(resolveUserIdentity(req));
       res.json(result ?? []);
     } catch (err: unknown) {
+      // Same reasoning as the wheel: a panel that predates contests answers
+      // 404, this runs on every dashboard render, and "no contests" is a
+      // truthful answer the screen already draws.
+      if (isUpstreamStatus(err, 404)) {
+        getRequestLogger(req).warn("GET /contests: panel does not have contests yet");
+        res.json([]);
+        return;
+      }
       getRequestLogger(req).error({ err }, "GET /contests failed");
       res.status(500).json({ error: "internal" });
     }
