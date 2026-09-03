@@ -32,7 +32,7 @@ function sector(id: string, overrides: Partial<WheelSector> = {}): WheelSector {
 const label = (s: WheelSector) => s.title.ru ?? s.id
 
 function markup(sectors: readonly WheelSector[]): string {
-  return renderToStaticMarkup(<WheelDisc sectors={sectors} label={label} />)
+  return renderToStaticMarkup(<WheelDisc sectors={sectors} label={label} title="Колесо фортуны" />)
 }
 
 /**

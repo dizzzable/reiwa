@@ -202,7 +202,14 @@ export default function WheelPage() {
         </span>
       </div>
 
-      <WheelDisc ref={disc} sectors={sectors} label={label} onSettled={onSettled} onTick={onTick} />
+      <WheelDisc
+        ref={disc}
+        sectors={sectors}
+        label={label}
+        title={t('wheel.title')}
+        onSettled={onSettled}
+        onTick={onTick}
+      />
 
       <div className="space-y-2">
         <StadiumButton

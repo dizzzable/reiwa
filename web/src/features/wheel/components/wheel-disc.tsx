@@ -51,12 +51,14 @@ export const WheelDisc = forwardRef<
   {
     readonly sectors: readonly WheelSector[]
     readonly label: (sector: WheelSector) => string
+    /** What a screen reader calls the disc as a whole. */
+    readonly title: string
     /** Called once the disc has come to rest — never after unmount. */
     readonly onSettled?: (index: number) => void
     /** A tooth passed under the pointer, with how long the spin has left. */
     readonly onTick?: (remainingMs: number) => void
   }
->(function WheelDisc({ sectors, label, onSettled, onTick }, ref) {
+>(function WheelDisc({ sectors, label, title, onSettled, onTick }, ref) {
   const reduceMotion = useReducedMotion()
   const discRef = useRef<SVGSVGElement | null>(null)
   const pointerRef = useRef<HTMLDivElement | null>(null)
@@ -223,7 +225,7 @@ export const WheelDisc = forwardRef<
         width="100%"
         height="100%"
         role="img"
-        aria-label={label(sectors[0]!)}
+        aria-label={title}
         style={{ transformOrigin: '50% 50%' }}
       >
         <defs>
