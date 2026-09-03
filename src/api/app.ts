@@ -10,6 +10,7 @@ import type { AdminClient } from "../lib/admin-client.js";
 import type { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore, createWebSessionMiddleware } from "../infrastructure/redis/session.js";
 import { RedisPublicConfigPersistence } from "../infrastructure/public-config/redis-public-config-persistence.js";
+import { RedisConnectPageSnapshot } from "../infrastructure/public-config/redis-connect-page-snapshot.js";
 import { createPublicConfigRejectionNotifier } from "../infrastructure/public-config/rejection-notifier.js";
 import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import type { SessionConfig } from "../infrastructure/redis/session.js";
@@ -103,6 +104,11 @@ export function createApp(deps: CreateAppDeps) {
         logger,
         rejectionNotifier: publicConfigRejectionNotifier,
       })
+    : undefined;
+  // Same connection, same best-effort contract: a restart during a panel
+  // outage must not switch the connect screen off for everybody.
+  const connectPageSnapshot = deps.webSessionStore
+    ? new RedisConnectPageSnapshot({ redis: deps.webSessionStore.getRedis(), logger })
     : undefined;
   const reiwaPublicUrl = resolveReiwaPublicUrl(config);
   const app = express();
@@ -325,7 +331,7 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createLandingRouter({ adminClient: deps.adminClient, logger }));
   // The connect screen catalog. Public within the cabinet: it is identical for
   // every customer and carries nobody's subscription link.
-  app.use("/api/v1", createConnectPageRouter(deps.adminClient));
+  app.use("/api/v1", createConnectPageRouter(deps.adminClient, connectPageSnapshot));
   app.use("/api/v1", createAuthRouter(deps));
   app.use("/api/v1", createProfileRouter(deps));
   app.use("/api/v1", createPlansRouter(deps));

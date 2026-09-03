@@ -19,11 +19,22 @@
  * falls back to "copy the link", which is exactly what people did before this
  * screen existed. Serving a 5xx instead would turn a degraded screen into no
  * screen at all.
+ *
+ * But `null` also reads as "the connect screen is switched off", so an outage
+ * that outlives this process would switch the feature off for everybody with
+ * nothing written anywhere to say why. That is what the durable snapshot is
+ * for: a restart during an outage comes back with the last catalog the panel
+ * actually served, and only a cabinet that has never once reached the panel
+ * answers `null`.
  */
 import { Router } from "express";
 import { createHash } from "node:crypto";
 
 import type { AdminClient } from "../../infrastructure/admin-client/index.js";
+import {
+  NOOP_CONNECT_PAGE_SNAPSHOT,
+  type ConnectPageSnapshotStore,
+} from "../../infrastructure/public-config/redis-connect-page-snapshot.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 
 interface CachedCatalog {
@@ -65,9 +76,15 @@ function unavailable(): CachedCatalog {
   return { body: null, etag: computeEtag(null), fetchedAt: Date.now() };
 }
 
-async function fetchFresh(adminClient: AdminClient | null): Promise<CachedCatalog> {
+async function fetchFresh(
+  adminClient: AdminClient | null,
+  snapshots: ConnectPageSnapshotStore,
+): Promise<CachedCatalog> {
   if (adminClient === null) return unavailable();
   const body = (await adminClient.connectPage.getEffective()) ?? null;
+  // Recorded only for an answer the panel actually gave. Saving the fallback
+  // would make the outage permanent the first time it happened.
+  if (body !== null) void snapshots.save(body);
   return { body, etag: computeEtag(body), fetchedAt: Date.now() };
 }
 
@@ -81,6 +98,7 @@ async function fetchFresh(adminClient: AdminClient | null): Promise<CachedCatalo
  */
 async function getCatalog(
   adminClient: AdminClient | null,
+  snapshots: ConnectPageSnapshotStore,
   onFailure?: (err: unknown) => void,
 ): Promise<CachedCatalog> {
   const now = Date.now();
@@ -88,19 +106,30 @@ async function getCatalog(
 
   if (inflight === null) {
     const startedAt = generation;
-    inflight = fetchFresh(adminClient)
+    inflight = fetchFresh(adminClient, snapshots)
       .then((fresh) => {
         inflight = null;
         if (startedAt === generation) cached = fresh;
         return fresh;
       })
-      .catch((err) => {
+      .catch(async (err) => {
         inflight = null;
         // The negative cache is written FIRST. It used to be written after the
         // callback, so a throw from the logger would have undone the one thing
         // this branch exists to guarantee — that a dead panel is asked once per
         // TTL and not once per customer.
-        const answer = cached !== null ? { ...cached, fetchedAt: Date.now() } : unavailable();
+        let answer: CachedCatalog;
+        if (cached !== null) {
+          answer = { ...cached, fetchedAt: Date.now() };
+        } else {
+          // Nothing in memory: this is a cold start during an outage, the one
+          // case the durable snapshot exists for.
+          const stored = await snapshots.load();
+          answer =
+            stored === null
+              ? unavailable()
+              : { body: stored, etag: computeEtag(stored), fetchedAt: Date.now() };
+        }
         if (startedAt === generation) cached = answer;
         onFailure?.(err);
         return answer;
@@ -109,12 +138,15 @@ async function getCatalog(
   return inflight;
 }
 
-export function createConnectPageRouter(adminClient: AdminClient | null): Router {
+export function createConnectPageRouter(
+  adminClient: AdminClient | null,
+  snapshots: ConnectPageSnapshotStore = NOOP_CONNECT_PAGE_SNAPSHOT,
+): Router {
   const router = Router();
 
   router.get("/connect-page", async (req, res) => {
     try {
-      const payload = await getCatalog(adminClient, (err) => {
+      const payload = await getCatalog(adminClient, snapshots, (err) => {
         getRequestLogger(req).warn({ err }, "connect-page upstream fetch failed; serving fallback");
       });
       if (req.headers["if-none-match"] === payload.etag) {
