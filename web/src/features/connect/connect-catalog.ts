@@ -71,7 +71,6 @@ export interface ConnectPlatform {
 export interface ConnectCatalog {
   readonly platforms: readonly ConnectPlatform[];
   readonly icons: Readonly<Record<string, string>>;
-  readonly showConnectionKeys: boolean;
   /** Whether "Подключить" opens this screen instead of redirecting outward. */
   readonly connectScreenEnabled: boolean;
 }
@@ -95,7 +94,13 @@ function text(value: unknown): LocalizedText | null {
 }
 
 function str(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+  // Trimmed, not just tested for content. Returning the untrimmed value made
+  // `readCatalog` accept an icon by its trimmed prefix and store it with the
+  // leading space, so the renderer's own `startsWith('<svg')` then rejected it
+  // and the icon silently vanished — one rule, two spellings, already apart.
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function schemeOf(value: string): string | null {
@@ -127,6 +132,12 @@ function button(value: unknown): ConnectButton | null {
       if (!template.includes(SUBSCRIPTION_LINK_TOKEN)) return null;
       const scheme = schemeOf(template);
       if (scheme === null || FORBIDDEN_SCHEMES.has(scheme)) return null;
+      // An `https:` template is not a deep link, it is a browser navigation —
+      // and inside a Mini App a navigation to a third-party origin takes the
+      // container with it, with no way back. It would also hand that host the
+      // customer's subscription token in a query string. The panel refuses to
+      // save one; this refuses to render one saved before it did.
+      if (scheme === 'http' || scheme === 'https') return null;
       return { kind: 'deepLink', label, template, encode };
     }
     case 'copyLink':
@@ -155,6 +166,16 @@ function app(value: unknown): ConnectApp | null {
     ? value['steps'].map(step).filter((s): s is ConnectStep => s !== null)
     : [];
   if (steps.length === 0) return null;
+  // An app with steps but no way to hand the subscription over is worse than an
+  // app that is missing: the customer reads "tap Add below" under a card with
+  // no button. The panel audits for this, but its audit runs over ITS reading
+  // of the config — where every `kind` is known and `encode` is stamped — so it
+  // cannot see buttons that this side dropped. That is the whole shape of a
+  // panel newer or older than its cabinet, and it has to be caught here.
+  const canHandOver = steps.some((s) =>
+    s.buttons.some((button) => button.kind === 'deepLink' || button.kind === 'copyLink'),
+  );
+  if (!canHandOver) return null;
   return {
     id,
     name,
@@ -215,7 +236,6 @@ export function readCatalog(payload: unknown): ConnectCatalog | null {
   return {
     platforms,
     icons,
-    showConnectionKeys: payload['showConnectionKeys'] === true,
     connectScreenEnabled: payload['connectScreenEnabled'] === true,
   };
 }
@@ -232,8 +252,16 @@ export function readCatalog(payload: unknown): ConnectCatalog | null {
 export function buildDeepLink(button: ConnectButton, subscriptionUrl: string): string | null {
   if (button.kind !== 'deepLink') return null;
   if (subscriptionUrl.trim().length === 0) return null;
-  const value =
-    button.encode === 'component' ? encodeURIComponent(subscriptionUrl) : subscriptionUrl;
+  // `encodeURIComponent` throws `URIError` on a lone surrogate, and this runs
+  // inside render — one malformed character in a link would take the whole
+  // screen down. Everything else in this file answers `null` rather than
+  // throwing; this is the only line that could break that, so it does not.
+  let value: string;
+  try {
+    value = button.encode === 'component' ? encodeURIComponent(subscriptionUrl) : subscriptionUrl;
+  } catch {
+    return null;
+  }
   return button.template.split(SUBSCRIPTION_LINK_TOKEN).join(value);
 }
 
@@ -247,9 +275,14 @@ export function buildDeepLink(button: ConnectButton, subscriptionUrl: string): s
 export function chooseApp(
   platform: ConnectPlatform,
   remembered: string | null,
-): ConnectApp {
+): ConnectApp | null {
   const byId = remembered === null ? undefined : platform.apps.find((a) => a.id === remembered);
-  return byId ?? platform.apps.find((a) => a.featured) ?? platform.apps[0];
+  // `?? platform.apps[0]` returns `undefined` on an empty list while the
+  // signature promised a value, and `undefined !== null` is true — so the
+  // caller's own null check waved it through into `app.steps` and a blank
+  // screen. Nothing reaches here with an empty list today; the type says so now
+  // rather than a guard in another file saying it.
+  return byId ?? platform.apps.find((a) => a.featured) ?? platform.apps[0] ?? null;
 }
 
 /**

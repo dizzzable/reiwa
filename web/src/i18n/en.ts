@@ -849,6 +849,9 @@ export const en: RuDict = {
       'The app list is unavailable right now. Copy the link above and paste it into your VPN client.',
     linkFailedTitle: 'Could not load the link',
     linkFailedBody: 'A temporary problem on our side. Try again in a minute.',
+    linkUnknown: 'Could not load the link — try again',
+    noSectionForDevice: 'There are no instructions for your device yet. Pick a platform by hand.',
+    appsForPlatform: 'Apps for this platform',
   },
   devices: {
     title: 'Connected devices',

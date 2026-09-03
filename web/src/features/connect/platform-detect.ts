@@ -37,7 +37,13 @@ export function detectPlatform(input: DetectionInput): PlatformId | null {
 
   // TVs first: an Android TV is also an Android, and a tvOS device also says
   // "like Mac OS X". Matched later, they would each be swallowed by the phone.
-  if (ua.includes('android') && (ua.includes('tv') || ua.includes('aft'))) return 'androidtv';
+  // Anchored, not substring. `includes('tv')` matched an app called AfterShip
+  // in a phone's webview and handed it the TV catalog; `includes('aft')` did
+  // the same. Meanwhile a real Mi Box says `MIBOX4` and matched neither, so it
+  // got the phone list. Both directions were wrong at once.
+  if (ua.includes('android') && /\bandroid tv\b|;\s*aft[a-z]{1,4}\b|\bmibox|\bbravia|\bshield\b/.test(ua)) {
+    return 'androidtv';
+  }
   if (ua.includes('appletv') || ua.includes('apple tv') || ua.includes('tvos')) return 'appletv';
 
   if (ua.includes('android')) return 'android';
@@ -51,8 +57,13 @@ export function detectPlatform(input: DetectionInput): PlatformId | null {
   if (claimsMac) return 'macos';
 
   if (ua.includes('windows') || input.platform.toLowerCase().startsWith('win')) return 'windows';
-  // Last, because Android and several TV boxes also say Linux.
-  if (ua.includes('linux') || ua.includes('x11') || ua.includes('cros')) return 'linux';
+  // Smart TVs that are neither Android nor Apple say Linux too, and there is no
+  // section for them — so `null` is the honest answer. Calling them Linux
+  // offered desktop clients that cannot be installed on a television, and the
+  // picker cannot fix that because the platform is not in the list at all.
+  if (/smart-?tv|tizen|web0s|webos|hbbtv|netcast|viera|aquos|roku/.test(ua)) return null;
+  // `cros` as a bare substring is inside "microsoft".
+  if (ua.includes('linux') || ua.includes('x11') || /\bcros\b/.test(ua)) return 'linux';
 
   return null;
 }
@@ -95,9 +106,22 @@ export function rememberedApp(platform: PlatformId): string | null {
 export function rememberApp(platform: PlatformId, appId: string): void {
   try {
     const raw = window.localStorage.getItem(REMEMBERED_APP_KEY);
-    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    // A corrupt value used to throw here, before anything was assigned, and the
+    // catch swallowed it — so the key stayed corrupt and the preference could
+    // never be written again, silently and for good. Unreadable means start
+    // over, not give up.
+    let parsed: unknown = {};
+    if (raw !== null) {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = {};
+      }
+    }
     const next: Record<string, unknown> =
-      typeof parsed === 'object' && parsed !== null ? { ...(parsed as object) } : {};
+      typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+        ? { ...(parsed as object) }
+        : {};
     // Bounded by the platform list rather than by whatever keys are already in
     // there: this value survives across releases, and an old key nobody writes
     // any more would otherwise sit in storage forever.

@@ -62,6 +62,14 @@ describe("substituting the subscription link", () => {
     );
   });
 
+  it("answers null rather than throwing on a link it cannot encode", () => {
+    // `encodeURIComponent` throws URIError on a lone surrogate, and this runs
+    // inside render: one malformed character would take the whole screen down.
+    const lone = "https://a/" + String.fromCharCode(0xd800);
+
+    expect(buildDeepLink(deepLink("x://y?url={{SUBSCRIPTION_LINK}}", "component"), lone)).toBeNull();
+  });
+
   it("builds nothing without a link to build from", () => {
     expect(buildDeepLink(deepLink("happ://add/{{SUBSCRIPTION_LINK}}", "raw"), "")).toBeNull();
     expect(buildDeepLink({ kind: "copyLink", label: { en: "Copy" } }, SUB_URL)).toBeNull();
@@ -204,6 +212,86 @@ describe("reading a payload from an image that deploys separately", () => {
     }
   });
 
+  it("drops an app left with no way to hand the subscription over", () => {
+    // THE SHAPE OF A VERSION SKEW. A panel older than the `encode` contract
+    // sends deep links this side cannot use, so every one of them is dropped,
+    // and what is left is a card headed "tap Add below" with no button under
+    // it. The panel audits for exactly this, but over ITS reading of the
+    // config, where every kind is known: it cannot see what this side dropped.
+    const read = readCatalog({
+      ...catalog,
+      platforms: [
+        {
+          ...catalog.platforms[0],
+          apps: [
+            {
+              ...catalog.platforms[0].apps[0],
+              steps: [
+                {
+                  title: { ru: "Add it below" },
+                  body: null,
+                  iconKey: null,
+                  buttons: [
+                    { kind: "deepLink", label: { en: "Add" }, template: "happ://add/{{SUBSCRIPTION_LINK}}" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(read).toBeNull();
+  });
+
+  it("drops a platform whose apps all failed to read", () => {
+    // Pinned on its own: with an unknown platform id broken at the same time,
+    // either guard alone produced the same null and neither was tested.
+    const read = readCatalog({
+      ...catalog,
+      platforms: [
+        { id: "ios", title: { en: "iOS" }, iconKey: null, apps: [{ id: "x", name: "X", steps: [] }] },
+      ],
+    });
+
+    expect(read).toBeNull();
+  });
+
+  it("refuses an https template, which is a navigation and not a deep link", () => {
+    // Inside a Mini App it takes the container to a third-party origin with no
+    // way back, and hands that host the subscription token in a query string.
+    const read = readCatalog({
+      ...catalog,
+      platforms: [
+        {
+          ...catalog.platforms[0],
+          apps: [
+            {
+              ...catalog.platforms[0].apps[0],
+              steps: [
+                {
+                  ...catalog.platforms[0].apps[0].steps[0],
+                  buttons: [
+                    {
+                      kind: "deepLink",
+                      label: { en: "Add" },
+                      template: "https://convert.example/?url={{SUBSCRIPTION_LINK}}",
+                      encode: "component",
+                    },
+                    { kind: "copyLink", label: { en: "Copy" } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(read?.platforms[0].apps[0].steps[0].buttons.map((b) => b.kind)).toEqual(["copyLink"]);
+  });
+
   it("drops a store button that is not an http link", () => {
     const read = readCatalog({
       ...catalog,
@@ -216,7 +304,10 @@ describe("reading a payload from an image that deploys separately", () => {
               steps: [
                 {
                   ...catalog.platforms[0].apps[0].steps[0],
-                  buttons: [{ kind: "external", label: { en: "Store" }, url: "itms://x" }],
+                  buttons: [
+                    { kind: "external", label: { en: "Store" }, url: "itms://x" },
+                    { kind: "copyLink", label: { en: "Copy" } },
+                  ],
                 },
               ],
             },
@@ -225,7 +316,7 @@ describe("reading a payload from an image that deploys separately", () => {
       ],
     });
 
-    expect(read?.platforms[0].apps[0].steps[0].buttons).toHaveLength(0);
+    expect(read?.platforms[0].apps[0].steps[0].buttons.map((b) => b.kind)).toEqual(["copyLink"]);
   });
 });
 
@@ -240,15 +331,15 @@ describe("which app the screen opens on", () => {
   it("opens on the app this person used last", () => {
     const chosen = chooseApp(platform([{ id: "happ", featured: true }, { id: "streisand", featured: false }]), "streisand");
 
-    expect(chosen.id).toBe("streisand");
+    expect(chosen?.id).toBe("streisand");
   });
 
   it("falls back to the recommended one, then to the first", () => {
     const apps = platform([{ id: "happ", featured: false }, { id: "streisand", featured: true }]);
 
-    expect(chooseApp(apps, null).id).toBe("streisand");
-    expect(chooseApp(apps, "deleted-app").id).toBe("streisand");
-    expect(chooseApp(platform([{ id: "a", featured: false }]), null).id).toBe("a");
+    expect(chooseApp(apps, null)?.id).toBe("streisand");
+    expect(chooseApp(apps, "deleted-app")?.id).toBe("streisand");
+    expect(chooseApp(platform([{ id: "a", featured: false }]), null)?.id).toBe("a");
   });
 });
 
@@ -295,5 +386,37 @@ describe("the language a line is shown in", () => {
     expect(line({ en: "Add" }, "ru")).toBe("Add");
     expect(line({ ru: "Добавить" }, "de")).toBe("Добавить");
     expect(line(null, "ru")).toBe("");
+  });
+});
+
+describe("detection does not fire on a coincidence", () => {
+  const detect = (userAgent: string) => detectPlatform({ userAgent, maxTouchPoints: 0, platform: "" });
+
+  it("does not read an app name as a television", () => {
+    // Substring tests for "tv" and "aft" matched a shopping app inside a phone
+    // webview and handed it the set-top-box catalog.
+    expect(detect("Mozilla/5.0 (Linux; Android 14; Pixel 6) Mobile Safari/537.36 AfterShip/6.1")).toBe(
+      "android",
+    );
+  });
+
+  it("does read a real set-top box as one", () => {
+    // And the same substring test missed a Mi Box, which says MIBOX4, so the
+    // television got the phone list. Both directions were wrong at once.
+    expect(detect("Mozilla/5.0 (Linux; Android 9; MIBOX4 Build/PI)")).toBe("androidtv");
+    expect(detect("Mozilla/5.0 (Linux; Android 9; AFTKA Build/PS7233)")).toBe("androidtv");
+  });
+
+  it("does not read Microsoft as Chrome OS", () => {
+    expect(detect("Microsoft Office/16.0 (Unknown)")).toBeNull();
+    expect(detect("Mozilla/5.0 (X11; CrOS x86_64 14541.0.0)")).toBe("linux");
+  });
+
+  it("answers null for a television nothing in the catalog can serve", () => {
+    // Tizen and WebOS say Linux, and there is no section for them. Offering
+    // desktop clients that cannot be installed on a TV is worse than saying
+    // nothing, because the picker has no entry to correct it with either.
+    expect(detect("Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) SamsungBrowser/1.0")).toBeNull();
+    expect(detect("Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36")).toBeNull();
   });
 });

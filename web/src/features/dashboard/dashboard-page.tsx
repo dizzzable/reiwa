@@ -71,12 +71,15 @@ export default function DashboardPage() {
   // Fetched here as well as on the screen itself, and deliberately: this is
   // what decides where "Подключить" goes, and fetching it now also warms the
   // shared cache so the screen opens with its catalog already in hand.
-  const { data: connectCatalog } = useQuery({
+  const { data: connectCatalog, isPending: connectPending } = useQuery({
     queryKey: ["connect-page"],
     queryFn: getConnectPage,
     staleTime: 60_000,
   });
-  const connectScreenEnabled = isConnectScreenEnabled(connectCatalog);
+  // "Not answered yet" is not "off". Treating it as off meant the same customer
+  // tapping twice on a cold start got two different destinations, with the
+  // switch on the whole time.
+  const connectScreenEnabled = !connectPending && isConnectScreenEnabled(connectCatalog);
 
   const { data: allSubsData, isLoading: subsLoading } = useQuery({
     queryKey: subscriptionQueryKeys.all,
@@ -397,7 +400,16 @@ export default function DashboardPage() {
               // no deploy, one toggle, back to the external page.
               onConnect={() => {
                 if (connectScreenEnabled) {
-                  navigate("/subscription/connect");
+                  // The id travels with it, exactly as it does for add-ons: a
+                  // customer can hold several subscriptions, this button belongs
+                  // to one card, and the screen names none of them — so handing
+                  // over the first in the list would give somebody another
+                  // subscription's key with nothing on screen to notice it by.
+                  navigate(
+                    activeSubscription?.id
+                      ? `/subscription/connect?subscriptionId=${encodeURIComponent(activeSubscription.id)}`
+                      : "/subscription/connect",
+                  );
                   return;
                 }
                 const url = activeSubscription?.url;

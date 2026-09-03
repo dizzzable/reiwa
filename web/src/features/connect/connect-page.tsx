@@ -25,6 +25,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronDown, Copy, ExternalLink, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -66,29 +67,49 @@ export default function ConnectPage() {
 
   const catalog = useMemo(() => readCatalog(catalogQuery.data), [catalogQuery.data])
 
-  // The link this screen hands over. Read fresh from the subscription list
-  // rather than captured on mount: regenerating a link rotates it, and a copy
-  // taken at mount would hand out an address that stopped working while the
-  // screen was open.
+  // WHICH subscription. The dashboard hands the id over in the query string,
+  // exactly as it does for add-ons: a customer can hold several, the button
+  // belongs to one card, and nothing on this screen names the subscription — so
+  // handing over the first one in the list would give somebody another
+  // subscription's key with no way to notice. An expired one with a live url
+  // sorts first just as easily as the one they just paid for.
+  const [searchParams] = useSearchParams()
+  const wantedId = searchParams.get('subscriptionId')
+
+  // `getAllSubscriptions` answers `{ subscriptions: [...] }`, not an array.
+  // Reading it as one made this screen hand over nothing at all, for everybody:
+  // `Array.isArray` narrows to `any[]`, so the compiler had no complaint and
+  // every button that needs the link silently disappeared.
   const subscription = useMemo(() => {
-    const list = Array.isArray(subscriptions.data) ? subscriptions.data : []
-    return list.find((s) => typeof s?.url === 'string' && s.url.length > 0) ?? list[0] ?? null
-  }, [subscriptions.data])
-  const subscriptionUrl = typeof subscription?.url === 'string' ? subscription.url : ''
+    const list = subscriptions.data?.subscriptions ?? []
+    const byId = wantedId === null ? undefined : list.find((s) => s.id === wantedId)
+    return byId ?? list.find((s) => (s.url ?? '').length > 0) ?? list[0] ?? null
+  }, [subscriptions.data, wantedId])
+  const subscriptionUrl = subscription?.url ?? ''
+  /** The read failed, so "no link" is not something we know. */
+  const linkUnknown = subscriptions.isError
 
   const detected = useMemo(() => detectCurrentPlatform(), [])
   const [platformId, setPlatformId] = useState<PlatformId | null>(null)
   const [appId, setAppId] = useState<string | null>(null)
 
   // Settles once the catalog arrives, and only for what the customer has not
-  // chosen by hand: re-running detection over a manual pick would undo it on
-  // the next refetch.
+  // chosen by hand — but it also has to re-settle when the chosen platform
+  // STOPS EXISTING. An operator removing a platform (which is what the
+  // invalidate webhook exists to deliver promptly) otherwise left the screen
+  // with a selection that matches nothing: no platform block, no picker, and no
+  // "unavailable" line either, because that one hangs off a missing catalog.
+  // A dead screen only a reload could fix.
   useEffect(() => {
-    if (catalog === null || platformId !== null) return
+    if (catalog === null) return
     const available = catalog.platforms
+    if (platformId !== null && available.some((p) => p.id === platformId)) return
     const match = available.find((p) => p.id === detected) ?? null
     setPlatformId(match?.id ?? available[0]?.id ?? null)
   }, [catalog, detected, platformId])
+  /** True when the catalog has no section for the device we detected. */
+  const platformGuessed =
+    catalog !== null && detected !== null && !catalog.platforms.some((p) => p.id === detected)
 
   const platform: ConnectPlatform | null = useMemo(() => {
     if (catalog === null || platformId === null) return null
@@ -100,22 +121,50 @@ export default function ConnectPage() {
     return chooseApp(platform, appId ?? rememberedApp(platform.id))
   }, [platform, appId])
 
+  // The selected app can sit off the right edge of the scroller when it was
+  // remembered rather than tapped — the strip opens at the start, and the steps
+  // below then describe an app the customer cannot see is selected.
+  const appStrip = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const selected = appStrip.current?.querySelector('[aria-pressed="true"]')
+    selected?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [app?.id])
+
   const selectApp = (platformKey: PlatformId, nextAppId: string): void => {
     setAppId(nextAppId)
     rememberApp(platformKey, nextAppId)
   }
 
-  const copyLink = async (): Promise<void> => {
+  /**
+   * Answers whether the link actually reached the clipboard.
+   *
+   * It used to resolve either way, so the caller lit its green tick next to the
+   * red failure toast. And `navigator.clipboard` is absent outright in an
+   * insecure context and in some in-app browsers — `?.` rather than a bare
+   * property read, plus the old `execCommand` path, because "select it yourself"
+   * is not an instruction anybody can follow against a one-line truncated url.
+   */
+  const copyLink = async (): Promise<boolean> => {
     if (subscriptionUrl.length === 0) {
       toast.error(t('connect.noLink'))
-      return
+      return false
     }
     try {
-      await navigator.clipboard.writeText(subscriptionUrl)
+      if (navigator.clipboard?.writeText !== undefined) {
+        await navigator.clipboard.writeText(subscriptionUrl)
+      } else if (!copyViaSelection(subscriptionUrl)) {
+        throw new Error('no clipboard')
+      }
       toast.success(t('connect.copied'))
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
+      return true
     } catch {
+      if (copyViaSelection(subscriptionUrl)) {
+        toast.success(t('connect.copied'))
+        return true
+      }
       toast.error(t('connect.copyFailed'))
+      return false
     }
   }
 
@@ -148,7 +197,16 @@ export default function ConnectPage() {
 
         {/* Always available, catalog or not: this is the action that never
             depends on the panel being up. */}
-        <CopyCard url={subscriptionUrl} onCopy={copyLink} label={t('connect.copyLink')} hint={t('connect.copyHint')} />
+        <CopyCard
+          url={subscriptionUrl}
+          onCopy={copyLink}
+          label={t('connect.copyLink')}
+          // "Not known" and "not there yet" are different answers, and the
+          // neighbour screen already learned this the hard way: a failed read
+          // has no rows either, and printing the empty-state text over it tells
+          // the customer their subscription is not ready when it is.
+          hint={linkUnknown ? t('connect.linkUnknown') : t('connect.copyHint')}
+        />
 
         {loading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
 
@@ -158,6 +216,12 @@ export default function ConnectPage() {
 
         {catalog !== null && platform !== null && (
           <>
+            {platformGuessed && (
+              <p className="text-xs text-[color:var(--brand-muted-foreground)]">
+                {t('connect.noSectionForDevice')}
+              </p>
+            )}
+
             <PlatformPicker
               platforms={catalog.platforms}
               value={platform.id}
@@ -170,7 +234,12 @@ export default function ConnectPage() {
             />
 
             {platform.apps.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-1">
+              <div
+                ref={appStrip}
+                role="group"
+                aria-label={t('connect.appsForPlatform')}
+                className="flex gap-2 overflow-x-auto pb-1"
+              >
                 {platform.apps.map((candidate) => (
                   <button
                     key={candidate.id}
@@ -247,7 +316,7 @@ function CopyCard({
   hint,
 }: {
   url: string
-  onCopy: () => Promise<void>
+  onCopy: () => Promise<boolean>
   label: string
   hint: string
 }) {
@@ -267,7 +336,10 @@ function CopyCard({
         className="w-full"
         disabled={url.length === 0}
         onClick={() => {
-          void onCopy().then(() => {
+          // Only on a real success. It used to tick regardless, so a failed
+          // copy showed a green check beside its own red error toast.
+          void onCopy().then((copied) => {
+            if (!copied) return
             setDone(true)
             if (timer.current !== null) window.clearTimeout(timer.current)
             timer.current = window.setTimeout(() => setDone(false), 2_000)
@@ -290,7 +362,7 @@ function StepButton({
   button: ConnectButton
   locale: string
   subscriptionUrl: string
-  onCopy: () => Promise<void>
+  onCopy: () => Promise<boolean>
 }) {
   const label = line(button.label, locale)
 
@@ -322,7 +394,7 @@ function StepButton({
   return (
     <a
       href={href}
-      className="inline-flex items-center gap-2 rounded-full bg-[color:var(--brand-primary)] px-4 py-2 text-sm font-medium text-[color:var(--brand-primary-foreground)]"
+      className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] bg-[color:var(--brand-primary)] px-4 py-2 text-sm font-medium text-[color:var(--brand-primary-fg)]"
       onClick={() => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium')}
     >
       <Link2 className="h-4 w-4" />
@@ -362,10 +434,34 @@ function PlatformPicker({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-0 h-4 w-4 text-[color:var(--brand-muted-foreground)]" />
+        <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-0 h-4 w-4 text-[color:var(--brand-muted-foreground)]" />
       </span>
     </label>
   )
+}
+
+/**
+ * The last-resort copy: put the link in a field, select it, ask the document.
+ *
+ * `navigator.clipboard` is absent in an insecure context and in several in-app
+ * browsers, and "select the link and copy it yourself" is not an instruction
+ * anybody can follow against a one-line truncated address.
+ */
+function copyViaSelection(value: string): boolean {
+  try {
+    const field = document.createElement('textarea')
+    field.value = value
+    field.setAttribute('readonly', '')
+    field.style.position = 'fixed'
+    field.style.opacity = '0'
+    document.body.append(field)
+    field.select()
+    const copied = document.execCommand('copy')
+    field.remove()
+    return copied
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -378,6 +474,14 @@ function PlatformPicker({
  * sanitizer is a second opinion about what the string means.
  */
 function Icon({ markup, fallback }: { markup?: string; fallback?: React.ReactNode }) {
+  // Same test the catalog reader applied, on the value it stored — it now
+  // trims there, so these two no longer disagree about a leading space.
   if (typeof markup !== 'string' || !markup.startsWith('<svg')) return <>{fallback ?? null}</>
-  return <span className="inline-flex h-5 w-5 [&>svg]:h-5 [&>svg]:w-5" dangerouslySetInnerHTML={{ __html: markup }} />
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-5 w-5 [&>svg]:h-5 [&>svg]:w-5"
+      dangerouslySetInnerHTML={{ __html: markup }}
+    />
+  )
 }

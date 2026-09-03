@@ -37,11 +37,23 @@ const CACHE_TTL_MS = 60_000;
 // Module-scoped so the invalidate webhook can drop it for the whole process.
 let cached: CachedCatalog | null = null;
 let inflight: Promise<CachedCatalog> | null = null;
+/**
+ * Bumped by every invalidate. A fetch that started before the bump may not
+ * write its answer.
+ *
+ * Without it a slow read begun before an operator's save could land after a
+ * later read that already stored the new catalog, overwrite it, and serve the
+ * pre-save version for another whole TTL — with the invalidate already spent
+ * and the panel reporting the event as delivered. The operator sees "the save
+ * did not work" and there is nothing left to re-fire.
+ */
+let generation = 0;
 
 /** Drop the cached catalog. Called from the admin invalidate webhook. */
 export function resetConnectPageCache(): void {
   cached = null;
   inflight = null;
+  generation += 1;
 }
 
 function computeEtag(value: unknown): string {
@@ -75,23 +87,23 @@ async function getCatalog(
   if (cached !== null && now - cached.fetchedAt < CACHE_TTL_MS) return cached;
 
   if (inflight === null) {
+    const startedAt = generation;
     inflight = fetchFresh(adminClient)
       .then((fresh) => {
-        cached = fresh;
         inflight = null;
+        if (startedAt === generation) cached = fresh;
         return fresh;
       })
       .catch((err) => {
         inflight = null;
+        // The negative cache is written FIRST. It used to be written after the
+        // callback, so a throw from the logger would have undone the one thing
+        // this branch exists to guarantee — that a dead panel is asked once per
+        // TTL and not once per customer.
+        const answer = cached !== null ? { ...cached, fetchedAt: Date.now() } : unavailable();
+        if (startedAt === generation) cached = answer;
         onFailure?.(err);
-        if (cached !== null) {
-          // A catalog that was good a minute ago is still the best answer
-          // available, and it beats dropping the customer to "copy the link".
-          cached = { ...cached, fetchedAt: Date.now() };
-          return cached;
-        }
-        cached = unavailable();
-        return cached;
+        return answer;
       });
   }
   return inflight;
@@ -110,7 +122,16 @@ export function createConnectPageRouter(adminClient: AdminClient | null): Router
         return;
       }
       res.setHeader("ETag", payload.etag);
-      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+      // A fallback must NOT be cached publicly. `null` reads as "the screen is
+      // switched off", so a thirty-second hiccup at the panel would have parked
+      // every customer who loaded during it back on the external page for up to
+      // five more minutes in their own browser — somewhere the invalidate
+      // webhook cannot reach. The in-process cache still remembers the failure,
+      // so the panel is still asked only once per TTL.
+      res.setHeader(
+        "Cache-Control",
+        payload.body === null ? "no-store" : "public, max-age=60, stale-while-revalidate=300",
+      );
       res.json(payload.body);
     } catch (e: unknown) {
       // Defensive: `getCatalog` already fails closed. Never 5xx this route —
