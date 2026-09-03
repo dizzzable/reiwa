@@ -3,8 +3,8 @@
  * ───────────────────
  * Row of three icon+label action buttons directly below the subscription card.
  * These are actions **on the current subscription**:
- *   - Connect (Link2) — opens the subscription URL (deep-links into the VPN
- *     client / subscription page) instead of copying it.
+ *   - Connect (Link2) — raises `onConnect`; the page decides what connecting
+ *     means (today: opens the subscription URL instead of copying it).
  *   - Upgrade (ArrowUpCircle) — navigates to plans with upgrade intent
  *   - Renew (RotateCcw) — navigates to plans with renew intent
  *
@@ -20,7 +20,6 @@ import { useQuery } from "@tanstack/react-query";
 
 import type { Subscription } from "@/types/api";
 import { getSubscriptionAddOns } from "@/lib/api-client";
-import { openExternalUrl } from "@/lib/utils";
 import {
   canRenewSubscription,
   invokeRenewSubscriptionAction,
@@ -89,13 +88,13 @@ export function SubscriptionActions({
         icon={<Link2 className="h-5 w-5" />}
         label={t("card.actions.connect")}
         disabled={disabled || !hasUrl}
-        onClick={() => {
-          if (sub?.url) {
-            openExternalUrl(sub.url);
-            window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-          }
-          onConnect();
-        }}
+        // Signals the intent and nothing else. Opening the link used to happen
+        // HERE as well as in the parent's `onConnect`, so one tap opened the
+        // same URL twice and fired two haptics — invisible in Telegram, which
+        // swallows the second `openLink`, and a stray second tab in a browser.
+        // The parent owns the action because the parent is where "outside vs
+        // inside the cabinet" will be decided.
+        onClick={onConnect}
       />
       <ActionButton
         icon={<ArrowUpCircle className="h-5 w-5" />}
