@@ -18,7 +18,8 @@ import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
 import { ShoppingCart, TicketPercent } from "lucide-react";
 
-import { getActionPolicy, getAllSubscriptions, getSubscriptionDevices } from "@/lib/api-client";
+import { getActionPolicy, getAllSubscriptions,
+  getConnectPage, getSubscriptionDevices } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import { useAccessMode } from "@/lib/use-access-mode";
@@ -28,6 +29,7 @@ import {
   notifySubscriptionLimitReached,
 } from "@/lib/subscription-limit";
 import { openExternalUrl, cn } from "@/lib/utils";
+import { isConnectScreenEnabled } from "@/features/connect/connect-catalog";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
 import { SubscriptionActions } from "./components/subscription-actions";
@@ -66,6 +68,16 @@ export default function DashboardPage() {
   const promoGlowStyle = buildPromoGlowStyle(hasPersonalDiscount, hasPurchaseDiscount);
 
   // Fetch all subscriptions for the carousel
+  // Fetched here as well as on the screen itself, and deliberately: this is
+  // what decides where "Подключить" goes, and fetching it now also warms the
+  // shared cache so the screen opens with its catalog already in hand.
+  const { data: connectCatalog } = useQuery({
+    queryKey: ["connect-page"],
+    queryFn: getConnectPage,
+    staleTime: 60_000,
+  });
+  const connectScreenEnabled = isConnectScreenEnabled(connectCatalog);
+
   const { data: allSubsData, isLoading: subsLoading } = useQuery({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
@@ -379,7 +391,15 @@ export default function DashboardPage() {
               purchasesBlocked={purchasesBlocked}
               restricted={restricted}
               policyCanRenew={activeSubscriptionPolicy?.canRenew}
+              // The one place that decides what connecting means. The button
+              // raises the intent and has no opinion; the switch lives in the
+              // catalog the panel owns, and its off position is the rollback —
+              // no deploy, one toggle, back to the external page.
               onConnect={() => {
+                if (connectScreenEnabled) {
+                  navigate("/subscription/connect");
+                  return;
+                }
                 const url = activeSubscription?.url;
                 if (url) {
                   openExternalUrl(url);

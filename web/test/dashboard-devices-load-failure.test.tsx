@@ -30,6 +30,10 @@ const api = vi.hoisted(() => ({
   getSubscriptionDevices: vi.fn(),
   deleteSubscriptionDevice: vi.fn(),
   regenerateSubscriptionLink: vi.fn(),
+  // The dashboard reads the connect catalog to decide where "Подключить" goes.
+  // Resolving to null here is the switch's off position, which is what every
+  // assertion in this file assumes about that button.
+  getConnectPage: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("react-i18next", () => ({

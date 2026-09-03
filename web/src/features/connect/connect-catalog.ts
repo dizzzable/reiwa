@@ -72,6 +72,8 @@ export interface ConnectCatalog {
   readonly platforms: readonly ConnectPlatform[];
   readonly icons: Readonly<Record<string, string>>;
   readonly showConnectionKeys: boolean;
+  /** Whether "Подключить" opens this screen instead of redirecting outward. */
+  readonly connectScreenEnabled: boolean;
 }
 
 const SUBSCRIPTION_LINK_TOKEN = '{{SUBSCRIPTION_LINK}}';
@@ -178,6 +180,20 @@ function platform(value: unknown): ConnectPlatform | null {
 }
 
 /**
+ * Whether the cabinet should open its own screen for this customer.
+ *
+ * Read straight off the raw payload rather than off {@link readCatalog}, because
+ * the two answer different questions and conflating them changes behaviour in
+ * the wrong direction: a catalog with no readable platform gives `readCatalog`
+ * null, and a screen that is switched ON is still worth opening then — it hands
+ * over the link, which is the action that never needed the catalog. Deciding
+ * from the parsed value would silently send those customers back outward.
+ */
+export function isConnectScreenEnabled(payload: unknown): boolean {
+  return isRecord(payload) && payload['connectScreenEnabled'] === true;
+}
+
+/**
  * Read whatever the edge returned.
  *
  * `null` for anything unusable — including the `null` the edge itself serves
@@ -196,7 +212,12 @@ export function readCatalog(payload: unknown): ConnectCatalog | null {
       if (typeof markup === 'string' && markup.trim().startsWith('<svg')) icons[key] = markup;
     }
   }
-  return { platforms, icons, showConnectionKeys: payload['showConnectionKeys'] === true };
+  return {
+    platforms,
+    icons,
+    showConnectionKeys: payload['showConnectionKeys'] === true,
+    connectScreenEnabled: payload['connectScreenEnabled'] === true,
+  };
 }
 
 /**
