@@ -28,6 +28,7 @@ import {
   getEffectiveLandingCached,
   buildLandingMetaHead,
 } from "./routes/landing.js";
+import { createConnectPageRouter } from "./routes/connect-page.js";
 import {
   applyBrandingHead,
   buildWebManifest,
@@ -322,6 +323,9 @@ export function createApp(deps: CreateAppDeps) {
     }),
   );
   app.use("/api/v1", createLandingRouter({ adminClient: deps.adminClient, logger }));
+  // The connect screen catalog. Public within the cabinet: it is identical for
+  // every customer and carries nobody's subscription link.
+  app.use("/api/v1", createConnectPageRouter(deps.adminClient));
   app.use("/api/v1", createAuthRouter(deps));
   app.use("/api/v1", createProfileRouter(deps));
   app.use("/api/v1", createPlansRouter(deps));

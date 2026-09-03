@@ -34,6 +34,7 @@ export type { FaqItem } from './faq.js';
 export { LegalDocumentsNamespace } from './legal-documents.js';
 export type { LegalDocument, LegalDocumentKey } from './legal-documents.js';
 export { LandingNamespace } from './landing.js';
+export { ConnectPageNamespace } from './connect-page.js';
 export { LinkingNamespace } from './linking.js';
 export type {
   LinkEmailInitiateResult,

@@ -6,6 +6,7 @@ import { invalidateLegalDocumentsCache } from '../../infrastructure/admin-client
 import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
 import { resetBrandingCache } from "./branding.js";
 import { resetLandingCache } from "./landing.js";
+import { resetConnectPageCache } from "./connect-page.js";
 import { evictBrandingAssetCache } from "../branding-pwa.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
@@ -453,6 +454,13 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // Also evict the on-disk branding-asset mirror so a re-uploaded logo
           // / PWA icon is re-fetched fresh on the next request.
           void evictBrandingAssetCache();
+          break;
+        }
+        case "reiwa.connect-page.invalidate": {
+          // Drop the cached connect-screen catalog so the apps an operator just
+          // edited appear on the next tap of "Подключить" rather than after the
+          // HTTP TTL. Cabinet-only — the bot has no part in this screen.
+          resetConnectPageCache();
           break;
         }
         case "reiwa.landing.invalidate": {

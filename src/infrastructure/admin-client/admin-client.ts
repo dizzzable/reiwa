@@ -30,6 +30,7 @@ import {
   FaqNamespace,
   LegalDocumentsNamespace,
   LandingNamespace,
+  ConnectPageNamespace,
   LinkingNamespace,
   PartnerNamespace,
   PaymentsNamespace,
@@ -68,6 +69,7 @@ export class AdminClient {
   readonly partner: PartnerNamespace;
   readonly branding: BrandingNamespace;
   readonly landing: LandingNamespace;
+  readonly connectPage: ConnectPageNamespace;
   readonly webAuth: WebAuthNamespace;
   readonly extAuth: ExtAuthNamespace;
   readonly linking: LinkingNamespace;
@@ -100,6 +102,7 @@ export class AdminClient {
     this.partner = new PartnerNamespace(this.transport);
     this.branding = new BrandingNamespace(this.transport);
     this.landing = new LandingNamespace(this.transport);
+    this.connectPage = new ConnectPageNamespace(this.transport);
     this.webAuth = new WebAuthNamespace(this.transport);
     this.extAuth = new ExtAuthNamespace(this.transport);
     this.linking = new LinkingNamespace(this.transport);
