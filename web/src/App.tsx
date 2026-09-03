@@ -60,6 +60,9 @@ const SubscriptionPage = lazy(
 const DevicesPage = lazy(
   () => import("@/features/subscription/devices-page"),
 );
+const ConnectPage = lazy(
+  () => import("@/features/connect/connect-page"),
+);
 const PartnerPage = lazy(
   () => import("@/features/partner/partner-page"),
 );
@@ -137,6 +140,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/subscription" element={<SubscriptionPage />} />
           <Route path="/subscription/devices" element={<DevicesPage />} />
+          <Route path="/subscription/connect" element={<ConnectPage />} />
           <Route path="/partner" element={<PartnerPage />} />
           <Route path="/plans" element={<PlansPage />} />
           <Route path="/purchase" element={<PurchasePage />} />

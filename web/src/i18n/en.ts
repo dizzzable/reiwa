@@ -836,6 +836,20 @@ export const en: RuDict = {
     },
     pageOf: '{{current}} of {{total}}',
   },
+  connect: {
+    pageTitle: 'Connect',
+    subtitle: 'Choose an app',
+    platform: 'Platform',
+    copyLink: 'Copy the link',
+    copyHint: 'The link appears once the subscription is ready',
+    copied: 'Link copied',
+    copyFailed: 'Could not copy — select the link and copy it by hand',
+    noLink: 'This subscription has no link yet',
+    catalogUnavailable:
+      'The app list is unavailable right now. Copy the link above and paste it into your VPN client.',
+    linkFailedTitle: 'Could not load the link',
+    linkFailedBody: 'A temporary problem on our side. Try again in a minute.',
+  },
   devices: {
     title: 'Connected devices',
     empty: 'No devices connected yet',
