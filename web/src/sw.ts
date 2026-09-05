@@ -336,6 +336,19 @@ interface WebPushPayload {
   readonly body?: string
   readonly url?: string
   /**
+   * How many notifications are unread AFTER this one — the number to draw on
+   * the home-screen icon.
+   *
+   * A total, never an increment: two devices, a push arriving while the app is
+   * open, a notification read somewhere else — anything counted locally drifts
+   * within a day, and a wrong number on an icon is one the subscriber can see
+   * and cannot correct. The panel knows the real figure, so the panel sends it.
+   *
+   * Absent from an older panel, and then the badge is simply left alone rather
+   * than reset to something invented here.
+   */
+  readonly badgeCount?: number
+  /**
    * The operator brand mark, sent by the panel because THIS FILE CANNOT
    * KNOW IT. A service worker is a static asset built long before the
    * operator uploaded anything, so every notification carried the stock
@@ -373,6 +386,25 @@ self.addEventListener('push', (event) => {
   const icon = typeof data.icon === 'string' && data.icon.length > 0
     ? data.icon
     : '/icons/icon-192x192.png'
+
+  // The icon's number, set BEFORE the banner: this is the half that works when
+  // the app is closed, which on iOS is the only time it can be set at all —
+  // there the badge may only be touched from a push handler or a running page.
+  // Guarded twice because both failure modes are ordinary: the API is missing
+  // (Firefox, older Safari), or it rejects because notification permission was
+  // never granted. Neither is worth losing the banner over.
+  if (typeof data.badgeCount === 'number' && Number.isFinite(data.badgeCount)) {
+    const badging = self.navigator as Navigator & {
+      setAppBadge?: (count?: number) => Promise<void>
+      clearAppBadge?: () => Promise<void>
+    }
+    const count = Math.max(0, Math.floor(data.badgeCount))
+    event.waitUntil(
+      (count > 0 ? badging.setAppBadge?.(count) : badging.clearAppBadge?.())?.catch(
+        () => undefined,
+      ) ?? Promise.resolve(),
+    )
+  }
 
   event.waitUntil(
     self.registration.showNotification(title, {

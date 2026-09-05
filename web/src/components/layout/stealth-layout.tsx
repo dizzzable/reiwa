@@ -27,6 +27,7 @@ import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-co
 import { useBranding } from "@/lib/branding-provider";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { isStandalonePwa } from "@/hooks/use-install-prompt";
+import { useAppBadge } from "@/hooks/use-app-badge";
 import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
 import { reportSurface } from "@/lib/api-client";
@@ -109,6 +110,11 @@ const PUSH_RESYNC_KEY = "reiwa_push_resynced";
 
 export default function StealthLayout() {
   const { session, isLoading } = useSession();
+  // The number on the home-screen icon, kept in step while the app is open.
+  // Mounted HERE rather than on the dashboard: the subscriber reads their
+  // notifications from wherever they happen to be, and an icon that only
+  // corrects itself on one screen is an icon that lies on the other four.
+  useAppBadge();
   const { branding } = useBranding();
   const isDesktop = useIsDesktop();
   const location = useLocation();
