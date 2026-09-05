@@ -78,30 +78,38 @@ export function QuestsIcon(): JSX.Element | null {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        aria-label={t("quests.iconAria")}
-        className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
-      >
-        <Sparkles className="h-4 w-4" />
-        {!reduceMotion && (
-          <span
-            aria-hidden
-            className="animate-glint pointer-events-none absolute inset-y-0 -left-1/2 w-1/2"
-            style={{
-              background:
-                "linear-gradient(90deg, transparent, color-mix(in oklab, var(--brand-foreground) 55%, transparent), transparent)",
-            }}
-          />
-        )}
+      {/* The count sits OUTSIDE the button, and that is the whole point of this
+          wrapper. The glint that sweeps across the icon needs `overflow-hidden`
+          to stay inside the pill — and the badge was inside that same box,
+          offset by `-right-1 -top-1` into the exact area the clip removes, so
+          the corner of the number was sliced off. Two jobs, two boxes: the
+          button clips its own animation, the wrapper carries the badge. */}
+      <span className="relative inline-flex">
+        <button
+          onClick={() => setOpen(true)}
+          aria-label={t("quests.iconAria")}
+          className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
+        >
+          <Sparkles className="h-4 w-4" />
+          {!reduceMotion && (
+            <span
+              aria-hidden
+              className="animate-glint pointer-events-none absolute inset-y-0 -left-1/2 w-1/2"
+              style={{
+                background:
+                  "linear-gradient(90deg, transparent, color-mix(in oklab, var(--brand-foreground) 55%, transparent), transparent)",
+              }}
+            />
+          )}
+        </button>
         {unclaimed > 0 && (
-          <span className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center">
-            <span className="relative inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-(--brand-primary) px-1 text-[9px] font-bold leading-none text-(--brand-primary-fg)">
+          <span className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-4 min-w-[16px] items-center justify-center">
+            <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-(--brand-primary) px-1 text-[9px] font-bold leading-none text-(--brand-primary-fg)">
               {unclaimed > 9 ? "9+" : unclaimed}
             </span>
           </span>
         )}
-      </button>
+      </span>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
