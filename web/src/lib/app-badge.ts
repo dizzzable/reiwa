@@ -54,8 +54,12 @@ export function supportsAppBadge(): boolean {
  * appear, not an error the caller can do anything about.
  */
 export async function setAppBadge(count: number): Promise<void> {
-  const badging = navigator as BadgingNavigator
   try {
+    // Read INSIDE the try. Outside it, an environment with no global
+    // `navigator` throws — and because this function is `async`, the throw
+    // becomes a rejected promise at a `void`-ed call site, i.e. exactly the
+    // unhandled rejection the header above claims is impossible.
+    const badging = navigator as BadgingNavigator
     if (!Number.isFinite(count) || count <= 0) {
       await badging.clearAppBadge?.()
       return

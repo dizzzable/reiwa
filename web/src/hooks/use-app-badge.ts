@@ -37,8 +37,22 @@ export function useAppBadge(): void {
   const count = useNotificationBadge()
 
   useEffect(() => {
-    // Not while signed out. The count belongs to an account, and a number left
-    // on the icon after sign-out is somebody else's inbox on a shared phone.
-    void setAppBadge(isAuthenticated ? count : 0)
+    // "Not known" is not "zero", and writing zero for it is how this feature
+    // erases its own result.
+    //
+    // On a cold start the session is still loading, so `isAuthenticated` is
+    // false and the count query has not run: an effect that treated that as
+    // zero cleared, on every single launch, a badge a push had set correctly
+    // while the app was closed. Worse, `useSession` swallows its own errors and
+    // answers `null`, so a network failure is indistinguishable from a
+    // sign-out — and this product sells a VPN, i.e. the app is opened exactly
+    // when the connection is broken.
+    //
+    // So: write only what we actually know. Clearing on sign-out is a separate
+    // job with a separate trigger — see `clearAppBadge` at the sign-out sites,
+    // which fire before this component is unmounted and cannot be done from
+    // here at all.
+    if (!isAuthenticated || count === undefined) return
+    void setAppBadge(count)
   }, [count, isAuthenticated])
 }

@@ -364,6 +364,13 @@ interface WebPushPayload {
   readonly icon?: string
 }
 
+/**
+ * A ceiling for the icon number, well under the API's unsigned-long-long range.
+ * Nobody reads "9999+" as a count, and clamping means a mangled payload cannot
+ * reach the throwing branch of `setAppBadge` at all.
+ */
+const MAX_BADGE_COUNT = 9999
+
 self.addEventListener('push', (event) => {
   const data: WebPushPayload = (() => {
     try {
@@ -394,16 +401,29 @@ self.addEventListener('push', (event) => {
   // (Firefox, older Safari), or it rejects because notification permission was
   // never granted. Neither is worth losing the banner over.
   if (typeof data.badgeCount === 'number' && Number.isFinite(data.badgeCount)) {
-    const badging = self.navigator as Navigator & {
-      setAppBadge?: (count?: number) => Promise<void>
-      clearAppBadge?: () => Promise<void>
+    // The whole block sits in a `try`, not just the promise.
+    //
+    // `setAppBadge` is declared `[EnforceRange] unsigned long long`, so an
+    // out-of-range argument throws a TypeError SYNCHRONOUSLY — before the
+    // `.catch` can see anything, and before `showNotification` below. That
+    // would trade a missing number for a missing notification. `Number.isFinite`
+    // lets `1e30` through and `Math.floor` does not change it, so the guard
+    // above is not enough on its own; the panel cannot send that, a mangled
+    // payload can.
+    try {
+      const badging = self.navigator as Navigator & {
+        setAppBadge?: (count?: number) => Promise<void>
+        clearAppBadge?: () => Promise<void>
+      }
+      const count = Math.max(0, Math.min(Math.floor(data.badgeCount), MAX_BADGE_COUNT))
+      event.waitUntil(
+        (count > 0 ? badging.setAppBadge?.(count) : badging.clearAppBadge?.())?.catch(
+          () => undefined,
+        ) ?? Promise.resolve(),
+      )
+    } catch {
+      // Absent, refused or refused-synchronously. The banner still goes out.
     }
-    const count = Math.max(0, Math.floor(data.badgeCount))
-    event.waitUntil(
-      (count > 0 ? badging.setAppBadge?.(count) : badging.clearAppBadge?.())?.catch(
-        () => undefined,
-      ) ?? Promise.resolve(),
-    )
   }
 
   event.waitUntil(

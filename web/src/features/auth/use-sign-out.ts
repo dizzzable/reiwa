@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
+import { clearAppBadge } from "@/lib/app-badge";
+
 import { signOut } from "@/lib/api-client";
 
 /**
@@ -27,6 +29,14 @@ export function useSignOut(): { readonly signOut: () => void; readonly isPending
   const mutation = useMutation({
     mutationFn: signOut,
     onSettled: () => {
+      // Take the number off the home-screen icon BEFORE navigating away.
+      //
+      // It cannot be done from `useAppBadge`: that hook lives in
+      // `StealthLayout`, `/bootstrap` is outside it, and React batches the
+      // clear and the navigate into one commit — so the layout unmounts and
+      // no effect of its ever runs. Left alone, the count of one person's
+      // inbox stays on the icon of a shared phone with nothing to correct it.
+      void clearAppBadge();
       queryClient.clear();
       navigate("/bootstrap", { replace: true });
     },

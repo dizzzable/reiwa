@@ -1,3 +1,5 @@
+import { clearAppBadge } from '@/lib/app-badge';
+
 export interface DeletedUserSessionTermination {
   readonly closeRealtime: () => void;
   readonly clearPendingInvalidations: () => void;
@@ -19,6 +21,12 @@ export async function terminateDeletedUserSession(
 ): Promise<void> {
   dependencies.closeRealtime();
   dependencies.clearPendingInvalidations();
+  // The home-screen icon, cleared here and nowhere else on this path: it ends
+  // in `window.location.replace`, a full document navigation that gives no
+  // React effect a chance to run. For a deleted account there is also nothing
+  // coming later to correct it — no push will ever arrive again — so a number
+  // left on the icon stays there for good.
+  void clearAppBadge();
 
   try {
     await dependencies.cancelQueries();
