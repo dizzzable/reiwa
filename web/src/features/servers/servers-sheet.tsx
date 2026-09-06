@@ -13,6 +13,14 @@
  * screen rather than a colour: the globe reads as floating over the page the
  * customer just left, not as a picture pasted on top of it.
  *
+ * IT ARRIVES IN ORDER. The gesture is a double tap and what it was for is the
+ * planet, so the planet leads: the blurred page, the title, then the planet
+ * growing into place, then the recommendation, then the list one row behind
+ * another. The timings are all in `servers-sheet-motion.ts` rather than spread
+ * across `delay:` props here, because the sequence is the design and a sequence
+ * has to be readable in one place. Under `prefers-reduced-motion` none of it
+ * runs and the screen is simply there.
+ *
  * MARKERS ARE NOT GUARANTEED. Only the `globe` variant draws real geography, so
  * only it can point at anywhere; and even there a server may have no point —
  * a load balancer flagged 🇪🇺 decodes to a country code that is not a country.
@@ -30,6 +38,8 @@ import type { SubscriberServer } from '@/lib/api-client/servers';
 import { cn } from '@/lib/utils';
 
 import { countryPoint } from './country-points';
+import { rowDelay, SERVERS_SHEET_MOTION } from './servers-sheet-motion';
+import './servers-sheet-motion.css';
 import {
   GLOBE_CATALOG,
   type GlobePreferences,
@@ -116,11 +126,11 @@ export function ServersSheet({
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain"
       initial={reducedMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={reducedMotion ? undefined : { opacity: 0 }}
-      transition={{ duration: 0.22 }}
+      transition={{ duration: SERVERS_SHEET_MOTION.backdrop.duration }}
       role="dialog"
       aria-modal="true"
       aria-label={t('servers.title')}
@@ -132,63 +142,93 @@ export function ServersSheet({
         backgroundColor: 'rgb(7 7 10 / 0.62)',
       }}
     >
-      {/* The inset, not a flat padding: in Telegram fullscreen on a notched
-          phone the title and the close button rode under the status bar. Every
-          other top-of-screen surface in this cabinet uses it. */}
-      <header
-        className="flex items-start justify-between gap-3 px-5 pb-2"
-        style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))' }}
-      >
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-foreground">
-            {t('servers.title')}
-          </h2>
-          <p className="truncate text-xs text-muted-foreground">
-            {t('servers.subtitle', { count: servers.length })}
-          </p>
-        </div>
-        <button
-          ref={closeRef}
-          type="button"
-          onClick={onClose}
-          aria-label={t('common.close')}
-          className="rounded-full p-2 text-muted-foreground transition-colors hover:text-foreground"
+      {/* BLOCK FLOW, DELIBERATELY, and the width of the cabinet's own shell.
+          This was `flex flex-col` on the scroller above, and with a definite
+          height (`inset-0`) flex shrank these children to fit rather than
+          letting the container scroll. The globe wrapper asks for
+          `min(46vh, 360px)` and holds a child at `height: 100%` -- and a
+          percentage height resolves against the SPECIFIED height, not the one
+          flex shrank it to. The wrapper collapsed, the rows moved up into the
+          space, and the canvas went on drawing its full 360px over the top of
+          them. Block boxes do not shrink; the container scrolls instead.
+
+          `max-w-[46rem]` is `stealth-layout`'s column. Without it every row ran
+          the full width of a desktop screen. */}
+      <div className="mx-auto w-full max-w-[46rem]">
+        {/* The inset, not a flat padding: in Telegram fullscreen on a notched
+            phone the title and the close button rode under the status bar.
+            Every other top-of-screen surface in this cabinet uses it. */}
+        <motion.header
+          className="flex items-start justify-between gap-3 px-5 pb-2"
+          style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))' }}
+          initial={reducedMotion ? false : { opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={
+            reducedMotion
+              ? { duration: 0 }
+              : {
+                  duration: SERVERS_SHEET_MOTION.header.duration,
+                  delay: SERVERS_SHEET_MOTION.header.delay,
+                }
+          }
         >
-          <X className="size-5" />
-        </button>
-      </header>
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold text-foreground">
+              {t('servers.title')}
+            </h2>
+            <p className="truncate text-xs text-muted-foreground">
+              {t('servers.subtitle', { count: servers.length })}
+            </p>
+          </div>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            aria-label={t('common.close')}
+            className="rounded-full p-2 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <X className="size-5" />
+          </button>
+        </motion.header>
 
-      <GlobeStage servers={servers} preferences={preferences} />
+        <GlobeStage
+          servers={servers}
+          preferences={preferences}
+          reducedMotion={Boolean(reducedMotion)}
+        />
 
-      {recommended !== null && <Recommended server={recommended} />}
-
-      <section className="px-5 pb-10">
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-          {t('servers.listHeading')}
-        </h3>
-        {isPending ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            {t('servers.loading')}
-          </p>
-        ) : servers.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            {t('servers.empty')}
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            <AnimatePresence initial={!reducedMotion}>
-              {servers.map((server, index) => (
-                <ServerRow
-                  key={server.id}
-                  server={server}
-                  index={index}
-                  reducedMotion={Boolean(reducedMotion)}
-                />
-              ))}
-            </AnimatePresence>
-          </ul>
+        {recommended !== null && (
+          <Recommended server={recommended} reducedMotion={Boolean(reducedMotion)} />
         )}
-      </section>
+
+        <section className="px-5 pb-10">
+          <h3 className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+            {t('servers.listHeading')}
+          </h3>
+          {isPending ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t('servers.loading')}
+            </p>
+          ) : servers.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t('servers.empty')}
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              <AnimatePresence initial={!reducedMotion}>
+                {servers.map((server, index) => (
+                  <ServerRow
+                    key={server.id}
+                    server={server}
+                    index={index}
+                    reducedMotion={Boolean(reducedMotion)}
+                  />
+                ))}
+              </AnimatePresence>
+            </ul>
+          )}
+        </section>
+      </div>
     </motion.div>
   );
 }
@@ -202,9 +242,11 @@ export function ServersSheet({
 function GlobeStage({
   servers,
   preferences,
+  reducedMotion,
 }: {
   readonly servers: readonly SubscriberServer[];
   readonly preferences: GlobePreferences;
+  readonly reducedMotion: boolean;
 }) {
   const markers = useMemo(() => {
     if (!GLOBE_CATALOG[preferences.variant].supportsMarkers) return [];
@@ -231,9 +273,34 @@ function GlobeStage({
     typeof p[key] === 'boolean' ? (p[key] as boolean) : fallback;
 
   return (
-    <div
-      className="mx-auto w-full"
+    <motion.div
+      // `shrink-0` is belt and braces: this box holds a child at `height: 100%`,
+      // and any ancestor that ever shrinks it again would leave the canvas
+      // drawing at full size over whatever moved up underneath. The layout
+      // above is block flow now, so nothing shrinks it -- this makes the box
+      // refuse anyway.
+      //
+      // `servers-planet` is the hook the canvas reveal hangs on; see
+      // `servers-sheet-motion.css`. It carries no appearance of its own.
+      className="servers-planet mx-auto w-full shrink-0"
       style={{ height: 'min(46vh, 360px)' }}
+      // It grows into place rather than sliding: a sphere that settles reads as
+      // an object, one that slides reads as a panel.
+      initial={
+        reducedMotion
+          ? false
+          : { opacity: 0, scale: SERVERS_SHEET_MOTION.planet.scaleFrom }
+      }
+      animate={{ opacity: 1, scale: 1 }}
+      transition={
+        reducedMotion
+          ? { duration: 0 }
+          : {
+              duration: SERVERS_SHEET_MOTION.planet.duration,
+              delay: SERVERS_SHEET_MOTION.planet.delay,
+              ease: [0.16, 1, 0.3, 1],
+            }
+      }
       // Decorative: everything it conveys is also in the list below, and a
       // screen reader has nothing to do with a turning ball.
       aria-hidden="true"
@@ -296,15 +363,33 @@ function GlobeStage({
           />
         )}
       </Suspense>
-    </div>
+    </motion.div>
   );
 }
 
 /** The one to use right now, and why. */
-function Recommended({ server }: { readonly server: SubscriberServer }) {
+function Recommended({
+  server,
+  reducedMotion,
+}: {
+  readonly server: SubscriberServer;
+  readonly reducedMotion: boolean;
+}) {
   const { t } = useTranslation();
   return (
-    <div className="mx-5 mb-4 flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+    <motion.div
+      className="mx-5 mb-4 flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5"
+      initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={
+        reducedMotion
+          ? { duration: 0 }
+          : {
+              duration: SERVERS_SHEET_MOTION.recommended.duration,
+              delay: SERVERS_SHEET_MOTION.recommended.delay,
+            }
+      }
+    >
       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-base">
         {server.flag ?? '🛰'}
       </span>
@@ -317,7 +402,7 @@ function Recommended({ server }: { readonly server: SubscriberServer }) {
           {t('servers.recommendedWhy')}
         </p>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -345,7 +430,11 @@ function ServerRow({
       className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5"
       initial={reducedMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.24, delay: reducedMotion ? 0 : index * 0.04 }}
+      transition={
+        reducedMotion
+          ? { duration: 0 }
+          : { duration: SERVERS_SHEET_MOTION.list.duration, delay: rowDelay(index) }
+      }
     >
       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-base">
         {server.flag ?? '🛰'}

@@ -1,0 +1,30 @@
+/* The planet's own reveal.
+ *
+ * The globe components draw their first frame into a canvas that starts at
+ * `opacity: 0` and then flip it to `1` inline, the moment the scene is built.
+ * That flip cannot be reached from React — the canvas is created by the
+ * renderer and appended by the component — and left alone it is a pop that
+ * lands at whatever moment the lazily-loaded chunk finished, usually just after
+ * the box around it has settled.
+ *
+ * A transition on the box's own canvas turns the flip into a fade. Nothing here
+ * starts an animation; it only says how a change that is already happening
+ * should be crossed. `opacity` alone: it composites, and the canvas is the most
+ * expensive surface on this screen.
+ *
+ * Keep the duration in step with `SERVERS_SHEET_MOTION.canvasRevealMs`;
+ * `servers-sheet-motion.test.ts` compares the two.
+ */
+.servers-planet canvas {
+  transition: opacity 420ms ease-out;
+}
+
+/* Asked not to be moved: the planet is simply there once it is ready.
+ *
+ * Below the rule it turns off, so equal specificity resolves in its favour —
+ * the same ordering the cabinet's shared stylesheet relies on. */
+@media (prefers-reduced-motion: reduce) {
+  .servers-planet canvas {
+    transition: none;
+  }
+}
