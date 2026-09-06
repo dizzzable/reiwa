@@ -128,12 +128,29 @@ export function useDoubleTap(
     [moveTolerance],
   );
 
+  /**
+   * Abandons the press in progress WITHOUT forgetting the completed tap.
+   *
+   * `pointerleave` is why this exists. On a touch screen the pointer is
+   * destroyed the moment the finger lifts, so the browser fires `pointerup`
+   * and then immediately `pointerout`/`pointerleave` — every single tap. A
+   * full `forget()` there wiped the first tap a millisecond after it landed,
+   * and no second tap could ever pair with it. With a mouse `pointerleave`
+   * only fires when the cursor actually leaves the element, which is why this
+   * worked on a desktop and did nothing at all on a phone.
+   */
+  const abandonPress = useCallback(() => {
+    press.current = null;
+  }, []);
+
   return {
     onPointerDown,
     onPointerMove,
     onPointerUp,
-    onPointerCancel: forget,
-    onPointerLeave: forget,
+    // A cancelled gesture is the browser taking the press away — the tap
+    // before it is still a tap, so only the press in progress is dropped.
+    onPointerCancel: abandonPress,
+    onPointerLeave: abandonPress,
   };
 }
 

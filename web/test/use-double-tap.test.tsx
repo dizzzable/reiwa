@@ -53,6 +53,23 @@ const fire = (target: Element, type: string, x = 10, y = 10): void => {
   });
 };
 
+/**
+ * The leave a touch screen fires when the finger lifts.
+ *
+ * Dispatched as `pointerout` with no `relatedTarget`, because that is what
+ * React listens to: `onPointerLeave` is SYNTHESISED by its enter/leave plugin
+ * from `pointerout`/`pointerover`. A bare `pointerleave` event reaches no React
+ * handler at all — the first version of this case dispatched one and passed
+ * against the very defect it was written for.
+ */
+const leave = (target: Element, x = 10, y = 10): void => {
+  act(() => {
+    const event = pointer("pointerout", x, y) as MouseEvent;
+    Object.defineProperty(event, "relatedTarget", { value: null });
+    target.dispatchEvent(event);
+  });
+};
+
 /** One tap: down and up at the same place. */
 const tap = (target: Element, x = 10, y = 10): void => {
   fire(target, "pointerdown", x, y);
@@ -171,6 +188,38 @@ describe("useDoubleTap", () => {
     fire(card(), "pointermove", 150, 10);
     fire(card(), "pointerup", 150, 10);
     tap(card());
+    expect(onDoubleTap).not.toHaveBeenCalled();
+  });
+
+  it("survives the pointerleave a touch screen fires after every tap", () => {
+    // THE DEFECT THIS FILE MISSED, and the one an operator reported: on touch
+    // the pointer is destroyed when the finger lifts, so the browser fires
+    // `pointerup` and then immediately `pointerout`/`pointerleave` — on EVERY
+    // tap, without the finger going anywhere. A full reset there wiped the
+    // first tap a millisecond after it landed and no pair could ever form.
+    //
+    // With a mouse `pointerleave` fires only when the cursor really leaves, so
+    // this worked on a desktop and did nothing whatsoever on a phone. Every
+    // case above passed throughout, because none of them fired the event.
+    const onDoubleTap = vi.fn();
+    render(<Harness onDoubleTap={onDoubleTap} />);
+    tap(card());
+    leave(card());
+    tap(card());
+    leave(card());
+    expect(onDoubleTap).toHaveBeenCalledTimes(1);
+  });
+
+  it("still drops a press the browser takes away mid-gesture", () => {
+    // The other half: `pointercancel` and `pointerleave` must abandon the press
+    // IN PROGRESS, or a finger that slid off the card and lifted elsewhere
+    // would still count as a tap.
+    const onDoubleTap = vi.fn();
+    render(<Harness onDoubleTap={onDoubleTap} />);
+    tap(card());
+    fire(card(), "pointerdown", 10, 10);
+    fire(card(), "pointercancel", 10, 10);
+    fire(card(), "pointerup", 10, 10);
     expect(onDoubleTap).not.toHaveBeenCalled();
   });
 
