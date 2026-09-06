@@ -111,6 +111,9 @@ const CABINET_NAV_TABS_PATH = fileURLToPath(
 const CABINET_CARD_WATERMARK_PATH = fileURLToPath(
   new URL("../../web/src/components/ui/card-watermark.tsx", import.meta.url),
 );
+const CABINET_ICON_DECOR_PATH = fileURLToPath(
+  new URL("../../web/src/lib/icon-decor.ts", import.meta.url),
+);
 
 // The sibling checkout only exists on a machine holding both trees. reiwa's CI
 // clones reiwa alone, so there it is absent — and every cross-repo case below
@@ -1292,6 +1295,34 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
    * and, again, not what the operator picked, which is what the second case is
    * for.
    */
+  /**
+   * ICON_GLYPHS — the same shape as the card watermark, and the same hazard.
+   *
+   * The list itself is already pinned by the digest, which catches a value
+   * added on one side. What it does not catch is a value that EXISTS on both
+   * sides and resolves to nothing here: `useIconDecor` answers an unknown glyph
+   * with `null`, so the icon simply keeps its own picture and the operator's
+   * choice disappears without a word — the same silence `CARD_LOGO_PRESETS`
+   * has a case for.
+   */
+  describe("ICON_GLYPHS", () => {
+    it("has a glyph for every name the panel offers", () => {
+      // `default` means "keep whatever the cabinet ships for that position",
+      // which is exactly what a `null` lookup produces — so it is drawn by
+      // NOT being in the map, the same way `DEFAULT`/`NONE` are for the card
+      // watermark above.
+      const drawnSeparately = new Set(["default"]);
+      const drawn = new Set(readObjectKeysConst(CABINET_ICON_DECOR_PATH, "GLYPHS"));
+      const missing = fromPanel()
+        .iconGlyphs.filter((glyph) => !drawnSeparately.has(glyph))
+        .filter((glyph) => !drawn.has(glyph));
+      expect(
+        missing,
+        "the panel offers a dashboard glyph the cabinet cannot draw — the icon keeps its own picture and the operator is told nothing",
+      ).toEqual([]);
+    });
+  });
+
   describe("BRAND_LOGO_FRAMES", () => {
     it("never freezes the snapshot over a frame name", () => {
       const frames = [...fromPanel().brandLogoFrames, "frame-from-a-future-panel"];

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router'
 
 import { nextDestinationQuery } from '@/lib/next-destination'
+import { mergeCarriedQuery } from '@/lib/keep-query'
 
 import { detectTelegramInitData } from './telegram-launch'
 
@@ -59,10 +60,13 @@ export default function ContextRouter() {
       const initData = await detectTelegramInitData(0)
       if (cancelled) return
 
+      // `mergeCarriedQuery` on both arms: `nextSuffix` is rebuilt from `next`
+      // alone, so without it every `utm_*`, `ref` and `campaign` the ad put in
+      // the url dies on this hop — and this hop is where a deep link lands.
       if (initData && initData.length > 0) {
-        navigate(`/tma${nextSuffix}`, { replace: true })
+        navigate(mergeCarriedQuery(`/tma${nextSuffix}`), { replace: true })
       } else {
-        navigate(nextSuffix ? `/${nextSuffix}` : '/', { replace: true })
+        navigate(mergeCarriedQuery(nextSuffix ? `/${nextSuffix}` : '/'), { replace: true })
       }
     })()
 

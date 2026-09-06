@@ -32,6 +32,8 @@ function makeActivityApp(
     readonly getUnreadCount: ActivityMethod;
     readonly markAllRead: ActivityMethod;
     readonly markRead: ActivityMethod;
+    readonly getNotificationPrefs: ActivityMethod;
+    readonly updateNotificationPrefs: ActivityMethod;
   }>,
   destroyWebSession: () => Promise<void>,
 ): express.Express {
@@ -42,6 +44,8 @@ function makeActivityApp(
     getUnreadCount: async () => ({ unread: 0 }),
     markAllRead: async () => ({ ok: true }),
     markRead: async () => ({ ok: true }),
+    getNotificationPrefs: async () => ({ prefs: {}, available: [] }),
+    updateNotificationPrefs: async () => ({ prefs: {}, available: [] }),
     ...methods,
   };
   app.use(
@@ -325,5 +329,79 @@ describe('activity routes for a user absent upstream', () => {
     const serialised = JSON.stringify(response.body);
     expect(serialised).not.toContain('api/internal');
     expect(serialised).not.toContain('upstream diagnostic');
+  });
+
+  /**
+   * The two preference routes shipped with no try/catch at all, unlike every
+   * sibling in this file.
+   *
+   * Two distinct 404s reach them and they mean opposite things:
+   *
+   *  - the USER is gone upstream, which is a stale session, and every route
+   *    beside them answers 401 and revokes it;
+   *  - the ROUTE is gone, because the panel predates this pair. That is the
+   *    ordinary state of an out-of-order upgrade, not a fault — and without a
+   *    catch it became an unhandled rejection, a 500 on every visit to the
+   *    settings screen, and one operator report per react-query retry.
+   */
+  it('revokes the stale session when the user is gone upstream', async () => {
+    const destroyWebSession = vi.fn(async () => undefined);
+    const getNotificationPrefs = vi.fn(async () => {
+      throw new UpstreamError(
+        'GET',
+        '/api/internal/user/notifications/preferences?userId=missing-user',
+        404,
+        'User not found',
+      );
+    });
+    const response = await get(
+      makeActivityApp({ getNotificationPrefs }, destroyWebSession),
+      '/api/v1/activity/notifications/preferences',
+    );
+
+    expect(response).toEqual({ status: 401, body: { message: 'Session expired' } });
+    expect(destroyWebSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers an older panel with an empty set rather than a 500', async () => {
+    // The screen draws switches only for what `available` lists, so the empty
+    // set is a state it already handles: no switches, no error, nothing that
+    // looks broken. `destroyWebSession` must NOT fire — the customer's session
+    // is fine; it is the panel that is behind.
+    const destroyWebSession = vi.fn(async () => undefined);
+    const getNotificationPrefs = vi.fn(async () => {
+      throw new UpstreamError(
+        'GET',
+        '/api/internal/user/notifications/preferences',
+        404,
+        'Cannot GET /api/internal/user/notifications/preferences',
+      );
+    });
+    const response = await get(
+      makeActivityApp({ getNotificationPrefs }, destroyWebSession),
+      '/api/v1/activity/notifications/preferences',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ prefs: {}, available: [] });
+  });
+
+  it('does the same when saving a switch against an older panel', async () => {
+    const destroyWebSession = vi.fn(async () => undefined);
+    const updateNotificationPrefs = vi.fn(async () => {
+      throw new UpstreamError(
+        'POST',
+        '/api/internal/user/notifications/preferences',
+        404,
+        'Cannot POST /api/internal/user/notifications/preferences',
+      );
+    });
+    const response = await post(
+      makeActivityApp({ updateNotificationPrefs }, destroyWebSession),
+      '/api/v1/activity/notifications/preferences',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ prefs: {}, available: [] });
   });
 });

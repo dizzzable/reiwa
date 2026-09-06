@@ -37,15 +37,35 @@ const CARRIED_PARAMS = ['ref', 'next', 'campaign', 'startapp'] as const;
  */
 export function keepQuery(target: string): string {
   if (target.includes('?')) return target;
+  return mergeCarriedQuery(target);
+}
+
+/**
+ * Merge the carried parameters into a target that ALREADY has a query.
+ *
+ * Where `keepQuery` steps aside for such a target, this one folds into it, and
+ * anything the target set itself wins. That distinction is the whole reason
+ * both exist: a target built by hand is usually deliberate, but `/bootstrap`
+ * rebuilds its destination from `?next=` ALONE, so every `utm_*` beside it was
+ * dropped on the one hop that unwraps a deep link — the placement recorded,
+ * the tags gone, and a profile that reads as though the marks never existed.
+ */
+export function mergeCarriedQuery(target: string): string {
   if (typeof window === 'undefined') return target;
 
-  const carried = new URLSearchParams();
+  const questionMark = target.indexOf('?');
+  const path = questionMark === -1 ? target : target.slice(0, questionMark);
+  const merged = new URLSearchParams(questionMark === -1 ? '' : target.slice(questionMark + 1));
+
   const current = new URLSearchParams(window.location.search);
   for (const [key, value] of current) {
+    // Whatever the target already decided stays decided — `next` in particular
+    // arrives here sanitised, and the raw one must not overwrite it.
+    if (merged.has(key)) continue;
     if (key.startsWith('utm_') || (CARRIED_PARAMS as readonly string[]).includes(key)) {
-      carried.set(key, value);
+      merged.set(key, value);
     }
   }
-  const query = carried.toString();
-  return query.length > 0 ? `${target}?${query}` : target;
+  const query = merged.toString();
+  return query.length > 0 ? `${path}?${query}` : path;
 }

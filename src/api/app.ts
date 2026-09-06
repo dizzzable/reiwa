@@ -244,6 +244,29 @@ export function createApp(deps: CreateAppDeps) {
     "/api/v1/support/guest/attachments",
     express.json({ limit: "16mb" }),
   );
+  // The SIGNED-IN customer's upload needs the same budget, and it cannot be
+  // mounted by prefix: its path carries the ticket id in the middle
+  // (`/api/v1/support/tickets/<id>/attachments`). Without this it fell through
+  // to the 1 MB global parser below — and 1 MB of JSON is only about 768 KB of
+  // file once base64 has taken its 4-bytes-per-3, so essentially every phone
+  // photo was refused while the settings screen promised megabytes.
+  const attachmentJson = express.json({ limit: "16mb" });
+  app.use((req, res, next) => {
+    const segments = (req.path ?? "").split("/").filter(Boolean);
+    const isTicketUpload =
+      req.method === "POST" &&
+      segments.length === 6 &&
+      segments[0] === "api" &&
+      segments[1] === "v1" &&
+      segments[2] === "support" &&
+      segments[3] === "tickets" &&
+      segments[5] === "attachments";
+    if (isTicketUpload) {
+      attachmentJson(req, res, next);
+      return;
+    }
+    next();
+  });
   // Capture the raw body bytes so the rezeis-admin webhook receiver can verify
   // the HMAC signature over the exact payload (the signature is computed over
   // `<timestamp>.<rawBody>`, so a re-serialised body would never match).
@@ -729,6 +752,27 @@ export function createApp(deps: CreateAppDeps) {
       }
       if (!res.headersSent) {
         res.status(499).end();
+      }
+      return;
+    }
+
+    // A body the parser refused. This is raised in middleware, BEFORE any
+    // handler, so the route's own careful 413 branch never sees it — and
+    // answering 500 tells a customer "something went wrong here" for a file
+    // that is simply too big, which is the one refusal they can act on. It is
+    // also not an incident: reporting it pages the operator once per oversize
+    // photo.
+    const tooLarge =
+      (err as { type?: string }).type === "entity.too.large" ||
+      (err as { status?: number }).status === 413;
+    if (tooLarge) {
+      if (reqLogger) {
+        reqLogger.warn({ err }, "Request body over the limit");
+      } else if (logger) {
+        logger.warn({ err }, "Request body over the limit");
+      }
+      if (!res.headersSent) {
+        res.status(413).json({ message: "Payload too large" });
       }
       return;
     }

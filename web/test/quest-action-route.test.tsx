@@ -38,6 +38,11 @@ describe("quest action routes", () => {
   it("gives the install quest a CTA at all", () => {
     // `questAction` returning null renders NO button on the row — the quest
     // would sit there naming an action with nothing to press.
+    //
+    // What the ROW actually renders for this type is `InstallAction`, which
+    // takes precedence over this function; `quest-install-action` covers that.
+    // This case pins the fallback destination, and says so rather than letting
+    // a reader believe it is the live path.
     expect(questAction("INSTALL_PWA")).not.toBeNull();
   });
 

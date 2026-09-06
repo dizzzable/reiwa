@@ -6,6 +6,7 @@ import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { invalidateStaleUserSession } from "../lib/stale-user-session.js";
+import { describeUpstreamError } from "../lib/upstream-error.js";
 
 export function createActivityRouter(deps: {
   adminClient: AdminClient | null;
@@ -62,11 +63,29 @@ export function createActivityRouter(deps: {
     "/activity/notifications/preferences",
     requireSession,
     async (req: AuthRequest, res) => {
-      const result = await adminClient?.activity.getNotificationPrefs(resolveUserIdentity(req));
-      // An unreachable panel answers "nothing stored, nothing offered", and
-      // the screen then renders no switches rather than switches that do
-      // nothing — which is the state this whole pair replaced.
-      res.json(result ?? { prefs: {}, available: [] });
+      try {
+        const result = await adminClient?.activity.getNotificationPrefs(resolveUserIdentity(req));
+        // An unreachable panel answers "nothing stored, nothing offered", and
+        // the screen then renders no switches rather than switches that do
+        // nothing — which is the state this whole pair replaced.
+        res.json(result ?? { prefs: {}, available: [] });
+      } catch (error: unknown) {
+        if (await invalidateStaleUserSession(req, error)) {
+          res.status(401).json({ message: "Session expired" });
+          return;
+        }
+        // A panel that predates this pair answers 404 for the route itself.
+        // That is the ORDINARY state of an out-of-order upgrade, not a fault:
+        // without this the rejection is unhandled, every visit to the settings
+        // screen answers 500, and each react-query retry files its own report
+        // to the operator. The empty set is the shape the screen already
+        // handles — it draws no switches.
+        if (describeUpstreamError(error).status === 404) {
+          res.json({ prefs: {}, available: [] });
+          return;
+        }
+        throw error;
+      }
     },
   );
 
@@ -76,11 +95,26 @@ export function createActivityRouter(deps: {
     requireSession,
     async (req: AuthRequest, res) => {
       const prefs = (req.body as { prefs?: unknown } | undefined)?.prefs ?? {};
-      const result = await adminClient?.activity.updateNotificationPrefs(
-        resolveUserIdentity(req),
-        prefs,
-      );
-      res.json(result ?? { prefs: {}, available: [] });
+      try {
+        const result = await adminClient?.activity.updateNotificationPrefs(
+          resolveUserIdentity(req),
+          prefs,
+        );
+        res.json(result ?? { prefs: {}, available: [] });
+      } catch (error: unknown) {
+        if (await invalidateStaleUserSession(req, error)) {
+          res.status(401).json({ message: "Session expired" });
+          return;
+        }
+        // 404 means the panel cannot store the choice at all. The empty set
+        // makes the screen drop the switches rather than leave one that looks
+        // saved and is not.
+        if (describeUpstreamError(error).status === 404) {
+          res.json({ prefs: {}, available: [] });
+          return;
+        }
+        throw error;
+      }
     },
   );
 

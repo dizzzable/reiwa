@@ -8,13 +8,23 @@ import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { isUpstreamStatus } from "../lib/upstream-error.js";
+import { createRedisRateLimiter } from "../middleware/rate-limit.js";
+import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 
 export function createSupportRouter(deps: {
   adminClient: AdminClient | null;
   sessionStore: SessionStore | null;
   config: ReiwaConfig;
+  webSessionStore?: WebSessionStore | null;
 }) {
   const { adminClient, sessionStore } = deps;
+  // The attachment route writes bytes to the panel's disk on every call, and
+  // it had no budget at all — while the anonymous guest route beside it has
+  // had one since attachments shipped. Same 12/minute/IP.
+  const uploadLimiter = createRedisRateLimiter(
+    deps.webSessionStore?.getRedis() ?? null,
+    "ticketUpload",
+  );
   // Identity-agnostic auth: accepts the WebSession (reiwa_id) used by
   // browser / Mini-App / magic-link logins AND the legacy Telegram
   // session. The support surface is keyed by reiwa_id upstream so
@@ -92,45 +102,53 @@ export function createSupportRouter(deps: {
   // streams them. So a signed-in customer could SEE files and never send one
   // — which is why the operator's "please attach the receipt" went out and
   // nothing ever came back.
-  router.post("/support/tickets/:id/attachments", requireSession, async (req: AuthRequest, res) => {
-    const body = (req.body ?? {}) as {
-      filename?: unknown;
-      mimeType?: unknown;
-      content?: unknown;
-      dataBase64?: unknown;
-    };
-    const filename = typeof body.filename === "string" ? body.filename.trim() : "";
-    const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
-    if (filename.length === 0 || dataBase64.length === 0) {
-      res.status(400).json({ error: "file_required" });
-      return;
-    }
-    const ticketId = String(req.params.id);
-    try {
-      const result = await adminClient?.support.uploadAttachment(
-        resolveUserIdentity(req),
-        ticketId,
-        {
-          filename,
-          mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined,
-          content: typeof body.content === "string" ? body.content : undefined,
-          dataBase64,
-        },
-      );
-      res.status(201).json(result);
-    } catch (err: unknown) {
-      // 413 and 415 are the two the customer can act on — too big, or a type
-      // we do not take. Collapsing them into 500 turns "your photo is 12 MB"
-      // into "something went wrong", which is how a person gives up.
-      const status = (err as { status?: unknown })?.status;
-      if (status === 413 || status === 415) {
-        res.status(status).json({ error: status === 413 ? "too_large" : "unsupported_type" });
+  router.post(
+    "/support/tickets/:id/attachments",
+    requireSession,
+    uploadLimiter,
+    async (req: AuthRequest, res) => {
+      const body = (req.body ?? {}) as {
+        filename?: unknown;
+        mimeType?: unknown;
+        content?: unknown;
+        dataBase64?: unknown;
+      };
+      const filename = typeof body.filename === "string" ? body.filename.trim() : "";
+      const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+      if (filename.length === 0 || dataBase64.length === 0) {
+        res.status(400).json({ error: "file_required" });
         return;
       }
-      getRequestLogger(req).error({ err, ticketId }, "POST /support/tickets/:id/attachments failed");
-      res.status(500).json({ error: "internal" });
-    }
-  });
+      const ticketId = String(req.params.id);
+      try {
+        const result = await adminClient?.support.uploadAttachment(
+          resolveUserIdentity(req),
+          ticketId,
+          {
+            filename,
+            mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined,
+            content: typeof body.content === "string" ? body.content : undefined,
+            dataBase64,
+          },
+        );
+        res.status(201).json(result);
+      } catch (err: unknown) {
+        // 413 and 415 are the two the customer can act on — too big, or a type
+        // we do not take. Collapsing them into 500 turns "your photo is 12 MB"
+        // into "something went wrong", which is how a person gives up.
+        const status = (err as { status?: unknown })?.status;
+        if (status === 413 || status === 415) {
+          res.status(status).json({ error: status === 413 ? "too_large" : "unsupported_type" });
+          return;
+        }
+        getRequestLogger(req).error(
+          { err, ticketId },
+          "POST /support/tickets/:id/attachments failed",
+        );
+        res.status(500).json({ error: "internal" });
+      }
+    },
+  );
 
   // GET /api/v1/support/tickets/:id/attachments/:attachmentId — stream a file
   // attached to one of the user's OWN tickets (e.g. an operator reply's photo).

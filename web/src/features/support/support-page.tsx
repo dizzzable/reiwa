@@ -232,6 +232,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
   const queryClient = useQueryClient()
   const [text, setText] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data: ticket, isLoading } = useQuery({
     queryKey: ['ticket', ticketId],
@@ -420,34 +421,45 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
                 }
               }}
             />
-            <label
-              className={cn(
-                'flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full',
-                'glass-icon-btn text-[color:var(--brand-muted-foreground)]',
-                attachMutation.isPending && 'pointer-events-none opacity-50',
-              )}
+            {/*
+              A real button, not a `<label>` wrapping the input. A label is not
+              focusable, the input beside it is `display:none` and so is not
+              either — so Tab went straight from the message field to Send, and
+              a screen reader announced nothing at all. `aria-label` needs a
+              role to hang on, and a label has none. Same shape the panel uses
+              for its own file pickers.
+            */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={attachMutation.isPending}
               aria-label={t('support.attachAria')}
+              className={cn(
+                'flex h-11 w-11 shrink-0 items-center justify-center rounded-full',
+                'glass-icon-btn text-[color:var(--brand-muted-foreground)]',
+                attachMutation.isPending && 'opacity-50',
+              )}
             >
               {attachMutation.isPending ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <Paperclip className="h-5 w-5" />
               )}
-              <input
-                type="file"
-                className="hidden"
-                accept="image/png,image/jpeg,image/webp,application/pdf"
-                disabled={attachMutation.isPending}
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  // Cleared before the upload starts: the same file picked
-                  // twice in a row fires no change event otherwise, and the
-                  // second attempt after a failure would do nothing.
-                  e.target.value = ''
-                  if (file) attachMutation.mutate(file)
-                }}
-              />
-            </label>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept="image/png,image/jpeg,image/webp,application/pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                // Cleared before the upload starts: the same file picked
+                // twice in a row fires no change event otherwise, and the
+                // second attempt after a failure would do nothing.
+                e.target.value = ''
+                if (file) attachMutation.mutate(file)
+              }}
+            />
             <button
               onClick={() => text.trim() && replyMutation.mutate(text.trim())}
               disabled={!text.trim() || replyMutation.isPending}

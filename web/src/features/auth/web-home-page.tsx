@@ -46,14 +46,6 @@ import { keepQuery } from '@/lib/keep-query'
  */
 const BROWSER_SDK_WAIT_MS = 1500
 
-/**
- * Params worth carrying across an entry redirect: marketing attribution and the
- * post-auth destination. An allowlist, not a copy of the whole query — the entry
- * URL can also hold the single-use `?signin=` magic-link token, and forwarding
- * that into /tma or /sign-in (neither of which consumes it) would leak it into
- * browser history and proxy logs. A denylist would leak the next one-shot param
- * somebody adds.
- */
 export default function WebHomePage() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()

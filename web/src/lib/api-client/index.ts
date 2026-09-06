@@ -135,6 +135,7 @@ export {
   updateNotificationPreferences,
   markNotificationRead,
 } from "./activity.js";
+export type { NotificationPreferences } from "./activity.js";
 
 // Custom emoji packs
 export { getCustomEmojiPacks } from "./custom-emoji.js";

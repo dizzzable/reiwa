@@ -36,6 +36,7 @@ import {
   getPushPublicKey,
   getNotificationPreferences,
   updateNotificationPreferences,
+  type NotificationPreferences,
 } from "@/lib/api-client";
 import { isTelegramMiniAppSurface } from "@/lib/telegram-launch-params";
 
@@ -211,25 +212,46 @@ const EXPIRY_SWITCHES: ReadonlyArray<{
   { type: "expired_1_day_ago", labelKey: "notifications.after1", group: "after" },
 ];
 
+/** One key, so the optimistic write and the read cannot drift apart. */
+const PREFS_KEY = ["notification-preferences"] as const;
+
 function ExpiryNotificationSwitches() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
-    queryKey: ["notification-preferences"],
+    queryKey: PREFS_KEY,
     queryFn: ({ signal }) => getNotificationPreferences({ signal }),
     staleTime: 60_000,
   });
 
   const save = useMutation({
     mutationFn: (patch: Record<string, boolean>) => updateNotificationPreferences(patch),
-    onSuccess: (result) => {
-      queryClient.setQueryData(["notification-preferences"], result);
+    // The switch moves on the tap, not on the answer. Reading `checked`
+    // straight from the query cache meant nothing happened at all until the
+    // round trip came back — on a phone that is a control that looks broken,
+    // and the natural response is to tap it again.
+    onMutate: async (patch) => {
+      await queryClient.cancelQueries({ queryKey: PREFS_KEY });
+      const previous = queryClient.getQueryData<NotificationPreferences>(PREFS_KEY);
+      if (previous !== undefined) {
+        queryClient.setQueryData<NotificationPreferences>(PREFS_KEY, {
+          ...previous,
+          prefs: { ...previous.prefs, ...patch },
+        });
+      }
+      return { previous };
     },
-    onError: () => {
+    onSuccess: (result) => {
+      queryClient.setQueryData(PREFS_KEY, result);
+    },
+    onError: (_error, _patch, context) => {
       // The switch springs back, because the value it was showing is not the
       // value the server holds. Leaving it moved is how the old screen felt.
-      void queryClient.invalidateQueries({ queryKey: ["notification-preferences"] });
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(PREFS_KEY, context.previous);
+      }
+      void queryClient.invalidateQueries({ queryKey: PREFS_KEY });
       toast.error(t("notifications.prefsSaveFailed"));
     },
   });
@@ -253,7 +275,6 @@ function ExpiryNotificationSwitches() {
               <NotifToggle
                 label={t(row.labelKey)}
                 checked={isOn(row.type)}
-                disabled={save.isPending}
                 onCheckedChange={(next) => save.mutate({ [row.type]: next })}
               />
             </div>
@@ -273,12 +294,13 @@ function ExpiryNotificationSwitches() {
 function NotifToggle({
   label,
   checked,
-  disabled,
+  disabled = false,
   onCheckedChange,
 }: {
   label: string;
   checked: boolean;
-  disabled: boolean;
+  /** Optional: the expiry rows stay live, because they move optimistically. */
+  disabled?: boolean;
   onCheckedChange: (next: boolean) => void;
 }) {
   return (

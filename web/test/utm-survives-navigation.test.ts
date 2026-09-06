@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { keepQuery } from "../src/lib/keep-query";
+import { keepQuery, mergeCarriedQuery } from "../src/lib/keep-query";
 
 function at(search: string): void {
   window.history.replaceState({}, "", `/welcome${search}`);
@@ -101,6 +101,11 @@ const ACQUISITION_PAGES = [
   "../src/features/landing/sections/misc.tsx",
   "../src/features/auth/sign-in-page.tsx",
   "../src/features/auth/web-home-page.tsx",
+  // The landing page itself. It was missing from this list while holding three
+  // bare `<Navigate to="/sign-in">` on its fail-closed path — so the guard
+  // written to stop exactly this was blind to the live instance of it, on the
+  // file the whole list is named after.
+  LANDING_PAGE,
 ];
 
 /**
@@ -113,6 +118,32 @@ const ACQUISITION_PAGES = [
 function readSource(relative: string): string {
   return readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 }
+
+describe("mergeCarriedQuery", () => {
+  it("folds the marks into a target that already has a query", () => {
+    at("?utm_source=vk&campaign=ad_abc123");
+    const href = mergeCarriedQuery("/tma?next=%2Fdashboard");
+    expect(href).toContain("next=");
+    expect(href).toContain("utm_source=vk");
+    expect(href).toContain("campaign=ad_abc123");
+  });
+
+  it("lets the target keep its own value for a key", () => {
+    // `next` reaches this point sanitised. The raw one from the address bar
+    // must not overwrite the checked one.
+    at("?next=%2Fevil");
+    expect(mergeCarriedQuery("/tma?next=%2Fdashboard")).toContain("next=%2Fdashboard");
+    expect(mergeCarriedQuery("/tma?next=%2Fdashboard")).not.toContain("evil");
+  });
+
+  it("carries nothing that was not asked for", () => {
+    at("?utm_source=vk&session=secret&token=abc");
+    const href = mergeCarriedQuery("/tma?next=%2Fx");
+    expect(href).toContain("utm_source=vk");
+    expect(href).not.toContain("session");
+    expect(href).not.toContain("token");
+  });
+});
 
 describe("no acquisition page navigates with a bare path", () => {
   for (const relative of ACQUISITION_PAGES) {
@@ -150,6 +181,19 @@ describe("no acquisition page navigates with a bare path", () => {
     // that true without the panel knowing anything about this.
     const source = readSource(KIT_CONTEXT);
     expect(source).toContain("resolveInternalHref: (target) => target");
+  });
+
+  it("unwraps a deep link without dropping the marks beside it", () => {
+    // `/bootstrap` is the hop a deep link lands on, and it rebuilds where to
+    // go from `?next=` ALONE. Everything else in the url died there — the
+    // placement was recorded server-side, the tags were not, and the profile
+    // read as though the visitor had arrived from nowhere.
+    const source = readSource("../src/features/auth/context-router.tsx");
+    expect(source).toContain("mergeCarriedQuery");
+    expect(
+      source.includes("navigate(`/tma${nextSuffix}`"),
+      "the Telegram arm navigates with the bare suffix again",
+    ).toBe(false);
   });
 
   it("still finds a bare target when one is there", () => {

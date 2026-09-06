@@ -98,7 +98,17 @@ export function useIconDecor(key: string): ResolvedIconDecor {
   const decor = branding.iconDecor?.[key];
   if (decor === undefined) return NOTHING;
 
-  const Glyph = decor.glyph === undefined ? null : (GLYPHS[decor.glyph] ?? null);
+  // `Object.hasOwn`, not `??`: a plain object literal answers `constructor`,
+  // `toString` and friends from its prototype, and `??` keeps whatever comes
+  // back. `constructor` is the one such name that also passes the panel's slug
+  // validator, so it can be stored and served to every cabinet — and React
+  // given `Object` as a component throws, taking the whole dashboard header
+  // down instead of degrading to the shipped icon. Every other unknown glyph
+  // already fell back; this one did not.
+  const Glyph =
+    decor.glyph !== undefined && Object.hasOwn(GLYPHS, decor.glyph)
+      ? (GLYPHS[decor.glyph] ?? null)
+      : null;
   const effectClass = EFFECT_CLASS[resolveIconEffect(decor.effect)] ?? "";
   // One picker, two jobs: `--icon-effect-color` feeds the glow's static halo
   // and `color` paints the glyph. An operator who tints an icon and then finds

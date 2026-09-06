@@ -349,6 +349,47 @@ describe("animation paint contract", () => {
       "prefers-reduced-motion no longer switches the fallback drift off",
     ).toContain(".card-effect-layer__css-fallback-blob { animation: none;");
   });
+
+  it("puts the reduced-motion block below every animated rule it must beat", () => {
+    // The one assertion that would have caught the real defect. Every
+    // declaration in that block carries the SAME specificity as the rule it
+    // overrides, so the cascade falls back to source order — and the block
+    // sat above `.icon-effect-pulse`, `.icon-effect-shake` and
+    // `.icon-effect-glow::after`. Each `animation: none` was dead, and a
+    // subscriber who asked their system for no motion got a pulsing header
+    // anyway. Counting blocks and reading keyframe bodies both stayed green.
+    //
+    // `@layer base` is exempt on purpose: layered rules always lose to
+    // unlayered ones whatever their position.
+    // The opening brace matters: `@layer base` also appears in prose above.
+    const layerBase = INDEX_CSS.indexOf("@layer base {");
+    const unlayered = layerBase >= 0 ? INDEX_CSS.slice(0, layerBase) : INDEX_CSS;
+    const guardAt = unlayered.indexOf("@media (prefers-reduced-motion: reduce)");
+    expect(guardAt, "the reduced-motion block must be unlayered").toBeGreaterThan(-1);
+
+    // Every `animation:` that actually starts one, by position. No regex:
+    // the property name is enough, and "not `none`" is the whole
+    // distinction that matters here.
+    const NEEDLE = "animation:";
+    const animated: Array<{ at: number; text: string }> = [];
+    for (let at = unlayered.indexOf(NEEDLE); at !== -1; at = unlayered.indexOf(NEEDLE, at + 1)) {
+      const semicolon = unlayered.indexOf(";", at);
+      const value = unlayered.slice(at + NEEDLE.length, semicolon === -1 ? undefined : semicolon);
+      if (value.trim().startsWith("none")) continue;
+      const lineStart = unlayered.lastIndexOf(String.fromCharCode(10), at) + 1;
+      animated.push({ at, text: unlayered.slice(lineStart, at + 40).trim() });
+    }
+    expect(
+      animated.length,
+      "no animated rules found — the scan stopped matching, so this guard is asserting nothing",
+    ).toBeGreaterThan(0);
+
+    const late = animated.filter((rule) => rule.at > guardAt).map((rule) => rule.text);
+    expect(
+      late,
+      "these rules are declared AFTER the reduced-motion block, so their animations beat it at equal specificity and Reduce Motion does nothing for them",
+    ).toEqual([]);
+  });
 });
 
 describe("iOS input zoom contract", () => {

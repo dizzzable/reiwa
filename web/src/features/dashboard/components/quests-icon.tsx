@@ -489,6 +489,14 @@ export function questAction(
     // Same reasoning as the linking rows: the settings hub has twelve entries
     // and "install the app" is one of them. The parameter opens the install
     // sheet on arrival, so the tap that started here ends where it meant to.
+    //
+    // NOT reached from the row — `InstallAction` handles INSTALL_PWA before
+    // this function is consulted, because the browser can sometimes install
+    // the app in place and a route is the wrong answer when it can. This arm
+    // is the fallback for anywhere else that asks, and for the day the row's
+    // own branch goes away; `quest-action-route` pins the destination it must
+    // still name. Keeping it costs a line and removing it would delete the
+    // only written record of where the quest is meant to lead.
     case "INSTALL_PWA":
       return { route: "/settings?install=1", labelKey: "quests.actions.install" };
     default:

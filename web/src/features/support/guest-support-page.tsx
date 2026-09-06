@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Send, X, Copy, Check, Paperclip } from 'lucide-react'
+import { Loader2, Send, X, Copy, Check, Paperclip, FileX } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useMediaViewer } from '@/features/media-viewer/use-media-viewer'
@@ -430,7 +430,30 @@ function GuestAttachmentView({
   mine: boolean
   onOpen: (() => void) | null
 }): JSX.Element {
+  const { t } = useTranslation()
   const url = supportGuestAttachmentUrl(attachment.id)
+
+  // A purge is scoped to a ticket id and does not care whether the thread is
+  // a guest one — anonymous threads are in fact where files pile up, since
+  // that upload has existed the longest. Without this branch the operator's
+  // cleanup leaves the guest looking at a broken image box with no
+  // explanation, and the same page after upgrading, not just an old one.
+  if (attachment.purgedAt) {
+    return (
+      <div
+        className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${
+          mine
+            ? 'bg-black/15 text-inherit opacity-70'
+            : 'bg-[color:var(--color-surface)] text-foreground opacity-70'
+        }`}
+      >
+        <FileX className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
+        <span className="shrink-0 opacity-70">{t('support.attachmentRemoved')}</span>
+      </div>
+    )
+  }
+
   if (onOpen) {
     return (
       // `h-64` on the button — see the signed-in page for why the strip

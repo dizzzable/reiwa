@@ -32,6 +32,7 @@ export const TTL = {
   RATE_GUEST_REPLY: 60,
   /** Guest support attachment upload rate limit window — 1 minute */
   RATE_GUEST_UPLOAD: 60,
+  RATE_TICKET_UPLOAD: 60,
   /** AI chat message rate limit window — 1 minute */
   RATE_AI_CHAT: 60,
   /** Payment-method (card) setup rate limit window — 10 minutes */
@@ -136,6 +137,18 @@ export function rateGuestReplyKey(ip: string): string {
  */
 export function rateGuestUploadKey(ip: string): string {
   return `rate:guest_upload:${ip}`;
+}
+
+/**
+ * Build a Redis key for the SIGNED-IN attachment upload limit.
+ *
+ * Keyed by IP like its anonymous twin. A session is not a smaller budget here:
+ * the cost being bounded is disk and bandwidth, and the operator's whole reason
+ * for asking for these files was that storage fills up.
+ * Value: Counter (integer)
+ */
+export function rateTicketUploadKey(ip: string): string {
+  return `rate:ticket_upload:${ip}`;
 }
 
 /**

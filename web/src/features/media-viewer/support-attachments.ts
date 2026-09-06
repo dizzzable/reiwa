@@ -21,6 +21,11 @@ export interface ViewableAttachmentSource {
   readonly id: string;
   readonly filename: string;
   readonly mimeType: string;
+  /**
+   * Set once an operator reclaimed the ticket's disk. The row survives so the
+   * thread can say the file was deleted; the bytes do not.
+   */
+  readonly purgedAt?: string | null;
 }
 
 export interface ViewableMessage {
@@ -32,8 +37,16 @@ export interface ViewableAttachment extends MediaViewerItem {
   readonly id: string;
 }
 
-/** Whether this attachment is one the viewer will show. */
+/**
+ * Whether this attachment is one the viewer will show.
+ *
+ * A purged attachment is excluded here rather than in the caller: the bubble
+ * already renders it as a tombstone, but the viewer pages across the WHOLE
+ * thread, so leaving it in the list means an operator opens a live screenshot,
+ * presses next, and lands on a dead 404 frame with no way to tell why.
+ */
 export function isViewableAttachment(attachment: ViewableAttachmentSource): boolean {
+  if (attachment.purgedAt) return false;
   return typeof attachment.mimeType === "string" && attachment.mimeType.startsWith("image/");
 }
 

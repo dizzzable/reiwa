@@ -71,11 +71,19 @@ export default function LandingPage() {
     );
   }
 
-  if (isError) return <Navigate to="/sign-in" replace />;
+  // `keepQuery`, not a bare path, on every one of these. This is the landing's
+  // fail-closed exit, and it is reached by exactly the visitor who matters
+  // most: someone who followed an ad to `/welcome?campaign=…&utm_source=…`
+  // while the landing happens to be disabled, unpublished, empty, or briefly
+  // erroring. Dropping the query here loses the marks one hop before the form
+  // — the very defect this pair set out to fix, on the page it is named after.
+  const signIn = keepQuery('/sign-in');
+
+  if (isError) return <Navigate to={signIn} replace />;
 
   const parsed = parseLandingPayload(data);
-  if (parsed.enabled !== true) return <Navigate to="/sign-in" replace />;
-  if (parsed.sections.length === 0) return <Navigate to="/sign-in" replace />;
+  if (parsed.enabled !== true) return <Navigate to={signIn} replace />;
+  if (parsed.sections.length === 0) return <Navigate to={signIn} replace />;
 
   return (
     <Suspense fallback={null}>

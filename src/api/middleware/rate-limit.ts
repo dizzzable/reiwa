@@ -10,6 +10,7 @@ import {
   rateGuestCreateKey,
   rateGuestReplyKey,
   rateGuestUploadKey,
+  rateTicketUploadKey,
   rateAiChatKey,
   ratePaymentMethodSetupKey,
   bannedIpKey,
@@ -248,6 +249,17 @@ export const RATE_LIMITS = {
     maxAttempts: 12,
     windowSeconds: TTL.RATE_GUEST_UPLOAD,
     keyBuilder: rateGuestUploadKey,
+    onExceed: "block",
+    blockBehavior: "after_limit",
+  } satisfies RateLimitConfig,
+
+  // The same budget for a SIGNED-IN customer's upload. It had none at all,
+  // while the anonymous route beside it did — so the one path that costs disk
+  // per request was the one nobody bounded.
+  ticketUpload: {
+    maxAttempts: 12,
+    windowSeconds: TTL.RATE_TICKET_UPLOAD,
+    keyBuilder: rateTicketUploadKey,
     onExceed: "block",
     blockBehavior: "after_limit",
   } satisfies RateLimitConfig,

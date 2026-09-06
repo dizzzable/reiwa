@@ -558,19 +558,6 @@ body {
   50%      { transform: translate3d(-47.4%, 0, 0); }
 }
 
-/* One block, and the contract test enforces that: a second copy would leave
-   every assertion about reduced motion silently describing whichever came
-   first in the file. */
-@media (prefers-reduced-motion: reduce) {
-  .card-effect-layer__css-fallback-blob { animation: none; }
-  .icon-effect-pulse,
-  .icon-effect-shake { animation: none; }
-  /* The glow keeps its halo, at rest. Removing it too would make a "glowing"
-     icon indistinguishable from a plain one, which is not what the setting
-     asks for — it asks for no MOTION. */
-  .icon-effect-glow::after { animation: none; opacity: 0.35; }
-}
-
 /* Subtle game-like "glint" sheen — a diagonal highlight sweeps across the
    element periodically (with a long idle gap), used to draw the eye to the
    quests entry icon without the aggressiveness of the purchase-icon ring. */
@@ -648,6 +635,32 @@ body {
   animation: icon-effect-glow 2.6s ease-in-out infinite;
 }
 
+
+/* Reduced motion, and it lives HERE — last of the unlayered rules — for a
+   reason that cost this patch a silent defect: these declarations carry the
+   same specificity as the ones they must beat, so the cascade decides on
+   SOURCE ORDER alone. Sitting above `.icon-effect-pulse` and friends, every
+   `animation: none` below was dead, and a subscriber who had asked their
+   system for no motion still got a pulsing, shaking, glowing header. The
+   contract test counts blocks and reads keyframe bodies; it does not evaluate
+   the cascade, so nothing was red.
+
+   One block, and the contract test enforces that: a second copy would leave
+   every assertion about reduced motion silently describing whichever came
+   first in the file.
+
+   Anything animated LATER in this file must be added to this block, and the
+   block must stay below it. `@layer base` follows, and layered rules always
+   lose to unlayered ones, so this beats those wherever they land. */
+@media (prefers-reduced-motion: reduce) {
+  .card-effect-layer__css-fallback-blob { animation: none; }
+  .icon-effect-pulse,
+  .icon-effect-shake { animation: none; }
+  /* The glow keeps its halo, at rest. Removing it too would make a "glowing"
+     icon indistinguishable from a plain one, which is not what the setting
+     asks for — it asks for no MOTION. */
+  .icon-effect-glow::after { animation: none; opacity: 0.35; }
+}
 
 @layer base {
   * {
