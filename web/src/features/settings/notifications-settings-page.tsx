@@ -1,12 +1,23 @@
 /**
  * NotificationsSettingsPage
  * ─────────────────────────
- * Browser web-push opt-in + subscription expiry toggles. Reached from the
+ * Browser web-push opt-in + subscription expiry switches. Reached from the
  * Notifications hub.
+ *
+ * The expiry switches used to be seven `<Switch defaultChecked>` with no
+ * handler, no state and no mutation: no route accepted a preference, no
+ * column stored one, and the send decision was operator-global. Two of the
+ * seven governed reminders no emitter has ever produced — two and three days
+ * AFTER expiry — so even a working switch would have controlled nothing.
+ *
+ * They are driven by the server now, and `available` decides WHICH appear:
+ * the panel ships ahead of this image, so a switch this cabinet knows about
+ * but that panel does not honour must not be drawn at all.
  */
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, Smartphone } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { toast } from "sonner";
@@ -21,7 +32,11 @@ import {
   unsubscribeFromPush,
   type PushSupportStatus,
 } from "@/lib/push";
-import { getPushPublicKey } from "@/lib/api-client";
+import {
+  getPushPublicKey,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+} from "@/lib/api-client";
 import { isTelegramMiniAppSurface } from "@/lib/telegram-launch-params";
 
 export default function NotificationsSettingsPage() {
@@ -37,29 +52,7 @@ export default function NotificationsSettingsPage() {
       <div className="mx-5 space-y-6">
         <BrowserPushSection />
 
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-[var(--brand-foreground)]">{t("notifications.beforeExpiry")}</p>
-          <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 space-y-4">
-            <NotifToggle label={t("notifications.days3")} defaultChecked />
-            <Separator className="bg-[var(--color-border-soft)]" />
-            <NotifToggle label={t("notifications.days2")} defaultChecked={false} />
-            <Separator className="bg-[var(--color-border-soft)]" />
-            <NotifToggle label={t("notifications.days1")} defaultChecked />
-            <Separator className="bg-[var(--color-border-soft)]" />
-            <NotifToggle label={t("notifications.dayOf")} defaultChecked />
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-[var(--brand-foreground)]">{t("notifications.afterExpiry")}</p>
-          <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 space-y-4">
-            <NotifToggle label={t("notifications.after1")} defaultChecked />
-            <Separator className="bg-[var(--color-border-soft)]" />
-            <NotifToggle label={t("notifications.after2")} defaultChecked={false} />
-            <Separator className="bg-[var(--color-border-soft)]" />
-            <NotifToggle label={t("notifications.after3")} defaultChecked={false} />
-          </div>
-        </div>
+        <ExpiryNotificationSwitches />
 
         <p className="text-xs text-[var(--brand-muted-foreground)]">{t("notifications.hint")}</p>
       </div>
@@ -200,11 +193,104 @@ function BrowserPushSection() {
   );
 }
 
-function NotifToggle({ label, defaultChecked }: { label: string; defaultChecked: boolean }) {
+/**
+ * The switches, keyed by the notification type each one silences.
+ *
+ * The two "after 2 days" / "after 3 days" rows are gone: no emitter produces
+ * those reminders, so those controls governed nothing even in principle.
+ */
+const EXPIRY_SWITCHES: ReadonlyArray<{
+  type: string;
+  labelKey: string;
+  group: "before" | "after";
+}> = [
+  { type: "expires_in_3_days", labelKey: "notifications.days3", group: "before" },
+  { type: "expires_in_2_days", labelKey: "notifications.days2", group: "before" },
+  { type: "expires_in_1_days", labelKey: "notifications.days1", group: "before" },
+  { type: "expired", labelKey: "notifications.dayOf", group: "before" },
+  { type: "expired_1_day_ago", labelKey: "notifications.after1", group: "after" },
+];
+
+function ExpiryNotificationSwitches() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  const { data } = useQuery({
+    queryKey: ["notification-preferences"],
+    queryFn: ({ signal }) => getNotificationPreferences({ signal }),
+    staleTime: 60_000,
+  });
+
+  const save = useMutation({
+    mutationFn: (patch: Record<string, boolean>) => updateNotificationPreferences(patch),
+    onSuccess: (result) => {
+      queryClient.setQueryData(["notification-preferences"], result);
+    },
+    onError: () => {
+      // The switch springs back, because the value it was showing is not the
+      // value the server holds. Leaving it moved is how the old screen felt.
+      void queryClient.invalidateQueries({ queryKey: ["notification-preferences"] });
+      toast.error(t("notifications.prefsSaveFailed"));
+    },
+  });
+
+  // Only what the panel says it honours. An empty list — an older panel, or
+  // an unreachable one — draws no switches rather than dead ones.
+  const available = new Set(data?.available ?? []);
+  const rows = EXPIRY_SWITCHES.filter((row) => available.has(row.type));
+  if (rows.length === 0) return null;
+
+  const isOn = (type: string): boolean => data?.prefs?.[type] !== false;
+
+  const renderGroup = (title: string, group: typeof rows) =>
+    group.length === 0 ? null : (
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-[var(--brand-foreground)]">{title}</p>
+        <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 space-y-4">
+          {group.map((row, index) => (
+            <div key={row.type}>
+              {index > 0 && <Separator className="mb-4 bg-[var(--color-border-soft)]" />}
+              <NotifToggle
+                label={t(row.labelKey)}
+                checked={isOn(row.type)}
+                disabled={save.isPending}
+                onCheckedChange={(next) => save.mutate({ [row.type]: next })}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+
+  return (
+    <>
+      {renderGroup(t("notifications.beforeExpiry"), rows.filter((r) => r.group === "before"))}
+      {renderGroup(t("notifications.afterExpiry"), rows.filter((r) => r.group === "after"))}
+    </>
+  );
+}
+
+function NotifToggle({
+  label,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onCheckedChange: (next: boolean) => void;
+}) {
   return (
     <div className="flex items-center justify-between">
       <Label className="text-sm text-[var(--brand-foreground)] cursor-pointer">{label}</Label>
-      <Switch defaultChecked={defaultChecked} />
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onCheckedChange}
+        aria-label={label}
+      />
     </div>
   );
 }
+

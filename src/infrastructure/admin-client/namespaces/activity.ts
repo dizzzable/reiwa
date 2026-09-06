@@ -78,6 +78,26 @@ export class ActivityNamespace {
     );
   }
 
+  /**
+   * The subscriber's own notification switches. `available` comes back with
+   * them so the cabinet renders only the switches THIS panel honours — a
+   * cabinet a release ahead would otherwise draw a control the panel cannot
+   * act on, which is the defect this pair was written to end.
+   */
+  getNotificationPrefs(identity: UserIdentity): Promise<unknown> {
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/notifications/preferences?${identityQuery(identity)}`,
+    );
+  }
+
+  updateNotificationPrefs(identity: UserIdentity, prefs: unknown): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/user/notifications/preferences', {
+      ...identityBody(identity),
+      prefs,
+    });
+  }
+
   getUnreadCount(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',

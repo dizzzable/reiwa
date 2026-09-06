@@ -131,6 +131,8 @@ export {
   getAddOnEntitlements,
   getUnreadCount,
   markAllNotificationsRead,
+  getNotificationPreferences,
+  updateNotificationPreferences,
   markNotificationRead,
 } from "./activity.js";
 

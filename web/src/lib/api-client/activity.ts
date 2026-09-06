@@ -55,3 +55,29 @@ export const markNotificationRead = (id: string) =>
 
 export const markAllNotificationsRead = () =>
   apiClient.post("/activity/notifications/read-all").then((r) => r.data);
+
+/**
+ * The subscriber's own notification switches.
+ *
+ * `available` is the list of switches the PANEL honours, and the screen
+ * renders only those. A cabinet that ships ahead of the panel would otherwise
+ * draw a control the panel cannot act on — which is precisely the state this
+ * screen was in.
+ */
+export interface NotificationPreferences {
+  /** Only what was actually stored; an absent key means "send it". */
+  prefs: Record<string, boolean>;
+  available: string[];
+}
+
+export const getNotificationPreferences = (options: ActivityRequestOptions = {}) =>
+  apiClient
+    .get<NotificationPreferences>("/activity/notifications/preferences", {
+      signal: options.signal,
+    })
+    .then((r) => r.data);
+
+export const updateNotificationPreferences = (prefs: Record<string, boolean>) =>
+  apiClient
+    .post<NotificationPreferences>("/activity/notifications/preferences", { prefs })
+    .then((r) => r.data);

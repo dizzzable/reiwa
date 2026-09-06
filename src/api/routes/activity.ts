@@ -54,6 +54,36 @@ export function createActivityRouter(deps: {
     },
   );
 
+  // GET /api/v1/activity/notifications/preferences — the subscriber's own
+  // switches. Registered before the `/:notificationId` routes for the same
+  // reason `unread-count` is: a static segment loses to a parameter that was
+  // declared first.
+  router.get(
+    "/activity/notifications/preferences",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      const result = await adminClient?.activity.getNotificationPrefs(resolveUserIdentity(req));
+      // An unreachable panel answers "nothing stored, nothing offered", and
+      // the screen then renders no switches rather than switches that do
+      // nothing — which is the state this whole pair replaced.
+      res.json(result ?? { prefs: {}, available: [] });
+    },
+  );
+
+  // POST /api/v1/activity/notifications/preferences
+  router.post(
+    "/activity/notifications/preferences",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      const prefs = (req.body as { prefs?: unknown } | undefined)?.prefs ?? {};
+      const result = await adminClient?.activity.updateNotificationPrefs(
+        resolveUserIdentity(req),
+        prefs,
+      );
+      res.json(result ?? { prefs: {}, available: [] });
+    },
+  );
+
   // GET /api/v1/activity/notifications/unread-count
   // NOTE: must be registered before /:notificationId/read to avoid route shadowing
   router.get(
