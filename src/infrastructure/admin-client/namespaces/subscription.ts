@@ -40,6 +40,22 @@ function identityQuery(identity: UserIdentity): string {
   return '';
 }
 
+/**
+ * The best reference the edge has for this user: a reiwa_id when there is one,
+ * otherwise the telegramId. The panel accepts either and tells them apart by
+ * shape — a telegramId is digits, a reiwa_id is a CUID. Same rule as the
+ * devices namespace, which addresses the panel the same path-shaped way.
+ */
+function reference(identity: UserIdentity): string {
+  if (typeof identity.userId === 'string' && identity.userId.length > 0) {
+    return identity.userId;
+  }
+  if (typeof identity.telegramId === 'string' && identity.telegramId.length > 0) {
+    return identity.telegramId;
+  }
+  throw new Error('A userId or telegramId is required');
+}
+
 export class SubscriptionNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
@@ -54,6 +70,25 @@ export class SubscriptionNamespace {
     return this.transport.request(
       'GET',
       `/api/internal/user/subscriptions?${identityQuery(identity)}`,
+    );
+  }
+
+  /**
+   * The servers this subscription can reach, for the globe.
+   *
+   * Path-shaped rather than query-shaped like the two above, because the panel
+   * resolves `:userRef` itself and the subscription is part of the address, not
+   * a filter — a user with two subscriptions reaches two different sets.
+   *
+   * The panel answers `{servers: [], recommendedServerId: null}` whenever it
+   * cannot reach Remnawave, so there is no failure shape to handle here beyond
+   * the transport's own.
+   */
+  listServers(identity: UserIdentity, subscriptionId: string): Promise<unknown> {
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}` +
+        `/subscriptions/${encodeURIComponent(subscriptionId)}/servers`,
     );
   }
 

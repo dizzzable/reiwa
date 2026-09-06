@@ -118,6 +118,52 @@ function flattenActionPolicy(raw: unknown): {
   };
 }
 
+/**
+ * Re-states the server list at this hop instead of forwarding the panel's body.
+ *
+ * The panel already constrains it — the response is built field by field and a
+ * spec pins the exact key set. But the two are SEPARATE IMAGES on separate
+ * release trains, so "the panel is careful" is a claim about a version, not
+ * about the process running upstream right now. A panel that ever widens the
+ * shape would reach a customer's browser through here with nothing in between.
+ *
+ * Unknown fields are dropped rather than refused: this screen must never be the
+ * reason a working subscription shows an error, and a newer panel sending an
+ * extra field is not a failure.
+ */
+function narrowServerList(payload: unknown): {
+  servers: Record<string, unknown>[];
+  recommendedServerId: string | null;
+} {
+  const source = isRecord(payload) ? payload : {};
+  const rows = Array.isArray(source["servers"]) ? source["servers"] : [];
+  const recommended = source["recommendedServerId"];
+  return {
+    servers: rows.filter(isRecord).map((row) => ({
+      id: asString(row["id"]),
+      name: asString(row["name"]),
+      flag: asNullableString(row["flag"]),
+      countryCode: asNullableString(row["countryCode"]),
+      status: asString(row["status"]),
+      uptimeSeconds: typeof row["uptimeSeconds"] === "number" ? row["uptimeSeconds"] : null,
+      usersOnline: typeof row["usersOnline"] === "number" ? row["usersOnline"] : null,
+    })),
+    recommendedServerId: typeof recommended === "string" ? recommended : null,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 export function createSubscriptionRouter(deps: {
   adminClient: AdminClient | null;
   sessionStore: SessionStore | null;
@@ -151,6 +197,39 @@ export function createSubscriptionRouter(deps: {
         res.json(flattenActionPolicy(policy));
       } catch (e: unknown) {
         sendSafeError(req, res, e, 500, "Failed to load action policy", "subscription/action-policy");
+      }
+    },
+  );
+
+  // GET /api/v1/subscription/:subscriptionId/servers — the servers behind one
+  // subscription, for the globe a customer opens by double-tapping the card.
+  //
+  // Empty on any failure, deliberately. The panel already answers with an empty
+  // list when it cannot reach Remnawave; this catch covers the panel itself
+  // being unreachable. Either way the card underneath is working, and an error
+  // here would be the only broken thing on the screen.
+  router.get(
+    "/subscription/:subscriptionId/servers",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      const empty = { servers: [], recommendedServerId: null };
+      try {
+        const result = await adminClient?.subscription.listServers(
+          resolveUserIdentity(req),
+          String(req.params["subscriptionId"]),
+        );
+        res.json(narrowServerList(result));
+      } catch (error) {
+        // The only catch in this router that used to say nothing at all. Every
+        // other handler reports through `sendSafeError`, which cannot be used
+        // here because it sets a non-200 and this route answers empty by
+        // design — but a panel outage still has to leave a trace, or the
+        // symptom is a globe with no servers and not one line anywhere.
+        req.log?.warn(
+          { err: error },
+          "GET /subscription/:id/servers failed; answering an empty list",
+        );
+        res.json(empty);
       }
     },
   );

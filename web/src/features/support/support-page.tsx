@@ -18,15 +18,18 @@ import type { SupportTicket, SupportAttachmentMeta } from '@/lib/api-client'
 import { getAiChatConfig } from '@/lib/api-client/ai-chat'
 import { BackButton } from '@/components/ui/back-button'
 import { useBranding } from '@/lib/branding-provider'
-import { cn } from '@/lib/utils'
+import { cn, getActiveLocale } from '@/lib/utils'
 import { toast } from 'sonner'
 
 function formatTime(dateStr: string) {
   const d = new Date(dateStr)
   const now = new Date()
   const isToday = d.toDateString() === now.toDateString()
-  if (isToday) return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  // Every timestamp in the ticket list and in the message thread. Pinned to
+  // Russian inside a screen whose every other word follows the language.
+  const locale = getActiveLocale()
+  if (isToday) return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 function formatBytes(bytes: number): string {

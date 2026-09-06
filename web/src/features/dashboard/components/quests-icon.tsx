@@ -112,7 +112,15 @@ export function QuestsIcon(): JSX.Element | null {
           className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
         >
           <QuestsGlyph className="h-4 w-4" style={decor.glyphStyle} />
-          {!reduceMotion && (
+          {/* The built-in glint, and it stands down the moment an operator
+              configures this icon — including when they configure it to have
+              no effect, which is them saying so. Left unconditional it would
+              run UNDER whatever they chose, so an icon set to pulse would
+              pulse and glint at once, and one set to "none" would keep
+              glinting. `effectChosen` is what tells those apart from an
+              install that has never opened the tab, which must look exactly
+              as it does today. */}
+          {!reduceMotion && !decor.effectChosen && (
             <span
               aria-hidden
               className="animate-glint pointer-events-none absolute inset-y-0 -left-1/2 w-1/2"

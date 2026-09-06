@@ -193,9 +193,16 @@ interface PillBox {
 }
 
 function primaryNav(): HTMLElement {
-  const nav = document.querySelector<HTMLElement>('nav[aria-label="Primary"]');
-  if (!nav) throw new Error("the cabinet shell rendered no primary navigation");
-  return nav;
+  // By ELEMENT, not by the label text. The landmark's `aria-label` is prose a
+  // screen reader speaks, so it goes through the dictionary now and changes
+  // with the language — a selector matching the English wording asserted the
+  // shell was in English, which is not what any of these cases are about.
+  const navs = document.querySelectorAll<HTMLElement>("nav");
+  if (navs.length === 0) throw new Error("the cabinet shell rendered no primary navigation");
+  if (navs.length > 1) {
+    throw new Error(`expected one nav landmark in the shell, found ${navs.length}`);
+  }
+  return navs[0];
 }
 
 function pillBox(): PillBox {

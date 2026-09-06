@@ -928,7 +928,9 @@ export const PANEL_BRANDING_VOCABULARY: PanelBrandingVocabulary = {
       "none",
       "pulse",
       "shake",
-      "glow"
+      "glow",
+      "glint",
+      "iridescent"
     ],
     "iconGlyphs": [
       "default",

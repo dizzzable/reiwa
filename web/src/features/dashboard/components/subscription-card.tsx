@@ -227,7 +227,7 @@ export function SubscriptionCardContent({
               />
             </div>
             <p className="w-fit text-[10px] font-medium tracking-wider uppercase">
-              {t("card.trafficUsed")}: {trafficUsedGb} / {trafficTotalGb} GB
+              {t("card.trafficUsed")}: {trafficUsedGb} / {trafficTotalGb} {t("common.gb")}
             </p>
           </div>
         ) : trafficTotalGb === null ? (

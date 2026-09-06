@@ -8,6 +8,7 @@ import { enterContest, getContests, getWheel, type ContestView } from '@/lib/api
 import { BackButton } from '@/components/ui/back-button'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { TipCard } from '@/components/ui/tip-card'
+import { pickLocalized } from '@/lib/pick-localized'
 
 /**
  * Events: what is running, and how the person did.
@@ -19,7 +20,7 @@ import { TipCard } from '@/components/ui/tip-card'
  * were are not on this screen, by design.
  */
 export default function EventsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
 
   const contests = useQuery({ queryKey: ['contests'], queryFn: getContests })
@@ -109,9 +110,9 @@ function ContestCard({
   readonly entering: boolean
   readonly onEnter: () => void
 }) {
-  const { t } = useTranslation()
-  const title = contest.title?.ru || contest.title?.en || t('events.unnamed')
-  const description = contest.description?.ru || contest.description?.en || ''
+  const { t, i18n } = useTranslation()
+  const title = pickLocalized(contest.title, i18n.language, t('events.unnamed'))
+  const description = pickLocalized(contest.description, i18n.language, '')
 
   return (
     <article className="space-y-3 rounded-2xl border p-4">
@@ -133,7 +134,7 @@ function ContestCard({
           <li key={prize.place} className="flex items-center gap-2">
             <Trophy className="h-4 w-4 shrink-0 text-amber-400" />
             <span className="text-muted-foreground">{t('events.place', { place: prize.place })}</span>
-            <span>{prize.title?.ru || prize.title?.en || t('events.unnamed')}</span>
+            <span>{pickLocalized(prize.title, i18n.language, t('events.unnamed'))}</span>
           </li>
         ))}
       </ul>
@@ -161,7 +162,7 @@ function ContestCard({
  * read like the second.
  */
 function Result({ contest }: { readonly contest: ContestView }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const result = contest.myResult
   if (result === null) {
     return <p className="text-sm text-muted-foreground">{t('events.result.notThisTime')}</p>
@@ -173,7 +174,7 @@ function Result({ contest }: { readonly contest: ContestView }) {
         <PartyPopper className="h-4 w-4 text-amber-400" />
         {t('events.result.won', {
           place: result.place,
-          prize: result.prizeTitle?.ru || result.prizeTitle?.en || t('events.unnamed'),
+          prize: pickLocalized(result.prizeTitle, i18n.language, t('events.unnamed')),
         })}
       </p>
       {secret ? <p className="break-all font-mono">{secret}</p> : null}

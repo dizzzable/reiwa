@@ -114,7 +114,7 @@ export default function SubscriptionPage() {
               <div className="rounded-xl bg-[color:var(--color-surface-high)] p-3">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('subscription.traffic')}</p>
                 <p className="mt-1 font-semibold text-foreground">
-                  {sub.trafficLimit ? `${sub.trafficLimit} GB` : t('subscription.unlimited')}
+                  {sub.trafficLimit ? `${sub.trafficLimit} ${t('common.gb')}` : t('subscription.unlimited')}
                 </p>
               </div>
               {sub.deviceLimit && (

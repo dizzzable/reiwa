@@ -65,7 +65,28 @@ async function runExpiryAlerts(): Promise<void> {
   const jobLog = logger.child({ job: "expiry-alerts" });
 
   try {
-    // Call the internal expiry-alerts endpoint (returns users with expiring subs).
+    // ── DEAD PATH, and it must not be revived as it stands ────────────────
+    //
+    // This asks for an ARRAY of alerts. The panel's `GET
+    // /api/internal/worker/expiry-alerts` answers with a SUMMARY object
+    // (`{ expired, warnings3d, warnings1d, cycleAt }`, see
+    // `auto-renew/controllers/internal-worker.controller.ts`), so
+    // `alerts.length` is `undefined`, the guard below returns, and the loop
+    // has never run.
+    //
+    // That is the safe outcome, because the message it would send is wrong in
+    // two ways: it is hardcoded Russian with no reference to the recipient's
+    // language, and its plural is built as `daysLeft < 5 ? 'дня' : 'дней'`,
+    // which prints «22 дней», «23 дней», «34 дней» — the rule needs the
+    // last-two-digits check that `formatDays()` in
+    // `infrastructure/i18n/translator` already implements correctly, in both
+    // languages, and which nothing calls.
+    //
+    // The panel's own `AutoRenewScheduler` already sends these reminders
+    // through `user-notifications`, localized per recipient. So before making
+    // this shape line up, decide whether the job should exist at all — and if
+    // it should, route the copy through `deps.translator` and `formatDays`.
+    //
     // Falls back gracefully if the endpoint doesn't exist yet (404 / network error).
     const alerts = (await adminClient.system
       .getExpiryAlerts()

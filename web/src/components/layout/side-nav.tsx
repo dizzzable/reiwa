@@ -24,6 +24,7 @@ import { resolveActiveTabTo, useNavTabs, type NavTab } from "@/components/layout
 import { ReferralInviteCard } from "@/components/layout/referral-invite-card";
 import { SignOutConfirmDialog } from "@/components/layout/sign-out-confirm-dialog";
 import { useSignOut } from "@/features/auth/use-sign-out";
+import i18n from "i18next"
 
 export function SideNav() {
   const location = useLocation();
@@ -63,7 +64,7 @@ export function SideNav() {
   return (
     <LazyMotion features={domMax} strict>
     <nav
-      aria-label="Primary"
+      aria-label={i18n.t("common.primaryNav")}
       className="flex h-full w-64 shrink-0 flex-col gap-2 border-r border-[var(--color-border-soft)] bg-[var(--color-surface)] px-3 py-5 backdrop-blur-xl"
     >
       {/* Brand header */}

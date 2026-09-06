@@ -67,6 +67,10 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("motion/react", () => ({
   useReducedMotion: () => false,
+  // The carousel wraps the servers sheet in this. A mock that renders its
+  // children keeps the sheet's own mounting visible to the tests below rather
+  // than swallowing it, which is what a `() => null` stand-in would do.
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) => children,
 }));
 
 vi.mock("@tanstack/react-query", () => ({

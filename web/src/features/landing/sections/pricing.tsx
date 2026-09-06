@@ -34,7 +34,7 @@ function formatMoney(cents: number | undefined, currency: string | undefined, lo
   }
 }
 
-function CatalogPricing({ heading }: { heading: string }) {
+function CatalogPricing({ heading, locale }: { heading: string; locale: string }) {
   const { LinkComponent, loadPlans, resolveInternalHref } = useLandingKit();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['landing', 'plans'],
@@ -65,7 +65,7 @@ function CatalogPricing({ heading }: { heading: string }) {
             <h3 className="text-lg font-semibold">{plan.name ?? '—'}</h3>
             {plan.description && <p className="ls-muted text-sm">{plan.description}</p>}
             <p className="text-3xl font-bold">
-              {formatMoney(plan.priceCents ?? plan.priceMonthlyCents, plan.currency, 'ru')}
+              {formatMoney(plan.priceCents ?? plan.priceMonthlyCents, plan.currency, locale)}
             </p>
             <LinkComponent
               to={resolveInternalHref('/register')}
@@ -178,7 +178,10 @@ export default function PricingSection({ section, locale, defaultLocale }: Props
   const heading = pickLocalized(data.heading, locale, defaultLocale);
   const source = data.source === 'static' ? 'static' : 'catalog';
   if (source === 'catalog') {
-    return <CatalogPricing heading={heading} />;
+    // `locale` reaches this section already; only the catalog branch was
+    // never handed it, so the first screen a prospect sees priced
+    // everything in Russian whatever language they were reading.
+    return <CatalogPricing heading={heading} locale={locale} />;
   }
   return (
     <StaticPricing

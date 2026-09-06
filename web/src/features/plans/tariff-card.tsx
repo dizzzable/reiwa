@@ -260,7 +260,7 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
             )}
           </div>
           <p className="mt-1 text-sm font-medium opacity-[0.85]">
-            {plan.trafficLimit ? `${plan.trafficLimit} GB` : t("plans.unlimited")}
+            {plan.trafficLimit ? `${plan.trafficLimit} ${t("common.gb")}` : t("plans.unlimited")}
             {plan.deviceLimit ? ` · ${t("plans.devicesSuffix", { count: plan.deviceLimit })}` : ""}
           </p>
           {plan.description && (

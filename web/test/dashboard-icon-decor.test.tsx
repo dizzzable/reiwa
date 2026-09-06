@@ -35,7 +35,18 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: "ru" } }),
 }));
 vi.mock("react-router", () => ({ useNavigate: () => vi.fn() }));
-vi.mock("motion/react", () => ({ useReducedMotion: () => true }));
+/**
+ * Reduced motion, switchable.
+ *
+ * It answers `true` for every case that does not say otherwise, which is what
+ * this file has always done: the decoration cases are about classes and styles,
+ * and leaving the animations out keeps them quiet. The glint cases below need
+ * the other answer, because the built-in sweep is not rendered at all under
+ * reduced motion — a fixed `true` made "it still glints" untestable and, worse,
+ * made it look tested.
+ */
+let reduceMotion = true;
+vi.mock("motion/react", () => ({ useReducedMotion: () => reduceMotion }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/lib/api-client/quests", () => api);
 vi.mock("@/hooks/use-install-prompt", () => ({
@@ -168,6 +179,67 @@ describe("a decorated dashboard icon", () => {
     await render();
     const svg = container.querySelector("button svg");
     expect(svg?.classList.contains("lucide-gift")).toBe(true);
+  });
+});
+
+describe("the built-in glint and the operator's choice", () => {
+  beforeEach(() => {
+    reduceMotion = false;
+  });
+  afterEach(() => {
+    reduceMotion = true;
+  });
+
+  /** The sweep the quests button has shipped with, independent of any setting. */
+  const builtInGlint = (): Element | null =>
+    container.querySelector("button > span.animate-glint");
+
+  it("keeps glinting for an install that has never configured this icon", async () => {
+    // Every existing installation looks like this. Making the effect
+    // configurable must not take the animation away from them.
+    brandingState.iconDecor = undefined;
+    await render();
+    expect(builtInGlint()).not.toBeNull();
+  });
+
+  it("stands down when the operator picks a different effect", async () => {
+    // Left running it would pulse AND glint at once — two animations on one
+    // 36px button, only one of which anybody asked for.
+    brandingState.iconDecor = { quests: { effect: "pulse" } };
+    await render();
+    expect(builtInGlint()).toBeNull();
+    expect(shell()?.className).toContain("icon-effect-pulse");
+  });
+
+  it("stands down when the operator picks no effect at all", async () => {
+    // `none` is the operator saying so. This is the case that cannot be
+    // expressed by looking at the resolved class alone, since an unconfigured
+    // icon resolves to the same empty string.
+    brandingState.iconDecor = { quests: { effect: "none" } };
+    await render();
+    expect(builtInGlint()).toBeNull();
+    expect(shell()?.className).not.toContain("icon-effect");
+  });
+
+  it("keeps glinting when the operator only set a colour", async () => {
+    // A colour is not an effect. Taking the animation away here would be a
+    // second change nobody asked for, made by editing an unrelated field.
+    brandingState.iconDecor = { quests: { color: "#ff0055" } };
+    await render();
+    expect(builtInGlint()).not.toBeNull();
+  });
+
+  it("wears the glint as a chosen effect, without the built-in one underneath", async () => {
+    brandingState.iconDecor = { quests: { effect: "glint" } };
+    await render();
+    expect(shell()?.className).toContain("icon-effect-glint");
+    expect(builtInGlint()).toBeNull();
+  });
+
+  it("wears iridescence", async () => {
+    brandingState.iconDecor = { quests: { effect: "iridescent" } };
+    await render();
+    expect(shell()?.className).toContain("icon-effect-iridescent");
   });
 });
 

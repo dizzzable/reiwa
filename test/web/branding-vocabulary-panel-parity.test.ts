@@ -142,7 +142,7 @@ const skipCrossRepo = !hasPanelSources;
  * two-repository change; the failure message says how.
  */
 const BRANDING_VOCABULARY_DIGEST =
-  "a0d1264e487c8eaa249d61c1c334f112a5b0acf264413939954ae5dd30d0833e";
+  "72f51f774a13856fdf5548f54411b4ac13ce4a8523ec6f0168de3ba2cb2e1e1b";
 
 /* ────────────────────────────── source reading ───────────────────────────── */
 
@@ -512,7 +512,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
     // THE ANSWER, restated — so silencing a failure by editing the constant
     // above has to be done twice, in two places that read differently.
     expect(BRANDING_VOCABULARY_DIGEST).toBe(
-      "a0d1264e487c8eaa249d61c1c334f112a5b0acf264413939954ae5dd30d0833e",
+      "72f51f774a13856fdf5548f54411b4ac13ce4a8523ec6f0168de3ba2cb2e1e1b",
     );
 
     // The canonicaliser itself: keys SORTED (so neither side has to write its

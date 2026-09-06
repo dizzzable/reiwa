@@ -238,6 +238,13 @@ const INDEX_CSS_KEYFRAMES = [
   "icon-effect-pulse",
   "icon-effect-shake",
   "icon-effect-glow",
+  // The glint sweeps a highlight and the iridescence cross-fades two
+  // pre-painted gradients. Neither may reach for `filter: hue-rotate` or an
+  // animated `background-image`, which are the two obvious ways to move colour
+  // and are both on the forbidden list below.
+  "icon-effect-glint",
+  "icon-effect-iridescent-a",
+  "icon-effect-iridescent-b",
 ];
 
 describe("animation paint contract", () => {
@@ -348,6 +355,131 @@ describe("animation paint contract", () => {
       cssBlock("@media (prefers-reduced-motion: reduce)"),
       "prefers-reduced-motion no longer switches the fallback drift off",
     ).toContain(".card-effect-layer__css-fallback-blob { animation: none;");
+  });
+
+/**
+ * Animated selectors the reduced-motion block does not name, and why.
+ *
+ * ONE of these is exempt for a good reason. The other three are simply older
+ * than the guard below, and they are listed rather than fixed because switching
+ * an animation off changes what a subscriber sees — a call somebody who owns
+ * the product should make deliberately, not something to slip into a patch
+ * about icon effects. Listing them is the point: they are now visible, and
+ * anything NEW that joins them fails instead.
+ */
+/** CSS with `/* … *\/` comments removed, so a commented rule cannot satisfy a substring test. */
+function stripComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, " ");
+}
+
+const EXEMPT_FROM_REDUCED_MOTION = new Map([
+  [
+    ".animate-glint",
+    "gated in JavaScript instead: `quests-icon` does not render the sweep at all when `useReducedMotion()` is true, so there is nothing for CSS to switch off",
+  ],
+  [
+    ".animate-pulse-glow::after",
+    "PRE-EXISTING GAP. The CTA halo breathes for as long as the screen is open and Reduce Motion does not stop it. It is only an opacity animation, so it costs nothing to run — but it is motion, and the setting asks for none",
+  ],
+  [
+    ".animate-fade-up",
+    "PRE-EXISTING GAP, and the mildest: a 0.4s one-shot entrance that ends and stays ended. Reduce Motion arguably still wants it gone",
+  ],
+  [
+    ".animate-spin-slow",
+    "PRE-EXISTING GAP. An 8s continuous rotation, which is the shape of animation the setting most clearly means",
+  ],
+]);
+
+  it("switches every animated selector off under reduced motion", () => {
+    // The companion to the ordering test below, and the half it was missing.
+    // That one proves the block can WIN; this one proves it says anything at
+    // all about each rule. A newly added animation that nobody remembers to
+    // list simply runs — the block is still correctly placed, still overrides
+    // everything it names, and names one fewer thing than it should.
+    //
+    // Caught by mutation: deleting `.icon-effect-glint::after` from the block
+    // left every assertion in this file green while a subscriber who asked for
+    // no motion kept a highlight sweeping across their header.
+    // Comments stripped FIRST. `guard.includes(selector)` is a substring test,
+    // so commenting a rule out satisfies it — which is the same defect this
+    // check was written after, expressed with `/*` instead of a delete.
+    const source = stripComments(INDEX_CSS);
+    // And the whole file, not the part above `@layer base`. A rule appended
+    // after that block is unlayered and later in source order, so it beats the
+    // guard outright — slicing there made exactly the winning case invisible.
+    const guard = stripComments(cssBlock("@media (prefers-reduced-motion: reduce)"));
+    const beforeGuard = source.slice(
+      0,
+      source.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    const afterGuard = source.slice(
+      source.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+
+    // The selector each animation is attached to: the last selector line above
+    // the declaration. Comma-separated groups count as one, which is how they
+    // are written in the guard too.
+    const NEEDLE = "animation:";
+    const selectors = new Set<string>();
+    for (let at = beforeGuard.indexOf(NEEDLE); at !== -1; at = beforeGuard.indexOf(NEEDLE, at + 1)) {
+      const semicolon = beforeGuard.indexOf(";", at);
+      const value = beforeGuard.slice(at + NEEDLE.length, semicolon === -1 ? undefined : semicolon);
+      if (value.trim().startsWith("none")) continue;
+      const openBrace = beforeGuard.lastIndexOf("{", at);
+      if (openBrace === -1) continue;
+      const head = beforeGuard.slice(0, openBrace);
+      // Keyframe steps also carry declarations; their opening brace is inside
+      // an `@keyframes` block and their "selector" is a percentage.
+      const selector = head.slice(head.lastIndexOf("}") + 1).trim().split(String.fromCharCode(10)).pop() ?? "";
+      if (selector.length === 0 || selector.startsWith("@") || /^[\d%,\s]+$/.test(selector)) continue;
+      for (const one of selector.split(",")) {
+        const name = one.trim();
+        if (name.startsWith(".")) selectors.add(name);
+      }
+    }
+
+    expect(
+      selectors.size,
+      "no animated selectors found — the scan stopped matching, so this guard is asserting nothing",
+    ).toBeGreaterThan(3);
+
+    // Anything animated AFTER the guard is unguarded whatever the block says,
+    // because at equal specificity the later rule wins.
+    for (let at = afterGuard.indexOf(NEEDLE); at !== -1; at = afterGuard.indexOf(NEEDLE, at + 1)) {
+      const semicolon = afterGuard.indexOf(";", at);
+      const value = afterGuard.slice(at + NEEDLE.length, semicolon === -1 ? undefined : semicolon);
+      if (value.trim().startsWith("none")) continue;
+      // The guard block itself is part of this slice; its own rules all say
+      // `none`, so anything else here is a rule declared below it.
+      const inGuard = at < guard.length + 200;
+      expect(
+        inGuard,
+        "an animation is declared after the reduced-motion block, so it beats it at equal specificity",
+      ).toBe(true);
+    }
+
+    const unguarded = [...selectors].filter(
+      (selector) => !guard.includes(selector) && !EXEMPT_FROM_REDUCED_MOTION.has(selector),
+    );
+    expect(
+      unguarded,
+      "these selectors start an animation that the reduced-motion block never switches off, so Reduce Motion does nothing for them — switch them off in that block, or add them to EXEMPT_FROM_REDUCED_MOTION with the reason",
+    ).toEqual([]);
+  });
+
+  it("keeps the reduced-motion exemptions honest", () => {
+    // An exemption for a selector that no longer animates is a note about
+    // nothing, and it would go on excusing whatever later took the name.
+    const layerBase = INDEX_CSS.indexOf("@layer base {");
+    const unlayered = layerBase >= 0 ? INDEX_CSS.slice(0, layerBase) : INDEX_CSS;
+    const stale = [...EXEMPT_FROM_REDUCED_MOTION.keys()].filter(
+      (selector) => !unlayered.includes(selector),
+    );
+    expect(
+      stale,
+      "these selectors are excused from the reduced-motion block but no longer exist in index.css",
+    ).toEqual([]);
   });
 
   it("puts the reduced-motion block below every animated rule it must beat", () => {

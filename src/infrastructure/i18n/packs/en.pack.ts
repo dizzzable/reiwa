@@ -28,6 +28,22 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'menu.btn_lang': '🌐 Language',
   'menu.btn_trial_free': 'Try for free',
   'menu.btn_trial_paid': 'Try for {{price}}',
+  'menu.btn_webapp': 'Open the app',
+  'menu.btn_cabinet': 'My cabinet',
+  'menu.btn_invite': 'Invite a friend',
+  'menu.btn_rules': 'Terms',
+  'menu.btn_help': 'Help',
+
+  // ── AI support ──────────────────────────────────────────────────────────────
+  'ai_support.exit_button': '❌ Exit support',
+  'ai_support.unavailable':
+    '😔 *AI support is temporarily unavailable*\n\nPlease reach a human operator via /help',
+  'ai_support.intro':
+    '🤖 *AI support mode*\n\nAsk anything about the service — plans, app setup, troubleshooting.\n\nJust type your question and I will answer 📝\n\n_Type /cancel to leave_',
+  'ai_support.exited':
+    '✅ *AI support mode ended*\n\nNeed help again? Use /support or /help',
+  'ai_support.rate_limited': '⏳ Too many messages in a row. Please wait a moment and try again.',
+  'ai_support.failed': '😔 Could not get an answer. Try again, or type /cancel to exit.',
 
   // ── Pre-registration funnel ─────────────────────────────────────────────────
   'start.open_app': '📱 Open app',

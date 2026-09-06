@@ -587,8 +587,9 @@ body {
 .animate-spin-slow  { animation: spin-slow 8s linear infinite; }
 .animate-glint      { animation: glint 3.8s ease-in-out infinite; }
 
+/* icon-effects:begin — mirrored into the panel preview; see icon-effect-css-parity.test.ts */
 /* ── Operator-chosen attention effects for the dashboard header icons ──────
-   Three, and each animates `transform` or `opacity` and nothing else — the
+   Five, and each animates `transform` or `opacity` and nothing else — the
    paint contract in `visual-css-contract.test.ts` fails any keyframe that
    touches a paint-bound property, and it is right to: these run on a phone,
    behind a card that is already compositing an effect of its own.
@@ -636,6 +637,110 @@ body {
 }
 
 
+/* ── Glint ─────────────────────────────────────────────────────────────────
+   A highlight sweeps across the icon. The quests icon has shipped with this
+   for a long time as a hard-coded overlay of its own; here it is the same
+   sweep made available to every icon, and the quests overlay stands down as
+   soon as an operator chooses anything, so the two can never run at once.
+
+   IT STAYS INSIDE THE PILL WITHOUT ANY CLIPPING, and that is the whole design
+   of the numbers below. The obvious version — a bar translated from -170% to
+   +170% — needs `overflow: hidden` on its container to look right, and the
+   container here is the WRAPPER, which also carries the unread badge hanging
+   off the corner. Clipping it slices the badge; the comment in `quests-icon`
+   records that exact bug being fixed once already. So the bar is 40% wide and
+   travels from 0 to 150% of its own width, which lands its trailing edge
+   exactly on the wrapper's right edge and never past it. */
+@keyframes icon-effect-glint {
+  0%   { opacity: 0; transform: translateX(0) skewX(-18deg); }
+  8%   { opacity: 0.62; }
+  22%  { opacity: 0; transform: translateX(150%) skewX(-18deg); }
+  100% { opacity: 0; transform: translateX(150%) skewX(-18deg); }
+}
+.icon-effect-glint { position: relative; }
+.icon-effect-glint::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--icon-effect-color, var(--brand-foreground)) 55%, transparent),
+    transparent
+  );
+  opacity: 0;
+  animation: icon-effect-glint 3.8s ease-in-out infinite;
+}
+
+/* ── Iridescence ───────────────────────────────────────────────────────────
+   Colours drift across the icon.
+
+   THE OBVIOUS TWO WAYS ARE BOTH FORBIDDEN HERE. `filter: hue-rotate` and an
+   animated `background-image` are paint-bound: they repaint the header on
+   every frame, for as long as the dashboard is open, on a phone that is
+   already compositing the card effect behind it. The contract test refuses
+   both by name.
+
+   So the movement is a CROSS-FADE between two pre-painted gradients that sit
+   still. Each is painted once; only their opacities animate, which stays on
+   the compositor. Offset by half a period, the pair reads as one shifting
+   sheen rather than two blinking layers.
+
+   `mix-blend-mode: color` rather than an overlay: it takes the hue from the
+   gradient and the LIGHTNESS from what is underneath, so the icon's dark
+   surface stays dark and only the glyph — the bright pixels — takes on the
+   colour. It also means this works on an operator's uploaded SVG with no mask
+   at all, because it composites over whatever was rendered rather than
+   needing to know its shape. */
+@keyframes icon-effect-iridescent-a {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0; }
+}
+@keyframes icon-effect-iridescent-b {
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 0.55; }
+}
+.icon-effect-iridescent { position: relative; isolation: isolate; }
+.icon-effect-iridescent::before,
+.icon-effect-iridescent::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--icon-effect-radius, var(--radius-pill, 9999px));
+  pointer-events: none;
+  mix-blend-mode: color;
+}
+.icon-effect-iridescent::before {
+  background: conic-gradient(
+    from 0deg,
+    #ff7ab6,
+    #ffd36e,
+    #7cf0c0,
+    #6fa8ff,
+    #c79cff,
+    #ff7ab6
+  );
+  animation: icon-effect-iridescent-a 5.2s ease-in-out infinite;
+}
+.icon-effect-iridescent::after {
+  background: conic-gradient(
+    from 140deg,
+    #7cf0c0,
+    #6fa8ff,
+    #c79cff,
+    #ff7ab6,
+    #ffd36e,
+    #7cf0c0
+  );
+  animation: icon-effect-iridescent-b 5.2s ease-in-out infinite;
+}
+
+/* icon-effects:end */
+
 /* Reduced motion, and it lives HERE — last of the unlayered rules — for a
    reason that cost this patch a silent defect: these declarations carry the
    same specificity as the ones they must beat, so the cascade decides on
@@ -660,6 +765,15 @@ body {
      icon indistinguishable from a plain one, which is not what the setting
      asks for — it asks for no MOTION. */
   .icon-effect-glow::after { animation: none; opacity: 0.35; }
+  /* The glint is nothing BUT motion — a highlight that has stopped moving is
+     a bar lying across the icon — so it goes away entirely. */
+  .icon-effect-glint::after { animation: none; opacity: 0; }
+  /* Iridescence keeps its colour and stops drifting, for the same reason the
+     glow keeps its halo: the setting asks for no motion, not for no effect.
+     One layer holds still and the other is dropped, so the pair cannot sit at
+     half opacity each and wash the icon out. */
+  .icon-effect-iridescent::before { animation: none; opacity: 0.5; }
+  .icon-effect-iridescent::after { animation: none; opacity: 0; }
 }
 
 @layer base {

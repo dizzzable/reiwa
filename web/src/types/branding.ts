@@ -49,7 +49,14 @@ export type CardEffect = string;
  * card's effects already live on that budget, so a row of shader-backed icons
  * would spend it and take the card down with them.
  */
-export const ICON_EFFECTS = ["none", "pulse", "shake", "glow"] as const;
+export const ICON_EFFECTS = [
+  "none",
+  "pulse",
+  "shake",
+  "glow",
+  "glint",
+  "iridescent",
+] as const;
 export type IconEffect = (typeof ICON_EFFECTS)[number];
 
 /** Glyphs an operator can swap onto a dashboard icon. */
@@ -639,6 +646,35 @@ export interface Branding {
    * header.
    */
   iconDecor?: Record<string, IconDecor>;
+  /**
+   * The globe a customer sees when they double-tap a subscription card, and
+   * how the operator set it up.
+   *
+   * Typed `unknown` on purpose, like `cardEffectProps` nearby. The panel ships
+   * as its own image and can be newer than this one, so the variant name may be
+   * a planet this build has never heard of and a number may be outside the
+   * range this build allows — neither is an error, and neither may blank the
+   * screen. `resolveGlobePreferences` in `features/servers/globe-preferences`
+   * is the only thing that reads it, and it clamps everything and falls back to
+   * a shipped default.
+   *
+   * Absent means the operator has not opened the tab, which is not the same as
+   * turning the feature off: absent gets the default globe, `enabled: false`
+   * gets a card that ignores the gesture.
+   *
+   * NOT VALIDATED BY `describePublicConfigSnapshot`, and that is deliberate.
+   * That guard is all-or-nothing: a value it refuses discards the ENTIRE
+   * branding snapshot and freezes the cabinet on the previous one — colours,
+   * logo, texts and all. A validator only earns that risk when the reader would
+   * otherwise be fooled, and this reader cannot be: `resolveGlobePreferences` is
+   * total, taking `unknown` and answering with a complete, in-range
+   * configuration for any input at all. Refusing the value here would trade a
+   * globe nobody can misconfigure for a cabinet that stops updating.
+   *
+   * The panel's own DTO does refuse a malformed block, which is where refusing
+   * belongs: it can say so to the operator who typed it.
+   */
+  serversGlobe?: unknown;
   borderRadius: string;
   /** Exact geometry; absent snapshots fall back to legacy borderRadius. */
   cornerRadii?: CornerRadii;
@@ -765,6 +801,7 @@ export const DEFAULT_BRANDING: Branding = {
   iconColorMode: "default",
   iconColors: {},
   iconDecor: {},
+  serversGlobe: undefined,
   borderRadius: "rounded-2xl",
   cornerRadii: {
     cardPx: 24,

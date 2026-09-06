@@ -661,7 +661,13 @@ export function createAuthRouter(deps: {
       const { message: errMsg } = describeUpstreamError(e);
 
       if (isUpstreamStatus(e, 401) || errMsg.toLowerCase().includes("password")) {
-        res.status(401).json({ message: "Current password is incorrect" });
+        // A `code` beside the sentence: the cabinet has no way to
+        // translate prose, and this refusal is one the customer has to
+        // act on. The sentence stays for logs and older clients.
+        res.status(401).json({
+          code: "CURRENT_PASSWORD_INCORRECT",
+          message: "Current password is incorrect",
+        });
         return;
       }
 

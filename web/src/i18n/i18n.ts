@@ -72,4 +72,20 @@ void i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
+/**
+ * Keep `<html lang>` in step with the active language.
+ *
+ * `index.html` ships `lang="ru"` and nothing ever changed it, so a screen
+ * reader pronounced the whole English interface with a Russian voice. It is
+ * also what `getActiveLocale` used to read — which is how every date in the
+ * app came out Russian.
+ */
+function syncDocumentLanguage(lang: string): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = lang.startsWith('ru') ? 'ru' : 'en';
+}
+
+syncDocumentLanguage(i18n.language ?? 'ru');
+i18n.on('languageChanged', syncDocumentLanguage);
+
 export { i18n };

@@ -52,9 +52,25 @@ export default function ChangePasswordPage() {
       toast.success(t('changePassword.success'))
       navigate(readNextDestination() ?? '/dashboard', { replace: true })
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { data?: { message?: string } } }
-        setError(axiosErr.response?.data?.message || t('changePassword.errorGeneric'))
+      // Branch on the CODE, never on the sentence. The sentence is English
+      // and this cabinet falls back to Russian, so printing it verbatim put
+      // English in front of the Russian-speaking majority — on a refusal they
+      // have to act on.
+      const response = (err as {
+        response?: { status?: number; data?: { code?: string; message?: string } }
+      })?.response
+      const code = response?.data?.code
+      if (code === 'CURRENT_PASSWORD_INCORRECT') {
+        setError(t('changePassword.errorCurrentWrong'))
+      } else if (response?.status === 400) {
+        // The password policy. Branching only on the code above collapsed this
+        // into a generic failure, and the customer lost the reason their new
+        // password was refused on the one screen they have to finish.
+        setError(t('changePassword.errorPolicy'))
+      } else if (response?.status === 503) {
+        // Carries a retry-after instruction. Same loss, and this one tells the
+        // customer to do something.
+        setError(t('changePassword.errorRetryLater'))
       } else {
         setError(t('changePassword.errorGeneric'))
       }

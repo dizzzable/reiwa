@@ -27,7 +27,10 @@ export function formatSavedPaymentMethodMeta(
   const parts: string[] = [];
   const typeKey = `paymentMethods.types.${method.methodType}`;
   const typeLabel = t(typeKey);
-  parts.push(typeLabel === typeKey ? method.methodType : typeLabel);
+  // `methodType` is gateway-supplied and open-ended, so a provider added
+  // tomorrow rendered as `mir_pay · 12/26` in the saved-cards row. The
+  // title path in this same file already falls back to a translated word.
+  parts.push(typeLabel === typeKey ? t('paymentMethods.fallbackTitle') : typeLabel);
   if (method.cardExpiryMonth && method.cardExpiryYear) {
     parts.push(
       t('paymentMethods.expires', {

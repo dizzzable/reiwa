@@ -118,12 +118,32 @@ export class Translator implements TranslatorPort, LocalePackHydrator {
     return vars ? interpolate(val, vars) : val;
   }
 
+  /**
+   * A keyboard button's label in `lang`.
+   *
+   * Order: the operator's own override for this language, then the built-in
+   * pack, then the label the caller was carrying.
+   *
+   * The middle step was missing, and it is the one that matters. The fallback
+   * a caller passes comes from bot settings, which store ONE label for both
+   * languages — so an English customer's main keyboard read «Мой кабинет»,
+   * «Пригласить», «Правила», «Помощь» unless the operator had hand-created
+   * four override rows they had no reason to know about. The pack has always
+   * been the right place for a shipped default; it simply was never consulted.
+   */
   resolveButtonLabel(buttonId: string, fallbackLabel: string, lang: SupportedLocale): string {
     const fullKey = `button.${buttonId}.${lang}`;
     const overridePack = this.overrides.get(lang);
     if (overridePack) {
       const direct = overridePack.get(fullKey) ?? overridePack.get(`button.${buttonId}`);
       if (direct !== undefined && direct.trim().length > 0) return direct;
+    }
+    // Only for a non-default language: in Russian the operator's own label IS
+    // the more specific answer, and overriding it with the shipped one would
+    // silently undo their wording.
+    if (lang !== DEFAULT_LOCALE) {
+      const packed = BUILTIN_PACKS[lang]?.[`menu.btn_${buttonId}`];
+      if (packed !== undefined && packed.trim().length > 0) return packed;
     }
     return fallbackLabel;
   }

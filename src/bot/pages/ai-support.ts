@@ -5,13 +5,15 @@
  * - /support command enters the AI support mode
  * - While in support mode, any text message is answered by AI
  * - The AI uses function calling to fetch live data from the admin panel
- * - /cancel or "❌ Выйти" exits support mode
+ * - /cancel or the inline exit button leaves support mode
  *
  * Extends the bot session with an `aiSupportMode` flag.
  */
 
 import { InlineKeyboard } from "grammy";
 import { generateResponseWithTools } from "../../core/ai/chat-client.js";
+import type { SupportedLocale } from "../../core/enums/locale.enum.js";
+import { coerceLocale } from "./coerce-locale.js";
 import type { PageRegistrar } from "./types.js";
 
 // ── Per-chat rate limit ─────────────────────────────────────────────────────
@@ -104,7 +106,17 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     };
   };
 
-  const exitKeyboard = () => new InlineKeyboard().text("❌ Выйти из поддержки", "ai_support_exit");
+  // Every string on this page goes through the pack now. It used to be the one
+  // page in the bot with no localization at all, and that produced the worst
+  // possible combination: the model answers in the customer's own language
+  // (the system prompt in `chat-client.ts` tells it to), and that answer
+  // arrived wrapped in a Russian screen, under a Russian button, with a
+  // Russian refusal whenever something went wrong.
+  const langOf = (ctx: { from?: { id?: number } }): SupportedLocale =>
+    coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+
+  const exitKeyboard = (lang: SupportedLocale) =>
+    new InlineKeyboard().text(deps.translator.t("ai_support.exit_button", lang), "ai_support_exit");
 
   const clearSupportMode = (ctx: { session: unknown }) => {
     try {
@@ -156,24 +168,18 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
   // ── /support command — enters AI support mode ──────────────────────
   bot.command("support", async (ctx) => {
     // Don't enter a dead support mode when the assistant is off/unconfigured.
+    const lang = langOf(ctx);
     const runtime = await resolveAiConfig();
     if (!runtime || !runtime.enabled) {
-      await ctx.reply(
-        "😔 *AI-поддержка временно недоступна*\n\nПожалуйста, обратись к оператору через /help",
-        { parse_mode: "Markdown" },
-      );
+      await ctx.reply(deps.translator.t("ai_support.unavailable", lang), {
+        parse_mode: "Markdown",
+      });
       return;
     }
 
-    await ctx.reply(
-      "🤖 *Режим AI-поддержки*\n\n"
-      + "Привет! Я AI-помощник. Задавай любые вопросы о нашем сервисе.\n"
-      + "Я могу рассказать о тарифах, помочь с настройкой приложений, "
-      + "подсказать решение проблем.\n\n"
-      + "Просто напиши свой вопрос, и я отвечу! 📝\n\n"
-      + "_Чтобы выйти из режима, напиши /cancel_",
-      { parse_mode: "Markdown" },
-    );
+    await ctx.reply(deps.translator.t("ai_support.intro", lang), {
+      parse_mode: "Markdown",
+    });
 
     // Set the session flag — only if session is available
     try {
@@ -195,10 +201,9 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       return next();
     }
     clearSupportMode(ctx);
-    await ctx.reply(
-      "✅ *Режим AI-поддержки завершён*\n\nЕсли понадобится помощь — пиши /support или /help",
-      { parse_mode: "Markdown" },
-    );
+    await ctx.reply(deps.translator.t("ai_support.exited", langOf(ctx)), {
+      parse_mode: "Markdown",
+    });
   });
 
   // ── Handle text messages in AI support mode ────────────────────────
@@ -223,10 +228,11 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     }
 
     // Per-chat rate limit — bound paid LLM calls from one chat.
+    const lang = langOf(ctx);
     const chatId = ctx.chat?.id;
     if (chatId !== undefined && isChatRateLimited(chatId)) {
-      await ctx.reply("⏳ Слишком много сообщений подряд. Подожди немного и попробуй снова.", {
-        reply_markup: exitKeyboard(),
+      await ctx.reply(deps.translator.t("ai_support.rate_limited", lang), {
+        reply_markup: exitKeyboard(lang),
       });
       return;
     }
@@ -238,11 +244,9 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     const runtime = await resolveAiConfig();
     if (!runtime || !runtime.enabled) {
       clearSupportMode(ctx);
-      await ctx.reply(
-        "😔 *AI-поддержка временно недоступна*\n\n"
-        + "Пожалуйста, обратись к оператору через /help",
-        { parse_mode: "Markdown" },
-      );
+      await ctx.reply(deps.translator.t("ai_support.unavailable", lang), {
+        parse_mode: "Markdown",
+      });
       return;
     }
 
@@ -278,7 +282,7 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       // unbalanced Markdown, which Telegram rejects with a 400 "can't parse
       // entities" — that would throw the whole reply into the catch and lose an
       // answer we already paid for. Attach the exit keyboard.
-      await ctx.reply(response, { reply_markup: exitKeyboard() });
+      await ctx.reply(response, { reply_markup: exitKeyboard(lang) });
     } catch (err: unknown) {
       // Redact: log only the message/status, never the full error object (an
       // OpenAI SDK error can carry request headers incl. the Authorization key).
@@ -286,10 +290,9 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       deps.logger?.error?.({ err: msg }, "AI support response failed");
       // Keep the exit affordance on the error path too, so the user is never
       // stuck in support mode with no way out.
-      await ctx.reply(
-        "😔 Не удалось получить ответ. Попробуй ещё раз или напиши /cancel для выхода.",
-        { reply_markup: exitKeyboard() },
-      );
+      await ctx.reply(deps.translator.t("ai_support.failed", lang), {
+        reply_markup: exitKeyboard(lang),
+      });
     }
   });
 
@@ -301,11 +304,9 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     } catch {
       // Noop
     }
-    await ctx.editMessageText(
-      "✅ *Режим AI-поддержки завершён*\n\n"
-      + "Если понадобится помощь — пиши /support или /help",
-      { parse_mode: "Markdown" },
-    );
+    await ctx.editMessageText(deps.translator.t("ai_support.exited", langOf(ctx)), {
+      parse_mode: "Markdown",
+    });
     await ctx.answerCallbackQuery();
   });
 };

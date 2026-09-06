@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { WheelDisc, type WheelDiscHandle } from './components/wheel-disc'
 import { WheelResultSheet } from './components/wheel-result-sheet'
 import { WheelHistoryList } from './components/wheel-history-list'
+import { pickLocalized } from '@/lib/pick-localized'
 
 /** Telegram's own feedback, when the cabinet is running inside Telegram. */
 function haptic(): NonNullable<NonNullable<Window['Telegram']>['WebApp']>['HapticFeedback'] {
@@ -28,7 +29,7 @@ function haptic(): NonNullable<NonNullable<Window['Telegram']>['WebApp']>['Hapti
 }
 
 export default function WheelPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const [spinning, setSpinning] = useState(false)
   const [result, setResult] = useState<WheelSpinResult | null>(null)
@@ -58,7 +59,7 @@ export default function WheelPage() {
 
   const sectors = useMemo(() => wheel.data?.sectors ?? [], [wheel.data])
   const label = useCallback(
-    (sector: WheelSector) => sectorLabel(sector, t('wheel.prizeFallback')),
+    (sector: WheelSector) => sectorLabel(sector, t('wheel.prizeFallback'), i18n.language),
     [t],
   )
 
@@ -269,14 +270,17 @@ export default function WheelPage() {
   )
 }
 
-/** The sector's own name, RU first, falling back to something readable. */
+/**
+ * The sector's own name, in the language the customer is reading.
+ *
+ * It used to be "RU first" — its own docblock said so — which meant an English
+ * customer read Russian slice labels on every spin, with the English text
+ * sitting unused in the same payload.
+ */
 export function sectorLabel(
   sector: { readonly title: { ru?: string; en?: string } },
   fallback: string,
+  lang: string,
 ): string {
-  const ru = sector.title?.ru
-  const en = sector.title?.en
-  if (ru && ru.trim() !== '') return ru
-  if (en && en.trim() !== '') return en
-  return fallback
+  return pickLocalized(sector.title, lang, fallback)
 }

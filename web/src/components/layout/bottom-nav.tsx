@@ -39,6 +39,7 @@ import {
   BOTTOM_NAV_ITEM_HEIGHT_PX,
 } from "@/components/layout/bottom-nav-metrics";
 import { resolveActiveTabTo, useNavTabs } from "@/components/layout/use-nav-tabs";
+import i18n from "i18next"
 
 export function BottomNav() {
   const location = useLocation();
@@ -50,7 +51,7 @@ export function BottomNav() {
   return (
     <LazyMotion features={domMax} strict>
     <nav
-      aria-label="Primary"
+      aria-label={i18n.t("common.primaryNav")}
       className="relative"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >

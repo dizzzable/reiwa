@@ -61,6 +61,8 @@ const EFFECT_CLASS: Readonly<Record<string, string>> = {
   pulse: "icon-effect-pulse",
   shake: "icon-effect-shake",
   glow: "icon-effect-glow",
+  glint: "icon-effect-glint",
+  iridescent: "icon-effect-iridescent",
 };
 
 export interface ResolvedIconDecor {
@@ -68,6 +70,19 @@ export interface ResolvedIconDecor {
   readonly Glyph: LucideIcon | null;
   /** Class for the wrapper, or `""` for no effect. */
   readonly effectClass: string;
+  /**
+   * Whether the operator named an effect for this icon at all — including
+   * naming `none`.
+   *
+   * Distinct from `effectClass === ""`, which is true in two situations that
+   * need different answers. An icon that ships its own built-in animation (the
+   * quests glint) must keep it while nobody has configured anything, and must
+   * DROP it the moment an operator chooses — even if what they chose is "no
+   * effect", because that is them saying so. Collapsing the two would either
+   * take the animation away from every existing install or make "no effect"
+   * unable to turn one off.
+   */
+  readonly effectChosen: boolean;
   /**
    * Goes on the WRAPPER: carries `--icon-effect-color`, which the glow's
    * pseudo-element reads. Separate from `glyphStyle` because the button
@@ -82,6 +97,7 @@ export interface ResolvedIconDecor {
 const NOTHING: ResolvedIconDecor = {
   Glyph: null,
   effectClass: "",
+  effectChosen: false,
   wrapperStyle: undefined,
   glyphStyle: undefined,
 };
@@ -119,5 +135,11 @@ export function useIconDecor(key: string): ResolvedIconDecor {
       : ({ "--icon-effect-color": decor.color } as CSSProperties);
   const glyphStyle = decor.color === undefined ? undefined : { color: decor.color };
 
-  return { Glyph, effectClass, wrapperStyle, glyphStyle };
+  return {
+    Glyph,
+    effectClass,
+    effectChosen: decor.effect !== undefined,
+    wrapperStyle,
+    glyphStyle,
+  };
 }

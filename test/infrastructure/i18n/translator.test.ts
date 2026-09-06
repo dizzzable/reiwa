@@ -129,9 +129,46 @@ describe('Translator.resolveButtonLabel', () => {
   });
 
   it('treats whitespace-only overrides as missing', () => {
+    // Still "missing" — but missing now means the built-in pack, not the label
+    // the caller was carrying. `cabinet` has `menu.btn_cabinet` in both packs.
     const t = new Translator();
     t.setOverrides({ 'en.button.cabinet.en': '   ' });
-    expect(t.resolveButtonLabel('cabinet', 'Fallback', 'en')).toBe('Fallback');
+    expect(t.resolveButtonLabel('cabinet', 'Fallback', 'en')).toBe('My cabinet');
+  });
+
+  /**
+   * The main keyboard, for a customer who is not reading Russian.
+   *
+   * The label a caller passes comes from bot settings, which store ONE string
+   * for both languages. So without a pack lookup an English customer's
+   * keyboard read «Мой кабинет», «Пригласить», «Правила», «Помощь» — unless
+   * the operator had hand-created four override rows they had no reason to
+   * know existed. Every one of those four now has a shipped English default.
+   */
+  it('answers an English customer from the pack when the stored label is Russian', () => {
+    const t = new Translator();
+    for (const [id, expected] of [
+      ['webapp', 'Open the app'],
+      ['cabinet', 'My cabinet'],
+      ['invite', 'Invite a friend'],
+      ['rules', 'Terms'],
+      ['help', 'Help'],
+    ] as const) {
+      expect(t.resolveButtonLabel(id, 'Мой кабинет', 'en')).toBe(expected);
+    }
+  });
+
+  it("leaves the operator’s own Russian label alone in Russian", () => {
+    // In the default language the operator's wording IS the more specific
+    // answer; overriding it with the shipped one would silently undo an edit
+    // they made on purpose.
+    const t = new Translator();
+    expect(t.resolveButtonLabel('cabinet', 'Личный кабинет', 'ru')).toBe('Личный кабинет');
+  });
+
+  it('still falls through to the caller for a button the pack does not know', () => {
+    const t = new Translator();
+    expect(t.resolveButtonLabel('custom_button', 'Custom', 'en')).toBe('Custom');
   });
 });
 

@@ -1,6 +1,12 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+// The bare i18next singleton, NOT `@/i18n/i18n`. Importing the app's
+// bootstrap here drags `initReactI18next` into every module that touches
+// `cn()` — which is all of them — and thirty test files that mock
+// `react-i18next` stopped loading at once. This is the same instance the
+// bootstrap configures, just without its side effects.
+import i18n from "i18next";
 import { isTelegramMiniAppSurface } from "./telegram-launch-params";
 
 export { brandAuroraStops } from "./brand-colors";
@@ -15,17 +21,25 @@ export function cn(...inputs: ClassValue[]): string {
 }
 
 /**
- * Formats an ISO date string as a compact numeric date: `DD.MM.YY` (e.g. `15.05.26`).
- * Used on the subscription card where space is limited.
+ * A compact numeric date for the subscription card, where space is tight.
+ *
+ * It used to hand-build `DD.MM.YY`, which is the Russian order and only the
+ * Russian order — so an English customer read their expiry date as `15.05.26`
+ * and had no way to know whether that was May or the 15th month. The card is
+ * the first screen anyone opens, and the expiry date is the one number on it
+ * that matters.
+ *
+ * `2-digit` on all three parts keeps the width the layout was built around.
  */
 export function formatDate(value: string | number | Date | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = String(date.getFullYear()).slice(-2);
-  return `${day}.${month}.${year}`;
+  return date.toLocaleDateString(getActiveLocale(), {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
 }
 
 /**
@@ -58,10 +72,22 @@ export function getDaysLeft(value: string | number | Date | null | undefined): n
   return Math.ceil((target.getTime() - now) / (24 * 60 * 60 * 1000));
 }
 
-function getActiveLocale(): string {
-  const htmlLang = document.documentElement.lang;
-  if (htmlLang && htmlLang.length > 0) return htmlLang;
-  return "ru";
+/**
+ * The BCP-47 tag every date in this app should be formatted with.
+ *
+ * It used to read `document.documentElement.lang` — a value nothing in the
+ * app has ever written. `index.html` ships `lang="ru"`, so the fallback was
+ * unreachable and this function returned Russian for everybody, on every
+ * screen that shows a date: Activity, Transactions, promo history, add-ons,
+ * the notification feed and the notification detail. An English customer read
+ * «23 окт, 14:30».
+ *
+ * `i18n.language` is the value the language switch actually changes, and it is
+ * what the rest of the app already consults — `points-history-list` reads it
+ * directly for exactly this reason.
+ */
+export function getActiveLocale(): string {
+  return i18n.language?.startsWith("ru") === false ? "en-US" : "ru-RU";
 }
 
 type TelegramWebApp = NonNullable<NonNullable<Window["Telegram"]>["WebApp"]>;

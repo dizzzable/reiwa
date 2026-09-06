@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { Loader2 } from 'lucide-react'
 
 import type { WheelHistoryItem } from '@/lib/api-client'
+import { pickLocalized } from '@/lib/pick-localized'
 
 /**
  * Everything this person has spun, and what came of it.
@@ -22,7 +23,7 @@ export function WheelHistoryList({
   readonly loading: boolean
   readonly onClose: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   if (!open) return null
 
   return (
@@ -53,7 +54,7 @@ export function WheelHistoryList({
               <li key={item.spinId} className="rounded-lg border p-3">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="font-medium">
-                    {item.title?.ru || item.title?.en || t('wheel.prizeFallback')}
+                    {pickLocalized(item.title, i18n.language, t('wheel.prizeFallback'))}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {new Date(item.createdAt).toLocaleDateString()}

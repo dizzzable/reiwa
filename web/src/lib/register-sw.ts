@@ -1,3 +1,4 @@
+import i18n from "i18next"
 /**
  * Service Worker Registration
  *
@@ -19,10 +20,10 @@ export async function registerServiceWorker(): Promise<void> {
       document.body.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#020202;color:#fff;font-family:system-ui;padding:2rem;text-align:center;">
           <div>
-            <h1 style="font-size:1.5rem;margin-bottom:1rem;">Configuration Error</h1>
+            <h1 style="font-size:1.5rem;margin-bottom:1rem;">${i18n.t("common.swErrorTitle")}</h1>
             <p style="color:#a1a1aa;max-width:400px;">${event.data.message}</p>
             <button onclick="location.reload()" style="margin-top:1.5rem;padding:0.75rem 1.5rem;background:#3b82f6;color:#fff;border:none;border-radius:0.5rem;cursor:pointer;">
-              Retry
+              ${i18n.t("common.retry")}
             </button>
           </div>
         </div>

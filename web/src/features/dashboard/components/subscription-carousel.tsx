@@ -17,8 +17,9 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useReducedMotion } from "motion/react";
+import { AnimatePresence, useReducedMotion } from "motion/react";
 
+import { composeGestures, useDoubleTap } from "@/hooks/use-double-tap";
 import { useLongPress } from "@/hooks/use-long-press";
 import { useBranding } from "@/lib/branding-provider";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
@@ -38,6 +39,9 @@ import {
   type SubscriptionCarouselProvisioningItem,
   type SubscriptionCarouselSubscriptionItem,
 } from "../subscription-lifecycle-policy";
+import { resolveGlobePreferences } from "@/components/reactbits/originkit/globe-preferences";
+import { ServersSheet } from "@/features/servers/servers-sheet";
+
 import { DeleteSubscriptionDialog } from "./delete-subscription-dialog";
 import { SubscriptionCard } from "./subscription-card";
 import { SubscriptionCreationMotion } from "./subscription-creation-motion";
@@ -158,6 +162,12 @@ export function SubscriptionCarousel({
   const { branding } = useBranding();
   const prefersReducedMotion = useReducedMotion();
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  /** Subscription whose servers the customer asked to see, or none. */
+  const [serversFor, setServersFor] = useState<string | null>(null);
+  const globePreferences = useMemo(
+    () => resolveGlobePreferences(branding.serversGlobe),
+    [branding.serversGlobe],
+  );
   const [deletion, setDeletion] =
     useState<DeletionPresentation | null>(null);
   const deletionRef = useRef<DeletionPresentation | null>(null);
@@ -514,6 +524,18 @@ export function SubscriptionCarousel({
                       }
                     : undefined
                 }
+                // Only the card the customer is actually looking at, and only
+                // while nothing else owns the carousel: opening the globe over
+                // a card that is mid-deletion would put a sheet on top of an
+                // animation that is removing what the sheet describes.
+                onDoubleTap={
+                  globePreferences.enabled &&
+                  index === activeIndex &&
+                  deletion === null &&
+                  handoffItemKey === null
+                    ? () => setServersFor(displayItem.subscription.id)
+                    : undefined
+                }
               />
             );
           }
@@ -579,6 +601,17 @@ export function SubscriptionCarousel({
         }
       />
 
+      <AnimatePresence>
+        {serversFor !== null && (
+          <ServersSheet
+            key={serversFor}
+            subscriptionId={serversFor}
+            preferences={globePreferences}
+            onClose={() => setServersFor(null)}
+          />
+        )}
+      </AnimatePresence>
+
       <DeleteSubscriptionDialog
         subscription={deleteTarget?.item.subscription ?? null}
         open={deleteTarget !== null}
@@ -596,13 +629,16 @@ export function SubscriptionCarousel({
 function SlideShell({
   children,
   onLongPress,
+  onDoubleTap,
   itemKey,
 }: {
   readonly children: React.ReactNode;
   readonly onLongPress?: () => void;
+  readonly onDoubleTap?: () => void;
   readonly itemKey?: string;
 }) {
   const longPress = useLongPress(onLongPress ?? (() => undefined));
+  const doubleTap = useDoubleTap(onDoubleTap ?? (() => undefined));
   return (
     <div
       className="relative w-full shrink-0 snap-center snap-always"
@@ -614,7 +650,10 @@ function SlideShell({
         boxSizing: "border-box",
         WebkitTouchCallout: "none",
       }}
-      {...(onLongPress ? longPress : {})}
+      {...composeGestures(
+        onLongPress ? longPress : {},
+        onDoubleTap ? doubleTap : {},
+      )}
     >
       {children}
     </div>
@@ -635,6 +674,7 @@ function RealSubscriptionSlide({
   onDeleteSuccessExitComplete,
   onDeleteRestoreComplete,
   onLongPress,
+  onDoubleTap,
 }: {
   readonly item: SubscriptionCarouselSubscriptionItem;
   readonly firstDevice: string | null;
@@ -649,9 +689,14 @@ function RealSubscriptionSlide({
   readonly onDeleteSuccessExitComplete: () => void;
   readonly onDeleteRestoreComplete: () => void;
   readonly onLongPress?: () => void;
+  readonly onDoubleTap?: () => void;
 }) {
   return (
-    <SlideShell itemKey={item.key} onLongPress={onLongPress}>
+    <SlideShell
+      itemKey={item.key}
+      onLongPress={onLongPress}
+      onDoubleTap={onDoubleTap}
+    >
       <SubscriptionDeletionMotion
         active={deletion !== null}
         visual={visual}
