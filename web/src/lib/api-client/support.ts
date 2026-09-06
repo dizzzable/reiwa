@@ -20,6 +20,12 @@ export interface SupportAttachmentMeta {
   sizeBytes: number;
   /** Present on cabinet tickets; the guest serializer omits it (unused by UI). */
   createdAt?: string;
+  /**
+   * Set once an operator has reclaimed the disk. The row survives so the
+   * thread can still say what was sent and when; the bytes do not, and the
+   * stream answers 404 — so the chip must not be a link.
+   */
+  purgedAt?: string | null;
 }
 
 export interface SupportTicketMessage {
@@ -64,6 +70,21 @@ export const createTicket = (subject: string, message: string) =>
 export const replyToTicket = (ticketId: string, content: string) =>
   apiClient
     .post<SupportTicketMessage>(`/support/tickets/${ticketId}/reply`, { content })
+    .then((r) => r.data);
+
+/**
+ * Attach a file to one of your own tickets.
+ *
+ * Base64 in JSON, matching the transport the panel already speaks. The server
+ * re-validates the decoded bytes — the declared type here is advisory and
+ * carries no weight.
+ */
+export const attachToTicket = (
+  ticketId: string,
+  file: { filename: string; mimeType: string; dataBase64: string; content?: string },
+) =>
+  apiClient
+    .post<SupportTicket>(`/support/tickets/${ticketId}/attachments`, file)
     .then((r) => r.data);
 
 // ── Anonymous guest conversations ──────────────────────────────────────────

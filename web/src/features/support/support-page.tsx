@@ -3,8 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate } from 'react-router'
 import { motion } from 'motion/react'
-import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, Sparkles, X } from 'lucide-react'
-import { getTickets, getTicket, createTicket, replyToTicket, supportAttachmentUrl } from '@/lib/api-client'
+import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, Sparkles, X, FileX } from 'lucide-react'
+import {
+  getTickets,
+  getTicket,
+  createTicket,
+  replyToTicket,
+  attachToTicket,
+  supportAttachmentUrl,
+} from '@/lib/api-client'
 import { useMediaViewer } from '@/features/media-viewer/use-media-viewer'
 import { collectViewableAttachments, indexOfAttachment } from '@/features/media-viewer/support-attachments'
 import type { SupportTicket, SupportAttachmentMeta } from '@/lib/api-client'
@@ -51,7 +58,29 @@ function SupportAttachmentView({
   isUser: boolean
   onOpen: (() => void) | null
 }) {
+  const { t } = useTranslation()
   const url = supportAttachmentUrl(ticketId, attachment.id)
+
+  // The bytes were reclaimed by an operator; the record was not. A link here
+  // would 404, and a chip that simply vanished from the thread would read as
+  // a bug — so say what happened, and keep the name it happened to.
+  if (attachment.purgedAt) {
+    return (
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-xl px-3 py-2 text-xs',
+          isUser
+            ? 'bg-black/15 text-inherit opacity-70'
+            : 'theme-surface text-[color:var(--brand-muted-foreground)]',
+        )}
+      >
+        <FileX className="h-4 w-4 shrink-0" />
+        <span className="truncate">{attachment.filename}</span>
+        <span className="shrink-0 opacity-70">{t('support.attachmentRemoved')}</span>
+      </div>
+    )
+  }
+
   if (onOpen) {
     return (
       // `h-64` on the button, not `max-h-64` on the image: a screenshot has no
@@ -219,6 +248,43 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
     onError: () => toast.error(t('support.sendError')),
   })
 
+  /**
+   * Attaching a file.
+   *
+   * The whole point of this control: an operator asks for a receipt or a
+   * screenshot and, until now, the customer had nothing to press — they could
+   * open the operator's files and send none of their own. The caption is
+   * whatever is already typed in the box, so "here it is" and the picture
+   * arrive as one message rather than two.
+   */
+  const attachMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const dataBase64 = await readAsBase64(file)
+      return attachToTicket(ticketId, {
+        filename: file.name,
+        mimeType: file.type,
+        dataBase64,
+        content: text.trim() || undefined,
+      })
+    },
+    onSuccess: () => {
+      setText('')
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticketId] })
+    },
+    onError: (err: unknown) => {
+      // The two refusals a person can act on. Anything else is ours, not
+      // theirs, and gets the generic line.
+      const status = (err as { response?: { status?: number } })?.response?.status
+      toast.error(
+        status === 413
+          ? t('support.attachTooLarge')
+          : status === 415
+            ? t('support.attachUnsupported')
+            : t('support.attachFailed'),
+      )
+    },
+  })
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -354,6 +420,34 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
                 }
               }}
             />
+            <label
+              className={cn(
+                'flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full',
+                'glass-icon-btn text-[color:var(--brand-muted-foreground)]',
+                attachMutation.isPending && 'pointer-events-none opacity-50',
+              )}
+              aria-label={t('support.attachAria')}
+            >
+              {attachMutation.isPending ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Paperclip className="h-5 w-5" />
+              )}
+              <input
+                type="file"
+                className="hidden"
+                accept="image/png,image/jpeg,image/webp,application/pdf"
+                disabled={attachMutation.isPending}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  // Cleared before the upload starts: the same file picked
+                  // twice in a row fires no change event otherwise, and the
+                  // second attempt after a failure would do nothing.
+                  e.target.value = ''
+                  if (file) attachMutation.mutate(file)
+                }}
+              />
+            </label>
             <button
               onClick={() => text.trim() && replyMutation.mutate(text.trim())}
               disabled={!text.trim() || replyMutation.isPending}
@@ -526,3 +620,23 @@ export default function SupportPage() {
   )
 }
 
+/**
+ * Read a picked file as bare base64.
+ *
+ * `readAsDataURL` gives `data:<mime>;base64,<payload>` and the server wants
+ * the payload alone — it sniffs the real type out of the bytes and treats the
+ * declared one as advisory, so shipping the prefix would just corrupt the
+ * first bytes it looks at.
+ */
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.readAsDataURL(file)
+  })
+}

@@ -83,6 +83,55 @@ export function createSupportRouter(deps: {
     }
   });
 
+  // POST /api/v1/support/tickets/:id/attachments — the customer attaches a
+  // file to their OWN ticket.
+  //
+  // This did not exist, and every other piece of it did: the panel validates
+  // and stores the bytes, the ANONYMOUS guest conversation has had an upload
+  // route since attachments shipped, and this cabinet already renders and
+  // streams them. So a signed-in customer could SEE files and never send one
+  // — which is why the operator's "please attach the receipt" went out and
+  // nothing ever came back.
+  router.post("/support/tickets/:id/attachments", requireSession, async (req: AuthRequest, res) => {
+    const body = (req.body ?? {}) as {
+      filename?: unknown;
+      mimeType?: unknown;
+      content?: unknown;
+      dataBase64?: unknown;
+    };
+    const filename = typeof body.filename === "string" ? body.filename.trim() : "";
+    const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+    if (filename.length === 0 || dataBase64.length === 0) {
+      res.status(400).json({ error: "file_required" });
+      return;
+    }
+    const ticketId = String(req.params.id);
+    try {
+      const result = await adminClient?.support.uploadAttachment(
+        resolveUserIdentity(req),
+        ticketId,
+        {
+          filename,
+          mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined,
+          content: typeof body.content === "string" ? body.content : undefined,
+          dataBase64,
+        },
+      );
+      res.status(201).json(result);
+    } catch (err: unknown) {
+      // 413 and 415 are the two the customer can act on — too big, or a type
+      // we do not take. Collapsing them into 500 turns "your photo is 12 MB"
+      // into "something went wrong", which is how a person gives up.
+      const status = (err as { status?: unknown })?.status;
+      if (status === 413 || status === 415) {
+        res.status(status).json({ error: status === 413 ? "too_large" : "unsupported_type" });
+        return;
+      }
+      getRequestLogger(req).error({ err, ticketId }, "POST /support/tickets/:id/attachments failed");
+      res.status(500).json({ error: "internal" });
+    }
+  });
+
   // GET /api/v1/support/tickets/:id/attachments/:attachmentId — stream a file
   // attached to one of the user's OWN tickets (e.g. an operator reply's photo).
   // Upstream scopes the fetch to the resolved user, so ownership is enforced

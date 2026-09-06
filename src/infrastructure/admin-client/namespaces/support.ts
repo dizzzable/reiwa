@@ -60,6 +60,32 @@ export class SupportNamespace {
   }
 
   /**
+   * Attach a file to one of the user's OWN tickets.
+   *
+   * Base64 in JSON rather than multipart, because that is what travels over
+   * the signed panel transport — the same shape the anonymous guest
+   * conversation has used since attachments shipped. Upstream re-validates
+   * the decoded bytes against an allow-list and a magic-byte sniff; the
+   * declared type is advisory.
+   */
+  uploadAttachment(
+    identity: UserIdentity,
+    ticketId: string,
+    data: {
+      readonly filename: string;
+      readonly mimeType?: string;
+      readonly content?: string;
+      readonly dataBase64: string;
+    },
+  ): Promise<unknown> {
+    return this.transport.request(
+      'POST',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/tickets/${encodeURIComponent(ticketId)}/attachments`,
+      data,
+    );
+  }
+
+  /**
    * Open a binary stream for an attachment on one of the user's OWN tickets.
    * Upstream re-checks the ticket belongs to the resolved user, so a user can
    * never read another user's file. Returns `null` on 404/permission failure.
