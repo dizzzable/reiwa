@@ -35,7 +35,7 @@ function formatMoney(cents: number | undefined, currency: string | undefined, lo
 }
 
 function CatalogPricing({ heading }: { heading: string }) {
-  const { LinkComponent, loadPlans } = useLandingKit();
+  const { LinkComponent, loadPlans, resolveInternalHref } = useLandingKit();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['landing', 'plans'],
     // The host injects the catalog. `enabled` guards the fetch; the fallback
@@ -68,7 +68,7 @@ function CatalogPricing({ heading }: { heading: string }) {
               {formatMoney(plan.priceCents ?? plan.priceMonthlyCents, plan.currency, 'ru')}
             </p>
             <LinkComponent
-              to="/register"
+              to={resolveInternalHref('/register')}
               className="ls-cta mt-auto inline-flex h-11 items-center justify-center rounded-full bg-(--brand-primary) px-6 text-sm font-semibold text-(--brand-primary-fg) transition hover:opacity-90"
             >
               →
@@ -102,7 +102,7 @@ function StaticPricing({
   locale: string;
   defaultLocale: string;
 }) {
-  const { LinkComponent } = useLandingKit();
+  const { LinkComponent, resolveInternalHref } = useLandingKit();
   const plans = Array.isArray(data.staticPlans) ? data.staticPlans : [];
   if (plans.length === 0) return null;
   return (
@@ -122,9 +122,9 @@ function StaticPricing({
           const ctaAction = plan.cta?.action;
           const ctaHref =
             ctaAction === 'register'
-              ? '/register'
+              ? resolveInternalHref('/register')
               : ctaAction === 'login'
-              ? '/sign-in'
+              ? resolveInternalHref('/sign-in')
               : ctaAction === 'url'
               ? safeUrl(plan.cta?.url)
               : null;

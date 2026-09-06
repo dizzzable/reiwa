@@ -17,6 +17,15 @@
  *   - `LinkComponent` — how an internal CTA (`/register`, `/sign-in`) renders.
  *     reiwa passes a react-router adapter; the admin preview passes a non-
  *     navigating anchor. Default: plain `<a>`, so the kit renders standalone.
+ *   - `resolveInternalHref` — what an internal CTA's path becomes before it
+ *     is handed to `LinkComponent`. reiwa carries the acquisition query
+ *     across the hop (`utm_*`, `ref`, `campaign`); the admin preview leaves
+ *     the path alone, because a preview must show the operator the path they
+ *     configured and has no visitor query to carry. Default: identity.
+ *
+ *     Injected rather than imported for the reason this whole block exists:
+ *     the panel vendors a byte-identical copy of this folder and has no
+ *     `@/lib/keep-query` to resolve.
  *   - `loadPlans` — the catalog behind `pricing.source === 'catalog'`.
  *     reiwa passes its public plans endpoint; the admin passes its own catalog
  *     API mapped to `LandingCatalogPlan`. Default `null` fails closed: the
@@ -46,6 +55,8 @@ export interface LandingKitLinkProps {
 export interface LandingKitValue {
   /** Renders an internal SPA link. External URLs never go through this. */
   readonly LinkComponent: ComponentType<LandingKitLinkProps>;
+  /** Rewrites an internal CTA path before it is rendered. Identity by default. */
+  readonly resolveInternalHref: (target: string) => string;
   /** Loads catalog plans for pricing; `null` hides catalog pricing (fail-closed). */
   readonly loadPlans: (() => Promise<readonly LandingCatalogPlan[]>) | null;
 }
@@ -60,6 +71,7 @@ function PlainAnchor({ to, className, children }: LandingKitLinkProps) {
 
 const DEFAULT_KIT: LandingKitValue = {
   LinkComponent: PlainAnchor,
+  resolveInternalHref: (target) => target,
   loadPlans: null,
 };
 

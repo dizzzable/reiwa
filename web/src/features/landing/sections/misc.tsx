@@ -1,4 +1,5 @@
 import { pickLocalized, safeUrl, type LandingSection } from '../landing-schema';
+import { useLandingKit } from '../landing-kit-context';
 
 /**
  * Miscellaneous smaller landing sections that share the same 2-column /
@@ -164,6 +165,7 @@ export function TrustLogosSection({ section, locale, defaultLocale }: Props) {
 
 // ── CtaBanner ─────────────────────────────────────────────────────────────
 export function CtaBannerSection({ section, locale, defaultLocale }: Props) {
+  const { resolveInternalHref } = useLandingKit();
   const data = section.data as {
     heading?: unknown;
     body?: unknown;
@@ -177,9 +179,9 @@ export function CtaBannerSection({ section, locale, defaultLocale }: Props) {
   const action = data.cta?.action;
   const href =
     action === 'register'
-      ? '/register'
+      ? resolveInternalHref('/register')
       : action === 'login'
-      ? '/sign-in'
+      ? resolveInternalHref('/sign-in')
       : action === 'url'
       ? safeUrl(data.cta?.url)
       : null;

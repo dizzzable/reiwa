@@ -12,6 +12,7 @@ import { SESSION_QUERY_KEY, fetchSessionOrNull } from '@/hooks/use-session'
 import { LANDING_QUERY_KEY } from '@/features/landing/landing-page'
 import { parseLandingPayload } from '@/features/landing/landing-schema'
 import { detectTelegramInitData } from './telegram-launch'
+import { keepQuery } from '@/lib/keep-query'
 
 /**
  * WebHomePage — entry point for browser users (`/`).
@@ -53,30 +54,6 @@ const BROWSER_SDK_WAIT_MS = 1500
  * browser history and proxy logs. A denylist would leak the next one-shot param
  * somebody adds.
  */
-const CARRIED_PARAMS = ['ref', 'next'] as const
-
-/**
- * Appends the carried query params to a client-side navigation target.
- *
- * Every hand-off out of this page used to pass a bare path, so react-router
- * replaced the URL without its query — dropping the `utm_*` tags the register
- * form reads off `window.location.search`, and (before the server started
- * capturing it) the `?campaign=ad_<code>` advertising marker with them. Targets
- * that carry their own query are left untouched.
- */
-function keepQuery(target: string): string {
-  if (target.includes('?')) return target
-  const carried = new URLSearchParams()
-  const current = new URLSearchParams(window.location.search)
-  for (const [key, value] of current) {
-    if (key.startsWith('utm_') || (CARRIED_PARAMS as readonly string[]).includes(key)) {
-      carried.set(key, value)
-    }
-  }
-  const query = carried.toString()
-  return query.length > 0 ? `${target}?${query}` : target
-}
-
 export default function WebHomePage() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()

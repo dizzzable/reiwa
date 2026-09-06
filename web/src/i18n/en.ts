@@ -1183,7 +1183,7 @@ export const en: RuDict = {
     after1: '1 day after',
     after2: '2 days after',
     after3: '3 days after',
-    hint: 'Notifications arrive in the Telegram bot and in your browser, if you allowed push. Anything switched off here stops arriving but stays in Notifications.',
+    hint: 'Anything switched off here stops arriving in the bot, the browser and by email, but stays in Notifications — nothing is lost.',
     pushSection: 'Browser notifications',
     pushDescription: 'Get notifications in your browser or on your device, even when the site is closed.',
     pushBroadcastsHint: 'Important news and service announcements arrive here too — enable it so you never miss them.',

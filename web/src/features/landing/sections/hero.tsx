@@ -20,9 +20,18 @@ interface Props {
   defaultLocale: string;
 }
 
-function resolveCtaHref(action: unknown, url: unknown): { href: string; internal: boolean } | null {
-  if (action === 'register') return { href: '/register', internal: true };
-  if (action === 'login') return { href: '/sign-in', internal: true };
+function resolveCtaHref(
+  action: unknown,
+  url: unknown,
+  // The host decides what an internal path becomes. On reiwa it carries the
+  // acquisition query across the hop: react-router replaces the URL wholesale,
+  // so a bare `/register` threw away the `utm_*` tags an advertisement put
+  // there one screen earlier — which is how every profile in the panel came
+  // to read «UTM-метки не сохранены».
+  resolveInternalHref: (target: string) => string,
+): { href: string; internal: boolean } | null {
+  if (action === 'register') return { href: resolveInternalHref('/register'), internal: true };
+  if (action === 'login') return { href: resolveInternalHref('/sign-in'), internal: true };
   if (action === 'url') {
     const safe = safeUrl(url);
     return safe === null ? null : { href: safe, internal: false };
@@ -41,11 +50,11 @@ function CtaLink({
   defaultLocale: string;
   variant: 'primary' | 'secondary';
 }) {
-  const { LinkComponent } = useLandingKit();
+  const { LinkComponent, resolveInternalHref } = useLandingKit();
   if (!cta || typeof cta !== 'object') return null;
   const label = pickLocalized(cta.label, locale, defaultLocale);
   if (label.length === 0) return null;
-  const target = resolveCtaHref(cta.action, cta.url);
+  const target = resolveCtaHref(cta.action, cta.url, resolveInternalHref);
   if (target === null) return null;
   const className =
     variant === 'primary'

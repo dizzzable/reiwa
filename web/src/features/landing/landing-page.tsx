@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { getLanding, getPlans } from '@/lib/api-client';
 import { parseLandingPayload } from './landing-schema';
+import { keepQuery } from '@/lib/keep-query';
 import {
   LandingKitProvider,
   type LandingCatalogPlan,
@@ -29,7 +30,17 @@ function RouterLink({ to, className, children }: LandingKitLinkProps) {
 const loadCatalogPlans = (): Promise<readonly LandingCatalogPlan[]> =>
   getPlans() as Promise<readonly LandingCatalogPlan[]>;
 
-const KIT_BINDINGS = { LinkComponent: RouterLink, loadPlans: loadCatalogPlans };
+/**
+ * `resolveInternalHref` is what carries the acquisition query across a CTA.
+ * Only the real page binds it: the admin preview renders the same sections and
+ * must show the operator the path they configured, with no visitor query to
+ * carry.
+ */
+const KIT_BINDINGS = {
+  LinkComponent: RouterLink,
+  resolveInternalHref: keepQuery,
+  loadPlans: loadCatalogPlans,
+};
 
 const LANDING_QUERY_KEY = ['landing'] as const;
 

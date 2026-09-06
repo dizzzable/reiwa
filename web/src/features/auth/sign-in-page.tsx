@@ -11,6 +11,7 @@ import { hashPassword } from '@/lib/crypto'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { ExternalAuthButtons } from './external-auth-buttons'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
+import { keepQuery } from '@/lib/keep-query'
 
 // Autofocusing the username field on a touch device raises the iOS keyboard in
 // the middle of the mount animation (viewport shrink vs. entrance motion, plus
@@ -271,7 +272,7 @@ export default function SignInPage() {
           <span className="text-[color:var(--brand-muted-foreground)]">
             {t('auth.noAccount')}{' '}
             <Link
-              to="/register"
+              to={keepQuery('/register')}
               className="text-(--brand-primary) transition-colors hover:brightness-110"
             >
               {t('auth.register')}
