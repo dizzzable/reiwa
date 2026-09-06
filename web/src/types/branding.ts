@@ -40,6 +40,55 @@ export type CardLogoPreset =
 export type CardEffect = string;
 
 /** Icon colouring strategy for cabinet menu icons (mirrors backend). */
+/**
+ * Attention effects an operator can put on a dashboard icon.
+ *
+ * Three, and CSS only. The paint contract in `visual-css-contract.test.ts`
+ * refuses a keyframe that animates a paint-bound property, and an iPhone
+ * allows sixteen live WebGL contexts per render process — the subscription
+ * card's effects already live on that budget, so a row of shader-backed icons
+ * would spend it and take the card down with them.
+ */
+export const ICON_EFFECTS = ["none", "pulse", "shake", "glow"] as const;
+export type IconEffect = (typeof ICON_EFFECTS)[number];
+
+/** Glyphs an operator can swap onto a dashboard icon. */
+export const ICON_GLYPHS = [
+  "default",
+  "sparkles",
+  "gift",
+  "star",
+  "trophy",
+  "crown",
+  "flame",
+  "zap",
+  "rocket",
+  "heart",
+  "gem",
+  "target",
+  "bell",
+  "cart",
+  "ticket",
+] as const;
+export type IconGlyph = (typeof ICON_GLYPHS)[number];
+
+/** What an operator put on one dashboard icon; every field optional. */
+export interface IconDecor {
+  glyph?: string;
+  effect?: string;
+  color?: string;
+}
+
+/**
+ * Narrows a delivered effect to one this build can draw. An unknown value is
+ * a panel that shipped first, not a bug — it degrades to no effect.
+ */
+export function resolveIconEffect(value: string | undefined): IconEffect {
+  return (ICON_EFFECTS as readonly string[]).includes(value ?? "")
+    ? (value as IconEffect)
+    : "none";
+}
+
 export type IconColorMode = "default" | "theme" | "custom";
 
 /**
@@ -579,6 +628,17 @@ export interface Branding {
   iconColorMode: IconColorMode;
   /** Per-icon hex colours (used when iconColorMode === "custom"). */
   iconColors: Record<string, string>;
+  /**
+   * Operator decoration for the dashboard header controls, keyed by icon
+   * (`quests`, `wheel`, `bell`, `buy`, `promo`). Optional so a snapshot from
+   * an older panel is handled as "nothing decorated".
+   *
+   * `glyph` and `effect` are plain strings, not unions, for the same reason
+   * `cardEffect` is: the panel ships ahead of this image, and a value nobody
+   * here has heard of must fall back to what is shipped rather than break the
+   * header.
+   */
+  iconDecor?: Record<string, IconDecor>;
   borderRadius: string;
   /** Exact geometry; absent snapshots fall back to legacy borderRadius. */
   cornerRadii?: CornerRadii;
@@ -704,6 +764,7 @@ export const DEFAULT_BRANDING: Branding = {
   },
   iconColorMode: "default",
   iconColors: {},
+  iconDecor: {},
   borderRadius: "rounded-2xl",
   cornerRadii: {
     cardPx: 24,

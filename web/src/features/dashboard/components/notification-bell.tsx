@@ -10,7 +10,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { Bell, CheckCheck, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,11 +31,15 @@ import {
 import { EmojiText } from "@/components/ui/emoji-text";
 import { cn } from "@/lib/utils";
 import type { NotificationsResponse } from "@/types/api";
+import { useIconDecor } from "@/lib/icon-decor";
 
 const RECENT_LIMIT = 5;
 
 export function NotificationBell() {
   const { t } = useTranslation();
+  const reduceMotion = useReducedMotion();
+  const decor = useIconDecor("bell");
+  const BellGlyph = decor.Glyph ?? Bell;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -135,20 +139,31 @@ export function NotificationBell() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
+        className={cn(
+          "relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]",
+          decor.effectClass,
+        )}
+        style={decor.wrapperStyle}
         aria-label={bellLabel}
       >
+        {/*
+          The shake is the one header animation that never asked whether the
+          reader wants motion. Every neighbour — the quests glint, the buy
+          ring, the card effects — is gated; this ran forever on any device
+          holding an unread notification. An indicator that will not sit still
+          is exactly what `prefers-reduced-motion` exists to silence.
+        */}
         <motion.span
           className="inline-flex"
           style={{ transformOrigin: "50% 0%" }}
-          animate={hasUnread ? { rotate: [0, -14, 12, -9, 7, 0] } : { rotate: 0 }}
+          animate={hasUnread && !reduceMotion ? { rotate: [0, -14, 12, -9, 7, 0] } : { rotate: 0 }}
           transition={
-            hasUnread
+            hasUnread && !reduceMotion
               ? { duration: 1, repeat: Infinity, repeatDelay: 2.4, ease: "easeInOut" }
               : { duration: 0.2 }
           }
         >
-          <Bell className="h-4 w-4" />
+          <BellGlyph className="h-4 w-4" style={decor.glyphStyle} />
         </motion.span>
         {hasUnread && (
           <span className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center">

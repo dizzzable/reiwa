@@ -212,6 +212,7 @@ export function describePublicConfigSnapshot(
     () => inBranding("appBackground", "not-a-valid-app-background", hasOptionalAppBackground(branding, "appBackground")),
     () => inBranding("iconColorMode", "not-an-allowed-value", isAllowedString(branding["iconColorMode"], ICON_COLOR_MODES)),
     () => inBranding("iconColors", "not-a-hex-colour-map", isHexRecord(branding["iconColors"])),
+    () => inBranding("iconDecor", "not-a-valid-icon-decor-map", hasOptionalIconDecor(branding, "iconDecor")),
     () => inBranding("borderRadius", "not-an-allowed-value", isAllowedString(branding["borderRadius"], BORDER_RADII)),
     () => inBranding("cornerRadii", "not-a-valid-corner-radius-set", hasOptionalCornerRadii(branding, "cornerRadii")),
     () => inBranding("fontFamily", "not-a-string", isString(branding["fontFamily"])),
@@ -758,6 +759,38 @@ function hasOptionalSafeGradientOrNull(
 ): boolean {
   const value = record[key];
   return value === undefined || value === null || value === "none" || isSafeGradient(value);
+}
+
+/**
+ * `{ iconKey: { glyph?, effect?, color? } }`, or absent.
+ *
+ * The values are NOT checked against a vocabulary here. The panel ships ahead
+ * of this image, so a snapshot naming an effect this build has never heard of
+ * is a newer panel, not a corrupt payload — refusing it would black out the
+ * operator's whole identity over one unknown word. Shape is checked; meaning
+ * is resolved at the point of use, where an unknown value degrades to the
+ * shipped default.
+ */
+function hasOptionalIconDecor(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key];
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  const entries = Object.entries(value);
+  if (entries.length > 64) return false;
+  return entries.every(([iconKey, entry]) => {
+    if (iconKey.length === 0 || iconKey.length > 64) return false;
+    if (!isRecord(entry)) return false;
+    const decor = entry as Record<string, unknown>;
+    if (decor["glyph"] !== undefined && !isSlug(decor["glyph"])) return false;
+    if (decor["effect"] !== undefined && !isSlug(decor["effect"])) return false;
+    if (decor["color"] !== undefined && !isHex(decor["color"])) return false;
+    return true;
+  });
+}
+
+/** A vocabulary key: lowercase, short, and safe inside a CSS class name. */
+function isSlug(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(value);
 }
 
 function isHexRecord(value: unknown): value is Record<string, string> {

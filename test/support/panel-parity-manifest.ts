@@ -924,6 +924,36 @@ export const PANEL_BRANDING_VOCABULARY: PanelBrandingVocabulary = {
       "triangles",
       "noise",
     ],
+    "iconEffects": [
+      "none",
+      "pulse",
+      "shake",
+      "glow"
+    ],
+    "iconGlyphs": [
+      "default",
+      "sparkles",
+      "gift",
+      "star",
+      "trophy",
+      "crown",
+      "flame",
+      "zap",
+      "rocket",
+      "heart",
+      "gem",
+      "target",
+      "bell",
+      "cart",
+      "ticket"
+    ],
+    "dashboardIconKeys": [
+      "quests",
+      "wheel",
+      "bell",
+      "buy",
+      "promo"
+    ],
     "iconColorModes": [
       "default",
       "theme",

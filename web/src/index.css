@@ -558,8 +558,17 @@ body {
   50%      { transform: translate3d(-47.4%, 0, 0); }
 }
 
+/* One block, and the contract test enforces that: a second copy would leave
+   every assertion about reduced motion silently describing whichever came
+   first in the file. */
 @media (prefers-reduced-motion: reduce) {
   .card-effect-layer__css-fallback-blob { animation: none; }
+  .icon-effect-pulse,
+  .icon-effect-shake { animation: none; }
+  /* The glow keeps its halo, at rest. Removing it too would make a "glowing"
+     icon indistinguishable from a plain one, which is not what the setting
+     asks for — it asks for no MOTION. */
+  .icon-effect-glow::after { animation: none; opacity: 0.35; }
 }
 
 /* Subtle game-like "glint" sheen — a diagonal highlight sweeps across the
@@ -590,6 +599,55 @@ body {
 .animate-fade-up    { animation: fade-up 0.4s ease-out forwards; }
 .animate-spin-slow  { animation: spin-slow 8s linear infinite; }
 .animate-glint      { animation: glint 3.8s ease-in-out infinite; }
+
+/* ── Operator-chosen attention effects for the dashboard header icons ──────
+   Three, and each animates `transform` or `opacity` and nothing else — the
+   paint contract in `visual-css-contract.test.ts` fails any keyframe that
+   touches a paint-bound property, and it is right to: these run on a phone,
+   behind a card that is already compositing an effect of its own.
+
+   The glow follows `pulse-glow` exactly: the halo is a STATIC box-shadow
+   pre-painted on a pseudo-element, and only its opacity breathes. Animating
+   the shadow itself would repaint the header every frame for as long as the
+   dashboard is open.
+
+   Everything here is off under `prefers-reduced-motion` — an icon that asks
+   for attention is precisely what that setting exists to silence. */
+@keyframes icon-effect-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.12); }
+}
+@keyframes icon-effect-shake {
+  0%, 86%, 100% { transform: rotate(0deg); }
+  88%           { transform: rotate(-9deg); }
+  91%           { transform: rotate(8deg); }
+  94%           { transform: rotate(-5deg); }
+  97%           { transform: rotate(3deg); }
+}
+@keyframes icon-effect-glow {
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 1; }
+}
+
+.icon-effect-pulse { animation: icon-effect-pulse 2.4s ease-in-out infinite; }
+.icon-effect-shake { animation: icon-effect-shake 4.5s ease-in-out infinite; }
+.icon-effect-glow  { position: relative; }
+.icon-effect-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* The wrapper carrying this class is a bare `inline-flex` with no radius of
+     its own — `inherit` would draw a square halo behind a round button. Every
+     dashboard control is a pill, so that is the default. */
+  border-radius: var(--icon-effect-radius, var(--radius-pill, 9999px));
+  pointer-events: none;
+  box-shadow:
+    0 0 14px var(--icon-effect-color, var(--brand-primary)),
+    0 0 28px var(--icon-effect-color, var(--brand-primary));
+  opacity: 0.15;
+  animation: icon-effect-glow 2.6s ease-in-out infinite;
+}
+
 
 @layer base {
   * {

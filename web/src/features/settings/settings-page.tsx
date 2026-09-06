@@ -16,8 +16,8 @@
  *   - 🚪 Выйти
  */
 
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
@@ -52,6 +52,7 @@ import { useSignOut } from "@/features/auth/use-sign-out";
 import { SignOutConfirmDialog } from "@/components/layout/sign-out-confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FlagIcon } from "@/components/ui/flag-icon";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
@@ -65,6 +66,25 @@ export default function SettingsPage() {
   const [showLangDialog, setShowLangDialog] = useState(false);
   const [showThemeModeDialog, setShowThemeModeDialog] = useState(false);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  /**
+   * Deep link from the "Install the app" quest: `/settings?install=1`.
+   *
+   * The sheet is opened rather than the native prompt fired directly. A
+   * deferred `beforeinstallprompt` must be spent from inside a user gesture,
+   * and arriving on a page is not one — the same reason a payment redirect
+   * cannot open a tab on the way back. The button inside the sheet is the
+   * gesture. The parameter is stripped so a refresh or a back does not
+   * re-open the sheet over a page the reader came back to for something else.
+   */
+  useEffect(() => {
+    if (searchParams.get("install") === null) return;
+    setShowInstallHelp(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("install");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Support indicator: count UNREAD support replies (the operator answered and
   // the user hasn't opened the ticket yet). Driven by the same notification
@@ -377,7 +397,34 @@ export default function SettingsPage() {
 
       <Dialog open={showInstallHelp} onOpenChange={setShowInstallHelp}>
         <DialogContent className="max-w-xs">
-          {install.isTelegramWebview ? (
+          {/*
+            Branch order matches the menu row's own logic: a captured
+            `beforeinstallprompt` is the browser's verdict and outranks any
+            inference we make from the user agent, so it comes first. The last
+            branch is the one that had nowhere to go before — Firefox, a
+            desktop browser that never offered the event, or somebody who
+            already installed and arrived here from the quest anyway.
+          */}
+          {install.canInstall ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {t("settings.installPromptTitle", { brand: branding.brandName })}
+                </DialogTitle>
+                <DialogDescription>{t("settings.installPromptIntro")}</DialogDescription>
+              </DialogHeader>
+              <Button
+                className="mt-2 w-full gap-2"
+                onClick={() => {
+                  setShowInstallHelp(false);
+                  void install.promptInstall();
+                }}
+              >
+                <Download className="h-4 w-4" />
+                {t("settings.installPromptAction")}
+              </Button>
+            </>
+          ) : install.isTelegramWebview ? (
             <>
               <DialogHeader>
                 <DialogTitle>
@@ -410,7 +457,7 @@ export default function SettingsPage() {
                 </li>
               </ol>
             </>
-          ) : (
+          ) : install.isIos ? (
             <>
               <DialogHeader>
                 <DialogTitle>
@@ -432,6 +479,21 @@ export default function SettingsPage() {
                   <span>{t("settings.installIosStep3")}</span>
                 </li>
               </ol>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {install.isStandalone
+                    ? t("settings.installAlreadyTitle")
+                    : t("settings.installUnavailableTitle")}
+                </DialogTitle>
+                <DialogDescription>
+                  {install.isStandalone
+                    ? t("settings.installAlreadyIntro")
+                    : t("settings.installUnavailableIntro")}
+                </DialogDescription>
+              </DialogHeader>
             </>
           )}
         </DialogContent>

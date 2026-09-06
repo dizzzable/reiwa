@@ -139,7 +139,7 @@ const skipCrossRepo = !hasPanelSources;
  * two-repository change; the failure message says how.
  */
 const BRANDING_VOCABULARY_DIGEST =
-  "d54362979e50c22b44cd11c46ef892728f8b204dba56ca00eb72f5ca55356c59";
+  "a0d1264e487c8eaa249d61c1c334f112a5b0acf264413939954ae5dd30d0833e";
 
 /* ────────────────────────────── source reading ───────────────────────────── */
 
@@ -311,6 +311,9 @@ const livePanel = skipCrossRepo
         "APP_BACKGROUND_TEXTURES",
       ),
       iconColorModes: readStringArrayConst(PANEL_INTERFACE_PATH, "ICON_COLOR_MODES"),
+      iconEffects: readStringArrayConst(PANEL_INTERFACE_PATH, "ICON_EFFECTS"),
+      iconGlyphs: readStringArrayConst(PANEL_INTERFACE_PATH, "ICON_GLYPHS"),
+      dashboardIconKeys: readStringArrayConst(PANEL_INTERFACE_PATH, "DASHBOARD_ICON_KEYS"),
       subscriptionCardTextModes: readStringArrayConst(
         PANEL_INTERFACE_PATH,
         "SUBSCRIPTION_CARD_TEXT_MODES",
@@ -399,6 +402,9 @@ const committedPanel = {
   appBackgroundKinds: vocabulary("appBackgroundKinds"),
   appBackgroundTextures: vocabulary("appBackgroundTextures"),
   iconColorModes: vocabulary("iconColorModes"),
+  iconEffects: vocabulary("iconEffects"),
+  iconGlyphs: vocabulary("iconGlyphs"),
+  dashboardIconKeys: vocabulary("dashboardIconKeys"),
   subscriptionCardTextModes: vocabulary("subscriptionCardTextModes"),
   planCardTextModes: vocabulary("planCardTextModes"),
   cardEffectSlotModes: vocabulary("cardEffectSlotModes"),
@@ -503,7 +509,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
     // THE ANSWER, restated — so silencing a failure by editing the constant
     // above has to be done twice, in two places that read differently.
     expect(BRANDING_VOCABULARY_DIGEST).toBe(
-      "d54362979e50c22b44cd11c46ef892728f8b204dba56ca00eb72f5ca55356c59",
+      "a0d1264e487c8eaa249d61c1c334f112a5b0acf264413939954ae5dd30d0833e",
     );
 
     // The canonicaliser itself: keys SORTED (so neither side has to write its
@@ -517,7 +523,7 @@ describe("branding vocabulary parity with the rezeis-admin panel", () => {
     // agree with itself forever.
     const form = canonicalise(PANEL_BRANDING_VOCABULARY);
     expect(form.length, "the canonical branding vocabulary came out empty").toBeGreaterThan(1200);
-    expect(Object.keys(PANEL_BRANDING_VOCABULARY.vocabularies).length).toBe(22);
+    expect(Object.keys(PANEL_BRANDING_VOCABULARY.vocabularies).length).toBe(25);
     for (const [name, values] of Object.entries(PANEL_BRANDING_VOCABULARY.vocabularies)) {
       expect(values.length, `\`${name}\` in the committed manifest is empty`).toBeGreaterThan(0);
     }

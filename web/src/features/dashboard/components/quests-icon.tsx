@@ -14,7 +14,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import {
+  Download,
   Gift,
+  Link2,
   Mail,
   Megaphone,
   Send,
@@ -44,9 +46,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useBranding } from "@/lib/branding-provider";
+import { useInstallPrompt } from "@/hooks/use-install-prompt";
 import { cn } from "@/lib/utils";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
+import { useIconDecor } from "@/lib/icon-decor";
 
+/**
+ * Preset glyphs an operator can pick for a quest.
+ *
+ * The keys the PANEL offers are the contract; an unlisted key falls through
+ * to `Sparkles` with nothing said, so a operator picks "friends" in the panel
+ * and the cabinet quietly draws a sparkle. `friends`, `channel` and `link`
+ * were exactly that — offered there, missing here.
+ */
 const PRESET_ICONS: Record<string, LucideIcon> = {
   telegram: Send,
   mail: Mail,
@@ -57,13 +69,20 @@ const PRESET_ICONS: Record<string, LucideIcon> = {
   star: Star,
   users: Users,
   invite: Users,
+  friends: Users,
   megaphone: Megaphone,
+  channel: Megaphone,
+  link: Link2,
+  install: Download,
 };
 
 export function QuestsIcon(): JSX.Element | null {
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
+  // Above every early return: this cabinet has no lint rule for hook order,
+  // and a conditional hook here took the whole cabinet down once already.
+  const decor = useIconDecor("quests");
 
   const { data } = useQuery({
     queryKey: ["quests"],
@@ -75,6 +94,8 @@ export function QuestsIcon(): JSX.Element | null {
   const quests = data?.quests ?? [];
   if (quests.length === 0) return null;
   const unclaimed = quests.filter((q) => q.claimable).length;
+  // The operator's glyph, or the sparkle this cabinet ships.
+  const QuestsGlyph = decor.Glyph ?? Sparkles;
 
   return (
     <>
@@ -84,13 +105,13 @@ export function QuestsIcon(): JSX.Element | null {
           offset by `-right-1 -top-1` into the exact area the clip removes, so
           the corner of the number was sliced off. Two jobs, two boxes: the
           button clips its own animation, the wrapper carries the badge. */}
-      <span className="relative inline-flex">
+      <span className={cn("relative inline-flex", decor.effectClass)} style={decor.wrapperStyle}>
         <button
           onClick={() => setOpen(true)}
           aria-label={t("quests.iconAria")}
           className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
         >
-          <Sparkles className="h-4 w-4" />
+          <QuestsGlyph className="h-4 w-4" style={decor.glyphStyle} />
           {!reduceMotion && (
             <span
               aria-hidden
@@ -231,6 +252,8 @@ function QuestRow({
           ) : null
         ) : quest.type === "PARTNER_TASK" ? (
           <PartnerAction quest={quest} />
+        ) : quest.type === "INSTALL_PWA" ? (
+          <InstallAction onClose={onClose} />
         ) : (
           questAction(quest.type) && (
             <button
@@ -247,6 +270,43 @@ function QuestRow({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The install quest's own control.
+ *
+ * When the browser has handed us a deferred `beforeinstallprompt`, THIS click
+ * spends it — one tap, the system sheet, done. That is only possible from
+ * here: the event must be spent inside a user gesture, so the alternative
+ * (navigate, then press a second button) exists solely for the platforms with
+ * no prompt to spend. iOS is the whole of that set in practice — Safari has
+ * no such event at all — and there the settings sheet carries the Share →
+ * Add-to-Home-Screen steps.
+ *
+ * Either way the quest completes server-side, from the first open OUT of the
+ * installed app, not from this click. Nothing here asserts anything.
+ */
+function InstallAction({ onClose }: { onClose: () => void }): JSX.Element {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const install = useInstallPrompt();
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (install.canInstall) {
+          void install.promptInstall();
+          return;
+        }
+        onClose();
+        navigate("/settings?install=1");
+      }}
+      className="rounded-[var(--radius-item)] border border-[color:var(--color-border-strong)] px-3 py-1.5 text-xs text-[color:var(--brand-foreground)] transition-colors hover:bg-[color:var(--color-surface-high)]"
+    >
+      {t("quests.actions.install")}
+    </button>
   );
 }
 
@@ -426,6 +486,11 @@ export function questAction(
       return { route: "/settings/privacy?link=email", labelKey: "quests.actions.link" };
     case "INVITE_FRIENDS":
       return { route: "/referrals", labelKey: "quests.actions.invite" };
+    // Same reasoning as the linking rows: the settings hub has twelve entries
+    // and "install the app" is one of them. The parameter opens the install
+    // sheet on arrival, so the tap that started here ends where it meant to.
+    case "INSTALL_PWA":
+      return { route: "/settings?install=1", labelKey: "quests.actions.install" };
     default:
       return null;
   }

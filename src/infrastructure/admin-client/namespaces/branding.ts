@@ -93,6 +93,10 @@ export interface BrandingPayload {
   };
   readonly iconColorMode: 'default' | 'theme' | 'custom';
   readonly iconColors: Readonly<Record<string, string>>;
+  /** Dashboard-icon decoration; absent on a snapshot from an older panel. */
+  readonly iconDecor?: Readonly<
+    Record<string, { readonly glyph?: string; readonly effect?: string; readonly color?: string }>
+  >;
   readonly borderRadius: string;
   readonly cornerRadii?: {
     readonly cardPx: number;

@@ -591,6 +591,16 @@ export const ru = {
     faqSub: 'Часто задаваемые вопросы',
     installApp: 'Установить приложение',
     installAppSub: 'Добавить кабинет на домашний экран',
+    installPromptTitle: 'Установить {{brand}}',
+    installPromptIntro:
+      'Приложение появится на домашнем экране и будет открываться без адресной строки.',
+    installPromptAction: 'Установить',
+    installUnavailableTitle: 'Установка недоступна',
+    installUnavailableIntro:
+      'Этот браузер не предлагает установку. Откройте кабинет в Chrome или Safari — и пункт появится.',
+    installAlreadyTitle: 'Приложение уже установлено',
+    installAlreadyIntro:
+      'Вы открыли кабинет из установленного приложения. Если это задание, награда станет доступна в течение нескольких минут.',
     installIosTitle: 'Установить {{brand}}',
     installIosIntro: 'В Safari добавьте кабинет на домашний экран:',
     installIosStep1: 'Нажмите кнопку «Поделиться»',
@@ -1256,6 +1266,7 @@ export const ru = {
     actions: {
       link: 'Привязать',
       invite: 'Пригласить',
+      install: 'Установить',
       openBot: 'Открыть бота',
     },
     reward: {
@@ -1493,6 +1504,8 @@ export const ru = {
     statusWaitingShort: 'Ответ',
     statusClosed: 'Закрыт',
     chatStatusWaiting: 'Ожидает ответа',
+    chatAuthorSupport: 'Поддержка',
+    chatAuthorSystem: 'Система',
     sendError: 'Не удалось отправить',
     messagePlaceholder: 'Сообщение...',
     ticketCreated: 'Тикет создан',

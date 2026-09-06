@@ -15,10 +15,14 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleDot } from "lucide-react";
 
 import { getContests, getWheel } from "@/lib/api-client";
+import { useIconDecor } from "@/lib/icon-decor";
+import { cn } from "@/lib/utils";
 
 export function WheelIcon() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Above the early return below — hook order is not linted in this tree.
+  const decor = useIconDecor("wheel");
 
   const { data } = useQuery({
     queryKey: ["wheel"],
@@ -33,15 +37,20 @@ export function WheelIcon() {
 
   const hasContest = (contests.data ?? []).some((contest) => contest.status === "ACTIVE");
   if (!data?.enabled && !hasContest) return null;
+  const WheelGlyph = decor.Glyph ?? CircleDot;
 
   return (
     <button
       type="button"
       onClick={() => navigate("/events")}
       aria-label={t("events.title")}
-      className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-all hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
+      className={cn(
+        "relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-all hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]",
+        decor.effectClass,
+      )}
+      style={decor.wrapperStyle}
     >
-      <CircleDot className="h-4 w-4" />
+      <WheelGlyph className="h-4 w-4" style={decor.glyphStyle} />
       {data?.canSpin ? (
         <span
           aria-hidden

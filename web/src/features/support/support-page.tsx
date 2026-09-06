@@ -291,6 +291,25 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
                   ? 'bg-(--brand-primary)/90 text-(--brand-primary-fg) rounded-br-sm'
                   : 'bg-[color:var(--color-surface-high)] text-[color:var(--brand-foreground)] rounded-bl-sm'
               )}>
+                {/*
+                  Who is speaking, on every bubble that is not the reader's
+                  own. Position alone carried it while support could only
+                  ever REPLY — the client's own words were always first, so
+                  the left column needed no name. An operator can now open
+                  the conversation, and then the very first thing on screen
+                  is an unattributed bubble about something the reader never
+                  asked about.
+                */}
+                {!isUser && (
+                  <p className={cn(
+                    'mb-1 text-[10px] font-medium uppercase tracking-wide',
+                    'text-[color:var(--brand-muted-foreground)]',
+                  )}>
+                    {msg.authorType === 'system'
+                      ? t('support.chatAuthorSystem')
+                      : t('support.chatAuthorSupport')}
+                  </p>
+                )}
                 {msg.content && (
                   <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                 )}

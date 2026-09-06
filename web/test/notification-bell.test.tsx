@@ -31,6 +31,15 @@ vi.mock("motion/react", () => ({
       <span {...props}>{children}</span>
     ),
   },
+  // The bell's shake is gated on this; a double that omits it makes the
+  // component throw rather than render, and every case below would then be
+  // failing for a reason none of them is about.
+  useReducedMotion: () => true,
+}));
+vi.mock("@/lib/branding-provider", () => ({
+  // The header icons read operator decoration from branding. Undecorated is
+  // the state these cases are about.
+  useBranding: () => ({ branding: { iconDecor: undefined } }),
 }));
 vi.mock("sonner", () => ({ toast }));
 

@@ -588,6 +588,16 @@ export const en: RuDict = {
     faqSub: 'Frequently asked questions',
     installApp: 'Install app',
     installAppSub: 'Add the cabinet to your home screen',
+    installPromptTitle: 'Install {{brand}}',
+    installPromptIntro:
+      'The app lands on your home screen and opens without a browser address bar.',
+    installPromptAction: 'Install',
+    installUnavailableTitle: 'Installing is not available here',
+    installUnavailableIntro:
+      'This browser does not offer installation. Open the cabinet in Chrome or Safari and the option appears.',
+    installAlreadyTitle: 'The app is already installed',
+    installAlreadyIntro:
+      'You opened the cabinet from the installed app. If this was a quest, the reward becomes available within a few minutes.',
     installIosTitle: 'Install {{brand}}',
     installIosIntro: 'In Safari, add the cabinet to your home screen:',
     installIosStep1: 'Tap the Share button',
@@ -1252,6 +1262,7 @@ export const en: RuDict = {
     actions: {
       link: 'Link',
       invite: 'Invite',
+      install: 'Install',
       openBot: 'Open bot',
     },
     reward: {
@@ -1486,6 +1497,8 @@ export const en: RuDict = {
     statusWaitingShort: 'Reply',
     statusClosed: 'Closed',
     chatStatusWaiting: 'Awaiting reply',
+    chatAuthorSupport: 'Support',
+    chatAuthorSystem: 'System',
     sendError: 'Failed to send',
     messagePlaceholder: 'Message...',
     ticketCreated: 'Ticket created',

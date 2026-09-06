@@ -231,6 +231,13 @@ const INDEX_CSS_KEYFRAMES = [
   "card-effect-fallback-drift-b",
   "card-effect-fallback-drift-c",
   "glint",
+  // Operator-chosen attention effects for the dashboard header icons. All
+  // three are on this list for the same reason as their neighbours: the loop
+  // below is what proves they animate `transform`/`opacity` and nothing that
+  // costs a repaint.
+  "icon-effect-pulse",
+  "icon-effect-shake",
+  "icon-effect-glow",
 ];
 
 describe("animation paint contract", () => {

@@ -36,6 +36,7 @@ import { SubscriptionActions } from "./components/subscription-actions";
 import { DevicesList } from "./components/devices-list";
 import { resolveDevicesViewState } from "@/lib/devices-view-state";
 import { NotificationBell } from "./components/notification-bell";
+import { useIconDecor } from "@/lib/icon-decor";
 import { QuestsIcon } from "./components/quests-icon";
 import { WheelIcon } from "./components/wheel-icon";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
@@ -57,6 +58,10 @@ export default function DashboardPage() {
   const { branding } = useBranding();
   const { purchasesBlocked, restricted } = useAccessMode();
   const reduceMotion = useReducedMotion();
+  const buyDecor = useIconDecor("buy");
+  const promoDecor = useIconDecor("promo");
+  const BuyGlyph = buyDecor.Glyph ?? ShoppingCart;
+  const PromoGlyph = promoDecor.Glyph ?? TicketPercent;
   const queryClient = useQueryClient();
 
   // Active-discount glow for the promo shortcut: violet for the permanent
@@ -310,7 +315,10 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div className="relative shrink-0">
+          <div
+            className={cn("relative shrink-0", buyDecor.effectClass)}
+            style={buyDecor.wrapperStyle}
+          >
             {!purchasesBlocked && !buyLimitReached && !reduceMotion && (
               <motion.span
                 aria-hidden
@@ -343,16 +351,19 @@ export default function DashboardPage() {
                   : undefined
               }
             >
-              <ShoppingCart className="h-4 w-4" />
+              <BuyGlyph className="h-4 w-4" style={buyDecor.glyphStyle} />
             </button>
           </div>
           <button
             onClick={() => navigate("/promo")}
-            style={promoGlowStyle}
-            className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-all hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]"
+            style={{ ...promoGlowStyle, ...promoDecor.wrapperStyle }}
+            className={cn(
+              "relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)] transition-all hover:bg-[color:var(--color-surface-high)] hover:text-[color:var(--brand-foreground)]",
+              promoDecor.effectClass,
+            )}
             aria-label={t("card.actions.promo")}
           >
-            <TicketPercent className="h-4 w-4" />
+            <PromoGlyph className="h-4 w-4" style={promoDecor.glyphStyle} />
           </button>
           <QuestsIcon />
           <WheelIcon />

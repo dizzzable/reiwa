@@ -26,6 +26,21 @@ describe("quest action routes", () => {
     expect(questAction("INVITE_FRIENDS")?.route).toBe("/referrals");
   });
 
+  it("sends the install quest to the settings sheet, not the settings hub", () => {
+    // Same lesson as the linking rows above: the hub has twelve entries and
+    // "Install the app" is one of them. The parameter is what opens the sheet
+    // on arrival — a bare `/settings` would repeat the stall it cost support
+    // a ticket to find.
+    expect(questAction("INSTALL_PWA")?.route).toBe("/settings?install=1");
+    expect(questAction("INSTALL_PWA")?.route).not.toBe("/settings");
+  });
+
+  it("gives the install quest a CTA at all", () => {
+    // `questAction` returning null renders NO button on the row — the quest
+    // would sit there naming an action with nothing to press.
+    expect(questAction("INSTALL_PWA")).not.toBeNull();
+  });
+
   it("has no inline route for quests resolved by their own controls", () => {
     expect(questAction("SUBSCRIBE_CHANNEL")).toBeNull();
     expect(questAction("PARTNER_TASK")).toBeNull();
