@@ -15,3 +15,7 @@ Thumbs.db
 
 # Local agent planning and verification artifacts
 .omx/
+
+# Copied from the `flag-icons` dependency by web/scripts/sync-flags.mjs,
+# which `predev` and `prebuild` run. Generated, so not committed.
+web/public/flags/

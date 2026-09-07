@@ -36,6 +36,7 @@ import { X } from 'lucide-react';
 import { getSubscriptionServers } from '@/lib/api-client/servers';
 import type { SubscriberServer } from '@/lib/api-client/servers';
 import { cn } from '@/lib/utils';
+import { CountryFlag, nameWithoutFlag } from '@/components/ui/country-flag';
 
 import { countryPoint } from './country-points';
 import { rowDelay, SERVERS_SHEET_MOTION } from './servers-sheet-motion';
@@ -390,14 +391,14 @@ function Recommended({
             }
       }
     >
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-base">
-        {server.flag ?? '🛰'}
-      </span>
+      <CountryFlag code={server.countryCode} className="size-8 shrink-0 rounded-lg" />
       <div className="min-w-0">
         <p className="text-[10px] uppercase tracking-wide text-emerald-400">
           {t('servers.recommendedLabel')}
         </p>
-        <p className="truncate text-sm font-semibold text-foreground">{server.name}</p>
+        <p className="truncate text-sm font-semibold text-foreground">
+          {nameWithoutFlag(server.name)}
+        </p>
         <p className="truncate text-[11px] text-muted-foreground">
           {t('servers.recommendedWhy')}
         </p>
@@ -436,11 +437,11 @@ function ServerRow({
           : { duration: SERVERS_SHEET_MOTION.list.duration, delay: rowDelay(index) }
       }
     >
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-base">
-        {server.flag ?? '🛰'}
-      </span>
+      <CountryFlag code={server.countryCode} className="size-8 shrink-0 rounded-lg" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-foreground">{server.name}</p>
+        <p className="truncate text-sm font-medium text-foreground">
+          {nameWithoutFlag(server.name)}
+        </p>
         <p className="truncate text-[11px] text-muted-foreground">
           {t(`servers.status.${server.status}`)}
           {uptime !== null ? ` · ${uptime}` : ''}

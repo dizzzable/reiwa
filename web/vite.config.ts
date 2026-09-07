@@ -17,6 +17,10 @@ export default defineConfig({
       manifest: false, // We use our own manifest.webmanifest in public/
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // 271 country flags, ~2 MB, of which a customer sees the handful their
+        // operator actually uses. Precaching them would make every first load
+        // pay for all of them; the browser fetches each one on demand instead.
+        globIgnores: ['**/flags/**'],
       },
       devOptions: {
         enabled: true,

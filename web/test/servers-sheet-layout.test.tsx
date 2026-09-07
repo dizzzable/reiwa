@@ -60,7 +60,7 @@ import { resolveGlobePreferences } from "@/components/reactbits/originkit/globe-
 
 const SERVERS = Array.from({ length: 14 }, (_, index) => ({
   id: `host-${index}`,
-  name: `Germany 0${index}`,
+  name: `🇩🇪 Germany 0${index}`,
   flag: "🇩🇪",
   countryCode: "DE",
   status: "online" as const,
@@ -140,6 +140,21 @@ describe("the servers screen holds its planet above its list", () => {
     const dialog = await renderSheet();
     expect(dialog.querySelector('[data-testid="globe-canvas"]')).not.toBeNull();
     expect(dialog.querySelectorAll("li")).toHaveLength(14);
+  });
+
+  it("draws each server's flag as an image, not as an emoji", async () => {
+    // Windows has no glyph for a regional-indicator pair, so `🇩🇪` renders
+    // there as the letters "DE" — the desktop report this replaced. A row must
+    // carry a real file; see `country-flag.test.tsx` for the fallback.
+    const dialog = await renderSheet();
+    const row = dialog.querySelector("li");
+    expect(row).not.toBeNull();
+    const flag = (row as HTMLElement).querySelector("img");
+    expect(flag, "the row draws no flag image").not.toBeNull();
+    expect((flag as HTMLImageElement).getAttribute("src")).toMatch(/flags\/de\.svg$/);
+    // And the emoji is not ALSO printed beside it: the operator's name carries
+    // one, and on Windows it arrives as two stray letters in front of the name.
+    expect(dialog.textContent ?? "").not.toContain("🇩🇪");
   });
 
   it("puts the planet BEFORE the list in document order", async () => {

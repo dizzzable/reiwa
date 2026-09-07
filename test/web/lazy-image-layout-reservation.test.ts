@@ -90,6 +90,16 @@ describe('lazy images reserve their layout box', () => {
     );
   });
 
+  it('reserves a country flag by its ratio, which is the same for all of them', () => {
+    // A fourth shape, and the simplest: every flag in the set is 4:3, so the
+    // box is known before the file is. The default size covers a caller that
+    // passes no class at all — fourteen server rows would otherwise each snap
+    // from nothing to 32px as their flags arrive.
+    const source = read('components/ui/country-flag.tsx');
+    expect(source).toContain('aspect-[4/3]');
+    expect(source).toContain("className = 'size-8'");
+  });
+
   it('knows about every lazy image in the tree, so a new one has to be decided', () => {
     const sites = everyComponentFile(WEB_SRC).flatMap((file) => {
       const occurrences = readFileSync(file, 'utf8').match(/loading="lazy"/g) ?? [];
@@ -97,6 +107,7 @@ describe('lazy images reserve their layout box', () => {
     });
 
     expect(sites.slice().sort()).toEqual([
+      'components/ui/country-flag.tsx',
       'components/ui/emoji-text.tsx',
       'features/landing/sections/how-it-works.tsx',
       'features/landing/sections/misc.tsx',
