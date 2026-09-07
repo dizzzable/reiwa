@@ -704,7 +704,13 @@ body {
   0%, 100% { opacity: 0; }
   50%      { opacity: 0.55; }
 }
-.icon-effect-iridescent { position: relative; isolation: isolate; }
+.icon-effect-iridescent {
+  position: relative;
+  isolation: isolate;
+  /* Named once so both layers below read the same colour, and so the fallback
+     lives in one place rather than six. */
+  --icon-sheen: var(--icon-effect-color, #ff7ab6);
+}
 .icon-effect-iridescent::before,
 .icon-effect-iridescent::after {
   content: "";
@@ -737,6 +743,45 @@ body {
     #7cf0c0
   );
   animation: icon-effect-iridescent-b 5.2s ease-in-out infinite;
+}
+
+/* THE OPERATOR'S COLOUR LEADS THE SHEEN.
+   Reported as "the effect works but does not react to the colour", and it was
+   true: the two gradients above are fixed, and `mix-blend-mode: color` paints
+   them over the tinted glyph as well, so an icon set to pink came out rainbow
+   with no pink anywhere in it.
+   The chosen colour now anchors both gradients and every other stop is mixed
+   toward it, which keeps the drift that makes this effect what it is while
+   making it unmistakably theirs.
+   `@supports` rather than a fallback declaration, and the distinction matters:
+   a declaration containing `var()` is valid at PARSE time, so an unsupported
+   `color-mix` would fail later, at computed-value time, and resolve to `unset`
+   — not to the plain rainbow above. Wrapping it is the only form that really
+   falls back. A browser without `color-mix` (iOS below 16.2) keeps exactly
+   what it ships today. */
+@supports (color: color-mix(in oklab, red 50%, blue)) {
+  .icon-effect-iridescent::before {
+    background: conic-gradient(
+      from 0deg,
+      var(--icon-sheen),
+      color-mix(in oklab, var(--icon-sheen) 55%, #ffd36e),
+      color-mix(in oklab, var(--icon-sheen) 55%, #7cf0c0),
+      color-mix(in oklab, var(--icon-sheen) 55%, #6fa8ff),
+      color-mix(in oklab, var(--icon-sheen) 55%, #c79cff),
+      var(--icon-sheen)
+    );
+  }
+  .icon-effect-iridescent::after {
+    background: conic-gradient(
+      from 140deg,
+      color-mix(in oklab, var(--icon-sheen) 55%, #7cf0c0),
+      color-mix(in oklab, var(--icon-sheen) 55%, #6fa8ff),
+      color-mix(in oklab, var(--icon-sheen) 55%, #c79cff),
+      var(--icon-sheen),
+      color-mix(in oklab, var(--icon-sheen) 55%, #ffd36e),
+      color-mix(in oklab, var(--icon-sheen) 55%, #7cf0c0)
+    );
+  }
 }
 
 /* icon-effects:end */

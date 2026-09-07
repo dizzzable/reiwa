@@ -50,6 +50,21 @@ function markedBlock(source: string): string {
   return source.slice(start, to).replace(/\r\n/g, "\n").trim();
 }
 
+/**
+ * The panel's escape hatch, and the ONE thing its copy is allowed to add.
+ *
+ * An operator whose system asks for reduced motion still has to be able to
+ * judge an effect they just clicked — otherwise the panel shows them a still
+ * icon and they report the effect as broken, which is what happened. The panel
+ * scopes every reduced-motion rule with this so a switch can lift all of them
+ * at once, without restating a single duration. A restated duration is a second
+ * copy that drifts; a scope is not.
+ *
+ * The cabinet has no such attribute and must never grow one: a subscriber's
+ * setting is not the operator's to override.
+ */
+const PANEL_MOTION_SCOPE = ":root:not([data-force-icon-motion]) ";
+
 /** Every `.icon-effect-*` line inside a reduced-motion block. */
 function reducedMotionIconRules(source: string): readonly string[] {
   const at = source.indexOf("@media (prefers-reduced-motion: reduce) {");
@@ -110,9 +125,29 @@ describe("icon effect CSS parity with the panel preview", () => {
     // lift them out of. A preview that keeps animating for an operator who
     // asked their system for no motion is its own defect.
     const panel = readFileSync(PANEL_CSS, "utf8");
-    expect([...reducedMotionIconRules(panel)].sort()).toEqual(
-      [...reducedMotionIconRules(cabinet)].sort(),
-    );
+    const panelRules = reducedMotionIconRules(panel);
+    // Every one of them carries the scope, so the switch cannot half-work:
+    // a rule that forgot it keeps its icon still whatever the operator
+    // presses, and would otherwise pass this file by looking identical.
+    for (const rule of panelRules) {
+      expect(
+        rule.startsWith(PANEL_MOTION_SCOPE),
+        `this reduced-motion rule ignores the panel's motion switch: ${rule}`,
+      ).toBe(true);
+    }
+    expect(
+      panelRules.map((rule) => rule.slice(PANEL_MOTION_SCOPE.length)).sort(),
+    ).toEqual([...reducedMotionIconRules(cabinet)].sort());
+  });
+
+  it("keeps the panel's escape hatch out of the cabinet", () => {
+    // An operator may lift their OWN system setting to judge an effect.
+    // Nothing gives them the right to lift a subscriber's.
+    expect(
+      cabinet.includes("data-force-icon-motion"),
+      "the cabinet has grown the panel's motion override — a subscriber's "
+        + "reduced-motion setting is not an operator's to lift",
+    ).toBe(false);
   });
 
   it("says out loud when the sibling checkout is absent", () => {
