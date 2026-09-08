@@ -212,6 +212,56 @@ export function readConnectTheme(payload: unknown): ConnectScreenTheme | null {
 }
 
 /**
+ * Light or dark, judged from the ground the concept actually paints.
+ *
+ * ── Why this is needed at all ────────────────────────────────────────────────
+ *
+ * Native controls are drawn by the browser, not by us. A `<select>`'s open list
+ * is the operating system's, and with no `color-scheme` declared anywhere the
+ * browser assumes light: on the dark cabinet the platform picker opened as a
+ * white sheet with black text over a dark screen. Reported exactly that way —
+ * "не в тему попадает".
+ *
+ * ── Why it is derived and not fixed ──────────────────────────────────────────
+ *
+ * `color-scheme: dark` would fix the screenshot and break 44 of the 104
+ * concepts, which are light-backgrounded. The concept knows its own answer, so
+ * the answer is read off the concept.
+ *
+ * `null` means "this theme does not say" — no concept, or one with no ground
+ * colour — and the caller then uses the cabinet's own mode, which is the right
+ * answer for a screen wearing the cabinet's own appearance.
+ */
+export function themeColorScheme(theme: ConnectScreenTheme | null): 'light' | 'dark' | null {
+  const ground = theme?.backgroundColor ?? theme?.tokens['color-surface-high'] ?? null
+  if (ground === null) return null
+  const channels = readHexChannels(ground)
+  if (channels === null) return null
+  // WCAG relative luminance; 0.18 is the crossover the same formula puts
+  // between "text on this wants to be dark" and "wants to be light".
+  const [r, g, b] = channels.map((value) => {
+    const c = value / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.18 ? 'dark' : 'light'
+}
+
+/** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`. Anything else answers null. */
+function readHexChannels(value: string): readonly [number, number, number] | null {
+  const body = value.trim().replace('#', '')
+  const wide = body.length >= 6
+  if (body.length !== (wide ? 6 : 3) && body.length !== (wide ? 8 : 4)) return null
+  const size = wide ? 2 : 1
+  const read = (index: number): number => {
+    const slice = body.slice(index * size, index * size + size)
+    const parsed = Number.parseInt(wide ? slice : slice + slice, 16)
+    return Number.isNaN(parsed) ? -1 : parsed
+  }
+  const rgb = [read(0), read(1), read(2)] as const
+  return rgb.some((v) => v < 0) ? null : rgb
+}
+
+/**
  * The inline style that carries the theme.
  *
  * Scoped to one element rather than written onto `documentElement`: the
@@ -250,6 +300,12 @@ export function connectThemeStyle(theme: ConnectScreenTheme | null): CSSProperti
   // Safe when a token is missing: `--brand-foreground` still has its `:root`
   // default, so this resolves to what the screen would have inherited anyway.
   style.color = 'var(--brand-foreground)'
+
+  // Tells the browser which way to draw the controls it owns — the platform
+  // picker's open list above all. Without it the list is the UA default, which
+  // is white, on a screen that may well be black.
+  const scheme = themeColorScheme(theme)
+  if (scheme !== null) style.colorScheme = scheme
   // The rail is deliberately NOT emitted as a custom property. A token the
   // screen reads has to have a declared default in `index.css` — that is what
   // `connect-page-tokens.test.ts` checks, and it is checking for a real thing:

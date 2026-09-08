@@ -50,6 +50,16 @@ export interface ConnectStep {
   readonly title: LocalizedText;
   readonly body: LocalizedText | null;
   readonly iconKey: string | null;
+  /**
+   * A colour the operator chose for this step's icon, or null to follow the
+   * theme — which is the ordinary case and the default for everything shipped.
+   *
+   * Narrowed to a hex literal here as well as in the panel, because it is
+   * written into a `style` attribute: the panel refuses anything else at save
+   * time, and this side refuses it again because the two ship as separate
+   * images and the cabinet is where the value becomes CSS.
+   */
+  readonly iconColor: string | null;
   readonly buttons: readonly ConnectButton[];
 }
 
@@ -154,7 +164,13 @@ function step(value: unknown): ConnectStep | null {
   const buttons = Array.isArray(value['buttons'])
     ? value['buttons'].map(button).filter((b): b is ConnectButton => b !== null)
     : [];
-  return { title, body: text(value['body']), iconKey: str(value['iconKey']), buttons };
+  return {
+    title,
+    body: text(value['body']),
+    iconKey: str(value['iconKey']),
+    iconColor: hexColor(value['iconColor']),
+    buttons,
+  };
 }
 
 function app(value: unknown): ConnectApp | null {
@@ -220,6 +236,24 @@ export function isConnectScreenEnabled(payload: unknown): boolean {
  * `null` for anything unusable — including the `null` the edge itself serves
  * when the panel is unreachable. The screen has one degraded mode, not two.
  */
+/**
+ * A colour, or nothing.
+ *
+ * Hex only. The value lands in a `style` attribute, and the alternatives — a
+ * keyword, a function, `var(…)` — are each a small grammar with its own escape
+ * rules; an icon tint does not need any of them, and the panel already refuses
+ * them at save time.
+ */
+function hexColor(value: unknown): string | null {
+  // 3, 4, 6 or 8 digits. `{3,8}` also accepted five and seven, which are not
+  // colours — the browser drops the declaration and the icon silently keeps
+  // the theme colour, so the operator's choice looked like it did nothing.
+  return typeof value === 'string' &&
+    /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i.test(value.trim())
+    ? value.trim()
+    : null;
+}
+
 export function readCatalog(payload: unknown): ConnectCatalog | null {
   if (!isRecord(payload)) return null;
   const platforms = Array.isArray(payload['platforms'])

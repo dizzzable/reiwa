@@ -63,6 +63,25 @@ describe("the connect screen borrows the cabinet's tokens", () => {
     }
   });
 
+  it("hardcodes no corner of its own", () => {
+    // Reported from a phone: the fact tiles at the top and the workspace under
+    // them had different corners. Both are cards, and the operator sets ONE
+    // rounding in the cabinet's appearance settings — but the little boxes
+    // inside the tiles carried the artboard's own numbers (a 10px icon box, a
+    // 4px mark plate), so the theme stopped applying halfway down the screen.
+    //
+    // `rounded-full` is deliberately allowed: a circle is a shape, not a
+    // radius, and the step rings and round header actions are circles in every
+    // one of the 104 concepts.
+    for (const screen of SCREENS) {
+      const literals = Array.from(
+        read(screen).matchAll(/rounded-\[([^\]]+)\]/g),
+        (m) => m[1],
+      ).filter((value) => !value.startsWith("var(--radius"));
+      expect(literals, `${screen} pins a corner the theme cannot move`).toEqual([]);
+    }
+  });
+
   it("hardcodes no colour of its own", () => {
     // A literal hex is a colour that survives one theme and breaks in the other
     // — and this screen is shown under every one of the appearance concepts.

@@ -198,13 +198,16 @@ describe("the arrangement the concepts share", () => {
     expect(numbers).toEqual(["01", "02", "03", "04"]);
   });
 
-  it("lays the apps out as a grid rather than a scroller", () => {
+  it("wraps the apps instead of scrolling them", () => {
     const el = render();
     const apps = el.querySelector<HTMLElement>("[data-testid='connect-apps']");
-    expect(apps, "there is no app grid").not.toBeNull();
-    expect(apps?.className).toContain("grid");
-    // The scroller it replaced is the reason the selected app could sit off the
-    // right edge; a grid has no off-screen.
+    expect(apps, "there is no app row").not.toBeNull();
+    // Wrapping, measured off the page this screen replaces. It beats both of
+    // the things it replaced: a horizontal scroller could hide the selected app
+    // off the right edge, and a fixed two-column grid needed a breakpoint to
+    // decide what four apps do — this needs none, and a fifth app added later
+    // simply takes a new line.
+    expect(apps?.className).toContain("flex-wrap");
     expect(apps?.className).not.toContain("overflow-x-auto");
     expect(apps?.querySelectorAll("button")).toHaveLength(4);
   });
@@ -399,7 +402,7 @@ describe("an operator editing the catalog", () => {
     expect(apps?.querySelectorAll("[data-connect-app]")).toHaveLength(3);
     // Every chip is the same fixed height, so a short row cannot stretch one.
     for (const chip of apps?.querySelectorAll("[data-connect-app]") ?? []) {
-      expect(chip.className).toContain("h-9");
+      expect(chip.className).toContain("h-12");
     }
   });
 
@@ -414,6 +417,24 @@ describe("an operator editing the catalog", () => {
     expect(el.querySelector("[data-testid='connect-apps']")).toBeNull();
     // …and the steps for that one app are still there.
     expect(el.querySelectorAll("[data-connect-step]").length).toBeGreaterThan(0);
+  });
+
+  it("puts the app mark behind the label, pinned to the right edge", () => {
+    // The page this screen replaces draws the logo as a watermark running off
+    // the chip's right edge, not as a small icon beside the name. Pinned to the
+    // RIGHT because the chip narrows as the row wraps: a left offset that lands
+    // correctly on a desktop lands in the middle of the label on a phone.
+    const el = render();
+    const mark = el.querySelector<HTMLElement>("[data-connect-app-mark]");
+    expect(mark, "the app has no mark on it").not.toBeNull();
+    expect(mark?.className).toContain("absolute");
+    expect(mark?.className).toMatch(/-right-/);
+    expect(mark?.className, "the mark is anchored from the left").not.toMatch(/left-/);
+    // Behind the label, which carries its own stacking context above it.
+    const label = [...el.querySelectorAll("[data-connect-app] span")].find((n) =>
+      n.textContent === "FlClashX",
+    );
+    expect(label?.className).toContain("z-10");
   });
 
   it("marks the app the operator recommends", () => {
@@ -443,11 +464,15 @@ describe("the same arrangement on a phone and on a desktop", () => {
     expect(shell?.className).toContain("max-w-[60rem]");
   });
 
-  it("stacks the apps in two columns on a phone and one row on a desktop", () => {
+  it("lets the apps decide their own rows, with no breakpoint involved", () => {
+    // The live page does the same and it is why the mark looks "shifted" on a
+    // phone: nothing about the chip changes between widths except how many fit
+    // on a line, so a breakpoint here would be inventing a difference the
+    // original does not have.
     const el = render();
     const apps = el.querySelector<HTMLElement>("[data-testid='connect-apps']");
-    expect(apps?.className).toContain("grid-cols-2");
-    expect(apps?.className).toContain("md:flex");
+    expect(apps?.className).toContain("flex-wrap");
+    expect(apps?.className, "a breakpoint decides the app layout").not.toMatch(/md:(flex|grid)/);
   });
 
   it("keeps the section subtitle off the phone, where there is no room", () => {
@@ -458,6 +483,72 @@ describe("the same arrangement on a phone and on a desktop", () => {
     expect(hint, "the desktop subtitle is missing").toBeDefined();
     expect(hint?.className).toContain("hidden");
     expect(hint?.className).toContain("md:block");
+  });
+});
+
+describe("what colour an icon takes", () => {
+  /**
+   * The default is the theme, and that is what makes ONE catalog look right on
+   * all 104 concepts: the step glyphs are drawn on `currentColor`, so the ring
+   * hands them whatever accent is in force.
+   *
+   * The override exists because the page this screen replaces carries a colour
+   * per step (`svgIconColor`), and an operator who used it would otherwise lose
+   * it on the way across.
+   */
+  it("follows the theme when the operator set nothing", () => {
+    const el = render();
+    const ring = el.querySelector<HTMLElement>("[data-connect-step] span");
+    expect(ring?.style.color).toBe("var(--brand-primary)");
+  });
+
+  it("uses the operator's colour when they set one", () => {
+    const platform = CATALOG.platforms[0];
+    const app = platform.apps[0];
+    catalogPayload = {
+      ...CATALOG,
+      platforms: [
+        {
+          ...platform,
+          apps: [
+            { ...app, steps: [{ ...app.steps[0], iconColor: "#4FC4DD" }, ...app.steps.slice(1)] },
+            ...platform.apps.slice(1),
+          ],
+        },
+      ],
+    };
+    const el = render();
+    const ring = el.querySelector<HTMLElement>("[data-connect-step] span");
+    expect(ring?.style.color).toBe("rgb(79, 196, 221)");
+  });
+
+  it("ignores anything that is not a colour", () => {
+    // The value lands in a `style` attribute. The panel refuses everything but
+    // a hex literal at save time, and the cabinet refuses it again — the two
+    // ship as separate images and this side is where it becomes CSS.
+    const platform = CATALOG.platforms[0];
+    const app = platform.apps[0];
+    for (const bad of ["var(--admin-token)", "red", "url(https://evil.test)", ""]) {
+      catalogPayload = {
+        ...CATALOG,
+        platforms: [
+          {
+            ...platform,
+            apps: [
+              { ...app, steps: [{ ...app.steps[0], iconColor: bad }, ...app.steps.slice(1)] },
+              ...platform.apps.slice(1),
+            ],
+          },
+        ],
+      };
+      const el = render();
+      expect(
+        el.querySelector<HTMLElement>("[data-connect-step] span")?.style.color,
+        bad,
+      ).toBe("var(--brand-primary)");
+      act(() => root?.unmount());
+      host?.remove();
+    }
   });
 });
 

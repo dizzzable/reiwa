@@ -20,11 +20,23 @@
  * paragraph flattens the hierarchy until nothing on the screen is louder than
  * anything else.
  *
- * Geometry here is the concept's, in its own numbers — the 22px card radius,
- * the 12px tile padding, the 13px step rhythm, the 4px accent rail. Type is
- * NOT: the artboards set micro-labels at 7px and body at 10px, which is legible
- * on a 2× export and not on a phone, so the scale is lifted to the cabinet's
- * floor while keeping the concept's proportions.
+ * Geometry here is the concept's in its SPACING — the 12px tile padding, the
+ * 13px step rhythm, the 4px accent rail. Two things are deliberately NOT taken
+ * from the artboards:
+ *
+ * CORNERS come from `--radius-card` / `--radius-item` / `--radius-pill`, never
+ * from a number. The artboards draw a 22px card, a 10px icon box and a 4px mark
+ * plate, and copying those literally is what made the fact tiles disagree with
+ * the workspace under them: the tiles asked the theme, the little boxes inside
+ * them did not, so the operator's own rounding stopped halfway down the screen.
+ * A concept sets the tokens; everything on this screen reads them. Circles stay
+ * circles — a step ring and a round action are round in every concept, and that
+ * is a shape, not a radius.
+ *
+ * TYPE is lifted: the artboards set micro-labels at 7px and body at 10px, which
+ * is legible on a 2× export and not on a phone, so the scale is raised to the
+ * cabinet's floor while keeping the concept's proportions. The FACE is the
+ * cabinet's, inherited from `body`; concepts carry one and it does not travel.
  *
  * ── Handing the raw link over ────────────────────────────────────────────────
  *
@@ -38,12 +50,6 @@
  * card this screen was opened from. So with no catalog at all there is still a
  * working control that hands the link over — it is simply the concept's control
  * rather than an extra one bolted above it.
- *
- * ── What is deliberately NOT here ────────────────────────────────────────────
- *
- * A typeface. Concepts carry one, and shipping it would mean loading a webfont
- * per concept on a screen a customer sees once; the palette, the geometry and
- * the background travel, the letterforms stay the cabinet's.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -88,7 +94,7 @@ import { detectCurrentPlatform, rememberApp, rememberedApp } from './platform-de
 export default function ConnectPage() {
   const { t, i18n } = useTranslation()
   const locale = i18n.language.slice(0, 2)
-  const { branding } = useBranding()
+  const { branding, themeMode } = useBranding()
 
   // The same query key the dashboard uses, so the screen shares its cache and
   // a link rotated on the card is the link this screen hands over.
@@ -242,11 +248,16 @@ export default function ConnectPage() {
     (item) => item.id === 'support' && item.visible,
   )
 
+  // `colorScheme` tells the browser how to draw the controls it owns — the
+  // platform picker's open list above all, which arrived as a white sheet on a
+  // black screen because nothing in the cabinet declares one. A concept answers
+  // from its own ground and overrides this; with no concept the cabinet's mode
+  // is right, and it is the one the customer chose.
   return (
     <div
       data-connect-theme={theme === null ? 'inherit' : 'concept'}
       className="relative min-h-[100dvh] pb-10"
-      style={connectThemeStyle(theme)}
+      style={{ colorScheme: themeMode, ...connectThemeStyle(theme) }}
     >
       {theme?.rail != null && (
         <span
@@ -268,7 +279,7 @@ export default function ConnectPage() {
                 carries that same string as its accessible title — so without
                 this a screen reader reads the brand twice in a row. */}
             <span aria-hidden="true" className="contents">
-              <BrandLogo className="size-[30px] shrink-0 rounded-[10px]" />
+              <BrandLogo className="size-[30px] shrink-0 rounded-[var(--radius-item)]" />
             </span>
             <span className="truncate text-base font-bold tracking-[0.06em]">
               {branding.brandName}
@@ -372,7 +383,7 @@ export default function ConnectPage() {
                     role="group"
                     data-testid="connect-apps"
                     aria-label={t('connect.appsForPlatform')}
-                    className="mt-[14px] grid grid-cols-2 gap-[6px] md:mt-5 md:flex md:gap-2"
+                    className="mt-[14px] flex flex-wrap gap-2 md:mt-5"
                   >
                     {platform.apps.map((candidate) => (
                       <AppTab
@@ -563,7 +574,7 @@ function Fact({
         <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[color:var(--brand-muted-foreground)]">
           {label}
         </span>
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-[10px] border border-[color:var(--color-border-soft)] text-[color:var(--brand-primary)]">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] text-[color:var(--brand-primary)]">
           {icon}
         </span>
       </div>
@@ -613,58 +624,48 @@ function AppTab({
       data-connect-app={app.id}
       onClick={onSelect}
       aria-pressed={selected}
-      className={`relative flex h-9 min-w-0 items-center gap-[6px] overflow-hidden rounded-[var(--radius-pill)] border px-[7px] md:h-11 md:flex-1 md:gap-2 md:px-[11px] ${
+      // Measured off the live page this screen replaces: 48 tall, 16px label,
+      // 16 of padding on the left and 48 on the RIGHT — that right gutter is
+      // what keeps the label clear of the mark behind it. The chips flex-wrap
+      // rather than sit in a grid, so four fit one row on a desktop and two
+      // rows on a phone with no breakpoint deciding it, and a fifth app added
+      // later simply wraps instead of stretching the row.
+      //
+      // The corner is the theme's, not the page's 8px: an operator sets one
+      // rounding for the cabinet and it applies here too.
+      className={`relative flex h-12 min-w-0 flex-1 basis-[9rem] items-center gap-2 overflow-hidden rounded-[var(--radius-item)] border py-0 pl-4 pr-12 ${
         selected
           ? 'border-[color:var(--brand-primary)] bg-[color:var(--brand-primary)] text-[color:var(--brand-primary-fg)]'
           : 'border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)]'
       }`}
     >
       {markup !== undefined && (
-        // The etched copy of the mark bleeding off the right edge — the
-        // concepts' one piece of decoration. `luminosity` is theirs too: it
-        // drops the mark's own colour and keeps only its light, so a bright
-        // brand does not glow through the chip it is sitting in.
+        // The app's own mark, BEHIND the label and running off the right edge —
+        // which is how the page this screen replaces draws it, and what an
+        // operator comparing the two looks at first. It is the only thing
+        // separating four chips that are otherwise a row of identical pills.
+        //
+        // 56 square, hanging 11px past the right edge and 4px above the top,
+        // at a quarter opacity — measured off the live page, and the SAME at
+        // every width. It reads as "shifted on mobile" only because the chip
+        // itself narrows from 156 to 142, which moves the label towards it; the
+        // mark's own anchor never moves, and pinning it to the right edge is
+        // what makes that true at any chip width.
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute -top-3 left-10 size-16 opacity-10 mix-blend-luminosity [&>svg]:size-16 md:-top-4 md:left-[122px] md:size-[86px] md:[&>svg]:size-[86px]"
+          data-connect-app-mark=""
+          className="pointer-events-none absolute -top-1 -right-[11px] size-14 opacity-25 [&>svg]:size-14"
           dangerouslySetInnerHTML={{ __html: markup }}
         />
       )}
-      {/* The mark sits on a plate, and the plate is not decoration. Most of
-          these marks are a light glyph with no ground of their own — on a light
-          concept an unbacked one is invisible, and on the accent-filled selected
-          chip a white glyph on coral is barely better. The artboards draw the
-          same plate: a rounded square with a faint white edge. */}
-      <span
-        aria-hidden="true"
-        data-connect-app-mark=""
-        className="relative flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[4px] border border-white/15 bg-black/80 text-[10px] font-bold text-white/70 md:size-6 md:rounded-[5px] md:text-xs"
-      >
-        {/* The one surface on this screen that does NOT follow the concept,
-            and deliberately: it is the mark's own ground, not the screen's. The
-            artboards use PNGs that carry their own background; these marks are
-            light glyphs on transparent, so on a light concept an unbacked one
-            is invisible and on the accent-filled selected chip it is worse. An
-            app-icon plate is dark in every operating system for the same
-            reason. Neutral black at a fixed alpha, no palette of its own.
-
-            The letter is the artboards' own fallback — every mark in the file
-            has a disabled letter layer sitting under it, because an operator
-            adding an app nobody has a logo for is the ordinary case. A plate
-            with an initial reads as deliberate; an empty plate reads as a
-            failed image. */}
-        <Icon markup={markup} className="size-4 md:size-5" fallback={app.name.slice(0, 1)} />
-      </span>
-      <span className="relative min-w-0 truncate text-xs font-semibold md:text-[13px]">
-        {app.name}
-      </span>
+      <span className="relative z-10 min-w-0 truncate text-base">{app.name}</span>
       {/* The operator's own "start here". It is data we already carry and the
           concepts mark it, so a catalog with a recommended app says so. */}
       {app.featured && (
         <span
           data-connect-featured=""
           aria-label="recommended"
-          className={`relative ml-auto size-[5px] shrink-0 rounded-full ${
+          className={`relative z-10 ml-auto size-[5px] shrink-0 rounded-full ${
             selected
               ? 'bg-[color:var(--brand-primary-fg)]'
               : 'bg-[color:var(--brand-primary)]'
@@ -696,7 +697,15 @@ function StepRow({
   return (
     <>
       <div data-connect-step="" className="flex gap-[10px] py-[13px]">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-primary)]">
+        {/* The ring takes the theme's accent, which is what makes one catalog
+            look right on all 104 concepts. `iconColor` overrides it for one
+            step, because the page this screen replaces lets an operator colour
+            their steps and they would otherwise lose that on the way across.
+            Absent — the ordinary case — means follow the theme. */}
+        <span
+          className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]"
+          style={{ color: step.iconColor ?? 'var(--brand-primary)' }}
+        >
           <Icon
             markup={catalog.icons[step.iconKey ?? '']}
             className="size-[14px]"
@@ -833,7 +842,18 @@ function PlatformPicker({
         className="appearance-none bg-transparent pr-1 text-xs font-medium outline-none"
       >
         {platforms.map((platform) => (
-          <option key={platform.id} value={platform.id}>
+          // The open list is drawn by the operating system, and `color-scheme`
+          // on the screen decides light or dark for it. These two also paint the
+          // rows on the desktop browsers that honour them, so the list matches
+          // the concept rather than merely stopping being white.
+          <option
+            key={platform.id}
+            value={platform.id}
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              color: 'var(--brand-foreground)',
+            }}
+          >
             {line(platform.title, locale)}
           </option>
         ))}

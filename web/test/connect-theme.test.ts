@@ -4,6 +4,7 @@ import {
   connectThemeStyle,
   isSafeBackgroundImage,
   readConnectTheme,
+  themeColorScheme,
 } from "../src/features/connect/connect-theme";
 
 /**
@@ -209,7 +210,7 @@ describe("token values", () => {
     // What this still refuses is a stray property nobody declared on purpose.
     const style = connectThemeStyle(readConnectTheme(REAL_THEME)) as Record<string, string>;
     const plain = Object.keys(style).filter((key) => !key.startsWith("--")).sort();
-    expect(plain).toEqual(["backgroundColor", "backgroundImage", "color"]);
+    expect(plain).toEqual(["backgroundColor", "backgroundImage", "color", "colorScheme"]);
     // And `color` reads the token rather than pinning a literal, so a theme
     // that omits the foreground still inherits the cabinet's.
     expect(style.color).toBe("var(--brand-foreground)");
@@ -222,5 +223,51 @@ describe("token values", () => {
     });
     expect(theme?.tokens["brand-primary"]).toBeUndefined();
     expect(theme?.tokens["radius-card"]).toBeUndefined();
+  });
+});
+
+describe("which way the browser should draw its own controls", () => {
+  /**
+   * The platform picker's open list belongs to the operating system, and with
+   * no `color-scheme` declared anywhere the browser assumes light — so on the
+   * dark cabinet it opened as a white sheet with black text. Reported exactly
+   * that way.
+   *
+   * `color-scheme: dark` would fix that screenshot and break the 44 concepts of
+   * 104 that are light-backgrounded, so the answer is read off the concept's
+   * own ground rather than fixed.
+   */
+  it("reads dark off a dark ground", () => {
+    expect(themeColorScheme(readConnectTheme(REAL_THEME))).toBe("dark");
+  });
+
+  it("reads light off a light ground", () => {
+    // Alpine Moss Glass, the light half of the book.
+    expect(
+      themeColorScheme(readConnectTheme({ ...REAL_THEME, backgroundColor: "#EDF2E7" })),
+    ).toBe("light");
+  });
+
+  it("falls back to the raised surface when there is no ground colour", () => {
+    const theme = readConnectTheme({
+      tokens: { "color-surface-high": "#F9FBF1" },
+      backgroundImage: REAL_BACKGROUND,
+    });
+    expect(themeColorScheme(theme)).toBe("light");
+  });
+
+  it("says nothing when the theme says nothing", () => {
+    // Not a guess: with no concept the cabinet's own mode is the right answer,
+    // and only the caller knows it.
+    expect(themeColorScheme(null)).toBeNull();
+    expect(themeColorScheme(readConnectTheme({ tokens: { "brand-primary": "#FF6B7A" } }))).toBeNull();
+  });
+
+  it("says nothing for a ground it cannot read", () => {
+    // `rgba()` and `hsl()` pass the colour grammar but are not hex; guessing at
+    // them would be worse than deferring to the cabinet.
+    expect(
+      themeColorScheme(readConnectTheme({ ...REAL_THEME, backgroundColor: "rgba(1,2,3,0.5)" })),
+    ).toBeNull();
   });
 });
