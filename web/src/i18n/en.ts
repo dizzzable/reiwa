@@ -919,6 +919,12 @@ export const en: RuDict = {
     subscriptionMissing:
       'This subscription is unavailable — it may have been cancelled, or the link is out of date. Go back and pick a subscription again.',
     support: 'Support',
+    recommended: 'Recommended',
+    linkSheetOpen: 'Link and QR code',
+    linkSheetHeading: 'Get the link',
+    linkSheetTitle: 'Scan the QR code in the app',
+    linkSheetBody:
+      'The simple way to add the subscription to any client. Or copy the link below and paste it into the client.',
     factName: 'Name',
     factStatus: 'Status',
     factExpires: 'Expires',

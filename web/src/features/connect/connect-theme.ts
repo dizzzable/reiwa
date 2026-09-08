@@ -60,7 +60,12 @@ export const CONNECT_THEME_COLOR_TOKENS = [
 export const CONNECT_THEME_LENGTH_TOKENS = [
   'radius-card',
   'radius-item',
-  'radius-pill',
+  // `radius-pill` is deliberately NOT here. The screen has two corners — a card
+  // and everything inside it — because the page it replaces has one radius on
+  // every surface, chip and button, and a 9999px control among 15px cards read
+  // as two designs on one screen. A token nothing renders has no business
+  // arriving: an operator would set it, see nothing happen, and have no way to
+  // tell that from the feature being broken.
   'glass-blur',
 ] as const
 

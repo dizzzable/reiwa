@@ -83,7 +83,26 @@ export interface ConnectCatalog {
   readonly icons: Readonly<Record<string, string>>;
   /** Whether "Подключить" opens this screen instead of redirecting outward. */
   readonly connectScreenEnabled: boolean;
+  /** The dot that marks the recommended app. Never null — see the default. */
+  readonly featuredColor: string;
 }
+
+/**
+ * The colour of the "start here" dot, when the operator has not chosen one.
+ *
+ * Amber, and deliberately NOT the accent. The page this screen replaces marks
+ * its recommended app in yellow, and that is the point of the mark: it has to
+ * read as an annotation ON the catalog rather than as one more thing wearing
+ * the brand colour. Drawn in the accent it disappeared into a chip that is
+ * already outlined and filled in that same accent — which is precisely what was
+ * reported.
+ *
+ * It lives here rather than in the screen because the screen is guarded against
+ * literal colours, and rightly: everything a concept can move belongs to the
+ * concept. This one cannot be moved by a concept, so it is data with a default,
+ * and the operator can set it.
+ */
+export const DEFAULT_FEATURED_COLOR = '#FACC15';
 
 const SUBSCRIPTION_LINK_TOKEN = '{{SUBSCRIPTION_LINK}}';
 
@@ -271,6 +290,10 @@ export function readCatalog(payload: unknown): ConnectCatalog | null {
     platforms,
     icons,
     connectScreenEnabled: payload['connectScreenEnabled'] === true,
+    // A panel that has never heard of this field sends nothing, and a panel
+    // whose operator left it empty sends null. Both mean amber, so the screen
+    // never has to ask whether the colour is there.
+    featuredColor: hexColor(payload['featuredColor']) ?? DEFAULT_FEATURED_COLOR,
   };
 }
 

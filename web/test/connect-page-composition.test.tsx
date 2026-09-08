@@ -321,8 +321,10 @@ describe("whose subscription this screen is about", () => {
     expect(el.querySelector("[data-testid='connect-facts']")).toBeNull();
     expect(el.textContent).not.toContain("someone-else");
     // And nothing hands over a key that is not theirs.
-    const copy = el.querySelector<HTMLButtonElement>('button[aria-label="connect.copyLink"]');
-    expect(copy?.disabled).toBe(true);
+    const handOver = el.querySelector<HTMLButtonElement>(
+      'button[aria-label="connect.linkSheetOpen"]',
+    );
+    expect(handOver?.disabled).toBe(true);
   });
 
   it("still picks something sensible when nothing was asked for", () => {
@@ -620,19 +622,23 @@ describe("what still works when the panel does not", () => {
   it("can still hand the link over with no catalog at all", () => {
     catalogPayload = undefined;
     const el = render();
-    const copy = el.querySelector<HTMLButtonElement>('button[aria-label="connect.copyLink"]');
-    expect(copy, "no control hands the link over").not.toBeNull();
-    expect(copy?.disabled).toBe(false);
+    const handOver = el.querySelector<HTMLButtonElement>(
+      'button[aria-label="connect.linkSheetOpen"]',
+    );
+    expect(handOver, "no control hands the link over").not.toBeNull();
+    expect(handOver?.disabled).toBe(false);
   });
 
   it("disables it when there is genuinely no link yet", () => {
     // Different from "the panel is down": here the subscription itself has no
-    // url. Offering a copy button that copies nothing is worse than offering
+    // url. Offering a control that hands over nothing is worse than offering
     // none, because pressing it looks like it worked.
     subscriptionsPayload = { subscriptions: [{ ...SUBSCRIPTION, url: null }] };
     const el = render();
-    const copy = el.querySelector<HTMLButtonElement>('button[aria-label="connect.copyLink"]');
-    expect(copy?.disabled).toBe(true);
+    const handOver = el.querySelector<HTMLButtonElement>(
+      'button[aria-label="connect.linkSheetOpen"]',
+    );
+    expect(handOver?.disabled).toBe(true);
   });
 
   it("does not announce the brand twice", () => {
@@ -650,5 +656,191 @@ describe("what still works when the panel does not", () => {
     expect(mark?.closest('[aria-hidden="true"]'), "the mark is announced").not.toBeNull();
     // And the name itself is still there to be read, exactly once.
     expect(el.querySelector("header")?.textContent).toContain("d3MVpn");
+  });
+});
+
+describe("the link sheet behind the header control", () => {
+  /**
+   * The control used to copy outright. It now opens a sheet with a QR code in
+   * it, because copying only works on the device that is already holding the
+   * link — and the devices that most need a subscription added are the ones
+   * that are not: a TV box, a router, a desktop client. The page this screen
+   * replaces puts the code behind this same control, and it was missing here.
+   */
+  function open(): HTMLDivElement {
+    const el = render();
+    const control = el.querySelector<HTMLButtonElement>(
+      'button[aria-label="connect.linkSheetOpen"]',
+    );
+    act(() => control?.click());
+    return el;
+  }
+
+  it("opens the sheet instead of copying silently", () => {
+    const el = open();
+    expect(el.querySelector("[data-testid='connect-link-dialog']")).not.toBeNull();
+  });
+
+  it("still offers copy, inside the sheet", () => {
+    // Copy did not go away, it moved. On the device the client is installed on
+    // it is still the right answer, so both live in one place.
+    const el = open();
+    const sheet = el.querySelector("[data-testid='connect-link-dialog']");
+    expect(sheet?.textContent).toContain("connect.copyLink");
+  });
+
+  it("closes on Escape", () => {
+    const el = open();
+    const sheet = el.querySelector<HTMLElement>("[data-testid='connect-link-dialog']");
+    act(() => {
+      sheet?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(el.querySelector("[data-testid='connect-link-dialog']")).toBeNull();
+  });
+
+  it("opens INSIDE the themed element, not beside it", () => {
+    // Custom properties inherit down the DOM. A sheet portalled to the body
+    // sits outside the element that declares the concept, so it would open
+    // wearing the cabinet's palette on a screen wearing something else —
+    // exactly the defect the native platform list had, in a bigger box.
+    const el = open();
+    const sheet = el.querySelector("[data-testid='connect-link-dialog']");
+    expect(sheet?.closest("[data-connect-theme='concept']")).not.toBeNull();
+  });
+});
+
+describe("the platform list is ours, not the operating system's", () => {
+  const TWO_PLATFORMS = {
+    ...CATALOG,
+    platforms: [
+      CATALOG.platforms[0],
+      {
+        id: "android",
+        title: { ru: "Android", en: "Android" },
+        apps: [koalaLike("v2raytun", "v2RayTun")],
+      },
+    ],
+  };
+
+  function openList(): HTMLDivElement {
+    catalogPayload = TWO_PLATFORMS;
+    const el = render();
+    act(() =>
+      el.querySelector<HTMLButtonElement>("[data-testid='connect-platform-trigger']")?.click(),
+    );
+    return el;
+  }
+
+  it("draws no native select at all", () => {
+    // A `<select>`'s open list is painted by the platform, and the highlighted
+    // row takes the platform's own selection colour — on Windows a solid opaque
+    // blue over the label. `color-scheme` fixed the sheet being white; it
+    // cannot fix the row you are standing on being unreadable.
+    catalogPayload = TWO_PLATFORMS;
+    const el = render();
+    expect(el.querySelector("select")).toBeNull();
+    expect(el.querySelector("[data-testid='connect-platform-trigger']")).not.toBeNull();
+  });
+
+  it("marks the chosen row with a tint that does not cover it", () => {
+    const el = openList();
+    const chosen = el.querySelector<HTMLElement>("[data-connect-platform][data-selected]");
+    expect(chosen, "nothing marks the chosen platform").not.toBeNull();
+    const tint = chosen?.querySelector<HTMLElement>("[data-connect-platform-tint]");
+    expect(tint, "the mark is not a tint").not.toBeNull();
+    // The two halves of "does not cover it": the fill is translucent, and the
+    // label sits above it rather than under it.
+    expect(tint?.className).toMatch(/opacity-[0-9]+/);
+    expect(tint?.className).toContain("pointer-events-none");
+    expect(chosen?.querySelector("span.z-10")?.textContent).toBe("Windows");
+  });
+
+  it("wears the concept, because it is inside the themed element", () => {
+    const el = openList();
+    const list = el.querySelector("[data-testid='connect-platform-list']");
+    expect(list?.closest("[data-connect-theme='concept']")).not.toBeNull();
+  });
+
+  it("switches platform when a row is chosen", () => {
+    const el = openList();
+    act(() => el.querySelector<HTMLButtonElement>("[data-connect-platform='android']")?.click());
+    expect(el.querySelector("[data-testid='connect-platform-list']")).toBeNull();
+    expect(el.querySelector("[data-testid='connect-platform-trigger']")?.textContent).toContain(
+      "Android",
+    );
+  });
+
+  it("opens and moves on the keyboard", () => {
+    catalogPayload = TWO_PLATFORMS;
+    const el = render();
+    const trigger = el.querySelector<HTMLElement>("[data-testid='connect-platform-trigger']");
+    act(() => {
+      trigger?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    const list = el.querySelector<HTMLElement>("[data-testid='connect-platform-list']");
+    expect(list, "the list did not open on ArrowDown").not.toBeNull();
+    // Two renders, not one batch: within a single `act` the second handler
+    // would still read the pre-render `active`, and Enter would pick the row
+    // ArrowDown had just left. A person pressing two keys gets two tasks.
+    act(() => {
+      list?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    act(() => {
+      el.querySelector<HTMLElement>("[data-testid='connect-platform-list']")
+        ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(el.querySelector("[data-testid='connect-platform-trigger']")?.textContent).toContain(
+      "Android",
+    );
+  });
+});
+
+describe("the recommendation dot", () => {
+  /** What the browser makes of a colour, so the assertion is not about spelling. */
+  function asRendered(colour: string): string {
+    const probe = document.createElement("div");
+    probe.style.background = colour;
+    return probe.style.background;
+  }
+
+  it("is amber by default, not the accent", () => {
+    // Drawn in the accent it vanished on the chosen chip — that chip is FILLED
+    // with the accent — and read as punctuation on the others. The page this
+    // screen replaces marks its recommended app in yellow for the same reason:
+    // the mark is an annotation ON the catalog, not one more thing wearing the
+    // brand colour.
+    const el = render();
+    const dot = el.querySelector<HTMLElement>("[data-connect-featured]");
+    expect(dot, "nothing marks the recommended app").not.toBeNull();
+    expect(dot?.style.background).toBe(asRendered("#FACC15"));
+  });
+
+  it("sits in the top-left corner, clear of the label and the mark", () => {
+    const el = render();
+    const dot = el.querySelector<HTMLElement>("[data-connect-featured]");
+    // The mark bleeds off the top RIGHT, and the label is centred against the
+    // left padding. That corner is the one place nothing else is.
+    expect(dot?.className).toContain("absolute");
+    expect(dot?.className).toMatch(/left-\[/);
+    expect(dot?.className).toMatch(/top-\[/);
+    expect(dot?.className).not.toContain("ml-auto");
+  });
+
+  it("takes the operator's colour when they set one", () => {
+    catalogPayload = { ...CATALOG, featuredColor: "#00FF7F" };
+    const el = render();
+    const dot = el.querySelector<HTMLElement>("[data-connect-featured]");
+    expect(dot?.style.background).toBe(asRendered("#00FF7F"));
+  });
+
+  it("falls back to amber for a panel that never heard of the field", () => {
+    // The panel and the cabinet ship as separate images. A cabinet running
+    // ahead of its panel gets no field at all, and must not draw a dot with no
+    // colour — which renders as nothing and reads as "the mark disappeared".
+    catalogPayload = { ...CATALOG, featuredColor: undefined };
+    const el = render();
+    expect(el.querySelector<HTMLElement>("[data-connect-featured]")?.style.background).toBe(
+      asRendered("#FACC15"),
+    );
   });
 });

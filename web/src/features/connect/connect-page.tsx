@@ -24,14 +24,31 @@
  * 13px step rhythm, the 4px accent rail. Two things are deliberately NOT taken
  * from the artboards:
  *
- * CORNERS come from `--radius-card` / `--radius-item` / `--radius-pill`, never
- * from a number. The artboards draw a 22px card, a 10px icon box and a 4px mark
- * plate, and copying those literally is what made the fact tiles disagree with
- * the workspace under them: the tiles asked the theme, the little boxes inside
- * them did not, so the operator's own rounding stopped halfway down the screen.
- * A concept sets the tokens; everything on this screen reads them. Circles stay
- * circles — a step ring and a round action are round in every concept, and that
- * is a shape, not a radius.
+ * CORNERS come from `--radius-card` and `--radius-item`, never from a number
+ * and never from `--radius-pill`. The artboards draw a 22px card, a 10px icon
+ * box and a 4px mark plate, and copying those literally is what made the fact
+ * tiles disagree with the workspace under them: the tiles asked the theme, the
+ * little boxes inside them did not, so the operator's own rounding stopped
+ * halfway down the screen.
+ *
+ * The pill was the second half of that same report. The step buttons and the
+ * platform control were drawn at `--radius-pill`, which is 9999px — so on a
+ * concept with a 15px corner the screen held square-ish cards full of lozenges,
+ * and the two read as belonging to different designs. The page this screen
+ * replaces gives every surface, chip and button ONE radius, and that is the
+ * rule here: two tokens, a card and everything inside it.
+ *
+ * NOTHING on this screen is a circle by decree. That was the third half of the
+ * same report: the round header actions and the little icon boxes inside the
+ * fact tiles were drawn `rounded-full`, and against an artboard whose boxes are
+ * rounded squares they read as belonging somewhere else. The one exception is
+ * the recommendation dot, which is a dot — a 6px mark with no content in it.
+ *
+ * Small boxes take `SMALL_CORNER` rather than `--radius-item` outright, because
+ * a 24px box at a 15px radius IS a circle: the browser clamps opposing radii
+ * that overlap, so the theme's number silently becomes "round" below about
+ * 30px. The cap is a PERCENTAGE of the box, so the corner still moves with the
+ * theme everywhere it fits.
  *
  * TYPE is lifted: the artboards set micro-labels at 7px and body at 10px, which
  * is legible on a 2× export and not on a phone, so the scale is raised to the
@@ -57,7 +74,6 @@ import { useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   CalendarDays,
-  ChevronsUpDown,
   CircleCheck,
   Copy,
   ExternalLink,
@@ -89,6 +105,8 @@ import {
   type PlatformId,
 } from './connect-catalog'
 import { connectThemeStyle, readConnectTheme } from './connect-theme'
+import { ConnectLinkDialog } from './connect-link-dialog'
+import { PlatformPicker } from './connect-platform-picker'
 import { detectCurrentPlatform, rememberApp, rememberedApp } from './platform-detect'
 
 export default function ConnectPage() {
@@ -172,6 +190,7 @@ export default function ConnectPage() {
   const detected = useMemo(() => detectCurrentPlatform(), [])
   const [platformId, setPlatformId] = useState<PlatformId | null>(null)
   const [appId, setAppId] = useState<string | null>(null)
+  const [linkSheetOpen, setLinkSheetOpen] = useState(false)
 
   // Settles once the catalog arrives, and only for what the customer has not
   // chosen by hand — but it also has to re-settle when the chosen platform
@@ -286,10 +305,16 @@ export default function ConnectPage() {
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-[7px] md:gap-2">
+            {/* Opens the sheet rather than copying outright. The page this
+                screen replaces puts a QR behind this control, and that is the
+                only way to get a subscription onto a device that is not the one
+                holding the link — a TV box, a router, a desktop client. Copying
+                is still one tap away, inside the sheet, where it is the right
+                answer for the device that IS holding the link. */}
             <RoundAction
-              label={t('connect.copyLink')}
+              label={t('connect.linkSheetOpen')}
               disabled={subscriptionUrl.length === 0}
-              onClick={() => void copyLink()}
+              onClick={() => setLinkSheetOpen(true)}
             >
               <Link2 aria-hidden="true" className="size-[14px] md:size-4" />
             </RoundAction>
@@ -349,7 +374,8 @@ export default function ConnectPage() {
                   value={platform.id}
                   locale={locale}
                   label={t('connect.platform')}
-                  markup={catalog.icons[platform.iconKey ?? '']}
+                  icons={catalog.icons}
+                  surface={SURFACE}
                   onChange={(next) => {
                     setPlatformId(next)
                     setAppId(null)
@@ -392,6 +418,7 @@ export default function ConnectPage() {
                         catalog={catalog}
                         selected={candidate.id === app?.id}
                         onSelect={() => selectApp(platform.id, candidate.id)}
+                        featuredColor={catalog.featuredColor}
                       />
                     ))}
                   </div>
@@ -418,6 +445,20 @@ export default function ConnectPage() {
           </Workspace>
         </div>
       </div>
+
+      {/* Inside the themed element, deliberately. A portal to `document.body`
+          would put the sheet outside the element that declares the concept's
+          tokens, and custom properties inherit down the DOM — so it would open
+          wearing the cabinet's palette on a screen wearing something else. */}
+      {linkSheetOpen && (
+        <ConnectLinkDialog
+          url={subscriptionUrl}
+          surface={SURFACE}
+          buttonClassName={STEP_BUTTON}
+          onCopy={copyLink}
+          onClose={() => setLinkSheetOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -438,6 +479,32 @@ const RAISED =
 /** The sunken surface: chips, buttons, the timeline inside the workspace. */
 const SUNKEN =
   'border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]'
+
+/**
+ * The corner for a box too small to wear the theme's radius as written.
+ *
+ * `--radius-item` is the radius of a 48px chip. Put the same number on a 24px
+ * icon box and the two opposing radii overlap, the browser scales them down to
+ * half the box, and the result is a circle — which is how this screen ended up
+ * with round buttons and round icon boxes on artboards that draw neither.
+ *
+ * 35% keeps a visible corner on any square, and `min()` means the theme still
+ * decides everywhere its own number is the smaller of the two. The percentage
+ * resolves per axis, so a wide element keeps square corners rather than
+ * elliptical ones.
+ */
+const SMALL_CORNER = 'rounded-[min(var(--radius-item),35%)]'
+
+/**
+ * The two surfaces, handed to the parts of this screen that live in their own
+ * files — the platform list and the link sheet.
+ *
+ * Passed rather than imported so there is still exactly ONE definition of what
+ * a raised and a sunken surface look like. A second copy in the picker is how
+ * two controls on one screen end up with different borders after somebody
+ * changes the shadow here.
+ */
+const SURFACE = { raised: RAISED, sunken: SUNKEN } as const
 
 function Workspace({ children }: { children: React.ReactNode }) {
   return <section className={`${RAISED} p-4 md:p-6`}>{children}</section>
@@ -468,7 +535,7 @@ function RoundAction({
   href?: string
   disabled?: boolean
 }) {
-  const className = `${SUNKEN} flex size-8 items-center justify-center rounded-full text-[color:var(--brand-primary)] disabled:opacity-40 md:size-9`
+  const className = `${SUNKEN} ${SMALL_CORNER} flex size-8 items-center justify-center text-[color:var(--brand-primary)] disabled:opacity-40 md:size-9`
   if (href !== undefined) {
     return (
       <a href={href} aria-label={label} title={label} className={className}>
@@ -574,7 +641,9 @@ function Fact({
         <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[color:var(--brand-muted-foreground)]">
           {label}
         </span>
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] text-[color:var(--brand-primary)]">
+        <span
+          className={`${SMALL_CORNER} flex size-6 shrink-0 items-center justify-center border border-[color:var(--color-border-soft)] text-[color:var(--brand-primary)]`}
+        >
           {icon}
         </span>
       </div>
@@ -611,12 +680,16 @@ function AppTab({
   catalog,
   selected,
   onSelect,
+  featuredColor,
 }: {
   app: ConnectApp
   catalog: ConnectCatalog
   selected: boolean
   onSelect: () => void
+  /** The recommendation dot's colour — amber unless the operator set one. */
+  featuredColor: string
 }) {
+  const { t } = useTranslation()
   const markup = catalog.icons[app.iconKey ?? '']
   return (
     <button
@@ -659,17 +732,22 @@ function AppTab({
         />
       )}
       <span className="relative z-10 min-w-0 truncate text-base">{app.name}</span>
-      {/* The operator's own "start here". It is data we already carry and the
-          concepts mark it, so a catalog with a recommended app says so. */}
+      {/* The operator's own "start here", in the corner the page this screen
+          replaces puts it in: top left, clear of the label and clear of the
+          mark bleeding off the right edge.
+
+          It was drawn in the accent and sat at the end of the label, which
+          made it invisible on the chosen chip — that chip is FILLED with the
+          accent — and easy to read as punctuation on the others. Amber says
+          "annotation", and the ring keeps it legible on a light fill without
+          needing a second colour for the selected state. */}
       {app.featured && (
         <span
           data-connect-featured=""
-          aria-label="recommended"
-          className={`relative z-10 ml-auto size-[5px] shrink-0 rounded-full ${
-            selected
-              ? 'bg-[color:var(--brand-primary-fg)]'
-              : 'bg-[color:var(--brand-primary)]'
-          }`}
+          aria-label={t('connect.recommended')}
+          title={t('connect.recommended')}
+          className="absolute left-[7px] top-[7px] z-10 size-[6px] rounded-full shadow-[0_0_0_1.5px_rgba(0,0,0,0.3)]"
+          style={{ background: featuredColor }}
         />
       )}
     </button>
@@ -703,7 +781,7 @@ function StepRow({
             their steps and they would otherwise lose that on the way across.
             Absent — the ordinary case — means follow the theme. */}
         <span
-          className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]"
+          className={`${SMALL_CORNER} flex size-7 shrink-0 items-center justify-center border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]`}
           style={{ color: step.iconColor ?? 'var(--brand-primary)' }}
         >
           <Icon
@@ -753,7 +831,7 @@ function StepRow({
 }
 
 const STEP_BUTTON =
-  'flex w-full items-center justify-center gap-[6px] rounded-[var(--radius-pill)] px-[10px] py-2 text-xs font-semibold disabled:opacity-40'
+  'flex w-full items-center justify-center gap-[6px] rounded-[var(--radius-item)] px-[10px] py-2 text-xs font-semibold disabled:opacity-40'
 
 function StepButton({
   button,
@@ -807,59 +885,6 @@ function StepButton({
       <Link2 aria-hidden="true" className="size-4" />
       {label}
     </a>
-  )
-}
-
-function PlatformPicker({
-  platforms,
-  value,
-  locale,
-  label,
-  markup,
-  onChange,
-}: {
-  platforms: readonly ConnectPlatform[]
-  value: PlatformId
-  locale: string
-  label: string
-  /** The platform's own mark, so the control says which device it is set to. */
-  markup?: string
-  onChange: (next: PlatformId) => void
-}) {
-  // Kept even though the platform is detected: detection reads a string the
-  // browser chooses to send, and every "request desktop site" toggle exists to
-  // make it lie. A wrong guess costs one tap; asking everyone costs it always.
-  return (
-    <label
-      aria-label={label}
-      className={`${SUNKEN} flex shrink-0 items-center gap-[6px] rounded-[var(--radius-pill)] px-[9px] py-2 md:gap-2 md:px-3 md:py-2.5`}
-    >
-      <span className="sr-only">{label}</span>
-      <Icon markup={markup} className="size-[13px] text-[color:var(--brand-primary)] md:size-[15px]" />
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value as PlatformId)}
-        className="appearance-none bg-transparent pr-1 text-xs font-medium outline-none"
-      >
-        {platforms.map((platform) => (
-          // The open list is drawn by the operating system, and `color-scheme`
-          // on the screen decides light or dark for it. These two also paint the
-          // rows on the desktop browsers that honour them, so the list matches
-          // the concept rather than merely stopping being white.
-          <option
-            key={platform.id}
-            value={platform.id}
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              color: 'var(--brand-foreground)',
-            }}
-          >
-            {line(platform.title, locale)}
-          </option>
-        ))}
-      </select>
-      <ChevronsUpDown aria-hidden="true" className="size-3 shrink-0 text-[color:var(--brand-primary)] md:size-3.5" />
-    </label>
   )
 }
 

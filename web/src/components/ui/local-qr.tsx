@@ -9,10 +9,19 @@ export function LocalQr({
   url,
   label,
   size = 96,
+  captioned = true,
 }: {
   url: string;
   label: string;
   size?: number;
+  /**
+   * The caption under the code. On by default because that is what the two
+   * callers that came first need; off where the code already sits under a
+   * heading that says the same thing, and repeating it there reads as a
+   * mistake. `label` stays the alt text either way — a code with no accessible
+   * name is a picture nobody can identify.
+   */
+  captioned?: boolean;
 }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
 
@@ -43,7 +52,7 @@ export function LocalQr({
           style={{ width: size, height: size }}
           aria-hidden
         />
-        <span className="text-[9px] text-muted-foreground">{label}</span>
+        {captioned && <span className="text-[9px] text-muted-foreground">{label}</span>}
       </div>
     );
   }
@@ -51,7 +60,7 @@ export function LocalQr({
   return (
     <div className="flex flex-col items-center gap-1">
       <img src={dataUrl} alt={label} width={size} height={size} className="rounded-md bg-white p-1" />
-      <span className="text-[9px] text-muted-foreground">{label}</span>
+      {captioned && <span className="text-[9px] text-muted-foreground">{label}</span>}
     </div>
   );
 }
