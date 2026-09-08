@@ -1,0 +1,9 @@
+{
+  "_comment": "Пример. Переименуйте в ru.override.json и оставьте только свои ключи. Смотрите README.md рядом.",
+  "plans": {
+    "durationOptions_one": "{{count}} вариант",
+    "durationOptions_few": "{{count}} варианта",
+    "durationOptions_many": "{{count}} вариантов",
+    "durationOptions_other": "{{count}} вариантов"
+  }
+}

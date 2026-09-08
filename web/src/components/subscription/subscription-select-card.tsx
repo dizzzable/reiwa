@@ -32,11 +32,8 @@ import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/
 import { useBranding } from "@/lib/branding-provider";
 import { useCardEffectSlot } from "@/lib/card-effect-budget";
 import { brandAuroraStops, cn, formatDate } from "@/lib/utils";
+import { subscriptionTitle } from "@/lib/subscription-title";
 
-/** Subscription identity as shown on the dashboard card (profile first). */
-function subscriptionTitle(sub: Subscription): string {
-  return sub.profileName || sub.plan?.name || sub.id;
-}
 
 export function SubscriptionSelectCard({
   subscription,

@@ -552,6 +552,11 @@ export function createApp(deps: CreateAppDeps) {
         setHeaders: (res, filePath) => {
           if (filePath.endsWith("index.html")) {
             res.setHeader("Cache-Control", "no-cache");
+          } else if (filePath.includes(`${path.sep}locales${path.sep}`)) {
+            // Operator wording, mounted into the container by hand. Edited on
+            // the server and expected to take effect on the next load, so it
+            // must never be served from a cache the operator cannot see.
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
           } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
             res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
           }

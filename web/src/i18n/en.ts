@@ -914,6 +914,15 @@ export const en: RuDict = {
     linkUnknown: 'Could not load the link — try again',
     noSectionForDevice: 'There are no instructions for your device yet. Pick a platform by hand.',
     appsForPlatform: 'Apps for this platform',
+    install: 'Installation',
+    installHint: 'Pick an app and follow the steps',
+    subscriptionMissing:
+      'This subscription is unavailable — it may have been cancelled, or the link is out of date. Go back and pick a subscription again.',
+    support: 'Support',
+    factName: 'Name',
+    factStatus: 'Status',
+    factExpires: 'Expires',
+    factTraffic: 'Traffic',
   },
   devices: {
     title: 'Connected devices',

@@ -22,10 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { executeSubscriptionDeleteWithAmbiguousRetry } from "../subscription-delete-policy";
-
-function subscriptionTitle(sub: Subscription): string {
-  return sub.profileName || sub.plan?.name || sub.id;
-}
+import { subscriptionTitle } from "@/lib/subscription-title";
 
 export function DeleteSubscriptionDialog({
   subscription,

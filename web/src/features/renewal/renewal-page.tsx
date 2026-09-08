@@ -49,6 +49,7 @@ import {
   resolveRenewalAddOnReview,
 } from "./renewal-review-policy";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
+import { subscriptionTitle } from "@/lib/subscription-title";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -86,11 +87,6 @@ function formatPrice(amount: string | null, currency: string | null): string {
   if (amount === null || currency === null) return "—";
   const symbol = CURRENCY_SYMBOLS[currency] ?? "";
   return `${symbol}${formatCurrencyAmount(amount)} ${currency}`;
-}
-
-/** Subscription identity as shown on the dashboard card (profile first). */
-function subscriptionTitle(sub: Subscription): string {
-  return sub.profileName || sub.plan?.name || sub.id;
 }
 
 export default function RenewalPage() {
