@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  connectBackdrop,
   connectThemeStyle,
   isSafeBackgroundImage,
   readConnectTheme,
@@ -66,7 +67,29 @@ describe("a concept the panel actually sends", () => {
     const style = connectThemeStyle(readConnectTheme(REAL_THEME)) as Record<string, string>;
     expect(style["--brand-primary"]).toBe("#FF6B7A");
     expect(style["--color-border-soft"]).toBe("#FF8AA83D");
-    expect(style.backgroundImage).toBe(REAL_BACKGROUND);
+  });
+
+  it("hands the ground to the shell rather than painting it here", () => {
+    // Painted on this element it covers the route's own column and leaves the
+    // cabinet's black down both sides — "что за обрубки по бокам". `<main>` is
+    // where it belongs, and `<main>` is a sibling of the navigation, so the
+    // sidebar and the capsule keep the cabinet's appearance by construction.
+    const style = connectThemeStyle(readConnectTheme(REAL_THEME)) as Record<string, string>;
+    expect(style.backgroundImage).toBeUndefined();
+    expect(style.backgroundColor).toBeUndefined();
+
+    const backdrop = connectBackdrop(readConnectTheme(REAL_THEME));
+    expect(backdrop?.backgroundImage).toBe(REAL_BACKGROUND);
+    expect(backdrop?.backgroundColor).toBe("#05070D");
+    // The rail travels with the ground for the same reason: the concept draws
+    // it at the edge of the SCREEN, and in the cabinet the screen begins where
+    // the navigation ends.
+    expect(backdrop?.rail).toBe("#FF6B7A");
+  });
+
+  it("asks for no backdrop at all when there is no concept", () => {
+    // Absent is the ordinary case and must leave `<main>` exactly as it was.
+    expect(connectBackdrop(null)).toBeNull();
   });
 
   it("keeps the rail out of the custom properties", () => {
@@ -210,7 +233,7 @@ describe("token values", () => {
     // What this still refuses is a stray property nobody declared on purpose.
     const style = connectThemeStyle(readConnectTheme(REAL_THEME)) as Record<string, string>;
     const plain = Object.keys(style).filter((key) => !key.startsWith("--")).sort();
-    expect(plain).toEqual(["backgroundColor", "backgroundImage", "color", "colorScheme"]);
+    expect(plain).toEqual(["color", "colorScheme"]);
     // And `color` reads the token rather than pinning a literal, so a theme
     // that omits the foreground still inherits the cabinet's.
     expect(style.color).toBe("var(--brand-foreground)");

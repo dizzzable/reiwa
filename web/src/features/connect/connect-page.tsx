@@ -104,10 +104,11 @@ import {
   type ConnectPlatform,
   type PlatformId,
 } from './connect-catalog'
-import { connectThemeStyle, readConnectTheme } from './connect-theme'
+import { connectBackdrop, connectThemeStyle, readConnectTheme } from './connect-theme'
 import { ConnectLinkDialog } from './connect-link-dialog'
 import { PlatformPicker } from './connect-platform-picker'
 import { detectCurrentPlatform, rememberApp, rememberedApp } from './platform-detect'
+import { usePageBackdropStore } from '@/stores/page-backdrop.store'
 
 export default function ConnectPage() {
   const { t, i18n } = useTranslation()
@@ -143,6 +144,24 @@ export default function ConnectPage() {
       ),
     [catalogQuery.data],
   )
+
+  /**
+   * The concept's ground goes to the SHELL, not to this element.
+   *
+   * A background painted here covers the route's own column — `<main>` centres
+   * it at `max-w-[46rem]` — and leaves the cabinet's black down both sides. The
+   * shell paints `<main>`, which reaches the edges of the page and stops at the
+   * navigation, so the sidebar and the capsule keep the cabinet's appearance.
+   *
+   * Cleared on the way out, and on the way out only: a concept that followed
+   * the customer back to the dashboard would be a cabinet wearing two themes.
+   */
+  const setBackdrop = usePageBackdropStore((state) => state.setBackdrop)
+  const backdrop = useMemo(() => connectBackdrop(theme), [theme])
+  useEffect(() => {
+    setBackdrop(backdrop)
+    return () => setBackdrop(null)
+  }, [backdrop, setBackdrop])
 
   // WHICH subscription. The dashboard hands the id over in the query string,
   // exactly as it does for add-ons: a customer can hold several, the button
@@ -278,14 +297,6 @@ export default function ConnectPage() {
       className="relative min-h-[100dvh] pb-10"
       style={{ colorScheme: themeMode, ...connectThemeStyle(theme) }}
     >
-      {theme?.rail != null && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 left-0 w-1"
-          style={{ background: theme.rail }}
-        />
-      )}
-
       {/* Two artboards, one arrangement. The desktop concept is the same
           vertical stack at 960 with 60px gutters, wider gaps and an app row
           instead of an app grid — so the breakpoints below are the only place
@@ -672,8 +683,24 @@ function Fact({
  * Every chip is the SAME shape. The artboards draw the selected one at a 5px
  * corner against 18px for the rest, and rendered at real size that reads as a
  * chip that failed to round rather than as a chip that is chosen — reported as
- * exactly that. Selection is the fill, and `aria-pressed` carries it for anyone
- * who cannot see the fill at all.
+ * exactly that.
+ *
+ * ── Selection is a frosted tint, not a fill ──────────────────────────────────
+ *
+ * It WAS a fill: the chosen chip took `--brand-primary` solid. That covered the
+ * one thing the chip exists to show. Most marks are a light glyph, the mark is
+ * drawn at a quarter opacity, and a light glyph at 25% over a near-white accent
+ * is nothing at all — so the chosen app was the one chip with no logo on it,
+ * which is precisely backwards. Reported as "баг с кнопкой остался, что
+ * теряется лого".
+ *
+ * The chip now keeps the sunken surface and its own mark, and the choice is
+ * said with the accent border, an 18% wash of the accent over the whole chip,
+ * and the concept's own blur behind it. On a monochrome concept that reads as
+ * the white frosting it was asked for; on a coloured one it is that concept's
+ * accent, which is the same statement in its own palette.
+ *
+ * `aria-pressed` carries it for anyone who can see none of that.
  */
 function AppTab({
   app,
@@ -706,10 +733,10 @@ function AppTab({
       //
       // The corner is the theme's, not the page's 8px: an operator sets one
       // rounding for the cabinet and it applies here too.
-      className={`relative flex h-12 min-w-0 flex-1 basis-[9rem] items-center gap-2 overflow-hidden rounded-[var(--radius-item)] border py-0 pl-4 pr-12 ${
+      className={`relative flex h-12 min-w-0 flex-1 basis-[9rem] items-center gap-2 overflow-hidden rounded-[var(--radius-item)] border bg-[color:var(--color-surface)] py-0 pl-4 pr-12 ${
         selected
-          ? 'border-[color:var(--brand-primary)] bg-[color:var(--brand-primary)] text-[color:var(--brand-primary-fg)]'
-          : 'border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)]'
+          ? 'border-[color:var(--brand-primary)] text-[color:var(--brand-foreground)] backdrop-blur-[var(--glass-blur)]'
+          : 'border-[color:var(--color-border-soft)] text-[color:var(--brand-muted-foreground)]'
       }`}
     >
       {markup !== undefined && (
@@ -729,6 +756,15 @@ function AppTab({
           data-connect-app-mark=""
           className="pointer-events-none absolute -top-1 -right-[11px] size-14 opacity-25 [&>svg]:size-14"
           dangerouslySetInnerHTML={{ __html: markup }}
+        />
+      )}
+      {/* The wash, ABOVE the mark and below the label: frosting sits over what
+          it frosts, so the logo reads through it rather than beside it. */}
+      {selected && (
+        <span
+          aria-hidden="true"
+          data-connect-app-tint=""
+          className="pointer-events-none absolute inset-0 bg-[color:var(--brand-primary)] opacity-[0.18]"
         />
       )}
       <span className="relative z-10 min-w-0 truncate text-base">{app.name}</span>

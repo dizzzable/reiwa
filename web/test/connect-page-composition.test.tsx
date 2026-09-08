@@ -153,6 +153,7 @@ vi.mock("@/components/ui/back-button", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const { default: ConnectPage } = await import("../src/features/connect/connect-page");
+const { usePageBackdropStore } = await import("../src/stores/page-backdrop.store");
 
 let root: Root | null = null;
 let host: HTMLDivElement | null = null;
@@ -177,6 +178,7 @@ afterEach(() => {
   host?.remove();
   root = null;
   host = null;
+  usePageBackdropStore.setState({ backdrop: null });
 });
 
 describe("the arrangement the concepts share", () => {
@@ -555,14 +557,18 @@ describe("what colour an icon takes", () => {
 });
 
 describe("a concept the operator chose", () => {
-  it("paints one element and not the document", () => {
+  it("scopes its tokens to one element, not to the document", () => {
     // A token written onto `documentElement` would follow the customer back out
     // of this screen and repaint a cabinet wearing a different concept.
     const el = render();
     const themed = el.querySelector<HTMLElement>("[data-connect-theme='concept']");
     expect(themed).not.toBeNull();
     expect(themed?.style.getPropertyValue("--brand-primary")).toBe("#FF6B7A");
-    expect(themed?.style.backgroundImage).toContain("linear-gradient");
+    // The GROUND is not here — it goes to the shell, which paints `<main>`.
+    // Painted here it covers only this route's own column and leaves the
+    // cabinet's black down both sides: "что за обрубки по бокам".
+    expect(themed?.style.backgroundImage).toBe("");
+    expect(themed?.style.backgroundColor).toBe("");
     expect(document.documentElement.style.getPropertyValue("--brand-primary")).toBe("");
   });
 
@@ -842,5 +848,103 @@ describe("the recommendation dot", () => {
     expect(el.querySelector<HTMLElement>("[data-connect-featured]")?.style.background).toBe(
       asRendered("#FACC15"),
     );
+  });
+});
+
+describe("the ground the screen hands to the shell", () => {
+  /**
+   * The concept is a palette AND a ground, and they land in different places.
+   * The palette is declared on this screen's own element so it cannot follow
+   * the customer back out. The ground cannot live there at all: the screen is
+   * rendered inside `<main>`'s centred column, so a background painted here is
+   * a themed rectangle with the cabinet's black down both sides — reported from
+   * a desktop as "что за обрубки по бокам".
+   */
+  it("publishes it while the screen is open", () => {
+    render();
+    const backdrop = usePageBackdropStore.getState().backdrop;
+    expect(backdrop?.backgroundImage).toContain("linear-gradient");
+    expect(backdrop?.backgroundColor).toBe("#05070D");
+    expect(backdrop?.rail).toBe("#FF6B7A");
+  });
+
+  it("takes it back on the way out", () => {
+    // A concept that followed the customer to the dashboard would be a cabinet
+    // wearing two themes at once.
+    render();
+    expect(usePageBackdropStore.getState().backdrop).not.toBeNull();
+    act(() => root?.unmount());
+    root = null;
+    expect(usePageBackdropStore.getState().backdrop).toBeNull();
+  });
+
+  it("asks for nothing when the operator picked no concept", () => {
+    catalogPayload = { ...CATALOG, theme: undefined };
+    render();
+    expect(usePageBackdropStore.getState().backdrop).toBeNull();
+  });
+});
+
+describe("the chosen app keeps its logo", () => {
+  /**
+   * THE CHIP WAS FILLED WITH THE ACCENT, AND THAT COVERED THE ONE THING IT IS
+   * FOR.
+   *
+   * Most vendor marks are a light glyph, the mark is drawn at a quarter
+   * opacity, and a light glyph at 25% over a near-white accent is nothing at
+   * all — so the app the customer had chosen was the single chip on the screen
+   * with no logo on it. Reported as "баг с кнопкой остался, что теряется лого".
+   *
+   * The chip now keeps the sunken surface and its mark, and the choice is said
+   * with the accent border and an 18% wash of the accent over the whole chip.
+   */
+  const chosen = (el: HTMLElement) =>
+    el.querySelector<HTMLElement>("[data-connect-app][aria-pressed='true']");
+
+  it("does not fill the chosen chip with the accent", () => {
+    const el = render();
+    const chip = chosen(el);
+    expect(chip, "nothing is marked as chosen").not.toBeNull();
+    expect(chip?.className).not.toContain("bg-[color:var(--brand-primary)]");
+    expect(chip?.className).toContain("bg-[color:var(--color-surface)]");
+  });
+
+  it("says the choice with a wash over the chip, and frosts it", () => {
+    const el = render();
+    const chip = chosen(el);
+    const tint = chip?.querySelector<HTMLElement>("[data-connect-app-tint]");
+    expect(tint, "the choice is not a wash").not.toBeNull();
+    expect(tint?.className).toMatch(/opacity-\[0?\.\d+\]/);
+    expect(tint?.className).toContain("pointer-events-none");
+    // The frosting the concept's own blur provides.
+    expect(chip?.className).toContain("backdrop-blur-[var(--glass-blur)]");
+    // And the border still carries it for anyone the wash is too subtle for.
+    expect(chip?.className).toContain("border-[color:var(--brand-primary)]");
+  });
+
+  it("keeps the mark on the chosen chip, at the same weight as the others", () => {
+    const el = render();
+    const chip = chosen(el);
+    const mark = chip?.querySelector<HTMLElement>("[data-connect-app-mark]");
+    expect(mark, "the chosen app lost its logo").not.toBeNull();
+    expect(mark?.className).toContain("opacity-25");
+  });
+
+  it("puts the wash above the mark and below the label", () => {
+    // Frosting sits over what it frosts. Under the mark it would not frost it;
+    // over the label it would dim the name.
+    const el = render();
+    const chip = chosen(el);
+    const order = [...(chip?.children ?? [])].map((node) =>
+      node.hasAttribute("data-connect-app-mark")
+        ? "mark"
+        : node.hasAttribute("data-connect-app-tint")
+          ? "tint"
+          : node.hasAttribute("data-connect-featured")
+            ? "dot"
+            : "label",
+    );
+    expect(order.indexOf("tint")).toBeGreaterThan(order.indexOf("mark"));
+    expect(order.indexOf("tint")).toBeLessThan(order.indexOf("label"));
   });
 });

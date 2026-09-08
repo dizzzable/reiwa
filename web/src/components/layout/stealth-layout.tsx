@@ -37,6 +37,7 @@ import { ensurePushSubscription } from "@/lib/push";
 import { nextDestinationQuery } from "@/lib/next-destination";
 import { readTelegramLaunchInitData } from "@/lib/telegram-launch-params";
 import { resolveAppBackgroundKind } from "@/types/branding";
+import { usePageBackdropStore } from "@/stores/page-backdrop.store";
 
 type Surface = "tma" | "pwa" | "browser";
 type FormFactor = "mobile" | "tablet" | "desktop";
@@ -118,6 +119,28 @@ export default function StealthLayout() {
   const { branding } = useBranding();
   const isDesktop = useIsDesktop();
   const location = useLocation();
+  /**
+   * The ground the current route asked the shell to paint, or nothing.
+   *
+   * Nothing is the ordinary case: every route but the connect screen leaves
+   * this alone and `<main>` keeps the cabinet's own appearance, exactly as
+   * before. See `page-backdrop.store.ts` for why a route cannot do this itself.
+   */
+  const backdrop = usePageBackdropStore((state) => state.backdrop);
+  const backdropStyle = useMemo(
+    () =>
+      backdrop === null
+        ? undefined
+        : {
+            ...(backdrop.backgroundColor === null
+              ? {}
+              : { backgroundColor: backdrop.backgroundColor }),
+            ...(backdrop.backgroundImage === null
+              ? {}
+              : { backgroundImage: backdrop.backgroundImage }),
+          },
+    [backdrop],
+  );
   // Telemetry only needs the display mode, so read it directly rather than
   // calling `useInstallPrompt()` for one field of four.
   //
@@ -307,7 +330,18 @@ export default function StealthLayout() {
           <div className="relative z-20 shrink-0" data-tour="bottom-nav">
             <SideNav />
           </div>
-          <main className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto">
+          {/* The ground a route asked for, on `<main>` rather than inside the
+              column. A concept painted in the column is a themed rectangle
+              floating in the cabinet's own black with a seam down each side —
+              "что за обрубки по бокам". `<main>` is a SIBLING of the sidebar,
+              so this reaches the edges of the page and stops where the
+              navigation begins; the sidebar keeps the cabinet's appearance
+              because nothing here can reach it. */}
+          <main
+            className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto"
+            style={backdropStyle}
+          >
+            <PageRail colour={backdrop?.rail ?? null} />
             <div className="mx-auto w-full max-w-[46rem] px-2">
               <PageTransition>
                 <RouteContentBoundary>
@@ -346,6 +380,10 @@ export default function StealthLayout() {
           <main
             className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto"
             style={{
+              // A route's own ground, if it asked for one. It stops at the
+              // capsule for the same reason it stops at the sidebar on a
+              // desktop: the navigation is not inside `<main>`.
+              ...backdropStyle,
               paddingBottom: BOTTOM_NAV_CONTENT_INSET,
               // The same length again, as the scrollport's "keep this clear"
               // margin. The browser scrolls a focused field into view by
@@ -360,6 +398,7 @@ export default function StealthLayout() {
               scrollPaddingBottom: BOTTOM_NAV_CONTENT_INSET,
             }}
           >
+            <PageRail colour={backdrop?.rail ?? null} />
             <PageTransition>
               <RouteContentBoundary>
                 <Outlet />
@@ -415,5 +454,30 @@ export default function StealthLayout() {
       </div>
       <HintController audience={hintAudience} />
     </OnboardingTourProvider>
+  );
+}
+
+/**
+ * The concept's 4px accent rail, down the left edge of the content area.
+ *
+ * `sticky` rather than `absolute`: an absolutely positioned child of a scroll
+ * container is laid out against its padding box, so it scrolls away and a long
+ * page loses the rail below the fold. Sticky pins it to the top of the
+ * scrollport and the negative margin gives it back the line it would otherwise
+ * take, so it costs the page no height.
+ *
+ * It sits at the left edge of `<main>`, which on a desktop is where the sidebar
+ * ends — the concept draws it at the edge of the screen, and in the cabinet the
+ * screen starts there.
+ */
+function PageRail({ colour }: { colour: string | null }) {
+  if (colour === null) return null;
+  return (
+    <span
+      aria-hidden="true"
+      data-page-rail=""
+      className="pointer-events-none sticky top-0 left-0 z-10 -mb-[100dvh] block h-[100dvh] w-1"
+      style={{ background: colour }}
+    />
   );
 }

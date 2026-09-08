@@ -267,13 +267,37 @@ function readHexChannels(value: string): readonly [number, number, number] | nul
 }
 
 /**
+ * The ground the shell paints across the whole content area.
+ *
+ * Separate from {@link connectThemeStyle} because the two land in different
+ * places for different reasons: the tokens belong to this route's subtree so
+ * they cannot follow the customer back out, and the ground belongs to `<main>`
+ * so it reaches the edges of the page. `<main>` is a sibling of the navigation,
+ * so this can never repaint the sidebar or the capsule — which is the half of
+ * the request that says the navigation stays as it was.
+ */
+export function connectBackdrop(theme: ConnectScreenTheme | null): {
+  readonly backgroundColor: string | null
+  readonly backgroundImage: string | null
+  readonly rail: string | null
+} | null {
+  if (theme === null) return null
+  if (theme.backgroundColor === null && theme.backgroundImage === null && theme.rail === null) {
+    return null
+  }
+  return {
+    backgroundColor: theme.backgroundColor,
+    backgroundImage: theme.backgroundImage,
+    rail: theme.rail,
+  }
+}
+
+/**
  * The inline style that carries the theme.
  *
  * Scoped to one element rather than written onto `documentElement`: the
  * customer arrives here from a cabinet wearing a different concept and leaves
- * back into it, and a token set on the root would follow them out. The cabinet
- * paints its background on the body, so this element paints its own on top and
- * the two never have to agree.
+ * back into it, and a token set on the root would follow them out.
  */
 export function connectThemeStyle(theme: ConnectScreenTheme | null): CSSProperties {
   if (theme === null) return {}
@@ -281,8 +305,13 @@ export function connectThemeStyle(theme: ConnectScreenTheme | null): CSSProperti
   for (const [token, value] of Object.entries(theme.tokens)) {
     style[`--${token}`] = value
   }
-  if (theme.backgroundColor !== null) style.backgroundColor = theme.backgroundColor
-  if (theme.backgroundImage !== null) style.backgroundImage = theme.backgroundImage
+  // The GROUND is deliberately not here. It is published to the shell instead
+  // (`connectBackdrop`), because this element is the route's own column inside
+  // `<main>`'s centred `max-w-[46rem]` — painting a concept there produces a
+  // themed rectangle floating in the cabinet's black with a seam down each
+  // side. Reported as "что за обрубки по бокам". Painting it in BOTH places is
+  // worse than either: the gradient's percentages resolve against each element,
+  // so the two copies are scaled differently and the seam becomes a mismatch.
 
   // `color`, explicitly, on the SAME element that declares the token.
   //
