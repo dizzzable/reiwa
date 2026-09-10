@@ -91,21 +91,29 @@ createRoot(root).render(
             <Toaster
               position="top-center"
               offset={16}
-              toastOptions={{
-                // Glass surface matching the cabinet's dialogs/sheets
-                // (near-black translucent, heavy blur, hairline border,
-                // rounded corners) so toasts read as one design system.
-                style: {
-                  background: 'rgba(9,9,11,0.92)',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  color: '#fafafa',
-                  backdropFilter: 'blur(40px)',
-                  WebkitBackdropFilter: 'blur(40px)',
-                  borderRadius: '16px',
-                  boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
-                  fontSize: '13px',
-                },
-              }}
+              // NOT cosmetic, and not a claim about the customer's OS.
+              //
+              // Sonner styles the toast's CHILDREN — description, action
+              // button, "later" chip, close button — through its own palette,
+              // and its default is `light`. The card underneath has always been
+              // near-black. So the hint BODY rendered #3f3f3f on rgba(9,9,11)
+              // — about 1.9:1 — and the whole message the operator wrote was
+              // invisible; the "later" chip was worse. Nothing in the cabinet
+              // had ever passed `description` or `closeButton` before this
+              // hint toast, so the palette had never been asked for anything
+              // but a title.
+              //
+              // This says "the surface these children sit on is dark", which is
+              // a fact about `.cabinet-toast`, not a preference.
+              theme="dark"
+              // Glass surface matching the cabinet's dialogs/sheets so toasts
+              // read as one design system — in `index.css` under
+              // `.cabinet-toast`, NOT inline here, and that is not tidying.
+              // An inline declaration beats every stylesheet rule, so while the
+              // surface was written here the four hint tones an operator picks
+              // in the panel could not be drawn at all: warning, success and
+              // danger all arrived as the same near-black card.
+              toastOptions={{ className: 'cabinet-toast' }}
             />
           </TooltipProvider>
         </BrandingProvider>

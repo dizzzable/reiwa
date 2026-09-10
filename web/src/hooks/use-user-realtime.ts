@@ -30,7 +30,9 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { useSession } from "./use-session";
+import { realtimeEventText } from "./realtime-event-copy";
 import { terminateDeletedUserSession } from "./user-realtime-session-policy";
 import { signOut } from "@/lib/api-client";
 import {
@@ -75,6 +77,13 @@ const DEBOUNCE_MS = 400;
 export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
   const { isAuthenticated } = useSession();
   const queryClient = useQueryClient();
+  // Through a ref, not a dependency. `t` is a new function on every language
+  // change, and putting it in the effect's deps would tear down and rebuild the
+  // EventSource whenever the customer switches language — dropping whatever the
+  // stream was mid-way through delivering.
+  const { t } = useTranslation();
+  const tRef = useRef(t);
+  tRef.current = t;
   const onEventRef = useRef(options.onEvent);
   onEventRef.current = options.onEvent;
   const showToasts = options.showToasts ?? true;
@@ -114,15 +123,21 @@ export function useUserRealtime(options: UseUserRealtimeOptions = {}): void {
       for (const key of ALWAYS_INVALIDATE) scheduleInvalidate(key);
 
       if (showToasts) {
+        // THIS CABINET'S WORDS, in the customer's language — not the sentence
+        // the panel sent. See `realtime-event-copy`: that sentence used to be
+        // the operator's own, English, naming the Remnawave profile built
+        // around the customer's login. It is neutral now, and it is still one
+        // language for a bilingual cabinet.
+        const text = realtimeEventText(tRef.current, event);
         if (event.severity === "ERROR") {
-          toast.error(event.message);
+          toast.error(text);
         } else if (event.severity === "WARNING") {
-          toast.warning(event.message);
+          toast.warning(text);
         } else if (event.type !== "realtime.ready") {
           // INFO events: keep silent except on explicit user-facing types.
           // The map above is intentionally narrow to avoid toast spam.
           if (event.category === "SUBSCRIPTION" || event.category === "PAYMENT") {
-            toast.success(event.message);
+            toast.success(text);
           }
         }
       }

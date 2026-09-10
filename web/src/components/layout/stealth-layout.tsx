@@ -12,7 +12,7 @@
  * checking on its own.
  */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -34,6 +34,7 @@ import { reportSurface } from "@/lib/api-client";
 import { HintController } from "@/features/hints/hint-controller";
 import { getPlatformPolicy } from "@/lib/api-client";
 import { ensurePushSubscription } from "@/lib/push";
+import { isPushResyncFresh, rememberPushResync } from "@/lib/push-resync-marker";
 import { nextDestinationQuery } from "@/lib/next-destination";
 import { readTelegramLaunchInitData } from "@/lib/telegram-launch-params";
 import { resolveAppBackgroundKind } from "@/types/branding";
@@ -107,7 +108,6 @@ function detectFormFactor(): FormFactor {
 }
 
 const SURFACE_REPORTED_KEY = "reiwa_surface_reported";
-const PUSH_RESYNC_KEY = "reiwa_push_resynced";
 
 export default function StealthLayout() {
   const { session, isLoading } = useSession();
@@ -204,18 +204,59 @@ export default function StealthLayout() {
     [session, isStandalone],
   );
 
-  // Heal a rotated / pruned web-push subscription once per session (no prompt;
-  // only when permission is already granted). Repairs the "push silently stops
-  // arriving" drift after VAPID rotation or a server-side 410 cleanup.
+  /**
+   * A heal that is already running.
+   *
+   * The effect below depends on `session`, whose object IDENTITY changes every
+   * time the `["session"]` query is invalidated — `subscription.created`,
+   * `payment.completed`, `referral.reward_issued` all do that, and a purchase
+   * fires more than one within seconds. The marker is only written on success,
+   * so nothing else stops two runs overlapping: two `subscribe()` calls and two
+   * POSTs against the same per-IP budget every customer behind one NAT shares.
+   * A ref is enough — this is one tab, not one cluster.
+   */
+  const healingPush = useRef(false);
+
+  // Heal a rotated / pruned web-push subscription (no prompt; only when
+  // permission is already granted). Repairs the "push silently stops arriving"
+  // drift after VAPID rotation or a server-side 410 cleanup.
   useEffect(() => {
     if (!session) return;
-    try {
-      if (sessionStorage.getItem(PUSH_RESYNC_KEY) === "1") return;
-      sessionStorage.setItem(PUSH_RESYNC_KEY, "1");
-    } catch {
-      // sessionStorage unavailable — fall through; healing is idempotent.
-    }
-    void ensurePushSubscription();
+    if (healingPush.current) return;
+    // BOUNDED IN TIME, not "once per tab". `sessionStorage` outlives reloads
+    // and `location.replace`, so the old `"1"` meant a pinned tab that healed
+    // at nine in the morning would never try again — including after the
+    // service worker rotated the subscription, POSTed it into a lapsed session
+    // and got a 401. `push-resync-marker.ts` carries the full reasoning; the
+    // short version is that a wrong "done" now expires, and the worker can also
+    // retire it outright the moment it knows better.
+    if (isPushResyncFresh()) return;
+    healingPush.current = true;
+    // MARKED DONE ONLY ONCE IT IS DONE. The marker used to be written before
+    // the call, so an attempt that failed for any reason — a 429 from the
+    // per-IP budget every customer behind one NAT shares, a 503 while the BFF
+    // has no upstream, a 500 on a blip — burned the tab's only attempt.
+    //
+    // That asymmetry ran the wrong way for the very bug this line exists to
+    // fix: an installed PWA gets a fresh session store on every launch and so
+    // retries constantly, while a browser tab a customer keeps pinned for
+    // weeks got exactly one try. Retrying on the next session change is
+    // bounded and cheap.
+    // `await` rather than `.then`, so a caller that hands back nothing — a
+    // stub in a test, an older build of this module — simply reads as "not
+    // healed" instead of throwing out of an effect and taking the shell with
+    // it. That is not hypothetical: `.then` on a mocked `undefined` broke
+    // five unrelated suites the moment this line was written.
+    void (async () => {
+      try {
+        const healed = await ensurePushSubscription();
+        if (healed === true) rememberPushResync();
+      } finally {
+        // Released whatever happened, so the NEXT session change may retry.
+        // The marker, not this flag, is what stops a successful heal repeating.
+        healingPush.current = false;
+      }
+    })();
   }, [session]);
 
   // Which of the two background renderers this shell mounts.
@@ -337,8 +378,11 @@ export default function StealthLayout() {
               so this reaches the edges of the page and stops where the
               navigation begins; the sidebar keeps the cabinet's appearance
               because nothing here can reach it. */}
+          {/* No z-index, deliberately — see the note on the mobile `<main>`
+              below: it made `<main>` a stacking context that every route
+              overlay lost to the floating navigation from. */}
           <main
-            className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto"
+            className="scroll-area relative flex-1 overflow-x-hidden overflow-y-auto"
             style={backdropStyle}
           >
             <PageRail colour={backdrop?.rail ?? null} />
@@ -377,8 +421,29 @@ export default function StealthLayout() {
               fit overflows `<PageTransition>` and runs straight past this
               padding — the trailing box further down is the other half, and
               the reason that page still ends above the capsule too. */}
+          {/* NO z-index ON `<main>`, and that is load-bearing rather than an
+              omission.
+
+              It carried `z-10`, which made it a STACKING CONTEXT — and the
+              floating navigation is its `z-20` sibling. Every z-index a route
+              wrote was therefore scoped inside a context that lost to the pill:
+              a modal at `z-50` inside `<main>` competed as `z-10` against the
+              navigation's `z-20` and was painted under it, whatever number it
+              chose. Five hand-rolled overlays were caught by it — the connect
+              screen's QR sheet, the servers sheet, both wheel sheets and the
+              media viewer — with the pill drawn lit and clickable across the
+              scrim, over their own buttons. Reported on the QR sheet.
+
+              Nothing is lost by removing it: the background sits OUTSIDE
+              `.app-shell`, which carries `z-10` of its own, so the shell is
+              already above it and `<main>` never needed a second one. Ordinary
+              page content stays under the pill because it is at `z-10` or
+              below; only an overlay that deliberately asks for more now wins.
+
+              `relative` stays — `PageRail` and the route grounds position
+              against it. */}
           <main
-            className="scroll-area relative z-10 flex-1 overflow-x-hidden overflow-y-auto"
+            className="scroll-area relative flex-1 overflow-x-hidden overflow-y-auto"
             style={{
               // A route's own ground, if it asked for one. It stops at the
               // capsule for the same reason it stops at the sidebar on a

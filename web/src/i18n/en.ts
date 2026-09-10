@@ -136,6 +136,28 @@ export const en: RuDict = {
     // `debug` for BOT_DEV_ID from the server).
     accessDenied: 'Could not sign in. Try again later or contact support.',
   },
+  /**
+   * Live events, in the customer’s own language.
+   *
+   * The panel sends one neutral sentence per event; these replace it. Keyed by
+   * the event TYPE, so the dotted names are deliberate — see
+   * `realtime-event-copy.ts`.
+   */
+  realtimeEvents: {
+    'subscription.created': 'Your subscription is ready',
+    'subscription.renewed': 'Your subscription has been extended',
+    'subscription.expired': 'Your subscription has ended',
+    'subscription.deleted': 'Your subscription has been removed',
+    'subscription.upgraded': 'Your plan has changed',
+    'user_hwid_revoked': 'A device has been unlinked from your subscription',
+    'payment.completed': 'Payment received',
+    'payment.failed': 'The payment did not go through',
+    'promocode.activated': 'Your promo code has been applied',
+    'referral.qualified': 'Your referral has been confirmed',
+    'referral.reward_issued': 'A referral reward has been credited',
+    'user.deleted': 'Your account has been deleted',
+    'subscription.trial_granted': 'Your trial is active',
+  },
   hints: {
     later: 'Maybe later',
   },

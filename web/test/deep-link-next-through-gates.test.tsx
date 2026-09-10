@@ -57,7 +57,7 @@ const platformPolicy = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api-client", () => api);
-vi.mock("@/lib/push", () => ({ ensurePushSubscription: vi.fn() }));
+vi.mock("@/lib/push", () => ({ ensurePushSubscription: vi.fn(async () => false) }));
 vi.mock("@/hooks/use-session", () => ({
   SESSION_QUERY_KEY: ["session"],
   useSession: () => sessionState,

@@ -11,7 +11,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { CabinetHint } from "@/lib/api-client/hints";
-import { cn, openExternalUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+
+import { hasHintCta, runHintCta } from "./hint-cta";
+import { railForTone } from "./hint-tone";
 
 /**
  * One operator-authored hint, on screen.
@@ -29,14 +32,11 @@ import { cn, openExternalUrl } from "@/lib/utils";
  * These carry the same four tones as `TipCard`, but a modal painted entirely
  * in a warning colour reads as an error the customer caused. The colour sits on
  * a rule above the title: enough to set the register, not enough to alarm.
+ *
+ * The table itself is in `hint-tone.ts`, next to the toast's severity table,
+ * because "what does an unrecognised tone become?" is one decision and the two
+ * had drifted into answering it differently.
  */
-
-const TONE_RULE: Record<CabinetHint["tone"], string> = {
-  INFO: "bg-blue-500/70",
-  SUCCESS: "bg-emerald-500/70",
-  WARNING: "bg-amber-500/70",
-  DANGER: "bg-(--brand-primary)/70",
-};
 
 export function HintModal({
   hint,
@@ -51,30 +51,14 @@ export function HintModal({
   const navigate = useNavigate();
 
   function act(): void {
-    if (hint.ctaKind === "ROUTE" && hint.ctaTarget) {
-      void navigate(hint.ctaTarget);
-    } else if (hint.ctaKind === "EXTERNAL" && hint.ctaTarget) {
-      // THE SHARED OPENER, not a local re-implementation. This file had one,
-      // and it got Telegram wrong in the way this codebase has documented
-      // twice: `openLink` on a `t.me` address shows the landing page in an
-      // in-app browser instead of resolving it natively — and "open our bot" is
-      // the most likely external destination an operator will ever author.
-      // `openExternalUrl` classifies the link and picks `openTelegramLink` for
-      // those, and it is the only copy of that decision.
-      openExternalUrl(hint.ctaTarget);
-    }
+    // `hint-cta.ts`, shared with the toast. The decision about what a hint's
+    // button does is one decision, and this file used to hold a second copy of
+    // half of it — a local external opener that got Telegram wrong.
+    runHintCta(hint, navigate);
     onAct();
   }
 
-  // `ROUTE` and `EXTERNAL` only. A kind a newer panel introduces would
-  // otherwise render a full-width primary button that does nothing, closes the
-  // modal and reports `acted` — a dead control counted as the hint working.
-  const hasCta =
-    (hint.ctaKind === "ROUTE" || hint.ctaKind === "EXTERNAL") &&
-    typeof hint.ctaTarget === "string" &&
-    hint.ctaTarget.length > 0 &&
-    typeof hint.ctaLabel === "string" &&
-    hint.ctaLabel.length > 0;
+  const hasCta = hasHintCta(hint);
 
   return (
     <Dialog
@@ -89,10 +73,7 @@ export function HintModal({
       <DialogContent className="max-w-sm">
         {/* Falls back rather than rendering a colourless stripe: a tone this
             build has not heard of is a newer panel, not a broken hint. */}
-        <div
-          className={cn("mb-1 h-1 w-10 rounded-full", TONE_RULE[hint.tone] ?? TONE_RULE.INFO)}
-          aria-hidden
-        />
+        <div className={cn("mb-1 h-1 w-10 rounded-full", railForTone(hint.tone))} aria-hidden />
         <DialogHeader>
           <DialogTitle>{hint.title}</DialogTitle>
           <DialogDescription className="whitespace-pre-line text-left">

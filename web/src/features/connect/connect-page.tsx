@@ -457,15 +457,17 @@ export default function ConnectPage() {
         </div>
       </div>
 
-      {/* Inside the themed element, deliberately. A portal to `document.body`
-          would put the sheet outside the element that declares the concept's
-          tokens, and custom properties inherit down the DOM — so it would open
-          wearing the cabinet's palette on a screen wearing something else. */}
+      {/* Portalled to the body, with this screen's tokens handed over so they
+          travel with it. Rendered inside this element the sheet inherited the
+          concept correctly and could not escape the shell's stacking: `<main>`
+          is `relative z-10` and the floating navigation is its `z-20` sibling,
+          so the pill painted over the sheet whatever z-index it carried. */}
       {linkSheetOpen && (
         <ConnectLinkDialog
           url={subscriptionUrl}
           surface={SURFACE}
           buttonClassName={STEP_BUTTON}
+          themeStyle={{ colorScheme: themeMode, ...connectThemeStyle(theme) }}
           onCopy={copyLink}
           onClose={() => setLinkSheetOpen(false)}
         />

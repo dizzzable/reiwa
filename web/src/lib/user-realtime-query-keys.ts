@@ -63,4 +63,20 @@ export const userRealtimeQueryKeysByType: Readonly<
   ],
   "referral.qualified": [["referrals"]],
   "referral.reward_issued": [["referrals"], ["session"]],
+  // A DEVICE UNBOUND SERVER-SIDE, and the reason it is here rather than only in
+  // the copy file: this map is not just a list of what to refetch, it is the
+  // list of event names `useUserRealtime` registers an SSE listener for. The
+  // panel has been sending `user_hwid_revoked` all along; the browser dispatches
+  // a named event only on a matching listener and never on the generic
+  // `message` handler, so every one of those frames was dropped on the floor.
+  //
+  // What that cost: unbinding a device from the panel produced no toast and no
+  // device-list refresh in the cabinet, and the neutral sentence the panel
+  // added for this event — plus both translations of it — were dead code that
+  // nothing could reach.
+  "user_hwid_revoked": [
+    ["devices"],
+    subscriptionQueryKeys.detail,
+    subscriptionQueryKeys.actionPolicyRoot,
+  ],
 };

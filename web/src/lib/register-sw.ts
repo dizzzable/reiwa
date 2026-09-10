@@ -1,4 +1,6 @@
 import i18n from "i18next"
+
+import { watchForPushResyncFailure } from "@/lib/push-resync-marker"
 /**
  * Service Worker Registration
  *
@@ -11,6 +13,11 @@ export async function registerServiceWorker(): Promise<void> {
   if (!('serviceWorker' in navigator)) {
     return
   }
+
+  // The worker's other report: a push re-registration that did not land.
+  // Registered here rather than in the shell because it can arrive at any time,
+  // including while nobody is signed in — and the shell is not mounted then.
+  watchForPushResyncFailure()
 
   // Listen for strategy violation messages from the service worker
   navigator.serviceWorker.addEventListener('message', (event) => {

@@ -23,14 +23,27 @@
  * white plate. A code that cannot be read is worth less than one that does not
  * match, so the plate is fixed and the frame around it carries the concept.
  *
- * ── Rendered inside the themed element, not portalled ────────────────────────
+ * ── Portalled, WITH the concept's tokens carried onto the portal root ────────
  *
- * Custom properties inherit down the DOM, not up from the layout root. A dialog
- * portalled to `document.body` sits outside the element that declares the
- * concept and would wear the cabinet's own palette instead — the same defect
- * the native `<select>` had, in a bigger box.
+ * It was rendered inside the themed element, and that was half right for the
+ * right reason: custom properties inherit down the DOM, not up from the layout
+ * root, so a dialog portalled bare to `document.body` opens wearing the
+ * cabinet's own palette on a screen wearing something else — the defect the
+ * native `<select>` had, in a bigger box.
+ *
+ * What that missed is that a modal has to escape more than the palette. The
+ * shell's `<main>` is `relative z-10` and the floating bottom navigation is
+ * its `z-20` SIBLING, so a dialog inside `<main>` competes at z-10 no matter
+ * what z-index it carries: `z-50` inside a z-10 stacking context loses to a
+ * z-20 sibling of that context, always. The navigation pill painted straight
+ * through the scrim, lit and clickable, over the sheet's own action button.
+ *
+ * So it portals to the body — above every stacking context there is — and the
+ * tokens travel WITH it, declared on the overlay itself. The overlay is the
+ * outermost node, so everything inside it inherits exactly what the screen has.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Copy, QrCode, X } from 'lucide-react'
 
@@ -40,6 +53,7 @@ export function ConnectLinkDialog({
   url,
   surface,
   buttonClassName,
+  themeStyle,
   onCopy,
   onClose,
 }: {
@@ -47,6 +61,14 @@ export function ConnectLinkDialog({
   surface: { readonly raised: string; readonly sunken: string }
   /** The screen's own step-button shape, so this sheet has no second one. */
   buttonClassName: string
+  /**
+   * The concept's tokens, verbatim from the screen that opened this.
+   *
+   * Passed rather than read here because the screen owns the decision — and
+   * because it has to land on the OVERLAY: the portal breaks the DOM chain the
+   * tokens would otherwise inherit down, and this is what mends it.
+   */
+  themeStyle: CSSProperties
   onCopy: () => Promise<boolean>
   onClose: () => void
 }) {
@@ -88,10 +110,20 @@ export function ConnectLinkDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div
       data-testid="connect-link-dialog"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center"
+      style={themeStyle}
+      // CENTRED AT EVERY WIDTH. It used to be `items-end` below the `sm`
+      // breakpoint — a bottom sheet, but a floating one with a 16px gutter
+      // rather than a flush edge, which put it directly under the floating
+      // navigation pill and hid its own copy button behind it. Centred, the
+      // sheet is clear of the navigation on every screen, and the code is where
+      // somebody pointing a second phone at it expects to find it.
+      //
+      // `max-h` with its own scroll for the short-landscape case: a sheet taller
+      // than the viewport would otherwise be clipped at both ends at once.
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
@@ -102,7 +134,7 @@ export function ConnectLinkDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="connect-link-dialog-title"
-        className={`${surface.raised} w-full max-w-[21rem] p-4 md:p-5`}
+        className={`${surface.raised} max-h-[calc(100dvh-2rem)] w-full max-w-[21rem] overflow-y-auto p-4 md:p-5`}
       >
         <div className="flex items-start justify-between gap-3">
           <span className="flex items-center gap-2 text-sm font-semibold">
@@ -146,6 +178,7 @@ export function ConnectLinkDialog({
           {t('connect.copyLink')}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

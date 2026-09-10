@@ -52,7 +52,7 @@ const sessionState = vi.hoisted(() => ({
 const standalone = vi.hoisted(() => ({ value: false }));
 
 vi.mock("@/lib/api-client", () => api);
-vi.mock("@/lib/push", () => ({ ensurePushSubscription: vi.fn() }));
+vi.mock("@/lib/push", () => ({ ensurePushSubscription: vi.fn(async () => false) }));
 vi.mock("@/hooks/use-session", () => ({ useSession: () => sessionState }));
 vi.mock("@/hooks/use-user-realtime", () => ({ useUserRealtime: () => undefined }));
 vi.mock("@/hooks/use-is-desktop", () => ({ useIsDesktop: () => false }));
@@ -68,6 +68,10 @@ vi.mock("react-router", () => ({
   Navigate: () => null,
   Outlet: () => null,
   useLocation: () => ({ pathname: "/dashboard", search: "" }),
+  // The hint controller inside this shell reads it unconditionally now: a
+  // toast's call to action navigates, and the decision about what a hint's
+  // button does is shared with the modal rather than duplicated.
+  useNavigate: () => () => undefined,
 }));
 vi.mock("@/components/layout/bottom-nav", () => ({ BottomNav: () => null }));
 vi.mock("@/components/layout/side-nav", () => ({ SideNav: () => null }));

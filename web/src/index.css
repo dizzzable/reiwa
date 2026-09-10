@@ -786,6 +786,77 @@ body {
 
 /* icon-effects:end */
 
+/* ── The tone of a toast ─────────────────────────────────────────────────────
+
+   An operator picks one of four tones for every pop-up, and in MODAL mode it
+   is drawn: a coloured rule above the title, the same four colours `TipCard`
+   uses. In TOAST mode all four drew the SAME near-black glass card, so the
+   control did nothing — "your payment did not go through" and "your trial has
+   started" arrived looking identical.
+
+   Sonner's own answer is `richColors`, and it does not work here: it paints
+   through CSS variables, and `main.tsx` sets `background`, `color` and
+   `border` INLINE on `toastOptions.style` to build the cabinet's glass. An
+   inline declaration beats a stylesheet one, so richColors would have been
+   switched on and invisible — the same class of silent nothing.
+
+   So the glass moved OUT of the inline style and into the class below, and
+   the tone is an inset rail on the card's own shadow. Two things it is
+   deliberately not:
+
+   NOT a pseudo-element. Sonner owns both — `::before` becomes a screen-wide
+   invisible hit area while a toast is being swiped away, `::after` a gap
+   filler above it while the stack is expanded. A rail parked on either of them
+   reappears, stretched, at exactly those moments.
+
+   NOT `richColors`. That repaints the whole card in the tone, which is the
+   thing the modal's own comment rejects: a surface painted entirely in a
+   warning colour reads as an error the customer caused.
+
+   Specificity is load-bearing. Sonner's own card is `[data-sonner-toast]
+   [data-styled='true']`, so the selector below carries both plus the class to
+   beat it whichever order the two stylesheets end up in — sonner injects its
+   own at run time. */
+[data-sonner-toast][data-styled="true"].cabinet-toast {
+  /* Verbatim what `main.tsx` used to set inline: near-black translucent, heavy
+     blur, hairline border, 16px corners — the cabinet's dialogs and sheets. */
+  background: rgba(9, 9, 11, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fafafa;
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border-radius: 16px;
+  font-size: 13px;
+  /* The drop shadow, plus a neutral rail. A tone this file does not know about
+     — a fifth one, or a plain `toast()` — gets an edge rather than nothing. */
+  box-shadow:
+    inset 3px 0 0 rgba(255, 255, 255, 0.18),
+    0 12px 40px rgba(0, 0, 0, 0.55);
+}
+/* The modal's four colours, at full strength rather than its 70%: this rail is
+   3px against a dark card where the modal's is a 10px bar under a lighter one. */
+[data-sonner-toast][data-styled="true"].cabinet-toast[data-type="info"] {
+  box-shadow: inset 3px 0 0 #3b82f6, 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+[data-sonner-toast][data-styled="true"].cabinet-toast[data-type="success"] {
+  box-shadow: inset 3px 0 0 #22c55e, 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+[data-sonner-toast][data-styled="true"].cabinet-toast[data-type="warning"] {
+  box-shadow: inset 3px 0 0 #f59e0b, 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+/* DANGER is the brand colour in the modal, and the brand colour is whatever an
+   operator sets — including the green that here would read as success. A toast
+   saying something went wrong is red. */
+[data-sonner-toast][data-styled="true"].cabinet-toast[data-type="error"] {
+  box-shadow: inset 3px 0 0 #ef4444, 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+/* Sonner's own focus ring is `0 0 0 2px rgba(0,0,0,.4)`, written for its white
+   card. On this one a keyboard user tabbing to the call to action or to "later"
+   got a black ring on a near-black surface — no visible focus at all. */
+[data-sonner-toast][data-styled="true"].cabinet-toast [data-button]:focus-visible {
+  box-shadow: 0 0 0 2px rgba(9, 9, 11, 0.9), 0 0 0 4px rgba(255, 255, 255, 0.85);
+}
+
 /* Reduced motion, and it lives HERE — last of the unlayered rules — for a
    reason that cost this patch a silent defect: these declarations carry the
    same specificity as the ones they must beat, so the cascade decides on

@@ -29,6 +29,7 @@ import {
   pushSubscribe,
   pushUnsubscribe,
 } from '@/lib/api-client'
+import { matchApplicationServerKey } from '@/lib/push-key-match'
 
 export type PushSupportStatus =
   | 'supported'
@@ -173,20 +174,36 @@ export async function unsubscribeFromPush(): Promise<boolean> {
  *      server-side prune is repaired.
  * Best-effort and idempotent: never throws into the cabinet, never prompts.
  */
-export async function ensurePushSubscription(): Promise<void> {
-  if (typeof window === 'undefined') return
+export async function ensurePushSubscription(): Promise<boolean> {
+  if (typeof window === 'undefined') return false
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-    return
+    return false
   }
-  if (Notification.permission !== 'granted') return
+  if (Notification.permission !== 'granted') return false
   try {
     const { publicKey } = await getPushPublicKey()
-    if (publicKey.length === 0) return
+    if (publicKey.length === 0) return false
     const desiredKey = urlBase64ToUint8Array(publicKey)
     const reg = await navigator.serviceWorker.ready
     let sub = await reg.pushManager.getSubscription()
     // Drop a subscription minted with a stale VAPID key — its endpoint is dead.
-    if (sub !== null && !sameApplicationServerKey(sub, desiredKey)) {
+    //
+    // ONLY ON A KEY THAT WAS REPORTED AND DIFFERS. `applicationServerKey` is
+    // not exposed by every engine, and reading "the browser told us nothing" as
+    // "the key is wrong" made this destructive on precisely those browsers: a
+    // healthy endpoint was unsubscribed on every cabinet load, the replacement
+    // reported no key either, and the next load did it again — a new endpoint
+    // per load, none of them retired on the panel, and one notification
+    // delivered to every one of them until each 410'd.
+    //
+    // The trade is stated rather than hidden: where no key is reported, a
+    // genuine VAPID rotation is NOT repaired here and waits for the push
+    // service to 410 the old endpoint. One notification arriving at a dead
+    // endpoint beats an unbounded fan-out of live ones.
+    if (
+      sub !== null &&
+      matchApplicationServerKey(sub.options?.applicationServerKey, desiredKey) === 'different'
+    ) {
       try {
         await sub.unsubscribe()
       } catch {
@@ -209,23 +226,16 @@ export async function ensurePushSubscription(): Promise<void> {
       },
       userAgent: navigator.userAgent,
     })
+    // THE ANSWER, so a caller can tell "healed" from "tried and failed".
+    // Without it the shell marked the tab healed before finding out, and a
+    // single 429 from the shared per-IP budget cost that tab every further
+    // attempt for the rest of its life.
+    return true
   } catch {
     // Healing is best-effort — the explicit opt-in in settings remains the
     // user-facing path; we must never break the cabinet over this.
+    return false
   }
-}
-
-/** True when the subscription was created with the given VAPID key bytes. */
-function sameApplicationServerKey(sub: PushSubscription, desired: ArrayBuffer): boolean {
-  const current = sub.options?.applicationServerKey
-  if (!current) return false
-  const a = new Uint8Array(current)
-  const b = new Uint8Array(desired)
-  if (a.byteLength !== b.byteLength) return false
-  for (let i = 0; i < a.byteLength; i += 1) {
-    if (a[i] !== b[i]) return false
-  }
-  return true
 }
 
 /**

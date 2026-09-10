@@ -37,6 +37,16 @@ export interface HintAudienceInput {
   readonly locale?: 'ru' | 'en';
 }
 
+/**
+ * The header this cabinet declares its drawable modes in.
+ *
+ * NOT a body field. The panel validates bodies with `forbidNonWhitelisted`, so
+ * a panel that has not learned the field answers 400 rather than ignoring it —
+ * and a 400 here is not a lost mode, it is a cabinet with no hints at all.
+ * An unknown header is simply not read, in either direction.
+ */
+export const HINT_MODES_HEADER = 'x-reiwa-hint-modes';
+
 export class UserHintsNamespace {
   public constructor(private readonly transport: AdminTransport) {}
 
@@ -47,11 +57,18 @@ export class UserHintsNamespace {
    * calling on every cabinet entry: one indexed read, and the panel does the
    * audience filtering rather than shipping hints the client would discard.
    */
-  next(input: HintAudienceInput): Promise<{ hint: CabinetHint | null }> {
+  next(
+    input: HintAudienceInput,
+    /** What this build can draw. Omitted means the panel assumes MODAL only. */
+    drawableModes?: readonly string[],
+  ): Promise<{ hint: CabinetHint | null }> {
     return this.transport.request<{ hint: CabinetHint | null }>(
       'POST',
       '/api/internal/user-hints/next',
       input,
+      drawableModes === undefined || drawableModes.length === 0
+        ? undefined
+        : { [HINT_MODES_HEADER]: drawableModes.join(',') },
     );
   }
 

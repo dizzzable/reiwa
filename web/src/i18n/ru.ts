@@ -137,6 +137,28 @@ export const ru = {
     // `debug` for BOT_DEV_ID from the server).
     accessDenied: 'Не удалось войти. Попробуйте позже или напишите в поддержку.',
   },
+  /**
+   * Live events, in the customer’s own language.
+   *
+   * The panel sends one neutral sentence per event; these replace it. Keyed by
+   * the event TYPE, so the dotted names are deliberate — see
+   * `realtime-event-copy.ts`.
+   */
+  realtimeEvents: {
+    'subscription.created': 'Подписка готова',
+    'subscription.renewed': 'Подписка продлена',
+    'subscription.expired': 'Подписка закончилась',
+    'subscription.deleted': 'Подписка удалена',
+    'subscription.upgraded': 'Тариф изменён',
+    'user_hwid_revoked': 'Устройство отвязано от подписки',
+    'payment.completed': 'Оплата прошла',
+    'payment.failed': 'Оплата не прошла',
+    'promocode.activated': 'Промокод применён',
+    'referral.qualified': 'Приглашённый подтверждён',
+    'referral.reward_issued': 'Начислена награда за приглашение',
+    'user.deleted': 'Аккаунт удалён',
+    'subscription.trial_granted': 'Пробный период активирован',
+  },
   hints: {
     later: 'Позже',
   },

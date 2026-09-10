@@ -32,4 +32,17 @@ describe("service worker lifecycle registration", () => {
     expect(registrationSource).not.toContain("controllerchange");
     expect(registrationSource).toContain("registration.update().catch");
   });
+
+  it("listens for the worker's report that a push re-registration was refused", () => {
+    // The worker's half of this is covered behaviourally
+    // (`push-subscription-change.test.tsx`) and so is the page's
+    // (`push-resync-marker.test.ts`). What neither can see is whether the two
+    // are ever joined: unwired, the worker posts into nothing and the tab goes
+    // on believing itself healed, which is the whole defect.
+    //
+    // It belongs HERE and not in the shell, because the message can arrive
+    // while nobody is signed in and the shell is not mounted then.
+    expect(registrationSource).toContain("watchForPushResyncFailure()");
+    expect(registrationSource).toContain("push-resync-marker");
+  });
 });

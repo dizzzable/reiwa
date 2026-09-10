@@ -26,6 +26,29 @@ import type { AuthRequest } from "../middleware/session.js";
  * error about a feature the customer did not ask for. So every failure here
  * answers `{ hint: null }` or `{ ok: false }` and is logged instead.
  */
+/**
+ * The pop-up modes THIS cabinet image can put on screen.
+ *
+ * The single source of truth is the controller that draws them
+ * (`web/src/features/hints/hint-controller.tsx`), and this must be widened in
+ * the same commit that teaches it a new one — a mode listed here and not drawn
+ * is the exact failure the declaration exists to prevent, only now caused from
+ * this side. `hint-modes-are-declared.test.ts` compares the two.
+ *
+ * ── It travels as a HEADER, and that is the whole reason the pair is safe ────
+ *
+ * It was a field of the request body. The panel validates that body with a
+ * global pipe configured `forbidNonWhitelisted`, so a panel whose DTO has not
+ * learned the field yet does not IGNORE it — it answers 400. A cabinet upgraded
+ * before its panel would therefore have had every single hint request rejected,
+ * and the route swallows the failure into `{ hint: null }` at debug level: no
+ * hints for anybody, and nothing anywhere saying why.
+ *
+ * A header an old panel has never heard of is simply not read. That is the only
+ * shape of this negotiation that survives being deployed in either order.
+ */
+const DRAWABLE_HINT_MODES = ["MODAL", "TOAST"] as const;
+
 export function createUserHintsRouter(deps: {
   adminClient: AdminClient | null;
   sessionStore: SessionStore | null;
@@ -71,7 +94,10 @@ export function createUserHintsRouter(deps: {
       return;
     }
     try {
-      const answer = await adminClient.userHints.next({ ...identity, ...audienceOf(req) });
+      const answer = await adminClient.userHints.next(
+        { ...identity, ...audienceOf(req) },
+        [...DRAWABLE_HINT_MODES],
+      );
       res.json(answer);
     } catch (err: unknown) {
       req.log?.debug({ err }, "hints: could not read the queue");

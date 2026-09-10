@@ -673,6 +673,19 @@ describe("the link sheet behind the header control", () => {
    * that are not: a TV box, a router, a desktop client. The page this screen
    * replaces puts the code behind this same control, and it was missing here.
    */
+  /**
+   * QUERIED FROM THE DOCUMENT, not from the render container.
+   *
+   * The sheet portals to the body, so `el.querySelector` finds nothing — and
+   * the danger is not the two cases that go red, it is the one that goes GREEN:
+   * "closes on Escape" asserts the sheet is absent from `el`, which a portalled
+   * sheet satisfies whether Escape works or not. A helper both halves share is
+   * what stops that pair drifting apart again.
+   */
+  function sheet(): HTMLElement | null {
+    return document.body.querySelector<HTMLElement>("[data-testid='connect-link-dialog']");
+  }
+
   function open(): HTMLDivElement {
     const el = render();
     const control = el.querySelector<HTMLButtonElement>(
@@ -683,35 +696,47 @@ describe("the link sheet behind the header control", () => {
   }
 
   it("opens the sheet instead of copying silently", () => {
-    const el = open();
-    expect(el.querySelector("[data-testid='connect-link-dialog']")).not.toBeNull();
+    open();
+    expect(sheet()).not.toBeNull();
   });
 
   it("still offers copy, inside the sheet", () => {
     // Copy did not go away, it moved. On the device the client is installed on
     // it is still the right answer, so both live in one place.
-    const el = open();
-    const sheet = el.querySelector("[data-testid='connect-link-dialog']");
-    expect(sheet?.textContent).toContain("connect.copyLink");
+    open();
+    expect(sheet()?.textContent).toContain("connect.copyLink");
   });
 
   it("closes on Escape", () => {
-    const el = open();
-    const sheet = el.querySelector<HTMLElement>("[data-testid='connect-link-dialog']");
+    open();
+    const opened = sheet();
+    expect(opened, "the sheet never opened, so closing it proves nothing").not.toBeNull();
     act(() => {
-      sheet?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      opened?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
-    expect(el.querySelector("[data-testid='connect-link-dialog']")).toBeNull();
+    expect(sheet()).toBeNull();
   });
 
-  it("opens INSIDE the themed element, not beside it", () => {
-    // Custom properties inherit down the DOM. A sheet portalled to the body
-    // sits outside the element that declares the concept, so it would open
-    // wearing the cabinet's palette on a screen wearing something else —
-    // exactly the defect the native platform list had, in a bigger box.
-    const el = open();
-    const sheet = el.querySelector("[data-testid='connect-link-dialog']");
-    expect(sheet?.closest("[data-connect-theme='concept']")).not.toBeNull();
+  it("carries the concept's tokens, though it opens outside the themed element", () => {
+    // The sheet has to escape TWO things at once and they pull opposite ways.
+    //
+    // Rendered inside the themed element it inherited the concept correctly and
+    // could not escape the shell's stacking: `<main>` is `relative z-10` and the
+    // floating navigation is its `z-20` SIBLING, so `z-50` inside `<main>` lost
+    // to the pill every time — which painted lit and clickable over the sheet's
+    // own copy button.
+    //
+    // Portalled bare it would clear the navigation and lose the palette, which
+    // is the defect the native platform list had, in a bigger box. So it
+    // portals AND carries the tokens on the overlay itself.
+    open();
+    const overlay = sheet();
+
+    expect(overlay?.closest("[data-connect-theme='concept']"), 'still inside the page').toBeNull();
+    // The concept's own accent, verbatim — the same token the case above pins
+    // on the themed element itself, so the two say the tokens arrive in both
+    // places rather than in one.
+    expect(overlay?.style.getPropertyValue('--brand-primary')).toBe('#FF6B7A');
   });
 });
 

@@ -5,6 +5,12 @@ import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategi
 import { ExpirationPlugin } from 'workbox-expiration'
 import { CacheableResponsePlugin } from 'workbox-cacheable-response'
 import { isCacheableApiPath } from './sw-cache-policy'
+// Both modules are dependency-free by design — see the note at the top of
+// `push-key-match.ts`. `lib/push.ts` itself is NOT reachable from here: it
+// imports the SPA API client (axios, i18n, `window`), none of which exists in a
+// worker, and this bundle is produced by a separate `injectManifest` build.
+import { matchApplicationServerKey } from './lib/push-key-match'
+import { PUSH_RESYNC_FAILED_MESSAGE } from './lib/push-resync-marker'
 
 declare let self: ServiceWorkerGlobalScope
 
@@ -362,6 +368,38 @@ interface WebPushPayload {
    * Absent therefore means "use the bundled mark", not "the panel forgot".
    */
   readonly icon?: string
+  /**
+   * The collapse key, chosen by the panel. PREFERRED OVER EVERYTHING BELOW.
+   *
+   * Two banners sharing a tag are one banner: the second replaces the first.
+   * That is occasionally what you want and usually not, so the side that knows
+   * which notification this is gets to say.
+   *
+   * The panel decides per type, and BOTH answers arrive here:
+   *
+   *   - a family key shared ON PURPOSE. `subscription-deadline` carries all
+   *     five expiry stages, because they are one fact retold and the customer
+   *     needs the current one rather than the history;
+   *   - `<type>:<event id>`, unique per notification, for everything the panel
+   *     has not declared a family — two support replies on two tickets, two
+   *     cashback credits, two messages an operator typed by hand.
+   *
+   * So do not assume uniqueness, and do not try to impose it here: a panel
+   * that shares a key is exercising the collapse deliberately. An older panel
+   * sends nothing at all, and the fallback below derives a key locally.
+   */
+  readonly tag?: string
+  /**
+   * The notification's type, e.g. `expires_in_3_days`. Second choice.
+   *
+   * Coarser than `tag` by construction — a type is a class of notification, so
+   * two of the same class collapse. The panel therefore sends it ONLY where
+   * that is the right answer, beside a family `tag`; where each notification
+   * is its own message the field is omitted rather than filled with a value
+   * that would collapse two of them. Still strictly better than the URL,
+   * which serves four types on `/renew` alone.
+   */
+  readonly type?: string
 }
 
 /**
@@ -370,6 +408,63 @@ interface WebPushPayload {
  * reach the throwing branch of `setAppBadge` at all.
  */
 const MAX_BADGE_COUNT = 9999
+
+/** Namespaced so these tags cannot collide with anything else on the origin. */
+const NOTIFICATION_TAG_PREFIX = 'reiwa-notification:'
+
+/**
+ * A stable short digest of the banner's words. FNV-1a, and it is not security.
+ *
+ * `crypto.subtle.digest` is a promise and the notification options are built
+ * synchronously; a hash that has to be awaited would mean holding the banner
+ * behind it. All this has to do is separate two different sentences, which any
+ * non-degenerate hash does.
+ */
+function fingerprint(text: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i)
+    // `Math.imul` because `hash * 16777619` leaves float range on the second
+    // character and every later byte then folds into the same few values.
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16)
+}
+
+/**
+ * ONE TAG PER NOTIFICATION, not one per destination.
+ *
+ * A shared tag makes every banner replace the last one. It was the URL alone,
+ * and the panel deep-links MANY types onto SIX pages — `/renew` serves
+ * `expires_in_3_days`, `expires_in_1_days`, `expired` and `limited`. So a
+ * weekend's worth of pushes arrived as one banner and the customer read the
+ * last of them.
+ *
+ * It cost nothing while the panel sent `TTL: 60`: a closed browser could never
+ * have more than one message waiting. The TTL is now a day, messages really do
+ * queue, and this became reachable the moment that changed.
+ *
+ * The chain, in order:
+ *   1. `tag` from the payload — the panel's own answer, honoured verbatim.
+ *   2. `type` from the payload — a class of notification, still far finer than
+ *      the URL.
+ *   3. the destination PLUS a digest of the words. Two different sentences are
+ *      two banners; a re-send of the same sentence still replaces its
+ *      predecessor, which is the collapsing that was actually wanted.
+ *
+ * Steps 1 and 2 are forward compatibility with a panel that does not exist yet:
+ * neither field is sent today, so every one of today's pushes takes step 3, and
+ * this file needs no coordinated release to be correct.
+ */
+function resolveNotificationTag(data: WebPushPayload, url: string, words: string): string {
+  if (typeof data.tag === 'string' && data.tag.length > 0) {
+    return `${NOTIFICATION_TAG_PREFIX}${data.tag}`
+  }
+  if (typeof data.type === 'string' && data.type.length > 0) {
+    return `${NOTIFICATION_TAG_PREFIX}${data.type}`
+  }
+  return `${NOTIFICATION_TAG_PREFIX}${url}#${fingerprint(words)}`
+}
 
 self.addEventListener('push', (event) => {
   const data: WebPushPayload = (() => {
@@ -437,9 +532,9 @@ self.addEventListener('push', (event) => {
       // reads as branding.
       badge: '/icons/icon-192x192.png',
       data: { url },
-      // Tag so successive pushes for the same notification type
-      // collapse into one banner instead of stacking.
-      tag: 'reiwa-notification',
+      // See `resolveNotificationTag`. The URL alone collapsed four different
+      // expiry notices into one banner.
+      tag: resolveNotificationTag(data, url, `${title} ${body}`),
       // `renotify` makes the device buzz/sound even when an existing
       // notification with the same tag is replaced. The DOM lib types
       // omit this Chrome-supported field; cast to silence the
@@ -493,22 +588,83 @@ self.addEventListener('notificationclick', (event) => {
 // subscription with the current VAPID key and re-register it on the BFF. Runs
 // even when the app is closed (the SW is woken for this event).
 self.addEventListener('pushsubscriptionchange', (event: Event) => {
-  ;(event as ExtendableEvent).waitUntil(resubscribePush())
+  // THE ENDPOINT THE BROWSER IS RETIRING. Chrome hands both subscriptions to
+  // this event, and the old one is the only thing that can tell the panel which
+  // row to drop. Without it the row lives until the first send 410s it, and
+  // until then one notification is delivered twice — once into the void.
+  const change = event as ExtendableEvent & {
+    readonly oldSubscription?: PushSubscription | null
+    readonly newSubscription?: PushSubscription | null
+  }
+  change.waitUntil(resubscribePush(change.oldSubscription?.endpoint ?? null))
 })
 
-async function resubscribePush(): Promise<void> {
+/**
+ * Tell the open pages that a re-registration did not land.
+ *
+ * This used to be `console.warn`, which is decorative: a worker's console is a
+ * separate pane (DevTools → Application → Service Workers) that nobody opens,
+ * so the one side that KNEW push had stopped told nobody. The click handler
+ * above already `postMessage`s clients; this uses the same machinery, and
+ * `push-resync-marker.ts` retires the page's "already healed" marker on
+ * receipt, so the next session change heals instead of the tab believing itself
+ * done for the rest of its life.
+ *
+ * `includeUncontrolled`, because a page loaded before this worker claimed it is
+ * exactly the page that will run the heal.
+ */
+async function reportSubscriptionNotSaved(status: number, endpoint: string): Promise<void> {
+  try {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of clients) {
+      client.postMessage({ type: PUSH_RESYNC_FAILED_MESSAGE, status, endpoint })
+    }
+  } catch {
+    // No clients, or the worker is being torn down. Nothing to salvage.
+  }
+}
+
+async function resubscribePush(oldEndpoint: string | null = null): Promise<void> {
   try {
     const keyRes = await fetch('/api/v1/push/public-key', { credentials: 'include' })
     if (!keyRes.ok) return
     const { publicKey } = (await keyRes.json()) as { publicKey?: string }
     if (typeof publicKey !== 'string' || publicKey.length === 0) return
+    const desiredKey = swUrlBase64ToArrayBuffer(publicKey)
 
-    const sub = await self.registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: swUrlBase64ToArrayBuffer(publicKey),
-    })
+    // THE OLD ONE GOES ONLY IF IT IS THE WRONG ONE.
+    //
+    // What stood here unsubscribed unconditionally, justified by: `subscribe()`
+    // with a DIFFERENT `applicationServerKey` while a subscription is live
+    // rejects with `InvalidStateError`. True — and only for a key MISMATCH.
+    // Applied to every case it cost two things:
+    //
+    //   • If the `subscribe()` below then threw — offline, push service down,
+    //     permission revoked between the two calls — the `catch` swallowed it
+    //     and the browser was left with NO subscription at all, where before
+    //     this handler ran it had a working one.
+    //   • Chrome fires this event with `newSubscription` ALREADY ISSUED, and
+    //     `getSubscription()` then returns that new one. So the handler
+    //     unsubscribed a fresh, valid subscription in order to mint another.
+    //
+    // Compared instead. `unknown` — an engine that does not expose the key —
+    // counts as "keep", for the reasons in `push-key-match.ts`.
+    let sub = await self.registration.pushManager.getSubscription()
+    if (
+      sub !== null &&
+      matchApplicationServerKey(sub.options?.applicationServerKey, desiredKey) === 'different'
+    ) {
+      await sub.unsubscribe().catch(() => undefined)
+      sub = null
+    }
+    if (sub === null) {
+      sub = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: desiredKey,
+      })
+    }
     const json = sub.toJSON()
-    await fetch('/api/v1/push/subscribe', {
+    const saved = await fetch('/api/v1/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -518,6 +674,64 @@ async function resubscribePush(): Promise<void> {
         userAgent: self.navigator?.userAgent ?? 'service-worker',
       }),
     })
+
+    // THE ANSWER IS READ. It was not, and `fetch` does not reject on an HTTP
+    // error — so a 401 from an expired session was swallowed by a `catch` that
+    // could never fire for it, and the browser's NEW endpoint was never
+    // registered. The old one then 410s on the next send and is pruned, and
+    // push is dead for that browser until somebody signs in again.
+    //
+    // It bites unevenly, which is what made it look like a PWA-versus-browser
+    // problem: an installed cabinet holds a 30-day session and is almost always
+    // able to re-register, while a browser session lapses after a day.
+    if (!saved.ok) {
+      // THE SUBSCRIPTION IS KEPT. Undoing it here was the first thing written
+      // and it was wrong twice over.
+      //
+      // It repaired nothing: `ensurePushSubscription()` re-POSTs on every
+      // cabinet load whether or not a local subscription already exists, so
+      // "a healthy local object the server has never heard of" was ALREADY
+      // being re-registered — at the same endpoint, which is the outcome we
+      // want. Unsubscribing only forced a fresh endpoint to be minted and left
+      // the old row on the panel with nothing to delete it.
+      //
+      // And it fired far too widely. `!saved.ok` is not "the session lapsed":
+      // it is also 429 from the shared per-IP rate limit (every customer behind
+      // one NAT shares that budget), 503 while the BFF has no upstream client,
+      // 500 on an upstream blip, and 403 when a proxy in front of the cabinet
+      // does not pass `x-forwarded-proto`. Each of those is transient, and each
+      // was destroying a perfectly good subscription that would have worked on
+      // the very next send.
+      //
+      // Nothing is undone. The next cabinet load re-registers this exact
+      // endpoint — and `stealth-layout.tsx` now retries that heal when it
+      // fails, instead of marking the tab done before finding out.
+      await reportSubscriptionNotSaved(saved.status, sub.endpoint)
+      return
+    }
+
+    // ── AND ONLY NOW, the endpoint the browser retired ─────────────────────
+    //
+    // After the save, never before it. Retiring first and then failing to
+    // register the replacement would leave the customer with no row at all;
+    // this order costs, at worst, one row that 410s on the next send — which is
+    // exactly where it stood before, so a failure here loses nothing.
+    //
+    // Guarded against `oldEndpoint === sub.endpoint`, which is the ordinary
+    // case when the subscription was reused: deleting it would drop the row
+    // that was just written.
+    if (
+      typeof oldEndpoint === 'string' &&
+      oldEndpoint.length > 0 &&
+      oldEndpoint !== sub.endpoint
+    ) {
+      await fetch('/api/v1/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ endpoint: oldEndpoint }),
+      }).catch(() => undefined)
+    }
   } catch {
     // Best-effort — re-subscription is retried on the next cabinet load via
     // `ensurePushSubscription()`.
