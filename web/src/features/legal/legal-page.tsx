@@ -29,6 +29,7 @@ import { BackButton } from "@/components/ui/back-button";
 import { useLegalDocuments } from "@/lib/use-legal-documents";
 import type { LegalDocument } from "@/lib/api-client";
 
+import { switcherScrollLeft } from "./document-switcher-scroll";
 import { anchorOf, outlineOf, type LegalBlock } from "./legal-document-outline";
 
 export default function LegalPage() {
@@ -126,8 +127,42 @@ function DocumentSwitcher({
   currentKey: string;
   label: string;
 }) {
+  const row = useRef<HTMLElement | null>(null);
+  const activePill = useRef<HTMLAnchorElement | null>(null);
+
+  // Bring the selected pill on screen. On a phone the row is wider than the
+  // screen, so arriving at `#doc-offer` — the shape of link the bot and the
+  // sign-up form hand out — otherwise shows the right document under a row
+  // still at `scrollLeft: 0`, in which the selection is past the right edge
+  // and nothing looks selected at all. See `switcherScrollLeft`, which owns
+  // the arithmetic and the two cases where the row must be left alone.
+  useEffect(() => {
+    const nav = row.current;
+    const pill = activePill.current;
+    if (nav === null || pill === null) return;
+    const navBox = nav.getBoundingClientRect();
+    const pillBox = pill.getBoundingClientRect();
+    const left = switcherScrollLeft(
+      {
+        scrollLeft: nav.scrollLeft,
+        clientWidth: nav.clientWidth,
+        scrollWidth: nav.scrollWidth,
+        left: navBox.left,
+      },
+      { left: pillBox.left, width: pillBox.width },
+    );
+    if (left === null) return;
+    // Optional CALL for the same reason the page's own scroller has one:
+    // `scrollTo` is absent in jsdom and in a few embedded webviews, and an
+    // unguarded call there throws inside an effect and unmounts the page.
+    // Assigning the offset is the fallback that works everywhere else.
+    if (typeof nav.scrollTo === "function") nav.scrollTo({ left });
+    else nav.scrollLeft = left;
+  }, [currentKey]);
+
   return (
     <nav
+      ref={row}
       aria-label={label}
       className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:h-fit lg:flex-col lg:overflow-visible lg:px-0 lg:sticky lg:top-20"
     >
@@ -136,6 +171,7 @@ function DocumentSwitcher({
         return (
           <a
             key={document.key}
+            ref={active ? activePill : undefined}
             href={`#${anchorOf(document.key)}`}
             aria-current={active ? "page" : undefined}
             className={[

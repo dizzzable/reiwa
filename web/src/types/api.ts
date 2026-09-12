@@ -70,8 +70,11 @@ export interface Plan {
   trafficLimit: number | null; // GB
   deviceLimit: number | null;
   trafficLimitStrategy: string;
-  internalSquads?: string[];
-  externalSquad?: string | null;
+  // `internalSquads` and `externalSquad` used to be declared here. They were
+  // the operator's Remnawave squad identifiers, they arrived in a public
+  // response, and nothing in this bundle ever read them — the declaration was
+  // the only trace they left. The panel stopped sending them and the BFF strips
+  // them from an older panel's answer; do not put them back.
   orderIndex: number;
   /** True when this is a trial-availability plan (always creates a trial sub). */
   isTrial?: boolean;
