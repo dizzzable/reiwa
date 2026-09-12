@@ -1,6 +1,6 @@
 {
   "name": "reiwa-web",
-  "version": "0.9.7.38",
+  "version": "0.9.7.39",
   "private": true,
   "type": "module",
   "engines": {
@@ -65,6 +65,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^6.0.1",
+    "@zxing/library": "^0.23.0",
     "flag-icons": "^7.5.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",

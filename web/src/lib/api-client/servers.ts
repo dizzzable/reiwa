@@ -19,7 +19,8 @@ export interface SubscriberServer {
   readonly status: "online" | "connecting" | "offline" | "unknown";
   /** Seconds the process has run. Not availability — see the panel's note. */
   readonly uptimeSeconds: number | null;
-  readonly usersOnline: number | null;
+  // No `usersOnline`: the BFF stops it at the boundary. The panel uses the
+  // count to pick the recommended server and nothing here ever displayed it.
 }
 
 export interface SubscriberServersResponse {

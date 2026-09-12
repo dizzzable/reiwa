@@ -675,6 +675,43 @@ export interface Branding {
    * belongs: it can say so to the operator who typed it.
    */
   serversGlobe?: unknown;
+  /**
+   * How the operator styled the QR codes a subscriber hands to someone else:
+   * the referral invite and the partner's advertising codes. Never the connect
+   * code — the subscription link is read by VPN clients' in-app scanners, the
+   * least forgiving readers there are, and it stays plain whatever this says.
+   * That is decided at the call sites, not here: `LocalQr` never reads this
+   * field, and only the two components that may be styled resolve it.
+   *
+   * Typed `unknown` on purpose, like `serversGlobe` above. The panel ships as
+   * its own image and can be newer than this one, so a module shape may be one
+   * this build has never drawn and a colour may be one this build refuses as
+   * too pale to scan — neither is an error, and neither may blank a screen.
+   * `resolveQrStyle` in `lib/qr-style` is the only thing that reads it, and it
+   * is total: any input comes back as a style that is safe to draw, falling
+   * back field by field to plain.
+   *
+   * ABSENT MEANS PLAIN, and that is the cross-version requirement rather than a
+   * convenience. A panel older than the setting sends no `qrStyle` at all; it
+   * arrives here as `undefined`, `resolveQrStyle` answers that with plain, and
+   * a plain style is drawn by `qrcode`'s own writer through `qrOptions()` —
+   * byte for byte what every unstyled code in this build gets, the connect code
+   * included. By the owner's rule, nobody who did not turn styling on may see a
+   * STYLED code. That is the guarantee, and it is not the same as "the code the
+   * released cabinet drew": this patch also moved every plain code from raster
+   * to vector and its quiet zone from one module to the standard four, on
+   * purpose — see `qr-options`.
+   *
+   * NOT VALIDATED BY `describePublicConfigSnapshot`, for the reason given at
+   * `serversGlobe`: that guard is all-or-nothing, and a value it refuses
+   * discards the ENTIRE branding snapshot and freezes the cabinet on the
+   * previous one. A reader this total cannot be fooled, so a refusal would
+   * protect nothing and cost the operator their whole identity —
+   * `test/web/qr-style-snapshot-guard.test.ts` fails if a validator appears.
+   * Refusing a malformed block is the panel DTO's job, where there is an
+   * operator to tell.
+   */
+  qrStyle?: unknown;
   borderRadius: string;
   /** Exact geometry; absent snapshots fall back to legacy borderRadius. */
   cornerRadii?: CornerRadii;
@@ -802,6 +839,7 @@ export const DEFAULT_BRANDING: Branding = {
   iconColors: {},
   iconDecor: {},
   serversGlobe: undefined,
+  qrStyle: undefined,
   borderRadius: "rounded-2xl",
   cornerRadii: {
     cardPx: 24,

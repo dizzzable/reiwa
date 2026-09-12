@@ -146,7 +146,13 @@ function narrowServerList(payload: unknown): {
       countryCode: asNullableString(row["countryCode"]),
       status: asString(row["status"]),
       uptimeSeconds: typeof row["uptimeSeconds"] === "number" ? row["uptimeSeconds"] : null,
-      usersOnline: typeof row["usersOnline"] === "number" ? row["usersOnline"] : null,
+      // `usersOnline` is deliberately NOT forwarded. The panel derives the
+      // recommendation from it, and that is its only use — the browser never
+      // rendered it anywhere. A live per-server count of the people connected
+      // right now is load data the operator never chose to publish, and a
+      // field nothing reads is exactly the kind that leaks without anyone
+      // noticing. Dropping it here, rather than in the panel, keeps the fix
+      // inside this image: a panel that still sends it changes nothing.
     })),
     recommendedServerId: typeof recommended === "string" ? recommended : null,
   };

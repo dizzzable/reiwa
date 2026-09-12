@@ -65,7 +65,6 @@ const SERVERS = Array.from({ length: 14 }, (_, index) => ({
   countryCode: "DE",
   status: "online" as const,
   uptimeSeconds: 604_800,
-  usersOnline: index,
 }));
 
 let container: HTMLDivElement;

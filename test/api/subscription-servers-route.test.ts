@@ -168,9 +168,13 @@ describe("GET /subscription/:id/servers", () => {
       "name",
       "status",
       "uptimeSeconds",
-      "usersOnline",
     ]);
     expect(row.name).toBe("Frankfurt 🇩🇪");
+    // The panel sent `usersOnline: 7` above, and it must stop here. The count
+    // exists so the panel can pick the recommended server; the browser never
+    // rendered it, and a live per-server tally of connected people is load
+    // data nobody chose to publish.
+    expect(row).not.toHaveProperty("usersOnline");
   });
 
   it("answers an empty list when the panel is unreachable", async () => {

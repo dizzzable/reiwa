@@ -140,9 +140,14 @@ vi.mock("motion/react", () => {
 vi.mock("react-router", () => {
   const navigate = vi.fn();
   const setSearchParams = vi.fn();
+  const location = { pathname: "/legal", search: "", hash: "", state: null, key: "probe" };
   return {
     useNavigate: () => navigate,
     useSearchParams: () => [new URLSearchParams("paymentId=probe"), setSearchParams],
+    // `/legal` picks the document to show from the fragment. A stable object
+    // for the same reason as the two functions above: it is read during
+    // render and compared by identity in an effect.
+    useLocation: () => location,
   };
 });
 

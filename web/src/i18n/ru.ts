@@ -1207,6 +1207,7 @@ export const ru = {
     legalDocuments: 'Условия и документы',
     legalDocumentsSub: 'Действующая редакция — можно прочитать целиком',
     legalDocumentsEmpty: 'Оператор не опубликовал документы.',
+    legalDocumentsNav: 'Список документов',
     linkTelegram: 'Привязать Telegram',
     linkTelegramSub: 'Для быстрого входа через бота',
     linkEmail: 'Привязать Email',

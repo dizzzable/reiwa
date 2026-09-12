@@ -10,9 +10,36 @@
 // ── TTL Constants (in seconds) ──────────────────────────────────────────────
 
 export const TTL = {
-  /** Web session storage — 24 hours */
-  SESSION: 24 * 60 * 60,
-  /** Web session for an installed PWA (standalone) — 30 days */
+  /**
+   * Web session storage — 30 days, sliding.
+   *
+   * Was 24 hours, and that was the whole of "it signs me out in the browser
+   * but not in the app": an installed cabinet got `SESSION_PWA` below, a tab
+   * did not. Nothing keeps a backgrounded tab's window open either — the
+   * pollers do not tick while the tab is unfocused, `refetchOnWindowFocus` is
+   * off, and the SSE stream is one long-lived request that never re-arms the
+   * cookie — so a pinned tab simply aged out and the next click landed on
+   * `/sign-in`.
+   *
+   * The cookie's `Max-Age` is derived from this (`session.ts`), and both are
+   * re-issued on every authenticated request, so raising it signs nobody out:
+   * a live session picks up the new window on its first touch.
+   *
+   * What it costs is honest and worth saying out loud: there is no index from
+   * a user to their sessions, so "sign out everywhere" cannot be implemented
+   * today, and a stolen cookie now lives for a month instead of a day.
+   * Operator block still lands through `/session`; a password change still
+   * does not invalidate anything.
+   */
+  SESSION: 30 * 24 * 60 * 60,
+  /**
+   * Web session for an installed PWA (standalone) — 30 days.
+   *
+   * Equal to `SESSION` since the browser window was raised to match, which
+   * makes the standalone branch a no-op rather than dead code. It is kept
+   * deliberately: it is free, and it is the hook for the day the two windows
+   * have to differ again.
+   */
   SESSION_PWA: 30 * 24 * 60 * 60,
   /** Telegram linking code — 10 minutes */
   TELEGRAM_LINK: 10 * 60,

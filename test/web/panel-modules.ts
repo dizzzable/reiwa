@@ -92,7 +92,7 @@ export interface PanelBundle {
   readonly plainToInstance: (cls: new () => object, plain: object) => object;
   readonly validateSync: (
     instance: object,
-    options?: { readonly whitelist?: boolean },
+    options?: { readonly whitelist?: boolean; readonly forbidNonWhitelisted?: boolean },
   ) => readonly ValidationErrorLike[];
 }
 

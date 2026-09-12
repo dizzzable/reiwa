@@ -7,7 +7,7 @@
  *   - a request form to propose a new advertising campaign,
  *   - request history with Accept for COUNTERED operator terms.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -25,6 +25,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { LocalQr } from "@/components/ui/local-qr";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useBranding } from "@/lib/branding-provider";
+import { resolveQrStyle, type QrStyle } from "@/lib/qr-style";
 
 const PLATFORMS: readonly AdPlatform[] = [
   "TELEGRAM",
@@ -41,6 +43,12 @@ const PLATFORMS: readonly AdPlatform[] = [
 export function PartnerAdvertisingSection() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { branding } = useBranding();
+  // Resolved once for every card, and memoised because `LocalQr` redraws when
+  // the style object changes. These codes reach a phone camera from a post or a
+  // flyer, so the operator may style them; the connect sheet's code, which a VPN
+  // client reads, is never handed a style at all.
+  const qrStyle = useMemo(() => resolveQrStyle(branding.qrStyle), [branding.qrStyle]);
   const [selected, setSelected] = useState<AdPlatform[]>([]);
   const [channel, setChannel] = useState("");
   const [windowDays, setWindowDays] = useState("30");
@@ -95,7 +103,7 @@ export function PartnerAdvertisingSection() {
       ) : placements.length > 0 ? (
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {placements.map((p) => (
-            <PlacementCard key={p.placementId} placement={p} />
+            <PlacementCard key={p.placementId} placement={p} qrStyle={qrStyle} />
           ))}
         </div>
       ) : (
@@ -165,7 +173,14 @@ export function PartnerAdvertisingSection() {
   );
 }
 
-function PlacementCard({ placement: p }: { placement: PartnerAdPlacementStat }) {
+function PlacementCard({
+  placement: p,
+  qrStyle,
+}: {
+  placement: PartnerAdPlacementStat;
+  /** Already resolved and memoised by the section — see there. */
+  qrStyle: QrStyle;
+}) {
   const { t } = useTranslation();
   const botUrl = p.links?.botStart || "";
   const webUrl = p.links?.miniAppWeb || "";
@@ -204,8 +219,8 @@ function PlacementCard({ placement: p }: { placement: PartnerAdPlacementStat }) 
           {webUrl && <CopyRow label={t("partnerAds.linkWeb")} value={webUrl} />}
           {(botUrl || webUrl) && (
             <div className="flex flex-wrap gap-3 pt-1">
-              {botUrl && <LocalQr label={t("partnerAds.qrBot")} url={botUrl} size={96} />}
-              {webUrl && <LocalQr label={t("partnerAds.qrWeb")} url={webUrl} size={96} />}
+              {botUrl && <LocalQr label={t("partnerAds.qrBot")} url={botUrl} size={96} style={qrStyle} />}
+              {webUrl && <LocalQr label={t("partnerAds.qrWeb")} url={webUrl} size={96} style={qrStyle} />}
             </div>
           )}
         </div>

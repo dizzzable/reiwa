@@ -1,6 +1,6 @@
 {
   "name": "reiwa",
-  "version": "0.9.7.38",
+  "version": "0.9.7.39",
   "private": true,
   "type": "module",
   "engines": {
@@ -53,9 +53,12 @@
     "react-dom": "19.2.7",
     "tsx": "4.22.0",
     "typescript": "6.0.3",
-    "vitest": "4.1.7"
+    "vitest": "4.1.11"
   },
   "overrides": {
-    "body-parser": "2.3.0"
+    "body-parser": "2.3.0",
+    "openai": {
+      "zod": "$zod"
+    }
   }
 }

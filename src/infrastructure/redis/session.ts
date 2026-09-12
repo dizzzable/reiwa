@@ -5,7 +5,7 @@
  * - httpOnly, sameSite=lax, secure flags
  * - Production: grace period with retry before failing if security flags cannot be set
  * - Non-production: allows authentication without security flags
- * - 24h session TTL
+ * - 30-day session TTL, the same for a tab and an installed PWA
  */
 
 import type { RequestHandler, Request, Response, NextFunction } from "express";
@@ -25,7 +25,8 @@ export interface WebSession {
   ip: string;
   lastActivity: number;
   /** True once the user opened the cabinet as an installed PWA (standalone).
-   *  Standalone sessions get the 30-day TTL instead of the default 24h. */
+   *  Standalone sessions carry `TTL.SESSION_PWA`. The browser window now equals
+   *  it, but the two stay separate settings — one can move without the other. */
   standalone?: boolean;
   /** Latest-seen PWA platform (`ios`/`android`/`desktop`). */
   platform?: string;
@@ -162,7 +163,7 @@ export class WebSessionStore {
 
 // ── Cookie Security Flag Helpers ────────────────────────────────────────────
 
-/** TTL (seconds) for a session — 30 days when standalone (installed PWA), else 24h. */
+/** TTL (seconds) for a session — 30 days either way, from two separate settings. */
 function sessionTtlSeconds(session: WebSession): number {
   return session.standalone === true ? TTL.SESSION_PWA : TTL.SESSION;
 }
@@ -276,11 +277,11 @@ export function createWebSessionMiddleware(
         await store.touch(sessionId, ip);
         // Slide the COOKIE too: re-issue it with a fresh maxAge so an actively
         // used session never expires out from under the user. Without this the
-        // cookie kept its original 24h lifetime from login regardless of
-        // activity — a home-screen PWA would force a re-login every 24h even
-        // for daily users. The Redis TTL already slides on touch; this keeps
-        // the browser-side cookie in lockstep. Installed-PWA (standalone)
-        // sessions slide on the 30-day window.
+        // cookie keeps the lifetime it was handed at sign-in regardless of
+        // activity, and the window becomes an absolute cap counted from then —
+        // a daily user signed out on a schedule. The Redis TTL already slides
+        // on touch; this keeps the browser-side cookie in lockstep, on
+        // whichever of the two windows the session carries.
         res.cookie(
           cookieName,
           sessionId,

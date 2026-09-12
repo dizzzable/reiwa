@@ -14,15 +14,15 @@
  *   - **QR** generates the web link (QR is scanned by camera → opens browser).
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Copy, QrCode, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import QRCode from "qrcode";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useBranding } from "@/lib/branding-provider";
+import { qrSvg, resolveQrStyle } from "@/lib/qr-style";
 import { cn } from "@/lib/utils";
 
 interface InviteLinkHeroProps {
@@ -43,6 +43,11 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const displayBrand = brandName ?? branding.brandName;
+  // The operator's QR style, resolved once per branding change rather than on
+  // every render, because it is a dependency of `handleQr` below.
+  // `resolveQrStyle` is total: an old panel's absent field, or anything
+  // malformed, comes back as plain — today's code, byte for byte.
+  const qrStyle = useMemo(() => resolveQrStyle(branding.qrStyle), [branding.qrStyle]);
 
   // Context detection: TMA users get Telegram link, web users get web link
   const isTma = !!window.Telegram?.WebApp?.initData;
@@ -104,21 +109,27 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
 
   const handleQr = useCallback(async () => {
     try {
-      // QR always encodes the web link (scanned by camera → opens browser)
-      const foreground =
-        getComputedStyle(document.documentElement).getPropertyValue("--brand-foreground").trim() ||
-        "#ffffff";
-      const dataUrl = await QRCode.toDataURL(webLink, {
-        width: 280,
-        margin: 2,
-        color: { dark: foreground, light: "#00000000" },
-      });
-      setQrDataUrl(dataUrl);
+      // QR always encodes the web link (scanned by camera → opens browser).
+      //
+      // Drawn dark-on-white, on a white plate, and NOT in the brand foreground
+      // on a transparent field as it was. That looked right on the dark sheet
+      // and failed twice over: it is an inverted code, which ZXing's JS port
+      // and v2rayNG's camera path do not attempt at all, and its background
+      // was `#00000000` — so the moment the alpha was flattened onto white,
+      // which is what saving or forwarding the image does, it became
+      // near-white on white. Not faint. Blank.
+      //
+      // The operator may style it: this is a code one person hands to another
+      // person's phone camera, not one a VPN client reads. 208 is the CSS size
+      // the dialog shows it at (`h-52 w-52` below), which is what decides
+      // whether dots are still large enough to keep.
+      const svg = await qrSvg(webLink, qrStyle, 208);
+      setQrDataUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
       setQrOpen(true);
     } catch {
       toast.error(t("common.error"));
     }
-  }, [webLink, t]);
+  }, [webLink, qrStyle, t]);
 
   return (
     <>
@@ -183,14 +194,15 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
             <DialogTitle className="text-center">{t("referrals.qrTitle")}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-2">
+            {/* A WHITE plate under a dark code. The dark surface this used to
+                sit on is what tempted the inverted palette in the first place;
+                a light plate is how a dark theme shows a scannable code.
+                `imageRendering: pixelated` went with the bitmap — an SVG has no
+                pixels to snap, and forcing it degrades the very edges the
+                decoder samples. */}
             {qrDataUrl && (
-              <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
-                <img
-                  src={qrDataUrl}
-                  alt="QR Code"
-                  className="h-52 w-52"
-                  style={{ imageRendering: "pixelated" }}
-                />
+              <div className="overflow-hidden rounded-2xl border border-[var(--color-border-soft)] bg-white p-4">
+                <img src={qrDataUrl} alt="QR Code" className="h-52 w-52" />
               </div>
             )}
             <p className="max-w-[220px] break-all text-center text-[11px] leading-relaxed text-[var(--brand-muted-foreground)]">

@@ -1203,6 +1203,7 @@ export const en: RuDict = {
     legalDocuments: 'Terms and conditions',
     legalDocumentsSub: 'The current wording — readable in full',
     legalDocumentsEmpty: 'The operator has not published any documents.',
+    legalDocumentsNav: 'Document list',
     linkTelegram: 'Link Telegram',
     linkTelegramSub: 'For quick sign-in via bot',
     linkEmail: 'Link Email',
