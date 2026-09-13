@@ -118,6 +118,14 @@ export interface Subscription {
   expireAt?: string; // Legacy alias
   expiresAt: string | null; // ISO date (canonical)
   url: string | null;
+  /**
+   * The cabinet's signature over `url`, which the connect screen hands to the
+   * public `/connect/open` page so it can ask whether this cabinet issued the
+   * subscription (`src/api/lib/connect-handoff-signature.ts`). Sent by
+   * `GET /subscriptions/all` on every subscription that has a url; absent on
+   * every other route.
+   */
+  connectSignature?: string;
   configUrl?: string | null;
   plan: {
     id: string | null;

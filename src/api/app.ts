@@ -30,6 +30,7 @@ import {
   buildLandingMetaHead,
 } from "./routes/landing.js";
 import { createConnectPageRouter } from "./routes/connect-page.js";
+import { createConnectHandoffRouter } from "./routes/connect-handoff.js";
 import {
   applyBrandingHead,
   buildWebManifest,
@@ -355,6 +356,9 @@ export function createApp(deps: CreateAppDeps) {
   // The connect screen catalog. Public within the cabinet: it is identical for
   // every customer and carries nobody's subscription link.
   app.use("/api/v1", createConnectPageRouter(deps.adminClient, connectPageSnapshot));
+  // Whether the cabinet signed the subscription inside a `/connect/open`
+  // address. Public like the catalog: the page asking has no session.
+  app.use("/api/v1", createConnectHandoffRouter({ config }));
   app.use("/api/v1", createAuthRouter(deps));
   app.use("/api/v1", createProfileRouter(deps));
   app.use("/api/v1", createPlansRouter(deps));

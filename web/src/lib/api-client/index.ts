@@ -96,7 +96,7 @@ export { getPlans } from "./plans.js";
 
 // Landing
 export { getLanding } from "./landing.js";
-export { getConnectPage } from "./connect-page.js";
+export { getConnectPage, verifyConnectHandoff } from "./connect-page.js";
 
 // Subscription
 export {

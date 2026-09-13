@@ -46,6 +46,11 @@ const INIT_DATA =
 const SDK_LAUNCH_PARAMS_KEY = "__telegram__initParams";
 
 const SUBSCRIPTION_URL = "https://sub.example.test/s/AbC123";
+/**
+ * What `GET /subscriptions/all` puts on a subscription with a url. Any 32 bytes
+ * in base64url do here: this screen carries the signature, it never checks it.
+ */
+const CONNECT_SIGNATURE = "0q0EVtTmeAZtN1hAS6FIHMEp9upFASpBB7mUNL77xBY";
 const HAPP_HREF = `happ://add/${SUBSCRIPTION_URL}`;
 /**
  * An app the shipped catalog does not contain, with a scheme nothing in the
@@ -95,6 +100,7 @@ const SUBSCRIPTION = {
   isTrial: false,
   profileName: "dizzable",
   url: SUBSCRIPTION_URL,
+  connectSignature: CONNECT_SIGNATURE,
   expiresAt: "2100-02-28T00:00:00.000Z",
   trafficUsed: 1,
   trafficLimit: null,
@@ -102,6 +108,9 @@ const SUBSCRIPTION = {
   userRemnaId: null,
   plan: { id: null, name: null, type: null },
 };
+
+/** The row the screen is showing; a case may swap it before rendering. */
+let shownSubscription: Record<string, unknown> = SUBSCRIPTION;
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: "ru" } }),
@@ -112,7 +121,7 @@ vi.mock("react-router", () => ({
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => ({
-    data: queryKey[0] === "connect-page" ? CATALOG : { subscriptions: [SUBSCRIPTION] },
+    data: queryKey[0] === "connect-page" ? CATALOG : { subscriptions: [shownSubscription] },
     isLoading: false,
     isError: false,
     isFetching: false,
@@ -192,6 +201,7 @@ function cleanDocument(): void {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  shownSubscription = SUBSCRIPTION;
   cleanDocument();
 });
 
@@ -274,10 +284,26 @@ describe("inside a Telegram Mini App the app's scheme never reaches an href", ()
     // The key is in the fragment and nowhere a server or its log could see it.
     expect(opened.search).toBe("");
     expect(opened.href).not.toContain("sub.example.test");
+    // With the subscription's signature beside it, or the page opens nothing.
     expect(readTrampolinePayload(opened.hash)).toEqual({
       link: HAPP_HREF,
       subscriptionUrl: SUBSCRIPTION_URL,
+      signature: CONNECT_SIGNATURE,
     });
+  });
+
+  it("offers no button for a subscription that arrived without a signature — and never the anchor instead", () => {
+    // An API older than this screen. The trampoline page would refuse the
+    // payload, and falling back to the plain anchor is exactly what destroys a
+    // Mini App on Android.
+    shownSubscription = { ...SUBSCRIPTION, connectSignature: undefined };
+    launchedBy("android");
+    const el = render();
+
+    expect(appSchemeHrefs(el), "a missing signature put the app scheme back in an href").toEqual([]);
+    expect(el.querySelector("button[data-connect-trampoline]")).toBeNull();
+    // The rest of the step is still there: the copy button needs no signature.
+    expect(el.textContent).toContain("Скопировать ссылку");
   });
 
   it("opens the same address as a new window when the bridge never arrived, never in place", () => {

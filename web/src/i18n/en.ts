@@ -968,7 +968,7 @@ export const en: RuDict = {
     openInvalid:
       'The link is incomplete or damaged. Go back to Telegram and tap the add-subscription button again.',
     openUnverified:
-      'This link does not lead to any app in the catalog, so this page will not open it. Go back to Telegram and copy the link on the connect screen.',
+      'This page could not confirm that the link was made on the connect screen of this service, so it will not open it. Go back to Telegram and copy the link on the connect screen.',
   },
   devices: {
     title: 'Connected devices',

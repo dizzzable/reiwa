@@ -8,6 +8,7 @@ import { createFlexibleSessionMiddleware } from "../middleware/session.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { attachConnectSignatures, createConnectHandoffSigner } from "../lib/connect-handoff-signature.js";
 
 /**
  * Flatten the rezeis nested quote shape
@@ -195,6 +196,7 @@ export function createSubscriptionRouter(deps: {
 }) {
   const { adminClient, sessionStore } = deps;
   const requireSession = createFlexibleSessionMiddleware(sessionStore);
+  const connectHandoff = createConnectHandoffSigner(deps.config.REZEIS_INTERNAL_SHARED_SECRET);
   const router = Router();
 
   // GET /api/v1/subscription
@@ -265,7 +267,9 @@ export function createSubscriptionRouter(deps: {
     async (req: AuthRequest, res) => {
       try {
         const result = await adminClient?.subscription.getAll(resolveUserIdentity(req));
-        res.json(result ?? { subscriptions: [] });
+        // Each url signed for the public `/connect/open` page, which asks the
+        // cabinet whether it issued the subscription inside its link.
+        res.json(attachConnectSignatures(result ?? { subscriptions: [] }, connectHandoff));
       } catch {
         res.json({ subscriptions: [] });
       }

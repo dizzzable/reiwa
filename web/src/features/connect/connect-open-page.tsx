@@ -20,15 +20,26 @@
  * so it is the primary path, and "copy the link" sits under it for the device
  * that has no app registered for the scheme.
  *
+ * ── Two checks before the button, in order ──────────────────────────────────
+ *
+ * Anybody can hand anybody an address of this page, so the button waits for
+ * both. The operator's catalog must build exactly this link from this
+ * subscription URL, and then the cabinet must confirm it signed that
+ * subscription URL for a signed-in subscriber — the catalog vouches for the
+ * app, the signature for whose subscription is inside it
+ * (`connect-trampoline.ts`). Until both have said yes nothing on the page is
+ * clickable; a no is a refusal, and a check that could not be asked is a retry.
+ *
  * ── Nobody's session, and nobody's key in a log ─────────────────────────────
  *
  * Safari has none of Telegram's cookies, so the route is public — declared
  * outside `StealthLayout` in `App.tsx`, and listed in the transport's public
  * paths so a stray 401 elsewhere cannot bounce it to the sign-in form. The link
  * arrives in the fragment (`connect-trampoline.ts`) and never leaves the
- * document: the one request this page makes is the public catalog, with nothing
- * of the link in it, and the client-error reporter sends `pathname + search`,
- * never the hash.
+ * document. The page makes two requests: the public catalog, with nothing of
+ * the link in it, and the signature check, which carries the SHA-256 of the
+ * subscription URL and the signature and nothing else. The client-error
+ * reporter sends `pathname + search`, never the hash.
  *
  * ── Outside the shell, so it brings its own scroller ────────────────────────
  *
@@ -42,10 +53,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Copy, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { getConnectPage } from '@/lib/api-client'
+import { getConnectPage, verifyConnectHandoff } from '@/lib/api-client'
 import { copyText } from './clipboard'
 import { readCatalog } from './connect-catalog'
-import { readTrampolinePayload, verifyTrampolinePayload } from './connect-trampoline'
+import { readTrampolinePayload, subscriptionDigest, verifyTrampolinePayload } from './connect-trampoline'
 
 type Verdict = 'ready' | 'checking' | 'failed' | 'invalid' | 'unverified'
 
@@ -68,18 +79,50 @@ export default function ConnectOpenPage() {
     enabled: payload !== null,
   })
 
+  /** The catalog's word on the link: `null` until the catalog has answered. */
+  const catalogVouches = useMemo(() => {
+    if (payload === null || catalogQuery.data === undefined) return null
+    return verifyTrampolinePayload(readCatalog(catalogQuery.data), payload)
+  }, [payload, catalogQuery.data])
+
+  // The cabinet's word on whose subscription it is. Asked only once the catalog
+  // has vouched, so a link no template builds is refused without a request, and
+  // asked with the digest — the subscription URL and the link stay here. One
+  // signature's answer does not change while the page is open.
+  const signatureQuery = useQuery({
+    queryKey: ['connect-handoff', payload?.signature ?? null],
+    queryFn: async () => {
+      if (payload === null) throw new Error('no payload to verify')
+      const digest = await subscriptionDigest(payload.subscriptionUrl)
+      return verifyConnectHandoff({ digest, signature: payload.signature })
+    },
+    enabled: catalogVouches === true,
+    staleTime: Infinity,
+  })
+
   const verdict: Verdict = useMemo(() => {
     if (payload === null) return 'invalid'
-    if (catalogQuery.data !== undefined) {
-      return verifyTrampolinePayload(readCatalog(catalogQuery.data), payload) ? 'ready' : 'unverified'
-    }
-    return catalogQuery.isError ? 'failed' : 'checking'
-  }, [payload, catalogQuery.data, catalogQuery.isError])
+    if (catalogVouches === null) return catalogQuery.isError ? 'failed' : 'checking'
+    if (!catalogVouches) return 'unverified'
+    // Only a literal yes opens anything. A no is a refusal; an answer that is
+    // neither is a check that did not happen, and so is an error.
+    const answer = signatureQuery.data?.valid
+    if (answer === true) return 'ready'
+    if (answer === false) return 'unverified'
+    if (signatureQuery.data !== undefined || signatureQuery.isError) return 'failed'
+    return 'checking'
+  }, [payload, catalogVouches, catalogQuery.isError, signatureQuery.data, signatureQuery.isError])
 
   const copy = async (): Promise<void> => {
     if (payload === null) return
     if (await copyText(payload.subscriptionUrl)) toast.success(t('connect.copied'))
     else toast.error(t('connect.copyFailed'))
+  }
+
+  // Asks again whichever check could not be asked: the catalog while it has no
+  // answer, the signature after it has one.
+  const retry = (): void => {
+    void (catalogVouches === null ? catalogQuery.refetch() : signatureQuery.refetch())
   }
 
   return (
@@ -96,11 +139,12 @@ export default function ConnectOpenPage() {
             <p className="text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">
               {t('connect.openBody')}
             </p>
-            {/* The catalog vouches for the SHAPE of the link — the operator's
-                own app, the operator's own import endpoint — and cannot vouch
-                for whose subscription is inside it: a public page cannot know
-                the operator's subscription host. So the host is shown, which is
-                what lets somebody handed a stranger's address notice it. */}
+            {/* The catalog vouched for the app and the cabinet for the
+                subscription: its signature says this cabinet issued that URL
+                to a signed-in subscriber. It cannot say the subscriber is the
+                person holding this phone — anybody can pass on a subscription
+                the operator issued — so the host is still shown, which is
+                what lets somebody handed another person's address notice it. */}
             <p
               data-connect-open-host=""
               className="break-all text-xs text-[color:var(--brand-muted-foreground)]"
@@ -108,8 +152,8 @@ export default function ConnectOpenPage() {
               {t('connect.openSource', { host: new URL(payload.subscriptionUrl).host })}
             </p>
             {/* The same-window anchor the owner saw work in Safari. Only ever
-                rendered for a link the catalog vouched for — a fast tap before
-                the check finishes has nothing to land on. */}
+                rendered once the catalog AND the cabinet have said yes — a fast
+                tap before both checks finish has nothing to land on. */}
             <a
               data-connect-open-app=""
               href={payload.link}
@@ -144,7 +188,8 @@ export default function ConnectOpenPage() {
             </p>
             <button
               type="button"
-              onClick={() => void catalogQuery.refetch()}
+              data-connect-open-retry=""
+              onClick={retry}
               className={`${BUTTON} border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]`}
             >
               {t('common.retry')}

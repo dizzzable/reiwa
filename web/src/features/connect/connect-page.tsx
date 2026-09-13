@@ -209,6 +209,9 @@ export default function ConnectPage() {
   /** An id was handed over and the list does not hold it. */
   const subscriptionMissing = resolved.missing
   const subscriptionUrl = subscription?.url ?? ''
+  // The cabinet's signature over that same url, from the same row — what lets
+  // the trampoline page confirm the subscription is one this cabinet issued.
+  const connectSignature = subscription?.connectSignature ?? null
 
   const detected = useMemo(() => detectCurrentPlatform(), [])
   // The HOST, not the device, and never a guess from the user agent: whether an
@@ -463,6 +466,7 @@ export default function ConnectPage() {
                         locale={locale}
                         step={step}
                         subscriptionUrl={subscriptionUrl}
+                        connectSignature={connectSignature}
                         handoff={handoff}
                         onCopy={copyLink}
                       />
@@ -818,6 +822,7 @@ function StepRow({
   catalog,
   locale,
   subscriptionUrl,
+  connectSignature,
   handoff,
   onCopy,
 }: {
@@ -827,6 +832,8 @@ function StepRow({
   catalog: ConnectCatalog
   locale: string
   subscriptionUrl: string
+  /** The subscription's `connectSignature` — `connect-trampoline.ts`. */
+  connectSignature: string | null
   /** How an "add to app" button hands its link over — `deep-link-handoff.ts`. */
   handoff: DeepLinkHandoff
   onCopy: () => Promise<boolean>
@@ -871,6 +878,7 @@ function StepRow({
                   button={btn}
                   locale={locale}
                   subscriptionUrl={subscriptionUrl}
+                  connectSignature={connectSignature}
                   handoff={handoff}
                   onCopy={onCopy}
                 />
@@ -897,12 +905,14 @@ function StepButton({
   button,
   locale,
   subscriptionUrl,
+  connectSignature,
   handoff,
   onCopy,
 }: {
   button: ConnectButton
   locale: string
   subscriptionUrl: string
+  connectSignature: string | null
   handoff: DeepLinkHandoff
   onCopy: () => Promise<boolean>
 }) {
@@ -949,7 +959,17 @@ function StepButton({
     // fell back to its own navigation would load the trampoline INSIDE the Mini
     // App, where its button is the dead one again. And the call is made from the
     // tap itself with nothing awaited first — both mobile clients refuse
-    // `openLink` more than ten seconds after the last touch.
+    // `openLink` more than ten seconds after the last touch. The signature is
+    // part of that address and is already on the subscription in memory, so it
+    // costs the tap nothing.
+    //
+    // No signature, no button — and never the anchor below instead. The page
+    // refuses a payload without one (`connect-trampoline.ts`), so this button
+    // could only open a page calling the link damaged, and the anchor is the
+    // one thing this branch exists to keep out of a Mini App. Every subscription
+    // with a url arrives signed from `GET /subscriptions/all`; one without a
+    // signature came from an API older than this screen.
+    if (connectSignature === null) return null
     return (
       <>
         <button
@@ -958,7 +978,9 @@ function StepButton({
           className={`${STEP_BUTTON} bg-[color:var(--brand-primary)] text-[color:var(--brand-primary-fg)]`}
           onClick={() => {
             window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium')
-            openExternalUrl(trampolineUrl(window.location.origin, { link: href, subscriptionUrl }))
+            openExternalUrl(
+              trampolineUrl(window.location.origin, { link: href, subscriptionUrl, signature: connectSignature }),
+            )
           }}
         >
           <Link2 aria-hidden="true" className="size-4" />

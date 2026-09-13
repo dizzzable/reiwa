@@ -139,7 +139,8 @@ export default function App() {
         <Route path="/support/guest" element={<GuestSupportPage />} />
         {/* Where an "add to app" link lands after leaving a Telegram Mini App.
             Public because it opens in a browser that has none of Telegram's
-            cookies; it acts only on links the public catalog vouches for. */}
+            cookies; it opens only a link the public catalog vouches for,
+            around a subscription this cabinet signed. */}
         <Route path="/connect/open" element={<ConnectOpenPage />} />
 
         {/* Protected shell */}
