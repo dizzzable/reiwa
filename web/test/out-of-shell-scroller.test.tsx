@@ -7,7 +7,7 @@
  * (the `html, body, #root` rule). That is not a stylistic choice — it is what
  * stops the whole Mini App from rubber-banding on iOS — and it means the shell
  * root CLIPS. Inside `StealthLayout` that is harmless, because the shell hands
- * the page a `<main class="scroll-area">` of its own. The fifteen routes in
+ * the page a `<main class="scroll-area">` of its own. The sixteen routes in
  * `App.tsx` that render OUTSIDE the shell get no such thing: whatever they draw
  * below the first screen is not merely off-screen, it is unreachable. There is
  * no scrollbar, no touch scroll, no keyboard scroll — the content is simply
@@ -100,6 +100,7 @@ vi.mock("lucide-react", () => ({
   Copy: () => <svg />,
   ExternalLink: () => <svg />,
   Gift: () => <svg />,
+  Link2: () => <svg />,
   Loader2: () => <svg />,
   Paperclip: () => <svg />,
   Send: () => <svg />,
@@ -196,6 +197,8 @@ vi.mock("@/lib/api-client", () => ({
   abandonCheckout: vi.fn(),
   // `/tma`
   bootstrapTelegram: vi.fn(),
+  // `/connect/open`
+  getConnectPage: vi.fn(),
 }));
 
 // `/onboarding`, `/tma`
@@ -226,6 +229,7 @@ import GuestSupportPage from "@/features/support/guest-support-page";
 import OnboardingPage from "@/features/onboarding/onboarding-page";
 import PaymentReturnPage from "@/features/payment/payment-return-page";
 import TmaBootstrapPage from "@/features/auth/tma-bootstrap-page";
+import ConnectOpenPage from "@/features/connect/connect-open-page";
 
 // jsdom replaces the global `URL`, so a `new URL(…, import.meta.url)` handed to
 // `node:fs` is rejected here — the neighbouring jsdom specs go through
@@ -423,6 +427,19 @@ describe("a route outside StealthLayout owns its scroller", () => {
         "in Chrome with such a message the column is 526px, so at 375x360 it " +
         "began at -83px and the retry button ended 66px below the fold, with a " +
         "scroll range of 0.",
+    ).toEqual({ blockAxisScrolling: true, blockSizeBounded: true });
+  });
+
+  it("/connect/open keeps its one button reachable", () => {
+    const page = renderOutsideShell(<ConnectOpenPage />);
+    const box = blockAxis(page);
+    expect(
+      { blockAxisScrolling: box.scrolls, blockSizeBounded: box.bounded },
+      "/connect/open renders outside the shell, so #root — which clips — is its " +
+        `only container. Its outermost box resolved to { ${box.resolved} }, which ` +
+        "cannot scroll: a subscriber who left a Telegram Mini App to reach this " +
+        "page, on a short phone or with large text, could not reach the button " +
+        "that opens the app or the copy button under it.",
     ).toEqual({ blockAxisScrolling: true, blockSizeBounded: true });
   });
 });

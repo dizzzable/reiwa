@@ -71,6 +71,10 @@ const PUBLIC_PATHS = [
   "/tma",
   "/payment-return",
   "/support/guest",
+  // The page an "add to app" link opens in a browser after leaving a Telegram
+  // Mini App. It has no session by construction, and a 401 from anything else
+  // on the page must not replace the one button the subscriber came for.
+  "/connect/open",
 ];
 
 // `/advertising/click` is fire-and-forget analytics behind a session guard: a

@@ -137,6 +137,20 @@ function schemeOf(value: string): string | null {
   return match === null ? null : match[1].toLowerCase();
 }
 
+/**
+ * Whether a URL may stand in an "add to app" `href`: it names a scheme, that
+ * scheme cannot execute, and it is not a browser navigation.
+ *
+ * Exported so the page that opens such a link OUTSIDE the connect screen —
+ * `connect-open-page.tsx`, reached from inside a Telegram Mini App — asks the
+ * question the catalog reader asks of a template, rather than a second copy of
+ * the rule that could come apart from this one.
+ */
+export function isAppSchemeUrl(value: string): boolean {
+  const scheme = schemeOf(value);
+  return scheme !== null && !FORBIDDEN_SCHEMES.has(scheme) && scheme !== 'http' && scheme !== 'https';
+}
+
 function button(value: unknown): ConnectButton | null {
   if (!isRecord(value)) return null;
   const label = text(value['label']);
@@ -159,14 +173,13 @@ function button(value: unknown): ConnectButton | null {
       if (template === null) return null;
       if (encode !== 'raw' && encode !== 'component') return null;
       if (!template.includes(SUBSCRIPTION_LINK_TOKEN)) return null;
-      const scheme = schemeOf(template);
-      if (scheme === null || FORBIDDEN_SCHEMES.has(scheme)) return null;
-      // An `https:` template is not a deep link, it is a browser navigation —
-      // and inside a Mini App a navigation to a third-party origin takes the
+      // No scheme, or one that executes, is not a link at all. An `https:`
+      // template is not a deep link either, it is a browser navigation — and
+      // inside a Mini App a navigation to a third-party origin takes the
       // container with it, with no way back. It would also hand that host the
       // customer's subscription token in a query string. The panel refuses to
       // save one; this refuses to render one saved before it did.
-      if (scheme === 'http' || scheme === 'https') return null;
+      if (!isAppSchemeUrl(template)) return null;
       return { kind: 'deepLink', label, template, encode };
     }
     case 'copyLink':

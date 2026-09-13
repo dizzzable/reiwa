@@ -956,6 +956,19 @@ export const en: RuDict = {
     factStatus: 'Status',
     factExpires: 'Expires',
     factTraffic: 'Traffic',
+    openHint: 'A page will open — tap "Open the app" on it.',
+    openTitle: 'Add the subscription',
+    openBody: 'Tap the button — the app opens and the subscription is added to it.',
+    openButton: 'Open the app',
+    openSource: 'Subscription address: {{host}}',
+    openNotOpened:
+      'The app did not open? Make sure it is installed, or copy the link and add the subscription in the app by hand.',
+    openChecking: 'Checking the link…',
+    openFailed: 'Could not check the link. Check your internet connection and try again.',
+    openInvalid:
+      'The link is incomplete or damaged. Go back to Telegram and tap the add-subscription button again.',
+    openUnverified:
+      'This link does not lead to any app in the catalog, so this page will not open it. Go back to Telegram and copy the link on the connect screen.',
   },
   devices: {
     title: 'Connected devices',

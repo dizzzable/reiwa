@@ -63,6 +63,9 @@ const DevicesPage = lazy(
 const ConnectPage = lazy(
   () => import("@/features/connect/connect-page"),
 );
+const ConnectOpenPage = lazy(
+  () => import("@/features/connect/connect-open-page"),
+);
 const PartnerPage = lazy(
   () => import("@/features/partner/partner-page"),
 );
@@ -134,6 +137,10 @@ export default function App() {
         <Route path="/legal" element={<LegalPage />} />
         {/* Public anonymous support — no login required. */}
         <Route path="/support/guest" element={<GuestSupportPage />} />
+        {/* Where an "add to app" link lands after leaving a Telegram Mini App.
+            Public because it opens in a browser that has none of Telegram's
+            cookies; it acts only on links the public catalog vouches for. */}
+        <Route path="/connect/open" element={<ConnectOpenPage />} />
 
         {/* Protected shell */}
         <Route element={<StealthLayout />}>

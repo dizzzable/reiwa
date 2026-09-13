@@ -92,6 +92,7 @@ import { BrandLogo } from '@/components/ui/brand-logo'
 import { LoadErrorCard } from '@/components/ui/load-error-card'
 import { formatDate, openExternalUrl } from '@/lib/utils'
 import { subscriptionTitle } from '@/lib/subscription-title'
+import { isTelegramMiniAppSurface, readTelegramLaunchPlatform } from '@/lib/telegram-launch-params'
 import type { Subscription } from '@/types/api'
 import {
   buildDeepLink,
@@ -104,6 +105,9 @@ import {
   type ConnectPlatform,
   type PlatformId,
 } from './connect-catalog'
+import { copyViaSelection } from './clipboard'
+import { trampolineUrl } from './connect-trampoline'
+import { deepLinkHandoff, type DeepLinkHandoff } from './deep-link-handoff'
 import { connectBackdrop, connectThemeStyle, readConnectTheme } from './connect-theme'
 import { ConnectLinkDialog } from './connect-link-dialog'
 import { PlatformPicker } from './connect-platform-picker'
@@ -207,6 +211,19 @@ export default function ConnectPage() {
   const subscriptionUrl = subscription?.url ?? ''
 
   const detected = useMemo(() => detectCurrentPlatform(), [])
+  // The HOST, not the device, and never a guess from the user agent: whether an
+  // "add to app" button may carry the app's scheme at all is decided by what
+  // launched the screen. The platform above picks a catalog section and may be
+  // wrong; this picks whether the button works, and inside a Telegram Mini App
+  // on a phone a wrong answer destroys the Mini App. `deep-link-handoff.ts`.
+  const handoff = useMemo(
+    () =>
+      deepLinkHandoff({
+        insideTelegram: isTelegramMiniAppSurface(),
+        telegramPlatform: readTelegramLaunchPlatform(),
+      }),
+    [],
+  )
   const [platformId, setPlatformId] = useState<PlatformId | null>(null)
   const [appId, setAppId] = useState<string | null>(null)
   const [linkSheetOpen, setLinkSheetOpen] = useState(false)
@@ -446,6 +463,7 @@ export default function ConnectPage() {
                         locale={locale}
                         step={step}
                         subscriptionUrl={subscriptionUrl}
+                        handoff={handoff}
                         onCopy={copyLink}
                       />
                     ))}
@@ -800,6 +818,7 @@ function StepRow({
   catalog,
   locale,
   subscriptionUrl,
+  handoff,
   onCopy,
 }: {
   step: ConnectApp['steps'][number]
@@ -808,6 +827,8 @@ function StepRow({
   catalog: ConnectCatalog
   locale: string
   subscriptionUrl: string
+  /** How an "add to app" button hands its link over — `deep-link-handoff.ts`. */
+  handoff: DeepLinkHandoff
   onCopy: () => Promise<boolean>
 }) {
   return (
@@ -850,6 +871,7 @@ function StepRow({
                   button={btn}
                   locale={locale}
                   subscriptionUrl={subscriptionUrl}
+                  handoff={handoff}
                   onCopy={onCopy}
                 />
               ))}
@@ -875,13 +897,18 @@ function StepButton({
   button,
   locale,
   subscriptionUrl,
+  handoff,
   onCopy,
 }: {
   button: ConnectButton
   locale: string
   subscriptionUrl: string
+  handoff: DeepLinkHandoff
   onCopy: () => Promise<boolean>
 }) {
+  // Above every early return below: hooks run in the same order on every
+  // render, and nothing lints for it in this tree.
+  const { t } = useTranslation()
   const label = line(button.label, locale)
 
   if (button.kind === 'copyLink') {
@@ -910,10 +937,48 @@ function StepButton({
   const href = buildDeepLink(button, subscriptionUrl)
   if (href === null) return null
 
+  if (handoff === 'trampoline') {
+    // Inside a Telegram Mini App the app's scheme must never reach an `href`.
+    // Telegram for Android loads it in the Mini App's own webview and replaces
+    // the whole Mini App with an error page; Telegram for iOS lets it fail
+    // without a sound. `openLink` is the documented way out of a Mini App and it
+    // takes an https address, so it gets the trampoline page, which opens the
+    // app from a tap in a real browser.
+    //
+    // A `<button>`, not an anchor pointing at that page: an anchor that ever
+    // fell back to its own navigation would load the trampoline INSIDE the Mini
+    // App, where its button is the dead one again. And the call is made from the
+    // tap itself with nothing awaited first — both mobile clients refuse
+    // `openLink` more than ten seconds after the last touch.
+    return (
+      <>
+        <button
+          type="button"
+          data-connect-trampoline=""
+          className={`${STEP_BUTTON} bg-[color:var(--brand-primary)] text-[color:var(--brand-primary-fg)]`}
+          onClick={() => {
+            window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium')
+            openExternalUrl(trampolineUrl(window.location.origin, { link: href, subscriptionUrl }))
+          }}
+        >
+          <Link2 aria-hidden="true" className="size-4" />
+          {label}
+        </button>
+        {/* The operator's step text promises the app opens; here a page opens
+            first, and somebody who expected the app should know what to tap
+            on it. */}
+        <p className="text-[11px] leading-relaxed text-[color:var(--brand-muted-foreground)]">
+          {t('connect.openHint')}
+        </p>
+      </>
+    )
+  }
+
   // A real anchor, not a click handler that navigates. A custom scheme leaves
-  // the page through the host's own link handling, and inside Telegram that
-  // handling is what passes the scheme to the operating system — a scripted
-  // navigation is the shape that gets swallowed.
+  // the page through the host's own link handling, and that handling is what
+  // passes the scheme to the operating system — a scripted navigation is the
+  // shape that gets swallowed. This is the shape outside Telegram and in
+  // Telegram Desktop, the two places it was seen working.
   return (
     <a
       href={href}
@@ -924,30 +989,6 @@ function StepButton({
       {label}
     </a>
   )
-}
-
-/**
- * The last-resort copy: put the link in a field, select it, ask the document.
- *
- * `navigator.clipboard` is absent in an insecure context and in several in-app
- * browsers, and "select the link and copy it yourself" is not an instruction
- * anybody can follow against a one-line truncated address.
- */
-function copyViaSelection(value: string): boolean {
-  try {
-    const field = document.createElement('textarea')
-    field.value = value
-    field.setAttribute('readonly', '')
-    field.style.position = 'fixed'
-    field.style.opacity = '0'
-    document.body.append(field)
-    field.select()
-    const copied = document.execCommand('copy')
-    field.remove()
-    return copied
-  } catch {
-    return false
-  }
 }
 
 /**

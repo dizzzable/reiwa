@@ -444,6 +444,27 @@ export function readTelegramLaunchStartParam(): string | null {
 }
 
 /**
+ * The client that opened this session, in Telegram's own spelling — `ios`,
+ * `android`, `tdesktop`, `macos`, `weba`, … — or `null` when Telegram did not.
+ *
+ * This is `window.Telegram.WebApp.platform`, from the place the SDK reads it
+ * (`initParams.tgWebAppPlatform`) and with the same availability as everything
+ * else here. The bridge's copy says `unknown` until the SDK has arrived from
+ * telegram.org, and on the networks this product is sold into that can be
+ * never — so a behaviour chosen from it falls back to whatever `unknown`
+ * selects, on precisely the devices that needed the other branch.
+ *
+ * It outlives the payload on purpose. `forgetTelegramLaunchPayload()` and
+ * `isSpentLaunchPayload` take `tgWebAppData` away and leave this behind: it
+ * describes the CLIENT, and the client did not change because the server
+ * refused a signature.
+ */
+export function readTelegramLaunchPlatform(): string | null {
+  const platform = resolveTelegramLaunchParams()?.tgWebAppPlatform
+  return isUsableLaunchValue(platform) ? platform : null
+}
+
+/**
  * Is this document running inside a Telegram client's webview?
  *
  * A different question from `readTelegramLaunchInitData()`, and the difference
