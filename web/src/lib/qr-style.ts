@@ -64,28 +64,93 @@
  * the cabinet draws today (36-139 bytes) stays at `M`. Raising the level past a
  * free one would shrink every module, and module size in pixels, not the
  * correction level, is what decides whether a camera reads a code.
+ *
+ * The one exception is a code that carries a logo, which is the one thing that
+ * actually SPENDS correction. Its level is the planner's (`qr-logo.ts`), which
+ * weighs a larger knockout against smaller modules in CSS pixels.
+ *
+ * ── A logo ──────────────────────────────────────────────────────────────────
+ *
+ * `style.logo` names an image the operator uploaded; `qr-logo.ts` decides
+ * whether it fits at the size the code is shown, and how large. A logo is drawn
+ * ONLY when there is a plan AND the caller hands in the image, already loaded,
+ * as a `data:` URI (`qr-logo-source.ts`). Without either, the code is exactly —
+ * byte for byte — what the same style without a logo draws: while the image
+ * loads, when it fails, at a size too small for one, on a link too dense for
+ * one. A broken image in a code is never an outcome.
+ *
+ * What is drawn: the data modules of the planned knockout are left out; a
+ * light plate is the white field itself, a dark plate is a rounded square in
+ * the code's own dark colour, one module inside the knockout all round; the
+ * image goes over everything, inside that. It goes in as a `data:` URI and
+ * nothing else, because the SVG reaches the page as an `<img>`: an SVG used as
+ * an image may not load external resources — MDN, "SVG as an image": scripts
+ * are disabled, and outside images and stylesheets are refused unless inlined
+ * as `data:` URLs. An `https:` logo would simply never paint. So the renderer
+ * refuses every other href, and the loader is what turns an upload into one.
+ *
+ * The connect code never carries a logo. It never receives a style at all, and
+ * a logo additionally needs the fourth argument of `qrSvg`, which `LocalQr` —
+ * the component the connect sheet draws through — has no way to pass.
  */
 import QRCode, { type QRCodeErrorCorrectionLevel } from 'qrcode'
 
 import { QUIET_ZONE_MODULES, qrOptions, relativeLuminance } from './qr-options'
+import { LOGO_MOAT_MODULES, type QrLogoPlan, knockoutIsClear, planQrLogo } from './qr-logo'
 
 export type QrModuleShape = 'square' | 'rounded' | 'dots'
 export type QrEyeShape = 'square' | 'rounded'
+/** How wide a logo may grow: `small` ≤ 20% of the symbol, `large` ≤ 30% (`qr-logo.ts`). */
+export type QrLogoSize = 'small' | 'large'
+/** What the logo sits on: the white field itself, or a rounded square in the code's dark colour. */
+export type QrLogoPlate = 'light' | 'dark'
+
+export interface QrLogo {
+  /**
+   * The image: an upload the cabinet relays same-origin, `/uploads/branding/<file>`
+   * with an image extension — and nothing else (`isQrLogoSrc`).
+   */
+  readonly src: string
+  readonly size: QrLogoSize
+  readonly plate: QrLogoPlate
+}
 
 export interface QrStyle {
   readonly modules: QrModuleShape
   readonly eyes: QrEyeShape
   /** The dark colour of modules and eyes. The field is always opaque white. */
   readonly dark: string
+  /**
+   * A logo in the middle, or `null` for none. Drawn only where it fits and only
+   * once it has loaded — see the header.
+   */
+  readonly logo: QrLogo | null
 }
 
-export const QR_STYLE_PLAIN: QrStyle = { modules: 'square', eyes: 'square', dark: '#000000' }
+export const QR_STYLE_PLAIN: QrStyle = { modules: 'square', eyes: 'square', dark: '#000000', logo: null }
 
 const MODULE_SHAPES: readonly QrModuleShape[] = ['square', 'rounded', 'dots']
 const EYE_SHAPES: readonly QrEyeShape[] = ['square', 'rounded']
+const LOGO_SIZES: readonly QrLogoSize[] = ['small', 'large']
+const LOGO_PLATES: readonly QrLogoPlate[] = ['light', 'dark']
 
 const LIGHT = '#ffffff'
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
+
+/**
+ * `/uploads/branding/<file>`, the file named as the cabinet's upload relay
+ * accepts one (`isSafeBrandingFile` in `src/api/branding-pwa.ts`), with an
+ * extension the relay serves an image type for — from its disk mirror the type
+ * comes from the extension alone, and `application/octet-stream` is not
+ * something the loader can draw.
+ */
+const LOGO_SRC = /^\/uploads\/branding\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|jpe?g|webp|svg)$/i
+const LOGO_SRC_MAX_LENGTH = 256
+
+/** What the loader produces: a PNG it rasterised, or an SVG it inlined. Base64, so nothing in it needs escaping. */
+const LOGO_HREF = /^data:image\/(?:png|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/
+/** Bounds the markup a logo can add to one code. The loader's own limits stay well under it. */
+export const LOGO_HREF_MAX_LENGTH = 512 * 1024
 
 /**
  * 7:1 against white ⇔ relative luminance of the dark colour ≤ this (0.1).
@@ -101,11 +166,22 @@ export const DOT_RADIUS = 0.43
  * Below this many pixels per module, dots become rounded squares. At small
  * sizes the camera's own blur averages a dot with the white around it and the
  * centre stops reading as dark; a rounded square keeps more ink there.
+ * A logo's floor is the same number (`LOGO_MIN_PIXELS_PER_MODULE`).
  */
 export const MIN_PIXELS_PER_MODULE_FOR_DOTS = 4
 
 /** Eye corner radii, in modules: outer ring (of 7), its white hole (of 5), the core (of 3). */
 export const EYE_RADII = { outer: 1.6, hole: 1.1, core: 0.8 } as const
+
+/**
+ * A dark plate's corner radius, as a share of its width — an app icon's rounding.
+ * Rounding does not change the lines through the plate's centre, and a plate
+ * five modules wide inside the one-module moat can pass for a finder where the
+ * link's modules complete it — see "What geometry cannot promise" in `qr-logo.ts`.
+ */
+export const LOGO_DARK_PLATE_RADIUS = 0.22
+/** How far the image sits inside a dark plate, as a share of the plate's width, on every side. */
+export const LOGO_DARK_PLATE_INSET = 0.15
 
 export type QrShape =
   | {
@@ -126,6 +202,16 @@ export type QrShape =
       readonly fill: string
     }
 
+/** Where the logo image is placed, in modules, and the image itself. */
+export interface QrLogoImage {
+  readonly x: number
+  readonly y: number
+  readonly w: number
+  readonly h: number
+  /** A `data:` URI, never anything that loads (`isQrLogoHref`). */
+  readonly href: string
+}
+
 export interface QrDrawing {
   /** Modules across, quiet zone included. The SVG's viewBox is `0 0 size size`. */
   readonly size: number
@@ -133,6 +219,8 @@ export interface QrDrawing {
   readonly shapes: readonly QrShape[]
   readonly version: number
   readonly errorCorrectionLevel: QRCodeErrorCorrectionLevel
+  /** The logo image, painted over every shape. Absent whenever no logo is drawn. */
+  readonly logo?: QrLogoImage
 }
 
 export interface DrawQrOptions {
@@ -145,6 +233,13 @@ export interface DrawQrOptions {
    * pixels track that, where a phone's 3× device pixels would overstate it.
    */
   readonly displayPixels?: number
+  /**
+   * A logo to draw: `planQrLogo`'s plan for this text and style, and the loaded
+   * image. Ignored — the code drawn as if it were absent — when the style has
+   * no logo, the href is not a `data:` image, or the plan does not fit this
+   * text's matrix (another text's plan could otherwise clear a finder).
+   */
+  readonly logo?: { readonly plan: QrLogoPlan; readonly href: string }
 }
 
 /**
@@ -154,6 +249,11 @@ export interface DrawQrOptions {
  * there is an operator to tell, and this answers every input with a valid style.
  * `Object.hasOwn`, because `raw['constructor']` on a plain object is a function
  * inherited from the prototype, not a missing key.
+ *
+ * The logo is all or nothing, unlike the members above: a logo whose size or
+ * plate this build does not know, or whose source is anything but a relayed
+ * upload, is no logo — a panel older than the member sends no `logo` key, and
+ * that is no logo too.
  */
 export function resolveQrStyle(raw: unknown): QrStyle {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return QR_STYLE_PLAIN
@@ -165,21 +265,47 @@ export function resolveQrStyle(raw: unknown): QrStyle {
     modules: pick(own('modules'), MODULE_SHAPES, 'square'),
     eyes: pick(own('eyes'), EYE_SHAPES, 'square'),
     dark: dark !== null && isUsableDark(dark) ? dark : QR_STYLE_PLAIN.dark,
+    logo: resolveQrLogo(own('logo')),
   }
 }
 
-/** True for the style every operator who never opened the setting has. */
+/**
+ * True for the style every operator who never opened the setting has: square
+ * modules and eyes, black, and NO logo.
+ *
+ * A style with a logo is not plain, even when every other member is — the
+ * panel's reset control reads this. It can still DRAW as the plain code: when
+ * no logo is drawn (none fits at the size shown, or the image has not loaded),
+ * `qrSvg` draws exactly what the same style without a logo draws, and for
+ * plain members that is `qrcode`'s own writer.
+ */
 export function isPlainStyle(style: QrStyle): boolean {
   return (
     style.modules === QR_STYLE_PLAIN.modules &&
     style.eyes === QR_STYLE_PLAIN.eyes &&
-    style.dark === QR_STYLE_PLAIN.dark
+    style.dark === QR_STYLE_PLAIN.dark &&
+    style.logo === null
   )
 }
 
 /** A dark colour a scanner can still separate from the white field — 7:1 or better. */
 export function isUsableDark(hex: string): boolean {
   return HEX.test(hex) && relativeLuminance(hex) <= MAX_DARK_LUMINANCE
+}
+
+/** A logo source this build will load: a relayed upload, `/uploads/branding/<file>`, and nothing else. */
+export function isQrLogoSrc(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= LOGO_SRC_MAX_LENGTH &&
+    LOGO_SRC.test(value) &&
+    !value.includes('..')
+  )
+}
+
+/** An image href this renderer will write into a code: a base64 PNG or SVG `data:` URI of bounded size. */
+export function isQrLogoHref(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= LOGO_HREF_MAX_LENGTH && LOGO_HREF.test(value)
 }
 
 /**
@@ -208,17 +334,42 @@ export function freeErrorCorrectionLevel(text: string): QRCodeErrorCorrectionLev
  * EXPLICITLY by each call site: the connect sheet, read by the strictest
  * scanners there are, never receives one, and a renderer that looked the style
  * up for itself would style it without anyone deciding to.
+ *
+ * `logoHref` is the style's logo, loaded (`loadQrLogo`). A logo is drawn when
+ * it is a `data:` image AND `planQrLogo` has a plan for `displayPixels`; in
+ * every other case — no href yet, a failed load, no plan — the result is
+ * byte for byte the same style with `logo: null`.
  */
-export async function qrSvg(text: string, style: QrStyle, displayPixels?: number): Promise<string> {
-  if (isPlainStyle(style)) return QRCode.toString(text, qrOptions())
-  return qrDrawingToSvg(drawQr(text, style, displayPixels === undefined ? {} : { displayPixels }))
+export async function qrSvg(
+  text: string,
+  style: QrStyle,
+  displayPixels?: number,
+  logoHref?: string,
+): Promise<string> {
+  const plan =
+    displayPixels !== undefined && isQrLogoHref(logoHref) ? planQrLogo(text, style, displayPixels) : null
+  if (plan !== null && logoHref !== undefined) {
+    return qrDrawingToSvg(drawQr(text, style, { displayPixels, logo: { plan, href: logoHref } }))
+  }
+
+  const withoutLogo: QrStyle = style.logo === null ? style : { ...style, logo: null }
+  if (isPlainStyle(withoutLogo)) return QRCode.toString(text, qrOptions())
+  return qrDrawingToSvg(drawQr(text, withoutLogo, displayPixels === undefined ? {} : { displayPixels }))
 }
 
 export function drawQr(text: string, style: QrStyle, options: DrawQrOptions = {}): QrDrawing {
-  const errorCorrectionLevel = freeErrorCorrectionLevel(text)
+  const requested = options.logo
+  const logo =
+    requested !== undefined && style.logo !== null && isQrLogoHref(requested.href) ? requested : undefined
+  const errorCorrectionLevel = logo === undefined ? freeErrorCorrectionLevel(text) : logo.plan.level
   const qr = QRCode.create(text, { errorCorrectionLevel })
   const matrix = qr.modules
   const n = matrix.size
+  if (logo !== undefined && (logo.plan.modules !== n || !knockoutIsClear(matrix, logo.plan.knockout))) {
+    // A plan made for another text, level or version. Whatever it would clear
+    // here is not known to be data, so draw the code as if no logo were asked for.
+    return drawQr(text, style, { ...options, logo: undefined })
+  }
   const q = QUIET_ZONE_MODULES
   const size = n + q * 2
 
@@ -233,11 +384,22 @@ export function drawQr(text: string, style: QrStyle, options: DrawQrOptions = {}
   const inFinder = (row: number, col: number): boolean =>
     (row < 7 && col < 7) || (row < 7 && col >= n - 7) || (row >= n - 7 && col < 7)
 
+  const knockout = logo === undefined ? 0 : logo.plan.knockout
+  const knockoutFrom = (n - knockout) / 2
+  const inKnockout = (row: number, col: number): boolean =>
+    knockout > 0 &&
+    row >= knockoutFrom &&
+    row < knockoutFrom + knockout &&
+    col >= knockoutFrom &&
+    col < knockoutFrom + knockout
+
   const shapes: QrShape[] = [{ kind: 'rect', x: 0, y: 0, w: size, h: size, r: 0, fill: LIGHT }]
 
   for (let row = 0; row < n; row += 1) {
     for (let col = 0; col < n; col += 1) {
       if (!matrix.get(row, col)) continue
+      // Under the logo. Only data modules are ever here: `knockoutIsClear` above.
+      if (inKnockout(row, col)) continue
       const reserved = matrix.isReserved(row, col) !== 0
       // Drawn whole below, as three nested rounded squares.
       if (reserved && style.eyes === 'rounded' && inFinder(row, col)) continue
@@ -261,12 +423,41 @@ export function drawQr(text: string, style: QrStyle, options: DrawQrOptions = {}
     }
   }
 
-  return { size, shapes, version: qr.version, errorCorrectionLevel }
+  if (logo === undefined || style.logo === null) {
+    return { size, shapes, version: qr.version, errorCorrectionLevel }
+  }
+
+  // The plate: inside the knockout, clear of it by the moat on every side.
+  const plateFrom = q + knockoutFrom + LOGO_MOAT_MODULES
+  const plateWidth = knockout - LOGO_MOAT_MODULES * 2
+  let image: QrLogoImage = { x: plateFrom, y: plateFrom, w: plateWidth, h: plateWidth, href: logo.href }
+  if (style.logo.plate === 'dark') {
+    shapes.push({
+      kind: 'rect',
+      x: plateFrom,
+      y: plateFrom,
+      w: plateWidth,
+      h: plateWidth,
+      r: plateWidth * LOGO_DARK_PLATE_RADIUS,
+      fill: style.dark,
+    })
+    const inset = plateWidth * LOGO_DARK_PLATE_INSET
+    image = {
+      x: plateFrom + inset,
+      y: plateFrom + inset,
+      w: plateWidth - inset * 2,
+      h: plateWidth - inset * 2,
+      href: logo.href,
+    }
+  }
+  // A light plate is the white field itself, which the knockout leaves bare.
+  return { size, shapes, version: qr.version, errorCorrectionLevel, logo: image }
 }
 
 export function qrDrawingToSvg(drawing: QrDrawing): string {
   const body = drawing.shapes.map(shapeToSvg).join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${drawing.size} ${drawing.size}">${body}</svg>`
+  const logo = drawing.logo !== undefined && isQrLogoHref(drawing.logo.href) ? imageToSvg(drawing.logo) : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${drawing.size} ${drawing.size}">${body}${logo}</svg>`
 }
 
 function dataModule(shape: QrModuleShape, x: number, y: number, fill: string): QrShape {
@@ -295,6 +486,27 @@ function shapeToSvg(shape: QrShape): string {
   }
   const radius = shape.r > 0 ? ` rx="${n3(shape.r)}"` : ''
   return `<rect x="${n3(shape.x)}" y="${n3(shape.y)}" width="${n3(shape.w)}" height="${n3(shape.h)}"${radius} fill="${fill}"/>`
+}
+
+/**
+ * The logo, over everything. `preserveAspectRatio` is left at its default,
+ * `xMidYMid meet`: the whole image, centred, never cropped or stretched.
+ */
+function imageToSvg(image: QrLogoImage): string {
+  return `<image href="${escapeAttribute(image.href)}" x="${n3(image.x)}" y="${n3(image.y)}" width="${n3(image.w)}" height="${n3(image.h)}"/>`
+}
+
+function resolveQrLogo(raw: unknown): QrLogo | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  const own = (key: string): unknown => (Object.hasOwn(record, key) ? record[key] : undefined)
+  const src = own('src')
+  const size = own('size')
+  const plate = own('plate')
+  if (!isQrLogoSrc(src)) return null
+  if (typeof size !== 'string' || !(LOGO_SIZES as readonly string[]).includes(size)) return null
+  if (typeof plate !== 'string' || !(LOGO_PLATES as readonly string[]).includes(plate)) return null
+  return { src, size: size as QrLogoSize, plate: plate as QrLogoPlate }
 }
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {

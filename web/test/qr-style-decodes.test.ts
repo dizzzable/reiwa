@@ -62,16 +62,16 @@ const STYLES: ReadonlyArray<readonly [string, QrStyle]> = [
   ['rounded modules', { ...QR_STYLE_PLAIN, modules: 'rounded' }],
   ['dots', { ...QR_STYLE_PLAIN, modules: 'dots' }],
   ['rounded eyes', { ...QR_STYLE_PLAIN, eyes: 'rounded' }],
-  ['dots, rounded eyes, brand navy', { modules: 'dots', eyes: 'rounded', dark: '#1e3a8a' }],
+  ['dots, rounded eyes, brand navy', { modules: 'dots', eyes: 'rounded', dark: '#1e3a8a', logo: null }],
   // The palest dark colour the resolver lets through: #595959, 7.00:1 against
   // white. The floor used to be WCAG's 4.5:1 (#767676), and this very case —
   // rounded, subscription link, through the camera at 6.5 px/module — failed
   // on it. Two rows, so a failure says whether the colour or the shape did it.
   ['square modules, grey at the contrast floor', { ...QR_STYLE_PLAIN, dark: '#595959' }],
-  ['rounded, grey at the contrast floor', { modules: 'rounded', eyes: 'rounded', dark: '#595959' }],
+  ['rounded, grey at the contrast floor', { modules: 'rounded', eyes: 'rounded', dark: '#595959', logo: null }],
   // The worst cell of the panel's own grid: the least ink of the three
   // module shapes and the palest colour the resolver lets through, together.
-  ['dots, rounded eyes, grey at the contrast floor', { modules: 'dots', eyes: 'rounded', dark: '#595959' }],
+  ['dots, rounded eyes, grey at the contrast floor', { modules: 'dots', eyes: 'rounded', dark: '#595959', logo: null }],
 ]
 
 describe('a styled code decodes with the strictest reader — point-sampled', () => {
@@ -89,7 +89,7 @@ describe('a styled code decodes with the strictest reader — point-sampled', ()
   it('survives a blur on top of the point-sampled image', () => {
     const drawing = drawQr(
       SUBSCRIPTION,
-      { modules: 'dots', eyes: 'rounded', dark: '#1e3a8a' },
+      { modules: 'dots', eyes: 'rounded', dark: '#1e3a8a', logo: null },
       { pixelsPerModule: 6 },
     )
     expect(decode(blur(rasterise(drawing, 6), 1))).toBe(SUBSCRIPTION)
@@ -127,7 +127,7 @@ describe('the reader is as strict as the customers it stands for', () => {
     // `#767676` is WCAG's 4.5:1 text grey, the floor this file's colour cases
     // used to sit at. `drawQr` takes any colour; `resolveQrStyle` is what
     // refuses this one, and the measurement that made it refuse is this.
-    const style: QrStyle = { modules: 'rounded', eyes: 'rounded', dark: '#767676' }
+    const style: QrStyle = { modules: 'rounded', eyes: 'rounded', dark: '#767676', logo: null }
     expect(isUsableDark(style.dark), 'the resolver has stopped refusing this grey').toBe(false)
     const drawing = drawQr(SUBSCRIPTION, style, { pixelsPerModule: 6.5 })
     expect(decode(rasterise(drawing, 6.5)), 'point-sampled, this grey still reads').toBe(SUBSCRIPTION)

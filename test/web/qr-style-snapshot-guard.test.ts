@@ -55,8 +55,25 @@ const MALFORMED: ReadonlyArray<readonly [string, unknown]> = [
   ["a colour name rather than a hex colour", { modules: "rounded", dark: "navy" }],
   [
     "a field only a newer panel knows",
+    { modules: "dots", eyes: "rounded", dark: "#1e3a8a", logo: null, frame: { kind: "badge" } },
+  ],
+  // The logo: every way it can be wrong resolves to NO logo, and none of them
+  // may cost the operator the rest of the brand.
+  [
+    "a logo in a shape this build does not read",
     { modules: "dots", eyes: "rounded", dark: "#1e3a8a", logo: { url: "https://example.com/l.png" } },
   ],
+  [
+    "a logo hosted anywhere but the upload relay",
+    { modules: "dots", logo: { src: "https://cdn.example.com/uploads/branding/l.png", size: "small", plate: "light" } },
+  ],
+  ["a logo that walks out of the branding uploads", { logo: { src: "/uploads/branding/../icons/l.png", size: "small", plate: "light" } }],
+  ["a logo size this build has never drawn", { logo: { src: "/uploads/branding/l.png", size: "huge", plate: "light" } }],
+  [
+    "logo keys named after the prototype",
+    JSON.parse('{"logo":{"constructor":{"src":"/uploads/branding/l.png"},"__proto__":{"size":"small"},"plate":"dark"}}'),
+  ],
+  ["a logo that is a number", { logo: 7 }],
   ["null", null],
   ["a number", 7],
   ["an array", ["dots", "rounded"]],
@@ -80,7 +97,14 @@ describe("the snapshot guard never refuses a QR style", () => {
   it("lets the operator's style through untouched", () => {
     const raw = { modules: "dots", eyes: "rounded", dark: "#1E3A8A" };
     expect(describePublicConfigSnapshot(withBranding({ qrStyle: raw }))).toBeNull();
-    expect(resolveQrStyle(raw)).toEqual({ modules: "dots", eyes: "rounded", dark: "#1e3a8a" });
+    expect(resolveQrStyle(raw)).toEqual({ modules: "dots", eyes: "rounded", dark: "#1e3a8a", logo: null });
+  });
+
+  it("lets the operator's logo through untouched", () => {
+    const logo = { src: "/uploads/branding/qr-logo.svg", size: "large", plate: "dark" };
+    const raw = { modules: "rounded", eyes: "rounded", dark: "#1e3a8a", logo };
+    expect(describePublicConfigSnapshot(withBranding({ qrStyle: raw }))).toBeNull();
+    expect(resolveQrStyle(raw).logo).toEqual(logo);
   });
 
   it.each(MALFORMED)("lets %s through, and the reader answers with a safe style", (_label, raw) => {
@@ -98,6 +122,7 @@ describe("the snapshot guard never refuses a QR style", () => {
     expect(["square", "rounded", "dots"]).toContain(style.modules);
     expect(["square", "rounded"]).toContain(style.eyes);
     expect(isUsableDark(style.dark), `${JSON.stringify(raw)} resolved to ${style.dark}`).toBe(true);
+    expect(style.logo, `${JSON.stringify(raw)} resolved to a logo`).toBeNull();
   });
 });
 
@@ -126,7 +151,12 @@ describe("the brightness resolver carries the style to the components", () => {
   };
 
   it.each(["light", "dark"] as const)("keeps it in the %s rendering", (mode) => {
-    const raw = { modules: "rounded", eyes: "rounded", dark: "#1e3a8a" };
+    const raw = {
+      modules: "rounded",
+      eyes: "rounded",
+      dark: "#1e3a8a",
+      logo: { src: "/uploads/branding/qr-logo.png", size: "small", plate: "light" },
+    };
     const branding: Branding = {
       ...DEFAULT_BRANDING,
       qrStyle: raw,

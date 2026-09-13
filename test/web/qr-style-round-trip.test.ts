@@ -37,6 +37,28 @@ import {
 let panel: PanelBundle;
 if (hasPanel) panel = await loadPanelBundle();
 
+/**
+ * Whether the sibling panel knows `qrStyle.logo` yet. The cabinet half of the
+ * logo landed first: its `QrStyle` carries `logo: null` for no logo, and a
+ * panel that predates the member neither sends it nor accepts it — its zod
+ * object strips it and its DTO, with `forbidNonWhitelisted`, refuses it. Until
+ * the panel half lands the cases below talk to such a panel in ITS shape
+ * (`forPanel`), and the logo cases skip, saying so in "reaches both checkouts".
+ * Read off the panel's own form default, which comes from its vendored copy of
+ * this renderer: the member appears there the moment the kit is synced.
+ */
+const PANEL_KNOWS_LOGO = hasPanel && panelKnowsLogo();
+
+function panelKnowsLogo(): boolean {
+  return Object.hasOwn(panel.schema.createInitialBrandingDraft({}).qrStyle as Record<string, unknown>, "logo");
+}
+
+/** A style as the sibling panel speaks it: without `logo` while it does not know the member. */
+function forPanel(style: object): Record<string, unknown> {
+  const { logo: _unknownToThisPanel, ...rest } = style as Record<string, unknown>;
+  return PANEL_KNOWS_LOGO ? { ...(style as Record<string, unknown>) } : rest;
+}
+
 const VALIDATION_MESSAGES = {
   hexInvalid: "hex-invalid",
   imageUrlInvalid: "image-url-invalid",
@@ -63,7 +85,7 @@ const refused = (by: string, reason: string): RoundTripResult => ({
 /** Push one style through panel form → API → storage → cabinet, as production does. */
 function roundTrip(
   block: Record<string, unknown>,
-  saved: Record<string, unknown> = { ...QR_STYLE_PLAIN },
+  saved: Record<string, unknown> = forPanel(QR_STYLE_PLAIN),
 ): RoundTripResult {
   const schema = panel.schema.createBrandingFormSchema(VALIDATION_MESSAGES);
   const baseline = panel.schema.createInitialBrandingDraft({ qrStyle: saved });
@@ -136,13 +158,16 @@ function survive(block: Record<string, unknown>, saved?: Record<string, unknown>
   return result.resolved as QrStyle;
 }
 
-const BRAND_NAVY: QrStyle = { modules: "dots", eyes: "rounded", dark: "#1e3a8a" };
+const BRAND_NAVY: QrStyle = { modules: "dots", eyes: "rounded", dark: "#1e3a8a", logo: null };
 
 describe("QR style round trip, panel → API → cabinet", () => {
   it("reaches both checkouts", () => {
     console.info(
       hasPanel
-        ? `qr-style round trip: driving the panel at ${PANEL_REPO_PATH}`
+        ? `qr-style round trip: driving the panel at ${PANEL_REPO_PATH}` +
+            (PANEL_KNOWS_LOGO
+              ? " — it knows qrStyle.logo, and the logo cases run"
+              : " — it does NOT know qrStyle.logo yet: the logo cases SKIP until the panel half lands")
         : `qr-style round trip: no sibling checkout at ${PANEL_REPO_PATH} — cases skip`,
     );
     if (hasPanelRepo) {
@@ -156,7 +181,7 @@ describe("QR style round trip, panel → API → cabinet", () => {
 
   describe.skipIf(!hasPanel)("the owner's rule: plain unless the operator chose otherwise", () => {
     it("opens the form on the plain code", () => {
-      expect(panel.schema.createInitialBrandingDraft({}).qrStyle).toEqual(QR_STYLE_PLAIN);
+      expect(panel.schema.createInitialBrandingDraft({}).qrStyle).toEqual(forPanel(QR_STYLE_PLAIN));
     });
 
     it("delivers the plain code from a panel that never stored a style", () => {
@@ -169,14 +194,14 @@ describe("QR style round trip, panel → API → cabinet", () => {
 
   describe.skipIf(!hasPanel)("what the operator set", () => {
     const STYLES: ReadonlyArray<readonly [string, QrStyle]> = [
-      ["rounded modules", { modules: "rounded", eyes: "square", dark: "#000000" }],
+      ["rounded modules", { modules: "rounded", eyes: "square", dark: "#000000", logo: null }],
       ["dots, rounded eyes, brand navy", BRAND_NAVY],
       // The palest grey the contrast floor lets through: 7.00:1 against white.
-      ["rounded eyes at the contrast floor", { modules: "square", eyes: "rounded", dark: "#595959" }],
+      ["rounded eyes at the contrast floor", { modules: "square", eyes: "rounded", dark: "#595959", logo: null }],
     ];
 
     it.each(STYLES)("delivers %s", (_name, style) => {
-      expect(survive({ ...style })).toEqual(style);
+      expect(survive(forPanel(style))).toEqual(style);
     });
 
     it("delivers a colour however the operator typed it", () => {
@@ -189,7 +214,7 @@ describe("QR style round trip, panel → API → cabinet", () => {
 
     it("goes back to the plain code", () => {
       // The reset the section offers. From a styled saved row, so it is a real edit.
-      const resolved = survive({ ...QR_STYLE_PLAIN }, { ...BRAND_NAVY });
+      const resolved = survive(forPanel(QR_STYLE_PLAIN), forPanel(BRAND_NAVY));
       expect(isPlainStyle(resolved)).toBe(true);
     });
   });
@@ -210,22 +235,60 @@ describe("QR style round trip, panel → API → cabinet", () => {
     };
 
     it("the API refuses on its own what the form would have refused", () => {
-      expect(dtoRejects({ ...QR_STYLE_PLAIN })).toBe(false);
-      expect(dtoRejects({ ...BRAND_NAVY })).toBe(false);
+      expect(dtoRejects(forPanel(QR_STYLE_PLAIN))).toBe(false);
+      expect(dtoRejects(forPanel(BRAND_NAVY))).toBe(false);
       expect(dtoRejects({ modules: "square", eyes: "square", dark: "#595959" })).toBe(false);
 
       expect(dtoRejects({ modules: "square", eyes: "square", dark: "#767676" })).toBe(true);
       expect(dtoRejects({ modules: "hearts", eyes: "square", dark: "#000000" })).toBe(true);
       // Half a block would replace the stored one whole and wipe the other two.
       expect(dtoRejects({ modules: "dots" })).toBe(true);
-      expect(dtoRejects({ ...QR_STYLE_PLAIN, extra: 1 })).toBe(true);
+      expect(dtoRejects({ ...forPanel(QR_STYLE_PLAIN), extra: 1 })).toBe(true);
     });
 
     it("answers a key named after the prototype with no crash, even without the HTTP pipe", () => {
       // In production Nest's ValidationPipe deletes such keys before
       // class-transformer runs; here there is no pipe, and a nested DTO class
       // still must not throw — `serversGlobe`'s bare record does.
-      expect(() => dtoRejects({ ...QR_STYLE_PLAIN, constructor: 1 })).not.toThrow();
+      expect(() => dtoRejects({ ...forPanel(QR_STYLE_PLAIN), constructor: 1 })).not.toThrow();
+    });
+  });
+
+  describe.skipIf(!hasPanel || !PANEL_KNOWS_LOGO)("the logo — armed once the panel half has landed", () => {
+    // The contract the panel half has to meet, written before it exists: these
+    // cases SKIP against a panel whose vendored renderer has no `logo`, and the
+    // first case in this file says so in its output. Run them the day the kit is
+    // synced; a case here that has never run guards nothing.
+    const LOGO = { src: "/uploads/branding/qr-logo.png", size: "large", plate: "dark" } as const;
+
+    it("delivers a logo the operator set, with the style around it", () => {
+      expect(survive({ ...BRAND_NAVY, logo: { ...LOGO } })).toEqual({ ...BRAND_NAVY, logo: LOGO });
+    });
+
+    it("takes the logo away again", () => {
+      const resolved = survive({ ...BRAND_NAVY, logo: null }, { ...BRAND_NAVY, logo: { ...LOGO } });
+      expect(resolved.logo).toBeNull();
+    });
+
+    it("refuses a logo that is not a relayed upload, in the form and in the API alike", () => {
+      const external = { ...BRAND_NAVY, logo: { ...LOGO, src: "https://cdn.example.com/qr-logo.png" } };
+      expect(roundTrip(external).rejectedBy, "an external logo got past the panel form").toBe("panel Zod schema");
+
+      const dtoRejects = (block: unknown): boolean =>
+        panel.validateSync(panel.plainToInstance(panel.dto.UpdateBrandingSettingsDto, { qrStyle: block }), STRICT)
+          .length > 0;
+      expect(dtoRejects({ ...BRAND_NAVY, logo: { ...LOGO } })).toBe(false);
+      expect(dtoRejects({ ...BRAND_NAVY, logo: null })).toBe(false);
+      for (const logo of [
+        { ...LOGO, src: "https://cdn.example.com/qr-logo.png" },
+        { ...LOGO, src: "/uploads/branding/../icons/qr-logo.png" },
+        { ...LOGO, size: "huge" },
+        { ...LOGO, plate: "glass" },
+        { src: LOGO.src, size: LOGO.size },
+        { ...LOGO, extra: 1 },
+      ]) {
+        expect(dtoRejects({ ...BRAND_NAVY, logo }), JSON.stringify(logo)).toBe(true);
+      }
     });
   });
 
@@ -239,6 +302,7 @@ describe("QR style round trip, panel → API → cabinet", () => {
         expect(["square", "rounded", "dots"]).toContain(style.modules);
         expect(["square", "rounded"]).toContain(style.eyes);
         expect(isUsableDark(style.dark)).toBe(true);
+        expect(style.logo).toBeNull();
       },
     );
 

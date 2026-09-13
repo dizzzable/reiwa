@@ -31,6 +31,8 @@ import { createRoot, type Root } from "react-dom/client";
 import QRCode from "qrcode";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { planQrLogo } from "@/lib/qr-logo";
+import { loadQrLogo } from "@/lib/qr-logo-source";
 import { qrOptions } from "@/lib/qr-options";
 import { isUsableDark, qrSvg, resolveQrStyle, type QrStyle } from "@/lib/qr-style";
 import { DEFAULT_BRANDING, type Branding } from "@/types/branding";
@@ -58,16 +60,38 @@ vi.mock("motion/react", () => ({
   motion: {
     span: ({ children }: { readonly children?: ReactNode }) => <span>{children}</span>,
   },
+  useReducedMotion: () => false,
 }));
-// Rendered in place instead of portalled, so the invite code is found where it
-// was drawn. What is under test happens before the dialog opens.
-vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({ open, children }: { readonly open: boolean; readonly children?: ReactNode }) =>
-    open ? <div data-testid="invite-qr-dialog">{children}</div> : null,
-  DialogContent: ({ children }: { readonly children?: ReactNode }) => <div>{children}</div>,
-  DialogHeader: ({ children }: { readonly children?: ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { readonly children?: ReactNode }) => <h2>{children}</h2>,
-}));
+// Rendered in place instead of portalled, so a code is found where it was
+// drawn. The trigger opens the dialog it sits in, as Radix's does; the real
+// primitive — focus, Escape — is driven in `qr-partner-dialog.test.tsx`.
+vi.mock("@/components/ui/dialog", async () => {
+  const React = await import("react");
+  const Open = React.createContext<{ readonly open: boolean; readonly setOpen: (open: boolean) => void }>({
+    open: false,
+    setOpen: () => undefined,
+  });
+  return {
+    Dialog: ({
+      open,
+      onOpenChange,
+      children,
+    }: {
+      readonly open: boolean;
+      readonly onOpenChange?: (open: boolean) => void;
+      readonly children?: ReactNode;
+    }) => <Open.Provider value={{ open, setOpen: (next) => onOpenChange?.(next) }}>{children}</Open.Provider>,
+    DialogTrigger: ({ children }: { readonly children: React.ReactElement<{ onClick?: () => void }> }) => {
+      const { setOpen } = React.useContext(Open);
+      return React.cloneElement(children, { onClick: () => setOpen(true) });
+    },
+    DialogContent: ({ children }: { readonly children?: ReactNode }) =>
+      React.useContext(Open).open ? <div data-testid="dialog-content">{children}</div> : null,
+    DialogHeader: ({ children }: { readonly children?: ReactNode }) => <div>{children}</div>,
+    DialogTitle: ({ children }: { readonly children?: ReactNode }) => <h2>{children}</h2>,
+    DialogDescription: ({ children }: { readonly children?: ReactNode }) => <p>{children}</p>,
+  };
+});
 
 import { LocalQr } from "@/components/ui/local-qr";
 import { ConnectLinkDialog } from "@/features/connect/connect-link-dialog";
@@ -99,6 +123,50 @@ const GARBAGE: ReadonlyArray<readonly [string, unknown]> = [
 ];
 
 const DATA_URL_PREFIX = "data:image/svg+xml;charset=utf-8,";
+
+/** A small SVG logo, as the cabinet's upload relay would serve an operator's file. */
+const SVG_LOGO =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" rx="2" fill="#e11d48"/></svg>';
+/** What the loader makes of it. */
+const LOGO_HREF = `data:image/svg+xml;base64,${btoa(SVG_LOGO)}`;
+
+let logoFiles = 0;
+/** A source no other case has loaded: the loader keeps a loaded logo for the life of the page. */
+function freshLogoSrc(): string {
+  logoFiles += 1;
+  return `/uploads/branding/qr-logo-${logoFiles}.svg`;
+}
+
+/** The operator's raw style with a logo — what a panel with the setting sends. */
+function withLogo(raw: Record<string, unknown>, src: string): Record<string, unknown> {
+  return { ...raw, logo: { src, size: "small", plate: "light" } };
+}
+
+type Served = "the logo" | "a redirect to the stock icon" | "a 404" | "a network failure";
+
+/**
+ * `fetch`, answering as the cabinet's upload relay does — the file itself, the
+ * 302 to the stock Reiwa icon it sends while the panel is down, a 404, or no
+ * answer at all. Returns the stub, so a case can prove the load was attempted.
+ */
+function serveLogo(src: string, served: Served) {
+  const fetch = vi.fn(async (input: string, _init?: unknown) => {
+    if (served === "a network failure") throw new TypeError("Failed to fetch");
+    // Every answer but the network failure carries a perfectly drawable SVG,
+    // on purpose: then the redirect flag, or the status, is the ONLY thing
+    // between that body and the code, and a loader that stopped checking it
+    // would put a logo in and fail the case. Serving the stock PNG would not —
+    // jsdom has no canvas, a raster never loads here, the case would pass anyway.
+    return {
+      ok: served !== "a 404",
+      redirected: served === "a redirect to the stock icon",
+      headers: { get: (name: string) => (name.toLowerCase() === "content-type" ? "image/svg+xml" : null) },
+      arrayBuffer: async () => new TextEncoder().encode(input === src ? SVG_LOGO : "<svg/>").buffer,
+    };
+  });
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
+}
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -382,5 +450,200 @@ describe("the partner's advertising codes", () => {
     expectSafe(web);
     expect(bot).toBe(await todaysCode(BOT_AD));
     expect(web).toBe(await todaysCode(WEB_AD));
+  });
+
+  it("keeps both 96 px thumbnails byte for byte what they were — no logo, with one configured AND loaded", async () => {
+    const src = freshLogoSrc();
+    const fetch = serveLogo(src, "the logo");
+    brandingState.branding = withQrStyle(withLogo(OPERATOR_RAW, src));
+    const { bot, web } = await drawAdvertisingCodes();
+
+    expect(bot).toBe(await qrSvg(BOT_AD, OPERATOR_STYLE, 96));
+    expect(web).toBe(await qrSvg(WEB_AD, OPERATOR_STYLE, 96));
+    expect(bot).not.toContain("<image");
+    expect(web).not.toContain("<image");
+    // Not vacuous: the logo WAS there to be had — the enlarging dialogs fetched it.
+    expect(await loadQrLogo(src)).toBe(LOGO_HREF);
+    expect(fetch).toHaveBeenCalledWith(src, expect.anything());
+  });
+
+  it("opens each code large, at 256 px — the same link, the operator's style, and the logo", async () => {
+    const src = freshLogoSrc();
+    serveLogo(src, "the logo");
+    const raw = withLogo(OPERATOR_RAW, src);
+    const style = resolveQrStyle(raw);
+    expect(planQrLogo(BOT_AD, style, 256), "precondition: the bot link carries a logo at 256 px").not.toBeNull();
+    expect(planQrLogo(WEB_AD, style, 256), "precondition: the web link carries a logo at 256 px").not.toBeNull();
+    brandingState.branding = withQrStyle(raw);
+    await drawAdvertisingCodes();
+
+    for (const [kind, link] of [
+      ["Bot", BOT_AD],
+      ["Web", WEB_AD],
+    ] as const) {
+      const button = container?.querySelector(`button[aria-label="partnerAds.qrEnlarge${kind}"]`);
+      expect(button, `the ${kind} thumbnail is not a button`).not.toBeNull();
+      await act(async () => {
+        (button as HTMLButtonElement).click();
+      });
+      const selector = `img[alt="partnerAds.qrDialog${kind}"]`;
+      const svg = await settleFor(() => {
+        const drawn = readSvg(container?.querySelector(selector));
+        return drawn?.includes("<image") ? drawn : null;
+      }, `the enlarged ${kind} code with its logo`);
+      expect(svg).toBe(await qrSvg(link, style, 256, LOGO_HREF));
+      expect(svg).toContain('<image href="data:image/svg+xml;base64,');
+      expect(container?.querySelector(selector)?.getAttribute("width")).toBe("256");
+      // The dialog names the link it opened.
+      expect(container?.querySelector(selector)?.closest('[data-testid="dialog-content"]')?.textContent).toContain(link);
+    }
+  });
+
+  it("opens large without a logo when none is configured — and fetches nothing", async () => {
+    const fetch = serveLogo("/uploads/branding/none.svg", "the logo");
+    brandingState.branding = withQrStyle(OPERATOR_RAW);
+    await drawAdvertisingCodes();
+    await act(async () => {
+      (container?.querySelector('button[aria-label="partnerAds.qrEnlargeBot"]') as HTMLButtonElement).click();
+    });
+    const svg = await drawnCode('img[alt="partnerAds.qrDialogBot"]', "the enlarged bot code");
+    expect(svg).toBe(await qrSvg(BOT_AD, OPERATOR_STYLE, 256));
+    // At 256 px there is room for dots — the thumbnail's 96 px had not.
+    expect(svg).toContain("<circle");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+/* ────────────────────────────────── the logo ───────────────────────────────── */
+
+describe("the logo on the referral invite", () => {
+  /** Mounts the invite and opens its dialog, without waiting for a code. */
+  async function openInvite(): Promise<void> {
+    mount(<InviteLinkHero telegramLink={TELEGRAM_INVITE} webLink={WEB_INVITE} brandName="Reiwa" />);
+    const tile = [...(container?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.trim() === "QR");
+    expect(tile, "the QR tile").toBeDefined();
+    await act(async () => {
+      tile?.click();
+    });
+  }
+
+  const inviteSvg = (): string | null => readSvg(container?.querySelector('img[alt="QR Code"]'));
+
+  it("is in the invite's code once it has loaded — the operator's style, planned for 208 px, the image inlined", async () => {
+    const src = freshLogoSrc();
+    const fetch = serveLogo(src, "the logo");
+    const raw = withLogo(OPERATOR_RAW, src);
+    const style = resolveQrStyle(raw);
+    expect(planQrLogo(WEB_INVITE, style, 208), "precondition: the invite link carries a logo at 208 px").not.toBeNull();
+    brandingState.branding = withQrStyle(raw);
+
+    await openInvite();
+    const svg = await settleFor(() => {
+      const drawn = inviteSvg();
+      return drawn?.includes("<image") ? drawn : null;
+    }, "the invite code with its logo");
+    expect(svg).toBe(await qrSvg(WEB_INVITE, style, 208, LOGO_HREF));
+    expect(svg).toContain('<image href="data:image/svg+xml;base64,');
+    expect(fetch).toHaveBeenCalledWith(src, expect.anything());
+  });
+
+  it("shows the logo-less code while the logo is still loading — never an empty plate — then redraws with it", async () => {
+    const src = freshLogoSrc();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const served = serveLogo(src, "the logo");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init?: unknown) => {
+        await held;
+        return served(input, init);
+      }),
+    );
+    const raw = withLogo(OPERATOR_RAW, src);
+    const style = resolveQrStyle(raw);
+    brandingState.branding = withQrStyle(raw);
+
+    await openInvite();
+    const whileLoading = await settleFor(inviteSvg, "the invite code while its logo loads");
+    expect(whileLoading).toBe(await qrSvg(WEB_INVITE, style, 208));
+    expect(whileLoading).not.toContain("<image");
+
+    release();
+    const loaded = await settleFor(() => {
+      const drawn = inviteSvg();
+      return drawn?.includes("<image") ? drawn : null;
+    }, "the invite code redrawn with its logo");
+    expect(loaded).toBe(await qrSvg(WEB_INVITE, style, 208, LOGO_HREF));
+  });
+
+  it.each(["a redirect to the stock icon", "a 404", "a network failure"] as const)(
+    "is the logo-less code when the upload answers with %s",
+    async (served) => {
+      const src = freshLogoSrc();
+      const fetch = serveLogo(src, served);
+      const raw = withLogo(OPERATOR_RAW, src);
+      const style = resolveQrStyle(raw);
+      brandingState.branding = withQrStyle(raw);
+
+      await openInvite();
+      // The very load the invite started — the loader shares it — has failed…
+      expect(await loadQrLogo(src)).toBeNull();
+      await act(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+      // …and the dialog shows the code without a logo: no broken image, no blank.
+      const svg = await settleFor(inviteSvg, "the invite code");
+      expect(svg).toBe(await qrSvg(WEB_INVITE, style, 208));
+      expect(svg).not.toContain("<image");
+      expect(fetch, "the invite never tried to load the logo — this case guards nothing").toHaveBeenCalledWith(
+        src,
+        expect.anything(),
+      );
+    },
+  );
+
+  it("is today's styled code, and fetches nothing, from a panel older than the logo — no `logo` key", async () => {
+    const fetch = serveLogo("/uploads/branding/unused.svg", "the logo");
+    expect(Object.hasOwn(OPERATOR_RAW, "logo"), "precondition: the payload has no logo key").toBe(false);
+    brandingState.branding = withQrStyle(OPERATOR_RAW);
+
+    await openInvite();
+    const svg = await settleFor(inviteSvg, "the invite code");
+    expect(svg).toBe(await qrSvg(WEB_INVITE, OPERATOR_STYLE, 208));
+    expect(svg).not.toContain("<image");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("the logo and the connect sheet", () => {
+  it("never reaches the connect code — configured, loadable, room for it, and the code stays plain", async () => {
+    // A SHORT subscription link, on purpose: the long one is too dense for any
+    // logo at 208 px, so a sheet that did pass one on would still draw none and
+    // this case would guard nothing. On this one a logo fits.
+    const shortSubscription = "https://sub.example.com/api/sub/9f2c1e7a4d8b4b2f9c31";
+    const src = freshLogoSrc();
+    serveLogo(src, "the logo");
+    expect(
+      planQrLogo(shortSubscription, resolveQrStyle(withLogo(OPERATOR_RAW, src)), 208),
+      "precondition: a logo would fit this code at the sheet's size",
+    ).not.toBeNull();
+    brandingState.branding = withQrStyle(withLogo(OPERATOR_RAW, src));
+    mount(
+      <ConnectLinkDialog
+        url={shortSubscription}
+        surface={{ raised: "", sunken: "" }}
+        buttonClassName=""
+        themeStyle={{}}
+        onCopy={async () => true}
+        onClose={() => undefined}
+      />,
+    );
+    const svg = await drawnCode('[data-testid="connect-link-dialog"] img', "the connect code", document.body);
+    expect(svg).toBe(await todaysCode(shortSubscription));
+    expect(svg).not.toContain("<image");
+    // Not vacuous: the logo loads for anyone who asks — the sheet does not ask.
+    expect(await loadQrLogo(src)).toBe(LOGO_HREF);
   });
 });

@@ -6,8 +6,14 @@
  * geometry the page draws. What it does not model is the browser's own
  * anti-aliasing; each pixel is sampled at its centre, which is the harsher of
  * the two for thin features, not the kinder.
+ *
+ * A LOGO IMAGE IS NOT PIXELS HERE. `drawing.logo` is a `data:` URI that only a
+ * browser can decode, and both rasterisers REFUSE a drawing that carries one:
+ * skipping it would read the code as if its logo were transparent, and a decode
+ * test would pass on a picture nobody draws. Model the image instead —
+ * `withMark` swaps it for shapes placed in its box.
  */
-import type { QrDrawing, QrShape } from '@/lib/qr-style'
+import type { QrDrawing, QrLogoImage, QrShape } from '@/lib/qr-style'
 
 /** Does this shape cover the point? Units are modules; rounded corners honoured. */
 export function covers(shape: QrShape, px: number, py: number): boolean {
@@ -50,6 +56,7 @@ export interface LuminanceImage {
  * coverage tests. The answer is identical because later shapes still win.
  */
 export function rasterise(drawing: QrDrawing, pixelsPerModule: number): LuminanceImage {
+  refuseLogoImage(drawing)
   const side = Math.round(drawing.size * pixelsPerModule)
   const luminance = new Uint8ClampedArray(side * side).fill(255)
   for (const shape of drawing.shapes) {
@@ -68,6 +75,23 @@ export function rasterise(drawing: QrDrawing, pixelsPerModule: number): Luminanc
     }
   }
   return { width: side, height: side, luminance }
+}
+
+/**
+ * The drawing with its logo image replaced by `mark(box)` — shapes standing in
+ * for what the image would paint, in the box the renderer gave it. The shapes
+ * go last, over everything, exactly where the image would.
+ */
+export function withMark(drawing: QrDrawing, mark: (box: QrLogoImage) => readonly QrShape[]): QrDrawing {
+  if (drawing.logo === undefined) throw new Error('this drawing carries no logo to model')
+  const { logo, ...rest } = drawing
+  return { ...rest, shapes: [...drawing.shapes, ...mark(logo)] }
+}
+
+function refuseLogoImage(drawing: QrDrawing): void {
+  if (drawing.logo !== undefined) {
+    throw new Error('a logo image cannot be rasterised here — model it with withMark()')
+  }
 }
 
 function bounds(shape: QrShape): [number, number, number, number] {
@@ -101,6 +125,7 @@ export function rasteriseCamera(
   pixelsPerModule: number,
   options: { readonly supersample?: number; readonly blurModules?: number } = {},
 ): LuminanceImage {
+  refuseLogoImage(drawing)
   const supersample = options.supersample ?? 4
   const side = Math.round(drawing.size * pixelsPerModule)
   const fineSide = side * supersample

@@ -702,6 +702,17 @@ export interface Branding {
    * to vector and its quiet zone from one module to the standard four, on
    * purpose — see `qr-options`.
    *
+   * `logo` — `null | { src, size: 'small' | 'large', plate: 'light' | 'dark' }` —
+   * is a mark in the middle of those same codes, and the same rules hold. A
+   * panel older than the member sends no `logo` key, which resolves to `null`:
+   * today's code for that style, byte for byte. `src` must be a relayed upload,
+   * `/uploads/branding/<file>`; any other source, or a size or plate this build
+   * does not know, resolves to no logo rather than to a partial one. Whether a
+   * logo is actually DRAWN is decided per code, at the size it is shown, by
+   * `planQrLogo` in `lib/qr-logo` — never on the 96 px partner thumbnails, never
+   * on the connect code — and only once `loadQrLogo` has the image; until then,
+   * and whenever it cannot load, the code is drawn without it.
+   *
    * NOT VALIDATED BY `describePublicConfigSnapshot`, for the reason given at
    * `serversGlobe`: that guard is all-or-nothing, and a value it refuses
    * discards the ENTIRE branding snapshot and freezes the cabinet on the

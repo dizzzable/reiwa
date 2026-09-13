@@ -28,6 +28,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useBranding } from "@/lib/branding-provider";
 import { resolveQrStyle, type QrStyle } from "@/lib/qr-style";
 
+import { PartnerQrDialog } from "./partner-qr-dialog";
+
 const PLATFORMS: readonly AdPlatform[] = [
   "TELEGRAM",
   "TELEGRAM_ADS",
@@ -219,8 +221,19 @@ function PlacementCard({
           {webUrl && <CopyRow label={t("partnerAds.linkWeb")} value={webUrl} />}
           {(botUrl || webUrl) && (
             <div className="flex flex-wrap gap-3 pt-1">
-              {botUrl && <LocalQr label={t("partnerAds.qrBot")} url={botUrl} size={96} style={qrStyle} />}
-              {webUrl && <LocalQr label={t("partnerAds.qrWeb")} url={webUrl} size={96} style={qrStyle} />}
+              {/* The 96 px codes stay exactly what they were — no logo ever
+                  fits at 96 px — and each opens the same link drawn large,
+                  where dots and the operator's logo can apply. */}
+              {botUrl && (
+                <PartnerQrDialog kind="bot" url={botUrl} style={qrStyle}>
+                  <LocalQr label={t("partnerAds.qrBot")} url={botUrl} size={96} style={qrStyle} />
+                </PartnerQrDialog>
+              )}
+              {webUrl && (
+                <PartnerQrDialog kind="web" url={webUrl} style={qrStyle}>
+                  <LocalQr label={t("partnerAds.qrWeb")} url={webUrl} size={96} style={qrStyle} />
+                </PartnerQrDialog>
+              )}
             </div>
           )}
         </div>

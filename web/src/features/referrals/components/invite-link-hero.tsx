@@ -14,7 +14,7 @@
  *   - **QR** generates the web link (QR is scanned by camera → opens browser).
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Copy, QrCode, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -22,8 +22,18 @@ import { toast } from "sonner";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useBranding } from "@/lib/branding-provider";
+import { LOGO_DISPLAY_PIXELS } from "@/lib/qr-logo";
+import { useQrLogoHref } from "@/lib/qr-logo-source";
 import { qrSvg, resolveQrStyle } from "@/lib/qr-style";
 import { cn } from "@/lib/utils";
+
+/**
+ * The CSS size the dialog shows the code at — `h-52 w-52` on its `<img>` below.
+ * It decides whether dots stay dots and whether a logo fits, and it is the
+ * size the panel verifies an operator's logo at, which is why it comes from the
+ * shared kit rather than being written here.
+ */
+const INVITE_QR_PIXELS = LOGO_DISPLAY_PIXELS.referralInvite;
 
 interface InviteLinkHeroProps {
   /** Telegram deep link: https://t.me/Bot?start=CODE */
@@ -48,6 +58,12 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
   // `resolveQrStyle` is total: an old panel's absent field, or anything
   // malformed, comes back as plain — today's code, byte for byte.
   const qrStyle = useMemo(() => resolveQrStyle(branding.qrStyle), [branding.qrStyle]);
+  // The operator's logo, fetched as the page opens rather than on the tap, so
+  // it is usually in the code the first time the dialog shows it. `undefined`
+  // while it loads, when it fails, and when this link cannot carry one at this
+  // size — and for `undefined` the code is drawn exactly as it is without a
+  // logo. A logo that lands while the dialog is open redraws it (below).
+  const logoHref = useQrLogoHref(webLink, qrStyle, INVITE_QR_PIXELS);
 
   // Context detection: TMA users get Telegram link, web users get web link
   const isTma = !!window.Telegram?.WebApp?.initData;
@@ -120,16 +136,32 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
       // near-white on white. Not faint. Blank.
       //
       // The operator may style it: this is a code one person hands to another
-      // person's phone camera, not one a VPN client reads. 208 is the CSS size
-      // the dialog shows it at (`h-52 w-52` below), which is what decides
-      // whether dots are still large enough to keep.
-      const svg = await qrSvg(webLink, qrStyle, 208);
+      // person's phone camera, not one a VPN client reads. `INVITE_QR_PIXELS`
+      // is the CSS size the dialog shows it at, which is what decides whether
+      // dots are still large enough to keep and whether the logo fits.
+      const svg = await qrSvg(webLink, qrStyle, INVITE_QR_PIXELS, logoHref);
       setQrDataUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
       setQrOpen(true);
     } catch {
       toast.error(t("common.error"));
     }
-  }, [webLink, qrStyle, t]);
+  }, [webLink, qrStyle, logoHref, t]);
+
+  // An open dialog follows its inputs: above all the logo, which may finish
+  // loading after the tap. Until then the dialog shows the logo-less code
+  // `handleQr` drew — never an empty plate, never a broken image.
+  useEffect(() => {
+    if (!qrOpen) return undefined;
+    let cancelled = false;
+    void qrSvg(webLink, qrStyle, INVITE_QR_PIXELS, logoHref)
+      .then((svg) => {
+        if (!cancelled) setQrDataUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [qrOpen, webLink, qrStyle, logoHref]);
 
   return (
     <>

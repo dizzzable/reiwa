@@ -102,17 +102,20 @@ describe("pixels per module", () => {
 /* ───────────────────────────── reading the sources ─────────────────────────── */
 
 /**
- * The two files that may use the `qrcode` package at run time. Every other file
+ * The files that may use the `qrcode` package at run time. Every other file
  * draws through what they export — `qrSvg`, which takes the plain path through
  * `qrOptions()` and the styled one through the matrix — so a fourth copy of the
- * options cannot exist anywhere without first touching the encoder here.
+ * options cannot exist anywhere without first touching the encoder here. The
+ * third, `qr-logo`, only PLANS: it builds the matrix to learn which modules a
+ * logo may cover, and draws nothing.
  */
-const ENCODER_OWNERS: readonly string[] = ["lib/qr-options.ts", "lib/qr-style.ts"];
+const ENCODER_OWNERS: readonly string[] = ["lib/qr-options.ts", "lib/qr-style.ts", "lib/qr-logo.ts"];
 
 const LOCAL_QR = "components/ui/local-qr.tsx";
 const CONNECT_SHEET = "features/connect/connect-link-dialog.tsx";
 const INVITE_HERO = "features/referrals/components/invite-link-hero.tsx";
 const PARTNER_ADS = "features/partner/components/partner-advertising-section.tsx";
+const PARTNER_DIALOG = "features/partner/components/partner-qr-dialog.tsx";
 
 /** Every `.ts`/`.tsx` under `web/src`, `web/src`-relative, so a new call site cannot hide. */
 function sources(dir: string = WEB_SRC, into: string[] = []): string[] {
@@ -354,13 +357,16 @@ describe("who may touch the encoder", () => {
     expect(encoderUse(parseSource("lib/qr-style.ts"))).toEqual(
       expect.arrayContaining(["imports qrcode", "calls QRCode.toString", "calls QRCode.create"]),
     );
+    expect(encoderUse(parseSource("lib/qr-logo.ts"))).toEqual(
+      expect.arrayContaining(["imports qrcode", "calls QRCode.create"]),
+    );
 
     // And the codes on screen reach it through `qrSvg`.
     const drawing = all.filter(
       (path) => !ENCODER_OWNERS.includes(path) && callsTo(parseSource(path), "qrSvg").length > 0,
     );
     expect(drawing, "no file draws a QR code through `qrSvg` any more — has the API changed?").toEqual(
-      expect.arrayContaining([LOCAL_QR, INVITE_HERO]),
+      expect.arrayContaining([LOCAL_QR, INVITE_HERO, PARTNER_DIALOG]),
     );
   });
 });
@@ -440,5 +446,136 @@ describe("which codes the operator's style reaches", () => {
     const localQr = parseSource(LOCAL_QR);
     expect(callsTo(localQr, "useBranding"), "LocalQr reads the branding itself").toEqual([]);
     expect(callsTo(localQr, "resolveQrStyle"), "LocalQr resolves a style itself").toEqual([]);
+  });
+});
+
+/**
+ * Every `<Tag …>` in a file, as its props — the same shape as `localQrElements`,
+ * for any component name.
+ */
+function elementsNamed(file: ts.SourceFile, tag: string): Array<Record<string, string>> {
+  const elements: Array<Record<string, string>> = [];
+  walk(file, (node) => {
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(file) === tag) {
+      const props: Record<string, string> = {};
+      for (const property of node.attributes.properties) {
+        if (ts.isJsxAttribute(property)) props[property.name.getText(file)] = property.initializer?.getText(file) ?? "";
+        else props["..."] = property.getText(file);
+      }
+      elements.push(props);
+    }
+  });
+  return elements;
+}
+
+/** The names a file binds to a call of `callee` — `const x = callee(…)`. */
+function boundTo(file: ts.SourceFile, callee: string): string[] {
+  const names: string[] = [];
+  walk(file, (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      node.initializer.expression.text === callee
+    ) {
+      names.push(node.name.text);
+    }
+  });
+  return names;
+}
+
+describe("which codes may carry a logo", () => {
+  // The owner's decisions: a logo may appear on the referral invite and on a
+  // partner's advertising code opened large — never on the 96 px thumbnails and
+  // never on the connect code. The render proofs are in
+  // `qr-style-call-sites.test.tsx`; these read the sources, so the decision
+  // cannot move without this file noticing.
+
+  it("gives LocalQr no way to draw one: its `qrSvg` takes three arguments, and it loads no logo", () => {
+    // `qrSvg` draws a logo only from its FOURTH argument, the loaded image. The
+    // connect sheet and the partner thumbnails both draw through LocalQr, so a
+    // LocalQr that cannot pass one is what keeps a logo off both.
+    const localQr = parseSource(LOCAL_QR);
+    const draws = callsTo(localQr, "qrSvg");
+    expect(draws.length, "LocalQr no longer draws with `qrSvg` — this guard is looking at nothing").toBeGreaterThan(0);
+    for (const call of draws) {
+      expect(call.arguments.length, `LocalQr draws with \`${call.getText(localQr)}\``).toBeLessThanOrEqual(3);
+    }
+    for (const loader of ["useQrLogoHref", "loadQrLogo", "planQrLogo"]) {
+      expect(callsTo(localQr, loader), `LocalQr calls ${loader}`).toEqual([]);
+    }
+  });
+
+  it("keeps the connect sheet away from every piece of the logo", () => {
+    const sheet = parseSource(CONNECT_SHEET);
+    for (const name of ["qrSvg", "useQrLogoHref", "loadQrLogo", "planQrLogo"]) {
+      expect(callsTo(sheet, name), `the connect sheet calls ${name}`).toEqual([]);
+    }
+    expect(elementsNamed(sheet, "PartnerQrDialog"), "the connect sheet renders the enlarging dialog").toEqual([]);
+    // Anchor: the sheet still draws its code, through LocalQr.
+    expect(localQrElements(sheet).length).toBeGreaterThan(0);
+  });
+
+  it("loads a logo in exactly two places — the invite and the partner's enlarged code", () => {
+    const loading = sources()
+      .filter((path) => !path.startsWith("lib/"))
+      .filter((path) => /useQrLogoHref|loadQrLogo/.test(readSource(path)))
+      .filter((path) => {
+        const file = parseSource(path);
+        return callsTo(file, "useQrLogoHref").length + callsTo(file, "loadQrLogo").length > 0;
+      })
+      .sort();
+    expect(loading, "a logo is loaded somewhere new — every code it reaches has to be one the owner chose").toEqual(
+      [INVITE_HERO, PARTNER_DIALOG].sort(),
+    );
+  });
+
+  it("draws the invite with the logo it loaded for that very link, style and size", () => {
+    const file = parseSource(INVITE_HERO);
+    const hrefs = boundTo(file, "useQrLogoHref");
+    expect(hrefs, "the invite does not load its logo through `useQrLogoHref`").toHaveLength(1);
+    const [load] = callsTo(file, "useQrLogoHref");
+    expect(load?.arguments.map((argument) => argument.getText(file))).toEqual([
+      "webLink",
+      memoisedStyles(file)[0],
+      "INVITE_QR_PIXELS",
+    ]);
+    const draws = callsTo(file, "qrSvg");
+    expect(draws.length).toBeGreaterThan(0);
+    for (const call of draws) {
+      expect(
+        call.arguments.map((argument) => argument.getText(file)),
+        `the invite draws with \`${call.getText(file)}\``,
+      ).toEqual(["webLink", memoisedStyles(file)[0], "INVITE_QR_PIXELS", hrefs[0]]);
+    }
+  });
+
+  it("opens each partner code with the style the section resolved, and draws it large with the logo loaded for it", () => {
+    const section = parseSource(PARTNER_ADS);
+    const [style] = memoisedStyles(section);
+    const dialogs = elementsNamed(section, "PartnerQrDialog");
+    expect(dialogs.length, "the partner section no longer opens its codes large").toBeGreaterThanOrEqual(2);
+    for (const props of dialogs) {
+      expect(props["style"], `a partner dialog without the resolved style: ${JSON.stringify(props)}`).toBe(`{${style}}`);
+      expect(Object.keys(props), "a spread can carry anything").not.toContain("...");
+    }
+
+    const dialog = parseSource(PARTNER_DIALOG);
+    expect(callsTo(dialog, "resolveQrStyle"), "the dialog resolves a style of its own").toEqual([]);
+    expect(callsTo(dialog, "useBranding"), "the dialog reads the branding itself").toEqual([]);
+    const hrefs = boundTo(dialog, "useQrLogoHref");
+    expect(hrefs).toHaveLength(1);
+    const draws = callsTo(dialog, "qrSvg");
+    expect(draws.length).toBeGreaterThan(0);
+    for (const call of draws) {
+      expect(call.arguments.map((argument) => argument.getText(dialog))).toEqual([
+        "url",
+        "style",
+        "ENLARGED_PARTNER_QR_PIXELS",
+        hrefs[0],
+      ]);
+    }
   });
 });
