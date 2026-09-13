@@ -13,6 +13,12 @@ export interface SubscriberServer {
   readonly id: string;
   /** The host's name as the operator wrote it — flag included. */
   readonly name: string;
+  /**
+   * A short label the operator gave the host ("ОСНОВНОЙ | СЕРВЕР"), drawn as a
+   * badge under the name the way VPN clients draw it. `null` when there is
+   * none, and absent altogether from a panel older than the field.
+   */
+  readonly description?: string | null;
   readonly flag: string | null;
   /** ISO 3166-1 alpha-2, or a code with no single point on Earth (`EU`). */
   readonly countryCode: string | null;

@@ -442,7 +442,24 @@ function ServerRow({
         <p className="truncate text-sm font-medium text-foreground">
           {nameWithoutFlag(server.name)}
         </p>
-        <p className="truncate text-[11px] text-muted-foreground">
+        {/*
+          The badge gets a line of its own, always — name, badge, status.
+          Sharing a line with the status and wrapping only when it did not fit
+          made the rows of ONE list different heights: "AUTO | СЕРВЕР" fitted
+          beside "Работает · в работе 8 дней" on a 375px phone and "ОСНОВНОЙ |
+          СЕРВЕР" did not, so the list stepped up and down for no reason the
+          customer could see. Truncating the status instead would hide the one
+          thing that line is for. Operators who use badges put one on every
+          host, so a fixed structure keeps their whole list even.
+        */}
+        {server.description ? (
+          <div className="mt-1 flex">
+            <span className="inline-flex max-w-full rounded-md bg-(--brand-primary)/12 px-1.5 py-0.5 text-[10px] leading-tight font-medium text-(--brand-primary) ring-1 ring-(--brand-primary)/25 ring-inset">
+              <span className="truncate">{server.description}</span>
+            </span>
+          </div>
+        ) : null}
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {t(`servers.status.${server.status}`)}
           {uptime !== null ? ` · ${uptime}` : ''}
         </p>

@@ -135,6 +135,7 @@ describe("GET /subscription/:id/servers", () => {
         {
           id: "host-1",
           name: "Frankfurt 🇩🇪",
+          description: "ОСНОВНОЙ | СЕРВЕР",
           flag: "🇩🇪",
           countryCode: "DE",
           status: "online",
@@ -163,6 +164,7 @@ describe("GET /subscription/:id/servers", () => {
     const [row] = (body as { servers: Record<string, unknown>[] }).servers;
     expect(Object.keys(row).sort()).toEqual([
       "countryCode",
+      "description",
       "flag",
       "id",
       "name",
@@ -170,11 +172,32 @@ describe("GET /subscription/:id/servers", () => {
       "uptimeSeconds",
     ]);
     expect(row.name).toBe("Frankfurt 🇩🇪");
+    // The badge the VPN client draws under the name. Without this line the
+    // panel can send it and the customer's browser never sees it — the key set
+    // above would still pass if `description` came through as `null`.
+    expect(row.description).toBe("ОСНОВНОЙ | СЕРВЕР");
     // The panel sent `usersOnline: 7` above, and it must stop here. The count
     // exists so the panel can pick the recommended server; the browser never
     // rendered it, and a live per-server tally of connected people is load
     // data nobody chose to publish.
     expect(row).not.toHaveProperty("usersOnline");
+  });
+
+  it("renders no badge from a panel that predates the field, or sends junk in it", async () => {
+    // The two images are upgraded separately. A panel older than `description`
+    // does not send it at all, and the row must come out with `null` rather
+    // than `undefined` leaking into the browser type or, worse, a non-string
+    // being rendered inside the badge.
+    for (const description of [undefined, null, 42, { text: "x" }, ["a"]]) {
+      const listServers = vi.fn(async () => ({
+        servers: [{ id: "host-1", name: "Germany - 1", description, status: "online", uptimeSeconds: 60 }],
+        recommendedServerId: null,
+      }));
+      const { body } = await get(makeApp(listServers), "/api/v1/subscription/sub-1/servers");
+      const [row] = (body as { servers: Record<string, unknown>[] }).servers;
+      expect(row.description, JSON.stringify(description) ?? "undefined").toBeNull();
+      expect(row.name).toBe("Germany - 1");
+    }
   });
 
   it("answers an empty list when the panel is unreachable", async () => {

@@ -142,6 +142,11 @@ function narrowServerList(payload: unknown): {
     servers: rows.filter(isRecord).map((row) => ({
       id: asString(row["id"]),
       name: asString(row["name"]),
+      // The host's badge text — `serverDescription`, which VPN clients draw as
+      // a chip under the name. Operator free text written for customers, so it
+      // is safe to pass; `null` from a panel that predates the field, which the
+      // row simply renders without a badge.
+      description: asNullableString(row["description"]),
       flag: asNullableString(row["flag"]),
       countryCode: asNullableString(row["countryCode"]),
       status: asString(row["status"]),
