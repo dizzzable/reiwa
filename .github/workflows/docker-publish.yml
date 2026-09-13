@@ -53,11 +53,18 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}
+          # `latest` is the RELEASE channel: it moves on a `v*` tag push only.
+          # It used to follow `{{is_default_branch}}`, so every push to main
+          # retagged `latest` — and docker-compose.yml and the README point
+          # operators at `:latest`, so their next `docker compose pull` took
+          # unreleased main. Main pushes still publish `:main` and `:sha-…`.
+          # (Our four-part tags such as v0.9.7.40 are not semver, so the
+          # `type=semver` line and `flavor: latest=auto` add nothing here.)
           tags: |
             type=ref,event=branch
             type=ref,event=tag
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=sha,format=short
 
       # Single unified image: API + bot + worker + SPA (served by the API).
