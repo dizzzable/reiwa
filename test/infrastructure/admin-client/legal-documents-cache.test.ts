@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LegalDocumentsCache } from '../../../src/infrastructure/admin-client/legal-documents-cache.js';
 import type { LegalDocument } from '../../../src/infrastructure/admin-client/namespaces/legal-documents.js';
@@ -117,5 +117,136 @@ describe('LegalDocumentsCache', () => {
     await cache.get('ru');
 
     expect(calls).toBe(2);
+  });
+});
+
+/**
+ * The same cache across the operator-edit webhook.
+ *
+ * A read already in flight when `invalidate()` runs may have reached the panel
+ * BEFORE the document was switched on. If a later tap may join that read, or
+ * the read may still store its answer when it lands, the rules screen keeps
+ * offering the old link for another whole TTL — with the webhook already spent.
+ * Every upstream here answers only when the test says so.
+ */
+describe('LegalDocumentsCache across invalidate()', () => {
+  const NONE: readonly LegalDocument[] = [];
+  const SWITCHED_ON: readonly LegalDocument[] = [AGREEMENT];
+
+  function handAnswered() {
+    const calls: Array<{
+      resolve: (value: readonly LegalDocument[]) => void;
+      reject: (reason: unknown) => void;
+    }> = [];
+    const fn = vi.fn(
+      (_locale: string) =>
+        new Promise<readonly LegalDocument[]>((resolve, reject) => {
+          calls.push({ resolve, reject });
+        }),
+    );
+    const call = (index: number) => {
+      const pending = calls[index];
+      if (pending === undefined) throw new Error(`upstream call #${index} was never made`);
+      return pending;
+    };
+    return {
+      fn,
+      answer: (index: number, value: readonly LegalDocument[]): void => call(index).resolve(value),
+      fail: (index: number, reason: unknown): void => call(index).reject(reason),
+    };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a get() after invalidate() does not join the fetch that started before it', async () => {
+    const upstream = handAnswered();
+    const cache = new LegalDocumentsCache(upstream.fn);
+
+    const beforeEdit = cache.get('ru');
+    cache.invalidate();
+    const afterEdit = cache.get('ru');
+
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    upstream.answer(0, NONE);
+    upstream.answer(1, SWITCHED_ON);
+    expect(await beforeEdit).toEqual(NONE);
+    expect(await afterEdit).toEqual(SWITCHED_ON);
+  });
+
+  it('a fetch begun before invalidate() does not overwrite the documents fetched after it', async () => {
+    const upstream = handAnswered();
+    const cache = new LegalDocumentsCache(upstream.fn);
+
+    const beforeEdit = cache.get('ru');
+    cache.invalidate();
+    const afterEdit = cache.get('ru');
+    upstream.answer(1, SWITCHED_ON);
+    expect(await afterEdit).toEqual(SWITCHED_ON);
+
+    upstream.answer(0, NONE); // the old read lands last
+    await beforeEdit;
+
+    expect(await cache.get('ru')).toEqual(SWITCHED_ON);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a fetch begun before invalidate() that lands with nobody else asking is not kept', async () => {
+    const upstream = handAnswered();
+    const cache = new LegalDocumentsCache(upstream.fn);
+
+    const beforeEdit = cache.get('ru');
+    cache.invalidate();
+    upstream.answer(0, NONE);
+    await beforeEdit;
+
+    const next = cache.get('ru');
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    upstream.answer(1, SWITCHED_ON);
+    expect(await next).toEqual(SWITCHED_ON);
+  });
+
+  it('a fetch begun before invalidate() does not free the slot of the fetch started after it', async () => {
+    const upstream = handAnswered();
+    const cache = new LegalDocumentsCache(upstream.fn);
+
+    const beforeEdit = cache.get('ru');
+    cache.invalidate();
+    const afterEdit = cache.get('ru'); // still in flight
+    upstream.answer(0, NONE);
+    await beforeEdit;
+
+    // Single-flight still holds: this joins the fetch already on its way.
+    const joined = cache.get('ru');
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    upstream.answer(1, SWITCHED_ON);
+    expect(await joined).toEqual(SWITCHED_ON);
+    expect(await afterEdit).toEqual(SWITCHED_ON);
+  });
+
+  it('a failed fetch begun before invalidate() does not extend the documents fetched after it', async () => {
+    let now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const upstream = handAnswered();
+    const cache = new LegalDocumentsCache(upstream.fn, 60_000);
+
+    const beforeEdit = cache.get('ru');
+    cache.invalidate();
+    const afterEdit = cache.get('ru');
+    upstream.answer(1, SWITCHED_ON);
+    await afterEdit;
+
+    now += 50_000;
+    upstream.fail(0, new Error('panel down'));
+    // Its own caller still gets a usable answer: the documents read after it.
+    expect(await beforeEdit).toEqual(SWITCHED_ON);
+
+    // The TTL runs from when the documents were actually read, not from the failure.
+    now += 11_000;
+    const next = cache.get('ru');
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+    upstream.answer(2, SWITCHED_ON);
+    expect(await next).toEqual(SWITCHED_ON);
   });
 });

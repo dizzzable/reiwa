@@ -57,6 +57,10 @@ let inflight: Promise<CachedCatalog> | null = null;
  * pre-save version for another whole TTL — with the invalidate already spent
  * and the panel reporting the event as delivered. The operator sees "the save
  * did not work" and there is nothing left to re-fire.
+ *
+ * The same read may not clear `inflight` either unless the slot still holds it:
+ * after an invalidate it holds the newer read, and freeing it would send the
+ * next tap upstream alongside that read instead of joining it.
  */
 let generation = 0;
 
@@ -79,12 +83,15 @@ function unavailable(): CachedCatalog {
 async function fetchFresh(
   adminClient: AdminClient | null,
   snapshots: ConnectPageSnapshotStore,
+  isCurrent: () => boolean,
 ): Promise<CachedCatalog> {
   if (adminClient === null) return unavailable();
   const body = (await adminClient.connectPage.getEffective()) ?? null;
   // Recorded only for an answer the panel actually gave. Saving the fallback
-  // would make the outage permanent the first time it happened.
-  if (body !== null) void snapshots.save(body);
+  // would make the outage permanent the first time it happened. And only by a
+  // read no invalidate has overtaken (see `generation`): the snapshot is what a
+  // restart during a panel outage serves, so a pre-save read may not write it.
+  if (body !== null && isCurrent()) void snapshots.save(body);
   return { body, etag: computeEtag(body), fetchedAt: Date.now() };
 }
 
@@ -106,14 +113,14 @@ async function getCatalog(
 
   if (inflight === null) {
     const startedAt = generation;
-    inflight = fetchFresh(adminClient, snapshots)
+    const pending: Promise<CachedCatalog> = fetchFresh(adminClient, snapshots, () => startedAt === generation)
       .then((fresh) => {
-        inflight = null;
+        if (inflight === pending) inflight = null;
         if (startedAt === generation) cached = fresh;
         return fresh;
       })
       .catch(async (err) => {
-        inflight = null;
+        if (inflight === pending) inflight = null;
         // The negative cache is written FIRST. It used to be written after the
         // callback, so a throw from the logger would have undone the one thing
         // this branch exists to guarantee — that a dead panel is asked once per
@@ -134,6 +141,7 @@ async function getCatalog(
         onFailure?.(err);
         return answer;
       });
+    inflight = pending;
   }
   return inflight;
 }

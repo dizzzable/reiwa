@@ -32,12 +32,22 @@ const DISABLED_SENTINEL = { enabled: false } as const;
 // instead of waiting for the TTL.
 let cached: CachedLanding | null = null;
 let inflight: Promise<CachedLanding> | null = null;
+/**
+ * Bumped by every reset. A read begun before the bump may not store anything —
+ * its answer, the extended last-known-good, or the disabled sentinel — and may
+ * clear `inflight` only while the slot still holds that read. Otherwise a read
+ * that reached the panel before a publish could land after the webhook and
+ * serve the old page, or `/sign-in`, for another TTL; `generation` in
+ * `connect-page.ts` spells out the race.
+ */
+let generation = 0;
 
 /** Drop the cached landing payload. Called on the admin landing-invalidate
  *  webhook (publish/rollback) so operator changes propagate promptly. */
 export function resetLandingCache(): void {
   cached = null;
   inflight = null;
+  generation += 1;
 }
 
 function computeEtag(value: unknown): string {
@@ -70,19 +80,21 @@ async function getLandingPayload(
     return cached;
   }
   if (inflight === null) {
-    inflight = fetchFresh(adminClient)
+    const startedAt = generation;
+    const pending: Promise<CachedLanding> = fetchFresh(adminClient)
       .then((fresh) => {
-        cached = fresh;
-        inflight = null;
+        if (startedAt === generation) cached = fresh;
+        if (inflight === pending) inflight = null;
         return fresh;
       })
       .catch((err) => {
-        inflight = null;
+        if (inflight === pending) inflight = null;
         onFailure?.(err);
         if (cached !== null) {
           // Extend last-known-good during the outage to reduce upstream pressure.
-          cached = { ...cached, fetchedAt: Date.now() };
-          return cached;
+          const extended = { ...cached, fetchedAt: Date.now() };
+          if (startedAt === generation) cached = extended;
+          return extended;
         }
         // Remember the miss for the TTL. Leaving `cached` null meant the
         // failure was never recorded, so EVERY following request paid another
@@ -90,13 +102,15 @@ async function getLandingPayload(
         // visitor, indefinitely. `fetchedAt` is now, so the TTL still expires
         // and the request after it goes upstream again: the sentinel cannot
         // outlive the outage. `resetLandingCache()` still drops it at once.
-        cached = {
+        const sentinel: CachedLanding = {
           body: DISABLED_SENTINEL,
           etag: computeEtag(DISABLED_SENTINEL),
           fetchedAt: Date.now(),
         };
-        return cached;
+        if (startedAt === generation) cached = sentinel;
+        return sentinel;
       });
+    inflight = pending;
   }
   return inflight;
 }

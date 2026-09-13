@@ -417,6 +417,161 @@ describe('BotConfigCache persistence (Workstream 4)', () => {
   });
 });
 
+/**
+ * An operator's save reaches the bot as `/invalidate` → `forceInvalidate()`. A
+ * fetch already in flight at that moment may have read the config from BEFORE
+ * the save. If it may still write when it lands, the bot runs on the old
+ * config — with the old translator overrides and the old durable snapshot —
+ * for another whole TTL, and the invalidate is already spent. Every upstream
+ * here answers only when the test says so.
+ */
+describe('BotConfigCache across forceInvalidate()', () => {
+  const SAVED: BotConfig & { translations: Record<string, string> } = {
+    ...DEFAULT_BOT_CONFIG,
+    translations: { 'en.menu.choose_action': 'Wording saved by the operator' },
+  };
+
+  function handAnswered() {
+    const calls: Array<{ resolve: (value: BotConfig) => void; reject: (reason: unknown) => void }> = [];
+    const fn = vi.fn(
+      () =>
+        new Promise<BotConfig>((resolve, reject) => {
+          calls.push({ resolve, reject });
+        }),
+    );
+    const call = (index: number) => {
+      const pending = calls[index];
+      if (pending === undefined) throw new Error(`upstream call #${index} was never made`);
+      return pending;
+    };
+    return {
+      fn,
+      answer: (index: number, value: BotConfig): void => call(index).resolve(value),
+      fail: (index: number, reason: unknown): void => call(index).reject(reason),
+    };
+  }
+
+  function recordingStore(load: () => Promise<BotConfig | null> = async () => null) {
+    const saved: BotConfig[] = [];
+    const port: ConfigPersistencePort = {
+      load,
+      async save(config) {
+        saved.push(config);
+      },
+    };
+    return { port, saved };
+  }
+
+  it('a fetch begun before forceInvalidate() does not overwrite the config it fetched', async () => {
+    const upstream = handAnswered();
+    const spy = spyHydrator();
+    const store = recordingStore();
+    const cache = new BotConfigCache({
+      fetcher: upstream.fn,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+
+    const beforeSave = cache.get();
+    const invalidated = cache.forceInvalidate('admin-pushed');
+    upstream.answer(1, SAVED);
+    expect(await invalidated).toBe(SAVED);
+
+    upstream.answer(0, SAMPLE); // the old read lands last
+    expect(await beforeSave).toBe(SAMPLE);
+
+    expect(await cache.get()).toBe(SAVED);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(spy.calls.at(-1)).toEqual(SAVED.translations);
+    expect(store.saved.at(-1)).toBe(SAVED);
+  });
+
+  it('a fetch that lands after reset() with nobody else asking is not kept', async () => {
+    const upstream = handAnswered();
+    const spy = spyHydrator();
+    const cache = new BotConfigCache({
+      fetcher: upstream.fn,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+    });
+
+    const beforeReset = cache.get();
+    cache.reset();
+    upstream.answer(0, SAMPLE);
+    await beforeReset;
+
+    const next = cache.get();
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    upstream.answer(1, SAVED);
+    expect(await next).toBe(SAVED);
+  });
+
+  it('a failed fetch begun before forceInvalidate() does not hydrate the translator over the saved config', async () => {
+    const SNAPSHOT: BotConfig & { translations: Record<string, string> } = {
+      ...DEFAULT_BOT_CONFIG,
+      translations: { 'en.menu.choose_action': 'Wording from the last durable snapshot' },
+    };
+    let markLoadStarted!: () => void;
+    const loadStarted = new Promise<void>((resolve) => {
+      markLoadStarted = resolve;
+    });
+    let answerLoad!: (config: BotConfig | null) => void;
+    const store = recordingStore(() => {
+      markLoadStarted();
+      return new Promise((resolve) => {
+        answerLoad = resolve;
+      });
+    });
+    const upstream = handAnswered();
+    const spy = spyHydrator();
+    const cache = new BotConfigCache({
+      fetcher: upstream.fn,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: store.port,
+    });
+
+    const beforeSave = cache.get();
+    const invalidated = cache.forceInvalidate('admin-pushed'); // still in flight
+    // The old read fails while nothing is cached, so it reaches for the snapshot…
+    upstream.fail(0, new Error('panel blinked'));
+    await loadStarted;
+    upstream.answer(1, SAVED);
+    expect(await invalidated).toBe(SAVED);
+
+    answerLoad(SNAPSHOT); // …and that snapshot read lands last
+    await beforeSave;
+
+    expect(spy.calls.at(-1)).toEqual(SAVED.translations);
+  });
+
+  it('of two invalidates in a row, only the newer hands back a config to push to Telegram', async () => {
+    const SECOND_SAVE: BotConfig & { translations: Record<string, string> } = {
+      ...DEFAULT_BOT_CONFIG,
+      translations: { 'en.menu.choose_action': 'Wording from the second save' },
+    };
+    const upstream = handAnswered();
+    const cache = new BotConfigCache({
+      fetcher: upstream.fn,
+      hydrator: spyHydrator().hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+    });
+
+    const first = cache.forceInvalidate('admin-pushed');
+    const second = cache.forceInvalidate('admin-pushed');
+    upstream.answer(1, SECOND_SAVE);
+    expect(await second).toBe(SECOND_SAVE);
+
+    // The first save's read lands last. `handleInvalidate` pushes whatever
+    // this resolves to, so anything but null would put the older profile on
+    // Telegram after the newer one.
+    upstream.answer(0, SAVED);
+    expect(await first).toBeNull();
+    expect(await cache.get()).toBe(SECOND_SAVE);
+  });
+});
+
 describe('DEFAULT_BOT_CONFIG', () => {
   it('mirrors the rezeis-admin seed (4 visible buttons in known order)', () => {
     expect(DEFAULT_BOT_CONFIG.buttons.map((b) => b.id)).toEqual([

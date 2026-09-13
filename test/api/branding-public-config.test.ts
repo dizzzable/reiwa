@@ -10,6 +10,7 @@ import type {
 import { isPublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
 import {
   createBrandingRouter,
+  getPublicConfigPayload,
   resetBrandingCache,
 } from '../../src/api/routes/branding.js';
 
@@ -97,6 +98,34 @@ function makeApp(
     }),
   );
   return app;
+}
+
+/**
+ * An upstream that answers each call only when the test says so, so a case can
+ * choose the order in which reads that overlap an invalidation settle.
+ */
+function handAnswered<T>() {
+  const calls: Array<{ resolve: (value: T) => void; reject: (reason: unknown) => void }> = [];
+  const fn = vi.fn(
+    () =>
+      new Promise<T>((resolve, reject) => {
+        calls.push({ resolve, reject });
+      }),
+  );
+  const call = (index: number) => {
+    const pending = calls[index];
+    if (pending === undefined) throw new Error(`upstream call #${index} was never made`);
+    return pending;
+  };
+  return {
+    fn,
+    answer: (index: number, value: T): void => call(index).resolve(value),
+  };
+}
+
+/** Lets a refresh nobody awaits run to completion (it involves no timers). */
+function backgroundWork(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 async function request(app: express.Express, path: string): Promise<{
@@ -617,5 +646,236 @@ describe('public branding configuration routes', () => {
 
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ message: 'Configuration unavailable' });
+  });
+});
+
+/**
+ * An invalidation the webhook already spent must not be undone by a read that
+ * was in flight when it arrived.
+ *
+ * The order that matters: a read starts (and may reach the panel BEFORE the
+ * operator's save commits), the save commits, the webhook drops the cache, and
+ * only then does the old read settle. If it may still write, it stores the
+ * pre-save theme with a fresh timestamp — and the panel has already recorded
+ * the event as delivered, so the cabinet serves the old theme for another
+ * whole TTL with nothing left to re-fire.
+ */
+describe('branding caches across an invalidation', () => {
+  const SAVED: PublicConfigSnapshot = {
+    ...OPERATOR_PUBLIC_CONFIG,
+    branding: { ...OPERATOR_PUBLIC_CONFIG.branding, brandName: 'Saved After The Edit' },
+  };
+
+  beforeEach(() => resetBrandingCache());
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetBrandingCache();
+  });
+
+  function panel() {
+    const upstream = handAnswered<PublicConfigSnapshot>();
+    const client = { branding: { getReiwaPublicConfig: upstream.fn } } as never;
+    return { upstream, client };
+  }
+
+  describe('public config, nothing cached', () => {
+    it('a read begun before the invalidation does not overwrite the theme read after it', async () => {
+      const { upstream, client } = panel();
+
+      const beforeSave = getPublicConfigPayload(client);
+      resetBrandingCache();
+      const afterSave = getPublicConfigPayload(client);
+      upstream.answer(1, SAVED);
+      expect((await afterSave).body).toEqual(SAVED);
+
+      upstream.answer(0, OPERATOR_PUBLIC_CONFIG); // the old read lands last
+      await beforeSave;
+
+      expect((await getPublicConfigPayload(client)).body).toEqual(SAVED);
+      expect(upstream.fn).toHaveBeenCalledTimes(2);
+    });
+
+    it('a read begun before the invalidation does not save its theme as the durable snapshot', async () => {
+      const { upstream, client } = panel();
+      const saved: PublicConfigSnapshot[] = [];
+      const persistence: PublicConfigPersistencePort = {
+        load: async () => null,
+        save: async (snapshot) => {
+          saved.push(snapshot);
+        },
+      };
+
+      const beforeSave = getPublicConfigPayload(client, undefined, persistence);
+      resetBrandingCache();
+      const afterSave = getPublicConfigPayload(client, undefined, persistence);
+      upstream.answer(1, SAVED);
+      await afterSave;
+
+      upstream.answer(0, OPERATOR_PUBLIC_CONFIG); // the old read lands last
+      await beforeSave;
+
+      // The snapshot is what a restart during a panel outage serves.
+      expect(saved).toEqual([SAVED]);
+    });
+
+    it('a read begun before the invalidation that lands with nobody else asking is not kept', async () => {
+      const { upstream, client } = panel();
+
+      const beforeSave = getPublicConfigPayload(client);
+      resetBrandingCache();
+      upstream.answer(0, OPERATOR_PUBLIC_CONFIG);
+      await beforeSave;
+
+      const next = getPublicConfigPayload(client);
+      expect(upstream.fn).toHaveBeenCalledTimes(2);
+      upstream.answer(1, SAVED);
+      expect((await next).body).toEqual(SAVED);
+    });
+
+    it('a read begun before the invalidation does not free the slot of the read started after it', async () => {
+      const { upstream, client } = panel();
+
+      const beforeSave = getPublicConfigPayload(client);
+      resetBrandingCache();
+      const afterSave = getPublicConfigPayload(client); // still in flight
+      upstream.answer(0, OPERATOR_PUBLIC_CONFIG);
+      await beforeSave;
+
+      // Single-flight still holds: this joins the read already on its way.
+      const joined = getPublicConfigPayload(client);
+      expect(upstream.fn).toHaveBeenCalledTimes(2);
+      upstream.answer(1, SAVED);
+      expect((await joined).body).toEqual(SAVED);
+      expect((await afterSave).body).toEqual(SAVED);
+    });
+  });
+
+  describe('public config, stale copy revalidating in the background', () => {
+    /**
+     * Caches the pre-save theme and lets it go stale, so the next read is
+     * served the stale copy and starts upstream call #1 in the background.
+     */
+    async function revalidateInBackground({ upstream, client }: ReturnType<typeof panel>) {
+      let now = 1_700_000_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => now);
+      const primed = getPublicConfigPayload(client);
+      upstream.answer(0, OPERATOR_PUBLIC_CONFIG);
+      await primed;
+      now += 61_000; // past the TTL, inside stale-while-revalidate
+      expect((await getPublicConfigPayload(client)).body).toEqual(OPERATOR_PUBLIC_CONFIG);
+      expect(upstream.fn).toHaveBeenCalledTimes(2);
+    }
+
+    it('a refresh begun before the invalidation does not overwrite the theme read after it', async () => {
+      const { upstream, client } = panel();
+      await revalidateInBackground({ upstream, client });
+
+      resetBrandingCache();
+      const afterSave = getPublicConfigPayload(client);
+      upstream.answer(2, SAVED);
+      expect((await afterSave).body).toEqual(SAVED);
+
+      upstream.answer(1, OPERATOR_PUBLIC_CONFIG); // the background refresh lands last
+      await backgroundWork();
+
+      expect((await getPublicConfigPayload(client)).body).toEqual(SAVED);
+      expect(upstream.fn).toHaveBeenCalledTimes(3);
+    });
+
+    it('a refresh begun before the invalidation that lands with nobody else asking is not kept', async () => {
+      const { upstream, client } = panel();
+      await revalidateInBackground({ upstream, client });
+
+      resetBrandingCache();
+      upstream.answer(1, OPERATOR_PUBLIC_CONFIG);
+      await backgroundWork();
+
+      const next = getPublicConfigPayload(client);
+      expect(upstream.fn).toHaveBeenCalledTimes(3);
+      upstream.answer(2, SAVED);
+      expect((await next).body).toEqual(SAVED);
+    });
+
+    it('a refresh begun before the invalidation does not free the slot of the read started after it', async () => {
+      const { upstream, client } = panel();
+      await revalidateInBackground({ upstream, client });
+
+      resetBrandingCache();
+      const afterSave = getPublicConfigPayload(client); // still in flight
+      upstream.answer(1, OPERATOR_PUBLIC_CONFIG);
+      await backgroundWork();
+
+      const joined = getPublicConfigPayload(client);
+      expect(upstream.fn).toHaveBeenCalledTimes(3);
+      upstream.answer(2, SAVED);
+      expect((await joined).body).toEqual(SAVED);
+      expect((await afterSave).body).toEqual(SAVED);
+    });
+  });
+
+  describe('custom emoji packs', () => {
+    const PACKS = '/api/v1/custom-emoji/packs';
+    const BEFORE_SAVE = [{ slug: 'old-pack' }];
+    const SAVED_PACKS = [{ slug: 'old-pack' }, { slug: 'new-pack' }];
+
+    /** The first read waits for the test to answer it; every later one gets the saved packs. */
+    function slowFirstRead() {
+      let started!: () => void;
+      const firstStarted = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      let answer!: (packs: unknown) => void;
+      const fn = vi
+        .fn<() => Promise<unknown>>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              answer = resolve;
+              started();
+            }),
+        )
+        .mockResolvedValue(SAVED_PACKS);
+      return { fn, firstStarted, answerFirst: (packs: unknown) => answer(packs) };
+    }
+
+    function packsApp(getCustomEmojiPacks: () => Promise<unknown>): express.Express {
+      const app = express();
+      app.use(
+        '/api/v1',
+        createBrandingRouter({ adminClient: { branding: { getCustomEmojiPacks } } as never }),
+      );
+      return app;
+    }
+
+    it('a read begun before the invalidation does not overwrite the packs read after it', async () => {
+      const upstream = slowFirstRead();
+      const app = packsApp(upstream.fn);
+
+      const beforeSave = request(app, PACKS);
+      await upstream.firstStarted;
+      resetBrandingCache();
+      expect((await request(app, PACKS)).body).toEqual(SAVED_PACKS);
+
+      upstream.answerFirst(BEFORE_SAVE); // the old read lands last
+      expect((await beforeSave).body).toEqual(BEFORE_SAVE);
+
+      expect((await request(app, PACKS)).body).toEqual(SAVED_PACKS);
+      expect(upstream.fn).toHaveBeenCalledTimes(2);
+    });
+
+    it('a read begun before the invalidation that lands with nobody else asking is not kept', async () => {
+      const upstream = slowFirstRead();
+      const app = packsApp(upstream.fn);
+
+      const beforeSave = request(app, PACKS);
+      await upstream.firstStarted;
+      resetBrandingCache();
+      upstream.answerFirst(BEFORE_SAVE);
+      expect((await beforeSave).body).toEqual(BEFORE_SAVE);
+
+      expect((await request(app, PACKS)).body).toEqual(SAVED_PACKS);
+      expect(upstream.fn).toHaveBeenCalledTimes(2);
+    });
   });
 });

@@ -65,6 +65,15 @@ export class BotConfigCache {
   private readonly logger: LoggerPort | undefined;
   private readonly persistence: ConfigPersistencePort | undefined;
   private entry: CacheEntry | null = null;
+  /**
+   * Bumped by `reset()` and `forceInvalidate()`. A fetch begun before the bump
+   * may have read the config from before the operator's save, so when it lands
+   * it may not write anything: not the entry, not the translator overrides, not
+   * the durable snapshot. Otherwise the bot runs on the old config for another
+   * TTL with the invalidate already spent; `generation` in
+   * `api/routes/connect-page.ts` spells out the race.
+   */
+  private generation = 0;
 
   constructor(options: BotConfigCacheOptions) {
     this.fetcher = options.fetcher;
@@ -89,8 +98,12 @@ export class BotConfigCache {
     if (this.entry !== null && Date.now() - this.entry.fetchedAt < this.ttlMs) {
       return this.entry.data;
     }
+    const startedAt = this.generation;
     try {
       const raw = (await this.fetcher()) as RawBotConfig;
+      // Superseded while in flight: the caller still gets what it read, but
+      // the cache, translator and snapshot belong to the newer fetch.
+      if (startedAt !== this.generation) return raw;
       this.entry = { data: raw, fetchedAt: Date.now() };
       // Hydrate translator overrides from the operator-managed
       // `translations` map. Best-effort — a malformed payload
@@ -119,7 +132,7 @@ export class BotConfigCache {
       // last-known-good config (correct branding + banner) over the
       // hardcoded default. We intentionally do NOT set `entry`, so the
       // cache keeps retrying the fetcher until upstream recovers.
-      const persisted = await this.loadPersisted();
+      const persisted = await this.loadPersisted(startedAt);
       if (persisted !== null) return persisted;
       return this.fallback;
     }
@@ -131,15 +144,18 @@ export class BotConfigCache {
    * Returns `null` when no store is configured, the store is empty, or
    * the load fails.
    */
-  private async loadPersisted(): Promise<BotConfig | null> {
+  private async loadPersisted(startedAt: number): Promise<BotConfig | null> {
     if (this.persistence === undefined) return null;
     try {
       const persisted = await this.persistence.load();
       if (persisted === null) return null;
       try {
-        this.hydrator.setOverrides(
-          (persisted as RawBotConfig).translations,
-        );
+        // Not over the overrides of a fetch begun after an invalidate.
+        if (startedAt === this.generation) {
+          this.hydrator.setOverrides(
+            (persisted as RawBotConfig).translations,
+          );
+        }
       } catch {
         // ignore hydrator failure — the config itself is still usable
       }
@@ -157,6 +173,7 @@ export class BotConfigCache {
   /** Test seam — drop the cached entry so the next `get()` re-fetches. */
   reset(): void {
     this.entry = null;
+    this.generation += 1;
   }
 
   /**
@@ -231,6 +248,13 @@ export class BotConfigCache {
    * Returns the fresh config (so the caller can ack with the latest
    * payload) or `null` when the upstream refresh fails — the cache
    * keeps serving stale data in that case rather than going dark.
+   *
+   * Also `null` when a newer invalidate landed while this one was fetching.
+   * The caller pushes what this returns on to Telegram (bot profile, menu
+   * button, commands), and two saves in a row used to finish in either order:
+   * the older read could land last and be pushed over the newer one, leaving
+   * the bot's Telegram profile on the first save. The newer invalidate owns
+   * that push.
    */
   async forceInvalidate(reason: string): Promise<BotConfig | null> {
     this.logger?.info(
@@ -238,8 +262,11 @@ export class BotConfigCache {
       'BotConfigCache: forced invalidate',
     );
     this.entry = null;
+    this.generation += 1;
+    const generation = this.generation;
     try {
-      return await this.get();
+      const config = await this.get();
+      return this.generation === generation ? config : null;
     } catch {
       return null;
     }

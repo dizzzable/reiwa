@@ -45,6 +45,14 @@ const STALE_WHILE_REVALIDATE_MS = 5 * 60_000;
 let cached: CachedPayload | null = null;
 let inflight: Promise<CachedPayload> | null = null;
 let packsCache: { body: unknown; fetchedAt: number } | null = null;
+/**
+ * Bumped by every reset. A read begun before the bump may not store its answer,
+ * and may clear `inflight` only while the slot still holds that read. Otherwise
+ * a read that reached the panel before the operator's save could land after the
+ * webhook and serve the old theme for another TTL; `generation` in
+ * `connect-page.ts` spells out the race.
+ */
+let generation = 0;
 
 /** Drop the cached public-config + custom-emoji packs. Called on the admin
  *  branding-invalidate webhook so theme edits propagate promptly. */
@@ -52,6 +60,7 @@ export function resetBrandingCache(): void {
   cached = null;
   inflight = null;
   packsCache = null;
+  generation += 1;
 }
 
 function toCachedPayload(body: PublicConfigSnapshot): CachedPayload {
@@ -77,6 +86,7 @@ async function fetchFreshPayload(
   adminClient: AdminClient,
   persistence: PublicConfigPersistencePort | undefined,
   notifier: PublicConfigRejectionNotifier,
+  isCurrent: () => boolean,
 ): Promise<CachedPayload> {
   const body: unknown = await adminClient.branding.getReiwaPublicConfig();
   const rejection = describePublicConfigSnapshot(body);
@@ -97,11 +107,16 @@ async function fetchFreshPayload(
   // This is the only save path: the body was received from a successful
   // upstream call and passed the runtime schema guard. A persistence failure
   // is intentionally non-fatal; the fresh response is still safe to serve.
-  try {
-    await persistence?.save(snapshot);
-  } catch {
-    // Port implementations are best-effort, but do not let a faulty test or
-    // third-party adapter turn a valid upstream response into an outage.
+  // Skipped for a read a reset has overtaken (see `generation`): the snapshot
+  // is what a restart during a panel outage serves, so the pre-save theme may
+  // not end up in it either.
+  if (isCurrent()) {
+    try {
+      await persistence?.save(snapshot);
+    } catch {
+      // Port implementations are best-effort, but do not let a faulty test or
+      // third-party adapter turn a valid upstream response into an outage.
+    }
   }
   return toCachedPayload(snapshot);
 }
@@ -132,6 +147,7 @@ async function refreshPayload(
   persistence: PublicConfigPersistencePort | undefined,
   onBgFailure: ((err: unknown) => void) | undefined,
   notifier: PublicConfigRejectionNotifier,
+  isCurrent: () => boolean,
 ): Promise<CachedPayload> {
   // A deployment without upstream credentials may serve only an operator
   // snapshot. Returning built-in defaults with HTTP 200 would make the
@@ -143,7 +159,7 @@ async function refreshPayload(
   }
 
   try {
-    return await fetchFreshPayload(adminClient, persistence, notifier);
+    return await fetchFreshPayload(adminClient, persistence, notifier, isCurrent);
   } catch (err: unknown) {
     onBgFailure?.(err);
     const persisted = await loadPersistedPayload(persistence, notifier);
@@ -173,28 +189,34 @@ export async function getPublicConfigPayload(
   if (cached !== null && now - cached.fetchedAt < STALE_WHILE_REVALIDATE_MS) {
     if (inflight === null) {
       const stale = cached;
-      inflight = refreshPayload(adminClient, persistence, onBgFailure, notifier)
+      const startedAt = generation;
+      const isCurrent = (): boolean => startedAt === generation;
+      const pending: Promise<CachedPayload> = refreshPayload(adminClient, persistence, onBgFailure, notifier, isCurrent)
         .then((fresh) => {
-          cached = fresh;
+          if (startedAt === generation) cached = fresh;
           return fresh;
         })
         .catch(() => stale)
         .finally(() => {
-          inflight = null;
+          if (inflight === pending) inflight = null;
         });
+      inflight = pending;
     }
     return cached;
   }
   // Cache fully expired — wait for fresh fetch (deduplicated across requests).
   if (inflight === null) {
-    inflight = refreshPayload(adminClient, persistence, onBgFailure, notifier)
+    const startedAt = generation;
+    const isCurrent = (): boolean => startedAt === generation;
+    const pending: Promise<CachedPayload> = refreshPayload(adminClient, persistence, onBgFailure, notifier, isCurrent)
       .then((fresh) => {
-        cached = fresh;
+        if (startedAt === generation) cached = fresh;
         return fresh;
       })
       .finally(() => {
-        inflight = null;
+        if (inflight === pending) inflight = null;
       });
+    inflight = pending;
   }
   return inflight;
 }
@@ -321,12 +343,17 @@ export function createBrandingRouter(deps: {
   router.get("/custom-emoji/packs", async (req, res) => {
     try {
       const now = Date.now();
+      let body = packsCache?.body;
       if (packsCache === null || now - packsCache.fetchedAt > CACHE_TTL_MS) {
+        const startedAt = generation;
         const packs = (await adminClient?.branding.getCustomEmojiPacks()) ?? [];
-        packsCache = { body: packs, fetchedAt: now };
+        // Stored only if no reset landed meanwhile — see `generation`. The
+        // request still answers with what it read.
+        if (startedAt === generation) packsCache = { body: packs, fetchedAt: now };
+        body = packs;
       }
       res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
-      res.json(packsCache.body);
+      res.json(body);
     } catch (e: unknown) {
       getRequestLogger(req).error({ err: e }, "GET /custom-emoji/packs failed");
       res.json([]);

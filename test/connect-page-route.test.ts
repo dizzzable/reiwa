@@ -199,3 +199,216 @@ describe("surviving a restart while the panel is down", () => {
     await close();
   });
 });
+
+describe("an invalidate that lands while a read is in flight", () => {
+  // The race `generation` in the route exists for. That read may reach the panel
+  // BEFORE the operator's save commits; if it settles after the webhook and may
+  // still write, the pre-save catalog is served for another whole TTL — and the
+  // panel already counts the event as delivered, so nothing is left to re-fire.
+  const SAVED = { ...CATALOG, showConnectionKeys: true };
+
+  /** A panel read the test answers by hand. `started` settles once the route has asked for it. */
+  function heldRead() {
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let resolveRead!: (value: unknown) => void;
+    let rejectRead!: (reason: unknown) => void;
+    const answer = new Promise<unknown>((resolve, reject) => {
+      resolveRead = resolve;
+      rejectRead = reject;
+    });
+    return {
+      started,
+      read: (): Promise<unknown> => {
+        markStarted();
+        return answer;
+      },
+      resolve: (value: unknown) => resolveRead(value),
+      reject: (reason: unknown) => rejectRead(reason),
+    };
+  }
+
+  /**
+   * `serve`, plus `arrived(n)`: settles once `n` requests have been handed to the
+   * route — which by then has already asked the cache for its answer, because
+   * the router dispatches synchronously. One extra turn is taken anyway.
+   */
+  async function serveCounting(adminClient: AdminClient) {
+    let seen = 0;
+    const waiters: Array<{ count: number; resolve: () => void }> = [];
+    const app = express();
+    app.use((_req, _res, next) => {
+      seen += 1;
+      next();
+      for (const waiter of waiters.filter((w) => w.count <= seen)) waiter.resolve();
+    });
+    app.use("/api/v1", createConnectPageRouter(adminClient, snapshotStore().store));
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    return {
+      url: `http://127.0.0.1:${port}/api/v1/connect-page`,
+      arrived: async (count: number): Promise<void> => {
+        if (seen < count) await new Promise<void>((resolve) => waiters.push({ count, resolve }));
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+      close: () =>
+        new Promise<void>((done) => {
+          server.closeAllConnections();
+          server.close(() => done());
+        }),
+    };
+  }
+
+  it("does not let a read begun before it overwrite the catalog read after it", async () => {
+    const oldRead = heldRead();
+    const getEffective = vi
+      .fn<() => Promise<unknown>>()
+      .mockImplementationOnce(oldRead.read)
+      .mockResolvedValue(SAVED);
+    const { url, close } = await serveCounting(client(getEffective));
+    try {
+      const beforeSave = fetch(url);
+      await oldRead.started;
+      resetConnectPageCache();
+      expect(await (await fetch(url)).json()).toEqual(SAVED);
+
+      oldRead.resolve(CATALOG); // the old read lands last
+      expect(await (await beforeSave).json()).toEqual(CATALOG);
+
+      expect(await (await fetch(url)).json()).toEqual(SAVED);
+      expect(getEffective).toHaveBeenCalledTimes(2);
+    } finally {
+      await close();
+    }
+  });
+
+  it("does not let a read begun before it write the durable snapshot", async () => {
+    const oldRead = heldRead();
+    const getEffective = vi
+      .fn<() => Promise<unknown>>()
+      .mockImplementationOnce(oldRead.read)
+      .mockResolvedValue(SAVED);
+    const snapshots = snapshotStore();
+    const { url, close } = await serve(client(getEffective), snapshots.store);
+    try {
+      const beforeSave = fetch(url);
+      await oldRead.started;
+      resetConnectPageCache();
+      expect(await (await fetch(url)).json()).toEqual(SAVED);
+
+      oldRead.resolve(CATALOG); // the old read lands last
+      expect(await (await beforeSave).json()).toEqual(CATALOG);
+
+      // What a restart during a panel outage serves.
+      expect(snapshots.read()).toEqual(SAVED);
+    } finally {
+      await close();
+    }
+  });
+
+  it("does not keep a read begun before it that lands with nobody else asking", async () => {
+    const oldRead = heldRead();
+    const getEffective = vi
+      .fn<() => Promise<unknown>>()
+      .mockImplementationOnce(oldRead.read)
+      .mockResolvedValue(SAVED);
+    const { url, close } = await serveCounting(client(getEffective));
+    try {
+      const beforeSave = fetch(url);
+      await oldRead.started;
+      resetConnectPageCache();
+      oldRead.resolve(CATALOG);
+      expect(await (await beforeSave).json()).toEqual(CATALOG);
+
+      expect(await (await fetch(url)).json()).toEqual(SAVED);
+      expect(getEffective).toHaveBeenCalledTimes(2);
+    } finally {
+      await close();
+    }
+  });
+
+  it("does not let a failed read begun before it park the fallback", async () => {
+    const oldRead = heldRead();
+    const getEffective = vi
+      .fn<() => Promise<unknown>>()
+      .mockImplementationOnce(oldRead.read)
+      .mockResolvedValue(SAVED);
+    const { url, close } = await serveCounting(client(getEffective));
+    try {
+      const beforeSave = fetch(url);
+      await oldRead.started;
+      resetConnectPageCache();
+      oldRead.reject(new Error("panel blinked"));
+      expect(await (await beforeSave).json()).toBeNull();
+
+      expect(await (await fetch(url)).json()).toEqual(SAVED);
+      expect(getEffective).toHaveBeenCalledTimes(2);
+    } finally {
+      await close();
+    }
+  });
+
+  it("does not let a read begun before it free the slot of the read started after it", async () => {
+    const oldRead = heldRead();
+    const newRead = heldRead();
+    const getEffective = vi
+      .fn<() => Promise<unknown>>()
+      .mockImplementationOnce(oldRead.read)
+      .mockImplementationOnce(newRead.read)
+      .mockResolvedValue(SAVED);
+    const { url, arrived, close } = await serveCounting(client(getEffective));
+    try {
+      const beforeSave = fetch(url);
+      await oldRead.started;
+      resetConnectPageCache();
+      const afterSave = fetch(url);
+      await newRead.started;
+      oldRead.resolve(CATALOG);
+      expect(await (await beforeSave).json()).toEqual(CATALOG);
+
+      // Single-flight still holds: this tap joins the read already on its way.
+      const joined = fetch(url);
+      await arrived(3);
+      expect(getEffective).toHaveBeenCalledTimes(2);
+
+      newRead.resolve(SAVED);
+      expect(await (await joined).json()).toEqual(SAVED);
+      expect(await (await afterSave).json()).toEqual(SAVED);
+    } finally {
+      await close();
+    }
+  });
+
+  it("does not let a failed read begun before it free the slot of the read started after it", async () => {
+    const oldRead = heldRead();
+    const newRead = heldRead();
+    const getEffective = vi
+      .fn<() => Promise<unknown>>()
+      .mockImplementationOnce(oldRead.read)
+      .mockImplementationOnce(newRead.read)
+      .mockResolvedValue(SAVED);
+    const { url, arrived, close } = await serveCounting(client(getEffective));
+    try {
+      const beforeSave = fetch(url);
+      await oldRead.started;
+      resetConnectPageCache();
+      const afterSave = fetch(url);
+      await newRead.started;
+      oldRead.reject(new Error("panel blinked"));
+      expect(await (await beforeSave).json()).toBeNull();
+
+      const joined = fetch(url);
+      await arrived(3);
+      expect(getEffective).toHaveBeenCalledTimes(2);
+
+      newRead.resolve(SAVED);
+      expect(await (await joined).json()).toEqual(SAVED);
+      expect(await (await afterSave).json()).toEqual(SAVED);
+    } finally {
+      await close();
+    }
+  });
+});

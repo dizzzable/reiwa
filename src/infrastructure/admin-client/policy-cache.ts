@@ -39,6 +39,14 @@ export class PolicyCache {
   private value: CachedPolicy | null = null;
   private fetchedAt = 0;
   private inFlight: Promise<CachedPolicy> | null = null;
+  /**
+   * Bumped by {@link invalidate}. A fetch begun before the bump may have read
+   * the policy from before the operator's change, so nobody may join it and it
+   * may not store its answer — or an access-mode switch would be ignored for up
+   * to a TTL with the webhook already spent. `generation` in
+   * `api/routes/connect-page.ts` spells out the race.
+   */
+  private generation = 0;
 
   public constructor(
     private readonly fetchFn: () => Promise<PlatformPolicyShape>,
@@ -57,11 +65,13 @@ export class PolicyCache {
     if (this.inFlight !== null) {
       return this.inFlight;
     }
-    this.inFlight = this.refresh();
+    const refresh = this.refresh(this.generation);
+    this.inFlight = refresh;
     try {
-      return await this.inFlight;
+      return await refresh;
     } finally {
-      this.inFlight = null;
+      // After an invalidate the slot may already hold a newer fetch.
+      if (this.inFlight === refresh) this.inFlight = null;
     }
   }
 
@@ -69,6 +79,9 @@ export class PolicyCache {
   public invalidate(): void {
     this.value = null;
     this.fetchedAt = 0;
+    // The fetch in flight too: a caller joining it would get the old policy.
+    this.inFlight = null;
+    this.generation += 1;
   }
 
   /** Sync read of the last cached value, mostly for diagnostics. */
@@ -76,18 +89,20 @@ export class PolicyCache {
     return this.value;
   }
 
-  private async refresh(): Promise<CachedPolicy> {
+  private async refresh(startedAt: number): Promise<CachedPolicy> {
     try {
       const fresh = await this.fetchFn();
-      this.value = fresh;
-      this.fetchedAt = Date.now();
+      if (startedAt === this.generation) {
+        this.value = fresh;
+        this.fetchedAt = Date.now();
+      }
       return fresh;
     } catch {
       // Fail open: return last-known-good if we have one (TTL extended
       // to reduce upstream pressure during the outage), otherwise the
       // documented PUBLIC fallback.
       if (this.value !== null) {
-        this.fetchedAt = Date.now();
+        if (startedAt === this.generation) this.fetchedAt = Date.now();
         return this.value;
       }
       return FALLBACK_POLICY;

@@ -30,6 +30,13 @@ const CACHE_TTL_MS = 60_000;
 export class LegalDocumentsCache {
   private readonly values = new Map<string, { documents: readonly LegalDocument[]; fetchedAt: number }>();
   private readonly inFlight = new Map<string, Promise<readonly LegalDocument[]>>();
+  /**
+   * Bumped by `invalidate()`, for every locale at once. Same rule as
+   * `PolicyCache`: a fetch begun before the bump may have read the documents
+   * from before the operator's edit, so nobody may join it and it may not store
+   * its answer.
+   */
+  private generation = 0;
 
   public constructor(
     private readonly fetchFn: (locale: string) => Promise<readonly LegalDocument[]>,
@@ -45,31 +52,39 @@ export class LegalDocumentsCache {
     if (pending !== undefined) {
       return pending;
     }
-    const refresh = this.refresh(locale);
+    const refresh = this.refresh(locale, this.generation);
     this.inFlight.set(locale, refresh);
     try {
       return await refresh;
     } finally {
-      this.inFlight.delete(locale);
+      // After an invalidate the slot may already hold a newer fetch.
+      if (this.inFlight.get(locale) === refresh) this.inFlight.delete(locale);
     }
   }
 
   /** Drops every locale so the next read refetches. Called on the operator webhook. */
   public invalidate(): void {
     this.values.clear();
+    // The fetches in flight too: a tap joining one would get the old documents.
+    this.inFlight.clear();
+    this.generation += 1;
   }
 
-  private async refresh(locale: string): Promise<readonly LegalDocument[]> {
+  private async refresh(locale: string, startedAt: number): Promise<readonly LegalDocument[]> {
     try {
       const fresh = await this.fetchFn(locale);
-      this.values.set(locale, { documents: fresh, fetchedAt: Date.now() });
+      if (startedAt === this.generation) {
+        this.values.set(locale, { documents: fresh, fetchedAt: Date.now() });
+      }
       return fresh;
     } catch {
       const stale = this.values.get(locale);
       if (stale !== undefined) {
         // Last-known-good, with the clock reset so an outage is not hammered
         // once per tap.
-        this.values.set(locale, { documents: stale.documents, fetchedAt: Date.now() });
+        if (startedAt === this.generation) {
+          this.values.set(locale, { documents: stale.documents, fetchedAt: Date.now() });
+        }
         return stale.documents;
       }
       return [];
