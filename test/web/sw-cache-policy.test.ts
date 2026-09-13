@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { isCacheableApiPath } from '../../web/src/sw-cache-policy.js';
+import {
+  isCacheableApiPath,
+  isNetworkFirstApiPath,
+  NETWORK_FIRST_API_EXACT,
+} from '../../web/src/sw-cache-policy.js';
 
 describe('service-worker public API cache policy', () => {
   it('never caches live FAQ content or its media', () => {
@@ -19,5 +23,20 @@ describe('service-worker public API cache policy', () => {
     expect(isCacheableApiPath('/api/v1/faq?locale=ru')).toBe(false);
     expect(isCacheableApiPath('/api/v1/plans/private')).toBe(false);
     expect(isCacheableApiPath('/api/v1/subscription')).toBe(false);
+  });
+
+  it('asks the network first for the plan catalogue, and only for it', () => {
+    // A withdrawn plan served from the cache is one the panel refuses at
+    // checkout; branding served a visit late is merely late.
+    expect(isNetworkFirstApiPath('/api/v1/plans')).toBe(true);
+    expect(isNetworkFirstApiPath('/api/v1/branding')).toBe(false);
+    expect(isNetworkFirstApiPath('/api/v1/gateways')).toBe(false);
+    expect(isNetworkFirstApiPath('/api/v1/plans/private')).toBe(false);
+  });
+
+  it('keeps every network-first path cacheable, so it still works offline', () => {
+    for (const path of NETWORK_FIRST_API_EXACT) {
+      expect(isCacheableApiPath(path), path).toBe(true);
+    }
   });
 });

@@ -21,7 +21,12 @@ import {
 const nested = (code: string): string => JSON.stringify({ message: { code, message: "x" } });
 
 describe("checkout refusal codes", () => {
-  it.each(["TRIAL_ALREADY_USED", "TRIAL_PENDING_CHECKOUT_STALE"])("forwards %s", (code) => {
+  it.each([
+    "TRIAL_ALREADY_USED",
+    "TRIAL_PENDING_CHECKOUT_STALE",
+    // A plan withdrawn while the buyer still had the old catalogue on screen.
+    "PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE",
+  ])("forwards %s", (code) => {
     expect(extractCheckoutRefusalCode(JSON.stringify({ code, message: "x" }))).toBe(code);
   });
 

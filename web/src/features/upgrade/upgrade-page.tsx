@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { ArrowUpCircle, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -27,6 +27,10 @@ import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { startCheckoutRedirect } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
+import {
+  isPlanUnavailableRefusal,
+  notifyPlanUnavailable,
+} from "@/features/purchase/plan-unavailable";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -222,14 +226,17 @@ function SelectPlan() {
 
 function SelectDuration() {
   const { t } = useTranslation();
-  const { selectedPlan, selectDuration, setStep } = useUpgradeStore();
+  const { selectedPlan, selectedDurationDays, selectDuration, setStep } = useUpgradeStore();
   const durations = selectedPlan?.durations ?? [];
 
+  // Only while no term is chosen. Back from the gateway step keeps the choice,
+  // and re-advancing then made that Back a no-op. Picking a plan clears the
+  // term, so arriving forward still skips a single-term step.
   useEffect(() => {
-    if (durations.length === 1) {
+    if (durations.length === 1 && selectedDurationDays === null) {
       selectDuration(durations[0]!.days);
     }
-  }, [durations, selectDuration]);
+  }, [durations, selectDuration, selectedDurationDays]);
 
   if (durations.length === 0) {
     return (
@@ -269,7 +276,7 @@ function SelectDuration() {
 
 function SelectGateway() {
   const { t } = useTranslation();
-  const { selectGateway, setStep } = useUpgradeStore();
+  const { selectedGateway, selectGateway, setStep } = useUpgradeStore();
   const { data: gateways = [], isLoading } = useQuery({
     queryKey: ["gateways"],
     queryFn: getEnabledGateways,
@@ -284,9 +291,14 @@ function SelectGateway() {
       currency: gw.currency,
     } satisfies GatewayOption);
 
+  // Only while no gateway is chosen. Back from the review keeps the choice, and
+  // re-advancing bounced the subscriber straight into the review they were
+  // leaving — with a price error there, Back could never get out. Purchase and
+  // renewal guard this effect on the navigation direction; this store records
+  // none, and a gateway still chosen is what marks the way back in.
   useEffect(() => {
-    if (!isLoading && gateways.length === 1) choose(gateways[0]!);
-  }, [isLoading, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!isLoading && gateways.length === 1 && selectedGateway === null) choose(gateways[0]!);
+  }, [isLoading, gateways, selectedGateway]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) {
     return (
@@ -420,8 +432,17 @@ function Row({ label, value }: { label: string; value: string }) {
 function CheckoutStep() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { selectedSubscriptionId, selectedPlan, selectedDurationDays, selectedGateway, setCheckoutResult, setStep } =
-    useUpgradeStore();
+  const {
+    selectedSubscriptionId,
+    selectedPlan,
+    selectedDurationDays,
+    selectedGateway,
+    setCheckoutResult,
+    setStep,
+    selectSubscription,
+    reset,
+  } = useUpgradeStore();
+  const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -440,7 +461,21 @@ function CheckoutStep() {
       if (result.checkoutUrl) startCheckoutRedirect(result.checkoutUrl);
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
-    onError: () => {
+    onError: (err) => {
+      if (isPlanUnavailableRefusal(err)) {
+        // The target plan was withdrawn after it was picked; nothing was
+        // charged. The review can only fail the same way again, so go back to
+        // the target list instead — reset, not invalidated, so the withdrawn
+        // plan is not rendered while the list refetches. Re-selecting the
+        // subscription is the store's own way onto that step with the stale
+        // term and gateway cleared.
+        notifyPlanUnavailable(t);
+        void queryClient.resetQueries({ queryKey: ["upgrade-options"] });
+        const subscriptionId = selectedSubscriptionId;
+        reset();
+        if (subscriptionId !== null) selectSubscription(subscriptionId);
+        return;
+      }
       // Return to review (not a stuck spinner) so the user can retry.
       toast.error(t("upgrade.checkoutError"));
       setStep("review");

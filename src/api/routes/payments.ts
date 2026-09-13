@@ -147,10 +147,10 @@ export function createPaymentsRouter(deps: {
             });
             return;
           }
-          // Paid-trial refusals. Without this they fall through to the generic
-          // 500 below, and the buyer whose own unfinished attempt is blocking
-          // them is told only "failed to create checkout" — with no hint that
-          // there is anything they can do about it.
+          // Paid-trial refusals, and a plan that is no longer sold. Without this
+          // they fall through to the generic 500 below, and the buyer is told
+          // only "failed to create checkout" — with no hint that there is
+          // anything they can do about it.
           const refusal = extractCheckoutRefusalCode(body);
           if (refusal !== undefined) {
             res.status(400).json({ code: refusal, message: refusal });

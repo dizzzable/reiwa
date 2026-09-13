@@ -370,6 +370,7 @@ export const en: RuDict = {
     checkout: {
       creating: 'Creating payment…',
       error: 'Failed to create payment. Try again later.',
+      planUnavailable: 'This plan is no longer available. Please choose one from the updated list.',
     },
     noGateways: 'Payment methods are temporarily unavailable',
   },

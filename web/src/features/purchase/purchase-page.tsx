@@ -29,6 +29,7 @@ import {
 } from "@/lib/subscription-provisioning-receipt";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { PromoInput } from "./components/promo-input";
+import { isPlanUnavailableRefusal, notifyPlanUnavailable } from "./plan-unavailable";
 import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
@@ -665,8 +666,11 @@ function CheckoutStep({
     selectedSavedPaymentMethodId,
     savePaymentMethodConsent,
     setCheckoutResult,
+    reset,
+    goBack,
   } = usePurchaseStore();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -708,7 +712,28 @@ function CheckoutStep({
         navigate("/dashboard", { replace: true });
         return;
       }
+      if (isPlanUnavailableRefusal(err)) {
+        // The plan was withdrawn after it was picked; nothing was charged.
+        // This step never leaves on its own — the latch below forbids a second
+        // attempt — so without this the spinner stayed up for good.
+        notifyPlanUnavailable(t);
+        // Reset, not invalidate: an invalidated catalogue is still RENDERED
+        // while it refetches, which would put the withdrawn plan back under the
+        // buyer's tap on the very list they are sent to.
+        void queryClient.resetQueries({ queryKey: ["plans"] });
+        reset();
+        navigate("/plans", { replace: true });
+        return;
+      }
       toast.error(t("purchase.checkout.error"));
+      // Back to the quote the buyer confirmed, choices kept: nothing was
+      // created, and this step cannot try again by itself (the latch below), so
+      // staying here left "creating payment" spinning for good after ANY other
+      // failure — a gateway switched off meanwhile, a timeout. From the quote
+      // they can pay again or step back to another gateway; the quote is
+      // re-priced rather than offered again from the cache.
+      void queryClient.invalidateQueries({ queryKey: ["quote"] });
+      goBack();
     },
   });
 

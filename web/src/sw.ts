@@ -4,7 +4,7 @@ import { registerRoute, Route, setCatchHandler } from 'workbox-routing'
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 import { CacheableResponsePlugin } from 'workbox-cacheable-response'
-import { isCacheableApiPath } from './sw-cache-policy'
+import { isCacheableApiPath, isNetworkFirstApiPath } from './sw-cache-policy'
 // Both modules are dependency-free by design — see the note at the top of
 // `push-key-match.ts`. `lib/push.ts` itself is NOT reachable from here: it
 // imports the SPA API client (axios, i18n, `window`), none of which exists in a
@@ -54,6 +54,9 @@ const NAV_CACHE = 'navigations-v2'
 const STRATEGY_MAP = {
   static: 'cache-first' as const,
   api: 'stale-while-revalidate' as const,
+  // The plan catalogue is the one cached API response a subscriber buys from —
+  // see `NETWORK_FIRST_API_EXACT` in `sw-cache-policy.ts`.
+  catalog: 'network-first' as const,
 } as const
 
 // ─── Strategy Violation Detection ──────────────────────────────────────────────
@@ -66,6 +69,10 @@ function validateStrategyIntegrity(): boolean {
   }
   // Verify API responses use stale-while-revalidate (not cache-first)
   if (STRATEGY_MAP.api !== 'stale-while-revalidate') {
+    return false
+  }
+  // Verify the plan catalogue asks the network first (not the cache)
+  if (STRATEGY_MAP.catalog !== 'network-first') {
     return false
   }
   return true
@@ -89,7 +96,8 @@ self.addEventListener('activate', (event) => {
             type: 'STRATEGY_VIOLATION',
             message:
               'Service worker caching strategy configuration is corrupted. ' +
-              'Static assets must use cache-first and API responses must use stale-while-revalidate.',
+              'Static assets must use cache-first, API responses stale-while-revalidate, ' +
+              'and the plan catalogue network-first.',
           })
         }
         // Force unregister to prevent corrupted behavior
@@ -240,6 +248,33 @@ const staticAssetsRoute = new Route(
 
 registerRoute(staticAssetsRoute)
 
+// ─── Plan Catalogue: Network-First ────────────────────────────────────────────
+// `/api/v1/plans` is stored like the API responses below, but ASKED of the
+// network first. Stale-while-revalidate answered it from the cache for up to
+// 24h, so the first catalogue a subscriber got after an operator archived or
+// deleted a plan still offered that plan — which the panel then refuses at
+// checkout — and the cabinet's refetch after that refusal was answered from the
+// same cache. Offline, or past the timeout, NetworkFirst still serves the
+// stored copy. Same cache as the route below, so a catalogue stored before this
+// route existed is still the offline fallback after it.
+const catalogRoute = new Route(
+  ({ url, request }) => request.method === 'GET' && isNetworkFirstApiPath(url.pathname),
+  new NetworkFirst({
+    cacheName: API_CACHE,
+    networkTimeoutSeconds: 5,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      new ExpirationPlugin({
+        maxEntries: 50,
+        maxAgeSeconds: 24 * 60 * 60, // 24h — config/catalog only, never account data
+        purgeOnQuotaError: true, // Evict API cache entries first on quota exceeded
+      }),
+    ],
+  }),
+)
+
+registerRoute(catalogRoute)
+
 // ─── API Responses: Stale-While-Revalidate (ALLOW-LIST ONLY) ──────────────────
 // Only operator-managed, non-personal config/catalog endpoints are cached.
 // Caching account-scoped data (subscription, payments, devices, profile,
@@ -250,7 +285,7 @@ registerRoute(staticAssetsRoute)
 //
 // Cached (safe, public/config, GET):
 //   /api/v1/branding         — operator branding
-//   /api/v1/plans            — public plan catalog
+//   /api/v1/plans            — public plan catalog (network-first: `catalogRoute`)
 //   /api/v1/gateways         — enabled payment gateways (catalog, not user)
 //
 // The add-on catalog (/api/v1/add-ons/plan/...) is deliberately NOT SW-cached:
@@ -272,7 +307,9 @@ const apiRoute = new Route(
   ({ url, request }) => {
     // Only ever cache idempotent reads; never POST/PUT/PATCH/DELETE.
     if (request.method !== 'GET') return false
-    return isCacheableApiPath(url.pathname)
+    // Network-first entries belong to `catalogRoute` above. Excluded here as
+    // well, so registration order is not the only thing keeping them there.
+    return isCacheableApiPath(url.pathname) && !isNetworkFirstApiPath(url.pathname)
   },
   new StaleWhileRevalidate({
     cacheName: API_CACHE,

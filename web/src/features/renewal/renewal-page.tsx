@@ -50,6 +50,7 @@ import {
 } from "./renewal-review-policy";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import { subscriptionTitle } from "@/lib/subscription-title";
+import { notifyPlanUnavailable } from "@/features/purchase/plan-unavailable";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -87,6 +88,76 @@ function formatPrice(amount: string | null, currency: string | null): string {
   if (amount === null || currency === null) return "—";
   const symbol = CURRENCY_SYMBOLS[currency] ?? "";
   return `${symbol}${formatCurrencyAmount(amount)} ${currency}`;
+}
+
+/**
+ * Subscriptions whose chosen plan the panel no longer renews onto.
+ *
+ * Only a plan-less (panel-imported) subscription carries a plan choice, and the
+ * catalogue it was picked from can be stale — the service worker and React
+ * Query both keep it. When the choice is not among the renewal targets, the
+ * panel answers with no plan id and not renewable (`quoteSubscriptionRenewal`),
+ * and keeps answering so for as long as the choice is sent.
+ */
+function withdrawnPlanChoices(
+  items: readonly RenewalOptionItem[] | undefined,
+  selectedPlans: Record<string, string>,
+): string[] {
+  return (items ?? [])
+    .filter(
+      (item) =>
+        selectedPlans[item.subscriptionId] !== undefined && item.planId === null && !item.renewable,
+    )
+    .map((item) => item.subscriptionId);
+}
+
+/**
+ * Lets go of withdrawn plan choices: tells the subscriber, refetches the
+ * catalogue and forgets the choice, so the subscription asks for a plan again.
+ *
+ * Kept in the store, such a choice made the subscription unrenewable on every
+ * later step: the review could not be priced, Back led to the gateway step, and
+ * one more Back to a list saying nothing was renewable — with no control on it,
+ * so the only way out was to leave /renew. `returnToPlanStep` is for steps past
+ * plan selection; the subscription list offers "choose a plan" by itself.
+ *
+ * Returns true while releasing, so the caller shows its loader instead of
+ * flashing the dead end it is about to leave.
+ */
+function useReleaseWithdrawnPlanChoices(
+  items: readonly RenewalOptionItem[] | undefined,
+  { returnToPlanStep }: { readonly returnToPlanStep: boolean },
+): boolean {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { selectedPlans, goBack } = useRenewalStore();
+  const withdrawn = withdrawnPlanChoices(items, selectedPlans);
+  const withdrawnKey = withdrawn.join("\u0000");
+  // StrictMode re-runs the effect with the same closure; a second pass would
+  // repeat the notice. The key resets once the choices are gone, so a later
+  // withdrawal of a new choice still gets released.
+  const releasedKey = useRef("");
+
+  useEffect(() => {
+    if (withdrawnKey === releasedKey.current) return;
+    releasedKey.current = withdrawnKey;
+    if (withdrawn.length === 0) return;
+    notifyPlanUnavailable(t);
+    // Reset, not invalidate: the plan step would otherwise render the withdrawn
+    // plan again while the catalogue refetches.
+    void queryClient.resetQueries({ queryKey: ["plans"] });
+    // The store has no action that forgets a single choice; this partial write
+    // is the narrowest one that does.
+    useRenewalStore.setState((state) => {
+      const remaining = { ...state.selectedPlans };
+      for (const subscriptionId of withdrawn) delete remaining[subscriptionId];
+      return { selectedPlans: remaining };
+    });
+    if (returnToPlanStep) goBack("plan");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withdrawnKey]);
+
+  return withdrawn.length > 0;
 }
 
 export default function RenewalPage() {
@@ -209,7 +280,8 @@ function SelectSubscriptions() {
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
-  const isLoading = optionsLoading || subsLoading;
+  const releasing = useReleaseWithdrawnPlanChoices(options?.items, { returnToPlanStep: false });
+  const isLoading = optionsLoading || subsLoading || releasing;
 
   // Merge: the user's own subscriptions (card identity) + per-item renewal
   // price. We renew the subscriptions the user already owns — the plan/tariff
@@ -915,6 +987,7 @@ function RenewalReview() {
       }),
     enabled: selectedSubscriptionIds.length > 0 && !!selectedGateway,
   });
+  const releasing = useReleaseWithdrawnPlanChoices(data?.items, { returnToPlanStep: true });
   const { data: subsData } = useQuery({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
@@ -966,7 +1039,7 @@ function RenewalReview() {
     onError: () => toast.error(t("renewal.balanceError")),
   });
 
-  if (isLoading || isFetching || addOnReview.status === "PENDING") {
+  if (isLoading || isFetching || addOnReview.status === "PENDING" || releasing) {
     return (
       <div className="flex h-48 items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
@@ -1152,6 +1225,7 @@ function CheckoutStep() {
     setCheckoutResult,
     goBack,
   } = useRenewalStore();
+  const queryClient = useQueryClient();
 
   const durationsPayload = selectedSubscriptionIds
     .filter((id) => selectedDurations[id] !== undefined)
@@ -1222,6 +1296,11 @@ function CheckoutStep() {
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
     onError: () => {
+      // A refused checkout means the reviewed quote may no longer hold — the
+      // chosen plan withdrawn, or the price changed (`QUOTE_CHANGED`). Re-price
+      // it on the way back: still fresh for 30 s, the review re-offered the
+      // refused quote with the same Pay button, and paying failed the same way.
+      void queryClient.invalidateQueries({ queryKey: ["renewal-review"] });
       // Return to review (not a stuck spinner) so the user can retry.
       toast.error(t("renewal.checkoutError"));
       goBack("review");
