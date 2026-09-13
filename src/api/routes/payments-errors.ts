@@ -155,6 +155,16 @@ const RENEWAL_ERROR_MESSAGES: Record<string, { status: number; message: string }
     status: 502,
     message: "Payment creation status is unresolved. Check payment status before retrying.",
   },
+  // rezeis refusing to price a subscription on the reviewed terms, usually
+  // because its plan was withdrawn between the buyer's review and their Pay.
+  // It used to arrive with no code at all and leave here as a 500 "Failed to
+  // create renewal checkout", a server fault for a state change. Answered as a
+  // conflict, like QUOTE_CHANGED, and handled the same way by the renewal
+  // page: it re-prices the review and sends the buyer back to it.
+  RENEWAL_ITEM_NOT_PRICEABLE: {
+    status: 409,
+    message: "A subscription can no longer be renewed on these terms. Review the renewal again.",
+  },
 };
 
 /** Maps known upstream renewal outcomes to a safe, stable BFF contract. */

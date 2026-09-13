@@ -55,6 +55,27 @@ describe('renewal checkout error contract', () => {
     });
   });
 
+  it('answers a renewal rezeis cannot price as a typed conflict, not a 500', () => {
+    // rezeis sends this as 400 with the code; before the code existed there
+    // was nothing to match and the route answered 500.
+    expect(
+      resolveRenewalCheckoutError(
+        new UpstreamError(
+          'POST',
+          '/internal',
+          400,
+          JSON.stringify({ statusCode: 400, code: 'RENEWAL_ITEM_NOT_PRICEABLE', message: 'RENEWAL_ITEM_NOT_PRICEABLE' }),
+        ),
+      ),
+    ).toEqual({
+      status: 409,
+      body: {
+        code: 'RENEWAL_ITEM_NOT_PRICEABLE',
+        message: 'A subscription can no longer be renewed on these terms. Review the renewal again.',
+      },
+    });
+  });
+
   it('maps an unknown renewal conflict to the safe quote-changed contract', () => {
     expect(resolveRenewalCheckoutError(new UpstreamError('POST', '/internal', 409, 'provider secret'))).toEqual({
       status: 409,
