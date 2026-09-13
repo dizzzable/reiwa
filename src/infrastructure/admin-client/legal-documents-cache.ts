@@ -100,7 +100,13 @@ export function getLegalDocumentsCache(adminClient: AdminClient): LegalDocuments
   return cache;
 }
 
-/** Drops the cached documents; wired to the same operator-edit webhook as the policy cache. */
+/**
+ * Drops the cached documents; does nothing when no cache has been built.
+ *
+ * Only the bot process builds one (`bot/pages/rules.ts`), so the call that
+ * reaches it is the bot listener's `/invalidate-policy`, where reiwa-api relays
+ * the operator-edit webhook. The same call in the API process finds nothing.
+ */
 export function invalidateLegalDocumentsCache(): void {
   cache?.invalidate();
 }

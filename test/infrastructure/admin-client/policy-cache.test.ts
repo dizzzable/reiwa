@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { AdminClient } from '../../../src/infrastructure/admin-client/admin-client.js';
 import type { PlatformPolicyShape } from '../../../src/infrastructure/admin-client/namespaces/system.js';
-import { PolicyCache } from '../../../src/infrastructure/admin-client/policy-cache.js';
+import {
+  PolicyCache,
+  getPolicyCache,
+  invalidatePolicyCache,
+  setPolicyCache,
+} from '../../../src/infrastructure/admin-client/policy-cache.js';
 
 /**
  * The platform policy cache across an operator's change.
@@ -145,5 +151,47 @@ describe('PolicyCache across invalidate()', () => {
     expect(upstream.fn).toHaveBeenCalledTimes(3);
     upstream.answer(2, AFTER_CHANGE);
     expect(await next).toEqual(AFTER_CHANGE);
+  });
+});
+
+/**
+ * `invalidatePolicyCache()` — what the bot's `/invalidate-policy` route calls.
+ *
+ * `getPolicyCache(client)` CREATES the singleton on first use, bound to the
+ * client it is handed, and every later caller gets that same instance whatever
+ * client they pass. The route has no client to hand it, so
+ * `getPolicyCache(null).invalidate()` there would, in a bot that has not read
+ * the policy yet, bind the cache to nothing for the life of the process.
+ */
+describe('invalidatePolicyCache()', () => {
+  afterEach(() => {
+    setPolicyCache(null);
+  });
+
+  it('drops the policy the process-wide cache holds', async () => {
+    const upstream = vi.fn(async () => BEFORE_CHANGE);
+    const cache = new PolicyCache(upstream);
+    setPolicyCache(cache);
+    await cache.get();
+    await cache.get();
+    expect(upstream).toHaveBeenCalledTimes(1);
+
+    invalidatePolicyCache();
+
+    await cache.get();
+    expect(upstream).toHaveBeenCalledTimes(2);
+  });
+
+  it('does nothing when no cache exists yet, and creates none', async () => {
+    setPolicyCache(null);
+
+    invalidatePolicyCache();
+
+    // The first real read binds the cache to the client it names. Had the call
+    // above created one with no client, this would be the PUBLIC fallback.
+    const getPlatformPolicy = vi.fn(async () => AFTER_CHANGE);
+    const client = { system: { getPlatformPolicy } } as unknown as AdminClient;
+    expect(await getPolicyCache(client).get()).toEqual(AFTER_CHANGE);
+    expect(getPlatformPolicy).toHaveBeenCalledTimes(1);
   });
 });

@@ -405,10 +405,13 @@ async function startBot(): Promise<void> {
   // Single Node-native server bound to the docker network so rezeis-admin
   // can punch synchronous events at the bot. Auth: the same shared
   // secret used for outbound calls to admin (`REZEIS_INTERNAL_SHARED_SECRET`).
-  // Three endpoints:
-  //   - POST /invalidate         — force-refresh BotConfigCache (Wave 8)
-  //   - POST /notify              — deliver a per-user message (Wave B)
-  //   - POST /notify-broadcast    — deliver to a chat / topic (Wave B)
+  // Endpoints (the full list lives in `internal-http-listener.ts`):
+  //   - POST /invalidate                 — force-refresh BotConfigCache
+  //   - POST /invalidate-policy          — drop the bot's policy + legal-documents caches
+  //   - POST /notify                     — deliver a per-user message
+  //   - POST /notify-dev(-document)      — operator dev-fallback card / report
+  //   - POST /notify-broadcast(-document) — deliver to a chat / topic
+  //   - POST /notify-backup-document     — upload a backup file
   const internalListener = startInternalHttpListener({
     bot: bot as unknown as Bot<Context>,
     cache: botConfigCache,

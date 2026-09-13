@@ -6,9 +6,13 @@
  * gated request, so we cache it with a short TTL and a single-flight
  * fetch so that bursts collapse onto one upstream request. The admin
  * webhook (`POST /api/v1/webhooks/rezeis` with
- * `event: 'platform-policy-invalidated'`) calls {@link PolicyCache.invalidate}
- * so an operator change propagates instantly; the TTL is a backstop for
- * environments where the webhook leg is unavailable.
+ * `event: 'reiwa.platform.policy_invalidated'`) calls
+ * {@link PolicyCache.invalidate} so an operator change propagates instantly;
+ * the TTL is a backstop for environments where the webhook leg is unavailable.
+ *
+ * The singleton is per PROCESS: reiwa-api and reiwa-bot each hold their own,
+ * and the webhook lands in the API alone, so the bot's copy is reached only
+ * through the relay to its `/invalidate-policy` listener route.
  *
  * Failure mode (Requirement 1.3): when admin is unreachable AND the cache
  * has no last-known-good value, callers receive a `PUBLIC`-mode fallback
@@ -125,6 +129,19 @@ export function getPolicyCache(adminClient: AdminClient | null): PolicyCache {
     return adminClient.system.getPlatformPolicy();
   });
   return instance;
+}
+
+/**
+ * Drops the cached policy WITHOUT creating the singleton — for a caller that
+ * holds no admin client, which is the bot's `/invalidate-policy` route.
+ *
+ * `getPolicyCache` binds the singleton to the client it is first handed, for
+ * the life of the process, so `getPolicyCache(null).invalidate()` in a process
+ * that has not read the policy yet would leave every later read on the PUBLIC
+ * fallback. With no instance there is nothing stale to drop.
+ */
+export function invalidatePolicyCache(): void {
+  instance?.invalidate();
 }
 
 /** Test hook — overrides the singleton with a custom cache. */

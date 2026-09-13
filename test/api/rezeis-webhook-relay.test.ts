@@ -5,6 +5,13 @@ import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createRezeisWebhookRouter } from '../../src/api/routes/webhooks.js';
+import type { PlatformPolicyShape } from '../../src/infrastructure/admin-client/namespaces/system.js';
+import { PolicyCache, setPolicyCache } from '../../src/infrastructure/admin-client/policy-cache.js';
+import {
+  REQUEST_SIGNATURE_HEADER,
+  REQUEST_TIMESTAMP_HEADER,
+  verifyInternalSignature,
+} from '../../src/lib/internal-hmac.js';
 
 const WEBHOOK_SECRET = 'webhook-secret';
 
@@ -128,6 +135,10 @@ async function relay(
   status: number;
   url: string | null;
   body: Record<string, unknown> | null;
+  /** The relayed body exactly as sent — the bytes the internal signature covers. */
+  rawBody: string | null;
+  /** The relay's request headers, which is where that signature travels. */
+  headers: Record<string, string> | null;
   response: string;
   deadline: RelayDeadline;
 }> {
@@ -154,6 +165,8 @@ async function relay(
       status,
       url: call ? String(call[0]) : null,
       body: call ? (JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>) : null,
+      rawBody: init !== undefined ? String(init.body) : null,
+      headers: init !== undefined ? (init.headers as Record<string, string>) : null,
       response: text,
       deadline: {
         requestedMs,
@@ -739,6 +752,11 @@ describe('Bot relay deadlines', () => {
   const MESSAGE_RELAYS = [
     { path: '/invalidate', event: 'reiwa.bot.invalidate', metadata: { reason: 'test' } },
     {
+      path: '/invalidate-policy',
+      event: 'reiwa.platform.policy_invalidated',
+      metadata: { reason: 'test' },
+    },
+    {
       path: '/notify',
       event: 'reiwa.user.notify',
       metadata: { eventId: 'dl-1', telegramId: '123456789', text: 'сообщение' },
@@ -862,5 +880,134 @@ describe('Bot relay deadlines', () => {
 
     expect(requestedMs).toEqual([]);
     expect(status).toBeNull();
+  });
+});
+
+/**
+ * `reiwa.platform.policy_invalidated` — the operator switched the access mode
+ * (reason `platform.<fields>`) or edited a legal document (`legal.<KEY>`).
+ *
+ * The webhook lands in the API process, and dropping the caches here used to be
+ * all it did, on the belief that the bot "reads through the same cache". It
+ * does not: the bot is a separate process in its own container (`reiwa-bot` in
+ * docker-compose.yml) with its own policy cache and the ONLY legal-documents
+ * cache, so it went on enforcing the old access mode, and offering the old
+ * rules link, until its 60s TTL ran out. The event is now relayed to the bot's
+ * `/invalidate-policy` as well.
+ *
+ * Unlike every other relay in this file it is BEST-EFFORT: whatever happens to
+ * the bot half, the answer stays the event's usual 204. This process's copy has
+ * already been dropped by then and the bot's TTL is the backstop, so a 502
+ * would report "not delivered" for an event that was. The panel acts on that
+ * word: the event is BOUNDED (2 attempts, 10s apart), so a 502 buys a retry
+ * that re-busts this process's cache for nothing and then files
+ * `reiwa.relay_undelivered` — an operator alert and a slot in the bounded
+ * failed-job set. The panel's own e2e stack runs no bot container at all, so
+ * every access-mode or legal save there would turn into one.
+ */
+describe('Policy invalidation reaches the bot process', () => {
+  afterEach(() => {
+    // The webhook branch reads the process-wide cache; leave none behind.
+    setPolicyCache(null);
+    vi.restoreAllMocks();
+  });
+
+  const EVENT = 'reiwa.platform.policy_invalidated';
+  const POLICY: PlatformPolicyShape = {
+    accessMode: 'RESTRICTED',
+    rulesRequired: false,
+    rulesLink: null,
+    channelRequired: false,
+    channelLink: null,
+    defaultCurrency: 'USD',
+  };
+
+  /**
+   * Install a WARM policy cache in this — the API — process, so "the webhook
+   * dropped it" reads as one more upstream call on the next `get()`.
+   */
+  async function warmApiPolicyCache() {
+    const upstream = vi.fn(async () => POLICY);
+    const cache = new PolicyCache(upstream);
+    setPolicyCache(cache);
+    await cache.get();
+    await cache.get();
+    // Anchor: warm. A cache that never cached would "refetch" below for a
+    // reason that has nothing to do with the webhook.
+    expect(upstream).toHaveBeenCalledTimes(1);
+    return { cache, upstream };
+  }
+
+  it('relays the invalidation to the bot, signed so the bot accepts it', async () => {
+    for (const reason of ['platform.accessMode', 'legal.USER_AGREEMENT']) {
+      const { status, url, body, rawBody, headers, response } = await relay(EVENT, { reason });
+
+      expect(url, reason).toBe('http://reiwa-bot:5100/invalidate-policy');
+      expect(body, reason).toEqual({ reason });
+      // Checked with the listener's own verifier, over the path and the exact
+      // bytes that went out: a relay the bot answers 401 drops nothing.
+      expect(
+        verifyInternalSignature({
+          secret: 's'.repeat(32),
+          method: 'POST',
+          path: '/invalidate-policy',
+          body: rawBody ?? '',
+          timestamp: headers?.[REQUEST_TIMESTAMP_HEADER] ?? '',
+          signature: headers?.[REQUEST_SIGNATURE_HEADER] ?? '',
+        }),
+        reason,
+      ).toBe(true);
+      expect(status, reason).toBe(204);
+      expect(response, reason).toBe('');
+    }
+  });
+
+  it('still acks, with the API copy dropped, when the bot answers an error', async () => {
+    // 503: the bot's handler crashed. 404: a bot image older than the route,
+    // mid-deploy. 401: the two containers disagree about the internal secret.
+    for (const botStatus of [503, 404, 401]) {
+      const label = `bot ${botStatus}`;
+      const { cache, upstream } = await warmApiPolicyCache();
+
+      const { status, url, response } = await relay(EVENT, { reason: 'platform.accessMode' }, botStatus);
+
+      // Self-check: the relay really was attempted, so this is the failure path.
+      expect(url, label).toBe('http://reiwa-bot:5100/invalidate-policy');
+      expect(status, label).toBe(204);
+      expect(response, label).toBe('');
+      await cache.get();
+      expect(upstream, label).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('acks when there is no bot to reach, having dropped the API copy before dialling', async () => {
+    const { cache, upstream } = await warmApiPolicyCache();
+    let apiCopyWhenDialled: unknown = 'never dialled';
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      apiCopyWhenDialled = cache.peek();
+      // What undici throws when `reiwa-bot` does not resolve or refuses.
+      throw new TypeError('fetch failed');
+    });
+
+    const body = { event: EVENT, metadata: { reason: 'legal.OFFER' } };
+    const { status, text } = await post(buildApp(), body, sign(JSON.stringify(body)));
+
+    // Dropped BEFORE the bot was dialled: a slow bot never holds up this
+    // process's own fresh read, and a failed one cannot skip it.
+    expect(apiCopyWhenDialled).toBeNull();
+    expect(status).toBe(204);
+    expect(text).toBe('');
+    await cache.get();
+    expect(upstream).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives a wedged bot the message budget, then acks instead of failing', async () => {
+    const { status, requestedMs } = await relayAgainstWedgedBot(EVENT, { reason: 'platform.accessMode' });
+
+    // The same 8s as every other message relay — below the panel's 10s for
+    // this route, so the cabinet still answers first.
+    expect(requestedMs).toEqual([8_000]);
+    // Not `null` (the handler held on) and not 502 (a retry, then an alert).
+    expect(status).toBe(204);
   });
 });

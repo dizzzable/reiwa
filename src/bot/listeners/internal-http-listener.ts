@@ -22,6 +22,13 @@
  *     next user request sees fresh data without waiting up to 5 min
  *     for the periodic refresh.
  *
+ *   POST /invalidate-policy
+ *     Drop this process's platform-policy and legal-documents caches.
+ *     reiwa-api relays `reiwa.platform.policy_invalidated` here (the access
+ *     mode or a legal document changed): those caches are per-process and
+ *     the webhook lands in the API, so nothing it drops there reaches the
+ *     bot. Always 204.
+ *
  *   POST /notify
  *     Deliver a per-user Telegram message. Body shape:
  *       {
@@ -68,6 +75,8 @@ import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { Bot, Context } from 'grammy';
 import { GrammyError, InlineKeyboard, InputFile } from 'grammy';
 
+import { invalidateLegalDocumentsCache } from '../../infrastructure/admin-client/legal-documents-cache.js';
+import { invalidatePolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
@@ -549,6 +558,10 @@ export function startInternalHttpListener(opts: ListenerOptions): http.Server | 
         await handleInvalidate(cache, logger, res, onConfigApplied);
         return;
       }
+      if (url === '/invalidate-policy') {
+        handleInvalidatePolicy(logger, res);
+        return;
+      }
       if (url === '/notify') {
         await handleNotify({ bot, logger, raw, res, onUserBlocked, keyboardUrls, rezeisAdminUrl: rezeisAdminUrl ?? null, cache });
         return;
@@ -661,6 +674,28 @@ async function handleInvalidate(
     res.statusCode = 500;
     res.end();
   }
+}
+
+/**
+ * `/invalidate-policy` — drop THIS process's platform-policy and legal-documents
+ * caches, so the next `/start`, menu or rules screen reads the operator's change
+ * instead of waiting out the 60s TTL.
+ *
+ * Unlike `/invalidate` this never answers 503: it needs neither the bot nor the
+ * bot-config cache, and a cache no page has built yet holds nothing stale. Both
+ * calls leave a missing cache missing, which is what makes that safe — this
+ * route has no admin client to build one with, and a cache built without one
+ * would serve its fallback for the life of the process.
+ */
+function handleInvalidatePolicy(
+  logger: ReturnType<typeof createLogger>,
+  res: http.ServerResponse,
+): void {
+  invalidatePolicyCache();
+  invalidateLegalDocumentsCache();
+  res.statusCode = 204;
+  res.end();
+  logger.info('Policy-invalidate: dropped the policy and legal-documents caches');
 }
 
 interface NotifyHandlerOptions {

@@ -235,6 +235,7 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  *
  * Event contract (reads `{ event, metadata }` from the admin webhook body):
  *   - `reiwa.bot.invalidate`    → POST bot `/invalidate`        { reason }
+ *   - `reiwa.platform.policy_invalidated` → POST bot `/invalidate-policy` { reason }, after dropping this process's copy; best-effort (see its case)
  *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
  *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
  *   - `reiwa.channel.broadcast.document` → POST bot `/notify-broadcast-document` { eventId, chatId, content, filename?, caption?, topicThreadId?, parseMode? }
@@ -260,11 +261,13 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  * (`modules/webhooks/services/webhook-dispatcher.service.ts`), which serves the
  * OPERATOR-facing external webhook system and never touches this path.
  *
- * The one exception is `reiwa.backup.document`: its caller (`BackupService`)
- * inspects the outcome and re-runs on a BullMQ job with `attempts: 3`. So the
- * 4xx-vs-502 split below changes what actually happens only for that event.
- * For every other event a 502 means the message is simply lost — the panel
- * writes one `logger.warn` and moves on.
+ * What a 502 sets off, then: for every event on that queue the panel retries
+ * within the event's policy and, once the attempts are spent, records
+ * `reiwa.relay_undelivered` and alerts the operator. `reiwa.backup.document` is
+ * the one event NOT on the queue; its caller (`BackupService`) inspects the
+ * outcome and re-runs the backup on its own BullMQ job (`attempts: 3`). A 4xx
+ * from the bot is permanent, so it is acked below instead of burning retries on
+ * a payload that can never succeed.
  *
  * Response contract: the two events whose delivery rezeis has to record —
  * `reiwa.user.notify` and `reiwa.backup.document` — answer `200 { messageId }`,
@@ -436,15 +439,43 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           return;
         }
         case "reiwa.platform.policy_invalidated": {
-          // Drop the cached platform policy so the next gated request
-          // refetches the current accessMode immediately.  No relay
-          // to the bot — the bot reads through the same cache.
+          // Drop this process's cached platform policy so the next gated
+          // request refetches the current accessMode immediately — before the
+          // bot is dialled, so a slow bot cannot delay it and a failed relay
+          // cannot skip it.
           getPolicyCache((req.app.locals['adminClient'] ?? null) as AdminClient | null).invalidate();
           // The panel fires this same webhook when a legal document is edited
-          // (reason `legal.<KEY>`), so the bot's copy is dropped here too —
-          // otherwise switching a document on would take up to a minute to
-          // change which link the rules screen offers.
+          // (reason `legal.<KEY>`). Only the bot builds that cache, so here the
+          // call finds nothing today; it stays so a reader added to this
+          // process later is not left stale.
           invalidateLegalDocumentsCache();
+          // The bot is a SEPARATE process (its own container) with its own
+          // policy cache and the only legal-documents cache: nothing dropped
+          // above reaches it, and without this relay it kept the old access
+          // mode, or the old rules link, until its 60s TTL ran out.
+          //
+          // BEST-EFFORT, unlike the other relays: a bot failure is logged and
+          // the event still acks 204. This process's half is done and the bot's
+          // TTL backstops the rest, so a 502 would tell the panel the event
+          // failed when it did not — and the panel acts on that
+          // (`ReiwaRelayProcessor`): the event is bounded, 2 attempts 10s apart,
+          // so it would re-bust this cache for nothing and then file
+          // `reiwa.relay_undelivered`, an operator alert plus a slot in the
+          // bounded failed-job set. A stack with no bot container, like the
+          // panel's e2e one, would do that on every access-mode or legal save.
+          // The retry would buy little anyway: a bot that went down restarts
+          // with empty caches, so only a running but unreachable bot stays
+          // stale, and only until its TTL.
+          try {
+            await relayToBot("/invalidate-policy", {
+              reason: str(meta["reason"]) ?? "admin-webhook",
+            });
+          } catch (err: unknown) {
+            getRequestLogger(req).warn(
+              { err, event },
+              "rezeis webhook: bot policy-cache relay failed; the bot's copy expires on its TTL",
+            );
+          }
           break;
         }
         case "reiwa.branding.invalidate": {
@@ -486,8 +517,8 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
         // The bot rejected the payload as permanently invalid (4xx) — e.g. a
         // telegramId that isn't a Telegram numeric id, or empty text. A retry
         // could never succeed, so ack (2xx) and log the details for diagnosis
-        // instead of returning a 502. (Nothing retries `reiwa.user.notify`
-        // either way — see the RETRIES note in the file header.)
+        // instead of returning a 502, which the panel's relay queue would
+        // retry — see the RETRIES note in the file header.
         getRequestLogger(req).warn(
           { event, botStatus: err.status, path: err.path },
           "rezeis webhook: bot rejected payload as invalid (permanent); dropping",
@@ -497,9 +528,9 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
       }
       getRequestLogger(req).error({ err, event }, "rezeis webhook relay failed");
       // 502 = transient (bot 5xx / network), unlike the 4xx bad payload above.
-      // Only `reiwa.backup.document` is actually retried on this signal
-      // (BackupService re-runs it on a BullMQ job, `attempts: 3`). For every
-      // other event this 502 is recorded and dropped — see the file header.
+      // The panel retries it: its relay queue within the event's attempts, and
+      // BackupService on its own job for `reiwa.backup.document` — see the
+      // RETRIES note in the file header.
       res.status(502).json({ message: "relay failed" });
     }
   });
