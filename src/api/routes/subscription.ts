@@ -141,6 +141,19 @@ function narrowServerList(payload: unknown): {
   return {
     servers: rows.filter(isRecord).map((row) => ({
       id: asString(row["id"]),
+      // `separator` for a section header the operator tagged in Remnawave,
+      // `server` for everything else. Only that exact literal is forwarded:
+      // missing, junk, a different case, or a kind some future panel invents
+      // all become `server`, because the one thing an unrecognised value must
+      // never do is hide a row or restyle it — a server drawn as a heading loses
+      // its status in front of the customer using it.
+      //
+      // Either upgrade order degrades to the screen as it was. A cabinet older
+      // than this line drops `kind` like any unknown field, so a newer panel's
+      // header reaches it as the grey "no data" row that host always was (the
+      // panel sends a header with every server field empty). A panel older than
+      // the field sends no `kind` at all, so every row here is a server.
+      kind: row["kind"] === "separator" ? "separator" : "server",
       name: asString(row["name"]),
       // The host's badge text — `serverDescription`, which VPN clients draw as
       // a chip under the name. Operator free text written for customers, so it

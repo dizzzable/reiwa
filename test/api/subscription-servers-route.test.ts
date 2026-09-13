@@ -162,15 +162,22 @@ describe("GET /subscription/:id/servers", () => {
       expect(serialized, `\`${secret}\` reached the browser`).not.toContain(secret);
     }
     const [row] = (body as { servers: Record<string, unknown>[] }).servers;
+    // `kind` is in the set deliberately: it is how the browser knows to draw a
+    // section header, and it is always one of two fixed words — see the two
+    // tests below for what happens to anything else the panel sends in it.
     expect(Object.keys(row).sort()).toEqual([
       "countryCode",
       "description",
       "flag",
       "id",
+      "kind",
       "name",
       "status",
       "uptimeSeconds",
     ]);
+    // This row sent no `kind`, as a panel older than the field does not: it
+    // arrives as a server, not with the key missing.
+    expect(row.kind).toBe("server");
     expect(row.name).toBe("Frankfurt 🇩🇪");
     // The badge the VPN client draws under the name. Without this line the
     // panel can send it and the customer's browser never sees it — the key set
@@ -197,6 +204,72 @@ describe("GET /subscription/:id/servers", () => {
       const [row] = (body as { servers: Record<string, unknown>[] }).servers;
       expect(row.description, JSON.stringify(description) ?? "undefined").toBeNull();
       expect(row.name).toBe("Germany - 1");
+    }
+  });
+
+  it("forwards a section header the panel marked as one", async () => {
+    // The operator tagged the host in Remnawave and the panel sends it as
+    // `kind: "separator"`. Dropped here, the browser would draw the heading as
+    // a server with no data — which is what it was before headers existed.
+    const listServers = vi.fn(async () => ({
+      servers: [
+        {
+          id: "host-sep",
+          kind: "separator",
+          name: "⬇️ Все | Локации ⬇️",
+          description: null,
+          flag: null,
+          countryCode: null,
+          status: "unknown",
+          uptimeSeconds: null,
+        },
+        {
+          id: "host-1",
+          kind: "server",
+          name: "Germany - 1",
+          description: null,
+          flag: "🇩🇪",
+          countryCode: "DE",
+          status: "online",
+          uptimeSeconds: 60,
+        },
+      ],
+      recommendedServerId: "host-1",
+    }));
+    const { body } = await get(makeApp(listServers), "/api/v1/subscription/sub-1/servers");
+    const rows = (body as { servers: Record<string, unknown>[] }).servers;
+    expect(rows.map((row) => [row.id, row.kind])).toEqual([
+      ["host-sep", "separator"],
+      ["host-1", "server"],
+    ]);
+    expect(rows[0]?.name).toBe("⬇️ Все | Локации ⬇️");
+  });
+
+  it("reads a missing, junk or unknown kind as a server — never as a header", async () => {
+    // An unrecognised value must not hide a row or restyle it: a server drawn
+    // as a heading loses its status in front of the customer using it. So only
+    // the exact literal becomes a header — not another case, not a wrapper, not
+    // a kind some later panel adds.
+    const kinds: unknown[] = [
+      undefined,
+      null,
+      42,
+      true,
+      "weird",
+      "SEPARATOR",
+      "Separator",
+      " separator",
+      ["separator"],
+      { kind: "separator" },
+    ];
+    for (const kind of kinds) {
+      const listServers = vi.fn(async () => ({
+        servers: [{ id: "host-1", kind, name: "Germany - 1", status: "online", uptimeSeconds: 60 }],
+        recommendedServerId: null,
+      }));
+      const { body } = await get(makeApp(listServers), "/api/v1/subscription/sub-1/servers");
+      const [row] = (body as { servers: Record<string, unknown>[] }).servers;
+      expect(row?.kind, JSON.stringify(kind) ?? "undefined").toBe("server");
     }
   });
 

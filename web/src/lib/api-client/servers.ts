@@ -11,6 +11,17 @@ import { apiClient } from "./transport.js";
 /** One server, exactly as the panel is willing to describe it. */
 export interface SubscriberServer {
   readonly id: string;
+  /**
+   * `separator` for a section header the operator put between servers —
+   * "⬇️ Все | Локации ⬇️" — drawn as a heading rather than a server; `server`,
+   * or absent, for everything else.
+   *
+   * Optional because a panel older than the field does not send it, and
+   * anything other than `separator` is a server — an unrecognised value must
+   * never hide a row or restyle it. A header row carries its heading in `name`
+   * and nothing that describes a server.
+   */
+  readonly kind?: "server" | "separator";
   /** The host's name as the operator wrote it — flag included. */
   readonly name: string;
   /**

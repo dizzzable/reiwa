@@ -26,6 +26,12 @@
  * a load balancer flagged 🇪🇺 decodes to a country code that is not a country.
  * Such a server is listed like any other and simply is not drawn on the planet,
  * because a balancer is a choice between places rather than a place.
+ *
+ * SECTION HEADERS ARE NOT SERVERS. An operator can put headings between hosts
+ * ("⬇️ Все | Локации ⬇️") and tag them in Remnawave; the panel sends those rows
+ * as `kind: 'separator'`. They are drawn as subheadings in the list and nowhere
+ * else: not counted, not on the planet. The panel has already dropped any
+ * header with no server under it and never recommends one.
  */
 import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -81,6 +87,10 @@ export function ServersSheet({
   });
 
   const servers = data?.servers ?? [];
+  // The number of SERVERS, which is not the number of rows once an operator has
+  // put headings between them. The subtitle and the empty state both read it,
+  // so "0 servers" never sits over a column of headings.
+  const serverCount = servers.filter((server) => !isSectionHeader(server)).length;
   const recommended = useMemo(
     () => servers.find((server) => server.id === data?.recommendedServerId) ?? null,
     [data?.recommendedServerId, servers],
@@ -178,7 +188,7 @@ export function ServersSheet({
               {t('servers.title')}
             </h2>
             <p className="truncate text-xs text-muted-foreground">
-              {t('servers.subtitle', { count: servers.length })}
+              {t('servers.subtitle', { count: serverCount })}
             </p>
           </div>
           <button
@@ -210,21 +220,30 @@ export function ServersSheet({
             <p className="py-6 text-center text-sm text-muted-foreground">
               {t('servers.loading')}
             </p>
-          ) : servers.length === 0 ? (
+          ) : serverCount === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               {t('servers.empty')}
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
               <AnimatePresence initial={!reducedMotion}>
-                {servers.map((server, index) => (
-                  <ServerRow
-                    key={server.id}
-                    server={server}
-                    index={index}
-                    reducedMotion={Boolean(reducedMotion)}
-                  />
-                ))}
+                {servers.map((server, index) =>
+                  isSectionHeader(server) ? (
+                    <SectionHeader
+                      key={server.id}
+                      header={server}
+                      index={index}
+                      reducedMotion={Boolean(reducedMotion)}
+                    />
+                  ) : (
+                    <ServerRow
+                      key={server.id}
+                      server={server}
+                      index={index}
+                      reducedMotion={Boolean(reducedMotion)}
+                    />
+                  ),
+                )}
               </AnimatePresence>
             </ul>
           )}
@@ -253,6 +272,11 @@ function GlobeStage({
     if (!GLOBE_CATALOG[preferences.variant].supportsMarkers) return [];
     const placed: { lat: number; lng: number }[] = [];
     for (const server of servers) {
+      // A heading is not a place. The panel sends a header with no country, but
+      // the planet does not lean on that: skipped here by what the row IS,
+      // inside this memo rather than by filtering the prop, so the markers
+      // array keeps its identity between renders.
+      if (isSectionHeader(server)) continue;
       const point = countryPoint(server.countryCode);
       if (point === null) continue;
       placed.push({ lat: point[0], lng: point[1] });
@@ -404,6 +428,64 @@ function Recommended({
         </p>
       </div>
     </motion.div>
+  );
+}
+
+/**
+ * Whether a row is a section header rather than a server.
+ *
+ * Only the exact `separator` is one. A row with no `kind` comes from a panel
+ * older than the field, and anything else is a kind this build does not know —
+ * both are servers, because an unrecognised value must never turn a working
+ * server into a heading.
+ */
+function isSectionHeader(server: SubscriberServer): boolean {
+  return server.kind === 'separator';
+}
+
+/**
+ * A heading the operator put between servers, drawn as one.
+ *
+ * Remnawave has no such thing, so operators make a heading out of an ordinary
+ * host, and VPN apps draw it as a row reading "n/a"; tagged in Remnawave, it
+ * arrives here as `kind: 'separator'`. Nothing of a server card survives: no
+ * box, no flag tile, no badge, no status dot, no status line — whatever the row
+ * carries in those fields. It is set in the type of this list's own "available
+ * servers" label, so it reads as a subheading between cards, and the extra
+ * space above it ties it to the cards below rather than the ones above.
+ *
+ * The flag is taken off the text the same way it is off a server's name; a
+ * heading has no place to draw one beside it. It wraps rather than truncating,
+ * because it is the whole of what the row says.
+ *
+ * Still an `<li>`: a list may only hold list items, and a heading inside one
+ * stays reachable by heading navigation. It arrives in the same stagger as the
+ * rows around it.
+ */
+function SectionHeader({
+  header,
+  index,
+  reducedMotion,
+}: {
+  readonly header: SubscriberServer;
+  readonly index: number;
+  readonly reducedMotion: boolean;
+}) {
+  return (
+    <motion.li
+      className="pt-2"
+      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={
+        reducedMotion
+          ? { duration: 0 }
+          : { duration: SERVERS_SHEET_MOTION.list.duration, delay: rowDelay(index) }
+      }
+    >
+      <h4 className="break-words text-[11px] uppercase tracking-wide text-muted-foreground">
+        {nameWithoutFlag(header.name)}
+      </h4>
+    </motion.li>
   );
 }
 
