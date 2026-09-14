@@ -24,10 +24,8 @@ import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.j
 import { buildProfileSummary } from '../../infrastructure/bot-message/message-builder.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import {
-  isChannelGateActive,
-  resolveChannelChatId,
+  checkChannelMembership,
   resolveChannelJoinUrl,
-  isSubscribedStatus,
   hasRecentlyPassedChannel,
   markChannelPassed,
 } from '../lib/channel-gate.js';
@@ -722,45 +720,40 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
 
     // Phase 2: channel-subscription gate. Driven entirely by the platform
     // policy (channelId / channelUsername / channelLink); honours the
-    // operator's re-check toggle.
+    // operator's re-check toggle. `checkChannelMembership` never throws: a user
+    // it cannot check is let in, and the operator is told why.
     if (deps.adminClient !== null) {
       try {
         const policy = await getPolicyCache(deps.adminClient).get();
-        if (policy !== null && isChannelGateActive(policy)) {
-          const relaxed = policy.channelRecheck === false;
-          if (!(relaxed && hasRecentlyPassedChannel(tgUser.id))) {
-            const chatId = resolveChannelChatId(policy);
-            try {
-              const member = await ctx.api.getChatMember(chatId as string | number, tgUser.id);
-              if (!isSubscribedStatus(member.status)) {
-                const joinUrl = resolveChannelJoinUrl(policy);
-                // Resolve premium custom-emoji tokens (`:slug:`) on the gate
-                // button labels the same way every other keyboard does — via
-                // the shared `inlineButton` helper, so this screen and the
-                // quest deep-link screen can never drift apart again.
-                const keyboard = new InlineKeyboard();
-                if (joinUrl !== null) {
-                  keyboard
-                    .url(inlineButton(deps.translator.t('channel.join_button', lang), botCfg), joinUrl)
-                    .row();
-                }
-                keyboard.text(
-                  inlineButton(deps.translator.t('channel.check_button', lang), botCfg),
-                  'check_channel',
-                );
-                await ctx.reply(deps.translator.t('channel.required', lang), {
-                  reply_markup: keyboard,
-                });
-                return;
-              }
-              markChannelPassed(tgUser.id);
-            } catch {
-              /* getChatMember failed (bot not admin / Telegram 5xx) — fail open. */
+        const relaxed = policy.channelRecheck === false;
+        if (!(relaxed && hasRecentlyPassedChannel(tgUser.id))) {
+          const verdict = await checkChannelMembership(ctx.api, policy, tgUser.id, deps);
+          if (verdict === 'not-subscribed') {
+            const joinUrl = resolveChannelJoinUrl(policy);
+            // Resolve premium custom-emoji tokens (`:slug:`) on the gate
+            // button labels the same way every other keyboard does — via
+            // the shared `inlineButton` helper, so this screen and the
+            // quest deep-link screen can never drift apart again.
+            const keyboard = new InlineKeyboard();
+            if (joinUrl !== null) {
+              keyboard
+                .url(inlineButton(deps.translator.t('channel.join_button', lang), botCfg), joinUrl)
+                .row();
             }
+            keyboard.text(
+              inlineButton(deps.translator.t('channel.check_button', lang), botCfg),
+              'check_channel',
+            );
+            await ctx.reply(deps.translator.t('channel.required', lang), {
+              reply_markup: keyboard,
+            });
+            return;
           }
+          if (verdict === 'subscribed') markChannelPassed(tgUser.id);
         }
-      } catch {
-        /* Platform policy unavailable — fall through. */
+      } catch (err: unknown) {
+        // The join prompt could not be sent: fail open as before, but not silently.
+        deps.logger?.warn({ err, telegramId: tgUser.id }, 'bot/start: channel gate failed; letting the user in');
       }
     }
 

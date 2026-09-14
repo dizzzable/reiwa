@@ -6,10 +6,10 @@
  *
  * `check_channel` additionally probes channel membership via the
  * Telegram Bot API; when the user is not a member the keyboard reply
- * is suppressed and the user gets `channel.not_subscribed`. Membership
- * check failures fall through (let the user in) — Telegram occasionally
- * 502s on getChatMember and we don't want a transient outage to lock
- * legitimate users out of the bot.
+ * is suppressed and the user gets `channel.not_subscribed`. A user the
+ * check cannot verify is let in — Telegram occasionally 502s on
+ * getChatMember, and a bot that is not a channel administrator is refused
+ * outright — and `checkChannelMembership` tells the operator why.
  *
  * Both flows mint a fresh bot-signin token so the Cabinet URL button
  * keeps the magic-link UX consistent across `/start` and warm
@@ -19,12 +19,7 @@
 import type { AdminClient } from '../../lib/admin-client.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { buildMainKeyboard, resolveSupportDeepLink } from '../widgets/main-keyboard.js';
-import {
-  isChannelGateActive,
-  resolveChannelChatId,
-  isSubscribedStatus,
-  markChannelPassed,
-} from '../lib/channel-gate.js';
+import { checkChannelMembership, markChannelPassed } from '../lib/channel-gate.js';
 
 import { coerceLocale } from './coerce-locale.js';
 import { sendWelcomeScreen } from './start.js';
@@ -108,24 +103,19 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
     }
     const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
 
-    try {
-      const policy = deps.adminClient
-        ? await getPolicyCache(deps.adminClient).get().catch(() => null)
-        : null;
-      if (policy !== null && isChannelGateActive(policy)) {
-        const chatId = resolveChannelChatId(policy);
-        const member = await ctx.api.getChatMember(chatId as string | number, tgUser.id);
-        if (!isSubscribedStatus(member.status)) {
-          await ctx.answerCallbackQuery();
-          await ctx.reply(deps.translator.t('channel.not_subscribed', lang));
-          return;
-        }
-        markChannelPassed(tgUser.id);
-      }
-    } catch {
-      // Can't verify — let them through. Telegram getChatMember occasionally
-      // 502s; locking the user out on a transient probe is the wrong call.
+    const policy = deps.adminClient
+      ? await getPolicyCache(deps.adminClient).get().catch(() => null)
+      : null;
+    // Never throws. A user it cannot verify is let in — locking somebody out on
+    // a Telegram refusal is the wrong call — and the operator is told why.
+    const verdict =
+      policy === null ? 'off' : await checkChannelMembership(ctx.api, policy, tgUser.id, deps);
+    if (verdict === 'not-subscribed') {
+      await ctx.answerCallbackQuery();
+      await ctx.reply(deps.translator.t('channel.not_subscribed', lang));
+      return;
     }
+    if (verdict === 'subscribed') markChannelPassed(tgUser.id);
 
     // Channel check passed — confirm via toast and render the FULL welcome
     // screen (banner + greeting + keyboard), identical to /start. Previously

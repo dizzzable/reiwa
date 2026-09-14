@@ -24,7 +24,11 @@ export interface PlatformPolicyShape {
   readonly rulesLink: string | null;
   readonly channelRequired: boolean;
   readonly channelLink: string | null;
-  readonly channelId?: string | number;
+  /**
+   * «ID канала». rezeis sends `null` when it is empty — the usual setup, with
+   * only the link filled — so `null` must read as "not set", never as an id.
+   */
+  readonly channelId?: string | number | null;
   readonly channelUsername?: string | null;
   readonly channelRecheck?: boolean;
   /**
