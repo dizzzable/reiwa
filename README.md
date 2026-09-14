@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.7.41-blue" alt="Version" /></a>
+  <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.7.42-blue" alt="Version" /></a>
   <a href="https://github.com/dizzzable/reiwa/pkgs/container/reiwa"><img src="https://img.shields.io/badge/ghcr.io-reiwa-2496ED?logo=docker&logoColor=white" alt="GHCR" /></a>
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js" />
@@ -49,17 +49,17 @@ Reiwa — пользовательский edge/BFF-слой [Rezeis](https://gi
 
 ## 📦 Готовые Docker-образы
 
-GitHub Container Registry публикует **единый** образ при каждом push'е в `main` и при создании тега.
+GitHub Container Registry публикует **единый** образ при каждом push'е в `main` и при каждом теге `v*`, но `latest` двигает только тег.
 
 ```bash
-# Stable latest (main branch)
+# Latest release (moves only when a v* tag is pushed)
 docker pull ghcr.io/dizzzable/reiwa:latest
 
 # Pin to a specific release
-docker pull ghcr.io/dizzzable/reiwa:v0.9.7.41
+docker pull ghcr.io/dizzzable/reiwa:v0.9.7.42
 ```
 
-Доступные теги: `latest` (актуальный main), `v0.9.7.41` (тег релиза), плюс `sha-<short>` для каждого коммита в `main`. Прод-`docker-compose.yml` использует `latest`.
+Доступные теги: `latest` (последний выпуск — двигается только push'ем тега `v*`), `v0.9.7.42` (тег релиза), `main` (текущая ветка `main`, ещё не выпуск), плюс `sha-<short>` для каждого собранного коммита. Прод-`docker-compose.yml` использует `latest`, то есть получает только выпуски.
 
 > Один образ обслуживает всё: API на `REIWA_PORT` (по умолчанию `node dist/api/main.js`) раздаёт собранную SPA из `/app/web`, бот — `dist/bot/main.js`, воркер — `dist/worker/main.js`. Роль выбирается командой запуска контейнера.
 
@@ -445,7 +445,7 @@ npm run build              # tsc -b + vite build
 - `dist/worker/main.js` — фоновый воркер
 - `web/dist/` — собранная PWA
 
-Образ публикуется автоматически в GHCR через [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) при push в `main` и при тегах `v*`. CI собирает **один** unified-образ (не отдельные backend/web).
+Образ публикуется автоматически в GHCR через [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml): push в `main` даёт теги `main` и `sha-<short>`, push тега `v*` — тег версии, `latest` и `sha-<short>`. CI собирает **один** unified-образ (не отдельные backend/web).
 
 `deploy/proxies/` содержит Remnawave-style reverse-proxy стеки (caddy / nginx / angie / traefik), фронтящие кабинет по 443 с bring-your-own сертификатом — см. [`deploy/proxies/README.md`](deploy/proxies/README.md).
 

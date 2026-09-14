@@ -12,10 +12,15 @@
  *
  *   1. no lockfile in this repository resolves one of these packages below the
  *      version that fixed it, and
- *   2. the overrides that force a version stay expressed as ranges. An exact
+ *   2. every override in both manifests stays expressed as a range. An exact
  *      override is not a floor, it is a ceiling: `fast-uri: "3.1.4"` and
  *      `postcss: "8.5.18"` were both written to force an upgrade, and both
  *      ended up holding the tree at the version that later turned vulnerable.
+ *      EVERY override, nested entries included: this used to check a hand-kept
+ *      list of three names, while `body-parser: "2.3.0"` and web's
+ *      `@hono/node-server: "2.0.11"` sat outside it as exact pins — the shape
+ *      that held rezeis on a vulnerable multer. A `$name` reference is allowed:
+ *      it takes the root manifest's own version.
  *
  * The floor is keyed by major, because a lockfile legitimately holds several
  * majors of one package at once — jsdom pulls undici 7 while the app uses
@@ -90,11 +95,15 @@ const FLOORS: readonly Floor[] = [
 ];
 
 /**
- * Packages this repository forces to a version their dependents did not ask
- * for. The value has to keep a range operator, or the override becomes the
- * thing that holds a vulnerable version in place.
+ * Exact pins this repository still carries, as `name: "value"` with the reason,
+ * per manifest. Keyed by the exact value so a pin that moves is looked at again,
+ * and asserted present so an entry leaves once its pin does.
+ *
+ * Empty: neither manifest has a pin that must stay exact. web's
+ * `@hono/node-server` and `body-parser` were the last two, and turning them into
+ * "^2.0.11" and "^2.3.0" left web/package-lock.json byte-identical (14.09.2026).
  */
-const RANGED_OVERRIDES: readonly string[] = ['brace-expansion', 'fast-uri', 'postcss'];
+const KEPT_PINS: Readonly<Record<string, Readonly<Record<string, string>>>> = {};
 
 const LOCKFILES: readonly string[] = ['../package-lock.json', '../web/package-lock.json'];
 const MANIFESTS: readonly string[] = ['../package.json', '../web/package.json'];
@@ -141,6 +150,44 @@ function label(lockfile: string): string {
   return lockfile.replace('../', '');
 }
 
+type OverrideLeaf = { readonly path: string; readonly value: unknown };
+
+/**
+ * Every leaf of an `overrides` map, with the names that lead to it. npm nests
+ * overrides under the dependent they apply to (`{ "openai": { "zod": "$zod" } }`)
+ * and spells the package's own version `"."` inside such an object, so one
+ * level is not enough.
+ */
+function overrideLeaves(overrides: Record<string, unknown>, trail: readonly string[] = []): OverrideLeaf[] {
+  return Object.entries(overrides).flatMap(([name, value]) =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? overrideLeaves(value as Record<string, unknown>, [...trail, name])
+      : [{ path: [...trail, name].join(' > '), value }],
+  );
+}
+
+/**
+ * The overrides that freeze a version: anything that is not a range (`^`, `~`,
+ * `>=`) and not a `$name` reference, which defers to the root manifest.
+ */
+function frozenOverrides(overrides: Record<string, unknown>): string[] {
+  return overrideLeaves(overrides)
+    .filter(({ value }) => typeof value !== 'string' || !(value.startsWith('$') || /^[\^~]|^>=/.test(value)))
+    .map(({ path, value }) => `${path}: ${JSON.stringify(value)}`);
+}
+
+/** Frozen overrides nobody gave a reason for, and kept pins that are no longer pins. */
+function unexplainedPins(
+  overrides: Record<string, unknown>,
+  kept: Readonly<Record<string, string>>,
+): { frozen: string[]; stale: string[] } {
+  const frozen = frozenOverrides(overrides);
+  return {
+    frozen: frozen.filter((entry) => kept[entry] === undefined),
+    stale: Object.keys(kept).filter((entry) => !frozen.includes(entry)),
+  };
+}
+
 describe('dependency security floor', () => {
   for (const lockfile of LOCKFILES) {
     for (const floor of FLOORS) {
@@ -161,20 +208,36 @@ describe('dependency security floor', () => {
     }
   }
 
+  it('the override walk reaches nested entries, lets $references through, and holds kept pins to their value', () => {
+    // Anti-vacuity for the cases below: a walk that read one level, or let
+    // everything through, would agree that no manifest pins anything.
+    expect(
+      frozenOverrides({
+        caret: '^1.2.3',
+        tilde: '~1.2.3',
+        floor: '>=1.2.3',
+        pinned: '1.2.3',
+        '@scope/dependent': { '@scope/dep': '$@scope/dep', '.': '^2.0.0', deeper: { leaf: '4.5.6' } },
+        notAVersion: 7,
+      }),
+    ).toEqual(['pinned: "1.2.3"', '@scope/dependent > deeper > leaf: "4.5.6"', 'notAVersion: 7']);
+    expect(
+      unexplainedPins(
+        { kept: '1.0.0', moved: '2.0.1', ranged: '^3.0.0' },
+        { 'kept: "1.0.0"': 'why', 'moved: "2.0.0"': 'why', 'ranged: "3.0.0"': 'why' },
+      ),
+    ).toEqual({ frozen: ['moved: "2.0.1"'], stale: ['moved: "2.0.0"', 'ranged: "3.0.0"'] });
+  });
+
   for (const manifest of MANIFESTS) {
     it(`${label(manifest)}: forced versions are ranges, not frozen pins`, () => {
       const overrides = (readJson(manifest)['overrides'] ?? {}) as Record<string, unknown>;
-      for (const packageName of RANGED_OVERRIDES) {
-        const value = overrides[packageName];
-        if (value === undefined) {
-          continue;
-        }
-        expect(typeof value).toBe('string');
-        expect(
-          value as string,
-          `${label(manifest)} pins ${packageName} to the exact version ${String(value)}. An exact override is a ceiling: when that version turns out to be the vulnerable one, nothing can move off it. Use a range such as "^${String(value)}".`,
-        ).toMatch(/^[\^~]|^>=/);
-      }
+      const { frozen, stale } = unexplainedPins(overrides, KEPT_PINS[manifest] ?? {});
+      expect(
+        frozen,
+        `${label(manifest)} freezes these overrides. An exact override is a ceiling: when that version turns out to be the vulnerable one, nothing can move off it. Use a range such as "^1.2.3", a "$name" reference to a root dependency, or list the pin in KEPT_PINS with the reason it has to stay exact.`,
+      ).toEqual([]);
+      expect(stale, `KEPT_PINS lists pins ${label(manifest)} no longer has; drop them`).toEqual([]);
     });
   }
 });

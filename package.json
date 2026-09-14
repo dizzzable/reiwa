@@ -1,6 +1,6 @@
 {
   "name": "reiwa",
-  "version": "0.9.7.41",
+  "version": "0.9.7.42",
   "private": true,
   "type": "module",
   "engines": {
@@ -56,7 +56,7 @@
     "vitest": "4.1.11"
   },
   "overrides": {
-    "body-parser": "2.3.0",
+    "body-parser": "^2.3.0",
     "openai": {
       "zod": "$zod"
     }
