@@ -15,6 +15,7 @@
 
 import { Bot, Context, session, SessionFlavor } from 'grammy';
 import { resolve as resolvePath } from 'node:path';
+import { inspect } from 'node:util';
 
 import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../config.js';
 import { AdminClient } from '../lib/admin-client.js';
@@ -60,7 +61,7 @@ import {
   translator,
   userLocaleCache,
 } from '../infrastructure/i18n/index.js';
-import { createLogger } from '../infrastructure/logger/index.js';
+import { createLogger, redactBotTokens } from '../infrastructure/logger/index.js';
 import { createLocaleDetectMiddleware } from './middleware/locale-detect.js';
 import { getMissingBotTokenError } from './startup-policy.js';
 
@@ -575,7 +576,10 @@ startBot().catch((err: unknown) => {
   // No logger yet (the failure happened during bootstrap before
   // createLogger ran); fall back to console.error so the operator sees
   // *something* instead of a silent crash.
+  // Printed as redacted text, never the error object: a startup that fails on
+  // the Bot API (`getMe`, `setMyCommands`) throws grammY's `HttpError`, whose
+  // wrapped node-fetch error quotes the request URL with the token in it.
   // eslint-disable-next-line no-console
-  console.error('[reiwa-bot] startup failed:', err);
+  console.error('[reiwa-bot] startup failed:', redactBotTokens(inspect(err)));
   process.exit(1);
 });

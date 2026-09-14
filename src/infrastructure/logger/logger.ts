@@ -10,7 +10,9 @@
  * available, otherwise fall back to plain JSON — the dev container does
  * not bundle `pino-pretty`, so this is a soft optional.
  */
-import pino, { type Logger, type LoggerOptions } from 'pino';
+import pino, { type DestinationStream, type Logger, type LoggerOptions } from 'pino';
+
+import { redactBotTokens, serializeErrorForLog } from './log-secrets.js';
 
 export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
 
@@ -28,6 +30,11 @@ export interface CreateLoggerOptions {
    * into raw JSON with that env var.
    */
   readonly pretty?: boolean;
+  /**
+   * Where the lines go instead of stdout — for specs, which read the JSON a
+   * log pipeline would get. Implies no pino-pretty.
+   */
+  readonly destination?: DestinationStream;
 }
 
 const REDACT_PATHS: readonly string[] = [
@@ -63,7 +70,14 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     base: { service: options.service },
     timestamp: pino.stdTimeFunctions.isoTime,
     redact: { paths: [...REDACT_PATHS], remove: true },
+    // A Bot API token inside TEXT — a failed call's URL, which grammY's
+    // transport error quotes — is out of reach of `redact.paths`, which match
+    // field names. See `log-secrets.ts`.
+    serializers: { err: serializeErrorForLog },
+    hooks: { streamWrite: redactBotTokens },
   };
+
+  if (options.destination !== undefined) return pino(opts, options.destination);
 
   // Default to human-readable structured output everywhere; operators who
   // ship logs to a JSON pipeline opt out with `LOG_FORMAT=json`. An explicit

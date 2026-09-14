@@ -6,6 +6,7 @@
  * header name used across the bot ↔ api ↔ admin chain.
  */
 export { createLogger, type CreateLoggerOptions, type LogLevel, type Logger } from './logger.js';
+export { redactBotTokens } from './log-secrets.js';
 export {
   getCurrentRequestId,
   getRequestContext,

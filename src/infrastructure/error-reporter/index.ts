@@ -12,6 +12,7 @@
  */
 import type { AdminClient } from '../../lib/admin-client.js';
 import { withReiwaBuildInfo } from '../../core/version.js';
+import { redactBotTokens } from '../logger/log-secrets.js';
 
 export type ErrorSource = 'api' | 'bot' | 'worker' | 'web';
 
@@ -56,13 +57,17 @@ export function createErrorReporter(opts: {
       if (windowCount >= MAX_PER_MIN) return;
       windowCount += 1;
 
+      // Redacted before it leaves: rezeis turns a report into an operator card
+      // and a `.txt` in Telegram, and an error's text can quote a Bot API URL
+      // with the token in it (`logger/log-secrets.ts`). Before the cut, so a
+      // token straddling it cannot survive as a fragment.
       void adminClient.system
         .reportError({
           source,
-          message: input.message.slice(0, 2000),
+          message: redactBotTokens(input.message).slice(0, 2000),
           ...(input.level !== undefined ? { level: input.level } : {}),
           context: withReiwaBuildInfo(input.context),
-          ...(input.stack !== undefined ? { stack: input.stack.slice(0, 8000) } : {}),
+          ...(input.stack !== undefined ? { stack: redactBotTokens(input.stack).slice(0, 8000) } : {}),
         })
         .catch(() => {
           /* best-effort — swallow; never let reporting failures cascade */
