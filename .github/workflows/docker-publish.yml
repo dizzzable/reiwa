@@ -53,18 +53,36 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}
-          # `latest` is the RELEASE channel: it moves on a `v*` tag push only.
-          # It used to follow `{{is_default_branch}}`, so every push to main
-          # retagged `latest` — and docker-compose.yml and the README point
-          # operators at `:latest`, so their next `docker compose pull` took
-          # unreleased main. Main pushes still publish `:main` and `:sha-…`.
+          # `latest` is the RELEASE channel: it moves when a `v*` tag is
+          # PUSHED, and at no other time. It used to follow
+          # `{{is_default_branch}}`, so every push to main retagged `latest` —
+          # and docker-compose.yml and the README point operators at `:latest`,
+          # so their next `docker compose pull` took unreleased main. Main
+          # pushes publish `:main` and `:sha-…` only.
+          #
+          # The `type=raw,value=latest` line is the only source of `latest`
+          # BECAUSE of `latest=false` below. Under the default `latest=auto`,
+          # `type=ref,event=tag` adds `latest` for any tag ref by itself
+          # (docker/metadata-action v6.2.0 src/meta.ts `procRefTag`, and its
+          # README "Latest tag"), so "Run workflow" on an old tag republished
+          # that old build as `latest` for everyone. The `event_name == 'push'`
+          # half closes the same door for a manual run on a `v*` tag.
           # (Our four-part tags such as v0.9.7.40 are not semver, so the
-          # `type=semver` line and `flavor: latest=auto` add nothing here.)
+          # `type=semver` line produces nothing.)
+          #
+          # Still open, because GitHub runs the workflow file AS COMMITTED AT THE
+          # REF being built: a manual run on a tag cut before this change still
+          # publishes `latest`, and "Re-run" of any older tag's run keeps
+          # event_name=push and moves `latest` back to that build. Pinned by
+          # test/ci/docker-publish-latest-channel.test.ts; rezeis carries the
+          # same step and the same spec — change the two together.
+          flavor: |
+            latest=false
           tags: |
             type=ref,event=branch
             type=ref,event=tag
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
             type=sha,format=short
 
       # Single unified image: API + bot + worker + SPA (served by the API).

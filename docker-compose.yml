@@ -34,8 +34,9 @@ services:
       - remnawave-network
 
   reiwa:
-    # Прод тянет ГОТОВЫЙ образ из GHCR (CI публикует на push в main и тег v*).
-    # Установка/обновление на VPS — без исходников:
+    # Прод тянет ГОТОВЫЙ образ из GHCR. `:latest` — последний выпуск: CI
+    # двигает его только на push тега v*; push в main публикует `:main` и
+    # `:sha-…`, но не `:latest`. Установка/обновление на VPS — без исходников:
     #   docker compose pull && docker compose up -d
     # Локальная сборка из исходников — через build-оверлей:
     #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
