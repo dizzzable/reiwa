@@ -115,10 +115,21 @@ declare global {
   interface Window {
     Telegram?: { WebApp?: TelegramWebApp }
     /**
+     * The client's own end of the bridge, injected by the Telegram client — not
+     * by the SDK — into a Mini App's top-level document: Telegram Desktop on
+     * Windows and macOS (`attach_bot_webview.cpp`, `window.TelegramWebviewProxy
+     * = { postEvent … }`), Telegram for Android and for iOS. `telegram-web-app.js`
+     * sends every event through it as `postEvent(eventType, JSON.stringify(data))`,
+     * so it is there on the networks where the SDK never arrives. Absent in a
+     * browser, in Telegram Web and in Telegram Desktop on Linux, whose Mini App
+     * is a frame. `postTelegramEvent` in `lib/utils.ts` is its one caller.
+     */
+    TelegramWebviewProxy?: { postEvent(eventType: string, eventData: string): void }
+    /**
      * Stamped by `public/telegram-webapp-loader.js` before it requests the SDK
-     * and left in place when that request fails, so `isTelegramLaunch()` in
-     * `lib/utils.ts` can still recognise a Mini App on a network that cannot
-     * reach telegram.org.
+     * and left in place when that request fails, so `isTelegramMiniAppSurface()`
+     * in `lib/telegram-launch-params.ts` can still recognise a Mini App on a
+     * network that cannot reach telegram.org.
      */
     __reiwaTelegramSdkState?: 'loading' | 'ready' | 'error'
   }

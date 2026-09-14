@@ -2,20 +2,25 @@
 
 /**
  * INSIDE A TELEGRAM MINI APP, AN "ADD TO APP" BUTTON NEVER CARRIES THE APP'S
- * SCHEME.
+ * SCHEME — ON ANY TELEGRAM CLIENT.
  *
- * Two recordings from the owner, the same screen, the app installed both times:
+ * Three reports from the owner, the same screen, the app installed each time:
  *
  *   - Telegram for Android: the tap loaded `incy://…` in the Mini App's own
  *     webview and Telegram replaced the whole Mini App with its error page —
  *     «Не удалось загрузить 2GET SHOP. net::ERR_UNKNOWN_URL_SCHEME».
  *   - Telegram for iOS: the tap did nothing. The same button in Safari worked.
+ *   - Telegram Desktop on Windows, cabinet 0.9.7.42: «Добавить подписку» did
+ *     nothing. That build kept the plain anchor there, and Telegram Desktop's
+ *     web view refuses every scheme but http, https, tonsite and ton before
+ *     Telegram's own code is asked (lib_webview, `webview_embed.cpp:421-429`) —
+ *     on Windows, macOS and Linux alike.
  *
  * So inside Telegram the button hands Telegram's documented `openLink` the
- * address of the cabinet's trampoline page, and outside Telegram — and in
- * Telegram Desktop on Windows, where the owner saw the anchor work — the anchor
- * stays exactly as it was. `web/src/features/connect/deep-link-handoff.ts` has
- * the sources for each client.
+ * address of the cabinet's trampoline page — through the SDK when it arrived,
+ * through the client's own channel when it did not — and outside Telegram the
+ * anchor stays exactly as it was. `web/src/features/connect/deep-link-handoff.ts`
+ * has the sources for each client.
  *
  * Every Telegram case is launched the way Telegram launches the cabinet — its
  * parameters in the fragment — and none defines `window.Telegram` unless the
@@ -27,7 +32,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { readTrampolinePayload } from "@/features/connect/connect-trampoline";
+import { readTrampolinePayload, trampolineUrl } from "@/features/connect/connect-trampoline";
 import { deepLinkHandoff } from "@/features/connect/deep-link-handoff";
 import { __resetTelegramLaunchCaptureForTests } from "@/lib/telegram-launch-params";
 
@@ -41,8 +46,10 @@ const ANDROID_CHROME_UA =
 
 /**
  * The three web views Telegram Desktop runs a Mini App in. `tdesktop` is one
- * launch parameter for all of them, so the user agent is the only thing that
- * tells them apart. Windows is WebView2, which is Edge.
+ * launch parameter for all of them, and the cabinet no longer tells them apart:
+ * the user agents are here so each system is rendered in its own, and so the
+ * one 0.9.7.42 read — Windows, which is WebView2, which is Edge — is shown to
+ * earn nothing. All three refuse an app scheme in lib_webview.
  */
 const TDESKTOP_WINDOWS_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -187,6 +194,67 @@ function bridge(extra: Record<string, unknown> = {}): { openLink: ReturnType<typ
   return { openLink };
 }
 
+/**
+ * The client's own end of the bridge, without the SDK: what Telegram Desktop on
+ * Windows and macOS, Android and iOS inject into the Mini App's document.
+ */
+function webviewProxy(): ReturnType<typeof vi.fn> {
+  const postEvent = vi.fn();
+  (window as unknown as Record<string, unknown>).TelegramWebviewProxy = { postEvent };
+  return postEvent;
+}
+
+/** What a Telegram shell reads from the Mini App's frame: `openLink`'s own event. */
+function openLinkMessage(url: string): string {
+  return JSON.stringify({ eventType: "web_app_open_link", eventData: { url } });
+}
+
+/** `location.ancestorOrigins` as an engine reports it: the parent's origin first. */
+function domStringList(origins: readonly string[]): DOMStringList {
+  return Object.assign([...origins], {
+    item: (index: number): string | null => origins[index] ?? null,
+    contains: (origin: string): boolean => origins.includes(origin),
+  }) as unknown as DOMStringList;
+}
+
+/**
+ * A Mini App in a frame — Telegram Web, Telegram Desktop for Linux — of a parent
+ * on `parentOrigin`, with no proxy.
+ *
+ * The parent's `postMessage` keeps the browser's rule: a message whose target
+ * origin is neither `*` nor the parent's own origin is dropped without a trace,
+ * so `received`, not the call count, says whether the shell got the event.
+ * `ancestorOrigins` is what the engine says about the parent: `"reported"` as
+ * Chromium, WebKit (WebKitGTK included) and Firefox 148+ do, `"absent"` as
+ * Firefox before 148 does.
+ */
+function framedBy(
+  parentOrigin: string,
+  ancestorOrigins: "reported" | "absent",
+): { postMessage: ReturnType<typeof vi.fn>; received: unknown[] } {
+  const received: unknown[] = [];
+  const postMessage = vi.fn((message: unknown, targetOrigin: string) => {
+    if (targetOrigin === "*" || new URL(targetOrigin).origin === parentOrigin) received.push(message);
+  });
+  vi.stubGlobal("parent", { postMessage });
+  if (ancestorOrigins === "reported") {
+    Object.defineProperty(window.location, "ancestorOrigins", {
+      configurable: true,
+      value: domStringList([parentOrigin]),
+    });
+  }
+  return { postMessage, received };
+}
+
+/** The trampoline address the Happ button on this screen opens. */
+function happTrampoline(): string {
+  return trampolineUrl(window.location.origin, {
+    link: HAPP_HREF,
+    subscriptionUrl: SUBSCRIPTION_URL,
+    signature: CONNECT_SIGNATURE,
+  });
+}
+
 /** Every `href` on the screen whose scheme is not a browser navigation. */
 function appSchemeHrefs(el: HTMLElement): string[] {
   return [...el.querySelectorAll<HTMLAnchorElement>("a[href]")]
@@ -211,7 +279,9 @@ function cleanDocument(): void {
   window.sessionStorage.clear();
   window.localStorage.clear();
   forget("Telegram");
+  forget("TelegramWebviewProxy");
   forget("__reiwaTelegramSdkState");
+  Reflect.deleteProperty(window.location, "ancestorOrigins");
 }
 
 beforeEach(() => {
@@ -321,7 +391,9 @@ describe("inside a Telegram Mini App the app's scheme never reaches an href", ()
     expect(el.textContent).toContain("Скопировать ссылку");
   });
 
-  it("opens the same address as a new window when the bridge never arrived, never in place", () => {
+  it("opens the same address as a new window when neither the SDK nor the client's channel is there, never in place", () => {
+    // No `window.Telegram`, no `TelegramWebviewProxy`, not a frame: the last
+    // way out, and it must still leave the Mini App's own document alone.
     launchedBy("ios");
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     const before = window.location.href;
@@ -373,10 +445,10 @@ describe("inside a Telegram Mini App the app's scheme never reaches an href", ()
     trampolineButton(el);
   });
 
-  it("never takes the platform from the bridge", () => {
-    // If `WebApp.platform` were read, this bridge would unlock the Desktop
-    // exception below with no launch parameter saying so. The user agent is
-    // WebView2's, so only the platform can be what keeps the exception shut.
+  it("gives a bridge that says tdesktop, in WebView2's user agent, the trampoline too", () => {
+    // Everything 0.9.7.42's Desktop exception keyed on, arriving through the
+    // bridge instead of the launch parameters. Nothing a host says about itself
+    // earns a Mini App the anchor any more, from either source.
     defineUserAgent(TDESKTOP_WINDOWS_UA);
     bridge({ platform: "tdesktop" });
     const el = render();
@@ -386,26 +458,17 @@ describe("inside a Telegram Mini App the app's scheme never reaches an href", ()
   });
 });
 
-describe("Telegram Desktop keeps the anchor only where the owner saw it work: Windows", () => {
-  it("renders the plain same-window anchor and no trampoline in WebView2 on Windows", () => {
-    defineUserAgent(TDESKTOP_WINDOWS_UA);
-    launchedBy("tdesktop");
-    const el = render();
-
-    expect(el.querySelector('a[href^="happ://"]')?.getAttribute("href")).toBe(HAPP_HREF);
-    expect(el.querySelector("button[data-connect-trampoline]")).toBeNull();
-    expect(el.textContent).not.toContain("connect.openHint");
-  });
-
+describe("Telegram Desktop takes the trampoline on every system: its web view refuses an app scheme", () => {
   it.each([
-    // WKWebView is told to allow the navigation and drops a scheme it cannot
-    // load — the same WebKit path as Telegram for iOS, where the button did
-    // nothing. Not recorded on a device.
+    // The owner's report on 0.9.7.42, which rendered the anchor here: WebView2's
+    // `NavigationStarting` is cancelled by lib_webview's scheme allowlist, and
+    // nothing happens.
+    ["Windows", TDESKTOP_WINDOWS_UA],
+    // The same allowlist answers WKWebView with a Cancel. Not recorded on a device.
     ["macOS", TDESKTOP_MACOS_UA],
-    // WebKitGTK, where the Mini App is a frame inside Telegram's own shell and
-    // a failed frame navigation is dropped too. Not recorded on a device.
+    // The same allowlist ignores the WebKitGTK navigation. Not recorded on a device.
     ["Linux", TDESKTOP_LINUX_UA],
-  ])("takes the trampoline on %s, where the engine is WebKit", (os, userAgent) => {
+  ])("renders no app-scheme href on %s, and its button hands openLink the trampoline", (os, userAgent) => {
     defineUserAgent(userAgent);
     launchedBy("tdesktop");
     const { openLink } = bridge();
@@ -413,26 +476,72 @@ describe("Telegram Desktop keeps the anchor only where the owner saw it work: Wi
 
     expect(
       appSchemeHrefs(el),
-      `Telegram Desktop on ${os} was handed an app scheme in an href — its web view drops it without a sound`,
+      `Telegram Desktop on ${os} was handed an app scheme in an href — its web view refuses it and the button does nothing`,
     ).toEqual([]);
-    act(() => trampolineButton(el).click());
+    expect(el.querySelector('a[href^="happ://"]'), `a happ:// anchor was rendered on ${os}`).toBeNull();
     expect(el.textContent).toContain("connect.openHint");
+
+    act(() => trampolineButton(el).click());
+    expect(openLink).toHaveBeenCalledTimes(1);
     expect(readTrampolinePayload(new URL(String(openLink.mock.calls[0]?.[0])).hash)?.link).toBe(HAPP_HREF);
   });
 
-  it("does not let a Windows user agent unlock the anchor for another Telegram client", () => {
-    // Telegram Web in Edge on Windows: the same user agent, a different host.
+  it("writes openLink's own event to TelegramWebviewProxy when the SDK never arrived — the owner's Windows case", () => {
+    // No `window.Telegram`: telegram.org is what this product's customers cannot
+    // reach. Telegram Desktop injects the proxy itself, and `web_app_open_link`
+    // through it opens the system browser with no gesture check at all.
     defineUserAgent(TDESKTOP_WINDOWS_UA);
-    launchedBy("weba");
+    launchedBy("tdesktop");
+    const postEvent = webviewProxy();
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const before = window.location.href;
     const el = render();
+    const button = trampolineButton(el);
 
-    expect(appSchemeHrefs(el)).toEqual([]);
-    trampolineButton(el);
+    act(() => {
+      button.click();
+      // Inside the tap, as for `openLink`: nothing may be awaited first.
+      expect(postEvent, "web_app_open_link was not posted synchronously from the tap").toHaveBeenCalledTimes(1);
+    });
+
+    expect(postEvent).toHaveBeenCalledWith("web_app_open_link", JSON.stringify({ url: happTrampoline() }));
+    const { url } = JSON.parse(String(postEvent.mock.calls[0]?.[1])) as { url: string };
+    expect(url.startsWith(`${window.location.origin}/connect/open#`), url).toBe(true);
+    expect(readTrampolinePayload(new URL(url).hash)).toEqual({
+      link: HAPP_HREF,
+      subscriptionUrl: SUBSCRIPTION_URL,
+      signature: CONNECT_SIGNATURE,
+    });
+    expect(open, "the proxy took the link and a second window was opened anyway").not.toHaveBeenCalled();
+    expect(window.location.href, "the Mini App's own document navigated").toBe(before);
+  });
+
+  it("posts the same event to Telegram's web shell, and to nobody else, where the Mini App is a frame — Linux", () => {
+    // Telegram Desktop for Linux loads the Mini App into a frame of its shell
+    // page on https://web.telegram.org, whose frame gets no proxy. WebKitGTK
+    // names that parent in `location.ancestorOrigins`.
+    defineUserAgent(TDESKTOP_LINUX_UA);
+    launchedBy("tdesktop");
+    const frame = framedBy("https://web.telegram.org", "reported");
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const el = render();
+    const button = trampolineButton(el);
+
+    act(() => {
+      button.click();
+      expect(frame.postMessage, "web_app_open_link was not posted synchronously from the tap").toHaveBeenCalledTimes(1);
+    });
+
+    // An explicit target origin, never "*": the message carries a signed
+    // subscription link.
+    expect(frame.postMessage).toHaveBeenCalledWith(openLinkMessage(happTrampoline()), "https://web.telegram.org");
+    expect(frame.received, "the shell never received the button's event").toEqual([openLinkMessage(happTrampoline())]);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("does not let a Windows user agent make a browser tab Telegram", () => {
-    // No launch parameters and no bridge: Edge on a Windows desktop. The user
-    // agent narrows the Desktop exception and never decides "inside Telegram".
+    // No launch parameters and no bridge: Edge on a Windows desktop, where the
+    // anchor is right. The user agent never decides "inside Telegram".
     defineUserAgent(TDESKTOP_WINDOWS_UA);
     const el = render();
 
@@ -441,43 +550,83 @@ describe("Telegram Desktop keeps the anchor only where the owner saw it work: Wi
   });
 });
 
+describe("Telegram Web gets the button's event on each host it is served from, without the SDK", () => {
+  // Web K is served from web.telegram.org/k/ and from webk.telegram.org — its
+  // own config lists both domains — and Web A from web.telegram.org/a/ and from
+  // weba.telegram.org, where a signed-in Web A stays. An event addressed to
+  // web.telegram.org alone never reaches a shell on either of the other two: the
+  // browser drops it without a trace, and the tap that reported it handed over
+  // opened nothing at all.
+
+  it("delivers it to Telegram Web K on webk.telegram.org, addressed to that origin, from the tap itself", () => {
+    launchedBy("webk");
+    const frame = framedBy("https://webk.telegram.org", "reported");
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const el = render();
+    const button = trampolineButton(el);
+
+    act(() => {
+      button.click();
+      expect(frame.postMessage, "web_app_open_link was not posted synchronously from the tap").toHaveBeenCalledTimes(1);
+    });
+
+    expect(frame.received, "Telegram Web K never received the button's event").toEqual([
+      openLinkMessage(happTrampoline()),
+    ]);
+    expect(frame.postMessage).toHaveBeenCalledWith(openLinkMessage(happTrampoline()), "https://webk.telegram.org");
+    expect(open, "the shell took the link and a new window was opened as well").not.toHaveBeenCalled();
+  });
+
+  it("delivers it exactly once to Telegram Web A on weba.telegram.org in a browser that cannot name the parent", () => {
+    // Firefox before 148 has no `location.ancestorOrigins`: one post per
+    // Telegram shell origin, and the parent, which has one origin, receives one.
+    launchedBy("weba");
+    const frame = framedBy("https://weba.telegram.org", "absent");
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const el = render();
+
+    act(() => trampolineButton(el).click());
+
+    expect(frame.postMessage).toHaveBeenCalledTimes(3);
+    expect(frame.received, "Telegram Web A did not receive the button's event exactly once").toEqual([
+      openLinkMessage(happTrampoline()),
+    ]);
+    expect(open).not.toHaveBeenCalled();
+  });
+});
+
 describe("the decision on its own", () => {
+  // Everything a host could say about itself, including the platform and the
+  // user agent 0.9.7.42's exception read. The hosts are handed over whole, so
+  // an exception that reads either of them again — in any shape — fails here.
+  const PLATFORMS = [null, "tdesktop", "android", "ios", "macos", "weba", "webk", "unknown", "a-client-nobody-has-heard-of", ""];
+  const USER_AGENTS = [
+    "",
+    TDESKTOP_WINDOWS_UA,
+    TDESKTOP_MACOS_UA,
+    TDESKTOP_LINUX_UA,
+    IPHONE_SAFARI_UA,
+    ANDROID_CHROME_UA,
+    "Mozilla/5.0 (win32) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/29.1.1",
+  ];
+
+  function hosts(insideTelegram: boolean) {
+    return PLATFORMS.flatMap((telegramPlatform) =>
+      USER_AGENTS.map((userAgent) => ({ insideTelegram, telegramPlatform, userAgent })),
+    );
+  }
+
   it("is the anchor outside Telegram whatever the platform or the user agent says", () => {
-    for (const userAgent of ["", TDESKTOP_WINDOWS_UA, TDESKTOP_MACOS_UA, IPHONE_SAFARI_UA]) {
-      expect(deepLinkHandoff({ insideTelegram: false, telegramPlatform: null, userAgent }), userAgent).toBe("anchor");
-      expect(deepLinkHandoff({ insideTelegram: false, telegramPlatform: "android", userAgent }), userAgent).toBe(
-        "anchor",
-      );
-      expect(deepLinkHandoff({ insideTelegram: false, telegramPlatform: "tdesktop", userAgent }), userAgent).toBe(
-        "anchor",
-      );
+    for (const host of hosts(false)) {
+      expect(deepLinkHandoff(host), `${host.telegramPlatform} / ${host.userAgent}`).toBe("anchor");
     }
   });
 
-  it("is the trampoline inside Telegram for everything but Telegram Desktop on Windows", () => {
-    // Every platform on the one user agent that opens the exception, so only
-    // the platform can be what keeps them out of it.
-    for (const platform of [null, "android", "ios", "macos", "weba", "webk", "unknown", ""]) {
-      expect(
-        deepLinkHandoff({ insideTelegram: true, telegramPlatform: platform, userAgent: TDESKTOP_WINDOWS_UA }),
-        String(platform),
-      ).toBe("trampoline");
-    }
-    expect(
-      deepLinkHandoff({ insideTelegram: true, telegramPlatform: "tdesktop", userAgent: TDESKTOP_WINDOWS_UA }),
-    ).toBe("anchor");
-    // And Telegram Desktop on anything that does not say Windows — jsdom's own
-    // `(win32)` among them: it is not a browser's user agent, and an unknown one
-    // gets the safe answer.
-    for (const userAgent of [
-      TDESKTOP_MACOS_UA,
-      TDESKTOP_LINUX_UA,
-      "",
-      "Mozilla/5.0 (win32) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/29.1.1",
-    ]) {
-      expect(deepLinkHandoff({ insideTelegram: true, telegramPlatform: "tdesktop", userAgent }), userAgent).toBe(
-        "trampoline",
-      );
+  it("is the trampoline inside Telegram for every platform and user agent — Telegram Desktop on Windows included", () => {
+    const tdesktopOnWindows = { insideTelegram: true, telegramPlatform: "tdesktop", userAgent: TDESKTOP_WINDOWS_UA };
+    expect(deepLinkHandoff(tdesktopOnWindows), "Telegram Desktop on Windows got the anchor back").toBe("trampoline");
+    for (const host of hosts(true)) {
+      expect(deepLinkHandoff(host), `${host.telegramPlatform} / ${host.userAgent}`).toBe("trampoline");
     }
   });
 });

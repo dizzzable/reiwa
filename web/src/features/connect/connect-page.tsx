@@ -92,7 +92,7 @@ import { BrandLogo } from '@/components/ui/brand-logo'
 import { LoadErrorCard } from '@/components/ui/load-error-card'
 import { formatDate, openExternalUrl } from '@/lib/utils'
 import { subscriptionTitle } from '@/lib/subscription-title'
-import { isTelegramMiniAppSurface, readTelegramLaunchPlatform } from '@/lib/telegram-launch-params'
+import { isTelegramMiniAppSurface } from '@/lib/telegram-launch-params'
 import type { Subscription } from '@/types/api'
 import {
   buildDeepLink,
@@ -217,19 +217,11 @@ export default function ConnectPage() {
   // The HOST, not the device: whether an "add to app" button may carry the app's
   // scheme at all is decided by what launched the screen. The platform above
   // picks a catalog section and may be wrong; this picks whether the button
-  // works, and inside a Telegram Mini App on a phone a wrong answer destroys the
-  // Mini App. The user agent is read only to narrow Telegram Desktop's exception
-  // to Windows, so it can move a host towards the trampoline and never away from
-  // it. `deep-link-handoff.ts`.
-  const handoff = useMemo(
-    () =>
-      deepLinkHandoff({
-        insideTelegram: isTelegramMiniAppSurface(),
-        telegramPlatform: readTelegramLaunchPlatform(),
-        userAgent: navigator.userAgent,
-      }),
-    [],
-  )
+  // works, and inside a Telegram Mini App a wrong answer is a dead button on
+  // Telegram Desktop and iOS and a destroyed Mini App on Android. Every Telegram
+  // client takes the trampoline — no platform and no user agent is read, so
+  // nothing can move a Mini App back to the anchor. `deep-link-handoff.ts`.
+  const handoff = useMemo(() => deepLinkHandoff({ insideTelegram: isTelegramMiniAppSurface() }), [])
   const [platformId, setPlatformId] = useState<PlatformId | null>(null)
   const [appId, setAppId] = useState<string | null>(null)
   const [linkSheetOpen, setLinkSheetOpen] = useState(false)
@@ -954,9 +946,12 @@ function StepButton({
     // Inside a Telegram Mini App the app's scheme must never reach an `href`.
     // Telegram for Android loads it in the Mini App's own webview and replaces
     // the whole Mini App with an error page; Telegram for iOS lets it fail
-    // without a sound. `openLink` is the documented way out of a Mini App and it
-    // takes an https address, so it gets the trampoline page, which opens the
-    // app from a tap in a real browser.
+    // without a sound; Telegram Desktop's web view refuses it on every system
+    // before Telegram's own code is asked. `openLink` is the documented way out
+    // of a Mini App and it takes an https address, so it gets the trampoline
+    // page, which opens the app from a tap in a real browser — and when the SDK
+    // never arrived, `openExternalUrl` sends `openLink`'s own event through the
+    // client's channel instead.
     //
     // A `<button>`, not an anchor pointing at that page: an anchor that ever
     // fell back to its own navigation would load the trampoline INSIDE the Mini
@@ -1002,8 +997,8 @@ function StepButton({
   // A real anchor, not a click handler that navigates. A custom scheme leaves
   // the page through the host's own link handling, and that handling is what
   // passes the scheme to the operating system — a scripted navigation is the
-  // shape that gets swallowed. This is the shape outside Telegram and in
-  // Telegram Desktop on Windows, the two places it was seen working.
+  // shape that gets swallowed. This is the shape outside Telegram, where it was
+  // seen working, and only there: no Telegram client passes the scheme on.
   return (
     <a
       href={href}

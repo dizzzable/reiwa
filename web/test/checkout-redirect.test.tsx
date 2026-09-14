@@ -42,17 +42,56 @@ type TelegramSpies = {
 };
 
 /**
+ * The URL checks `telegram-web-app.js` makes before a bridge call reaches the
+ * client: the protocol (`a.protocol != 'http:' && a.protocol != 'https:'`), then
+ * for `openTelegramLink` and `openInvoice` the host (`isTmeHostname`: `t.me` or
+ * `telegram.me`), then for `openInvoice` the invoice path.
+ */
+function sdkHttpUrl(url: string): URL | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function sdkIsTmeHostname(hostname: string): boolean {
+  return hostname === "t.me" || hostname === "telegram.me";
+}
+
+/**
  * Installs a Telegram WebApp stub and returns its spies.
  *
  * `omit` drops bridge methods, standing in for a client older than the Bot API
  * version that introduced them — `openInvoice` is 6.1+, `openTelegramLink`
  * 6.0+, and a buyer on an older build must still reach a payable page.
+ *
+ * Each spy refuses what the SDK refuses, the way the SDK does — by throwing:
+ * `openLink` and `openTelegramLink` throw `WebAppTgUrlInvalid`, `openInvoice`
+ * throws `WebAppInvoiceUrlInvalid`. A spy that takes more than the SDK takes
+ * turns a refusal into a pass; the `tg:` case at the bottom of this file used to
+ * "resolve natively" against an `openTelegramLink` that accepted `tg://`.
  */
 function withTelegram(present: boolean, omit: (keyof TelegramSpies)[] = []): TelegramSpies {
   const spies: TelegramSpies = {
-    openLink: vi.fn(),
-    openTelegramLink: vi.fn(),
-    openInvoice: vi.fn(),
+    openLink: vi.fn((url: string) => {
+      if (sdkHttpUrl(url) === null) throw new Error("WebAppTgUrlInvalid");
+    }),
+    openTelegramLink: vi.fn((url: string) => {
+      const parsed = sdkHttpUrl(url);
+      if (parsed === null || !sdkIsTmeHostname(parsed.hostname)) throw new Error("WebAppTgUrlInvalid");
+    }),
+    openInvoice: vi.fn((url: string) => {
+      const parsed = sdkHttpUrl(url);
+      if (
+        parsed === null ||
+        !sdkIsTmeHostname(parsed.hostname) ||
+        !/^\/(\$|invoice\/)([A-Za-z0-9\-_=]+)$/.test(parsed.pathname)
+      ) {
+        throw new Error("WebAppInvoiceUrlInvalid");
+      }
+    }),
   };
   if (present) {
     const webApp: Record<string, unknown> = {};
@@ -128,9 +167,10 @@ describe("checkout redirect", () => {
   });
 
   it("still asks Telegram to open the link, which is what works on mobile", () => {
-    // Desktop enforces the gesture and declines; mobile clients honour this and
-    // the buyer never has to press anything. Skipping the attempt outright
-    // would take auto-open away from the majority surface.
+    // Mobile clients honour this and the buyer never has to press anything, and
+    // Telegram Desktop checks no gesture for it either (`allowOpenLink()`
+    // returns true in 7.2.8). Skipping the attempt outright would take
+    // auto-open away from every client that has the SDK.
     const { openLink } = withTelegram(true);
     stubAssign();
 
@@ -370,13 +410,36 @@ describe("openExternalUrl shares the one bridge rule", () => {
     expect(openLink).not.toHaveBeenCalled();
   });
 
-  it("keeps resolving tg: deep links natively for the Connect action", () => {
-    const { openTelegramLink, openLink } = withTelegram(true);
+  it("offers a tg: link to both bridges, which refuse it, and then opens nothing inside the Mini App", () => {
+    // This case used to be "keeps resolving tg: deep links natively for the
+    // Connect action", and it passed only because the stub's `openTelegramLink`
+    // took `tg://`. The SDK does not: `openTelegramLink` and `openLink` both
+    // throw `WebAppTgUrlInvalid` for anything that is not http or https, before
+    // the client hears of the call (`telegram-web-app.js`, the `a.protocol`
+    // check at the top of each). No tg: link was ever resolved from here.
+    //
+    // What is reachable with the SDK loaded: both bridges are offered the link
+    // and both refuse it, and the tap ends with nothing opened. It is not posted
+    // to the client's own channel — Telegram Desktop closes the Mini App on a
+    // scheme outside `web_app_allowed_protocols` — and not retried through
+    // `window.open`, which Telegram for Android would load in the Mini App's own
+    // web view and replace the Mini App with an error page.
+    //
+    // Nor does the Connect action hand one over: it passes the subscription's
+    // https address. No caller passes this function a tg: link today — a hint's
+    // target is https-only in the panel, and the connect screen's buttons are
+    // http(s) or the trampoline — so this pins what the SDK makes of one.
+    const { openTelegramLink, openLink, openInvoice } = withTelegram(true);
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
 
-    openExternalUrl("tg://resolve?domain=Bot");
+    expect(() => openExternalUrl("tg://resolve?domain=Bot")).not.toThrow();
 
     expect(openTelegramLink).toHaveBeenCalledWith("tg://resolve?domain=Bot");
-    expect(openLink).not.toHaveBeenCalled();
+    expect(openTelegramLink.mock.results[0]?.type, "the stub took a tg: link the SDK refuses").toBe("throw");
+    expect(openLink).toHaveBeenCalledWith("tg://resolve?domain=Bot");
+    expect(openLink.mock.results[0]?.type, "the stub took a tg: link the SDK refuses").toBe("throw");
+    expect(openInvoice).not.toHaveBeenCalled();
+    expect(open, "a tg: link both bridges refused was retried through window.open inside the Mini App").not.toHaveBeenCalled();
   });
 
   it("opens a new tab outside Telegram, where the click gesture is live", () => {

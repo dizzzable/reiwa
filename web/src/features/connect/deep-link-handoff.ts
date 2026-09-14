@@ -8,9 +8,9 @@
  * page only because whatever renders the page meets a scheme it cannot load and
  * passes it on — so whether the button works is decided by the HOST, not by the
  * link, and not by the app. The owner's recordings say exactly that: the same
- * button, with the app installed, did three different things.
+ * button, with the app installed, did different things in different hosts.
  *
- * ── Inside a Telegram Mini App the anchor is the defect ─────────────────────
+ * ── Inside a Telegram Mini App the anchor is the defect, on every client ─────
  *
  * Telegram for ANDROID loads it. `BotWebViewContainer`'s `shouldOverrideUrlLoading`
  * passes an unknown scheme to the system only for a web view that is NOT a bot's
@@ -25,52 +25,48 @@
  * it is a universal link — an app scheme simply fails to load. The owner saw
  * the button do nothing in the Mini App and work in Safari on the same phone.
  *
+ * Telegram DESKTOP refuses it before Telegram's own code is asked, on Windows,
+ * macOS and Linux alike. Its web view is `desktop-app/lib_webview`, and
+ * `Window::navigationStartHandler()` wraps the client's handler in a scheme
+ * allowlist (`webview/webview_embed.cpp:421-429`): a URL that does not start
+ * with `http://`, `https://`, `tonsite://` or `ton://` is refused outright. On
+ * Windows the refusal cancels WebView2's `NavigationStarting` (`put_Cancel(TRUE)`,
+ * `webview_windows_edge_chromium.cpp:548-562`), on macOS it answers WKWebView
+ * with `WKNavigationActionPolicyCancel`, on Linux it ignores the WebKitGTK
+ * navigation — and on none of them does the scheme reach the system. The
+ * filter has been in lib_webview since 2022.
+ *
+ * Version 0.9.7.42 still rendered the anchor for Telegram Desktop on Windows,
+ * on the premise that an app had been seen opening from this screen there. The
+ * source rules that out, and so did the owner: on 0.9.7.42 «Добавить подписку»
+ * in Telegram Desktop on Windows did nothing. There is no Telegram client left
+ * for which this file keeps the anchor.
+ *
  * `Telegram.WebApp.openLink` is the documented way out of a Mini App and it
  * takes http and https only: the SDK throws `WebAppTgUrlInvalid` for anything
  * else before the client sees the call, and both mobile clients refuse such a
  * scheme again unless the server lists it in `web_app_allowed_protocols`.
+ * Telegram Desktop checks that same list and CLOSES the Mini App on a miss.
  *
- * So inside Telegram the button never carries the app's scheme. It asks
- * `openLink` to open the trampoline page on the cabinet's own origin
- * (`connect-trampoline.ts`), which lands in a real browser — Safari from iOS;
- * Telegram's in-app browser, a Custom Tab or the default browser from Android;
- * a new tab from the web clients. Safari passes an app scheme on from a tap
- * (the owner's own control), Telegram's in-app browser does it in the same
- * `shouldOverrideUrlLoading` that refuses the Mini App, and Chrome does it for a
- * navigation that began with a gesture — which is why that page opens nothing
- * until its own button is tapped.
+ * So inside Telegram the button never carries the app's scheme — on every
+ * client, including ones this file has never heard of. It asks `openLink` to
+ * open the trampoline page on the cabinet's own origin (`connect-trampoline.ts`),
+ * which lands in a real browser — Safari from iOS; Telegram's in-app browser, a
+ * Custom Tab or the default browser from Android; a new tab from the web
+ * clients; the system's default browser from Telegram Desktop, which asks for no
+ * gesture (`allowOpenLink()` returns true) and ends in
+ * `QDesktopServices::openUrl` on all three systems. Safari passes an app scheme
+ * on from a tap (the owner's own control), Telegram's in-app browser does it in
+ * the same `shouldOverrideUrlLoading` that refuses the Mini App, and Chrome does
+ * it for a navigation that began with a gesture — which is why that page opens
+ * nothing until its own button is tapped.
  *
- * ── The one Telegram host that keeps the anchor ─────────────────────────────
- *
- * Telegram Desktop on Windows: the owner opened an app from this screen there,
- * live, with the plain anchor. Telegram Desktop's web view allows the
- * navigation and leaves it to the engine (`setNavigationStartHandler` in
- * `attach_bot_webview.cpp`), and on Windows that engine is WebView2, which
- * deals with an external protocol itself. Taking a working desktop flow through
- * a browser tab would be a regression nobody asked for.
- *
- * The same client on macOS and Linux takes the trampoline. There the engine is
- * WebKit — WKWebView on macOS, WebKitGTK on Linux — Telegram Desktop answers
- * the navigation "allow", and nothing in it passes the scheme to the system.
- * WKWebView does that on its own only for an embedder that leaves the decision
- * to it, so the load simply fails with nothing on screen: the iOS path above,
- * where the owner watched the button do nothing. On Linux the Mini App is a
- * frame inside Telegram's own shell page, and WebKitGTK drops a failed frame
- * navigation without a word. Neither is recorded on a device; the hop is safe
- * on both, because Telegram Desktop's `openLink` opens the system browser
- * (`File::OpenUrl`).
- *
- * `tdesktop` is ONE launch parameter for all three systems, so the web view's
- * user agent is what tells them apart — `Windows NT` in WebView2's. It is read
- * for that and nothing else: beside the launch parameter it can only take the
- * anchor away, and it never decides whether the document is inside Telegram.
- * A user agent this file does not recognise costs a Telegram Desktop user one
- * tap to a browser page.
- *
- * Every OTHER value of `tgWebAppPlatform` takes the trampoline, including ones
- * this file has never heard of. The two ways to be wrong are not equal: a host
- * that could have opened the anchor loses one tap to a browser page, and a host
- * that could not loses the whole Mini App.
+ * The hop does not need the SDK. `openLink` is one event, `web_app_open_link`,
+ * written to a channel the client provides — `window.TelegramWebviewProxy`, or
+ * the parent frame's `postMessage` where the Mini App is a frame (Telegram Web,
+ * Telegram Desktop for Linux) — and `openExternalUrl` writes it there itself
+ * when `window.Telegram` never arrived from telegram.org, which on this
+ * product's networks is common.
  *
  * ── Outside Telegram nothing changes ────────────────────────────────────────
  *
@@ -79,10 +75,12 @@
  *
  * "Inside Telegram" is `isTelegramMiniAppSurface()` — the launch parameters
  * first, the bridge and the loader's flag only as fallbacks, so it can only
- * move a document towards the safe answer. The platform is
- * `readTelegramLaunchPlatform()`, launch parameters only: the bridge's
- * `platform` is `unknown` until the SDK arrives from telegram.org, which on
- * this product's networks may be never.
+ * move a document towards the safe answer — and it is the only input. Neither
+ * the platform nor the user agent is consulted: no value of either can earn a
+ * Mini App the anchor. The two ways to be wrong are not equal: a browser read
+ * as a Mini App loses one tap to a browser page, and a Mini App read as a
+ * browser gets an anchor that does nothing on Telegram Desktop and iOS and
+ * destroys the whole Mini App on Android.
  */
 
 export type DeepLinkHandoff = 'anchor' | 'trampoline';
@@ -90,24 +88,8 @@ export type DeepLinkHandoff = 'anchor' | 'trampoline';
 export interface DeepLinkHost {
   /** `isTelegramMiniAppSurface()`. */
   readonly insideTelegram: boolean;
-  /** `readTelegramLaunchPlatform()` — from the launch parameters, never the bridge. */
-  readonly telegramPlatform: string | null;
-  /**
-   * `navigator.userAgent`. Consulted only inside Telegram, and only to narrow
-   * the Telegram Desktop exception to Windows.
-   */
-  readonly userAgent: string;
 }
 
-/**
- * Telegram clients whose Mini App web view has been seen opening an app from a
- * same-window anchor on this screen, each with the user agent of the one system
- * it was seen on. One entry, and it needs a device to add another.
- */
-const ANCHOR_VERIFIED_TELEGRAM_HOSTS: ReadonlyMap<string, RegExp> = new Map([['tdesktop', /\bWindows NT\b/]]);
-
 export function deepLinkHandoff(host: DeepLinkHost): DeepLinkHandoff {
-  if (!host.insideTelegram) return 'anchor';
-  const seenOn = host.telegramPlatform === null ? undefined : ANCHOR_VERIFIED_TELEGRAM_HOSTS.get(host.telegramPlatform);
-  return seenOn !== undefined && seenOn.test(host.userAgent) ? 'anchor' : 'trampoline';
+  return host.insideTelegram ? 'trampoline' : 'anchor';
 }
