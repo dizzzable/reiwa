@@ -45,7 +45,10 @@
  *         }>,
  *       }
  *     Idempotency is enforced via an in-memory LRU of recent
- *     `eventId`s (24h horizon). Repeat deliveries no-op.
+ *     `eventId`s (24h horizon). A repeat of a delivered event sends nothing
+ *     and answers as the delivery did; a repeat that arrives while the first
+ *     send is still out answers 503 + Retry-After. A send that failed keeps
+ *     no claim, so its repeat is sent.
  *
  *   POST /notify-broadcast
  *     Deliver a Telegram message to a chat / topic. Body shape:
@@ -64,6 +67,14 @@
  *
  *   POST /notify-dev, /notify-dev-document, /notify-backup-document
  *     Described at their handlers below.
+ *
+ *   When Telegram does not take the message, every route above except the
+ *   backup relay answers by one table — 422 refused, 503 + Retry-After for a
+ *   flood-wait, 502 for an outage, 424 for a dev route with no `BOT_DEV_ID` —
+ *   and `/notify` keeps 204 for a subscriber who blocked or never started the
+ *   bot. Every failed send gives its event id back, so the panel's retry sends
+ *   again. The reasoning, and what the panel does with each, is at
+ *   `TELEGRAM_REFUSED_STATUS`.
  *
  * Bound to `0.0.0.0` INSIDE the bot container, and never published on any
  * topology: no compose file maps this port, and none should. reiwa-api reaches
@@ -89,6 +100,7 @@ import { invalidatePolicyCache } from '../../infrastructure/admin-client/policy-
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { loggableTelegramError } from './telegram-error-log.js';
 import { renderButtonLabel, renderBotCopy, renderBotCopyHtml } from '../../infrastructure/bot-config/emoji-utils.js';
 import type { BotConfig, BotEmojiMap, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 import { resolveBannerSource } from '../pages/banner-resolver.js';
@@ -199,7 +211,8 @@ interface ListenerOptions {
    * Telegram id of the bot's developer/operator (`BOT_DEV_ID`). Target of the
    * `/notify-dev` endpoint — lets rezeis route system events to the dev's DM
    * automatically when no operator group/topic is configured, without rezeis
-   * ever knowing the dev id. `undefined` → `/notify-dev` is a no-op.
+   * ever knowing the dev id. `undefined` → both dev routes answer 424, so the
+   * panel records the card as undelivered instead of as sent.
    */
   readonly devId?: number;
   /**
@@ -216,7 +229,10 @@ interface ListenerOptions {
   /**
    * Invoked when Telegram returns 403 Forbidden during a `/notify`
    * delivery. Lets the host record `isBotBlocked: true` on the user
-   * so admin stops trying to deliver. Best-effort — failures swallowed.
+   * so admin stops trying to deliver. Best-effort — a failure is logged.
+   *
+   * The 204 waits for it, up to `USER_BLOCKED_REPORT_WAIT_MS`: see there for
+   * why it must be awaited and why it must be capped.
    */
   readonly onUserBlocked?: (telegramId: string) => Promise<void> | void;
   /**
@@ -235,28 +251,54 @@ interface ListenerOptions {
 }
 
 /**
+ * What a replay of an already-claimed event is told.
+ *
+ * Two states, because "the id is taken" used to be answered as one: a 204, as
+ * if delivered. A claim is taken BEFORE the send, so while that send is still
+ * out the outcome is not known yet — reiwa-api gives up on the hop after 8s,
+ * the panel retries 15s later, and a Telegram call can take longer than both. A
+ * replay answered "delivered" then recorded an operator card as posted that
+ * could still fail a minute later, with no attempt left to repeat it.
+ */
+type ReplayState =
+  /** The first send has not settled yet: ask again later. */
+  | { readonly kind: 'in-flight' }
+  /** Telegram took the message. `messageId` when the route keeps Telegram's id. */
+  | { readonly kind: 'delivered'; readonly messageId: number | undefined };
+
+/** One claimed event id. */
+interface ClaimEntry {
+  /** When the id was claimed; the 24h horizon counts from here. */
+  readonly at: number;
+  state: 'in-flight' | 'delivered';
+  /** Telegram's own id, on the routes that keep it. */
+  messageId?: number;
+}
+
+/**
  * Bounded LRU set of recently-seen event ids. Pure in-memory; a bot
  * restart drops the dedup cache and admin's own eventId guarantees
  * (CUID per write of UserNotificationEvent) cover what survives the
  * restart window. 1024 slots at 24h horizon is enough for typical
  * traffic — at 1 event/sec sustained we hit a ~17-min window but
  * normal volume is far lower.
+ *
+ * A claim lives exactly as long as it guards a message that exists or is on
+ * its way: taken before the send, SETTLED when Telegram took it, RELEASED when
+ * the send failed in any way. See `release` for why a failure gives it back.
  */
 class IdempotencyCache {
   private readonly maxSize: number;
   private readonly ttlMs: number;
   /**
-   * `at` is when the id was claimed; `messageId` is Telegram's own id once
-   * the send succeeded.
-   *
-   * Remembering the id is what lets a REPLAY answer with proof. Without it
-   * a replay answered a bodiless 204, the panel read that as "accepted,
+   * Remembering Telegram's id is what lets a REPLAY answer with proof. Without
+   * it a replay answered a bodiless 204, the panel read that as "accepted,
    * nothing claimed", and its rule for a user notification — which demands
    * proof — recorded a FAILURE for somebody who had already received the
    * message. A relay hiccup therefore wrote off every recipient it had in
    * flight, permanently, and pressing "retry" only reproduced it.
    */
-  private readonly store = new Map<string, { at: number; messageId?: number }>();
+  private readonly store = new Map<string, ClaimEntry>();
 
   public constructor(maxSize: number, ttlMs: number) {
     this.maxSize = maxSize;
@@ -264,47 +306,91 @@ class IdempotencyCache {
   }
 
   /** Atomic check-and-set: returns true when the id is new (caller
-   * should proceed), false when it's a replay (caller should skip). */
+   * should proceed), false when it's a replay (caller asks `replayOf`). */
   public claim(eventId: string): boolean {
     const now = Date.now();
     this.evictExpired(now);
     if (this.store.has(eventId)) return false;
-    if (this.store.size >= this.maxSize) {
-      const oldestKey = this.store.keys().next().value;
-      if (oldestKey !== undefined) this.store.delete(oldestKey);
-    }
-    this.store.set(eventId, { at: now });
+    if (this.store.size >= this.maxSize) this.evictOldestDelivered();
+    this.store.set(eventId, { at: now, state: 'in-flight' });
     return true;
   }
 
-  /** Records what Telegram gave back, so a replay can answer with it. */
-  public remember(eventId: string, messageId: number): void {
+  /** Marks the claimed send as delivered, keeping Telegram's id when there is one. */
+  public settle(eventId: string, messageId?: number): void {
     const entry = this.store.get(eventId);
     if (entry === undefined) return;
-    entry.messageId = messageId;
-  }
-
-  /** Telegram's message id for an already-delivered event, if it is still held. */
-  public deliveredMessageId(eventId: string): number | undefined {
-    return this.store.get(eventId)?.messageId;
+    entry.state = 'delivered';
+    if (messageId !== undefined) entry.messageId = messageId;
   }
 
   /**
-   * Gives a claim back after the work it guarded failed transiently.
+   * What a replay of `eventId` should be told. Meaningful right after `claim`
+   * returned false; an id that is not held reads as in flight, which only ever
+   * costs the caller one more attempt.
+   */
+  public replayOf(eventId: string): ReplayState {
+    const entry = this.store.get(eventId);
+    if (entry === undefined || entry.state === 'in-flight') return { kind: 'in-flight' };
+    return { kind: 'delivered', messageId: entry.messageId };
+  }
+
+  /**
+   * Gives a claim back after the send it guarded failed — every failure.
    *
    * A claim taken BEFORE the send and never released turns the retry policy
    * into a single attempt: the second delivery of the same event finds the id
    * present, skips the send, and answers as though it had done the work. The
    * claim exists to stop a DUPLICATE send, not to stop a RETRY of one that
-   * never happened.
+   * never happened. A refusal (a 4xx from Telegram) produced no message either,
+   * so holding its claim protects nothing and makes a later delivery of the
+   * same id — the operator fixed the chat and pressed retry — answer "done"
+   * without sending.
+   *
+   * That includes the failures after which Telegram MAY have the message — a
+   * reset once the request was written, grammY's deadline, a 5xx. Holding
+   * those was tried: their retry was answered `unconfirmed`, which the panel
+   * records as DELIVERED for every event but a user notification, so an outage
+   * that failed sends this way recorded every operator card as posted, sent
+   * none and alerted nobody. They are also rarely a delivery in fact: this bot
+   * leaves grammY's call deadline at 500s, so a request Telegram did process
+   * but never answered stays in flight far past the panel's retries, and what
+   * does fail inside them — resets, TLS failures, HTML or JSON 5xx — almost
+   * always sent nothing. At least once: a rare second copy, not a lost message.
    */
   public release(eventId: string): void {
     this.store.delete(eventId);
   }
 
+  /**
+   * Makes room for one claim by dropping the oldest DELIVERED entry — never
+   * one still in flight.
+   *
+   * An in-flight entry is all that stops a replay from sending the same message
+   * while the first send is still out. Dropped, the replay sends a second copy,
+   * and the first send's late `settle` or `release` then lands on the replay's
+   * claim instead of its own. A delivered entry only costs a later replay its
+   * dedup — that replay sends again, as it would after a bot restart.
+   *
+   * In-flight entries are bounded by how many sends run at once, so when every
+   * entry is in flight the map grows past `maxSize` for as long as they last
+   * rather than drop one. The walk from the oldest end passes over at most that
+   * many before it finds a delivered entry.
+   */
+  private evictOldestDelivered(): void {
+    for (const [key, entry] of this.store) {
+      if (entry.state === 'delivered') {
+        this.store.delete(key);
+        return;
+      }
+    }
+  }
+
   private evictExpired(now: number): void {
     // Single pass: Map iterators preserve insertion order, so the
-    // first non-expired entry tells us when to stop.
+    // first non-expired entry tells us when to stop. Whatever the state: no
+    // send is in flight for 24h — grammY gives a call up after 500s — so an
+    // in-flight entry this old is a claim nothing will ever settle.
     for (const [key, entry] of this.store) {
       if (now - entry.at < this.ttlMs) break;
       this.store.delete(key);
@@ -314,10 +400,19 @@ class IdempotencyCache {
 
 const IDEMPOTENCY_CACHE = new IdempotencyCache(1024, 24 * 60 * 60 * 1000);
 
+/** The outcome of `claimDevEvent`. */
+type DevClaim =
+  /** No usable key: deliver, without dedup. */
+  | { readonly kind: 'unkeyed' }
+  /** Claimed under `key`, which the caller settles or releases. */
+  | { readonly kind: 'claimed'; readonly key: string }
+  /** Already claimed: answer the replay instead of sending. */
+  | { readonly kind: 'replay'; readonly replay: ReplayState };
+
 /**
  * Claim an OPTIONAL dedup key for one of the two dev-fallback endpoints.
- * Returns `false` when this exact delivery has already been made and the
- * caller should ack without sending again.
+ * Returns `replay` when this exact delivery is already made or under way, and
+ * the caller should answer that instead of sending again.
  *
  * Two things differ from `/notify`, `/notify-broadcast` and
  * `/notify-broadcast-document`, which read `eventId` inline and 400 without it:
@@ -337,11 +432,201 @@ const IDEMPOTENCY_CACHE = new IdempotencyCache(1024, 24 * 60 * 60 * 1000);
  *    document. Scoping cannot cost a dedup: a replay of one endpoint still
  *    collides with itself.
  */
-function claimDevEvent(scope: string, eventId: unknown): boolean {
-  if (typeof eventId !== 'string') return true;
+function claimDevEvent(scope: string, eventId: unknown): DevClaim {
+  if (typeof eventId !== 'string') return { kind: 'unkeyed' };
   const trimmed = eventId.trim();
-  if (trimmed.length === 0) return true;
-  return IDEMPOTENCY_CACHE.claim(`${scope}:${trimmed}`);
+  if (trimmed.length === 0) return { kind: 'unkeyed' };
+  const key = `${scope}:${trimmed}`;
+  return IDEMPOTENCY_CACHE.claim(key)
+    ? { kind: 'claimed', key }
+    : { kind: 'replay', replay: IDEMPOTENCY_CACHE.replayOf(key) };
+}
+
+/**
+ * ── What a notify route answers when Telegram does not take the message ──
+ *
+ * The status is the only thing that crosses back, and it crosses two hops:
+ * reiwa-api's webhook router translates it (`api/routes/webhooks.ts`), and
+ * the panel acts on the translation. The panel's rules, which these statuses
+ * are chosen against (rezeis-admin, `bot-notifier.client.ts`,
+ * `reiwa-relay.policy.ts`, `reiwa-relay.processor.ts`,
+ * `backup-delivery-retry.util.ts`):
+ *
+ *   - any 2xx without a numeric `messageId` is `unconfirmed`, and
+ *     `unconfirmed` counts as DELIVERED for every event but a user
+ *     notification — so a 2xx for a failure records it as a success;
+ *   - a non-2xx is `rejected`: retried when it is a 5xx, 408 or 429 — no
+ *     sooner than a `Retry-After` it names (`resolveRelayBackoff`, capped at
+ *     15 minutes) — otherwise terminal and undelivered. An undelivered event is
+ *     alerted (`reiwa.relay_undelivered`, coalesced per cause), except a user
+ *     notification's `unconfirmed` and a dev route that reached nobody — its
+ *     424, or a 422 whose reason says the RECIPIENT refused (chat not found, the
+ *     bot blocked or not in the chat) — which the panel completes quietly
+ *     (`shouldAlertOperator`, `isDevRelayDeadEnd`). A dev route's 422 for the
+ *     MESSAGE itself (unparsable entities, too long) is recorded and alerted.
+ *
+ * Hence:
+ *
+ *   - `TELEGRAM_REFUSED_STATUS` (422) — Telegram refused THIS message: chat not
+ *     found, bot not in the chat, message too long, unparsable entities. The
+ *     same request is refused identically in fifteen seconds, so terminal.
+ *     Alerted on an operator or subscriber route. On a dev route the panel
+ *     reads the `error` text: a recipient refusal is a quiet dead end, since
+ *     the alert would take the same route to the same refusal; a refusal of the
+ *     message itself is alerted. So the reason must stay in the body.
+ *   - `RETRY_LATER_STATUS` (503) + `Retry-After` — Telegram's 429 flood-wait,
+ *     and a replay of a send that is still out. `classifyTelegramFailure`
+ *     checks for 429 BEFORE the generic 4xx bucket: a 429 is the one refusal
+ *     that means "later", and reading it as a refusal dropped the message
+ *     during exactly the burst that produced it.
+ *   - `RETRYABLE_RELAY_STATUS` (502) — Telegram 5xx, a network failure
+ *     reaching api.telegram.org, anything else thrown on the way.
+ *   - `DEV_RECIPIENT_MISSING_STATUS` (424) — the dev fallback with no
+ *     `BOT_DEV_ID`. A deployment fact, not a Telegram failure, which the panel
+ *     completes quietly like a dev route's recipient refusal.
+ *
+ * And every one of those failures gives the event's idempotency claim back
+ * (`release`), so the panel's retry of the event really sends — at least once,
+ * and `release` says why a failure that may have left a message behind is no
+ * exception.
+ */
+const TELEGRAM_REFUSED_STATUS = 422;
+const RETRY_LATER_STATUS = 503;
+const DEV_RECIPIENT_MISSING_STATUS = 424;
+
+/**
+ * `Retry-After` for a replay that finds the first send still out.
+ *
+ * The panel's relay queue schedules by it: the next attempt waits for the later
+ * of its own backoff (15s -> 30s -> 60s) and this wait plus a second
+ * (`resolveRelayBackoff`). Only a retry can find the send in flight — the first
+ * attempt is the one that claimed it — and by then the queue's own backoff is
+ * 30s or more, so 15s says "later" without moving that schedule either way.
+ * Broadcast delivery does not read it and re-runs its batch on its own backoff.
+ */
+const IN_FLIGHT_RETRY_AFTER_SECONDS = 15;
+
+/** What a Bot API call that threw means for the relay that made it. */
+type TelegramSendFailure =
+  /** Telegram answered and refused THIS message. */
+  | { readonly kind: 'refused'; readonly code: number; readonly description: string }
+  /** Telegram's 429 flood-wait. */
+  | { readonly kind: 'rate-limited'; readonly retryAfterSeconds: number | null }
+  /** Anything else: a Telegram 5xx, a transport failure, a non-grammY error. */
+  | { readonly kind: 'failed' };
+
+function classifyTelegramFailure(err: unknown): TelegramSendFailure {
+  // `HttpError` (api.telegram.org unreachable, a reset socket, grammY's
+  // deadline) or anything else thrown on the way: nothing says Telegram refused
+  // THIS message.
+  if (!(err instanceof GrammyError)) return { kind: 'failed' };
+  const retryAfter = err.parameters?.retry_after;
+  if (err.error_code === 429 || typeof retryAfter === 'number') {
+    return {
+      kind: 'rate-limited',
+      retryAfterSeconds:
+        typeof retryAfter === 'number' && Number.isFinite(retryAfter) ? Math.max(0, Math.ceil(retryAfter)) : null,
+    };
+  }
+  if (err.error_code >= 400 && err.error_code < 500) {
+    // Typed as a string, but it is whatever the Bot API (or a local Bot API
+    // server) put in the body; a missing one must not crash the answer.
+    const description = typeof err.description === 'string' ? err.description : '';
+    return { kind: 'refused', code: err.error_code, description };
+  }
+  // A 5xx: Telegram failing on its own side.
+  return { kind: 'failed' };
+}
+
+/**
+ * Log and answer one failed send. The caller has already released its claim
+ * and handled any route-specific outcome (`/notify`'s per-recipient ones).
+ */
+function answerTelegramFailure(opts: {
+  readonly logger: ReturnType<typeof createLogger>;
+  readonly res: http.ServerResponse;
+  readonly err: unknown;
+  /** Log prefix, e.g. `Broadcast`. */
+  readonly route: string;
+  readonly context: Record<string, unknown>;
+}): void {
+  const { logger, res, err, route, context } = opts;
+  const failure = classifyTelegramFailure(err);
+  switch (failure.kind) {
+    case 'refused':
+      logger.warn(
+        { ...context, code: failure.code, description: failure.description },
+        `${route}: Telegram refused the message (permanent) — check the chat id, topic, bot membership or the text`,
+      );
+      res.statusCode = TELEGRAM_REFUSED_STATUS;
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          error: failure.description.length > 0 ? failure.description : 'Telegram refused the message',
+          code: failure.code,
+        }),
+      );
+      return;
+    case 'rate-limited':
+      logger.warn(
+        { ...context, retryAfterSeconds: failure.retryAfterSeconds },
+        `${route}: Telegram flood-wait — asking for a retry`,
+      );
+      res.statusCode = RETRY_LATER_STATUS;
+      if (failure.retryAfterSeconds !== null) res.setHeader('Retry-After', String(failure.retryAfterSeconds));
+      res.end();
+      return;
+    case 'failed':
+      logger.error(
+        { ...context, err: loggableTelegramError(err) },
+        `${route}: send failed — asking for a retry; a second copy is possible if Telegram had already taken this one`,
+      );
+      res.statusCode = RETRYABLE_RELAY_STATUS;
+      res.end();
+      return;
+  }
+}
+
+/** Answer a replay of a claimed event with what is actually known about it. */
+function answerReplay(res: http.ServerResponse, replay: ReplayState): void {
+  if (replay.kind === 'in-flight') {
+    res.statusCode = RETRY_LATER_STATUS;
+    res.setHeader('Retry-After', String(IN_FLIGHT_RETRY_AFTER_SECONDS));
+    res.end();
+    return;
+  }
+  if (replay.messageId !== undefined) {
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ messageId: replay.messageId }));
+    return;
+  }
+  res.statusCode = 204;
+  res.end();
+}
+
+/** The dev fallback has nobody to deliver to. Deliberately not a 204. */
+function answerDevRecipientMissing(res: http.ServerResponse): void {
+  res.statusCode = DEV_RECIPIENT_MISSING_STATUS;
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ error: 'BOT_DEV_ID is not configured on the bot: the dev fallback has no recipient' }));
+}
+
+/**
+ * Telegram's words for "this private chat does not exist for the bot": the
+ * subscriber never started it (typical for imported users) or the id names
+ * nobody. Read on `/notify` only — on a channel or the dev chat the same words
+ * mean the operator's configuration is wrong, which must be loud.
+ */
+const UNREACHABLE_RECIPIENT_RE = /\b(?:chat not found|user not found|PEER_ID_INVALID)\b/i;
+
+function isUnreachableRecipient(err: unknown): boolean {
+  return (
+    err instanceof GrammyError &&
+    err.error_code === 400 &&
+    typeof err.description === 'string' &&
+    UNREACHABLE_RECIPIENT_RE.test(err.description)
+  );
 }
 
 function readBody(req: http.IncomingMessage, max: number): Promise<string> {
@@ -598,7 +883,7 @@ export function startInternalHttpListener(opts: ListenerOptions): http.Server | 
       res.statusCode = 404;
       res.end();
     } catch (err: unknown) {
-      logger.error({ err, path: url }, 'Internal listener handler crashed');
+      logger.error({ err: loggableTelegramError(err), path: url }, 'Internal listener handler crashed');
       res.statusCode = 500;
       res.end();
     }
@@ -674,7 +959,8 @@ async function handleInvalidate(
         try {
           await onConfigApplied(fresh);
         } catch (err: unknown) {
-          logger.warn({ err }, 'Cache-invalidate: post-refresh apply failed');
+          // Bot API pushes (commands, profile): the same errors as a failed send.
+          logger.warn({ err: loggableTelegramError(err) }, 'Cache-invalidate: post-refresh apply failed');
         }
       })();
     }
@@ -730,14 +1016,25 @@ interface DevNotifyHandlerOptions {
  * `/notify-dev` — deliver a system-event card to the bot's developer/operator
  * (`BOT_DEV_ID`). Used by rezeis as the automatic fallback when no operator
  * group/topic is configured: the message lands in the dev's private DM with
- * this same bot, so it's visible only to them. No-ops (204) when the bot or
- * `BOT_DEV_ID` isn't available, so a misconfigured deployment never errors.
+ * this same bot, so it's visible only to them.
+ *
+ * NEVER a 204 for a card that did not arrive. This route used to "soft-succeed"
+ * on everything — no `BOT_DEV_ID`, Telegram refusing, Telegram down — on the
+ * theory that the firehose is best-effort. The panel does not read a 204 as
+ * "best-effort, maybe": it reads it as a delivered card, so the one channel an
+ * operator with nothing configured has went silent while the panel recorded
+ * every card as sent. Now: no bot 503, no `BOT_DEV_ID` 424, and a failed send
+ * answers what the failure was (`answerTelegramFailure`).
  */
 async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
   const { bot, devId, logger, raw, res } = opts;
-  if (bot === null || devId === undefined) {
-    res.statusCode = 204;
+  if (bot === null) {
+    res.statusCode = 503;
     res.end();
+    return;
+  }
+  if (devId === undefined) {
+    answerDevRecipientMissing(res);
     return;
   }
   let payload: DevNotifyPayload;
@@ -759,11 +1056,12 @@ async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
   // this the operator gets four identical cards for one incident. Claimed AFTER
   // the payload checks above so a 400 never burns the id, and BEFORE the send so
   // two overlapping retries cannot both get through.
-  if (!claimDevEvent('notify-dev', payload.eventId)) {
-    res.statusCode = 204;
-    res.end();
+  const claim = claimDevEvent('notify-dev', payload.eventId);
+  if (claim.kind === 'replay') {
+    answerReplay(res, claim.replay);
     return;
   }
+  const claimKey = claim.kind === 'claimed' ? claim.key : null;
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
   // Universal "Close" button so the dev can dismiss a handled event card
   // (routed by the shared `close` callback → deletes the message).
@@ -774,13 +1072,12 @@ async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
       link_preview_options: { is_disabled: true },
       reply_markup: keyboard,
     });
+    if (claimKey !== null) IDEMPOTENCY_CACHE.settle(claimKey);
     res.statusCode = 204;
     res.end();
   } catch (err: unknown) {
-    logger.warn({ err, devId }, 'Notify-dev: send failed');
-    // Soft-success: the firehose is best-effort; don't make admin retry.
-    res.statusCode = 204;
-    res.end();
+    if (claimKey !== null) IDEMPOTENCY_CACHE.release(claimKey);
+    answerTelegramFailure({ logger, res, err, route: 'Notify-dev', context: { devId } });
   }
 }
 
@@ -793,14 +1090,18 @@ const TG_CAPTION_LIMIT = 1024;
  * to the bot's developer/operator (`BOT_DEV_ID`) as a Telegram document, with
  * the sectioned error card carried as the document caption and a universal
  * "❌ Закрыть" (`close`) button. This is the dev-DM analogue of the operator
- * group's error report and matches the agreed card layout. No-ops (204) when
- * the bot or `BOT_DEV_ID` isn't available.
+ * group's error report and matches the agreed card layout. Answers exactly as
+ * `/notify-dev` does when there is no bot, no `BOT_DEV_ID`, or the send fails.
  */
 async function handleNotifyDevDocument(opts: DevNotifyHandlerOptions): Promise<void> {
   const { bot, devId, logger, raw, res } = opts;
-  if (bot === null || devId === undefined) {
-    res.statusCode = 204;
+  if (bot === null) {
+    res.statusCode = 503;
     res.end();
+    return;
+  }
+  if (devId === undefined) {
+    answerDevRecipientMissing(res);
     return;
   }
   let payload: DevNotifyDocumentPayload;
@@ -819,11 +1120,12 @@ async function handleNotifyDevDocument(opts: DevNotifyHandlerOptions): Promise<v
   }
   // Replay guard — see `/notify-dev` above. Same queue, same 4 attempts, and a
   // duplicate here costs the operator a whole second copy of the error report.
-  if (!claimDevEvent('notify-dev-document', payload.eventId)) {
-    res.statusCode = 204;
-    res.end();
+  const claim = claimDevEvent('notify-dev-document', payload.eventId);
+  if (claim.kind === 'replay') {
+    answerReplay(res, claim.replay);
     return;
   }
+  const claimKey = claim.kind === 'claimed' ? claim.key : null;
   const filename =
     typeof payload.filename === 'string' && payload.filename.trim().length > 0
       ? payload.filename.trim()
@@ -842,13 +1144,12 @@ async function handleNotifyDevDocument(opts: DevNotifyHandlerOptions): Promise<v
       ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
       reply_markup: keyboard,
     });
+    if (claimKey !== null) IDEMPOTENCY_CACHE.settle(claimKey);
     res.statusCode = 204;
     res.end();
   } catch (err: unknown) {
-    logger.warn({ err, devId }, 'Notify-dev-document: send failed');
-    // Soft-success: the firehose is best-effort; don't make admin retry.
-    res.statusCode = 204;
-    res.end();
+    if (claimKey !== null) IDEMPOTENCY_CACHE.release(claimKey);
+    answerTelegramFailure({ logger, res, err, route: 'Notify-dev-document', context: { devId } });
   }
 }
 
@@ -886,8 +1187,7 @@ async function handleNotifyBroadcastDocument(opts: {
     return;
   }
   if (!IDEMPOTENCY_CACHE.claim(eventId)) {
-    res.statusCode = 204;
-    res.end();
+    answerReplay(res, IDEMPOTENCY_CACHE.replayOf(eventId));
     return;
   }
   const filename =
@@ -913,21 +1213,15 @@ async function handleNotifyBroadcastDocument(opts: {
       ...(topicThreadId !== undefined ? { message_thread_id: topicThreadId } : {}),
       reply_markup: keyboard,
     });
+    IDEMPOTENCY_CACHE.settle(eventId);
     res.statusCode = 204;
     res.end();
   } catch (err: unknown) {
-    if (err instanceof GrammyError && err.error_code >= 400 && err.error_code < 500) {
-      logger.warn(
-        { eventId, chatId, code: err.error_code, description: err.description },
-        'Broadcast document: permanent delivery failure — check Chat ID / topic id / bot membership',
-      );
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
-    logger.error({ err, eventId, chatId }, 'Broadcast document: sendDocument failed');
-    res.statusCode = 502;
-    res.end();
+    // A refused report used to answer 204 here — a delivered report, upstream —
+    // and a failed one kept its claim, so the panel's retry was answered as a
+    // replay without sending. Same rules as `/notify-broadcast` now.
+    IDEMPOTENCY_CACHE.release(eventId);
+    answerTelegramFailure({ logger, res, err, route: 'Broadcast document', context: { eventId, chatId } });
   }
 }
 
@@ -1124,7 +1418,7 @@ async function handleNotifyBackupDocument(opts: {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ messageId }));
   } catch (err: unknown) {
-    logger.warn({ err, recordId }, 'Notify-backup-document: send failed');
+    logger.warn({ err: loggableTelegramError(err), recordId }, 'Notify-backup-document: send failed');
     // POST-UPLOAD. `sendDocument` has been entered, so the bytes may already be
     // in the operator's topic even though the call rejected — a mid-upload
     // socket reset on a multi-gigabyte file surfaces right here, and so does a
@@ -1134,6 +1428,64 @@ async function handleNotifyBackupDocument(opts: {
     // visible, a silent second 2 GB upload is neither.
     res.statusCode = 204;
     res.end();
+  }
+}
+
+/**
+ * How long `/notify` holds its 204 for a blocked subscriber while
+ * `onUserBlocked` records the block.
+ *
+ * Awaited, because the panel reads the record back right after the answer:
+ * broadcast delivery sleeps 50ms after `notifyUser` returns and then re-reads
+ * `isBotBlocked`, and that one read decides whether the row is "blocked by the
+ * user" or an error the operator is offered to retry (rezeis-admin,
+ * `broadcast-delivery.service.ts`). The block travels bot -> panel HTTP ->
+ * Prisma, so answering first lost that race whenever the round trip took
+ * longer than those 50ms.
+ *
+ * Capped, because the record is a call to the panel, whose transport waits up
+ * to 10s for headers — and reiwa-api gives this whole hop 8s
+ * (`BOT_RELAY_TIMEOUT_MS`). Waited for without a limit, a slow panel turned
+ * this final, quiet answer into reiwa-api's 502, which the panel retries —
+ * every retry another send to the subscriber who blocked the bot — alerts on
+ * once the attempts are spent, and counts toward broadcast delivery's relay
+ * circuit breaker. Two seconds leaves the hop six to spare; a panel slower than
+ * that gets its row filed as an error, and the block still lands.
+ */
+const USER_BLOCKED_REPORT_WAIT_MS = 2_000;
+
+/**
+ * Run `onUserBlocked` and wait for it, at most `USER_BLOCKED_REPORT_WAIT_MS`.
+ * Past the cap the call carries on in the background. Never throws: a failure,
+ * awaited or not, is logged.
+ */
+async function reportUserBlocked(
+  onUserBlocked: ((telegramId: string) => Promise<void> | void) | undefined,
+  telegramId: string,
+  logger: ReturnType<typeof createLogger>,
+): Promise<void> {
+  if (onUserBlocked === undefined) return;
+  const report = (async (): Promise<'recorded'> => {
+    try {
+      await onUserBlocked(telegramId);
+    } catch (blockErr: unknown) {
+      logger.warn({ err: blockErr, telegramId }, 'Notify: onUserBlocked callback threw');
+    }
+    return 'recorded';
+  })();
+  let timer: NodeJS.Timeout | undefined;
+  const cap = new Promise<'capped'>((resolve) => {
+    timer = setTimeout(() => resolve('capped'), USER_BLOCKED_REPORT_WAIT_MS);
+  });
+  try {
+    if ((await Promise.race([report, cap])) === 'capped') {
+      logger.warn(
+        { telegramId, waitedMs: USER_BLOCKED_REPORT_WAIT_MS },
+        'Notify: recording the block is taking too long — answering now, it finishes in the background',
+      );
+    }
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -1166,20 +1518,12 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     return;
   }
   if (!IDEMPOTENCY_CACHE.claim(eventId)) {
-    // Replay — we already delivered this one. Answer with the message id we
-    // kept, because the caller's bar for a user notification is proof: a
-    // bodiless 204 here was read as "not delivered" and wrote the recipient
-    // down as failed, even though they had the message in hand. Only a replay
-    // whose id has aged out of the cache still falls back to 204.
-    const delivered = IDEMPOTENCY_CACHE.deliveredMessageId(eventId);
-    if (delivered !== undefined) {
-      res.statusCode = 200;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ messageId: delivered }));
-      return;
-    }
-    res.statusCode = 204;
-    res.end();
+    // Replay. Delivered: answer with the message id we kept, because the
+    // caller's bar for a user notification is proof — a bodiless 204 here was
+    // read as "not delivered" and wrote the recipient down as failed, even
+    // though they had the message in hand. Still in flight: 503, so the retry
+    // comes back for the real outcome instead of settling on a guess.
+    answerReplay(res, IDEMPOTENCY_CACHE.replayOf(eventId));
     return;
   }
   const rawParseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
@@ -1197,8 +1541,9 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     let sent: { message_id: number } | undefined;
     // Banner-tagged notification → send as a photo with the text as caption
     // (Telegram caption limit 1024). Relative `/uploads/...` URLs are fetched
-    // from rezeis by the resolver. Any photo failure falls back to text so a
-    // banner glitch never drops the notification.
+    // from rezeis by the resolver, which answers `null` rather than throw when
+    // that download fails. Any photo failure falls back to text so a banner
+    // glitch never drops the notification.
     if (bannerUrl !== null && body.text.length <= TG_CAPTION_LIMIT) {
       const photo = await resolveBannerSource(bannerUrl, {
         rezeisAdminUrl: opts.rezeisAdminUrl ?? null,
@@ -1215,7 +1560,7 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
         } catch (photoErr: unknown) {
           if (photoErr instanceof GrammyError && photoErr.error_code === 403) throw photoErr;
           opts.logger.warn(
-            { err: photoErr, telegramId },
+            { err: loggableTelegramError(photoErr), telegramId },
             'Notify: sendPhoto failed; falling back to text',
           );
         }
@@ -1233,7 +1578,7 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     }
     // Kept, so a replay of this same event can answer with the id instead of a
     // bodiless ack the caller reads as "not delivered".
-    IDEMPOTENCY_CACHE.remember(eventId, sent.message_id);
+    IDEMPOTENCY_CACHE.settle(eventId, sent.message_id);
 
     // Return the Telegram message id so admin can persist it and later
     // edit/delete the message within Telegram's 48h edit window.
@@ -1241,23 +1586,38 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ messageId: sent.message_id }));
   } catch (err: unknown) {
+    // The claim is given back on every failure (see `release`). It used to be
+    // held here: a 502 asked the panel to retry, and the retry found the id
+    // taken and answered 204 — `unconfirmed`, i.e. the silent, un-alerted
+    // "blocked the bot" outcome — without sending.
+    IDEMPOTENCY_CACHE.release(eventId);
     if (err instanceof GrammyError && err.error_code === 403) {
-      // User has blocked the bot or removed it from chat. Tell admin
-      // so it can stop trying.
+      // User has blocked the bot or removed it from chat. Per-recipient and
+      // final. The panel's contract for exactly this: a 2xx without a message
+      // id on a user notification is undelivered, never retried, and never
+      // alerted (`shouldAlertOperator`). The host records the block first, so
+      // the panel stops trying — and so broadcast delivery can tell this row
+      // from an error when it reads the flag back (`USER_BLOCKED_REPORT_WAIT_MS`).
       logger.info({ telegramId, eventId }, 'Notify: user blocked the bot');
-      try {
-        await onUserBlocked?.(telegramId);
-      } catch (blockErr: unknown) {
-        logger.warn({ err: blockErr, telegramId }, 'Notify: onUserBlocked callback threw');
-      }
-      // Soft-success: from admin's POV the delivery decision is final.
+      await reportUserBlocked(onUserBlocked, telegramId, logger);
       res.statusCode = 204;
       res.end();
       return;
     }
-    logger.error({ err, eventId, telegramId }, 'Notify: sendMessage failed');
-    res.statusCode = 502;
-    res.end();
+    if (isUnreachableRecipient(err)) {
+      // The same kind of fact about one subscriber — they never started this
+      // bot — so the same quiet, final answer. A 422 would raise one operator
+      // alert per notification per such subscriber, which on an imported base
+      // is a flood nobody can act on. Not a block, so no `onUserBlocked`.
+      logger.info({ telegramId, eventId }, 'Notify: recipient has no chat with the bot');
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    // Anything else is about the message or the link, not the person: a text
+    // Telegram will not take is 422 and alerted, a flood-wait or an outage is
+    // retried.
+    answerTelegramFailure({ logger, res, err, route: 'Notify', context: { eventId, telegramId } });
   }
 }
 
@@ -1294,8 +1654,7 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     return;
   }
   if (!IDEMPOTENCY_CACHE.claim(eventId)) {
-    res.statusCode = 204;
-    res.end();
+    answerReplay(res, IDEMPOTENCY_CACHE.replayOf(eventId));
     return;
   }
   const rawParseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
@@ -1320,6 +1679,7 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     // policy then treated that as delivered. The id is the only evidence in
     // this exchange that anything reached Telegram, and without it a channel
     // post could never be told apart from one that silently went nowhere.
+    IDEMPOTENCY_CACHE.settle(eventId, sent.message_id);
     res.statusCode = 200;
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ messageId: sent.message_id }));
@@ -1335,22 +1695,14 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     // produced a warning in this container's log and a green "posted" in the
     // panel. A 4xx is classified `rejected` — terminal, NOT delivered, and it
     // raises the operator alert that names the chat id. No retry either way.
-    if (err instanceof GrammyError && err.error_code >= 400 && err.error_code < 500) {
-      logger.warn(
-        { eventId, chatId, code: err.error_code, description: err.description },
-        'Broadcast: permanent delivery failure — check Chat ID / topic id / bot membership',
-      );
-      res.statusCode = 422;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ error: err.description ?? 'Telegram rejected the channel post' }));
-      return;
-    }
-    // Transient: give the claim back so the retry can actually re-send. Held,
-    // it would answer the second attempt without sending anything.
+    //
+    // EXCEPT 429, which answered 422 here too and so dropped the post for good
+    // during the very burst that produced it: it is a wait, not a refusal, and
+    // `classifyTelegramFailure` reads it first. Every failure gives the claim
+    // back — held, it answers the next attempt without sending anything, and
+    // the panel records that answer as a posted card (see `release`).
     IDEMPOTENCY_CACHE.release(eventId);
-    logger.error({ err, eventId, chatId }, 'Broadcast: sendMessage failed');
-    res.statusCode = 502;
-    res.end();
+    answerTelegramFailure({ logger, res, err, route: 'Broadcast', context: { eventId, chatId } });
   }
 }
 

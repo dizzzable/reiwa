@@ -265,16 +265,61 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  * within the event's policy and, once the attempts are spent, records
  * `reiwa.relay_undelivered` and alerts the operator. `reiwa.backup.document` is
  * the one event NOT on the queue; its caller (`BackupService`) inspects the
- * outcome and re-runs the backup on its own BullMQ job (`attempts: 3`). A 4xx
- * from the bot is permanent, so it is acked below instead of burning retries on
- * a payload that can never succeed.
+ * outcome and re-runs the backup on its own BullMQ job (`attempts: 3`).
  *
- * Response contract: the two events whose delivery rezeis has to record —
- * `reiwa.user.notify` and `reiwa.backup.document` — answer `200 { messageId }`,
+ * Response contract: the three events whose Telegram message id rezeis reads —
+ * `reiwa.user.notify` and `reiwa.backup.document` (proof of delivery), and
+ * `reiwa.channel.broadcast` (the address of a broadcast's channel post, which
+ * the panel's edit and recall of that post need) — answer `200 { messageId }`,
  * echoing Telegram's own id (or `null` when the bot could not prove a
- * delivery). Every other event acks with a bodiless 204. rezeis treats a 2xx
- * without a numeric `messageId` as "accepted but unconfirmed", never as
- * delivered, so the id must not be dropped on those two paths.
+ * delivery). Every other event acks with a bodiless 204: nothing in rezeis
+ * reads an id for them. rezeis treats a 2xx without a numeric `messageId` as
+ * "accepted but unconfirmed"; for a user notification or a backup that is NOT
+ * delivered, so the id must not be dropped on those paths — and for every
+ * OTHER event it IS delivered, which is why a failure must never be answered
+ * with a 2xx.
+ *
+ * Failure contract — what the panel is told when the bot did not deliver, and
+ * what the panel then does (rezeis-admin: `BotNotifierClient.deliver` files any
+ * non-2xx as `rejected`, reading its `Retry-After`; `isRetryableRelayOutcome`
+ * retries a `rejected` 5xx, 408 or 429 and nothing else, and the relay queue's
+ * backoff waits out a named `Retry-After`, up to 15 minutes
+ * (`resolveRelayBackoff`); `ReiwaRelayProcessor` alerts on whatever ends
+ * undelivered — coalesced per cause — except a user notification's
+ * `unconfirmed` and a dev route that reached nobody (`shouldAlertOperator`,
+ * `isDevRelayDeadEnd`)):
+ *
+ *   - bot 422 -> 422. Telegram refused THIS message (chat not found, bot not
+ *     in the chat, message too long). Terminal and undelivered; a retry would
+ *     be refused identically. Alerted on an operator or subscriber route. On a
+ *     dev route the panel reads the reason: a recipient refusal (chat not
+ *     found, bot blocked) is a dead end it completes quietly, since the alert
+ *     would take the same route to the same refusal; a refusal of the message
+ *     itself (unparsable entities, too long) is alerted.
+ *   - bot 424 -> 424. A dev route with no `BOT_DEV_ID` on the bot. Terminal,
+ *     undelivered and quiet for the same reason — on an install with no
+ *     operator chat and no `BOT_DEV_ID` the alert would meet the same 424. Its
+ *     own status is what tells "nobody to send to" apart from "Telegram said no".
+ *   - bot names a wait (`Retry-After`: Telegram's 429 flood-wait, or a replay
+ *     of a send still in flight) -> 503 with that `Retry-After`. Retried, no
+ *     sooner than the wait.
+ *   - any other bot failure -> 502. Retried. That includes the bot refusing
+ *     the relay REQUEST itself (400/404/413: this router and the bot disagree
+ *     about a route or a body; 401: the two containers disagree about
+ *     `REZEIS_INTERNAL_SHARED_SECRET`). None of those sent anything, so a retry
+ *     cannot duplicate a message, and the likeliest causes — a half-restarted
+ *     pair, a staggered deploy — heal inside the retry window. It also includes
+ *     a send that failed on Telegram's side of the hop: the bot keeps no claim
+ *     for it, so the retry sends again — a second copy on the rare occasion
+ *     Telegram had taken the first, never a message recorded as sent that was not.
+ *   - the bot never answered (unreachable, deadline) -> 502. Retried.
+ *   - the bot answered 200 for a message whose id the panel keeps, and that
+ *     answer could not be read -> 502. Retried, and the retry is answered from
+ *     the bot's record of the delivery — see `relayToBot`'s `unreadableAnswer`.
+ *
+ * `/notify` answers 204 for a subscriber who blocked the bot or never started
+ * it; that stays `200 { messageId: null }` here — the panel's terminal,
+ * un-alerted per-recipient outcome — and is not a failure in this table.
  */
 export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
   const { config } = deps;
@@ -338,7 +383,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
             ...(parsed.buttons ? { buttons: parsed.buttons } : {}),
             ...(parsed.bannerUrl ? { bannerUrl: parsed.bannerUrl } : {}),
-          });
+          }, BOT_RELAY_TIMEOUT_MS, "retry");
           // Surface the Telegram message id back to admin so it can persist
           // it (broadcast edits/deletes need it within the 48h window).
           res.status(200).json({ messageId: relayed.messageId });
@@ -376,15 +421,26 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
         }
         case "reiwa.channel.broadcast": {
           const parsed = parseRelayMetadata(z.object({ chatId: chatIdSchema, text: textSchema, eventId: eventIdSchema, topicThreadId: topicThreadIdSchema.optional(), parseMode: parseModeSchema.optional(), buttons: buttonsSchema.optional() }), meta);
-          await relayToBot("/notify-broadcast", {
+          const relayed = await relayToBot("/notify-broadcast", {
             eventId: parsed.eventId,
             chatId: parsed.chatId,
             text: parsed.text,
             ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
             ...(parsed.buttons ? { buttons: parsed.buttons } : {}),
-          });
-          break;
+          }, BOT_RELAY_TIMEOUT_MS, "retry");
+          // Echo Telegram's message id, as `reiwa.user.notify` does. For a
+          // broadcast's channel post (`eventId` `broadcast-channel:<id>`) the
+          // panel stores it as the post's address (`rememberChannelPost` in
+          // `ReiwaRelayProcessor`), and the channel edit and recall work from
+          // nothing else — Telegram has no "what did I post" call, so an id
+          // dropped here is gone. This case used to `break` into the bodiless
+          // 204 while the bot already returned the id, which left every
+          // broadcast's public copy unaddressable. `null` when the bot proved
+          // nothing — the panel's `unconfirmed`, which it still counts as a
+          // delivered channel post — never an invented id.
+          res.status(200).json({ messageId: relayed.messageId });
+          return;
         }
         case "reiwa.channel.broadcast.document": {
           const parsed = parseRelayMetadata(z.object({ eventId: eventIdSchema, chatId: chatIdSchema, content: documentContentSchema, filename: filenameSchema.optional(), caption: captionSchema.optional(), topicThreadId: topicThreadIdSchema.optional(), parseMode: parseModeSchema.optional() }), meta);
@@ -419,6 +475,13 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // express; it stays on undici's 300s idle default. This relay also
           // runs on a backup schedule rather than per notification, so the
           // handler-pinning cost the other six paths carry barely applies.
+          //
+          // `"no-id"` for an answer whose body cannot be read, the opposite of
+          // `/notify`: this route keeps NO record of what it uploaded — no
+          // event claim, nothing a retry could be answered from — so a 502
+          // here is retried by `BackupService` as a second download and a
+          // second upload of the same backup. `{ messageId: null }` instead is
+          // recorded local-only and alerted, never retried.
           const relayed = await relayToBot("/notify-backup-document", {
             recordId: parsed.recordId,
             token: parsed.token,
@@ -426,7 +489,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.filename ? { filename: parsed.filename } : {}),
             ...(parsed.caption ? { caption: parsed.caption } : {}),
             ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
-          }, null);
+          }, null, "no-id");
           // Surface the Telegram message id back to admin — same shape as
           // `reiwa.user.notify` above. A 2xx only proves this relay instruction
           // was accepted; the bot fetches and uploads afterwards, so the id is
@@ -521,22 +584,49 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
         res.status(400).json({ message: "invalid webhook metadata" });
         return;
       }
-      if (err instanceof BotRelayError && err.status >= 400 && err.status < 500) {
-        // The bot rejected the payload as permanently invalid (4xx) — e.g. a
-        // telegramId that isn't a Telegram numeric id, or empty text. A retry
-        // could never succeed, so ack (2xx) and log the details for diagnosis
-        // instead of returning a 502, which the panel's relay queue would
-        // retry — see the RETRIES note in the file header.
-        getRequestLogger(req).warn(
-          { event, botStatus: err.status, path: err.path },
-          "rezeis webhook: bot rejected payload as invalid (permanent); dropping",
+      if (err instanceof BotRelayError) {
+        // The bot answered, and not with a delivery. Translate what it said
+        // into the status the panel acts on correctly — see "Failure contract"
+        // in the file header. This branch used to turn EVERY bot 4xx into
+        // `200 { dropped: true }`: the panel files a 2xx without a message id
+        // as `unconfirmed`, which is DELIVERED for every event but a user
+        // notification, so a channel post Telegram refused (the bot's 422) was
+        // recorded as posted — no alert, no retry.
+        const answer = webhookAnswerForBotFailure(err);
+        const fields = {
+          event,
+          path: err.path,
+          botStatus: err.status,
+          status: answer.status,
+          ...(err.retryAfterSeconds !== null ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
+          ...(err.detail !== null ? { detail: err.detail } : {}),
+        };
+        if (answer.status === 502) {
+          getRequestLogger(req).error(fields, answer.logMessage);
+        } else {
+          getRequestLogger(req).warn(fields, answer.logMessage);
+        }
+        if (answer.retryAfterSeconds !== null) {
+          res.setHeader("Retry-After", String(answer.retryAfterSeconds));
+        }
+        res.status(answer.status).json(answer.body);
+        return;
+      }
+      if (err instanceof BotAnswerUnreadableError) {
+        // The bot delivered, said so, and the proof was lost on the way back.
+        // The retry this asks for is answered from the bot's record of that
+        // delivery, with the same id and no second send — see
+        // `unreadableAnswer` on `relayToBot`.
+        getRequestLogger(req).error(
+          { event, path: err.path, botStatus: err.status, err: err.cause },
+          "rezeis webhook: the bot's answer to a delivered message could not be read; asking the panel to retry",
         );
-        res.status(200).json({ dropped: true });
+        res.status(502).json({ message: "relay failed" });
         return;
       }
       getRequestLogger(req).error({ err, event }, "rezeis webhook relay failed");
-      // 502 = transient (bot 5xx / network), unlike the 4xx bad payload above.
-      // The panel retries it: its relay queue within the event's attempts, and
+      // 502 = the bot never answered: unreachable, or the deadline fired. The
+      // panel retries it: its relay queue within the event's attempts, and
       // BackupService on its own job for `reiwa.backup.document` — see the
       // RETRIES note in the file header.
       res.status(502).json({ message: "relay failed" });
@@ -548,18 +638,40 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
    * the private docker hop, signed with the internal HMAC scheme so the bot
    * accepts it the same way it accepts the (now-removed) direct admin push.
    *
-   * Returns the bot's `messageId` when it replies with one (the `/notify`
-   * endpoint does on success); `null` for 204 acks or bodies without an id.
+   * Returns the bot's `messageId` when it replies with one (`/notify`,
+   * `/notify-broadcast` and `/notify-backup-document` do on success, and on a
+   * replay of a delivered event); `null` for 204 acks or bodies without an id.
    *
    * `timeoutMs` is a TOTAL deadline (`AbortSignal.timeout`), not an idle one,
    * and it covers reading the response body as well as the round-trip. Pass
    * `null` only where a correct call can legitimately outrun any fixed budget
    * — today that is the backup relay alone, and its call site says why.
+   *
+   * `unreadableAnswer` — what a 2xx whose body cannot be read (the connection
+   * dropped mid-body, the deadline fired while reading it, it is not JSON)
+   * means, which depends on what the bot does with a RETRY of the event:
+   *
+   *   - `"retry"` throws `BotAnswerUnreadableError`, answered 502. For
+   *     `/notify` and `/notify-broadcast`: a 200 there means Telegram took the
+   *     message and the bot has already recorded its id against the event
+   *     (`IDEMPOTENCY_CACHE.settle` runs before the answer is written), and a
+   *     replay of a delivered event is answered `200 { messageId }` from that
+   *     record without sending (`answerReplay`). So the retry costs no second
+   *     message and brings the id back, where `{ messageId: null }` would lose
+   *     it for good: a notification the subscriber has filed as undelivered, a
+   *     channel post nobody can edit or recall. What the retry cannot rely on
+   *     is what no replay can — the record is in memory and bounded, so a bot
+   *     restarted in between, or a thousand newer events pushing that record
+   *     out, sends again.
+   *   - `"no-id"` (the default) reads it as a 2xx that named no id. Right for
+   *     the events whose id nothing reads, and deliberate for the backup relay
+   *     — its call site says why.
    */
   async function relayToBot(
     path: string,
     body: unknown,
     timeoutMs: number | null = BOT_RELAY_TIMEOUT_MS,
+    unreadableAnswer: "retry" | "no-id" = "no-id",
   ): Promise<{ messageId: number | null }> {
     const bodyStr = JSON.stringify(body);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -574,12 +686,23 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
       ...(timeoutMs === null ? {} : { signal: AbortSignal.timeout(timeoutMs) }),
     });
     if (!resp.ok && resp.status !== 204) {
-      throw new BotRelayError(path, resp.status);
+      throw new BotRelayError(
+        path,
+        resp.status,
+        parseRetryAfterSeconds(resp.headers.get("retry-after")),
+        await readBotErrorDetail(resp),
+      );
     }
     if (resp.status === 204) return { messageId: null };
-    const json = (await resp.json().catch(() => null)) as { messageId?: unknown } | null;
+    let json: { messageId?: unknown } | null;
+    try {
+      json = (await resp.json()) as { messageId?: unknown } | null;
+    } catch (err: unknown) {
+      if (unreadableAnswer === "retry") throw new BotAnswerUnreadableError(path, resp.status, err);
+      json = null;
+    }
     const messageId =
-      json !== null && typeof json.messageId === "number" ? json.messageId : null;
+      json !== null && typeof json === "object" && typeof json.messageId === "number" ? json.messageId : null;
     return { messageId };
   }
 
@@ -594,17 +717,118 @@ function str(value: unknown): string | undefined {
 }
 
 /**
- * Thrown by `relayToBot` on a non-2xx/204 bot response. Carries the bot's HTTP
- * status so the webhook can distinguish a permanent 4xx (bad payload — ack &
- * drop) from a transient 5xx/network error (502). Only the backup relay has a
- * caller that retries on that 502 — see the RETRIES note in the file header.
+ * Thrown by `relayToBot` on a non-2xx/204 bot response. Carries what the bot
+ * said — its status, the wait it named, Telegram's reason — so the webhook can
+ * translate it (`webhookAnswerForBotFailure`) instead of guessing.
  */
 class BotRelayError extends Error {
   public constructor(
     public readonly path: string,
     public readonly status: number,
+    /** The bot's `Retry-After`, in whole seconds; `null` when it named none. */
+    public readonly retryAfterSeconds: number | null,
+    /** The bot's `{ error }` text (Telegram's own description), clipped; `null` if none. */
+    public readonly detail: string | null,
   ) {
     super(`bot relay ${path} -> ${status}`);
     this.name = "BotRelayError";
   }
+}
+
+/**
+ * Thrown by `relayToBot` when the bot answered 2xx on a route relayed with
+ * `unreadableAnswer: "retry"` and the body of that answer could not be read.
+ * `cause` is what reading it threw.
+ */
+class BotAnswerUnreadableError extends Error {
+  public constructor(
+    public readonly path: string,
+    public readonly status: number,
+    cause: unknown,
+  ) {
+    super(`bot relay ${path} -> ${status}, answer unreadable`, { cause });
+    this.name = "BotAnswerUnreadableError";
+  }
+}
+
+/**
+ * The bot's statuses that mean something specific, restated from
+ * `bot/listeners/internal-http-listener.ts` (`TELEGRAM_REFUSED_STATUS`,
+ * `DEV_RECIPIENT_MISSING_STATUS`). The two processes build from this one
+ * repository but are separate programs, and importing the listener here would
+ * drag grammY into the API; `test/api/rezeis-relay-chain.test.ts` runs this
+ * router against the real listener, which is what keeps the copies agreeing.
+ */
+const BOT_TELEGRAM_REFUSED_STATUS = 422;
+const BOT_DEV_RECIPIENT_MISSING_STATUS = 424;
+
+/** Longest bot error text passed on. Telegram's descriptions are short. */
+const MAX_BOT_DETAIL_LENGTH = 300;
+
+/** `Retry-After` as delta-seconds; the HTTP-date form and anything else read as none. */
+function parseRetryAfterSeconds(value: string | null): number | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return /^\d{1,6}$/.test(trimmed) ? Number(trimmed) : null;
+}
+
+/**
+ * The `{ error }` text of a bot failure response, when it carries one.
+ * `globalThis.Response`: the bare name in this file is Express's.
+ */
+async function readBotErrorDetail(resp: globalThis.Response): Promise<string | null> {
+  const text = await resp.text().catch(() => "");
+  if (text.length === 0) return null;
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown } | null;
+    const error = parsed?.error;
+    return typeof error === "string" && error.trim().length > 0
+      ? error.trim().slice(0, MAX_BOT_DETAIL_LENGTH)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What the panel is told when the bot answered with a failure. The table, and
+ * why each row is what the panel acts on correctly, is "Failure contract" in
+ * the file header.
+ */
+function webhookAnswerForBotFailure(err: BotRelayError): {
+  readonly status: number;
+  readonly retryAfterSeconds: number | null;
+  readonly body: Record<string, unknown>;
+  readonly logMessage: string;
+} {
+  if (err.status === BOT_TELEGRAM_REFUSED_STATUS) {
+    return {
+      status: 422,
+      retryAfterSeconds: null,
+      body: { message: "telegram refused the message", ...(err.detail !== null ? { detail: err.detail } : {}) },
+      logMessage: "rezeis webhook: Telegram refused the message (permanent); the panel records it undelivered",
+    };
+  }
+  if (err.status === BOT_DEV_RECIPIENT_MISSING_STATUS) {
+    return {
+      status: 424,
+      retryAfterSeconds: null,
+      body: { message: "the bot has no BOT_DEV_ID: the dev fallback has no recipient" },
+      logMessage: "rezeis webhook: dev fallback undeliverable, BOT_DEV_ID is not set on the bot",
+    };
+  }
+  if (err.retryAfterSeconds !== null) {
+    return {
+      status: 503,
+      retryAfterSeconds: err.retryAfterSeconds,
+      body: { message: "relay temporarily unavailable", retryAfter: err.retryAfterSeconds },
+      logMessage: "rezeis webhook: the bot asked for a wait (Telegram flood-wait or a send still in flight); asking the panel to retry",
+    };
+  }
+  return {
+    status: 502,
+    retryAfterSeconds: null,
+    body: { message: "relay failed" },
+    logMessage: "rezeis webhook: bot relay failed; asking the panel to retry",
+  };
 }

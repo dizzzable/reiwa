@@ -58,6 +58,14 @@ const RELATIVE_UPLOADS_RE =
  * upload but reiwa-bot can't reach the admin host (no
  * `REZEIS_HOST` env), so the caller can fall through to the
  * filesystem default instead of erroring out the welcome flow.
+ *
+ * Never rejects: every way an admin upload can fail — the fetch
+ * throws, rezeis answers non-2xx, the body is too big, the body dies
+ * while it is being read — answers `null`. All four callers read `null`
+ * as "no banner". None of them expects a rejection: `/start`, the
+ * screens and banner replies call this outside their error handling,
+ * and the notification relay inside its send's, where a rejection reads
+ * as a failed send.
  */
 export async function resolveBannerSource(
   rawUrl: string,
@@ -115,8 +123,18 @@ export async function resolveBannerSource(
         return null;
       }
     }
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(await response.arrayBuffer());
+    } catch (err: unknown) {
+      // rezeis answered, and the file never arrived whole: the connection
+      // dropped mid-body (undici: `TypeError: terminated`) or the stream
+      // failed. The same outcome as a fetch that threw — no banner. Thrown,
+      // it took the whole message down with the decoration: the notification
+      // relay never sent its text.
+      deps.logger?.warn({ err, fullUrl }, 'banner-resolver: reading the upload body failed');
+      return null;
+    }
     if (buffer.length > MAX_PHOTO_BYTES) {
       deps.logger?.warn(
         { bytes: buffer.length, fullUrl },

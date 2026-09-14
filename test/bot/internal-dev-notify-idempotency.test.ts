@@ -74,8 +74,9 @@ interface DevHarness {
  * without recording it would make "the replay was suppressed" and "the handler
  * never sent anything at all" the same observation, which is the whole thing
  * these tests are trying to tell apart. `devId` is supplied for the same
- * reason: without it both dev endpoints no-op at 204 and every count below
- * would read zero for a reason that has nothing to do with idempotency.
+ * reason: without it both dev endpoints answer 424 without sending (nobody to
+ * deliver to), and every count below would read zero for a reason that has
+ * nothing to do with idempotency.
  */
 function startDevHarness(): DevHarness {
   const sendMessage = vi.fn(async () => ({ message_id: 1 }));

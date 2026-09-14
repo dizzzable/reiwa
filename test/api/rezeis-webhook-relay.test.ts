@@ -563,15 +563,36 @@ describe('Rezeis webhook relay', () => {
   // ── channel chat id ───────────────────────────────────────────────────────
 
   it('accepts an @username channel target for a broadcast', async () => {
-    const { status, body } = await relay('reiwa.channel.broadcast', {
-      eventId: 'evt-10',
-      chatId: '@my_channel',
-      text: 'Всем привет',
-      buttons: [{ text: 'Промо', webAppPath: '/promo?code=X' }],
-    });
-    expect(status).toBe(204);
+    const { status, body, response } = await relay(
+      'reiwa.channel.broadcast',
+      {
+        eventId: 'evt-10',
+        chatId: '@my_channel',
+        text: 'Всем привет',
+        buttons: [{ text: 'Промо', webAppPath: '/promo?code=X' }],
+      },
+      200,
+      { messageId: 91 },
+    );
+    // 200 + the id since the channel post's address is echoed back (see the
+    // chain spec, "a broadcast's channel post keeps its address").
+    expect(status).toBe(200);
+    expect(JSON.parse(response)).toEqual({ messageId: 91 });
     expect(body?.chatId).toBe('@my_channel');
     expect(body?.buttons).toEqual([{ text: 'Промо', webAppPath: '/promo?code=X' }]);
+  });
+
+  it('answers a channel post the bot could not prove with a null id — never an invented one', async () => {
+    // A bot that answers a bodiless 204 (one older than the id echo). rezeis
+    // reads `200 { messageId: null }` exactly as it read the 204 — unconfirmed,
+    // still a delivered channel post — and stores no address for it.
+    const { status, response } = await relay(
+      'reiwa.channel.broadcast',
+      { eventId: 'evt-10b', chatId: '-1001234567890', text: 'Всем привет' },
+      204,
+    );
+    expect(status).toBe(200);
+    expect(JSON.parse(response)).toEqual({ messageId: null });
   });
 
   // ── dev fallback: the dedup key rezeis may or may not have ────────────────
@@ -726,6 +747,37 @@ describe('Rezeis webhook relay', () => {
     const invalidate = await relay('reiwa.bot.invalidate', { reason: 'test' });
     expect(invalidate.status).toBe(204);
     expect(invalidate.response).toBe('');
+  });
+
+  it('hands the message id back for exactly the events whose id rezeis reads', async () => {
+    // rezeis reads a relayed `messageId` in three places, and nowhere else:
+    // BroadcastDeliveryService (a user notification is SENT, and revocable, only
+    // with one), BackupService (a backup is off-site only with one) and
+    // ReiwaRelayProcessor.rememberChannelPost (a broadcast's channel post is
+    // addressable — editable, recallable — only with one). An id dropped on the
+    // way back cannot be asked for again.
+    const READS_ID = [
+      ['reiwa.user.notify', { eventId: 'evt-id-1', telegramId: '123456789', text: 'текст' }],
+      ['reiwa.channel.broadcast', { eventId: 'broadcast-channel:bc-1', chatId: '-1001234567890', text: 'текст' }],
+      ['reiwa.backup.document', { ...BACKUP_METADATA }],
+    ] as const;
+    for (const [event, metadata] of READS_ID) {
+      const { status, response } = await relay(event, metadata, 200, { messageId: 4242 });
+      expect(status, event).toBe(200);
+      expect(JSON.parse(response), event).toEqual({ messageId: 4242 });
+    }
+
+    // Nothing in rezeis reads an id for these, so they stay on the bare ack.
+    const IGNORES_ID = [
+      ['reiwa.channel.broadcast.document', { eventId: 'evt-id-2', chatId: '-1001234567890', content: 'report' }],
+      ['reiwa.dev.notify', { eventId: 'sysevt:id-3', text: 'карточка' }],
+      ['reiwa.dev.notify.document', { eventId: 'sysevt:id-4', content: 'report' }],
+    ] as const;
+    for (const [event, metadata] of IGNORES_ID) {
+      const { status, response } = await relay(event, metadata, 200, { messageId: 4242 });
+      expect(status, event).toBe(204);
+      expect(response, event).toBe('');
+    }
   });
 });
 
