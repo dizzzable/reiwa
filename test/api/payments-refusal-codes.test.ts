@@ -24,8 +24,11 @@ describe("checkout refusal codes", () => {
   it.each([
     "TRIAL_ALREADY_USED",
     "TRIAL_PENDING_CHECKOUT_STALE",
-    // A plan withdrawn while the buyer still had the old catalogue on screen.
+    // Any quote the panel will not turn into a draft. From a panel older than
+    // PAYMENT_DRAFT_PLAN_NOT_AVAILABLE this is also how a withdrawn plan arrives.
     "PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE",
+    // A plan or term withdrawn while the buyer still had the old catalogue on screen.
+    "PAYMENT_DRAFT_PLAN_NOT_AVAILABLE",
   ])("forwards %s", (code) => {
     expect(extractCheckoutRefusalCode(JSON.stringify({ code, message: "x" }))).toBe(code);
   });

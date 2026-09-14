@@ -371,6 +371,7 @@ export const en: RuDict = {
       creating: 'Creating payment…',
       error: 'Failed to create payment. Try again later.',
       planUnavailable: 'This plan is no longer available. Please choose one from the updated list.',
+      notAccepted: "This purchase can't be completed right now. If it keeps happening, contact support.",
     },
     noGateways: 'Payment methods are temporarily unavailable',
   },
@@ -932,7 +933,8 @@ export const en: RuDict = {
     copyLink: 'Copy the link',
     copyHint: 'The link appears once the subscription is ready',
     copied: 'Link copied',
-    copyFailed: 'Could not copy — select the link and copy it by hand',
+    copyFailed:
+      'Could not copy the link. Scan the QR code in the app instead — the link icon at the top of the screen opens it.',
     noLink: 'This subscription has no link yet',
     catalogUnavailable:
       'The app list is unavailable right now. Copy the link above and paste it into your VPN client.',
@@ -963,6 +965,7 @@ export const en: RuDict = {
     openSource: 'Subscription address: {{host}}',
     openNotOpened:
       'The app did not open? Make sure it is installed, or copy the link and add the subscription in the app by hand.',
+    openCopyFailed: 'Could not copy. Go back to Telegram and copy the link on the connect screen.',
     openChecking: 'Checking the link…',
     openFailed: 'Could not check the link. Check your internet connection and try again.',
     openInvalid:
@@ -1099,6 +1102,7 @@ export const en: RuDict = {
     choosePlanHint: 'Pick a plan',
     choosePlanCta: 'Choose plan',
     noneRenewable: 'No subscriptions are available to renew.',
+    loadError: 'Could not load the subscriptions to renew.',
     reason: {
       trial: "A trial can't be renewed — upgrade to a regular plan instead.",
       noPlan: 'This subscription has no plan — pick a plan when renewing.',

@@ -11,6 +11,7 @@ import {
 } from '@/lib/subscription-limit'
 import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
 import { BackButton } from '@/components/ui/back-button'
+import { StadiumButton } from '@/components/ui/stadium-button'
 import { TariffCard } from './tariff-card'
 
 export default function PlansPage() {
@@ -18,11 +19,22 @@ export default function PlansPage() {
   const { t } = useTranslation()
   const { selectPlan } = usePurchaseStore()
 
-  const { data: plans = [], isLoading } = useQuery({
+  const {
+    data: plans = [],
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['plans'],
     queryFn: getPlans,
     staleTime: 300_000,
   })
+  // A read that failed with nothing loaded is not an empty catalogue. The
+  // service worker keeps no copy of this list (it is resolved per signed-in
+  // subscriber), so offline this is what the page meets — and "no plans
+  // available" would be a claim about the operator, not about the network.
+  const loadFailed = isError && plans.length === 0
 
   const { data: actionPolicy, isFetched: policyFetched } = useQuery({
     queryKey: subscriptionQueryKeys.actionPolicy(),
@@ -95,6 +107,14 @@ export default function PlansPage() {
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="theme-skeleton h-[150px] animate-pulse rounded-card" />
           ))
+        ) : loadFailed ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-[color:var(--brand-muted-foreground)]">
+            <Shield className="h-12 w-12 opacity-30" />
+            <p>{t('plans.empty')}</p>
+            <StadiumButton variant="secondary" loading={isFetching} onClick={() => void refetch()}>
+              {t('common.retry')}
+            </StadiumButton>
+          </div>
         ) : activePlans.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-[color:var(--brand-muted-foreground)]">
             <Shield className="h-12 w-12 opacity-30" />

@@ -17,9 +17,10 @@ const toneClasses: Record<TipTone, string> = {
   danger:  'border-l-(--brand-primary)/60    bg-(--brand-primary)/10    text-(--brand-primary)',
 }
 
-export function TipCard({ tone = 'info', icon, children, className }: TipCardProps) {
+export function TipCard({ tone = 'info', icon, children, className, ...rest }: TipCardProps) {
   return (
     <div
+      {...rest}
       className={cn(
         'flex items-start gap-3 rounded-xl border-l-4 p-4 text-sm leading-relaxed',
         toneClasses[tone],

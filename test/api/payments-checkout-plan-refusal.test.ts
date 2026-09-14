@@ -11,12 +11,13 @@ import { UpstreamError } from '../../src/core/errors/upstream-error.js';
  *
  * The panel refuses such a checkout BEFORE any charge: its quote marks the plan
  * `PLAN_NOT_AVAILABLE`, and the draft step answers 400
- * `PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE` — a code its safe exception filter
- * allowlists precisely so a client can branch on it. This route collapsed it
- * into `500 Failed to create checkout`, so the purchase page could only show a
- * generic toast over a spinner that never stopped. A subscriber still looking
- * at yesterday's catalogue (the service worker keeps it) meets exactly this
- * when an operator archives or deletes a plan.
+ * `PAYMENT_DRAFT_PLAN_NOT_AVAILABLE` (a panel that predates that code answers
+ * `PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE`, which is also its answer to every other
+ * ineligible quote) — codes its safe exception filter allowlists precisely so
+ * a client can branch on them. This route collapsed them into `500 Failed to
+ * create checkout`, so the purchase page could only show a generic toast over
+ * a spinner that never stopped. A subscriber still looking at an earlier
+ * catalogue meets exactly this when an operator archives or deletes a plan.
  *
  * Driven through the real router, because the mapping lives in the catch block
  * and a helper-level test cannot see which status the route finally sends.
@@ -111,6 +112,33 @@ async function postCheckout(): Promise<{ status: number; body: unknown }> {
 }
 
 describe('POST /payments/checkout — a plan that is no longer for sale', () => {
+  it('forwards the panel code for a withdrawn plan as a typed 400', async () => {
+    // Since the panel names a withdrawn plan apart from other ineligible quotes,
+    // this is the code the purchase page answers by refetching the plan list.
+    // Dropped here, it would reach the cabinet as a 500 and that answer is lost.
+    createCheckout.mockRejectedValueOnce(
+      new UpstreamError(
+        'POST',
+        '/api/internal/payments/checkout',
+        400,
+        JSON.stringify({
+          statusCode: 400,
+          message: 'The selected plan or duration is no longer available.',
+          errorCode: 'PAYMENT_DRAFT_PLAN_NOT_AVAILABLE',
+          code: 'PAYMENT_DRAFT_PLAN_NOT_AVAILABLE',
+        }),
+      ),
+    );
+
+    const response = await postCheckout();
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      code: 'PAYMENT_DRAFT_PLAN_NOT_AVAILABLE',
+      message: 'PAYMENT_DRAFT_PLAN_NOT_AVAILABLE',
+    });
+  });
+
   it('answers with a typed 400 carrying the panel code, not a 500', async () => {
     createCheckout.mockRejectedValueOnce(
       new UpstreamError('POST', '/api/internal/payments/checkout', 400, QUOTE_NOT_ELIGIBLE_BODY),

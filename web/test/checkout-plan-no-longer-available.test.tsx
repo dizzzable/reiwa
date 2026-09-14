@@ -3,11 +3,13 @@
 /**
  * A plan the panel stopped selling must not strand the subscriber mid-wizard.
  *
- * The service worker and React Query both keep the catalogue, so a subscriber
- * can pick a plan an operator has since archived or deleted. The panel refuses
- * that checkout before any charge — `400 PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE`,
- * forwarded by the BFF — and the purchase page answered with a generic toast
- * over a "Создаём платёж…" spinner that never stopped.
+ * React Query keeps the catalogue, so a subscriber can pick a plan an operator
+ * has since archived or deleted. The panel refuses that checkout before any
+ * charge — `400 PAYMENT_DRAFT_PLAN_NOT_AVAILABLE`, or from a panel that predates
+ * that code the generic `PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE`, forwarded by the BFF
+ * — and the purchase page answered with a generic toast over a "Создаём
+ * платёж…" spinner that never stopped. More often the quote itself finds the
+ * plan gone, and said only "try a different payment method".
  *
  * Mounted the way the app mounts the wizard (store advanced into the step, a
  * query client with the app's defaults), because every one of these defects
@@ -19,7 +21,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { act, type ComponentProps, type ReactNode } from "react";
+import { act, StrictMode, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -99,16 +101,46 @@ import { useUpgradeStore } from "../src/stores/upgrade.store";
 
 /** What the BFF sends when the panel refuses a plan it no longer sells. */
 function planRefusal(): Error {
+  return refusal("PAYMENT_DRAFT_PLAN_NOT_AVAILABLE");
+}
+
+/**
+ * The panel's refusal that does not say why: any other ineligible quote — and,
+ * from a panel older than PAYMENT_DRAFT_PLAN_NOT_AVAILABLE, a withdrawn plan too.
+ */
+function quoteNotEligibleRefusal(): Error {
+  return refusal("PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE");
+}
+
+function refusal(code: string): Error {
   return Object.assign(new Error("Request failed with status code 400"), {
     isAxiosError: true,
-    response: {
-      status: 400,
-      data: {
-        code: "PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE",
-        message: "PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE",
-      },
-    },
+    response: { status: 400, data: { code, message: code } },
   });
+}
+
+/** An unpriced quote as the BFF flattens it: the first code, and all of them. */
+function unpricedQuote(...codes: string[]): { warning: string; warnings: { code: string; message: string }[] } {
+  return { warning: codes[0]!, warnings: codes.map((code) => ({ code, message: code })) };
+}
+
+/** A priced quote as the BFF flattens it. */
+function pricedQuote(planName: string): Record<string, unknown> {
+  return {
+    planId: "plan-archived",
+    planName,
+    durationDays: 30,
+    currency: "RUB",
+    basePrice: 100,
+    finalPrice: 100,
+    discountPercent: 0,
+    gatewayType: "YOOKASSA",
+  };
+}
+
+/** Buttons on screen, by their exact label. */
+function buttonLabels(): string[] {
+  return [...(container?.querySelectorAll("button") ?? [])].map((button) => button.textContent?.trim() ?? "");
 }
 
 /** Any other failure, which must not be mistaken for a withdrawn plan. */
@@ -196,17 +228,29 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/** Opens the purchase wizard on `step` with a plan, term and gateway chosen. */
+function enterPurchase(step: "quote" | "checkout", plan: { readonly isTrial?: boolean } = {}): void {
+  usePurchaseStore.setState({
+    step,
+    lastNav: "forward",
+    selectedPlan: {
+      id: "plan-archived",
+      name: "Archived",
+      type: "BOTH",
+      durations: [],
+      isTrial: plan.isTrial ?? false,
+    } as never,
+    selectedDuration: { days: 30 } as never,
+    selectedGateway: GATEWAY,
+    selectedDevice: null,
+    selectedSavedPaymentMethodId: null,
+    savePaymentMethodConsent: false,
+  });
+}
+
 describe("purchase: the panel refuses the plan at checkout", () => {
   function enterCheckout(): void {
-    usePurchaseStore.setState({
-      step: "checkout",
-      selectedPlan: { id: "plan-archived", name: "Archived", type: "BOTH", durations: [] } as never,
-      selectedDuration: { days: 30 } as never,
-      selectedGateway: GATEWAY,
-      selectedDevice: null,
-      selectedSavedPaymentMethodId: null,
-      savePaymentMethodConsent: false,
-    });
+    enterPurchase("checkout");
   }
 
   it("stops the spinner, says the plan is gone and returns to plan selection", async () => {
@@ -282,8 +326,151 @@ describe("purchase: the panel refuses the plan at checkout", () => {
     ] as const) {
       expect(dict.purchase.checkout.planUnavailable, `${name} copy`).toBeTruthy();
       expect(dict.purchase.checkout.planUnavailable).not.toBe(dict.purchase.checkout.error);
+      expect(dict.purchase.checkout.notAccepted, `${name} copy`).toBeTruthy();
+      expect(dict.purchase.checkout.notAccepted).not.toBe(dict.purchase.checkout.planUnavailable);
+      expect(dict.purchase.checkout.notAccepted).not.toBe(dict.purchase.checkout.error);
     }
     expect(en.purchase.checkout.planUnavailable).not.toBe(ru.purchase.checkout.planUnavailable);
+    expect(en.purchase.checkout.notAccepted).not.toBe(ru.purchase.checkout.notAccepted);
+  });
+});
+
+describe("purchase: a refusal that does not say why", () => {
+  // PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE no longer means "withdrawn" on its own: the
+  // panel names that case apart now. It still does from the panel in production
+  // today, so the page re-prices and lets the fresh quote tell the cases apart.
+
+  it("still ends on the refreshed plan list when the fresh quote finds the plan gone (an older panel)", async () => {
+    queryClient.setQueryData(["plans"], [{ id: "plan-archived" }, { id: "plan-live" }]);
+    api.createCheckout.mockRejectedValueOnce(quoteNotEligibleRefusal());
+    api.getQuote.mockResolvedValue(unpricedQuote("PLAN_NOT_AVAILABLE"));
+    enterPurchase("checkout");
+
+    await mount(<PurchasePage />);
+    await settle();
+
+    expect(api.createCheckout).toHaveBeenCalledTimes(1);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.warning).toHaveBeenCalledWith("purchase.checkout.planUnavailable", expect.anything());
+    expect(toast.error, "a withdrawn plan is not a generic failure").not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith("/plans", { replace: true });
+    expect(usePurchaseStore.getState().selectedPlan).toBeNull();
+    expect(queryClient.getQueryData(["plans"])).toBeUndefined();
+  });
+
+  it("does not call a plan that is still on sale withdrawn, and does not offer the refused Pay again", async () => {
+    queryClient.setQueryData(["plans"], [{ id: "plan-archived" }]);
+    api.createCheckout.mockRejectedValueOnce(quoteNotEligibleRefusal());
+    // The fresh quote prices the plan: the refusal is not about the list.
+    api.getQuote.mockResolvedValue(pricedQuote("Archived"));
+    enterPurchase("checkout");
+
+    await mount(<PurchasePage />);
+    await settle();
+
+    expect(api.createCheckout).toHaveBeenCalledTimes(1);
+    expect(text()).toContain("purchase.checkout.notAccepted");
+    expect(text(), "the spinner is still up").not.toContain("purchase.checkout.creating");
+    expect(buttonLabels(), "the refused quote is offered for payment again").not.toContain("purchase.quote.pay");
+    expect(buttonLabels()).toContain("purchase.quote.change");
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalledWith("/plans", expect.anything());
+    expect(usePurchaseStore.getState().selectedPlan).not.toBeNull();
+    expect(queryClient.getQueryData(["plans"])).toEqual([{ id: "plan-archived" }]);
+  });
+
+  it("re-prices before deciding: the refused copy is neither offered nor judged while the fresh quote is out", async () => {
+    // The realistic path: the buyer saw a price, pressed Pay, and was refused.
+    let answerFreshQuote: (quote: unknown) => void = () => undefined;
+    api.getQuote
+      .mockResolvedValueOnce(pricedQuote("Archived"))
+      .mockImplementationOnce(() => new Promise((resolve) => (answerFreshQuote = resolve)));
+    api.createCheckout.mockRejectedValueOnce(quoteNotEligibleRefusal());
+    enterPurchase("quote");
+
+    await mount(<PurchasePage />);
+    await press("purchase.quote.pay");
+    await settle();
+
+    expect(api.createCheckout).toHaveBeenCalledTimes(1);
+    expect(usePurchaseStore.getState().step).toBe("quote");
+    expect(text(), "judged the refused copy before re-pricing it").not.toContain("purchase.checkout.notAccepted");
+    expect(buttonLabels(), "offered the refused copy for payment while re-pricing").not.toContain(
+      "purchase.quote.pay",
+    );
+
+    await act(async () => answerFreshQuote(unpricedQuote("PLAN_NOT_AVAILABLE")));
+    await settle();
+    await settle();
+
+    expect(toast.warning).toHaveBeenCalledWith("purchase.checkout.planUnavailable", expect.anything());
+    expect(navigate).toHaveBeenCalledWith("/plans", { replace: true });
+  });
+
+  it("names why a paid trial is not sold to this subscriber instead of calling it withdrawn", async () => {
+    // Still listed: the catalogue does not check the Telegram link, so
+    // "choose from the updated list" would lead straight back to this trial.
+    queryClient.setQueryData(["plans"], [{ id: "plan-archived" }]);
+    api.createCheckout.mockRejectedValueOnce(quoteNotEligibleRefusal());
+    api.getQuote.mockResolvedValue(unpricedQuote("TRIAL_REQUIRES_TELEGRAM", "PLAN_NOT_AVAILABLE"));
+    enterPurchase("checkout", { isTrial: true });
+
+    await mount(<PurchasePage />);
+    await settle();
+
+    expect(text()).toContain("trialCta.subtitleLinkTelegram");
+    expect(text()).not.toContain("purchase.quote.priceError");
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalledWith("/plans", expect.anything());
+    expect(queryClient.getQueryData(["plans"])).toEqual([{ id: "plan-archived" }]);
+
+    await press("trialCta.buttonLinkTelegram");
+    expect(navigate).toHaveBeenCalledWith("/settings/privacy?link=telegram");
+  });
+});
+
+describe("purchase: the quote finds the plan already gone", () => {
+  // The most common path: the plan was withdrawn BEFORE the quote was priced, so
+  // no checkout is ever refused — the quote itself says so.
+
+  for (const codes of [
+    ["PLAN_NOT_AVAILABLE"],
+    ["DURATION_NOT_AVAILABLE"],
+    // An older panel led with a listed trial's claim warning on quotes for
+    // every other plan; for a plan that is not a trial it explains nothing.
+    ["TRIAL_REQUIRES_TELEGRAM", "PLAN_NOT_AVAILABLE"],
+  ]) {
+    it(`says so and returns to a freshly loaded plan list (${codes.join(" + ")})`, async () => {
+      queryClient.setQueryData(["plans"], [{ id: "plan-archived" }, { id: "plan-live" }]);
+      api.getQuote.mockResolvedValue(unpricedQuote(...codes));
+      enterPurchase("quote");
+
+      await mount(<PurchasePage />);
+      await settle();
+
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(toast.warning).toHaveBeenCalledWith("purchase.checkout.planUnavailable", expect.anything());
+      expect(queryClient.getQueryData(["plans"]), "the list still offers the withdrawn plan").toBeUndefined();
+      expect(navigate).toHaveBeenCalledWith("/plans", { replace: true });
+      expect(usePurchaseStore.getState().selectedPlan).toBeNull();
+      expect(text(), "told to try another payment method for a plan that is gone").not.toContain(
+        "purchase.quote.priceError",
+      );
+    });
+  }
+
+  it("keeps the payment-method hint for a quote the chosen gateway cannot price", async () => {
+    queryClient.setQueryData(["plans"], [{ id: "plan-archived" }]);
+    api.getQuote.mockResolvedValue(unpricedQuote("GATEWAY_NOT_AVAILABLE"));
+    enterPurchase("quote");
+
+    await mount(<PurchasePage />);
+    await settle();
+
+    expect(text()).toContain("purchase.quote.priceError");
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalledWith("/plans", expect.anything());
+    expect(queryClient.getQueryData(["plans"])).toEqual([{ id: "plan-archived" }]);
   });
 });
 
@@ -302,9 +489,33 @@ describe("upgrade: a target plan that is no longer sold", () => {
   beforeEach(() => {
     api.getAllSubscriptions.mockResolvedValue({ subscriptions: [] });
     api.getEnabledGateways.mockResolvedValue([GATEWAY_WIRE]);
-    // What the review re-reads once the target is gone.
-    api.getQuote.mockResolvedValue({ warning: "PLAN_NOT_AVAILABLE" });
+    // A review the chosen gateway cannot price; the cases about a withdrawn
+    // target set their own answer.
+    api.getQuote.mockResolvedValue(unpricedQuote("UPGRADE_RESETS_EXPIRY", "GATEWAY_NOT_AVAILABLE"));
   });
+
+  /** The target list as the subscriber chose from it, and as the panel serves it now. */
+  function serveTargetsAfterWithdrawal(): void {
+    queryClient.setQueryData(["upgrade-options", "sub-1"], {
+      subscriptionId: "sub-1",
+      plans: [GONE_TARGET, LIVE_TARGET],
+      warnings: [],
+    });
+    api.getUpgradeOptions.mockResolvedValue({
+      subscriptionId: "sub-1",
+      plans: [LIVE_TARGET],
+      warnings: [],
+    });
+  }
+
+  function expectBackOnRefreshedTargets(): void {
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.warning).toHaveBeenCalledWith("purchase.checkout.planUnavailable", expect.anything());
+    expect(useUpgradeStore.getState().step).toBe("plan");
+    expect(useUpgradeStore.getState().selectedPlan).toBeNull();
+    expect(text(), "the target list was not refetched").toContain("Live target");
+    expect(text()).not.toContain("Gone target");
+  }
 
   /** Mount first, then advance: the page resets the store when it unmounts. */
   async function enterStep(step: "review" | "checkout"): Promise<void> {
@@ -345,6 +556,92 @@ describe("upgrade: a target plan that is no longer sold", () => {
     expect(useUpgradeStore.getState().selectedPlan).toBeNull();
     expect(text(), "the target list was not refetched").toContain("Live target");
     expect(text()).not.toContain("Gone target");
+  });
+
+  it("sends an older panel's bare refusal back to the refreshed target list once the review finds it gone", async () => {
+    serveTargetsAfterWithdrawal();
+    api.createUpgradeCheckout.mockRejectedValueOnce(quoteNotEligibleRefusal());
+    // An upgrade quote leads with its informational warning, so the withdrawal
+    // is only visible in the full list.
+    api.getQuote.mockResolvedValue(unpricedQuote("UPGRADE_RESETS_EXPIRY", "PLAN_NOT_AVAILABLE"));
+
+    await enterStep("checkout");
+    await settle();
+
+    expect(api.createUpgradeCheckout).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+    expectBackOnRefreshedTargets();
+  });
+
+  it("re-prices a refused review before deciding, instead of judging the copy it already showed", async () => {
+    // The realistic path: the subscriber saw the upgrade priced and pressed Pay.
+    serveTargetsAfterWithdrawal();
+    let answerFreshQuote: (quote: unknown) => void = () => undefined;
+    api.getQuote
+      .mockResolvedValueOnce({
+        planId: "plan-gone",
+        planName: "Gone target",
+        durationDays: 30,
+        currency: "RUB",
+        basePrice: 100,
+        finalPrice: 100,
+        discountPercent: 0,
+        gatewayType: "YOOKASSA",
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => (answerFreshQuote = resolve)));
+    api.createUpgradeCheckout.mockRejectedValueOnce(quoteNotEligibleRefusal());
+
+    await enterStep("review");
+    await press("upgrade.pay");
+    await settle();
+
+    expect(api.createUpgradeCheckout).toHaveBeenCalledTimes(1);
+    expect(useUpgradeStore.getState().step).toBe("review");
+    expect(text(), "judged the refused copy before re-pricing it").not.toContain("purchase.checkout.notAccepted");
+    expect(buttonLabels()).not.toContain("upgrade.pay");
+
+    await act(async () => answerFreshQuote(unpricedQuote("UPGRADE_RESETS_EXPIRY", "PLAN_NOT_AVAILABLE")));
+    await settle();
+    await settle();
+
+    expectBackOnRefreshedTargets();
+  });
+
+  it("returns to the refreshed target list when the review finds the target already gone", async () => {
+    serveTargetsAfterWithdrawal();
+    api.getQuote.mockResolvedValue(unpricedQuote("UPGRADE_RESETS_EXPIRY", "PLAN_NOT_AVAILABLE"));
+
+    await enterStep("review");
+    await settle();
+
+    expect(text(), "told to try another payment method for a target that is gone").not.toContain(
+      "upgrade.priceError",
+    );
+    expectBackOnRefreshedTargets();
+  });
+
+  it("does not offer Pay again for a priced upgrade the panel refused without saying why", async () => {
+    api.createUpgradeCheckout.mockRejectedValueOnce(quoteNotEligibleRefusal());
+    api.getQuote.mockResolvedValue({
+      planId: "plan-gone",
+      planName: "Gone target",
+      durationDays: 30,
+      currency: "RUB",
+      basePrice: 100,
+      finalPrice: 100,
+      discountPercent: 0,
+      gatewayType: "YOOKASSA",
+    });
+
+    await enterStep("checkout");
+    await settle();
+
+    expect(api.createUpgradeCheckout).toHaveBeenCalledTimes(1);
+    expect(useUpgradeStore.getState().step).toBe("review");
+    expect(text()).toContain("purchase.checkout.notAccepted");
+    expect(buttonLabels()).not.toContain("upgrade.pay");
+    expect(buttonLabels()).toContain("upgrade.change");
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 
   it("lets Back leave a review that cannot be priced when only one gateway exists", async () => {
@@ -493,5 +790,255 @@ describe("renewal: a plan chosen for a plan-less subscription that is no longer 
     expect(text()).not.toContain("renewal.pay");
     expect(useRenewalStore.getState().selectedPlans).toEqual({});
     expect(toast.warning.mock.calls.map((call) => call[0])).toContain("purchase.checkout.planUnavailable");
+  });
+});
+
+describe("renewal: a subscription whose OWN plan is deleted mid-flow", () => {
+  // Deleting a plan makes its subscriptions ask for a plan choice at renewal
+  // (renewable, requiresPlanSelection, no price). The review summed only the
+  // priced subscriptions, offered Pay for that total, and every Pay was refused
+  // (RENEWAL_ITEM_NOT_PRICEABLE) — nothing said a plan had to be chosen.
+  const PLAN_LIVE = { id: "plan-live", name: "Live plan", isTrial: false, durations: [{ id: "d-30", days: 30 }] };
+
+  function pricedItem(subscriptionId: string, planId: string, amount: string) {
+    return {
+      subscriptionId,
+      planId,
+      planName: planId,
+      durationDays: 30,
+      availableDurations: [{ id: "d-30", days: 30 }],
+      currency: "RUB",
+      amount,
+      discountPercent: 0,
+      renewable: true,
+      requiresPlanSelection: false,
+      warnings: [],
+    };
+  }
+
+  /** `quoteSubscriptionRenewal` for a subscription whose plan is gone and no choice was sent. */
+  function needsChoiceItem(subscriptionId: string) {
+    return {
+      subscriptionId,
+      planId: null,
+      planName: null,
+      durationDays: null,
+      availableDurations: [],
+      currency: null,
+      amount: null,
+      discountPercent: 0,
+      renewable: true,
+      requiresPlanSelection: true,
+      warnings: [{ code: "ARCHIVED_PLAN_REPLACEMENT", message: "archived" }],
+    };
+  }
+
+  /** Whether the operator has deleted plan P (sub-a's own plan) yet. */
+  let planDeleted: boolean;
+
+  beforeEach(() => {
+    planDeleted = true;
+    api.getAllSubscriptions.mockResolvedValue({
+      subscriptions: [
+        { id: "sub-a", status: "ACTIVE", isTrial: false, plan: { name: "P" } },
+        { id: "sub-b", status: "ACTIVE", isTrial: false, plan: { name: "R" } },
+      ],
+    });
+    api.getEnabledGateways.mockResolvedValue([GATEWAY_WIRE]);
+    api.getPlans.mockResolvedValue([PLAN_LIVE]);
+    api.getRenewalOptions.mockImplementation(
+      async (input?: { subscriptionIds?: string[]; plans?: { subscriptionId: string; planId: string }[] }) => {
+        const chosenForA = input?.plans?.find((entry) => entry.subscriptionId === "sub-a")?.planId;
+        const itemA =
+          chosenForA !== undefined
+            ? pricedItem("sub-a", chosenForA, "100")
+            : planDeleted
+              ? needsChoiceItem("sub-a")
+              : pricedItem("sub-a", "plan-p", "200");
+        const items = [itemA, pricedItem("sub-b", "plan-r", "300")].filter(
+          (item) => input?.subscriptionIds === undefined || input.subscriptionIds.includes(item.subscriptionId),
+        );
+        const priced = items.filter((item) => item.amount !== null);
+        const total = priced.reduce((sum, item) => sum + Number(item.amount), 0);
+        return {
+          userId: "user-1",
+          items,
+          currency: priced.length > 0 ? "RUB" : null,
+          total: priced.length > 0 ? String(total) : null,
+        };
+      },
+    );
+  });
+
+  function priceNotRenewable(): Error {
+    return Object.assign(new Error("Request failed with status code 409"), {
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: {
+          code: "RENEWAL_ITEM_NOT_PRICEABLE",
+          message: "A subscription can no longer be renewed on these terms. Review the renewal again.",
+        },
+      },
+    });
+  }
+
+  it("sends a multi-subscription review to choose a plan instead of offering Pay for part of it", async () => {
+    // The list the subscriber ticked, as React Query still holds it: sub-a on
+    // its own plan, priced. Plan selection reads it too, and must not skip past
+    // the choice on this copy.
+    queryClient.setQueryData(["renewal-options", {}, {}], {
+      userId: "user-1",
+      items: [pricedItem("sub-a", "plan-p", "200"), pricedItem("sub-b", "plan-r", "300")],
+      currency: "RUB",
+      total: "500",
+    });
+    // The catalogue as it was cached before P was deleted.
+    queryClient.setQueryData(["plans"], [
+      { id: "plan-p", name: "Deleted plan P", isTrial: false, durations: [{ id: "d-30", days: 30 }] },
+      PLAN_LIVE,
+    ]);
+    useRenewalStore.setState({
+      step: "review",
+      navDirection: "forward",
+      selectedSubscriptionIds: ["sub-a", "sub-b"],
+      selectedGateway: GATEWAY,
+    });
+
+    await mount(<RenewalPage />);
+    await settle();
+    await settle();
+
+    expect(useRenewalStore.getState().step, "offered Pay for a total without sub-a").toBe("plan");
+    expect(api.createRenewalCheckout).not.toHaveBeenCalled();
+    expect(buttonLabels()).not.toContain("renewal.pay");
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.warning).toHaveBeenCalledWith("purchase.checkout.planUnavailable", expect.anything());
+    expect(text(), "plan selection skipped the choice on the stale list").toContain("Live plan");
+    expect(text(), "the deleted plan is offered to choose").not.toContain("Deleted plan P");
+
+    // And the way on works: choose, continue, and the review prices both.
+    await press("Live plan");
+    await press("renewal.continue");
+    await settle();
+    expect(useRenewalStore.getState().step).toBe("review");
+    expect(buttonLabels()).toContain("renewal.pay");
+    expect(text()).toContain("400");
+  });
+
+  it("sends a refused Pay to plan choice when the subscription's plan was deleted after the review", async () => {
+    planDeleted = false;
+    api.createRenewalCheckout.mockImplementation(async () => {
+      planDeleted = true;
+      throw priceNotRenewable();
+    });
+    useRenewalStore.setState({
+      step: "review",
+      navDirection: "forward",
+      selectedSubscriptionIds: ["sub-a"],
+      selectedGateway: GATEWAY,
+    });
+
+    await mount(<RenewalPage />);
+    expect(buttonLabels()).toContain("renewal.pay");
+
+    await press("renewal.pay");
+    await settle();
+    await settle();
+
+    expect(api.createRenewalCheckout).toHaveBeenCalledTimes(1);
+    expect(useRenewalStore.getState().step, "the re-priced review dead-ends").toBe("plan");
+    expect(text()).not.toContain("renewal.priceError");
+    expect(text()).toContain("Live plan");
+    expect(toast.warning.mock.calls.map((call) => call[0])).toContain("purchase.checkout.planUnavailable");
+  });
+});
+
+describe("under StrictMode, a withdrawal the step meets on mount is announced once", () => {
+  // `main.tsx` renders the app in StrictMode, which runs a newly mounted
+  // component's effects twice. A cached answer is there on the first render, so
+  // the withdrawal is met inside that double run.
+  async function mountStrict(node: ReactNode): Promise<void> {
+    await mount(<StrictMode>{node}</StrictMode>);
+  }
+
+  it("purchase quote", async () => {
+    queryClient.setQueryData(["quote", "plan-archived", 30, "YOOKASSA"], unpricedQuote("PLAN_NOT_AVAILABLE"));
+    enterPurchase("quote");
+
+    await mountStrict(<PurchasePage />);
+
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it("upgrade review", async () => {
+    api.getAllSubscriptions.mockResolvedValue({ subscriptions: [] });
+    api.getEnabledGateways.mockResolvedValue([GATEWAY_WIRE]);
+    api.getUpgradeOptions.mockResolvedValue({ subscriptionId: "sub-1", plans: [], warnings: [] });
+    queryClient.setQueryData(
+      ["upgrade-quote", "sub-1", "plan-gone", 30, "YOOKASSA"],
+      unpricedQuote("UPGRADE_RESETS_EXPIRY", "PLAN_NOT_AVAILABLE"),
+    );
+    // Mount first: the page resets its store when it (StrictMode-)unmounts.
+    await mountStrict(<UpgradePage />);
+    act(() => {
+      useUpgradeStore.setState({
+        step: "review",
+        selectedSubscriptionId: "sub-1",
+        selectedPlan: { id: "plan-gone", name: "Gone", durations: [{ id: "d-30", days: 30 }] } as never,
+        selectedDurationDays: 30,
+        selectedGateway: GATEWAY,
+      });
+    });
+    await settle();
+    await settle();
+
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it("renewal review", async () => {
+    // The review now re-prices on every visit and acts only on that answer, so
+    // the double run on mount never sees this cached copy: what this pins is the
+    // outcome, one notice. It no longer isolates `useSendToPlanChoice`'s latch,
+    // which no mount reaches (renewal-plan-choice-handoff.test.tsx pins the
+    // re-price itself).
+    api.getAllSubscriptions.mockResolvedValue({
+      subscriptions: [{ id: "sub-a", status: "ACTIVE", isTrial: false, plan: null }],
+    });
+    api.getEnabledGateways.mockResolvedValue([GATEWAY_WIRE]);
+    api.getPlans.mockResolvedValue([]);
+    const needsChoice = {
+      subscriptionId: "sub-a",
+      planId: null,
+      planName: null,
+      durationDays: null,
+      availableDurations: [],
+      currency: null,
+      amount: null,
+      discountPercent: 0,
+      renewable: true,
+      requiresPlanSelection: true,
+      warnings: [],
+    };
+    api.getRenewalOptions.mockResolvedValue({ userId: "user-1", items: [needsChoice], currency: null, total: null });
+    queryClient.setQueryData(["renewal-review", ["sub-a"], "YOOKASSA", {}, {}], {
+      userId: "user-1",
+      items: [needsChoice],
+      currency: null,
+      total: null,
+    });
+    await mountStrict(<RenewalPage />);
+    act(() => {
+      useRenewalStore.setState({
+        step: "review",
+        navDirection: "forward",
+        selectedSubscriptionIds: ["sub-a"],
+        selectedGateway: GATEWAY,
+      });
+    });
+    await settle();
+    await settle();
+
+    expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 });

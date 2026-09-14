@@ -35,6 +35,7 @@ import { GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
+import { useSafeBack } from "@/hooks/use-safe-back";
 import { useAccessMode, useRenewalAddOnsEnabled } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { selectRenewalReoffer } from "./renewal-reoffer";
@@ -94,8 +95,8 @@ function formatPrice(amount: string | null, currency: string | null): string {
  * Subscriptions whose chosen plan the panel no longer renews onto.
  *
  * Only a plan-less (panel-imported) subscription carries a plan choice, and the
- * catalogue it was picked from can be stale — the service worker and React
- * Query both keep it. When the choice is not among the renewal targets, the
+ * catalogue it was picked from can be stale — React Query keeps it for five
+ * minutes. When the choice is not among the renewal targets, the
  * panel answers with no plan id and not renewable (`quoteSubscriptionRenewal`),
  * and keeps answering so for as long as the choice is sent.
  */
@@ -122,11 +123,15 @@ function withdrawnPlanChoices(
  * plan selection; the subscription list offers "choose a plan" by itself.
  *
  * Returns true while releasing, so the caller shows its loader instead of
- * flashing the dead end it is about to leave.
+ * flashing the dead end it is about to leave. With `isCurrentStep: false` (a
+ * step still mounted for its exit animation) it only reports; it never acts.
  */
 function useReleaseWithdrawnPlanChoices(
   items: readonly RenewalOptionItem[] | undefined,
-  { returnToPlanStep }: { readonly returnToPlanStep: boolean },
+  {
+    returnToPlanStep,
+    isCurrentStep = true,
+  }: { readonly returnToPlanStep: boolean; readonly isCurrentStep?: boolean },
 ): boolean {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -139,6 +144,7 @@ function useReleaseWithdrawnPlanChoices(
   const releasedKey = useRef("");
 
   useEffect(() => {
+    if (!isCurrentStep) return;
     if (withdrawnKey === releasedKey.current) return;
     releasedKey.current = withdrawnKey;
     if (withdrawn.length === 0) return;
@@ -155,14 +161,124 @@ function useReleaseWithdrawnPlanChoices(
     });
     if (returnToPlanStep) goBack("plan");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [withdrawnKey]);
+  }, [withdrawnKey, isCurrentStep]);
 
   return withdrawn.length > 0;
+}
+
+/**
+ * Selected subscriptions the panel now renews only onto a plan the subscriber
+ * picks, with no pick made.
+ *
+ * Deleting a plan does that to every subscription on it: renewable, but
+ * `requiresPlanSelection` and no price. Met on the review — the plan deleted
+ * after the list was loaded, or between the review and Pay — such an item sat
+ * in the list at "—", the total summed the others, and Pay was offered for it;
+ * the panel refused every Pay, and nothing said a plan had to be chosen.
+ */
+function subscriptionsAwaitingPlanChoice(
+  items: readonly RenewalOptionItem[] | undefined,
+  selectedSubscriptionIds: readonly string[],
+  selectedPlans: Record<string, string>,
+): string[] {
+  return (items ?? [])
+    .filter(
+      (item) =>
+        selectedSubscriptionIds.includes(item.subscriptionId) &&
+        item.requiresPlanSelection === true &&
+        selectedPlans[item.subscriptionId] === undefined,
+    )
+    .map((item) => item.subscriptionId);
+}
+
+/**
+ * Sends the review to plan selection for subscriptions that now need a plan,
+ * telling the subscriber why. Returns true while doing so, so the review shows
+ * its loader instead of the Pay it is about to take away. With
+ * `isCurrentStep: false` it only reports; it never acts.
+ *
+ * `releasing` is the review's `useReleaseWithdrawnPlanChoices` flag for the
+ * same answer. One answer can withdraw the plan chosen for one subscription and
+ * find another's own plan deleted. The release then tells the subscriber and
+ * returns them to plan selection in this same commit (letting go removes the
+ * choice, so the flag is not up on any later one), and this adds only the
+ * reload plan selection needs. Each used to act alone: the same notice twice,
+ * and two returns to plan selection.
+ */
+function useSendToPlanChoice(
+  items: readonly RenewalOptionItem[] | undefined,
+  {
+    isCurrentStep = true,
+    releasing = false,
+  }: { readonly isCurrentStep?: boolean; readonly releasing?: boolean } = {},
+): boolean {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { selectedSubscriptionIds, selectedPlans, goBack } = useRenewalStore();
+  const awaiting = subscriptionsAwaitingPlanChoice(items, selectedSubscriptionIds, selectedPlans);
+  const awaitingKey = awaiting.join("\u0000");
+  // StrictMode re-runs the effect with the same closure; the notice must not
+  // repeat. The review passes only an answer its visit received, which no
+  // mount has yet, so that double run cannot meet one today. The latch stays
+  // for a caller that hands this a cached copy.
+  const sentKey = useRef("");
+
+  useEffect(() => {
+    if (!isCurrentStep) return;
+    if (awaitingKey === sentKey.current) return;
+    sentKey.current = awaitingKey;
+    if (awaiting.length === 0) return;
+    // Reset, not invalidate. Plan selection decides from the base renewal
+    // options which subscriptions need a plan: on the cached copy, where this
+    // one still had its own, it found none and skipped straight back to the
+    // gateway and this review.
+    void queryClient.resetQueries({ queryKey: ["renewal-options"] });
+    if (releasing) return;
+    notifyPlanUnavailable(t);
+    // The catalogue is dropped for the same reason the other withdrawal paths
+    // drop it.
+    void queryClient.resetQueries({ queryKey: ["plans"] });
+    goBack("plan");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [awaitingKey, isCurrentStep]);
+
+  return awaiting.length > 0;
+}
+
+/**
+ * A read a step cannot go on without failed, with nothing loaded to fall back
+ * on. Retry needs no spinner of its own: a read with nothing loaded goes back to
+ * pending when it starts again, and the step's loader takes over.
+ */
+function ReadFailed({
+  message,
+  onRetry,
+  onBack,
+}: {
+  readonly message: string;
+  readonly onRetry: () => void;
+  readonly onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="px-5 space-y-3">
+      <TipCard tone="danger" role="alert">
+        {message}
+      </TipCard>
+      <StadiumButton fullWidth variant="secondary" onClick={onRetry}>
+        {t("common.retry")}
+      </StadiumButton>
+      <StadiumButton fullWidth variant="ghost" onClick={onBack}>
+        {t("renewal.back")}
+      </StadiumButton>
+    </div>
+  );
 }
 
 export default function RenewalPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const leave = useSafeBack("/dashboard");
   const { step, reset } = useRenewalStore();
   const { restricted } = useAccessMode();
 
@@ -176,20 +292,50 @@ export default function RenewalPage() {
   // /upgrade BEFORE rendering any renewal chrome. Without this the user sees a
   // "Продление" screen flash before being redirected to "Улучшение". Both
   // queries share their keys with the wizard steps, so this adds no network.
-  const { data: baseOptions, isLoading: optionsLoading } = useQuery({
+  const {
+    data: baseOptions,
+    isLoading: optionsLoading,
+    isError: optionsFailed,
+    refetch: refetchOptions,
+  } = useQuery({
     queryKey: ["renewal-options", {}, {}],
     queryFn: () => getRenewalOptions(),
     staleTime: 60_000,
   });
-  const { data: subsData, isLoading: subsLoading } = useQuery({
+  const {
+    data: subsData,
+    isLoading: subsLoading,
+    isError: subsFailed,
+    refetch: refetchSubs,
+  } = useQuery({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
   const decided = !optionsLoading && !subsLoading;
-  const nothingRenewable = (baseOptions?.items ?? []).every((o) => !o.renewable);
+  // Only an answer says nothing is renewable. A read that failed, or one paused
+  // while the device is offline, is not loading either, and holds no list: read
+  // as "nothing renewable", it sent a subscriber holding any trial to /upgrade
+  // from the middle of the wizard (the review's hand-off to plan selection
+  // reloads this list), past plan selection's Retry and its offline wait. The
+  // subscription list is history, so an expired trial kept beside a paid
+  // subscription was enough. A refetch that failed still holds the list it did
+  // not replace, and that is not taken for an answer either.
+  const nothingRenewable =
+    baseOptions !== undefined && !optionsFailed && baseOptions.items.every((o) => !o.renewable);
   const hasTrial = (subsData?.subscriptions ?? []).some((s) => s.isTrial);
   const redirectToUpgrade = decided && nothingRenewable && hasTrial;
+  // The subscription step lists what these two reads say. With one of them
+  // failed and nothing loaded, it says so instead of mounting the list. The list
+  // presented the failure as «nothing to renew», and every new mount of it asked
+  // again: this page swapped it for the loader while that read ran, and the
+  // failure brought it back to ask once more, with no message and no Retry.
+  const listUnreadable =
+    (baseOptions === undefined && optionsFailed) || (subsData === undefined && subsFailed);
+  const retryList = () => {
+    if (optionsFailed) void refetchOptions();
+    if (subsFailed) void refetchSubs();
+  };
 
   useEffect(() => {
     if (redirectToUpgrade) navigate("/upgrade", { replace: true });
@@ -233,7 +379,12 @@ export default function RenewalPage() {
           wins the race; keying them together removes the dependency on that
           ordering. */}
       <StepTransition stepKey={step === "polling" ? "checkout" : step}>
-        {step === "subscriptions" && <SelectSubscriptions />}
+        {step === "subscriptions" &&
+          (listUnreadable ? (
+            <ReadFailed message={t("renewal.loadError")} onRetry={retryList} onBack={leave} />
+          ) : (
+            <SelectSubscriptions />
+          ))}
         {step === "plan" && <SelectPlan />}
         {step === "addons" && <SelectRenewalAddOns />}
         {step === "gateway" && <SelectGateway />}
@@ -247,6 +398,7 @@ export default function RenewalPage() {
 function SelectSubscriptions() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const leave = useSafeBack("/dashboard");
   const {
     selectedSubscriptionIds,
     selectedDurations,
@@ -266,7 +418,11 @@ function SelectSubscriptions() {
     planId,
   }));
 
-  const { data: options, isLoading: optionsLoading } = useQuery({
+  const {
+    data: options,
+    isError: optionsFailed,
+    refetch: refetchOptions,
+  } = useQuery({
     queryKey: ["renewal-options", selectedDurations, selectedPlans],
     queryFn: () =>
       getRenewalOptions({
@@ -275,13 +431,19 @@ function SelectSubscriptions() {
       }),
     staleTime: 60_000,
   });
-  const { data: subsData, isLoading: subsLoading } = useQuery({
+  const { data: subsData } = useQuery({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
   const releasing = useReleaseWithdrawnPlanChoices(options?.items, { returnToPlanStep: false });
-  const isLoading = optionsLoading || subsLoading || releasing;
+  // The page answers for the subscriptions and the base list. A term or plan
+  // picked here is read under a key of its own, and a failure of that read is
+  // this step's to show: with nothing loaded it listed «nothing to renew».
+  const optionsUnreadable = options === undefined && optionsFailed;
+  // Not "isLoading": a read paused while the device is offline is neither
+  // loading nor failed, and holds no list either.
+  const isLoading = (options === undefined && !optionsFailed) || subsData === undefined || releasing;
 
   // Merge: the user's own subscriptions (card identity) + per-item renewal
   // price. We renew the subscriptions the user already owns — the plan/tariff
@@ -301,24 +463,38 @@ function SelectSubscriptions() {
     return sub.isTrial && (opt === undefined || !opt.renewable);
   });
 
-  // Skip the selection step entirely when there is exactly one renewable
-  // subscription — auto-select it and advance. A plan-less sub goes to the
-  // tariff-selection step first; others go straight to the gateway.
+  // Exactly one renewable subscription: select it for the subscriber, and skip
+  // this step only when nothing is left to choose on it. A plan-less sub goes to
+  // the tariff-selection step, which has its own term picker; a plan offering a
+  // single term goes straight to the gateway. A plan offering several terms
+  // STAYS here — the term picker below is the only place the term is chosen,
+  // and skipping it renewed every such subscription for the default term.
+  //
+  // Once per visit: after that, an empty selection is the subscriber's own
+  // untick, and re-selecting (or re-advancing) would undo it.
+  const autoSelected = useRef(false);
   useEffect(() => {
+    if (autoSelected.current) return;
     if (!isLoading && renewable.length === 1 && selectedSubscriptionIds.length === 0) {
+      autoSelected.current = true;
       const only = renewable[0]!;
       setSelectedSubscriptions([only.sub.id]);
-      setStep(only.option.requiresPlanSelection && !selectedPlans[only.sub.id] ? "plan" : "gateway");
+      if (only.option.requiresPlanSelection && !selectedPlans[only.sub.id]) setStep("plan");
+      else if (only.option.availableDurations.length <= 1) setStep("gateway");
     }
   }, [isLoading, renewable, selectedSubscriptionIds.length, selectedPlans, setSelectedSubscriptions, setStep]);
 
   // Trying to renew but nothing is renewable and the user holds a trial →
-  // send them to the upgrade flow (a trial is upgraded, never renewed).
+  // send them to the upgrade flow (a trial is upgraded, never renewed). Only on
+  // an answer, as on the page: a failed read lists nothing renewable too.
+  const toUpgrade = !isLoading && !optionsFailed && renewable.length === 0 && trialSubs.length > 0;
   useEffect(() => {
-    if (!isLoading && renewable.length === 0 && trialSubs.length > 0) {
-      navigate("/upgrade", { replace: true });
-    }
-  }, [isLoading, renewable.length, trialSubs.length, navigate]);
+    if (toUpgrade) navigate("/upgrade", { replace: true });
+  }, [toUpgrade, navigate]);
+
+  if (optionsUnreadable) {
+    return <ReadFailed message={t("renewal.loadError")} onRetry={() => void refetchOptions()} onBack={leave} />;
+  }
 
   if (isLoading) {
     return (
@@ -332,7 +508,7 @@ function SelectSubscriptions() {
 
   if (renewable.length === 0) {
     // Trials are being redirected to upgrade — render nothing to avoid a flash.
-    if (trialSubs.length > 0) return null;
+    if (toUpgrade) return null;
     // Surface the most relevant reason instead of a bare "none renewable".
     const reasonCode = (options?.items ?? [])
       .flatMap((i) => i.warnings.map((w) => w.code))
@@ -451,12 +627,20 @@ function SelectPlan() {
     goBack,
   } = useRenewalStore();
 
-  const { data: plans = [], isLoading: plansLoading } = useQuery({
+  const {
+    data: plansData,
+    isError: plansFailed,
+    refetch: refetchPlans,
+  } = useQuery({
     queryKey: ["plans"],
     queryFn: getPlans,
     staleTime: 300_000,
   });
-  const { data: baseOptions, isLoading: baseLoading } = useQuery({
+  const {
+    data: baseOptions,
+    isError: baseFailed,
+    refetch: refetchBase,
+  } = useQuery({
     queryKey: ["renewal-options", {}, {}],
     queryFn: () => getRenewalOptions(),
     staleTime: 60_000,
@@ -466,7 +650,7 @@ function SelectPlan() {
     queryFn: getAllSubscriptions,
     staleTime: 60_000,
   });
-  const isLoading = plansLoading || baseLoading;
+  const plans = plansData ?? [];
 
   const optionById = new Map((baseOptions?.items ?? []).map((o) => [o.subscriptionId, o]));
   const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
@@ -478,15 +662,41 @@ function SelectPlan() {
   // "Chosen" only counts once we actually know the targets (post-load).
   const allChosen = targets.length > 0 && targets.every((id) => Boolean(selectedPlans[id]));
 
+  // Which subscriptions need a plan is decided from the base options, and only
+  // from an answer. A read still loading, one paused while the device is
+  // offline, and one that failed all leave them undefined. Read as "none needs
+  // a plan", that skipped to the gateway, whose single-gateway auto-advance
+  // re-entered the review that had just handed the subscriber over to this
+  // step; a review still asking for a plan handed them over again, with another
+  // notice, lap after lap.
+  const optionsUnknown = baseOptions === undefined;
+  // The catalogue matters only once there is a plan to choose.
+  const catalogUnknown = plansData === undefined && targets.length > 0;
+  const unreadable = (optionsUnknown && baseFailed) || (catalogUnknown && plansFailed);
+
   // Reached the plan step but nothing needs a tariff (e.g. all selected subs
   // already carry a plan) → skip straight to the gateway. Never strand here.
   useEffect(() => {
-    if (!isLoading && targets.length === 0) {
+    if (!optionsUnknown && targets.length === 0) {
       setStep(selectedSubscriptionIds.length === 0 ? "subscriptions" : "gateway");
     }
-  }, [isLoading, targets.length, selectedSubscriptionIds.length, setStep]);
+  }, [optionsUnknown, targets.length, selectedSubscriptionIds.length, setStep]);
 
-  if (isLoading) {
+  if (unreadable) {
+    return (
+      <ReadFailed
+        message={t("plans.empty")}
+        onRetry={() => {
+          if (baseFailed) void refetchBase();
+          if (plansFailed) void refetchPlans();
+        }}
+        onBack={() => goBack("subscriptions")}
+      />
+    );
+  }
+
+  // Also while skipping: with no targets the effect above is already moving on.
+  if (optionsUnknown || catalogUnknown || targets.length === 0) {
     return (
       <div className="px-5 space-y-2">
         {[1, 2, 3].map((i) => (
@@ -790,7 +1000,7 @@ function SelectGateway() {
     staleTime: 300_000,
   });
   const yookassaEnabled = gateways.some((gw) => gw.type === "YOOKASSA");
-  const { data: paymentMethodsData } = useQuery({
+  const { data: paymentMethodsData, isPending: paymentMethodsPending } = useQuery({
     queryKey: ["payment-methods"],
     queryFn: getPaymentMethods,
     enabled: yookassaEnabled,
@@ -800,6 +1010,9 @@ function SelectGateway() {
   const savedYookassaMethods = (paymentMethodsData?.methods ?? []).filter(
     (method) => method.gatewayType === "YOOKASSA" && method.autopayEnabled !== false,
   );
+  // While the saved cards are still being read, "no cards yet" looks exactly
+  // like "no cards", and the auto-advance below skipped the card choice.
+  const savedMethodsUnknown = yookassaEnabled && paymentMethodsPending;
 
   const choose = (
     gw: { type: string; displayName: string; currency: string },
@@ -821,18 +1034,20 @@ function SelectGateway() {
   // Auto-select when a single gateway is available — but only when arriving
   // FORWARD. Without the guard, pressing "back" from review re-mounts this and
   // immediately re-advances to review (a trap). Skip auto-advance when the
-  // user has saved YooKassa methods so they can pick a card.
+  // user has saved YooKassa methods so they can pick a card — decided once the
+  // methods are known, not on the render before their read has answered.
   useEffect(() => {
     if (
       !isLoading &&
       !policyLoading &&
       gateways.length === 1 &&
       navDirection === "forward" &&
+      !savedMethodsUnknown &&
       savedYookassaMethods.length === 0
     ) {
       choose(gateways[0]!);
     }
-  }, [isLoading, policyLoading, gateways, navDirection, savedYookassaMethods.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoading, policyLoading, gateways, navDirection, savedMethodsUnknown, savedYookassaMethods.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isTma = !!window.Telegram?.WebApp?.initData;
   const sorted = [...gateways].sort((a, b) => {
@@ -949,6 +1164,7 @@ function RenewalReview() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const {
+    step,
     selectedSubscriptionIds,
     selectedDurations,
     selectedPlans,
@@ -961,6 +1177,13 @@ function RenewalReview() {
     setStep,
     goBack,
   } = useRenewalStore();
+  // StepTransition keeps a step it is leaving mounted for the exit animation
+  // (about 200 ms), and that copy keeps re-rendering from the store. A review
+  // leaving for plan selection saw the choice it had just released dropped
+  // under it, priced what was left, and handed the subscriber over a second
+  // time on that answer. It asks for a price, and acts on one, only while it is
+  // the step on screen.
+  const isCurrentStep = step === "review";
   const showSaveCardConsent =
     selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
 
@@ -975,6 +1198,8 @@ function RenewalReview() {
     data,
     isLoading,
     isFetching,
+    isPaused,
+    isFetchedAfterMount,
     error,
   } = useQuery({
     queryKey: ["renewal-review", selectedSubscriptionIds, selectedGateway?.id, selectedDurations, selectedPlans],
@@ -985,9 +1210,22 @@ function RenewalReview() {
         ...(durationsPayload.length > 0 ? { durations: durationsPayload } : {}),
         ...(plansPayload.length > 0 ? { plans: plansPayload } : {}),
       }),
-    enabled: selectedSubscriptionIds.length > 0 && !!selectedGateway,
+    enabled: isCurrentStep && selectedSubscriptionIds.length > 0 && !!selectedGateway,
+    // Priced again on every visit. The cached copy is what this review said
+    // last time, and a visit can follow the very hand-off that copy caused: sent
+    // to plan selection, the subscriber finds nothing to choose there (a plan
+    // was put back on sale, say), the single gateway advances, and the copy,
+    // fresh for 30 s, asked for a plan once more.
+    refetchOnMount: "always",
   });
-  const releasing = useReleaseWithdrawnPlanChoices(data?.items, { returnToPlanStep: true });
+  // Only an answer this visit received decides a hand-off. Until the re-price
+  // lands, `data` is the copy it replaces; after a failed one it is still that
+  // copy, which nothing confirmed.
+  const answeredItems = isFetchedAfterMount && !error ? data?.items : undefined;
+  // A leaving review still reports what it is doing, so it keeps the loader it
+  // showed while handing off, but never acts again.
+  const releasing = useReleaseWithdrawnPlanChoices(answeredItems, { returnToPlanStep: true, isCurrentStep });
+  const choosingPlan = useSendToPlanChoice(answeredItems, { isCurrentStep, releasing });
   const { data: subsData } = useQuery({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
@@ -1039,7 +1277,22 @@ function RenewalReview() {
     onError: () => toast.error(t("renewal.balanceError")),
   });
 
-  if (isLoading || isFetching || addOnReview.status === "PENDING" || releasing) {
+  // Offline, the re-price this visit starts is paused, not running: neither
+  // loading nor fetching, with `data` still the copy an earlier visit left, or
+  // nothing. Pay on that copy was never confirmed, and "cannot calculate the
+  // price" is not true either, so the review waits for the connection. A
+  // leaving review whose selection changed under it has no answer of its own
+  // to show and keeps the loader through its exit: what is cached for its new
+  // selection is what an earlier visit said, a price error included.
+  if (
+    isLoading ||
+    isFetching ||
+    isPaused ||
+    (!isCurrentStep && !isFetchedAfterMount) ||
+    addOnReview.status === "PENDING" ||
+    releasing ||
+    choosingPlan
+  ) {
     return (
       <div className="flex h-48 items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
@@ -1178,11 +1431,19 @@ function RenewalReview() {
         </div>
       )}
 
+      {/* One renewal, one payment. The balance pays in place with this review
+          still on screen, and Pay stayed live beside it: while that payment was
+          out, and after it went through, Pay created a gateway checkout for the
+          same renewal. So Pay takes no tap while a balance payment is out or
+          done; a failed one gives it back. Neither button takes one once this
+          review is not the step on screen: it stays mounted for its exit, and a
+          review leaving for checkout still paid from the balance. */}
       <StadiumButton
         fullWidth
         size="lg"
         glow
         icon={<Check className="h-5 w-5" />}
+        disabled={!isCurrentStep || balanceMutation.isPending || balanceMutation.isSuccess}
         onClick={() => {
           setReviewQuote({ amount: confirmedAmount, currency: confirmedCurrency });
           setStep("checkout");
@@ -1195,6 +1456,7 @@ function RenewalReview() {
           fullWidth
           variant="secondary"
           loading={balanceMutation.isPending}
+          disabled={!isCurrentStep || balanceMutation.isSuccess}
           onClick={() => balanceMutation.mutate(balanceItem)}
         >
           {t("renewal.payWithBalance", {

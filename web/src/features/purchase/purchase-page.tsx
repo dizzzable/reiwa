@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ComponentType, type SVGProps } from "react";
+import { useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { useNavigate } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
@@ -29,7 +29,13 @@ import {
 } from "@/lib/subscription-provisioning-receipt";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
 import { PromoInput } from "./components/promo-input";
-import { isPlanUnavailableRefusal, notifyPlanUnavailable } from "./plan-unavailable";
+import {
+  isPlanUnavailableRefusal,
+  isQuoteNotEligibleRefusal,
+  notifyPlanUnavailable,
+  readUnpricedQuote,
+  TRIAL_CLAIM_REFUSAL_KEYS,
+} from "./plan-unavailable";
 import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
@@ -230,7 +236,7 @@ function SelectGateway({
     staleTime: 300_000,
   });
   const yookassaEnabled = gateways.some((gw) => gw.type === "YOOKASSA" && gw.isActive !== false);
-  const { data: paymentMethodsData } = useQuery({
+  const { data: paymentMethodsData, isPending: paymentMethodsPending } = useQuery({
     queryKey: ["payment-methods"],
     queryFn: getPaymentMethods,
     enabled: yookassaEnabled,
@@ -244,8 +250,20 @@ function SelectGateway({
   // Auto-select if only one gateway is available — but ONLY when the user
   // arrived here going forward. Without the guard, pressing "back" from the
   // quote step re-mounts this and immediately re-advances (a trap).
+  //
+  // And never over a saved card: for a YooKassa subscriber this screen offers
+  // "charge a saved card" beside "new payment page", which is a choice even
+  // with one gateway. Decide only once the cards are known — while their read
+  // is still out, "no cards yet" looks exactly like "no cards".
+  const savedMethodsUnknown = yookassaEnabled && paymentMethodsPending;
   useEffect(() => {
-    if (!isLoading && gateways.length === 1 && lastNav === "forward") {
+    if (
+      !isLoading &&
+      gateways.length === 1 &&
+      lastNav === "forward" &&
+      !savedMethodsUnknown &&
+      savedYookassaMethods.length === 0
+    ) {
       const gw = gateways[0];
       onSelect({
         id: gw.type,
@@ -254,7 +272,7 @@ function SelectGateway({
         currency: gw.currency,
       });
     }
-  }, [isLoading, gateways, lastNav]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoading, gateways, lastNav, savedMethodsUnknown, savedYookassaMethods.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sort: in TMA context, put Telegram Stars first
   const isTma = !!window.Telegram?.WebApp?.initData;
@@ -390,17 +408,41 @@ function SelectGateway({
   );
 }
 
+/**
+ * Leaves the wizard over a plan that is no longer offered: says so, drops the
+ * catalogue that offered it and returns to a freshly loaded list.
+ */
+function useLeaveWithdrawnPlan(): () => void {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const reset = usePurchaseStore((s) => s.reset);
+  return () => {
+    notifyPlanUnavailable(t);
+    // Reset, not invalidate: an invalidated catalogue is still RENDERED
+    // while it refetches, which would put the withdrawn plan back under the
+    // buyer's tap on the very list they are sent to.
+    void queryClient.resetQueries({ queryKey: ["plans"] });
+    reset();
+    navigate("/plans", { replace: true });
+  };
+}
+
 function QuoteView({
   purchaseType,
   slotIndex,
   slotIndexSource,
+  refused,
 }: {
   purchaseType: CreationPurchaseType;
   slotIndex: number;
   slotIndexSource: SubscriptionProvisioningSlotIndexSource;
+  /** The panel refused this very quote at checkout without saying why — see `CheckoutStep`. */
+  refused: boolean;
 }) {
   const { t } = useTranslation();
   const {
+    step,
     selectedPlan,
     selectedDuration,
     selectedGateway,
@@ -411,6 +453,9 @@ function QuoteView({
     setQuote,
     goBack,
   } = usePurchaseStore();
+  // `AnimatePresence mode="wait"` keeps a step it is leaving mounted for its
+  // exit (about 200 ms), and that copy keeps re-rendering from the store.
+  const isCurrentStep = step === "quote";
   const showSaveCardConsent =
     selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
   const queryClient = useQueryClient();
@@ -451,6 +496,26 @@ function QuoteView({
       getQuote(selectedPlan!.id, selectedDuration!.days, selectedGateway!.id),
     enabled: !!(selectedPlan && selectedDuration && selectedGateway),
   });
+
+  // An unpriced quote says why. A plan or term no longer offered is answered
+  // like the checkout refusal below — this is the more common way to meet it,
+  // the plan being gone before the quote was priced. Told "try a different
+  // payment method" instead, the buyer went back to a catalogue that kept
+  // offering the plan for as long as it stayed cached.
+  const unpriced =
+    !isLoading &&
+    !error &&
+    quote !== undefined &&
+    (quote.warning !== undefined || typeof quote.finalPrice !== "number");
+  const verdict = unpriced ? readUnpricedQuote(quote, selectedPlan?.isTrial === true) : null;
+  const withdrawn = verdict?.kind === "withdrawn";
+  const leaveWithdrawnPlan = useLeaveWithdrawnPlan();
+  // No latch against StrictMode's second effect run: leaving resets the store,
+  // and without a plan the page renders nothing, so this step is gone before it.
+  useEffect(() => {
+    if (withdrawn) leaveWithdrawnPlan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withdrawn]);
 
   const balanceMutation = useMutation({
     mutationFn: async () => {
@@ -493,10 +558,28 @@ function QuoteView({
     },
   });
 
-  if (isLoading) {
+  if (isLoading || withdrawn) {
     return (
       <div className="flex h-48 items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (verdict?.kind === "trial") {
+    // A paid trial this buyer cannot claim. It stays in the catalogue, so this
+    // is not a withdrawal, and no other payment method would help either.
+    return (
+      <div className="px-5 space-y-3">
+        <TipCard tone="danger">{t(TRIAL_CLAIM_REFUSAL_KEYS[verdict.code]!)}</TipCard>
+        {verdict.code === "TRIAL_REQUIRES_TELEGRAM" && (
+          <StadiumButton fullWidth onClick={() => navigate("/settings/privacy?link=telegram")}>
+            {t("trialCta.buttonLinkTelegram")}
+          </StadiumButton>
+        )}
+        <StadiumButton fullWidth variant="secondary" onClick={goBack}>
+          {t("purchase.back")}
+        </StadiumButton>
       </div>
     );
   }
@@ -593,16 +676,33 @@ function QuoteView({
         </div>
       )}
 
-      <StadiumButton
-        fullWidth
-        size="lg"
-        onClick={() => setQuote(quote)}
-        glow
-        icon={<Check className="h-5 w-5" />}
-      >
-        {t("purchase.quote.pay")}
-      </StadiumButton>
-      {partner &&
+      {/* The panel already refused exactly this quote and did not say why, yet
+          prices it again: not a withdrawn plan, and not something another press
+          of Pay would change. Say so instead of offering that press. */}
+      {refused && <TipCard tone="danger">{t("purchase.checkout.notAccepted")}</TipCard>}
+      {/* One purchase, one payment. The balance pays in place with this quote
+          still on screen, and Pay stayed live beside it: while that payment was
+          out, and after it went through, Pay created a gateway checkout for the
+          same purchase. So Pay takes no tap while a balance payment is out or
+          done; a failed one gives it back. Neither button takes one once this
+          quote is not the step on screen: it stays mounted for its exit, still
+          priced, so a quote leaving for checkout still paid from the balance,
+          and one left for the gateway step («Изменить», the header back) still
+          started a checkout. */}
+      {!refused && (
+        <StadiumButton
+          fullWidth
+          size="lg"
+          onClick={() => setQuote(quote)}
+          glow
+          icon={<Check className="h-5 w-5" />}
+          disabled={!isCurrentStep || balanceMutation.isPending || balanceMutation.isSuccess}
+        >
+          {t("purchase.quote.pay")}
+        </StadiumButton>
+      )}
+      {!refused &&
+        partner &&
         partner.isActive &&
         partner.balancePaymentEnabled &&
         partner.balanceCurrency === quote.currency &&
@@ -611,6 +711,7 @@ function QuoteView({
             fullWidth
             variant="secondary"
             loading={balanceMutation.isPending}
+            disabled={!isCurrentStep || balanceMutation.isSuccess}
             onClick={() => balanceMutation.mutate()}
           >
             {t("purchase.quote.payWithBalance", {
@@ -652,10 +753,13 @@ function CheckoutStep({
   purchaseType,
   slotIndex,
   slotIndexSource,
+  onQuoteRefused,
 }: {
   purchaseType: CreationPurchaseType;
   slotIndex: number;
   slotIndexSource: SubscriptionProvisioningSlotIndexSource;
+  /** Marks the current quote as refused by the panel without a reason. */
+  onQuoteRefused: () => void;
 }) {
   const { t } = useTranslation();
   const {
@@ -666,11 +770,11 @@ function CheckoutStep({
     selectedSavedPaymentMethodId,
     savePaymentMethodConsent,
     setCheckoutResult,
-    reset,
     goBack,
   } = usePurchaseStore();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const leaveWithdrawnPlan = useLeaveWithdrawnPlan();
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -716,13 +820,20 @@ function CheckoutStep({
         // The plan was withdrawn after it was picked; nothing was charged.
         // This step never leaves on its own — the latch below forbids a second
         // attempt — so without this the spinner stayed up for good.
-        notifyPlanUnavailable(t);
-        // Reset, not invalidate: an invalidated catalogue is still RENDERED
-        // while it refetches, which would put the withdrawn plan back under the
-        // buyer's tap on the very list they are sent to.
-        void queryClient.resetQueries({ queryKey: ["plans"] });
-        reset();
-        navigate("/plans", { replace: true });
+        leaveWithdrawnPlan();
+        return;
+      }
+      if (isQuoteNotEligibleRefusal(err)) {
+        // Refused without a reason, and nothing was charged. It is not
+        // necessarily a withdrawn plan — a paid trial this buyer cannot claim is
+        // refused so too, and stays listed — but from a panel that predates
+        // PAYMENT_DRAFT_PLAN_NOT_AVAILABLE it may be one. Back to the quote,
+        // re-priced (reset, so it cannot decide on the refused copy): its fresh
+        // answer names a withdrawal, a trial it will not sell, or a price that
+        // stands — and then this quote is marked so Pay is not offered again.
+        onQuoteRefused();
+        void queryClient.resetQueries({ queryKey: ["quote"] });
+        goBack();
         return;
       }
       toast.error(t("purchase.checkout.error"));
@@ -766,12 +877,18 @@ export default function PurchasePage() {
     step,
     selectedPlan,
     selectedDuration,
+    selectedGateway,
     selectDuration,
     selectDevice,
     selectGateway,
     goBack,
     reset,
   } = usePurchaseStore();
+  // The quote (plan, term, gateway) the panel refused at checkout without a
+  // reason. Held here because the checkout step that learns it unmounts on the
+  // way back to the quote step that has to show it.
+  const [refusedQuoteKey, setRefusedQuoteKey] = useState<string | null>(null);
+  const quoteKey = `${String(selectedPlan?.id)}|${String(selectedDuration?.days)}|${String(selectedGateway?.id)}`;
 
   // Hard capacity gate: never let the wizard complete a NEW/ADDITIONAL buy
   // when the effective multi-sub limit is full (deep-link / stale store).
@@ -880,6 +997,7 @@ export default function PurchasePage() {
               purchaseType={purchaseType}
               slotIndex={provisioningSlotIndex}
               slotIndexSource={provisioningSlotIndexSource}
+              refused={refusedQuoteKey === quoteKey}
             />
           )}
           {step === "checkout" && (
@@ -887,6 +1005,7 @@ export default function PurchasePage() {
               purchaseType={purchaseType}
               slotIndex={provisioningSlotIndex}
               slotIndexSource={provisioningSlotIndexSource}
+              onQuoteRefused={() => setRefusedQuoteKey(quoteKey)}
             />
           )}
         </motion.div>

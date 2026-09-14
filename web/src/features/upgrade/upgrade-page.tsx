@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { ArrowUpCircle, Check } from "lucide-react";
@@ -29,7 +29,9 @@ import { savePendingCheckout } from "@/lib/pending-checkout";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import {
   isPlanUnavailableRefusal,
+  isQuoteNotEligibleRefusal,
   notifyPlanUnavailable,
+  readUnpricedQuote,
 } from "@/features/purchase/plan-unavailable";
 
 const GATEWAY_ICONS: Record<string, string> = {
@@ -54,8 +56,16 @@ const CURRENCY_SYMBOLS: Record<string, string> = { RUB: "₽", USD: "$", EUR: "�
 export default function UpgradePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { step, reset } = useUpgradeStore();
+  const { step, reset, selectedSubscriptionId, selectedPlan, selectedDurationDays, selectedGateway } =
+    useUpgradeStore();
   const { purchasesBlocked } = useAccessMode();
+  // The review (subscription, target, term, gateway) the panel refused at
+  // checkout without a reason. Held here because the checkout step that learns
+  // it unmounts on the way back to the review that has to show it.
+  const [refusedReviewKey, setRefusedReviewKey] = useState<string | null>(null);
+  const reviewKey = [selectedSubscriptionId, selectedPlan?.id, selectedDurationDays, selectedGateway?.id]
+    .map(String)
+    .join("|");
 
   useEffect(() => () => reset(), [reset]);
 
@@ -91,8 +101,10 @@ export default function UpgradePage() {
         {step === "plan" && <SelectPlan />}
         {step === "duration" && <SelectDuration />}
         {step === "gateway" && <SelectGateway />}
-        {step === "review" && <UpgradeReview />}
-        {(step === "checkout" || step === "polling") && <CheckoutStep />}
+        {step === "review" && <UpgradeReview refused={refusedReviewKey === reviewKey} />}
+        {(step === "checkout" || step === "polling") && (
+          <CheckoutStep onQuoteRefused={() => setRefusedReviewKey(reviewKey)} />
+        )}
       </StepTransition>
     </div>
   );
@@ -340,7 +352,26 @@ function SelectGateway() {
   );
 }
 
-function UpgradeReview() {
+/**
+ * Leaves an upgrade whose target is no longer offered: says so and returns to
+ * the target list, reset rather than invalidated so the withdrawn plan is not
+ * rendered while it refetches. Re-selecting the subscription is the store's own
+ * way onto that step with the stale term and gateway cleared.
+ */
+function useLeaveWithdrawnTarget(): () => void {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { selectedSubscriptionId, selectSubscription, reset } = useUpgradeStore();
+  return () => {
+    notifyPlanUnavailable(t);
+    void queryClient.resetQueries({ queryKey: ["upgrade-options"] });
+    const subscriptionId = selectedSubscriptionId;
+    reset();
+    if (subscriptionId !== null) selectSubscription(subscriptionId);
+  };
+}
+
+function UpgradeReview({ refused }: { readonly refused: boolean }) {
   const { t } = useTranslation();
   const { selectedSubscriptionId, selectedPlan, selectedDurationDays, selectedGateway, setStep } =
     useUpgradeStore();
@@ -365,7 +396,28 @@ function UpgradeReview() {
       !!selectedSubscriptionId && !!selectedPlan && !!selectedDurationDays && !!selectedGateway,
   });
 
-  if (isLoading) {
+  // A target withdrawn before the review was priced is answered like the
+  // checkout refusal below. Upgrade targets are never trials, and the quote
+  // leads with its informational UPGRADE_RESETS_EXPIRY, so the whole warning
+  // list is read. Told "try a different payment method" instead, Back led
+  // through the gateway and term steps to a list still offering the target.
+  const unpriced =
+    !isLoading &&
+    !error &&
+    quote !== undefined &&
+    (quote.warning !== undefined || typeof quote.finalPrice !== "number");
+  const withdrawn = unpriced && readUnpricedQuote(quote, false)?.kind === "withdrawn";
+  const leaveWithdrawnTarget = useLeaveWithdrawnTarget();
+  // StrictMode runs a mount effect twice, and a cached answer arrives on mount.
+  const leftWithdrawnTarget = useRef(false);
+  useEffect(() => {
+    if (!withdrawn || leftWithdrawnTarget.current) return;
+    leftWithdrawnTarget.current = true;
+    leaveWithdrawnTarget();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withdrawn]);
+
+  if (isLoading || withdrawn) {
     return (
       <div className="flex h-48 items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
@@ -404,15 +456,20 @@ function UpgradeReview() {
         </div>
       </div>
       <TipCard tone="info">{t("upgrade.resetsExpiry")}</TipCard>
-      <StadiumButton
-        fullWidth
-        size="lg"
-        glow
-        icon={<Check className="h-5 w-5" />}
-        onClick={() => setStep("checkout")}
-      >
-        {t("upgrade.pay")}
-      </StadiumButton>
+      {/* Refused at checkout without a reason, yet priced again: not a
+          withdrawn target, and not something another press of Pay changes. */}
+      {refused && <TipCard tone="danger">{t("purchase.checkout.notAccepted")}</TipCard>}
+      {!refused && (
+        <StadiumButton
+          fullWidth
+          size="lg"
+          glow
+          icon={<Check className="h-5 w-5" />}
+          onClick={() => setStep("checkout")}
+        >
+          {t("upgrade.pay")}
+        </StadiumButton>
+      )}
       <StadiumButton fullWidth variant="ghost" onClick={() => setStep("gateway")}>
         {t("upgrade.change")}
       </StadiumButton>
@@ -429,7 +486,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CheckoutStep() {
+function CheckoutStep({ onQuoteRefused }: { readonly onQuoteRefused: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const {
@@ -439,10 +496,9 @@ function CheckoutStep() {
     selectedGateway,
     setCheckoutResult,
     setStep,
-    selectSubscription,
-    reset,
   } = useUpgradeStore();
   const queryClient = useQueryClient();
+  const leaveWithdrawnTarget = useLeaveWithdrawnTarget();
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -465,15 +521,20 @@ function CheckoutStep() {
       if (isPlanUnavailableRefusal(err)) {
         // The target plan was withdrawn after it was picked; nothing was
         // charged. The review can only fail the same way again, so go back to
-        // the target list instead — reset, not invalidated, so the withdrawn
-        // plan is not rendered while the list refetches. Re-selecting the
-        // subscription is the store's own way onto that step with the stale
-        // term and gateway cleared.
-        notifyPlanUnavailable(t);
-        void queryClient.resetQueries({ queryKey: ["upgrade-options"] });
-        const subscriptionId = selectedSubscriptionId;
-        reset();
-        if (subscriptionId !== null) selectSubscription(subscriptionId);
+        // the target list instead.
+        leaveWithdrawnTarget();
+        return;
+      }
+      if (isQuoteNotEligibleRefusal(err)) {
+        // Refused without a reason; nothing was charged. From a panel that
+        // predates PAYMENT_DRAFT_PLAN_NOT_AVAILABLE this may still be a
+        // withdrawn target, so the review is re-priced (reset, so it cannot
+        // decide on the refused copy) and its fresh answer tells which. If it
+        // prices the same review again, this review is marked so Pay is not
+        // offered a second time.
+        onQuoteRefused();
+        void queryClient.resetQueries({ queryKey: ["upgrade-quote"] });
+        setStep("review");
         return;
       }
       // Return to review (not a stuck spinner) so the user can retry.

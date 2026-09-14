@@ -95,12 +95,16 @@ export function extractSubscriptionLimitCode(body: string): string | undefined {
 const CHECKOUT_ERROR_CODES = new Set([
   "TRIAL_ALREADY_USED",
   "TRIAL_PENDING_CHECKOUT_STALE",
-  // The plan (or its term) is no longer sold: an operator archived or deleted
-  // it while the buyer still had the old catalogue on screen. rezeis refuses
-  // before any draft or charge exists. As a 500 the purchase page could only
-  // say "failed to create payment" over a spinner that never stopped; as this
-  // code it can say the plan is gone and send the buyer back to the catalogue.
+  // The panel will not turn the quote into a draft; nothing was charged. As a
+  // 500 the purchase page could only say "failed to create payment" over a
+  // spinner that never stopped. A panel older than the code below also sends
+  // this for a withdrawn plan, so the page re-prices the quote to tell which.
   "PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE",
+  // The plan (or its term) is no longer sold: an operator archived or deleted
+  // it while the buyer still had the old catalogue on screen. This one the page
+  // answers by saying the plan is gone and sending the buyer back to a freshly
+  // loaded catalogue — an answer that is only right for this refusal.
+  "PAYMENT_DRAFT_PLAN_NOT_AVAILABLE",
 ]);
 
 /** Abandon refusals, reported by rezeis as 409. */

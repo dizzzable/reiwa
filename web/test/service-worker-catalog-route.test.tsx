@@ -1,16 +1,15 @@
 // @vitest-environment jsdom
 
 /**
- * The plan catalogue must reach a subscriber when it changes, not a visit later.
+ * The plan catalogue is not the service worker's to keep.
  *
- * `/api/v1/plans` was served stale-while-revalidate for up to 24 hours. That
- * strategy ANSWERS FROM THE CACHE and only refreshes it behind the response, so
- * the first catalogue a returning subscriber saw after an operator archived or
- * deleted a plan was always the old one — withdrawn plan included — and React
- * Query then held that copy for its own five minutes. Worse, the cabinet's
- * recovery after the panel refuses such a plan is to refetch the catalogue, and
- * that refetch was answered from the same cache: it could hand the dead plan
- * straight back.
+ * `/api/v1/plans` is resolved by the panel FOR THE SIGNED-IN SUBSCRIBER: plans
+ * offered only to them, prices after their personal discounts. The worker kept
+ * it under the one URL — first stale-while-revalidate, then network-first with
+ * a five-second fallback — so on a slow or absent network the next account
+ * signed in on the same browser was shown the previous account's catalogue.
+ * The cabinet cannot buy offline anyway; the catalogue now always comes from
+ * the network, and the cache generation that stored it is purged.
  *
  * Driven through the real routing table, like the other service-worker specs:
  * the module is imported with Workbox stubbed, and the first route that claims
@@ -100,22 +99,24 @@ function answeringRoute(path: string, method = "GET"): CapturedRoute | undefined
   return routes.find((route) => route.match(request));
 }
 
-describe("service worker plan catalogue route", () => {
-  it("asks the network before the cache for the plan catalogue", () => {
+describe("service worker and the plan catalogue", () => {
+  it("routes the plan catalogue past every cache, straight to the network", () => {
+    // Non-vacuity: the table did load, and it does route the neighbours.
+    expect(answeringRoute("/api/v1/branding")).toBeDefined();
     expect(
       answeringRoute("/api/v1/plans")?.strategyName,
-      "a withdrawn plan keeps being offered from the cache until the next visit",
-    ).toBe("NetworkFirst");
+      "a signed-in subscriber's catalogue is stored where the next account can be served it",
+    ).toBeUndefined();
   });
 
-  it("still answers the catalogue from the API cache when the network does not", () => {
-    // Offline and slow-network behaviour: NetworkFirst falls back to its cache
-    // on failure or timeout, so the cache must be the owned API generation
-    // (purged by `activate` on a bump) and the wait must be bounded.
-    const route = answeringRoute("/api/v1/plans");
+  it("moves the API cache past the generation that stored catalogues, so installed workers purge them", () => {
+    // `activate` deletes every `api-responses-*` generation that is not the
+    // current one; v4 is the last generation that held `/api/v1/plans`.
+    const cacheName = answeringRoute("/api/v1/branding")?.options.cacheName ?? "";
+    const generation = /^api-responses-v(\d+)$/.exec(cacheName)?.[1];
 
-    expect(route?.options.cacheName).toMatch(/^api-responses-v\d+$/);
-    expect(route?.options.networkTimeoutSeconds).toBeGreaterThan(0);
+    expect(generation, `unexpected API cache name "${cacheName}"`).toBeDefined();
+    expect(Number(generation)).toBeGreaterThan(4);
   });
 
   it("leaves the other public catalogues on stale-while-revalidate", () => {
