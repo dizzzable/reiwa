@@ -533,10 +533,16 @@ function ServerRow({
           customer could see. Truncating the status instead would hide the one
           thing that line is for. Operators who use badges put one on every
           host, so a fixed structure keeps their whole list even.
+
+          `data-testid` because the flag fallback and the status dot are spans
+          too: `servers-sheet-badge.test.tsx` finds the chip by what it is.
         */}
         {server.description ? (
           <div className="mt-1 flex">
-            <span className="inline-flex max-w-full rounded-md bg-(--brand-primary)/12 px-1.5 py-0.5 text-[10px] leading-tight font-medium text-(--brand-primary) ring-1 ring-(--brand-primary)/25 ring-inset">
+            <span
+              data-testid="server-badge"
+              className="inline-flex max-w-full rounded-md bg-(--brand-primary)/12 px-1.5 py-0.5 text-[10px] leading-tight font-medium text-(--brand-primary) ring-1 ring-(--brand-primary)/25 ring-inset"
+            >
               <span className="truncate">{server.description}</span>
             </span>
           </div>
