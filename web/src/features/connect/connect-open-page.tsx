@@ -113,10 +113,14 @@ export default function ConnectOpenPage() {
     return 'checking'
   }, [payload, catalogVouches, catalogQuery.isError, signatureQuery.data, signatureQuery.isError])
 
+  // Its own failure line, not the connect screen's: that one says to select the
+  // link by hand, and this page never shows the link — only its host. What is
+  // left to a subscriber whose browser will not copy is the connect screen they
+  // came from, where the same button runs in Telegram's own web view.
   const copy = async (): Promise<void> => {
     if (payload === null) return
     if (await copyText(payload.subscriptionUrl)) toast.success(t('connect.copied'))
-    else toast.error(t('connect.copyFailed'))
+    else toast.error(t('connect.openCopyFailed'))
   }
 
   // Asks again whichever check could not be asked: the catalog while it has no

@@ -235,7 +235,7 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  *
  * Event contract (reads `{ event, metadata }` from the admin webhook body):
  *   - `reiwa.bot.invalidate`    → POST bot `/invalidate`        { reason }
- *   - `reiwa.platform.policy_invalidated` → POST bot `/invalidate-policy` { reason }, after dropping this process's copy; best-effort (see its case)
+ *   - `reiwa.platform.policy_invalidated` → POST bot `/invalidate-policy` { reason }, after dropping this process's policy and public-config copies; best-effort (see its case)
  *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
  *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
  *   - `reiwa.channel.broadcast.document` → POST bot `/notify-broadcast-document` { eventId, chatId, content, filename?, caption?, topicThreadId?, parseMode? }
@@ -449,6 +449,14 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // call finds nothing today; it stays so a reader added to this
           // process later is not left stale.
           invalidateLegalDocumentsCache();
+          // And for the default currency and the project name and web title,
+          // which the cabinet does NOT read from the policy cache above: it
+          // serves them from public-config — the price currency on tariff cards,
+          // the tab title. The panel sends no branding event for those saves,
+          // so without this they stayed old for the public-config TTL and the
+          // stale serve after it. Dropped here rather than by a second event,
+          // so every panel already deployed gets it.
+          resetBrandingCache();
           // The bot is a SEPARATE process (its own container) with its own
           // policy cache and the only legal-documents cache: nothing dropped
           // above reaches it, and without this relay it kept the old access

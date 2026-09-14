@@ -214,16 +214,19 @@ export default function ConnectPage() {
   const connectSignature = subscription?.connectSignature ?? null
 
   const detected = useMemo(() => detectCurrentPlatform(), [])
-  // The HOST, not the device, and never a guess from the user agent: whether an
-  // "add to app" button may carry the app's scheme at all is decided by what
-  // launched the screen. The platform above picks a catalog section and may be
-  // wrong; this picks whether the button works, and inside a Telegram Mini App
-  // on a phone a wrong answer destroys the Mini App. `deep-link-handoff.ts`.
+  // The HOST, not the device: whether an "add to app" button may carry the app's
+  // scheme at all is decided by what launched the screen. The platform above
+  // picks a catalog section and may be wrong; this picks whether the button
+  // works, and inside a Telegram Mini App on a phone a wrong answer destroys the
+  // Mini App. The user agent is read only to narrow Telegram Desktop's exception
+  // to Windows, so it can move a host towards the trampoline and never away from
+  // it. `deep-link-handoff.ts`.
   const handoff = useMemo(
     () =>
       deepLinkHandoff({
         insideTelegram: isTelegramMiniAppSurface(),
         telegramPlatform: readTelegramLaunchPlatform(),
+        userAgent: navigator.userAgent,
       }),
     [],
   )
@@ -1000,7 +1003,7 @@ function StepButton({
   // the page through the host's own link handling, and that handling is what
   // passes the scheme to the operating system — a scripted navigation is the
   // shape that gets swallowed. This is the shape outside Telegram and in
-  // Telegram Desktop, the two places it was seen working.
+  // Telegram Desktop on Windows, the two places it was seen working.
   return (
     <a
       href={href}

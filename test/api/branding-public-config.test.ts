@@ -756,14 +756,17 @@ describe('branding caches across an invalidation', () => {
      * Caches the pre-save theme and lets it go stale, so the next read is
      * served the stale copy and starts upstream call #1 in the background.
      */
-    async function revalidateInBackground({ upstream, client }: ReturnType<typeof panel>) {
+    async function revalidateInBackground(
+      { upstream, client }: ReturnType<typeof panel>,
+      persistence?: PublicConfigPersistencePort,
+    ) {
       let now = 1_700_000_000_000;
       vi.spyOn(Date, 'now').mockImplementation(() => now);
-      const primed = getPublicConfigPayload(client);
+      const primed = getPublicConfigPayload(client, undefined, persistence);
       upstream.answer(0, OPERATOR_PUBLIC_CONFIG);
       await primed;
       now += 61_000; // past the TTL, inside stale-while-revalidate
-      expect((await getPublicConfigPayload(client)).body).toEqual(OPERATOR_PUBLIC_CONFIG);
+      expect((await getPublicConfigPayload(client, undefined, persistence)).body).toEqual(OPERATOR_PUBLIC_CONFIG);
       expect(upstream.fn).toHaveBeenCalledTimes(2);
     }
 
@@ -781,6 +784,36 @@ describe('branding caches across an invalidation', () => {
 
       expect((await getPublicConfigPayload(client)).body).toEqual(SAVED);
       expect(upstream.fn).toHaveBeenCalledTimes(3);
+    });
+
+    it('a refresh begun before the invalidation does not save its theme as the durable snapshot', async () => {
+      // The persistence race on THIS branch. Its closure is not the one the
+      // nothing-cached case above exercises, and the three cases around this
+      // one pass no persistence, so a background refresh that ignored the reset
+      // when saving would get past every one of them.
+      const { upstream, client } = panel();
+      const saved: PublicConfigSnapshot[] = [];
+      const persistence: PublicConfigPersistencePort = {
+        load: async () => null,
+        save: async (snapshot) => {
+          saved.push(snapshot);
+        },
+      };
+      await revalidateInBackground({ upstream, client }, persistence);
+      // Anchor: the priming read saved, so this persistence is really wired in.
+      expect(saved).toEqual([OPERATOR_PUBLIC_CONFIG]);
+      saved.length = 0;
+
+      resetBrandingCache();
+      const afterSave = getPublicConfigPayload(client, undefined, persistence);
+      upstream.answer(2, SAVED);
+      await afterSave;
+
+      upstream.answer(1, OPERATOR_PUBLIC_CONFIG); // the background refresh lands last
+      await backgroundWork();
+
+      // The snapshot is what a restart during a panel outage serves.
+      expect(saved).toEqual([SAVED]);
     });
 
     it('a refresh begun before the invalidation that lands with nobody else asking is not kept', async () => {

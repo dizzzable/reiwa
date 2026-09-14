@@ -25,10 +25,12 @@
  * ── What it never does ──────────────────────────────────────────────────────
  *
  * Log the request body, or let anything cache an answer — `no-store` on every
- * reply, refusals included. That is also why a body that is not JSON is refused
- * HERE: the global JSON parser throws before any route runs, and the app's
- * error handler would answer that with a 500 and write the unparsed body, the
- * signature in it, into the log.
+ * reply, refusals included. That is why a body that is not JSON is still
+ * refused HERE. The global JSON parser throws before any route runs, and the
+ * app's error handler would answer that refusal too: with its own 400, logging
+ * only the refusal's type and status (`middleware/body-parser-refusal.ts`), so
+ * the signature stays out of the log either way. But its answer carries no
+ * `no-store` and not this route's message, and this handler adds both.
  */
 import { Router, type ErrorRequestHandler } from "express";
 

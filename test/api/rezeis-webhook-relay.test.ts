@@ -1,9 +1,16 @@
 import { createHmac } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
 import http from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import express from 'express';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { PublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
+import { createBrandingRouter, resetBrandingCache } from '../../src/api/routes/branding.js';
+import { createConnectPageRouter, resetConnectPageCache } from '../../src/api/routes/connect-page.js';
+import { createLandingRouter, resetLandingCache } from '../../src/api/routes/landing.js';
 import { createRezeisWebhookRouter } from '../../src/api/routes/webhooks.js';
 import type { PlatformPolicyShape } from '../../src/infrastructure/admin-client/namespaces/system.js';
 import { PolicyCache, setPolicyCache } from '../../src/infrastructure/admin-client/policy-cache.js';
@@ -1009,5 +1016,170 @@ describe('Policy invalidation reaches the bot process', () => {
     expect(requestedMs).toEqual([8_000]);
     // Not `null` (the handler held on) and not 502 (a retry, then an alert).
     expect(status).toBe(204);
+  });
+});
+
+/**
+ * The cache invalidations, from the signed webhook to the next read.
+ *
+ * The panel names the cache it wants dropped by the EVENT it sends, and the
+ * only thing tying that name to the cache is a `case` label in `webhooks.ts`
+ * and the reset call under it. Delete the call, or let the label drift from the
+ * panel's name (`reiwa-relay.constants.ts`), and the webhook still answers 204:
+ * the panel records the event as delivered, and visitors wait out the 60s TTL
+ * instead. The race suites beside each cache call `reset*()` directly and
+ * cannot see either mistake; these cases go through the router, with the
+ * panel's own event names.
+ */
+describe('Cache invalidations drop the cache they name', () => {
+  /** A snapshot the public-config guard accepts, as the panel serves it. */
+  const PUBLIC_CONFIG: PublicConfigSnapshot = {
+    branding: {
+      brandName: 'Northern Lights VPN',
+      logoUrl: '/uploads/branding/northern-lights.svg',
+      primary: '#6750a4',
+      primaryFg: '#ffffff',
+      bgPrimary: '#121212',
+      bgSecondary: '#242424',
+      cardGradient: 'linear-gradient(135deg, #312e81 0%, #a78bfa 100%)',
+      cardPattern: null,
+      cardLogo: 'CUSTOM',
+      cardLogoUrl: '/uploads/branding/card-logo.svg',
+      cardEffect: 'aurora',
+      cardEffectProps: {},
+      cardEffectOpacity: 0.7,
+      cardEffectsByIndex: [],
+      bgEffect: 'AURORA',
+      iconColorMode: 'default',
+      iconColors: {},
+      borderRadius: 'rounded-xl',
+      fontFamily: 'Manrope, sans-serif',
+    },
+    locales: ['en', 'ru'],
+    defaultLocale: 'en',
+    defaultCurrency: 'USD',
+    customIcons: [],
+    emailEnabled: true,
+  };
+
+  /**
+   * The panel before and after an operator's save: every read counted, the
+   * first one answered with the pre-save value and every later one with the
+   * saved value.
+   */
+  function panelWithOneSave() {
+    const readsAfterTheFirst = <T>(before: T, after: T) => {
+      let calls = 0;
+      return vi.fn(async () => (++calls === 1 ? before : after));
+    };
+    const publicConfig = readsAfterTheFirst(PUBLIC_CONFIG, { ...PUBLIC_CONFIG, defaultCurrency: 'RUB' });
+    const landing = readsAfterTheFirst(
+      { enabled: true, revision: 'before-save' },
+      { enabled: true, revision: 'saved' },
+    );
+    const connectPage = readsAfterTheFirst({ platforms: [], revision: 'before-save' }, { platforms: [], revision: 'saved' });
+    return {
+      upstream: { publicConfig, landing, connectPage },
+      client: {
+        branding: { getReiwaPublicConfig: publicConfig },
+        landing: { getEffective: landing },
+        connectPage: { getEffective: connectPage },
+      },
+    };
+  }
+
+  /** The webhook router beside the three public routes it keeps fresh, as `app.ts` mounts them. */
+  function appWithCaches(client: unknown): express.Express {
+    const app = buildApp();
+    app.use('/api/v1', createBrandingRouter({ adminClient: client as never }));
+    app.use('/api/v1', createLandingRouter({ adminClient: client as never }));
+    app.use('/api/v1', createConnectPageRouter(client as never));
+    return app;
+  }
+
+  async function read(app: express.Express, path: string): Promise<Record<string, unknown>> {
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      return await new Promise<Record<string, unknown>>((resolve, reject) => {
+        http
+          .get({ host: '127.0.0.1', port, path }, (res) => {
+            let text = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => {
+              text += chunk;
+            });
+            res.on('end', () => {
+              if (res.statusCode !== 200) {
+                reject(new Error(`GET ${path} answered ${String(res.statusCode)}: ${text}`));
+                return;
+              }
+              resolve(JSON.parse(text) as Record<string, unknown>);
+            });
+          })
+          .on('error', reject);
+      });
+    } finally {
+      server.close();
+    }
+  }
+
+  const resetAll = (): void => {
+    resetBrandingCache();
+    resetLandingCache();
+    resetConnectPageCache();
+    setPolicyCache(null);
+  };
+
+  // `reiwa.branding.invalidate` also empties the on-disk logo mirror, which
+  // otherwise lives under the working directory — this checkout.
+  const previousBrandingCacheDir = process.env['BRANDING_CACHE_DIR'];
+  const brandingCacheDir = mkdtempSync(join(tmpdir(), 'reiwa-relay-branding-'));
+  beforeAll(() => {
+    process.env['BRANDING_CACHE_DIR'] = brandingCacheDir;
+  });
+  afterAll(() => {
+    if (previousBrandingCacheDir === undefined) delete process.env['BRANDING_CACHE_DIR'];
+    else process.env['BRANDING_CACHE_DIR'] = previousBrandingCacheDir;
+    rmSync(brandingCacheDir, { recursive: true, force: true });
+  });
+
+  beforeEach(resetAll);
+  afterEach(() => {
+    resetAll();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    // A theme save.
+    { event: 'reiwa.branding.invalidate', path: '/api/v1/public-config', upstream: 'publicConfig', field: 'defaultCurrency', before: 'USD', saved: 'RUB' },
+    // Default currency, project name and web title. The panel sends the POLICY
+    // event for those, and the cabinet serves all three from public-config —
+    // tariff cards pick the price currency from it, the tab takes its title.
+    { event: 'reiwa.platform.policy_invalidated', path: '/api/v1/public-config', upstream: 'publicConfig', field: 'defaultCurrency', before: 'USD', saved: 'RUB' },
+    // A landing publish or rollback.
+    { event: 'reiwa.landing.invalidate', path: '/api/v1/landing', upstream: 'landing', field: 'revision', before: 'before-save', saved: 'saved' },
+    // An edit to the connect screen's catalog.
+    { event: 'reiwa.connect-page.invalidate', path: '/api/v1/connect-page', upstream: 'connectPage', field: 'revision', before: 'before-save', saved: 'saved' },
+  ] as const)('$event: the next read of $path goes to the panel', async ({ event, path, upstream, field, before, saved }) => {
+    const panel = panelWithOneSave();
+    // Only the policy event dials the bot; nothing here may reach a real one.
+    const botRelay = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const app = appWithCaches(panel.client);
+
+    expect((await read(app, path))[field]).toBe(before);
+    expect((await read(app, path))[field]).toBe(before);
+    // Anchor: warm. A cache that never cached would go to the panel again below
+    // for a reason that has nothing to do with the webhook.
+    expect(panel.upstream[upstream]).toHaveBeenCalledTimes(1);
+
+    const body = { event, metadata: { reason: 'operator-save' } };
+    const { status } = await post(app, body, sign(JSON.stringify(body)));
+    expect(status).toBe(204);
+
+    expect((await read(app, path))[field], `${event} left ${path} serving the copy from before the save`).toBe(saved);
+    expect(panel.upstream[upstream]).toHaveBeenCalledTimes(2);
+    expect(botRelay.mock.calls.every(([url]) => String(url).startsWith('http://reiwa-bot:5100/'))).toBe(true);
   });
 });

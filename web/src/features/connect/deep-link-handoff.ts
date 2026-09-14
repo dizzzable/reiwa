@@ -40,16 +40,32 @@
  * navigation that began with a gesture — which is why that page opens nothing
  * until its own button is tapped.
  *
- * ── The one Telegram client that keeps the anchor ───────────────────────────
+ * ── The one Telegram host that keeps the anchor ─────────────────────────────
  *
- * Telegram Desktop, `tdesktop`: the owner opened an app from this screen there,
- * live, with the plain anchor. Its web view allows the navigation and leaves it
- * to the engine (`setNavigationStartHandler` in `attach_bot_webview.cpp`), and
- * on Windows that engine is WebView2, which deals with an external protocol
- * itself. Taking a working desktop flow through a browser tab would be a
- * regression nobody asked for. What that evidence does NOT cover is the same
- * client on macOS or Linux, where the engine is WebKit — named in the report,
- * not guessed at here, because `tdesktop` is one launch parameter for all three.
+ * Telegram Desktop on Windows: the owner opened an app from this screen there,
+ * live, with the plain anchor. Telegram Desktop's web view allows the
+ * navigation and leaves it to the engine (`setNavigationStartHandler` in
+ * `attach_bot_webview.cpp`), and on Windows that engine is WebView2, which
+ * deals with an external protocol itself. Taking a working desktop flow through
+ * a browser tab would be a regression nobody asked for.
+ *
+ * The same client on macOS and Linux takes the trampoline. There the engine is
+ * WebKit — WKWebView on macOS, WebKitGTK on Linux — Telegram Desktop answers
+ * the navigation "allow", and nothing in it passes the scheme to the system.
+ * WKWebView does that on its own only for an embedder that leaves the decision
+ * to it, so the load simply fails with nothing on screen: the iOS path above,
+ * where the owner watched the button do nothing. On Linux the Mini App is a
+ * frame inside Telegram's own shell page, and WebKitGTK drops a failed frame
+ * navigation without a word. Neither is recorded on a device; the hop is safe
+ * on both, because Telegram Desktop's `openLink` opens the system browser
+ * (`File::OpenUrl`).
+ *
+ * `tdesktop` is ONE launch parameter for all three systems, so the web view's
+ * user agent is what tells them apart — `Windows NT` in WebView2's. It is read
+ * for that and nothing else: beside the launch parameter it can only take the
+ * anchor away, and it never decides whether the document is inside Telegram.
+ * A user agent this file does not recognise costs a Telegram Desktop user one
+ * tap to a browser page.
  *
  * Every OTHER value of `tgWebAppPlatform` takes the trampoline, including ones
  * this file has never heard of. The two ways to be wrong are not equal: a host
@@ -76,18 +92,22 @@ export interface DeepLinkHost {
   readonly insideTelegram: boolean;
   /** `readTelegramLaunchPlatform()` — from the launch parameters, never the bridge. */
   readonly telegramPlatform: string | null;
+  /**
+   * `navigator.userAgent`. Consulted only inside Telegram, and only to narrow
+   * the Telegram Desktop exception to Windows.
+   */
+  readonly userAgent: string;
 }
 
 /**
  * Telegram clients whose Mini App web view has been seen opening an app from a
- * same-window anchor on this screen. One entry, and it needs a device to add
- * another.
+ * same-window anchor on this screen, each with the user agent of the one system
+ * it was seen on. One entry, and it needs a device to add another.
  */
-const ANCHOR_VERIFIED_TELEGRAM_CLIENTS: ReadonlySet<string> = new Set(['tdesktop']);
+const ANCHOR_VERIFIED_TELEGRAM_HOSTS: ReadonlyMap<string, RegExp> = new Map([['tdesktop', /\bWindows NT\b/]]);
 
 export function deepLinkHandoff(host: DeepLinkHost): DeepLinkHandoff {
   if (!host.insideTelegram) return 'anchor';
-  return host.telegramPlatform !== null && ANCHOR_VERIFIED_TELEGRAM_CLIENTS.has(host.telegramPlatform)
-    ? 'anchor'
-    : 'trampoline';
+  const seenOn = host.telegramPlatform === null ? undefined : ANCHOR_VERIFIED_TELEGRAM_HOSTS.get(host.telegramPlatform);
+  return seenOn !== undefined && seenOn.test(host.userAgent) ? 'anchor' : 'trampoline';
 }

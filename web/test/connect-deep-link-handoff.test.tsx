@@ -13,9 +13,9 @@
  *
  * So inside Telegram the button hands Telegram's documented `openLink` the
  * address of the cabinet's trampoline page, and outside Telegram — and in
- * Telegram Desktop, where the owner saw the anchor work — the anchor stays
- * exactly as it was. `web/src/features/connect/deep-link-handoff.ts` has the
- * sources for each client.
+ * Telegram Desktop on Windows, where the owner saw the anchor work — the anchor
+ * stays exactly as it was. `web/src/features/connect/deep-link-handoff.ts` has
+ * the sources for each client.
  *
  * Every Telegram case is launched the way Telegram launches the cabinet — its
  * parameters in the fragment — and none defines `window.Telegram` unless the
@@ -38,6 +38,21 @@ const IPHONE_SAFARI_UA =
 const ANDROID_CHROME_UA =
   "Mozilla/5.0 (Linux; Android 14; V2403A) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36";
+
+/**
+ * The three web views Telegram Desktop runs a Mini App in. `tdesktop` is one
+ * launch parameter for all of them, so the user agent is the only thing that
+ * tells them apart. Windows is WebView2, which is Edge.
+ */
+const TDESKTOP_WINDOWS_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0";
+/** macOS: WKWebView's own user agent, which carries no Safari token. */
+const TDESKTOP_MACOS_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+/** Linux: WebKitGTK. */
+const TDESKTOP_LINUX_UA =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
 /** A live payload — `auth_date` now, so nothing treats the launch as spent. */
 const INIT_DATA =
@@ -360,7 +375,9 @@ describe("inside a Telegram Mini App the app's scheme never reaches an href", ()
 
   it("never takes the platform from the bridge", () => {
     // If `WebApp.platform` were read, this bridge would unlock the Desktop
-    // exception below with no launch parameter saying so.
+    // exception below with no launch parameter saying so. The user agent is
+    // WebView2's, so only the platform can be what keeps the exception shut.
+    defineUserAgent(TDESKTOP_WINDOWS_UA);
     bridge({ platform: "tdesktop" });
     const el = render();
 
@@ -369,8 +386,9 @@ describe("inside a Telegram Mini App the app's scheme never reaches an href", ()
   });
 });
 
-describe("Telegram Desktop keeps the anchor the owner saw working", () => {
-  it("renders the plain same-window anchor and no trampoline", () => {
+describe("Telegram Desktop keeps the anchor only where the owner saw it work: Windows", () => {
+  it("renders the plain same-window anchor and no trampoline in WebView2 on Windows", () => {
+    defineUserAgent(TDESKTOP_WINDOWS_UA);
     launchedBy("tdesktop");
     const el = render();
 
@@ -378,20 +396,88 @@ describe("Telegram Desktop keeps the anchor the owner saw working", () => {
     expect(el.querySelector("button[data-connect-trampoline]")).toBeNull();
     expect(el.textContent).not.toContain("connect.openHint");
   });
+
+  it.each([
+    // WKWebView is told to allow the navigation and drops a scheme it cannot
+    // load — the same WebKit path as Telegram for iOS, where the button did
+    // nothing. Not recorded on a device.
+    ["macOS", TDESKTOP_MACOS_UA],
+    // WebKitGTK, where the Mini App is a frame inside Telegram's own shell and
+    // a failed frame navigation is dropped too. Not recorded on a device.
+    ["Linux", TDESKTOP_LINUX_UA],
+  ])("takes the trampoline on %s, where the engine is WebKit", (os, userAgent) => {
+    defineUserAgent(userAgent);
+    launchedBy("tdesktop");
+    const { openLink } = bridge();
+    const el = render();
+
+    expect(
+      appSchemeHrefs(el),
+      `Telegram Desktop on ${os} was handed an app scheme in an href — its web view drops it without a sound`,
+    ).toEqual([]);
+    act(() => trampolineButton(el).click());
+    expect(el.textContent).toContain("connect.openHint");
+    expect(readTrampolinePayload(new URL(String(openLink.mock.calls[0]?.[0])).hash)?.link).toBe(HAPP_HREF);
+  });
+
+  it("does not let a Windows user agent unlock the anchor for another Telegram client", () => {
+    // Telegram Web in Edge on Windows: the same user agent, a different host.
+    defineUserAgent(TDESKTOP_WINDOWS_UA);
+    launchedBy("weba");
+    const el = render();
+
+    expect(appSchemeHrefs(el)).toEqual([]);
+    trampolineButton(el);
+  });
+
+  it("does not let a Windows user agent make a browser tab Telegram", () => {
+    // No launch parameters and no bridge: Edge on a Windows desktop. The user
+    // agent narrows the Desktop exception and never decides "inside Telegram".
+    defineUserAgent(TDESKTOP_WINDOWS_UA);
+    const el = render();
+
+    expect(el.querySelector('a[href^="happ://"]')?.getAttribute("href")).toBe(HAPP_HREF);
+    expect(el.querySelector("button[data-connect-trampoline]")).toBeNull();
+  });
 });
 
 describe("the decision on its own", () => {
-  it("is the anchor outside Telegram whatever the platform says", () => {
-    expect(deepLinkHandoff({ insideTelegram: false, telegramPlatform: null })).toBe("anchor");
-    expect(deepLinkHandoff({ insideTelegram: false, telegramPlatform: "android" })).toBe("anchor");
+  it("is the anchor outside Telegram whatever the platform or the user agent says", () => {
+    for (const userAgent of ["", TDESKTOP_WINDOWS_UA, TDESKTOP_MACOS_UA, IPHONE_SAFARI_UA]) {
+      expect(deepLinkHandoff({ insideTelegram: false, telegramPlatform: null, userAgent }), userAgent).toBe("anchor");
+      expect(deepLinkHandoff({ insideTelegram: false, telegramPlatform: "android", userAgent }), userAgent).toBe(
+        "anchor",
+      );
+      expect(deepLinkHandoff({ insideTelegram: false, telegramPlatform: "tdesktop", userAgent }), userAgent).toBe(
+        "anchor",
+      );
+    }
   });
 
-  it("is the trampoline inside Telegram for everything but Telegram Desktop", () => {
+  it("is the trampoline inside Telegram for everything but Telegram Desktop on Windows", () => {
+    // Every platform on the one user agent that opens the exception, so only
+    // the platform can be what keeps them out of it.
     for (const platform of [null, "android", "ios", "macos", "weba", "webk", "unknown", ""]) {
-      expect(deepLinkHandoff({ insideTelegram: true, telegramPlatform: platform }), String(platform)).toBe(
+      expect(
+        deepLinkHandoff({ insideTelegram: true, telegramPlatform: platform, userAgent: TDESKTOP_WINDOWS_UA }),
+        String(platform),
+      ).toBe("trampoline");
+    }
+    expect(
+      deepLinkHandoff({ insideTelegram: true, telegramPlatform: "tdesktop", userAgent: TDESKTOP_WINDOWS_UA }),
+    ).toBe("anchor");
+    // And Telegram Desktop on anything that does not say Windows — jsdom's own
+    // `(win32)` among them: it is not a browser's user agent, and an unknown one
+    // gets the safe answer.
+    for (const userAgent of [
+      TDESKTOP_MACOS_UA,
+      TDESKTOP_LINUX_UA,
+      "",
+      "Mozilla/5.0 (win32) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/29.1.1",
+    ]) {
+      expect(deepLinkHandoff({ insideTelegram: true, telegramPlatform: "tdesktop", userAgent }), userAgent).toBe(
         "trampoline",
       );
     }
-    expect(deepLinkHandoff({ insideTelegram: true, telegramPlatform: "tdesktop" })).toBe("anchor");
   });
 });

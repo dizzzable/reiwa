@@ -154,6 +154,9 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const { default: ConnectPage } = await import("../src/features/connect/connect-page");
 const { usePageBackdropStore } = await import("../src/stores/page-backdrop.store");
+const { toast } = await import("sonner");
+const { ru } = await import("../src/i18n/ru");
+const { en } = await import("../src/i18n/en");
 
 let root: Root | null = null;
 let host: HTMLDivElement | null = null;
@@ -433,7 +436,7 @@ describe("an operator editing the catalog", () => {
     expect(mark, "the app has no mark on it").not.toBeNull();
     expect(mark?.className).toContain("absolute");
     expect(mark?.className).toMatch(/-right-/);
-    expect(mark?.className, "the mark is anchored from the left").not.toMatch(/left-/);
+    expect(mark?.className, "the mark is anchored from the left").not.toMatch(/\bleft-/);
     // Behind the label, which carries its own stacking context above it.
     const label = [...el.querySelectorAll("[data-connect-app] span")].find((n) =>
       n.textContent === "FlClashX",
@@ -476,7 +479,7 @@ describe("the same arrangement on a phone and on a desktop", () => {
     const el = render();
     const apps = el.querySelector<HTMLElement>("[data-testid='connect-apps']");
     expect(apps?.className).toContain("flex-wrap");
-    expect(apps?.className, "a breakpoint decides the app layout").not.toMatch(/md:(flex|grid)/);
+    expect(apps?.className, "a breakpoint decides the app layout").not.toMatch(/\bmd:(flex|grid)/);
   });
 
   it("keeps the section subtitle off the phone, where there is no room", () => {
@@ -737,6 +740,73 @@ describe("the link sheet behind the header control", () => {
     // on the themed element itself, so the two say the tokens arrive in both
     // places rather than in one.
     expect(overlay?.style.getPropertyValue('--brand-primary')).toBe('#FF6B7A');
+  });
+});
+
+describe("a copy the device refuses", () => {
+  /**
+   * The notice said "select the link and copy it by hand", on a screen that
+   * shows no link: the address travels only inside its buttons and the QR
+   * sheet. A copy can only fail when there IS a link, and then the link icon in
+   * the header always opens that sheet, so the notice sends the subscriber to
+   * its QR code.
+   */
+  beforeEach(() => {
+    vi.mocked(toast.error).mockClear();
+    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: undefined });
+    Object.defineProperty(document, "execCommand", { configurable: true, value: vi.fn(() => false) });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, "execCommand");
+    Reflect.deleteProperty(window.navigator, "clipboard");
+  });
+
+  function button(scope: ParentNode | null | undefined, text: string): HTMLButtonElement | undefined {
+    return [...(scope?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((candidate) =>
+      candidate.textContent?.trim().includes(text),
+    );
+  }
+
+  /** A macrotask, not a microtask: the copy settles a few promise turns later. */
+  async function press(target: HTMLElement | null | undefined): Promise<void> {
+    expect(target, "the control to press is not on screen").toBeTruthy();
+    await act(async () => {
+      target?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  it("points at the QR code behind the header's link icon, from a step and from the sheet, in both languages", async () => {
+    // One app whose step copies. Not a tap on an app tab: the screen remembers
+    // that choice in localStorage, and later cases here would inherit it.
+    catalogPayload = { ...CATALOG, platforms: [{ ...CATALOG.platforms[0]!, apps: [koalaLike("koala", "Koala")] }] };
+    const el = render();
+    await press(button(el, "Скопировать"));
+    const sheetControl = el.querySelector<HTMLButtonElement>('button[aria-label="connect.linkSheetOpen"]');
+    await press(sheetControl);
+    const sheet = document.body.querySelector<HTMLElement>("[data-testid='connect-link-dialog']");
+    await press(button(sheet, "connect.copyLink"));
+
+    expect(vi.mocked(toast.error).mock.calls.map(([key]) => key)).toEqual(["connect.copyFailed", "connect.copyFailed"]);
+    // No link anywhere to select by hand...
+    expect(el.textContent).not.toContain(SUBSCRIPTION.url);
+    expect(sheet?.textContent).not.toContain(SUBSCRIPTION.url);
+    // ...and the QR code the line names is one enabled control away.
+    expect(sheetControl?.disabled).toBe(false);
+    expect(sheet?.textContent).toContain("connect.linkSheetTitle");
+
+    for (const [name, dict, selectByHand] of [
+      ["ru", ru, /выдел/i],
+      ["en", en, /\bselect\b/i],
+    ] as const) {
+      const line = dict.connect.copyFailed;
+      expect(line, `${name}: asks the subscriber to select a link this screen never shows`).not.toMatch(selectByHand);
+      expect(line, `${name}: does not say where the QR code is`).toMatch(/QR/);
+      expect(line, `${name}: sends the subscriber back to Telegram, which is the trampoline page's line`).not.toBe(
+        dict.connect.openCopyFailed,
+      );
+    }
   });
 });
 

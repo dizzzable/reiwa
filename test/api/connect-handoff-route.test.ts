@@ -22,8 +22,9 @@ import { createConnectHandoffSigner } from "../../src/api/lib/connect-handoff-si
  *   - it answers WITHOUT a session — the page never has one;
  *   - it says yes only to this installation's signature over the digest sent;
  *   - it refuses anything but exactly `{ digest, signature }`, well formed, with
- *     a 400 — a body that is not JSON included, which the app's global error
- *     handler would otherwise answer with a 500;
+ *     a 400 of its own — a body that is not JSON included, which the app's
+ *     global error handler would otherwise answer with its generic 400 and no
+ *     `no-store`;
  *   - nothing it answers is cacheable;
  *   - the CSRF guard still refuses another origin — nothing was loosened;
  *   - no log line holds the body or anything from it.

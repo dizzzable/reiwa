@@ -1,26 +1,28 @@
 /**
  * Internal HTTP listener — single Node-native server bound to
- * `BOT_INVALIDATE_PORT` (default 5100). Exposes a narrow set of
- * admin-pushed endpoints.
+ * `BOT_INVALIDATE_PORT` (default 5100). Exposes a narrow set of endpoints to
+ * ONE caller, reiwa-api. The panel never dials the bot: it delivers signed
+ * webhooks to reiwa-api's public `/api/v1/webhooks/rezeis`
+ * (`api/routes/webhooks.ts`), and reiwa-api relays each action here over the
+ * compose network the two containers share on one host.
  *
  * Auth (either is accepted):
  *   - HMAC signature (preferred): `x-request-timestamp` + `x-request-signature`
  *     over `METHOD\nPATH\nTIMESTAMP\nsha256(body)` keyed with
  *     `REZEIS_INTERNAL_SHARED_SECRET` (see `lib/internal-hmac.ts`). The
- *     secret never travels on the wire and a stale timestamp is rejected —
- *     this is what makes the hop safe when admin and bot are on different
- *     VPS reaching each other over the public internet.
+ *     secret never travels on the wire and a stale timestamp is rejected.
+ *     reiwa-api signs every relay this way.
  *   - Legacy shared-secret header `X-Auth-Token` == `REZEIS_INTERNAL_SHARED_SECRET`
- *     (transitional: safe only on a private docker network or behind TLS;
- *     kept so same-host deployments keep working until admin signs).
+ *     (left from when the panel called the bot directly; nothing sends it any
+ *     more, and it is still accepted until it is removed in a change of its own).
  *
  * Endpoints:
  *
  *   POST /invalidate
- *     Force-refresh the in-process bot config cache. Rezeis-admin
- *     pushes this whenever an operator saves the BotConfig so the
- *     next user request sees fresh data without waiting up to 5 min
- *     for the periodic refresh.
+ *     Force-refresh the in-process bot config cache. reiwa-api relays
+ *     `reiwa.bot.invalidate` here, which the panel sends whenever an operator
+ *     saves the BotConfig, so the next user request sees fresh data without
+ *     waiting up to 5 min for the periodic refresh.
  *
  *   POST /invalidate-policy
  *     Drop this process's platform-policy and legal-documents caches.
@@ -60,10 +62,17 @@
  *     Deliver a text document with an optional HTML/Markdown caption to a
  *     chat / topic. Used for full error reports on split deployments.
  *
- * Bound to `0.0.0.0`. When split across VPS, expose it ONLY through a
- * TLS reverse proxy (443) with an IP allow-list for the admin host — never
- * publish the raw port. The HMAC auth above protects the secret even if
- * TLS terminates at the proxy.
+ *   POST /notify-dev, /notify-dev-document, /notify-backup-document
+ *     Described at their handlers below.
+ *
+ * Bound to `0.0.0.0` INSIDE the bot container, and never published on any
+ * topology: no compose file maps this port, and none should. reiwa-api reaches
+ * it as `REIWA_BOT_INTERNAL_URL` (default `http://reiwa-bot:5100`), and
+ * reiwa-api and reiwa-bot always run side by side on one host — splitting the
+ * panel and the cabinet across VPSes moves `REZEIS_HOST`, never this hop
+ * (`.env.example`). Publishing the port, behind a proxy or not, would reach no
+ * caller that is not already on that network, and would put on the internet a
+ * listener that reads a request body before it checks auth.
  *
  * If `REZEIS_INTERNAL_SHARED_SECRET` is unset (dev / smoke tests) the
  * listener is skipped entirely — no auth means no endpoint, period.

@@ -402,9 +402,11 @@ async function startBot(): Promise<void> {
 
   // ── Cache invalidate + notify HTTP listener ───────────────────────────
   //
-  // Single Node-native server bound to the docker network so rezeis-admin
-  // can punch synchronous events at the bot. Auth: the same shared
-  // secret used for outbound calls to admin (`REZEIS_INTERNAL_SHARED_SECRET`).
+  // Single Node-native server on the compose network, never published. Its
+  // one caller is reiwa-api, which relays the panel's signed webhooks here
+  // (`api/routes/webhooks.ts`); the panel never dials the bot. Auth: an HMAC
+  // keyed with the same shared secret used for outbound calls to admin
+  // (`REZEIS_INTERNAL_SHARED_SECRET`).
   // Endpoints (the full list lives in `internal-http-listener.ts`):
   //   - POST /invalidate                 — force-refresh BotConfigCache
   //   - POST /invalidate-policy          — drop the bot's policy + legal-documents caches

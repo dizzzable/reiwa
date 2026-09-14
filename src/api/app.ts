@@ -17,6 +17,7 @@ import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
 import { resolveReiwaPublicUrl, resolveRezeisAdminUrl } from "../config.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
+import { readBodyRefusal } from "./middleware/body-parser-refusal.js";
 import { apiLimiter } from "./middleware/rate-limit.js";
 import { createCsrfProtection } from "./middleware/csrf-protection.js";
 import { createContextDetectionMiddleware } from "./middleware/context-detection.js";
@@ -765,23 +766,28 @@ export function createApp(deps: CreateAppDeps) {
       return;
     }
 
-    // A body the parser refused. This is raised in middleware, BEFORE any
-    // handler, so the route's own careful 413 branch never sees it — and
-    // answering 500 tells a customer "something went wrong here" for a file
-    // that is simply too big, which is the one refusal they can act on. It is
-    // also not an incident: reporting it pages the operator once per oversize
-    // photo.
-    const tooLarge =
-      (err as { type?: string }).type === "entity.too.large" ||
-      (err as { status?: number }).status === 413;
-    if (tooLarge) {
+    // A body the parser refused: JSON that does not parse, a body over the
+    // limit, a charset or content encoding it cannot read. This is raised in
+    // middleware, BEFORE any handler, so a route's own careful 413 branch never
+    // sees it — and answering 500 tells a customer "something went wrong here"
+    // for a file that is simply too big, which is the one refusal they can act
+    // on. None of them is an incident: reporting one pages the operator once
+    // per oversize photo, or once per malformed request anybody cares to send.
+    //
+    // And the error object stays out of the log. body-parser keeps the text it
+    // could not parse on it as `body`, pino writes every field of an `err`, and
+    // Node's JSON.parse message quotes that text too — so whatever the body
+    // held, a password or a handoff signature, would land in the log whole.
+    const refusal = readBodyRefusal(err);
+    if (refusal !== null) {
+      const line = { type: refusal.type, status: refusal.status };
       if (reqLogger) {
-        reqLogger.warn({ err }, "Request body over the limit");
+        reqLogger.warn(line, "Request body refused by the parser");
       } else if (logger) {
-        logger.warn({ err }, "Request body over the limit");
+        logger.warn(line, "Request body refused by the parser");
       }
       if (!res.headersSent) {
-        res.status(413).json({ message: "Payload too large" });
+        res.status(refusal.status).json({ message: refusal.message });
       }
       return;
     }

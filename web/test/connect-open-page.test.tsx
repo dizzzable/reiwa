@@ -277,6 +277,146 @@ describe("a link the operator's catalog vouches for, around a subscription the c
   });
 });
 
+/**
+ * Copying is this page's way out when the app does not open, and the page lands
+ * exactly where the clipboard API is least dependable: Telegram's in-app browser
+ * and the other in-app browsers `openLink` can hand it to.
+ */
+describe("copying when navigator.clipboard is no help", () => {
+  /** jsdom has no `execCommand`: each case installs the document's answer. */
+  function documentCopies(answer: boolean): ReturnType<typeof vi.fn> {
+    const execCommand = vi.fn((_command: string) => answer);
+    Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+    return execCommand;
+  }
+
+  function clipboard(value: unknown): void {
+    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value });
+  }
+
+  async function readyPage(): Promise<HTMLDivElement> {
+    openAt(`/connect/open${trampolineHash(HAPP_LINK)}`);
+    const el = render();
+    await settle();
+    expect(verdict(el)).toBe("ready");
+    return el;
+  }
+
+  /** A macrotask, not a microtask: a refused write settles a few promise turns later. */
+  async function tapCopy(el: HTMLElement): Promise<void> {
+    await act(async () => {
+      copyButton(el)?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, "execCommand");
+    Reflect.deleteProperty(window.navigator, "clipboard");
+  });
+
+  it("copies through the selection when the browser has no navigator.clipboard", async () => {
+    clipboard(undefined);
+    const execCommand = documentCopies(true);
+    const el = await readyPage();
+
+    await tapCopy(el);
+
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(toast.success).toHaveBeenCalledWith("connect.copied");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("copies through the selection when navigator.clipboard refuses the write", async () => {
+    const writeText = vi.fn(async (_value: string) => {
+      throw new DOMException("Write permission denied.", "NotAllowedError");
+    });
+    clipboard({ writeText });
+    const execCommand = documentCopies(true);
+    const el = await readyPage();
+
+    await tapCopy(el);
+
+    expect(writeText).toHaveBeenCalledWith(SUBSCRIPTION_URL);
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(toast.success).toHaveBeenCalledWith("connect.copied");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("sends the subscriber back to Telegram when neither path copies — this page shows no link to select", async () => {
+    clipboard(undefined);
+    const execCommand = documentCopies(false);
+    const el = await readyPage();
+
+    await tapCopy(el);
+
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(toast.success).not.toHaveBeenCalled();
+    // `connect.copyFailed` is the connect screen's line: it sends the subscriber
+    // to the QR code behind that screen's header icon, which this page does not
+    // have. Nor is there a link on this page to select by hand:
+    expect(el.textContent).not.toContain(SUBSCRIPTION_URL);
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith("connect.openCopyFailed");
+  });
+});
+
+/**
+ * A tap, never an attempt on load: Chrome refuses an app scheme no gesture
+ * started, and on iOS a page that redirects by itself reads as broken.
+ *
+ * jsdom cannot go to another document, and it REPORTS every attempt on its
+ * virtual console as a `not-implemented` error: `location.assign`, `replace`, an
+ * `href` assignment, an anchor's activation. That report is the only trace a
+ * scripted navigation leaves here — `Location`'s methods are unforgeable, so no
+ * spy can stand in for them.
+ */
+describe("the page never opens the app by itself", () => {
+  interface VirtualConsoleLike {
+    on(event: "jsdomError", listener: (error: Error & { type?: string }) => void): unknown;
+    off(event: "jsdomError", listener: (error: Error & { type?: string }) => void): unknown;
+  }
+
+  it("neither navigates nor clicks its own button once both checks have said yes", async () => {
+    const virtualConsole = (globalThis as unknown as { jsdom?: { virtualConsole?: VirtualConsoleLike } }).jsdom
+      ?.virtualConsole;
+    if (virtualConsole === undefined) throw new Error("vitest's jsdom environment no longer exposes its JSDOM instance");
+    const navigations: string[] = [];
+    const onJsdomError = (error: Error & { type?: string }): void => {
+      if (error.type === "not-implemented") navigations.push(error.message);
+    };
+    const clicks: Element[] = [];
+    const onClick = (event: Event): void => {
+      clicks.push(event.target as Element);
+    };
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    virtualConsole.on("jsdomError", onJsdomError);
+    document.addEventListener("click", onClick, true);
+    try {
+      openAt(`/connect/open${trampolineHash(HAPP_LINK)}`);
+      const el = render();
+      await settle();
+      expect(verdict(el)).toBe("ready");
+      // Room for anything a ready page could have queued: an effect, a timer.
+      await settle();
+
+      expect(navigations, "the page navigated without a tap").toEqual([]);
+      expect(clicks, "the page clicked a control of its own").toEqual([]);
+      expect(open, "the page opened a window without a tap").not.toHaveBeenCalled();
+
+      // The harness does see a navigation when one happens — a real tap on the
+      // button is one — so the silence above is evidence and not a deaf ear.
+      act(() => appButton(el)?.click());
+      await settle();
+      expect(clicks).toHaveLength(1);
+      expect(navigations, "jsdom did not report the tap's navigation; this case proves nothing").toHaveLength(1);
+    } finally {
+      virtualConsole.off("jsdomError", onJsdomError);
+      document.removeEventListener("click", onClick, true);
+    }
+  });
+});
+
 describe("the signature check carries a digest and a signature, and nothing else", () => {
   it("sends the SHA-256 of the subscription url with the signature — never the url, the host or the link", async () => {
     openAt(`/connect/open${trampolineHash(HAPP_LINK)}`);
