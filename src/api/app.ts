@@ -39,6 +39,7 @@ import {
   isSafeBrandingFile,
 } from "./branding-pwa.js";
 import { createProfileRouter } from "./routes/profile.js";
+import { createChannelGateRouter } from "./routes/channel-gate.js";
 import { createPlansRouter } from "./routes/plans.js";
 import { createSubscriptionRouter } from "./routes/subscription.js";
 import { createPaymentsRouter } from "./routes/payments.js";
@@ -362,6 +363,10 @@ export function createApp(deps: CreateAppDeps) {
   app.use("/api/v1", createConnectHandoffRouter({ config }));
   app.use("/api/v1", createAuthRouter(deps));
   app.use("/api/v1", createProfileRouter(deps));
+  // «Канал обязателен» inside the Mini App. The SPA asks only when it runs in
+  // Telegram and draws the join screen itself; the browser cabinet is not gated,
+  // so no other route refuses on the gate's behalf.
+  app.use("/api/v1", createChannelGateRouter(deps));
   app.use("/api/v1", createPlansRouter(deps));
   app.use("/api/v1", createSubscriptionRouter(deps));
   app.use("/api/v1", createPaymentsRouter(deps));

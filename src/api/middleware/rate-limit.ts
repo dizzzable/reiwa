@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { Redis } from "ioredis";
 
 import { getRequestLogger } from "./logger-accessor.js";
+import { resolveUserIdentity } from "./user-identity.js";
 import {
   rateLoginKey,
   rateRegisterKey,
@@ -120,6 +121,41 @@ export const apiLimiter = rateLimit({
     req.originalUrl.startsWith("/api/v1/webhooks/rezeis") ||
     (req.method === "GET" && OAUTH_NAVIGATION_PATH.test(req.originalUrl)),
 });
+
+/**
+ * An in-memory budget counted per signed-in ACCOUNT instead of per address.
+ *
+ * For a route whose cost lands on the person — the channel gate's re-check asks
+ * Telegram about one user each time — an address is the wrong unit both ways: a
+ * carrier NAT pool shares one, so one impatient tapper would spend the allowance
+ * of everybody behind it, while one account on a rotating mobile address would
+ * not be bounded at all. The Redis limiters below can only key by address.
+ *
+ * Mount it AFTER the session guard. The key is the session's identity — the
+ * reiwa_id, or the legacy session's Telegram id — and by then a request without
+ * one has already been answered 401. The API runs as one process, so a counter
+ * in memory sees every request. The 429 is the generic limiters' own:
+ * `Retry-After` and `{ message, retryAfter }`.
+ */
+export function createAccountRateLimiter(options: {
+  readonly windowMs: number;
+  readonly limit: number;
+}) {
+  return rateLimit({
+    windowMs: options.windowMs,
+    limit: options.limit,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many requests, please try again later" },
+    handler: createGenericLimitHandler(options.windowMs),
+    keyGenerator: (req) => {
+      const identity = resolveUserIdentity(req);
+      if (identity.userId !== undefined) return `account:${identity.userId}`;
+      if (identity.telegramId !== undefined) return `telegram:${identity.telegramId}`;
+      return "anonymous";
+    },
+  });
+}
 
 // ── Redis-based endpoint-specific rate limiters ─────────────────────────────
 
