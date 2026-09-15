@@ -27,10 +27,11 @@ const AD_ATTRIBUTION_TIMEOUT_MS = 2_000;
  * Binds a freshly created account to the advertising placement the browser
  * arrived from, using the code parked by the capture middleware.
  *
- * Shared by every path that creates an account. The password form was the only
- * one wired up, so a visitor who clicked an ad and then signed up with the
- * Google / Yandex / Telegram button counted as an open and never as a
- * registration — half the funnel, silently missing.
+ * Shared by every path that creates an account, and by the bot's magic-link
+ * sign-in into an account the bot created (rezeis attributes only a new one).
+ * The password form was the only one wired up, so a visitor who clicked an ad
+ * and then signed up with the Google / Yandex / Telegram button counted as an
+ * open and never as a registration — half the funnel, silently missing.
  *
  * The cookie is cleared only once rezeis confirms, so a restart or a
  * reiwa-ahead-of-rezeis deploy leaves something to retry from. Never throws:
@@ -269,6 +270,15 @@ export function createAuthRouter(deps: {
         res.status(500).json({ success: false, message: "Failed to create session" });
         return;
       }
+      // An account the bot created counts for the web ad this browser arrived
+      // from: a visitor who clicked the ad, went on to the bot and came back
+      // through its cabinet link used to be an open and never a registration.
+      // Only once the session exists, and before the answer, so a claimed cookie
+      // can still be expired on it. Never throws. No newness check here: rezeis
+      // refuses to attribute an account that is not new (`isNewAccountAtTouch`,
+      // 24 hours), so an old customer signing in with a parked code acquires
+      // nothing.
+      await claimAdAttribution(req, res, adminClient, result.userId);
       res.json({
         success: true,
         redirectUrl: "/dashboard",
