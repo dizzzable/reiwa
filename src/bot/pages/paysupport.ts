@@ -30,8 +30,16 @@ import { renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.
 import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
 import type { PageRegistrar } from './types.js';
 
+/**
+ * Exported for the channel gate (`middleware/channel-gate.ts`), which lets it
+ * through: Telegram's terms for Stars oblige a bot that takes payments to answer
+ * this command and handle payment questions — and a buyer who left the channel
+ * still has a charge to ask about.
+ */
+export const PAYSUPPORT_COMMAND = 'paysupport';
+
 export const registerPaySupportPage: PageRegistrar = (bot, deps) => {
-  bot.command('paysupport', async (ctx) => {
+  bot.command(PAYSUPPORT_COMMAND, async (ctx) => {
     const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
     const botCfg = await deps.getConfig();
 

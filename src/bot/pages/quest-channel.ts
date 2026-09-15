@@ -2,8 +2,13 @@
  * `quest_channel:<questId>` callback — the FAIL-CLOSED channel-subscription
  * quest verifier.
  *
- * This deliberately does NOT reuse the fail-open login gate (`menu.ts`). A quest
- * reward is money, so verification must be strict:
+ * Two different checks meet here. The bot's channel gate («Канал обязателен»,
+ * `middleware/channel-gate.ts`) stands in front of this callback like every
+ * other button — with a FRESH check, because this is the button pressed right
+ * after joining — so a user outside the gate's channel is stopped at its join
+ * prompt before reaching this handler. That gate is fail-OPEN: a user it
+ * cannot check is let in. The quest's own check below deliberately does NOT
+ * reuse it. A quest reward is money, so verification must be strict:
  *   - membership is proved by a fresh `getChatMember` against the server-derived
  *     chat id (never a callback-supplied one);
  *   - only `member` / `administrator` / `creator`, or `restricted` WITH
@@ -15,17 +20,51 @@
  * The bot passes ONLY the authenticated `ctx.from.id`; rezeis resolves the
  * account and owns completion state.
  */
+import { InlineKeyboard } from 'grammy';
+
 import { coerceLocale } from './coerce-locale.js';
-import type { PageDeps, PageRegistrar } from './types.js';
+import type { BotContext, PageDeps, PageRegistrar } from './types.js';
+import { channelGateApiFor } from '../lib/bot-channel-gate.js';
 import { isSubscribedMember } from '../lib/chat-membership.js';
+import { inlineButton } from '../widgets/inline-button.js';
 
-/** CUID-shaped quest id, matching rezeis' user-reference grammar. */
-const QUEST_CHANNEL_RE = /^quest_channel:([a-z][a-z0-9]{19,31})$/i;
+/**
+ * CUID-shaped quest id, matching rezeis' user-reference grammar — the one
+ * grammar every quest id in this bot is held to: this callback, the
+ * `quest_channel_<id>` deep link, and the id the channel gate's prompt carries
+ * (`check_channel:q:<id>`). Unanchored so it can be composed.
+ */
+export const QUEST_ID_PATTERN = '[a-z][a-z0-9]{19,31}';
+export const QUEST_ID_RE = new RegExp(`^${QUEST_ID_PATTERN}$`, 'i');
+export const QUEST_CHANNEL_RE = new RegExp(`^quest_channel:(${QUEST_ID_PATTERN})$`, 'i');
 
-interface ChannelTarget {
+export interface ChannelTarget {
   readonly questId: string;
   readonly chatId: string;
   readonly joinUrl: string;
+}
+
+/**
+ * The quest's join + verify screen: `quests.channel.prompt`, a URL button to the
+ * quest's channel and «Я подписался» → `quest_channel:<id>`. Sent by the
+ * `quest_channel_<id>` deep link, and by «✅ Я подписался» on a gate prompt that
+ * carried the quest, so both land on the same screen.
+ */
+export async function replyWithQuestChannelPrompt(
+  ctx: BotContext,
+  deps: Pick<PageDeps, 'translator' | 'userLocale' | 'getConfig'>,
+  questId: string,
+  target: Pick<ChannelTarget, 'joinUrl'>,
+): Promise<void> {
+  const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+  // The same two labels the gate's prompt renders, through the same renderer —
+  // otherwise an operator's `:slug:` shows on one screen and leaks on the other.
+  const botCfg = await deps.getConfig();
+  const keyboard = new InlineKeyboard()
+    .url(inlineButton(deps.translator.t('channel.join_button', lang), botCfg), target.joinUrl)
+    .row()
+    .text(inlineButton(deps.translator.t('channel.check_button', lang), botCfg), `quest_channel:${questId}`);
+  await ctx.reply(deps.translator.t('quests.channel.prompt', lang), { reply_markup: keyboard });
 }
 
 function readQuestId(match: unknown): string | null {
@@ -71,10 +110,12 @@ export const registerQuestChannelPage: PageRegistrar = (bot, deps: PageDeps) => 
       return;
     }
 
-    // 2. Fresh membership probe against the server-derived chat id.
+    // 2. Fresh membership probe against the server-derived chat id — through
+    //    the gate's short-timeout client, not `ctx.api`'s 500 seconds, which
+    //    would hold every update queued behind this one.
     let member: { status: string; is_member?: boolean };
     try {
-      member = await ctx.api.getChatMember(target.chatId, tgUser.id);
+      member = await channelGateApiFor(ctx, deps).getChatMember(target.chatId, tgUser.id);
     } catch (err: unknown) {
       // FAIL CLOSED: a Telegram error is never a completion.
       await ctx.answerCallbackQuery({ text: t('quests.channel.retry'), show_alert: true });

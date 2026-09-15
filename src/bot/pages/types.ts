@@ -25,6 +25,8 @@
 import type { Bot, Context, SessionFlavor } from 'grammy';
 
 import type { AdminClient } from '../../infrastructure/admin-client/index.js';
+import type { ChannelGateStore } from '../../infrastructure/channel-gate/channel-gate-store.js';
+import type { ChatMemberApi } from '../lib/channel-gate.js';
 import type { BannerStorePort } from '../../application/ports/banner-store.port.js';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
@@ -98,6 +100,20 @@ export interface PageDeps {
    * logger bound to `service: 'bot'`.
    */
   readonly logger?: LoggerPort;
+  /**
+   * The channel gate's Telegram client and shared store (`lib/bot-channel-gate.ts`).
+   * Production always wires both halves it has: the client always, the store when
+   * `REDIS_URL` is set. Omitted in page specs, where the gate falls back to
+   * `ctx.api` and this process's memory.
+   */
+  readonly channelGate?: BotChannelGate;
+}
+
+export interface BotChannelGate {
+  /** A client with a short timeout, for every membership check the bot makes. */
+  readonly api: ChatMemberApi;
+  /** Passes and the operator-alert throttle shared with the API. */
+  readonly store?: ChannelGateStore;
 }
 
 export type PageRegistrar = (bot: Bot<BotContext>, deps: PageDeps) => void;

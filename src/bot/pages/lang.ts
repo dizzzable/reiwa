@@ -40,10 +40,19 @@ function localeButton(
     : { text: rendered.text };
 }
 
+/**
+ * The picker's two triggers, exported because the channel gate middleware
+ * (`middleware/channel-gate.ts`) lets exactly these through: a user stopped at
+ * the join prompt must be able to switch it into a language they read. Shared
+ * rather than retyped so the exemption cannot drift from the registration.
+ */
+export const LANG_COMMAND = 'lang';
+export const LANG_CALLBACK_RE = /^lang:(.+)$/;
+
 export const registerLangPage: PageRegistrar = (bot, deps) => {
   const { translator, userLocale, adminClient, getConfig } = deps;
 
-  bot.command('lang', async (ctx) => {
+  bot.command(LANG_COMMAND, async (ctx) => {
     const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
     const botCfg = await getConfig();
     const kb = new InlineKeyboard()
@@ -52,7 +61,7 @@ export const registerLangPage: PageRegistrar = (bot, deps) => {
     await ctx.reply(translator.t('lang.choose', lang), { reply_markup: kb });
   });
 
-  bot.callbackQuery(/^lang:(.+)$/, async (ctx) => {
+  bot.callbackQuery(LANG_CALLBACK_RE, async (ctx) => {
     await ctx.answerCallbackQuery();
     const match = ctx.match;
     if (match === null || match === undefined) return;

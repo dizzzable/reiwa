@@ -1,10 +1,13 @@
 /**
  * Channel-quest bot callback — `quest_channel:<questId>`.
  *
- * FAIL-CLOSED, unlike the fail-open login gate in menu.ts. A quest reward may
+ * FAIL-CLOSED, unlike the fail-open channel gate («Канал обязателен») that stands
+ * in front of every bot update (`middleware/channel-gate.ts`, this callback
+ * included — `channel-gate-telegram.test.ts` pins that). A quest reward may
  * only be granted after a fresh positive membership proof; any Telegram error,
  * missing bot rights, or non-member status must yield a retry/not-subscribed
- * outcome and never a completion.
+ * outcome and never a completion. These specs drive the handler alone, past
+ * the gate.
  */
 import { describe, expect, it, vi } from 'vitest';
 

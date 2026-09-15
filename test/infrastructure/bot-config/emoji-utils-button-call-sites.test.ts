@@ -315,6 +315,7 @@ describe('back_to_menu — rendered on every sub-screen', () => {
 
 interface StartCtxShape {
   from: { id: number; first_name: string };
+  chat: { id: number; type: 'private' };
   match: string;
   api: { getChatMember: ReturnType<typeof vi.fn> };
   reply: ReturnType<typeof vi.fn>;
@@ -324,6 +325,9 @@ interface StartCtxShape {
 function buildStartCtx(match: string, getChatMember = vi.fn()): StartCtxShape {
   return {
     from: { id: 1, first_name: 'Anya' },
+    // The gate stands only in the user's own chat with the bot; a /start without a
+    // chat is not one, and the gate screen this spec compares would never render.
+    chat: { id: 1, type: 'private' },
     match,
     api: { getChatMember },
     reply: vi.fn().mockResolvedValue(undefined),

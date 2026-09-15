@@ -13,6 +13,7 @@
 import { InlineKeyboard } from "grammy";
 import { generateResponseWithTools } from "../../core/ai/chat-client.js";
 import type { SupportedLocale } from "../../core/enums/locale.enum.js";
+import { AI_SUPPORT_EXIT_CALLBACK, CANCEL_COMMAND } from "./ai-support-mode.js";
 import { coerceLocale } from "./coerce-locale.js";
 import type { PageRegistrar } from "./types.js";
 
@@ -116,7 +117,7 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
 
   const exitKeyboard = (lang: SupportedLocale) =>
-    new InlineKeyboard().text(deps.translator.t("ai_support.exit_button", lang), "ai_support_exit");
+    new InlineKeyboard().text(deps.translator.t("ai_support.exit_button", lang), AI_SUPPORT_EXIT_CALLBACK);
 
   const clearSupportMode = (ctx: { session: unknown }) => {
     try {
@@ -190,7 +191,7 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
   });
 
   // ── /cancel — exits AI support mode (the advertised escape hatch) ──
-  bot.command("cancel", async (ctx, next) => {
+  bot.command(CANCEL_COMMAND, async (ctx, next) => {
     let wasInSupport = false;
     try {
       wasInSupport = !!(ctx.session as Record<string, unknown>).aiSupportMode;
@@ -297,7 +298,7 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
   });
 
   // ── Exit AI support mode ───────────────────────────────────────────
-  bot.callbackQuery("ai_support_exit", async (ctx) => {
+  bot.callbackQuery(AI_SUPPORT_EXIT_CALLBACK, async (ctx) => {
     try {
       (ctx.session as Record<string, unknown>).aiSupportMode = false;
       (ctx.session as Record<string, unknown>).aiMessages = [];

@@ -19,6 +19,7 @@ import { inspect } from 'node:util';
 
 import { loadConfig, resolveRezeisAdminUrl, resolveReiwaPublicUrl } from '../config.js';
 import { AdminClient } from '../lib/admin-client.js';
+import { createBotChannelGate } from './lib/bot-channel-gate.js';
 import type { BotConfig } from '../infrastructure/bot-config/types.js';
 import { BotConfigCache, DEFAULT_BOT_CONFIG } from '../infrastructure/bot-config/cache.js';
 import { RedisConfigPersistence } from '../infrastructure/bot-config/redis-config-persistence.js';
@@ -62,6 +63,7 @@ import {
   userLocaleCache,
 } from '../infrastructure/i18n/index.js';
 import { createLogger, redactBotTokens } from '../infrastructure/logger/index.js';
+import { createChannelGateMiddleware } from './middleware/channel-gate.js';
 import { createLocaleDetectMiddleware } from './middleware/locale-detect.js';
 import { getMissingBotTokenError } from './startup-policy.js';
 
@@ -234,6 +236,20 @@ async function startBot(): Promise<void> {
     }),
   );
 
+  // ── Channel gate: its own Telegram client and the shared store ─────────────
+  //
+  // The client: `ctx.api` keeps grammY's 500-second default timeout, and updates
+  // are handled one at a time, so a `getChatMember` Telegram stopped answering
+  // held every user queued behind it. The store: passes of «Перепроверять
+  // подписку» OFF and the operator-alert throttle, shared with reiwa-api through
+  // the same REDIS_URL. See `lib/bot-channel-gate.ts`.
+  const channelGate = createBotChannelGate({
+    token: config.BOT_TOKEN,
+    apiRoot: config.TELEGRAM_BOT_API_ROOT,
+    redisUrl: config.REDIS_URL,
+    logger,
+  });
+
   // All command + callback handlers live in bot/pages/. Composition
   // root just walks the registrar list.
   const pageDeps = {
@@ -259,7 +275,19 @@ async function startBot(): Promise<void> {
       botConfigCache?.stampScreenBannerFileId(shortId, mediaUrl, fileId);
     },
     logger,
+    channelGate,
   };
+
+  // ── Channel gate («Канал обязателен») ──────────────────────────────────────
+  //
+  // After session + locale (the join prompt renders in the user's language) and
+  // before EVERY page below: a non-subscriber's message or button press in their
+  // own chat stops here with the join prompt. `/start`, «Я подписался»,
+  // `/paysupport`, the language picker, the ways out of AI support and `close`
+  // pass; so do service messages and anything outside the user's own chat. See
+  // `middleware/channel-gate.ts`.
+  bot.use(createChannelGateMiddleware(pageDeps));
+
   registerLangPage(bot, pageDeps);
   registerInvitePage(bot, pageDeps);
   // Inline mode. Registered like any other page, but it is the only handler

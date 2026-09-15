@@ -13,6 +13,8 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+import { resetChannelGateMemory } from '../../../src/bot/lib/channel-gate.js';
+import { resetChannelJoinPromptMemory } from '../../../src/bot/pages/channel-join-prompt.js';
 import { registerStartPage } from '../../../src/bot/pages/start.js';
 import { setPolicyCache } from '../../../src/infrastructure/admin-client/policy-cache.js';
 import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
@@ -27,6 +29,8 @@ interface FakeStartCtx {
     username?: string;
     language_code?: string;
   };
+  /** `/start` in the user's own chat unless a spec says otherwise — the only chat the gate stands in. */
+  chat?: { id: number; type: string };
   match?: string;
   api: { getChatMember: ReturnType<typeof vi.fn> };
   reply: ReturnType<typeof vi.fn>;
@@ -34,8 +38,10 @@ interface FakeStartCtx {
 }
 
 function buildStartCtx(over: Partial<FakeStartCtx> = {}): FakeStartCtx {
+  const from = over.from ?? { id: 1, first_name: 'Anya' };
   return {
-    from: over.from ?? { id: 1, first_name: 'Anya' },
+    from,
+    chat: over.chat ?? { id: from.id, type: 'private' },
     match: over.match,
     api: over.api ?? { getChatMember: vi.fn() },
     reply: vi.fn().mockResolvedValue(undefined),
@@ -73,8 +79,11 @@ describe('registerStartPage', () => {
   beforeEach(() => {
     // PolicyCache is a singleton — reset between tests so each one
     // sees a fresh empty cache (forcing a refetch from the per-test
-    // adminClient stub).
+    // adminClient stub). The gate's memory of a user and of the prompts it
+    // sent are process singletons too: every spec here is user 1.
     setPolicyCache(null);
+    resetChannelGateMemory();
+    resetChannelJoinPromptMemory();
   });
 
   it('registers the /start command', () => {
@@ -253,9 +262,35 @@ describe('registerStartPage', () => {
       api: { getChatMember: vi.fn().mockRejectedValue(new Error('502')) },
     });
     await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    // The gate really was asked — without this the spec passes with the gate removed.
+    expect(ctx.api.getChatMember).toHaveBeenCalledWith('@rezeis_news', 1);
     // Welcome reply still happens.
     expect(ctx.reply).toHaveBeenCalled();
     expect(ctx.reply.mock.calls.at(-1)?.[0]).not.toBe('ru:channel.required');
+  });
+
+  it('typed in a group, renders nothing and bootstraps nobody', async () => {
+    const adminClient = buildAdmin({
+      bootstrap: { language: 'en' },
+      policy: { channelRequired: true, channelLink: '@rezeis_news' },
+    });
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      config: DEFAULT_BOT_CONFIG,
+    });
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+    const ctx = buildStartCtx({
+      chat: { id: -1009876543210, type: 'supergroup' },
+      api: { getChatMember: vi.fn().mockResolvedValue({ status: 'member' }) },
+    });
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(ctx.reply).not.toHaveBeenCalled();
+    expect(ctx.replyWithPhoto).not.toHaveBeenCalled();
+    expect(ctx.api.getChatMember).not.toHaveBeenCalled();
+    expect(
+      (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
+    ).not.toHaveBeenCalled();
   });
 
   it('builds a t.me URL from a @-prefixed channelLink', async () => {

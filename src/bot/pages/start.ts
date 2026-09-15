@@ -6,11 +6,18 @@
  *   1. Bootstrap the user on rezeis-admin so `/api/internal/user/*`
  *      lookups have a record. Adopt the locale the admin echoes back.
  *   2. Channel-subscription gate. When the operator requires a channel
- *      sub, probe membership and short-circuit with the join-channel
- *      reply for `left` / `kicked` users.
+ *      sub, ask the gate (`resolveChannelGateVerdict`) and short-circuit
+ *      with the join prompt for a user who is not in the channel.
  *   3. Send the banner photo (if configured) and render the welcome
  *      caption + main keyboard. Photo failures are non-fatal — we
  *      still ship the text reply so users never see a dead bot.
+ *
+ * `/start` is the one command the gate middleware (`middleware/channel-gate.ts`)
+ * lets through unchecked, because the gate here has to run AFTER link consume,
+ * the access-mode gate, bootstrap and ad attribution. It is not the only gate:
+ * every other private-chat update meets the same verdict and the same prompt in
+ * the middleware. The quest deep link gates too (before its quest screen);
+ * `payment_return` alone does not.
  *
  * `bot.callbackQuery('menu:main')` flow (warm path — back-navigation):
  *   • Re-render the welcome screen *in place*, STEALTHNET-style —
@@ -20,15 +27,13 @@
  */
 import { InlineKeyboard } from 'grammy';
 
-import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
 import { buildProfileSummary } from '../../infrastructure/bot-message/message-builder.js';
-import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
-import {
-  checkChannelMembership,
-  resolveChannelJoinUrl,
-  hasRecentlyPassedChannel,
-  markChannelPassed,
-} from '../lib/channel-gate.js';
+import { getPolicyCache, type CachedPolicy } from '../../infrastructure/admin-client/policy-cache.js';
+import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/bot-channel-gate.js';
+import { isSameChannelChat, resolveChannelChatId, resolveChannelGateVerdict } from '../lib/channel-gate.js';
+import { inlineButton } from '../widgets/inline-button.js';
+import { sendChannelJoinPrompt } from './channel-join-prompt.js';
+import { QUEST_ID_RE, replyWithQuestChannelPrompt, type ChannelTarget } from './quest-channel.js';
 import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl, attachSigninTokenToUrl } from '../widgets/main-keyboard.js';
 import { pickScreenText, buildScreenKeyboard } from './screen-renderer.js';
 import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial-button.js';
@@ -43,6 +48,52 @@ import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 interface BootstrapSessionShape {
   readonly language?: string;
+}
+
+/** What the platform access mode says to a Telegram user before anything else happens. */
+export type AccessModeRefusal =
+  | 'access_mode.restricted'
+  | 'access_mode.reg_blocked_new'
+  | 'access_mode.invited_no_code';
+
+/**
+ * The access-mode rules `/start` applies to a Telegram user, as the translation
+ * key of the refusal — `null` when the user may go on:
+ *   - RESTRICTED refuses everyone;
+ *   - REG_BLOCKED refuses a user rezeis has no account for;
+ *   - INVITED refuses such a user too, unless `/start` carried a referral payload.
+ * For the last two the `exists()` probe is cheap (one indexed lookup), and a
+ * probe that fails reads as a returning user: rezeis's own gate inside bootstrap
+ * is the backstop.
+ *
+ * «✅ Я подписался» asks the same, with no payload, before its welcome screen.
+ * The channel gate hands its prompt — and so that button — to everybody it
+ * stops, a newcomer `/start` has just refused included, and a pass must not open
+ * the welcome screen of a service that refused them.
+ */
+export async function accessModeRefusal(
+  adminClient: NonNullable<PageDeps['adminClient']>,
+  policy: Pick<CachedPolicy, 'accessMode'>,
+  telegramId: number,
+  startPayload: string,
+): Promise<AccessModeRefusal | null> {
+  if (policy.accessMode === 'RESTRICTED') return 'access_mode.restricted';
+  if (policy.accessMode !== 'REG_BLOCKED' && policy.accessMode !== 'INVITED') return null;
+  let isNewUser = false;
+  try {
+    const probe = await adminClient.user.exists({ telegramId: String(telegramId) });
+    isNewUser = probe.exists === false;
+  } catch {
+    // exists() failed → assume returning user; the admin
+    // server-side gate inside bootstrap is the backstop.
+  }
+  if (!isNewUser) return null;
+  if (policy.accessMode === 'REG_BLOCKED') return 'access_mode.reg_blocked_new';
+  // INVITED: only reject when the user has NO referral payload on
+  // `/start <code>`. The referral deep-link path falls through to bootstrap.
+  const hasReferralPayload =
+    startPayload.length > 0 && !startPayload.startsWith('link_') && startPayload !== 'payment_return';
+  return hasReferralPayload ? null : 'access_mode.invited_no_code';
 }
 
 /** A subscription counts as "active" when ACTIVE or LIMITED (not expired/deleted). */
@@ -84,8 +135,9 @@ function extractTrialPriceLabel(plans: readonly CatalogPlanShape[]): string | nu
 /**
  * Build the welcome message text + main keyboard that both the
  * `/start` command and the `menu:main` callback render. Pure
- * rendering — no bootstrap or channel gate side-effects, those stay
- * in the `/start` cold path.
+ * rendering — no bootstrap or channel gate side-effects: bootstrap stays
+ * in the `/start` cold path, and the gate runs before either caller (in
+ * `/start` itself, and in the gate middleware for `menu:main`).
  */
 async function buildWelcomeView(
   ctx: BotContext,
@@ -458,31 +510,59 @@ function parseAdCode(payload: string): string | null {
 }
 
 /**
- * Build the object-form text for an inline button: resolves the operator's
- * `{{KEY}}` / `:slug:` tokens to glyphs and promotes a LEADING premium token to
- * `icon_custom_emoji_id` (premium owners only). Inline-button captions cannot
- * carry `custom_emoji` entities, so this is the only way a pack emoji renders
- * on one — and the only thing that keeps a raw `:slug:` out of the caption.
+ * The channel gate as `/start` runs it: the verdict every surface shares
+ * (`resolveChannelGateVerdict`, through the gate's own short-timeout client and
+ * shared store) and the join prompt every door sends (`sendChannelJoinPrompt`,
+ * which always sends from here and records it). `true` when the user was
+ * stopped.
  *
- * Every keyboard built on this page goes through it. The channel-gate branch
- * used to carry its own copy of this while the quest deep-link and
- * payment-return branches passed `translator.t(...)` straight into grammy, so
- * the same operator label rendered on one screen and leaked `:slug:` on
- * another.
+ * FRESH, like «✅ Я подписался»: `/start` is what somebody who has just joined
+ * sends, and a "not subscribed" remembered from a message a few seconds earlier
+ * must not refuse them. (Two `/start`s within the fresh window share one answer;
+ * under «Перепроверять подписку» OFF a pass is honoured without asking.)
+ *
+ * A prompt that cannot be sent still stops the user — the gate middleware
+ * does the same for every other update. Letting them in because the refusal
+ * could not be delivered would make a send failure a way past the gate.
+ *
+ * A quest deep link passes its quest. When the quest's channel IS the gate's,
+ * the quest screen is the prompt — it asks the user to join exactly that
+ * channel, and its verify button passes the gate with a fresh check — so the
+ * user is not stopped here. Otherwise the prompt carries the quest id, and
+ * «✅ Я подписался» continues to the quest instead of the menu.
  */
-function inlineButton(
-  label: string,
-  botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
-): { text: string } | { text: string; icon_custom_emoji_id: string } {
-  const rendered = renderButtonLabel(
-    label,
-    botCfg.botEmojis,
-    botCfg.customEmojis,
-    botCfg.botEmojiOwnerHasPremium ?? true,
+async function stoppedAtChannelGate(
+  ctx: BotContext,
+  deps: PageDeps,
+  telegramId: number,
+  quest?: { readonly questId: string; readonly target: ChannelTarget | null },
+): Promise<boolean> {
+  if (deps.adminClient === null) return false;
+  let policy: CachedPolicy;
+  try {
+    policy = await getPolicyCache(deps.adminClient).get();
+  } catch (err: unknown) {
+    // No policy, no gate: the same fail-open the middleware applies.
+    deps.logger?.warn({ err, telegramId }, 'bot/start: the platform policy could not be read; the channel gate is not applied');
+    return false;
+  }
+  // Never throws: a user it cannot check is let in, and the operator is told why.
+  const verdict = await resolveChannelGateVerdict(
+    channelGateApiFor(ctx, deps),
+    policy,
+    telegramId,
+    channelGateDepsOf(deps),
+    { fresh: true },
   );
-  return rendered.iconCustomEmojiId !== undefined
-    ? { text: rendered.text, icon_custom_emoji_id: rendered.iconCustomEmojiId }
-    : { text: rendered.text };
+  if (verdict !== 'not-subscribed') return false;
+  const target = quest?.target ?? null;
+  if (target !== null && isSameChannelChat(target.chatId, resolveChannelChatId(policy))) return false;
+  try {
+    await sendChannelJoinPrompt(ctx, deps, policy, target !== null && quest !== undefined ? { questId: quest.questId } : {});
+  } catch (err: unknown) {
+    deps.logger?.warn({ err, telegramId }, 'bot/start: the channel join prompt could not be sent; the user stays stopped');
+  }
+  return true;
 }
 
 export const registerStartPage: PageRegistrar = (bot, deps) => {
@@ -490,6 +570,13 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
   bot.command('start', async (ctx) => {
     const tgUser = ctx.from;
     if (tgUser === undefined) return;
+
+    // Only in the user's own private chat, and nothing at all anywhere else — no
+    // bootstrap, no link consume, no screen. `/start@bot` typed in a group used
+    // to post the welcome screen THERE, with the user's fresh single-use sign-in
+    // token in «Кабинет» for any member of the group to open first, and a quest
+    // link completed its quest there without the gate's channel.
+    if (!isOwnPrivateChat(ctx)) return;
 
     // Phase 0: account-linking deep-link. `t.me/<bot>?start=link_<code>`
     // delivers the 6-digit code minted by the web cabinet's "Link
@@ -513,33 +600,31 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       // (`quest_channel:<id>`) enforces. Without this, a malformed deep-link payload
       // triggers a wasted upstream call and can build a button whose callback_data
       // the callback then rejects (or that breaches Telegram's 64-byte limit).
-      if (!/^[a-z][a-z0-9]{19,31}$/i.test(questId)) {
+      if (!QUEST_ID_RE.test(questId)) {
         await ctx.reply(deps.translator.t('quests.channel.retry', lang));
         return;
       }
-      // Same two labels the channel gate renders below — resolve their operator
-      // emoji tokens the same way, or the quest deep-link screen shows a raw
-      // `:slug:` on buttons that look correct on the gate screen.
-      const questCfg = await deps.getConfig();
+      let target: ChannelTarget | null = null;
       try {
-        const target = (await deps.adminClient.quests.channelTarget({
+        target = (await deps.adminClient.quests.channelTarget({
           telegramId: String(tgUser.id),
           questId,
-        })) as { joinUrl: string };
-        const keyboard = new InlineKeyboard()
-          .url(inlineButton(deps.translator.t('channel.join_button', lang), questCfg), target.joinUrl)
-          .row()
-          .text(
-            inlineButton(deps.translator.t('channel.check_button', lang), questCfg),
-            `quest_channel:${questId}`,
-          );
-        await ctx.reply(deps.translator.t('quests.channel.prompt', lang), {
-          reply_markup: keyboard,
-        });
+        })) as ChannelTarget;
       } catch (err: unknown) {
         deps.logger?.warn({ err, telegramId: tgUser.id, questId }, 'bot/start: quest_channel target failed');
-        await ctx.reply(deps.translator.t('quests.channel.retry', lang));
       }
+      // …but not past the channel gate. This branch returns ahead of Phase 2,
+      // and the gate middleware lets every `/start` through, so it once showed
+      // the quest to a user the gate would have stopped. The target is read
+      // first because it decides what a non-subscriber gets: the quest screen
+      // itself when the quest's channel is the gate's, the gate prompt carrying
+      // the quest otherwise — see `stoppedAtChannelGate`.
+      if (await stoppedAtChannelGate(ctx, deps, tgUser.id, { questId, target })) return;
+      if (target === null) {
+        await ctx.reply(deps.translator.t('quests.channel.retry', lang));
+        return;
+      }
+      await replyWithQuestChannelPrompt(ctx, deps, questId, target);
       return;
     }
 
@@ -548,7 +633,9 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
     // Telegram opens this chat; we acknowledge the payment and offer a one-tap
     // button back into the Mini App, where the payment-return screen is already
     // polling the final status. Handled before bootstrap/channel-gate — a
-    // returning buyer is an existing user and shouldn't hit either.
+    // returning buyer is an existing user and shouldn't hit either. The only
+    // path through `/start` the gate never stops: the payment has already
+    // happened, and this message is its acknowledgement.
     if (startPayload === 'payment_return') {
       const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
       const keyboard = new InlineKeyboard();
@@ -611,43 +698,14 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
     // Phase 0.9: platform access-mode gate. Runs BEFORE bootstrap so a
     // brand-new Telegram user under REG_BLOCKED / RESTRICTED never
     // produces a `User` row in the DB (Property 6).
-    let lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+    const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
     if (deps.adminClient !== null) {
       try {
         const policy = await getPolicyCache(deps.adminClient).get();
-        if (policy.accessMode === 'RESTRICTED') {
-          await ctx.reply(deps.translator.t('access_mode.restricted', lang));
+        const refusal = await accessModeRefusal(deps.adminClient, policy, tgUser.id, startPayload);
+        if (refusal !== null) {
+          await ctx.reply(deps.translator.t(refusal, lang));
           return;
-        }
-        // For INVITED + REG_BLOCKED we additionally need to know whether
-        // the Telegram user is brand-new. The exists() probe is cheap
-        // (one indexed lookup) and tolerant of upstream failures.
-        if (policy.accessMode === 'REG_BLOCKED' || policy.accessMode === 'INVITED') {
-          let isNewUser = false;
-          try {
-            const probe = await deps.adminClient.user.exists({ telegramId: String(tgUser.id) });
-            isNewUser = probe.exists === false;
-          } catch {
-            // exists() failed → assume returning user; the admin
-            // server-side gate inside bootstrap is the backstop.
-          }
-          if (isNewUser) {
-            if (policy.accessMode === 'REG_BLOCKED') {
-              await ctx.reply(deps.translator.t('access_mode.reg_blocked_new', lang));
-              return;
-            }
-            // INVITED: only reject when the user has NO referral payload
-            // on `/start <code>`. Existing referral deep-link path falls
-            // through to bootstrap as today.
-            const hasReferralPayload =
-              startPayload.length > 0 &&
-              !startPayload.startsWith('link_') &&
-              startPayload !== 'payment_return';
-            if (!hasReferralPayload) {
-              await ctx.reply(deps.translator.t('access_mode.invited_no_code', lang));
-              return;
-            }
-          }
         }
       } catch {
         /* Policy unavailable — fail open and continue with bootstrap. */
@@ -693,9 +751,6 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       }
     }
 
-    // Re-resolve locale: bootstrap may have updated it from the admin response.
-    lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
-
     // Phase 1.5: advertising attribution. When the deep-link carried an
     // `ad_<code>` payload, record the click + first-touch acquisition in rezeis
     // now that the user row exists. Done BEFORE the channel gate so attribution
@@ -716,46 +771,13 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       }
     }
 
-    const botCfg = await deps.getConfig();
-
     // Phase 2: channel-subscription gate. Driven entirely by the platform
     // policy (channelId / channelUsername / channelLink); honours the
-    // operator's re-check toggle. `checkChannelMembership` never throws: a user
-    // it cannot check is let in, and the operator is told why.
-    if (deps.adminClient !== null) {
-      try {
-        const policy = await getPolicyCache(deps.adminClient).get();
-        const relaxed = policy.channelRecheck === false;
-        if (!(relaxed && hasRecentlyPassedChannel(tgUser.id))) {
-          const verdict = await checkChannelMembership(ctx.api, policy, tgUser.id, deps);
-          if (verdict === 'not-subscribed') {
-            const joinUrl = resolveChannelJoinUrl(policy);
-            // Resolve premium custom-emoji tokens (`:slug:`) on the gate
-            // button labels the same way every other keyboard does — via
-            // the shared `inlineButton` helper, so this screen and the
-            // quest deep-link screen can never drift apart again.
-            const keyboard = new InlineKeyboard();
-            if (joinUrl !== null) {
-              keyboard
-                .url(inlineButton(deps.translator.t('channel.join_button', lang), botCfg), joinUrl)
-                .row();
-            }
-            keyboard.text(
-              inlineButton(deps.translator.t('channel.check_button', lang), botCfg),
-              'check_channel',
-            );
-            await ctx.reply(deps.translator.t('channel.required', lang), {
-              reply_markup: keyboard,
-            });
-            return;
-          }
-          if (verdict === 'subscribed') markChannelPassed(tgUser.id);
-        }
-      } catch (err: unknown) {
-        // The join prompt could not be sent: fail open as before, but not silently.
-        deps.logger?.warn({ err, telegramId: tgUser.id }, 'bot/start: channel gate failed; letting the user in');
-      }
-    }
+    // operator's re-check toggle. The verdict and the join prompt are the ones
+    // the gate middleware uses for every other update — see
+    // `stoppedAtChannelGate`. The prompt reads the user's locale when it is
+    // sent, so a language bootstrap just adopted from rezeis is the one used.
+    if (await stoppedAtChannelGate(ctx, deps, tgUser.id)) return;
 
     // Phase 3: render the welcome screen (banner + greeting + keyboard).
     // Best-effort banner; shared with the post-channel-subscription path.
@@ -767,6 +789,12 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
   // view *in place* on the existing message instead of sending a new
   // one — STEALTHNET-style chrome.
   bot.callbackQuery('menu:main', async (ctx) => {
+    // The welcome screen carries the user's fresh sign-in token: rendered only
+    // in their own chat with the bot, never on a message in a group.
+    if (!isOwnPrivateChat(ctx)) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
     // Under RESTRICTED, every callback short-circuits to a "service
     // unavailable" toast — no menu re-render, no Mini App URL.
     if (deps.adminClient !== null) {

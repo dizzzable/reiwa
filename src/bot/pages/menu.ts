@@ -4,12 +4,27 @@
  * Both rebuild the main keyboard via the bot/widgets/main-keyboard
  * widget and reply with `menu.choose_action` / `channel.verified`.
  *
- * `check_channel` additionally probes channel membership via the
- * Telegram Bot API; when the user is not a member the keyboard reply
- * is suppressed and the user gets `channel.not_subscribed`. A user the
- * check cannot verify is let in — Telegram occasionally 502s on
- * getChatMember, and a bot that is not a channel administrator is refused
- * outright — and `checkChannelMembership` tells the operator why.
+ * `check_channel` is «✅ Я подписался» on the channel gate's join prompt, and
+ * the callback the gate middleware (`middleware/channel-gate.ts`) lets through
+ * unchecked: it runs the check itself, fresh. When the user is not a member the
+ * keyboard reply is suppressed: a `channel.not_subscribed` toast on every press,
+ * the same words as a message at most once per prompt interval. A user the
+ * check cannot verify is let in — Telegram occasionally 502s on getChatMember,
+ * and a bot that is not a channel administrator is refused outright — and the
+ * gate module tells the operator why. Before asking anybody it applies the
+ * access mode as `/start` does (`accessModeRefusal`): under RESTRICTED the same
+ * "service unavailable" alert `menu:main` answers, and under INVITED /
+ * REG_BLOCKED the refusal `/start` gives a newcomer. The gate hands this button
+ * to everyone it stops, so without the check it was a way onto the welcome
+ * screen of a service that is closed, or that has just refused them. A prompt that
+ * carried a quest (`check_channel:q:<id>`) continues to that quest's screen
+ * instead of the welcome screen, and falls back to the welcome screen when the
+ * quest cannot be read. `back_to_menu` is behind the middleware like every other
+ * button.
+ *
+ * Both answer only in the user's own chat with the bot: the screens they send
+ * carry the user's fresh sign-in token, and a button pressed on a message in a
+ * group must not post that token there.
  *
  * Both flows mint a fresh bot-signin token so the Cabinet URL button
  * keeps the magic-link UX consistent across `/start` and warm
@@ -19,11 +34,14 @@
 import type { AdminClient } from '../../lib/admin-client.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { buildMainKeyboard, resolveSupportDeepLink } from '../widgets/main-keyboard.js';
-import { checkChannelMembership, markChannelPassed } from '../lib/channel-gate.js';
+import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/bot-channel-gate.js';
+import { resolveChannelGateVerdict } from '../lib/channel-gate.js';
 
+import { CHECK_CHANNEL_CALLBACK_RE, sendNotSubscribedNoticeUnlessRecent } from './channel-join-prompt.js';
 import { coerceLocale } from './coerce-locale.js';
-import { sendWelcomeScreen } from './start.js';
-import type { PageDeps, PageRegistrar } from './types.js';
+import { replyWithQuestChannelPrompt, type ChannelTarget } from './quest-channel.js';
+import { accessModeRefusal, sendWelcomeScreen } from './start.js';
+import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 /**
  * Resolve the same support URL the start page uses for the Help button.
@@ -69,7 +87,9 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
   bot.callbackQuery('back_to_menu', async (ctx) => {
     await ctx.answerCallbackQuery();
     const tgUser = ctx.from;
-    if (tgUser === undefined) return;
+    // The menu carries the user's fresh sign-in token: only in their own chat
+    // with the bot, never on a message in a group.
+    if (tgUser === undefined || !isOwnPrivateChat(ctx)) return;
     const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
 
     const botCfg = await deps.getConfig();
@@ -95,33 +115,108 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
     });
   });
 
-  bot.callbackQuery('check_channel', async (ctx) => {
+  bot.callbackQuery(CHECK_CHANNEL_CALLBACK_RE, async (ctx) => {
     const tgUser = ctx.from;
-    if (tgUser === undefined) {
+    // A pass ends on the welcome screen and its sign-in token: only in the user's
+    // own chat. A gate prompt posted into a group before /start stayed private
+    // still carries this button there.
+    if (tgUser === undefined || !isOwnPrivateChat(ctx)) {
       await ctx.answerCallbackQuery();
       return;
     }
     const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+    // grammY puts the trigger's match here: group 1 is the carried quest id.
+    const questId = Array.isArray(ctx.match) ? (ctx.match[1] as string | undefined) : undefined;
 
     const policy = deps.adminClient
       ? await getPolicyCache(deps.adminClient).get().catch(() => null)
       : null;
-    // Never throws. A user it cannot verify is let in — locking somebody out on
-    // a Telegram refusal is the wrong call — and the operator is told why.
-    const verdict =
-      policy === null ? 'off' : await checkChannelMembership(ctx.api, policy, tgUser.id, deps);
-    if (verdict === 'not-subscribed') {
-      await ctx.answerCallbackQuery();
-      await ctx.reply(deps.translator.t('channel.not_subscribed', lang));
+    // The access mode `/start` applies, and before Telegram is asked. RESTRICTED:
+    // the same refusal `menu:main` answers — nothing past this button may be
+    // reached while the service is closed. INVITED / REG_BLOCKED: a newcomer
+    // `/start` refused holds this button too, because the gate middleware sends
+    // its prompt to everybody it stops, and a pass must not open the welcome
+    // screen of a service that refused them.
+    const refusal =
+      policy === null || deps.adminClient === null
+        ? null
+        : await accessModeRefusal(deps.adminClient, policy, tgUser.id, '');
+    if (refusal !== null) {
+      await ctx.answerCallbackQuery({
+        text: deps.translator.t(refusal, lang),
+        show_alert: true,
+      });
       return;
     }
-    if (verdict === 'subscribed') markChannelPassed(tgUser.id);
+    // Never throws. A user it cannot verify is let in — locking somebody out on
+    // a Telegram refusal is the wrong call — and the operator is told why.
+    //
+    // `fresh`: pressing «Я подписался» says something changed, so a remembered
+    // "not subscribed" is skipped — one who just joined must not be refused on a
+    // memo. Under «Перепроверять подписку» OFF a pass is still honoured: checked
+    // at the first entry only.
+    const verdict =
+      policy === null
+        ? 'off'
+        : await resolveChannelGateVerdict(
+            channelGateApiFor(ctx, deps),
+            policy,
+            tgUser.id,
+            channelGateDepsOf(deps),
+            { fresh: true },
+          );
+    if (verdict === 'not-subscribed') {
+      // The toast on every press; the message at most once per prompt interval.
+      await ctx.answerCallbackQuery({ text: deps.translator.t('channel.not_subscribed', lang) });
+      await sendNotSubscribedNoticeUnlessRecent(ctx, deps).catch((err: unknown) => {
+        // The toast already said it; a notice that failed is forgotten, and the next press sends it.
+        deps.logger?.warn({ err, telegramId: tgUser.id }, 'bot/menu: the not-subscribed notice could not be sent');
+      });
+      return;
+    }
 
-    // Channel check passed — confirm via toast and render the FULL welcome
-    // screen (banner + greeting + keyboard), identical to /start. Previously
-    // this sent a bare keyboard with no banner, so users had to re-/start to
-    // see the branded welcome.
     await ctx.answerCallbackQuery({ text: deps.translator.t('channel.verified', lang) });
+    if (questId !== undefined && deps.adminClient !== null && (await continuedToQuest(ctx, deps, deps.adminClient, questId))) {
+      return;
+    }
+    // Channel check passed — render the FULL welcome screen (banner + greeting
+    // + keyboard), identical to /start. Previously this sent a bare keyboard with
+    // no banner, so users had to re-/start to see the branded welcome.
     await sendWelcomeScreen(ctx, deps);
   });
 };
+
+/**
+ * After a gate prompt that carried a quest: the quest's own join + verify
+ * screen, exactly as the `quest_channel_<id>` deep link shows it — the user came
+ * for the quest, and passing the gate is only the first half of it.
+ *
+ * `false` when the quest cannot be shown, and the caller falls back to the
+ * welcome screen: answering "try again" with nothing else left the user on a
+ * dead end that pressing the button again only repeated. A 404 (no account
+ * linked to this Telegram) says so first, as the quest's verify button does.
+ */
+async function continuedToQuest(
+  ctx: BotContext,
+  deps: PageDeps,
+  adminClient: AdminClient,
+  questId: string,
+): Promise<boolean> {
+  const telegramId = ctx.from?.id ?? 0;
+  let target: ChannelTarget;
+  try {
+    target = (await adminClient.quests.channelTarget({ telegramId: String(telegramId), questId })) as ChannelTarget;
+  } catch (err: unknown) {
+    deps.logger?.warn({ err, telegramId, questId }, 'bot/menu: quest_channel target failed after the channel gate');
+    if (isStatus(err, 404)) {
+      await ctx.reply(deps.translator.t('quests.channel.link_first', coerceLocale(deps.userLocale.getSync(telegramId))));
+    }
+    return false;
+  }
+  await replyWithQuestChannelPrompt(ctx, deps, questId, target);
+  return true;
+}
+
+function isStatus(err: unknown, status: number): boolean {
+  return typeof err === 'object' && err !== null && (err as { status?: unknown }).status === status;
+}
