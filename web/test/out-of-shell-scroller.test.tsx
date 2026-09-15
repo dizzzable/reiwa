@@ -230,6 +230,7 @@ import OnboardingPage from "@/features/onboarding/onboarding-page";
 import PaymentReturnPage from "@/features/payment/payment-return-page";
 import TmaBootstrapPage from "@/features/auth/tma-bootstrap-page";
 import ConnectOpenPage from "@/features/connect/connect-open-page";
+import { ChannelGateScreen } from "@/features/channel-gate/channel-gate-screen";
 
 // jsdom replaces the global `URL`, so a `new URL(…, import.meta.url)` handed to
 // `node:fs` is rejected here — the neighbouring jsdom specs go through
@@ -440,6 +441,33 @@ describe("a route outside StealthLayout owns its scroller", () => {
         "cannot scroll: a subscriber who left a Telegram Mini App to reach this " +
         "page, on a short phone or with large text, could not reach the button " +
         "that opens the app or the copy button under it.",
+    ).toEqual({ blockAxisScrolling: true, blockSizeBounded: true });
+  });
+
+  // Not a route of its own: in a Telegram Mini App it stands in for EVERY
+  // gated route while the user is not in the operator's channel, so it lives
+  // outside the shell exactly as they do.
+  it("the Mini App's subscribe-to-the-channel screen keeps both buttons and the result reachable", () => {
+    const page = renderOutsideShell(
+      <ChannelGateScreen
+        joinUrl="https://t.me/reiwa_news"
+        busy={false}
+        unavailable={false}
+        notice="failed"
+        toldSeconds={null}
+        secondsLeft={null}
+        onCheck={() => undefined}
+      />,
+    );
+    const box = blockAxis(page);
+    expect(
+      { blockAxisScrolling: box.scrolls, blockSizeBounded: box.bounded },
+      "the channel screen renders outside the shell, so #root — which clips — " +
+        `is its only container. Its outermost box resolved to { ${box.resolved} }, ` +
+        "which cannot scroll: the brand tile, the heading, the explanation, two " +
+        "full-width buttons and the result under them stack past a short " +
+        "viewport, and a user who cannot reach «Я подписался» cannot get past " +
+        "the screen at all.",
     ).toEqual({ blockAxisScrolling: true, blockSizeBounded: true });
   });
 });

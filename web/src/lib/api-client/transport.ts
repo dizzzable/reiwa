@@ -5,7 +5,7 @@
  * `lib/api-client/`. They all consume this single transport so:
  *   - the session cookie is sent on every request (`withCredentials`)
  *   - the response interceptor catches 401 globally and bounces to
- *     `/bootstrap`
+ *     `/sign-in` (outside the public pages and the benign paths below)
  *   - a fresh `x-request-id` is attached to every outbound call so the
  *     reiwa API and rezeis-admin can correlate logs end-to-end (Wave 4
  *     installed the server side; this is the SPA half).
@@ -93,6 +93,16 @@ const BENIGN_401_PATHS = [
   // doing. The route's own "failures are silent" contract is enforced in the
   // handler; a 401 never reaches it.
   "/hints/",
+  // The Telegram Mini App's channel gate (`GET /channel-gate`,
+  // `POST /channel-gate/check`), and not for the hints' reason. A bounce from
+  // here lands a Mini App user on a password form they have never had, and this
+  // interceptor runs before the gate can do better. The gate handles the 401
+  // itself (`channel-gate.tsx`): on the FIRST check it lets the user in, on a
+  // RE-CHECK it keeps the wall up — that user was already found not subscribed —
+  // and either way it refreshes the session query, so a session that really
+  // died goes back through `/bootstrap` to a fresh Telegram sign-in. A cabinet
+  // request that really lost its session still bounces, exactly as before.
+  "/channel-gate",
 ];
 
 let redirectingToSignIn = false;

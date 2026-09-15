@@ -82,6 +82,16 @@ export {
 // Session + platform
 export { acceptRules, getPlatformPolicy, getSession, setOnboardingCompleted, reportSurface } from "./session.js";
 
+// Mandatory channel («Канал обязателен») — asked from the Telegram Mini App only
+export {
+  checkChannelGate,
+  getChannelGate,
+  readChannelGateFailure,
+  type ChannelGateAnswer,
+  type ChannelGateFailure,
+  type ChannelGateStatus,
+} from "./channel-gate.js";
+
 // External auth (web-cabinet social sign-in)
 export {
   externalStartPath,

@@ -7,11 +7,23 @@ export interface ReiwaWebAccount {
   requiresPasswordChange: boolean;
 }
 
+/**
+ * What `GET /api/v1/session` answers. Two shapes reach the SPA:
+ *   - the panel's payload, passed through by `src/api/routes/profile.ts` — the
+ *     ordinary case. `mapInternalUserSession` in rezeis-admin builds it and
+ *     sends `id` and `telegramId`, and NO `userId`;
+ *   - the legacy Telegram session (`src/lib/session-store.ts`), which the route
+ *     falls back to when the panel does not answer — `telegramId` and a numeric
+ *     `userId`, and no `id`.
+ * So neither `id` nor `userId` is on every session. An account is `id`, then
+ * `telegramId`.
+ */
 export interface ReiwaSession {
-  /** Canonical reiwa_id (CUID) — stable across login channels. */
+  /** Canonical reiwa_id (CUID) — stable across login channels. On every panel payload; absent on the legacy fallback. */
   id?: string;
   telegramId: string | null;
-  userId: number;
+  /** Legacy session only — the panel payload does not carry it. Never an account key. */
+  userId?: number;
   name: string;
   username?: string;
   role: string;

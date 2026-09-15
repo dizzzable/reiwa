@@ -137,6 +137,24 @@ export const en: RuDict = {
     accessDenied: 'Could not sign in. Try again later or contact support.',
   },
   /**
+   * The mandatory-channel screen in the Telegram Mini App. The button labels
+   * and the refusal were copied from the bot's English pack (`channel.*` in
+   * `src/infrastructure/i18n/packs/en.pack.ts`) and are not linked to it: panel
+   * edits to the bot's texts never reach this screen, `locales/en.override.json`
+   * does (`locale-overlay.ts`). `body` names "I subscribed" and has to keep
+   * matching `check`.
+   */
+  channelGate: {
+    title: 'Subscribe to the channel',
+    body: 'To use the service, subscribe to our channel, then tap "I subscribed".',
+    join: '📢 Open channel',
+    check: '✅ I subscribed',
+    checking: 'Checking your subscription…',
+    notSubscribed: '❌ You are not subscribed yet. Subscribe and try again.',
+    checkFailed: 'Could not verify your subscription. Please try again in a moment.',
+    rateLimited: 'Too many checks in a row. Try again in {{seconds}} sec.',
+  },
+  /**
    * Live events, in the customer’s own language.
    *
    * The panel sends one neutral sentence per event; these replace it. Keyed by

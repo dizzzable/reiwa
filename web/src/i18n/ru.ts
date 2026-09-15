@@ -138,6 +138,28 @@ export const ru = {
     accessDenied: 'Не удалось войти. Попробуйте позже или напишите в поддержку.',
   },
   /**
+   * «Канал обязателен» in the Telegram Mini App — the screen that replaces the
+   * whole cabinet until Telegram confirms the subscription.
+   *
+   * The button labels and the refusal were COPIED from the bot's pack
+   * (`channel.*` in `src/infrastructure/i18n/packs/ru.pack.ts`) so that the two
+   * surfaces start out saying the same thing. They are not linked: an operator
+   * who rewrites the bot's texts in the panel changes the bot only, and this
+   * screen keeps these words. What changes them for the Mini App is the locale
+   * overlay, `locales/ru.override.json` (`locale-overlay.ts`). `body` names
+   * «Я подписался» and has to keep matching `check`.
+   */
+  channelGate: {
+    title: 'Подпишитесь на канал',
+    body: 'Чтобы пользоваться сервисом, подпишитесь на наш канал, затем нажмите «Я подписался».',
+    join: '📢 Перейти в канал',
+    check: '✅ Я подписался',
+    checking: 'Проверяем подписку…',
+    notSubscribed: '❌ Вы ещё не подписаны на канал. Подпишитесь и попробуйте снова.',
+    checkFailed: 'Не удалось проверить подписку. Попробуйте ещё раз через пару секунд.',
+    rateLimited: 'Слишком много проверок подряд. Попробуйте снова через {{seconds}} сек.',
+  },
+  /**
    * Live events, in the customer’s own language.
    *
    * The panel sends one neutral sentence per event; these replace it. Keyed by

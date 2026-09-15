@@ -87,6 +87,13 @@ export interface TelegramWebApp {
     showProgress: (leaveActive?: boolean) => void
     hideProgress: () => void
   }
+  /** Subscribes to a client event — `activated` (Bot API 8.0+: the Mini App is
+   *  active again, e.g. brought back from minimised), `themeChanged`, … An
+   *  event the client does not know simply never fires. Optional because the
+   *  SDK ships these and may never arrive from telegram.org. */
+  onEvent?: (eventType: string, callback: () => void) => void
+  /** Removes a callback `onEvent` added, by reference. */
+  offEvent?: (eventType: string, callback: () => void) => void
   openLink: (url: string, options?: { try_instant_view?: boolean }) => void
   /** Bot API 6.0+ — optional because `lib/utils.ts` falls back down the bridge
    *  chain rather than assume any one of them shipped. */

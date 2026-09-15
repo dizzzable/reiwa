@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation, useParams } from "react-router";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
+import { ChannelGate } from "@/features/channel-gate/channel-gate";
 import { useAdAttribution } from "@/hooks/use-ad-attribution";
 import { useDeviceSignals } from "@/hooks/use-device-signals";
 import { useTelegramWebApp } from "@/hooks/use-telegram-webapp";
@@ -115,70 +116,78 @@ export default function App() {
   useDeviceSignals();
   return (
     <Suspense fallback={<PageLoader />}>
-      <Routes>
-        {/* Entry points */}
-        <Route path="/" element={<WebHomePage />} />
-        <Route path="/tma" element={<TmaBootstrapPage />} />
-        <Route path="/bootstrap" element={<ContextRouter />} />
+      {/* «Канал обязателен», Telegram Mini App only: until Telegram confirms
+          the subscription, every route below except the sign-in handshake,
+          /payment-return and /legal is replaced by the subscribe screen. In a
+          plain browser this renders the routes and nothing else — see
+          `features/channel-gate/channel-gate.tsx` for the rules and for why
+          each of those routes is exempt. */}
+      <ChannelGate fallback={<PageLoader />}>
+        <Routes>
+          {/* Entry points */}
+          <Route path="/" element={<WebHomePage />} />
+          <Route path="/tma" element={<TmaBootstrapPage />} />
+          <Route path="/bootstrap" element={<ContextRouter />} />
 
-        {/* Public auth pages */}
-        <Route path="/welcome" element={<LandingPage />} />
-        <Route path="/sign-in" element={<SignInPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/ref/:token" element={<ReferralLinkRedirect />} />
-        <Route path="/recover" element={<RecoverPage />} />
-        <Route path="/change-password" element={<ChangePasswordPage />} />
-        <Route path="/claim" element={<ClaimPage />} />
-        <Route path="/finish-setup" element={<FinishSetupPage />} />
-        <Route path="/payment-return" element={<PaymentReturn />} />
-        <Route path="/onboarding" element={<OnboardingPage />} />
-        {/* Public reader for the operator's legal documents — the bot links
-            here, and the sign-up form needs it before an account exists. */}
-        <Route path="/legal" element={<LegalPage />} />
-        {/* Public anonymous support — no login required. */}
-        <Route path="/support/guest" element={<GuestSupportPage />} />
-        {/* Where an "add to app" link lands after leaving a Telegram Mini App.
-            Public because it opens in a browser that has none of Telegram's
-            cookies; it opens only a link the public catalog vouches for,
-            around a subscription this cabinet signed. */}
-        <Route path="/connect/open" element={<ConnectOpenPage />} />
+          {/* Public auth pages */}
+          <Route path="/welcome" element={<LandingPage />} />
+          <Route path="/sign-in" element={<SignInPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/ref/:token" element={<ReferralLinkRedirect />} />
+          <Route path="/recover" element={<RecoverPage />} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
+          <Route path="/claim" element={<ClaimPage />} />
+          <Route path="/finish-setup" element={<FinishSetupPage />} />
+          <Route path="/payment-return" element={<PaymentReturn />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
+          {/* Public reader for the operator's legal documents — the bot links
+              here, and the sign-up form needs it before an account exists. */}
+          <Route path="/legal" element={<LegalPage />} />
+          {/* Public anonymous support — no login required. */}
+          <Route path="/support/guest" element={<GuestSupportPage />} />
+          {/* Where an "add to app" link lands after leaving a Telegram Mini App.
+              Public because it opens in a browser that has none of Telegram's
+              cookies; it opens only a link the public catalog vouches for,
+              around a subscription this cabinet signed. */}
+          <Route path="/connect/open" element={<ConnectOpenPage />} />
 
-        {/* Protected shell */}
-        <Route element={<StealthLayout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/subscription" element={<SubscriptionPage />} />
-          <Route path="/subscription/devices" element={<DevicesPage />} />
-          <Route path="/subscription/connect" element={<ConnectPage />} />
-          <Route path="/partner" element={<PartnerPage />} />
-          <Route path="/plans" element={<PlansPage />} />
-          <Route path="/purchase" element={<PurchasePage />} />
-          <Route path="/renew" element={<RenewalPage />} />
-          <Route path="/upgrade" element={<UpgradePage />} />
-          <Route path="/addons" element={<AddOnsPage />} />
-          <Route path="/activity" element={<ActivityPage />} />
-          <Route path="/promo" element={<PromoPage />} />
-          <Route path="/referrals" element={<ReferralsPage />} />
-          <Route path="/referrals/exchange" element={<PointsExchangePage />} />
-          <Route path="/wheel" element={<WheelPage />} />
-          <Route path="/events" element={<EventsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/settings/privacy" element={<PrivacyPage />} />
-          <Route path="/settings/notifications" element={<NotificationsSettingsPage />} />
-          <Route path="/settings/notifications/feed" element={<NotificationsFeedPage />} />
-          <Route path="/settings/notifications/settings" element={<NotificationsPrefsPage />} />
-          <Route path="/settings/transactions" element={<TransactionsPage />} />
-          <Route path="/settings/payment-methods" element={<PaymentMethodsPage />} />
-          <Route path="/settings/add-ons" element={<MyAddOnsPage />} />
-          <Route path="/settings/faq" element={<FaqPage />} />
-          <Route path="/settings/promocodes" element={<PromocodesSettingsPage />} />
-          <Route path="/support" element={<SupportPage />} />
-          <Route path="/support/ai" element={<AiSupportPage />} />
-        </Route>
+          {/* Protected shell */}
+          <Route element={<StealthLayout />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/subscription" element={<SubscriptionPage />} />
+            <Route path="/subscription/devices" element={<DevicesPage />} />
+            <Route path="/subscription/connect" element={<ConnectPage />} />
+            <Route path="/partner" element={<PartnerPage />} />
+            <Route path="/plans" element={<PlansPage />} />
+            <Route path="/purchase" element={<PurchasePage />} />
+            <Route path="/renew" element={<RenewalPage />} />
+            <Route path="/upgrade" element={<UpgradePage />} />
+            <Route path="/addons" element={<AddOnsPage />} />
+            <Route path="/activity" element={<ActivityPage />} />
+            <Route path="/promo" element={<PromoPage />} />
+            <Route path="/referrals" element={<ReferralsPage />} />
+            <Route path="/referrals/exchange" element={<PointsExchangePage />} />
+            <Route path="/wheel" element={<WheelPage />} />
+            <Route path="/events" element={<EventsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/privacy" element={<PrivacyPage />} />
+            <Route path="/settings/notifications" element={<NotificationsSettingsPage />} />
+            <Route path="/settings/notifications/feed" element={<NotificationsFeedPage />} />
+            <Route path="/settings/notifications/settings" element={<NotificationsPrefsPage />} />
+            <Route path="/settings/transactions" element={<TransactionsPage />} />
+            <Route path="/settings/payment-methods" element={<PaymentMethodsPage />} />
+            <Route path="/settings/add-ons" element={<MyAddOnsPage />} />
+            <Route path="/settings/faq" element={<FaqPage />} />
+            <Route path="/settings/promocodes" element={<PromocodesSettingsPage />} />
+            <Route path="/support" element={<SupportPage />} />
+            <Route path="/support/ai" element={<AiSupportPage />} />
+          </Route>
 
-        {/* Unknown paths fall through to the web home which routes the
-            user to /sign-in or /dashboard depending on cookie state. */}
-        <Route path="*" element={<WebHomePage />} />
-      </Routes>
+          {/* Unknown paths fall through to the web home which routes the
+              user to /sign-in or /dashboard depending on cookie state. */}
+          <Route path="*" element={<WebHomePage />} />
+        </Routes>
+      </ChannelGate>
     </Suspense>
   );
 }
