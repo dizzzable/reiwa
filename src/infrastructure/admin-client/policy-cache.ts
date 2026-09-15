@@ -18,11 +18,31 @@
  * has no last-known-good value, callers receive a `PUBLIC`-mode fallback
  * with `_isFallback: true`. This is "fail open" by design — a transient
  * outage must not lock every user out.
+ *
+ * Two things keep a slow or absent panel from stalling callers. The channel
+ * gate reads the policy in front of every bot update, and the bot handles
+ * updates one at a time, so a read that waits out the transport timeout stalls
+ * every user queued behind it:
+ *  - a STALE policy is answered at once while one refresh runs in the
+ *    background (stale-while-revalidate). Only a missing policy — first read,
+ *    or right after {@link PolicyCache.invalidate} — waits for the panel, so an
+ *    operator's change still applies on the very next read;
+ *  - with nothing cached, the fallback used to be handed out and forgotten, so
+ *    every read of an outage went upstream again. A second failure in a row now
+ *    keeps answering the fallback for {@link FALLBACK_RETRY_MS}. One failure is
+ *    retried at once, so a single blip right after boot or an invalidation does
+ *    not open the gates for half a minute.
  */
 import type { AdminClient } from '../../lib/admin-client.js';
 import type { PlatformPolicyShape } from './namespaces/system.js';
 
 const CACHE_TTL_MS = 60_000;
+
+/**
+ * How long the fallback is answered without asking the panel again, once two
+ * reads in a row have failed with nothing cached.
+ */
+export const FALLBACK_RETRY_MS = 30_000;
 
 export interface CachedPolicy extends PlatformPolicyShape {
   /** True when the value is the safe `PUBLIC` fallback (admin unreachable). */
@@ -42,6 +62,10 @@ const FALLBACK_POLICY: CachedPolicy = {
 export class PolicyCache {
   private value: CachedPolicy | null = null;
   private fetchedAt = 0;
+  /** Until when a read with nothing cached answers the fallback without going upstream. */
+  private fallbackUntil = 0;
+  /** Failed reads in a row with nothing cached; the second one starts the fallback window. */
+  private failuresWithNothingCached = 0;
   private inFlight: Promise<CachedPolicy> | null = null;
   /**
    * Bumped by {@link invalidate}. A fetch begun before the bump may have read
@@ -58,31 +82,34 @@ export class PolicyCache {
   ) {}
 
   /**
-   * Returns the cached policy, refreshing from upstream when stale or
-   * missing. Concurrent callers share a single in-flight fetch.
+   * Returns the cached policy. A stale one is returned at once and refreshed in
+   * the background; a missing one is fetched and waited for. Concurrent callers
+   * share a single in-flight fetch.
    */
   public async get(): Promise<CachedPolicy> {
     const now = Date.now();
-    if (this.value !== null && now - this.fetchedAt < this.ttlMs) {
+    if (this.value !== null) {
+      if (now - this.fetchedAt >= this.ttlMs && this.inFlight === null) {
+        void this.startRefresh();
+      }
       return this.value;
+    }
+    if (now < this.fallbackUntil) {
+      return FALLBACK_POLICY;
     }
     if (this.inFlight !== null) {
       return this.inFlight;
     }
-    const refresh = this.refresh(this.generation);
-    this.inFlight = refresh;
-    try {
-      return await refresh;
-    } finally {
-      // After an invalidate the slot may already hold a newer fetch.
-      if (this.inFlight === refresh) this.inFlight = null;
-    }
+    return this.startRefresh();
   }
 
   /** Drops the cached value so the next `get()` refetches immediately. */
   public invalidate(): void {
     this.value = null;
     this.fetchedAt = 0;
+    // An operator change is exactly when the panel is reachable again.
+    this.fallbackUntil = 0;
+    this.failuresWithNothingCached = 0;
     // The fetch in flight too: a caller joining it would get the old policy.
     this.inFlight = null;
     this.generation += 1;
@@ -93,12 +120,30 @@ export class PolicyCache {
     return this.value;
   }
 
+  /** Starts one fetch and holds the in-flight slot until it settles. Never rejects. */
+  private startRefresh(): Promise<CachedPolicy> {
+    const refresh = this.refresh(this.generation);
+    this.inFlight = refresh;
+    void refresh.finally(() => {
+      // After an invalidate the slot may already hold a newer fetch.
+      if (this.inFlight === refresh) this.inFlight = null;
+    });
+    return refresh;
+  }
+
   private async refresh(startedAt: number): Promise<CachedPolicy> {
     try {
       const fresh = await this.fetchFn();
+      // The transport casts the body, so a panel answering `null` (or anything that
+      // is not an object) would be cached as "the policy", handed to every caller
+      // typed as one, and refetched on every read. It is a failed read.
+      if (fresh === null || typeof fresh !== 'object') {
+        throw new TypeError('platform policy answer is not an object');
+      }
       if (startedAt === this.generation) {
         this.value = fresh;
         this.fetchedAt = Date.now();
+        this.fallbackUntil = 0;
       }
       return fresh;
     } catch {
@@ -108,6 +153,10 @@ export class PolicyCache {
       if (this.value !== null) {
         if (startedAt === this.generation) this.fetchedAt = Date.now();
         return this.value;
+      }
+      if (startedAt === this.generation) {
+        this.failuresWithNothingCached += 1;
+        if (this.failuresWithNothingCached >= 2) this.fallbackUntil = Date.now() + FALLBACK_RETRY_MS;
       }
       return FALLBACK_POLICY;
     }

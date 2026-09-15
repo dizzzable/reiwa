@@ -195,3 +195,232 @@ describe('invalidatePolicyCache()', () => {
     expect(getPlatformPolicy).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * The stand-in PUBLIC policy during a panel outage with nothing cached yet.
+ *
+ * It used to be handed out and forgotten, so every read in such an outage went
+ * upstream again and waited out the transport timeout. The channel gate reads the
+ * policy in front of every bot update, and the bot handles updates one at a time —
+ * each button press would stall for the full timeout. A second failure in a row now
+ * keeps answering the stand-in for 30 seconds; a single failure is retried at
+ * once, so one blip after boot or an invalidation does not open the gates for long.
+ */
+const LIVE: PlatformPolicyShape = {
+  accessMode: 'PUBLIC',
+  rulesRequired: false,
+  rulesLink: null,
+  channelRequired: true,
+  channelLink: 'https://t.me/rezeis_news',
+  defaultCurrency: 'RUB',
+};
+
+describe('PolicyCache with the panel down and nothing cached', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('retries one failure at once, then answers the stand-in without asking until the window passes', async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn<() => Promise<PlatformPolicyShape>>().mockRejectedValue(new Error('ECONNREFUSED'));
+    const cache = new PolicyCache(fetchFn);
+
+    expect((await cache.get())._isFallback).toBe(true);
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    expect((await cache.get())._isFallback).toBe(true);
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    // Thirty seconds, written out: importing the constant would pin whatever it held.
+    vi.advanceTimersByTime(29_999);
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(1);
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not open the window on a single blip: the next read reaches the panel', async () => {
+    const fetchFn = vi
+      .fn<() => Promise<PlatformPolicyShape>>()
+      .mockRejectedValueOnce(new Error('ECONNRESET'))
+      .mockResolvedValue(LIVE);
+    const cache = new PolicyCache(fetchFn);
+
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(await cache.get()).toEqual(LIVE);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('picks the panel up again on the first read after the window', async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn<() => Promise<PlatformPolicyShape>>().mockRejectedValue(new Error('ECONNREFUSED'));
+    const cache = new PolicyCache(fetchFn);
+    await cache.get();
+    await cache.get();
+
+    fetchFn.mockResolvedValue(LIVE);
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(30_000);
+    expect(await cache.get()).toEqual(LIVE);
+    expect(await cache.get()).toEqual(LIVE);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it('forgets the stand-in when the operator changes the policy', async () => {
+    const fetchFn = vi.fn<() => Promise<PlatformPolicyShape>>().mockRejectedValue(new Error('ECONNREFUSED'));
+    const cache = new PolicyCache(fetchFn);
+    await cache.get();
+    await cache.get();
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    fetchFn.mockResolvedValue(LIVE);
+    cache.invalidate();
+    expect(await cache.get()).toEqual(LIVE);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads an answer that is not an object as a failed read, never as the policy', async () => {
+    const fetchFn = vi
+      .fn<() => Promise<PlatformPolicyShape>>()
+      .mockResolvedValueOnce(null as unknown as PlatformPolicyShape)
+      .mockResolvedValueOnce('<html>502</html>' as unknown as PlatformPolicyShape)
+      .mockResolvedValue(LIVE);
+    const cache = new PolicyCache(fetchFn);
+
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(cache.peek()).toBeNull();
+    // Two bad answers in a row count as two failures: the stand-in window opens.
+    expect((await cache.get())._isFallback).toBe(true);
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the last known policy when the panel later answers something that is not an object', async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi
+      .fn<() => Promise<PlatformPolicyShape>>()
+      .mockResolvedValueOnce(LIVE)
+      .mockResolvedValue(null as unknown as PlatformPolicyShape);
+    const cache = new PolicyCache(fetchFn, 1_000);
+    expect(await cache.get()).toEqual(LIVE);
+
+    vi.advanceTimersByTime(1_001);
+    expect(await cache.get()).toEqual(LIVE);
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    expect(await cache.get()).toEqual(LIVE);
+    expect(cache.peek()).toEqual(LIVE);
+  });
+
+  it('starts the failure count over after an invalidation', async () => {
+    const fetchFn = vi
+      .fn<() => Promise<PlatformPolicyShape>>()
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockResolvedValue(LIVE);
+    const cache = new PolicyCache(fetchFn);
+    expect((await cache.get())._isFallback).toBe(true);
+
+    cache.invalidate();
+    // The first failure since the change: retried at once, not the second in a row.
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(await cache.get()).toEqual(LIVE);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it('still serves the last known policy, not the stand-in, when the panel drops later', async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn<() => Promise<PlatformPolicyShape>>().mockResolvedValueOnce(LIVE);
+    const cache = new PolicyCache(fetchFn, 1_000);
+    expect(await cache.get()).toEqual(LIVE);
+
+    fetchFn.mockRejectedValue(new Error('ECONNREFUSED'));
+    vi.advanceTimersByTime(1_001);
+    expect(await cache.get()).toEqual(LIVE);
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+
+    // The failed refresh restarted the TTL: the next reads do not go upstream again
+    // one after another for the length of the outage.
+    expect(await cache.get()).toEqual(LIVE);
+    expect(await cache.get()).toEqual(LIVE);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not count a failed read begun before an invalidation toward the window', async () => {
+    let rejectStale: (err: Error) => void = () => undefined;
+    const fetchFn = vi
+      .fn<() => Promise<PlatformPolicyShape>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<PlatformPolicyShape>((_resolve, reject) => {
+            rejectStale = reject;
+          }),
+      )
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockResolvedValue(LIVE);
+    const cache = new PolicyCache(fetchFn);
+
+    const stale = cache.get();
+    cache.invalidate();
+    rejectStale(new Error('ECONNREFUSED'));
+    expect((await stale)._isFallback).toBe(true);
+
+    // One failure of its own after the operator's change: retried at once. Had the
+    // read from before the change counted too, this would be the second in a row.
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(await cache.get()).toEqual(LIVE);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+});
+
+/**
+ * A stale policy is answered at once and refreshed in the background.
+ *
+ * Every minute the TTL ran out, the next reader waited for the panel — and with the
+ * gate in front of every bot update, that reader held up everyone queued behind it
+ * whenever the panel was slow. Only a MISSING policy is still waited for, so an
+ * operator's change applies on the very next read after the invalidation.
+ */
+describe('PolicyCache with a stale policy', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('answers the stale policy at once while one refresh runs', async () => {
+    vi.useFakeTimers();
+    const upstream = handAnswered();
+    const cache = new PolicyCache(upstream.fn, 1_000);
+    const first = cache.get();
+    upstream.answer(0, BEFORE_CHANGE);
+    expect(await first).toEqual(BEFORE_CHANGE);
+
+    vi.advanceTimersByTime(1_001);
+    // The refresh is still unanswered; the reader is not held up by it.
+    expect(await cache.get()).toEqual(BEFORE_CHANGE);
+    expect(await cache.get()).toEqual(BEFORE_CHANGE);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+
+    upstream.answer(1, AFTER_CHANGE);
+    for (let i = 0; i < 20 && cache.peek() !== AFTER_CHANGE; i += 1) await Promise.resolve();
+    expect(await cache.get()).toEqual(AFTER_CHANGE);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('still waits for the panel after an invalidation, so the change applies on the next read', async () => {
+    const upstream = handAnswered();
+    const cache = new PolicyCache(upstream.fn);
+    const first = cache.get();
+    upstream.answer(0, BEFORE_CHANGE);
+    await first;
+
+    cache.invalidate();
+    const next = cache.get();
+    upstream.answer(1, AFTER_CHANGE);
+    expect(await next).toEqual(AFTER_CHANGE);
+  });
+});
