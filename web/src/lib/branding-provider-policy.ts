@@ -143,3 +143,29 @@ export function shouldReportDefaultsPaint(
     isError && selectBrandingProviderConfig(data, snapshot) === DEFAULT_PUBLIC_CONFIG
   );
 }
+
+/**
+ * How long the cabinet may paint its built-in identity before that is worth an
+ * operator-visible event.
+ *
+ * The bootstrap has ONE retry policy — the 15s poll above — and a single failed
+ * attempt is ordinary: a carrier hiccup on a launch that has not reached the
+ * VPN yet, a 429 out of the shared `/api` budget, an upstream still warming.
+ * The report used to fire on that first failure, so a state that fixed itself
+ * on the very next tick reached the operator as an ERROR, with a user agent and
+ * a Telegram message behind it — one iPhone on a flaky network at 01:27
+ * (18.09.2026) was exactly that.
+ *
+ * Three ticks in a row failing is not a hiccup: that client cannot read the
+ * operator's configuration at all, and is looking at stock Reiwa — the state
+ * this report exists to surface. The window is deliberately longer than two
+ * poll intervals so it can only elapse after the poll itself has failed twice
+ * more; a payload landing at any point before it cancels the report outright.
+ */
+export const DEFAULTS_PAINT_REPORT_AFTER_MS = 45_000;
+
+/** What the operator is told, once the window above has passed unbranded. */
+export const DEFAULTS_PAINT_MESSAGE =
+  `public-config unavailable for ${Math.round(DEFAULTS_PAINT_REPORT_AFTER_MS / 1000)}s ` +
+  "(every attempt since the launch failed) and no local snapshot: " +
+  "cabinet is painting built-in default branding";

@@ -26,7 +26,6 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
@@ -38,6 +37,8 @@ import {
   writePublicConfigSnapshot,
 } from "@/lib/public-config-snapshot";
 import {
+  DEFAULTS_PAINT_MESSAGE,
+  DEFAULTS_PAINT_REPORT_AFTER_MS,
   publicConfigRefetchInBackground,
   publicConfigRefetchInterval,
   selectBrandingProviderConfig,
@@ -297,17 +298,28 @@ export function BrandingProvider({ children }: PropsWithChildren) {
   // reached production unreported. The report carries the user agent, so the
   // operator can see WHICH clients cannot reach their own configuration
   // rather than having to reproduce it on a device they may not own.
-  const reportedDefaultsPaint = useRef(false);
+  const paintingDefaults = shouldReportDefaultsPaint(isError, data, snapshot);
   useEffect(() => {
-    if (reportedDefaultsPaint.current) return;
-    if (!shouldReportDefaultsPaint(isError, data, snapshot)) return;
-    reportedDefaultsPaint.current = true;
-    reportClientError({
-      message:
-        "public-config unavailable and no local snapshot: cabinet is painting built-in default branding",
-      kind: "branding.defaults-painted",
-    });
-  }, [isError, data, snapshot]);
+    if (!paintingDefaults) return;
+    // Not on the FIRST failure. The poll above is this query's only retry, and
+    // one attempt failing is ordinary — the report then reached the operator as
+    // an ERROR for a state that fixed itself on the next tick. The timer is
+    // cleared the moment a payload lands (this boolean goes false), so
+    // what is reported is a client that could not read the configuration for
+    // the whole window, not one that had a bad moment.
+    // One report per session by construction: the effect depends on this one
+    // boolean, which can never go back to true once a payload has landed, and
+    // never changes while the cabinet stays unbranded.
+    const timer = window.setTimeout(() => {
+      reportClientError({
+        message: DEFAULTS_PAINT_MESSAGE,
+        kind: "branding.defaults-painted",
+      });
+    }, DEFAULTS_PAINT_REPORT_AFTER_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [paintingDefaults]);
 
   // Set the document (browser tab) title from the operator's webTitle,
   // falling back to projectName, then the brand name.
