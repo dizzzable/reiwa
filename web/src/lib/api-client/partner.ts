@@ -2,6 +2,7 @@
  * Partner namespace — info, status (lightweight bottom-nav probe),
  * earnings, withdrawals.
  */
+import type { PartnerBalanceHold } from "@/lib/partner-balance-hold";
 import { apiClient } from "./transport.js";
 
 export interface PartnerStatus {
@@ -21,6 +22,12 @@ export interface PartnerInfo {
   balancePaymentEnabled: boolean;
   /** Currency the balance is denominated in (e.g. "RUB"). */
   balanceCurrency: string | null;
+  /**
+   * The hold after a password recovery by subscription link: until `until`
+   * nothing leaves the balance. `null` when there is none; absent from a panel
+   * older than the hold's report — read both through `standingBalanceHold`.
+   */
+  balanceHold?: PartnerBalanceHold | null;
   createdAt: string;
 }
 

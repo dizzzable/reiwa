@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router'
+import { useNavigate, Link, useLocation, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
@@ -12,6 +12,8 @@ import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { ExternalAuthButtons } from './external-auth-buttons'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { keepQuery } from '@/lib/keep-query'
+import { useBranding } from '@/lib/branding-provider'
+import { readSignInHandoff } from './password-reset-api'
 
 // Autofocusing the username field on a touch device raises the iOS keyboard in
 // the middle of the mount animation (viewport shrink vs. entrance motion, plus
@@ -25,10 +27,18 @@ export default function SignInPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
 
-  const [username, setUsername] = useState('')
+  // A login handed over in navigation state — after a password reset whose
+  // automatic sign-in did not go through — is typed in already.
+  const [prefilledLogin] = useState(() => readSignInHandoff(location.state))
+  const [username, setUsername] = useState(prefilledLogin)
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // The account has no password yet (imported without one): where its reset
+  // link went. Not an error — the way in for the real owner.
+  const [passwordNotSet, setPasswordNotSet] = useState<PasswordNotSetDelivery | null>(null)
+  const { botUsername } = useBranding()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rateLimitSeconds, setRateLimitSeconds] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -102,6 +112,7 @@ export default function SignInPage() {
       }
 
       setError(null)
+      setPasswordNotSet(null)
       setIsSubmitting(true)
 
       try {
@@ -126,7 +137,10 @@ export default function SignInPage() {
           }
         }
       } catch (err: unknown) {
-        if (isAxiosError(err) && err.response?.status === 429) {
+        const notSet = isAxiosError(err) ? readPasswordNotSet(err.response?.data) : null
+        if (notSet !== null) {
+          setPasswordNotSet(notSet)
+        } else if (isAxiosError(err) && err.response?.status === 429) {
           // Rate limited — extract retryAfter from response body
           const retryAfter = err.response.data?.retryAfter
           const seconds = typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter : 60
@@ -191,9 +205,10 @@ export default function SignInPage() {
             </label>
             <input
               id="signin-username"
+              name="username"
               type="text"
               autoComplete="username"
-              autoFocus={autoFocusFinePointer}
+              autoFocus={autoFocusFinePointer && prefilledLogin === ''}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               disabled={isFormDisabled}
@@ -209,8 +224,10 @@ export default function SignInPage() {
             </label>
             <input
               id="signin-password"
+              name="password"
               type="password"
               autoComplete="current-password"
+              autoFocus={autoFocusFinePointer && prefilledLogin !== ''}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isFormDisabled}
@@ -218,6 +235,31 @@ export default function SignInPage() {
               className="glass-input h-11 w-full rounded-xl px-4 text-sm disabled:opacity-50"
             />
           </div>
+
+          {/* No password set yet: where the link to set one went. */}
+          {passwordNotSet !== null && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center gap-3 rounded-xl border border-(--brand-primary)/30 bg-(--brand-primary)/10 px-4 py-3 text-center text-sm text-[color:var(--brand-foreground)]"
+              role="status"
+              data-testid="signin-password-not-set"
+              data-delivery={passwordNotSet}
+            >
+              <p>{t(PASSWORD_NOT_SET_COPY[passwordNotSet])}</p>
+              {passwordNotSet === 'bot' && botShortcut(botUsername) !== null && (
+                <a
+                  href={botShortcut(botUsername) ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-(--brand-primary) hover:brightness-110"
+                  data-testid="signin-password-not-set-bot"
+                >
+                  {t('auth.passwordNotSet.openBot')}
+                </a>
+              )}
+            </motion.div>
+          )}
 
           {/* Error display */}
           {error && (
@@ -286,6 +328,32 @@ export default function SignInPage() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Where the reset link of an account without a password went — see `/auth/login`. */
+type PasswordNotSetDelivery = 'telegram' | 'email' | 'hourly_limit' | 'bot' | 'unavailable'
+
+const PASSWORD_NOT_SET_COPY: Readonly<Record<PasswordNotSetDelivery, string>> = {
+  telegram: 'auth.passwordNotSet.sentTelegram',
+  email: 'auth.passwordNotSet.sentEmail',
+  hourly_limit: 'auth.passwordNotSet.hourlyLimit',
+  bot: 'auth.passwordNotSet.useBot',
+  unavailable: 'auth.passwordNotSet.unavailable',
+}
+
+/** The sign-in refusal of an account that has no password yet, or `null` for any other. */
+function readPasswordNotSet(data: unknown): PasswordNotSetDelivery | null {
+  if (typeof data !== 'object' || data === null) return null
+  const { code, delivery } = data as { code?: unknown; delivery?: unknown }
+  if (code !== 'PASSWORD_NOT_SET' || typeof delivery !== 'string') return null
+  return Object.hasOwn(PASSWORD_NOT_SET_COPY, delivery) ? (delivery as PasswordNotSetDelivery) : null
+}
+
+/** `t.me/<bot>?start=pwreset` — the bot sends the link and names the login. */
+function botShortcut(botUsername: string | null | undefined): string | null {
+  return typeof botUsername === 'string' && botUsername.length > 0
+    ? `https://t.me/${botUsername.replace(/^@/, '')}?start=pwreset`
+    : null
+}
 
 interface AxiosErrorLike {
   response?: {

@@ -17,6 +17,8 @@
  */
 import axios from "axios";
 
+import { isTelegramMiniAppSurface } from "@/lib/telegram-launch-params";
+
 export const apiClient = axios.create({
   baseURL: "/api/v1",
   withCredentials: true, // send reiwa_session cookie automatically
@@ -118,6 +120,23 @@ function onPublicPage(): boolean {
   return PUBLIC_PATHS.some((p) => (p === "/" ? path === "/" : path.startsWith(p)));
 }
 
+/**
+ * Where a session that died mid-use sends the user. In a browser, the sign-in
+ * form. Inside the Telegram Mini App, `/bootstrap`: it re-reads the launch's
+ * Telegram credential and opens a fresh session with no password asked — the
+ * sign-in form there is a password form for a user who may never have had one.
+ * A Mini App session ends this way when the account's password changes or
+ * «Выйти на всех устройствах» is pressed somewhere else.
+ */
+function signedOutDestination(): string {
+  try {
+    return isTelegramMiniAppSurface() ? "/bootstrap" : "/sign-in";
+  } catch {
+    // Whatever this document cannot tell about itself, the bounce still happens.
+    return "/sign-in";
+  }
+}
+
 apiClient.interceptors.response.use(
   (res) => res,
   (error) => {
@@ -127,7 +146,7 @@ apiClient.interceptors.response.use(
       // a user who's already on a public page (prevents the reload loop).
       if (!isBenign401(reqUrl) && !onPublicPage() && !redirectingToSignIn) {
         redirectingToSignIn = true;
-        window.location.replace("/sign-in");
+        window.location.replace(signedOutDestination());
       }
     }
     return Promise.reject(error);

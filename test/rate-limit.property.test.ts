@@ -10,7 +10,8 @@
  * - Allow 5 registrations per hour and block from the 6th
  * - Refund a registration attempt that created nothing, so the budget caps
  *   accounts rather than rejected form submissions
- * - Block password recovery for the window without banning the IP
+ * - Allow 3 password-recovery requests per hour and block from the 4th, without
+ *   banning the IP; an IPv6 /64 counts as one address
  * - Continue to block on all subsequent attempts within the window
  *
  * When the rate limiting system is unavailable, the system SHALL return HTTP 503.
@@ -24,6 +25,7 @@ import fc from "fast-check";
 import type { Request, Response, NextFunction } from "express";
 import {
   createRedisRateLimiter,
+  ipRateBucket,
   RATE_LIMITS,
   type RateLimitEndpoint,
 } from "../src/api/middleware/rate-limit.js";
@@ -337,14 +339,14 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
   });
 
   describe("Recovery rate limit: 3 requests/hour, blocks without banning", () => {
-    it("blocks from 3rd recovery request and leaves the IP unbanned", async () => {
+    it("lets 3 recovery requests through, blocks from the 4th, and leaves the IP unbanned", async () => {
       await fc.assert(
         fc.asyncProperty(arbitraryIpv4, async (ip) => {
           redis.clear();
-          const results = await simulateRequests(redis, "recover", ip, 5);
+          const results = await simulateRequests(redis, "recover", ip, 6);
 
-          // First 2 requests should pass
-          for (let i = 0; i < 2; i++) {
+          // The advertised three get through…
+          for (let i = 0; i < 3; i++) {
             assert.equal(
               results[i].passed,
               true,
@@ -352,8 +354,8 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
             );
           }
 
-          // 3rd request and beyond should be blocked with 429
-          for (let i = 2; i < results.length; i++) {
+          // …and the 4th and beyond are blocked with 429
+          for (let i = 3; i < results.length; i++) {
             assert.equal(
               results[i].statusCode,
               429,
@@ -377,6 +379,71 @@ describe("Feature: web-auth-pwa, Property 21: Rate Limiting", () => {
         }),
         { numRuns: 100 },
       );
+    });
+
+    it("counts an IPv6 /64 as one address", async () => {
+      const middleware = createRedisRateLimiter(redis as unknown as any, "recover");
+      const outcomes: boolean[] = [];
+      for (const ip of ["2001:db8:1:2::1", "2001:db8:1:2::2", "2001:db8:1:2:aaaa::3", "2001:db8:1:2:ffff:ffff:ffff:ffff"]) {
+        let passed = false;
+        await middleware(createMockRequest(ip), createMockResponse(), () => {
+          passed = true;
+        });
+        outcomes.push(passed);
+      }
+      assert.deepEqual(outcomes, [true, true, true, false], "a fresh address inside the same /64 got a fresh budget");
+
+      let otherPrefix = false;
+      await middleware(createMockRequest("2001:db8:1:3::1"), createMockResponse(), () => {
+        otherPrefix = true;
+      });
+      assert.equal(otherPrefix, true, "another /64 shares the budget");
+    });
+  });
+
+  describe("Password-reset limiters: their own budgets, per address", () => {
+    const budgets: Array<[RateLimitEndpoint, number]> = [
+      ["passwordReset", 10],
+      ["passwordResetInspect", 30],
+      ["recoverSubscription", 10],
+    ];
+    for (const [endpoint, allowed] of budgets) {
+      it(`${endpoint}: ${allowed} pass, the next is refused with Retry-After`, async () => {
+        const results = await simulateRequests(redis, endpoint, "198.51.100.23", allowed + 2);
+        assert.deepEqual(
+          results.map((result) => result.passed),
+          [...Array.from({ length: allowed }, () => true), false, false],
+        );
+        assert.equal(results[allowed].statusCode, 429);
+        assert.ok(Number(results[allowed].headers["Retry-After"]) > 0);
+        assert.equal(await redis.get("banned_ip:198.51.100.23"), null);
+      });
+    }
+
+    it("does not share a counter with sign-in, with each other, or across a /64", async () => {
+      const keys = (ip: string) =>
+        (["login", "recover", "passwordReset", "passwordResetInspect", "recoverSubscription"] as const).map(
+          (endpoint) => RATE_LIMITS[endpoint].keyBuilder(ip),
+        );
+      assert.equal(new Set(keys("198.51.100.23")).size, 5);
+      for (const endpoint of ["recover", "passwordReset", "passwordResetInspect", "recoverSubscription"] as const) {
+        const build = RATE_LIMITS[endpoint].keyBuilder;
+        assert.equal(build("2001:db8:1:2::1"), build("2001:0db8:0001:0002:ffff:ffff:ffff:ffff"), endpoint);
+        assert.equal(build("::ffff:198.51.100.23"), build("198.51.100.23"), endpoint);
+        assert.notEqual(build("2001:db8:1:2::1"), build("2001:db8:1:3::1"), endpoint);
+      }
+    });
+  });
+
+  describe("ipRateBucket", () => {
+    it("reduces IPv6 to its /64, IPv4-mapped to the IPv4, and leaves the rest alone", () => {
+      assert.equal(ipRateBucket("2001:db8:1:2::1"), "2001:db8:1:2::/64");
+      assert.equal(ipRateBucket("2001:DB8:0:0:1::1"), "2001:db8:0:0::/64");
+      assert.equal(ipRateBucket("fe80::1%eth0"), "fe80:0:0:0::/64");
+      assert.equal(ipRateBucket("64:ff9b::192.0.2.1"), "64:ff9b:0:0::/64");
+      assert.equal(ipRateBucket("::ffff:192.0.2.1"), "192.0.2.1");
+      assert.equal(ipRateBucket("192.0.2.1"), "192.0.2.1");
+      assert.equal(ipRateBucket("unknown"), "unknown");
     });
   });
 

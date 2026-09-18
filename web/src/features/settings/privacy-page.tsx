@@ -13,8 +13,8 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router";
-import { Check, Copy, FileText, Key, Mail, Send } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router";
+import { Check, Copy, FileText, Key, LogOut, Mail, Send } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -27,6 +27,7 @@ import {
 } from "@/lib/api-client";
 import { useSession, SESSION_QUERY_KEY } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
+import { sanitizeNextDestination } from "@/lib/next-destination";
 import { resolvePrivacyDeepLink } from "@/lib/privacy-deep-link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,13 +36,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { LegalDocumentDialog } from "@/components/legal-document-dialog";
 import { useLegalDocuments } from "@/lib/use-legal-documents";
 import type { LegalDocument } from "@/lib/api-client";
+import { signOutOtherDevices } from "@/features/auth/account-security-api";
 
 export default function PrivacyPage() {
   const { t } = useTranslation();
   const { session } = useSession();
   const { emailEnabled, isLoading: brandingLoading } = useBranding();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeSheet, setActiveSheet] = useState<"password" | "telegram" | "email" | null>(null);
+  const navigate = useNavigate();
+  const [activeSheet, setActiveSheet] = useState<
+    "password" | "telegram" | "email" | "signOutEverywhere" | null
+  >(null);
+
+  // `?next=` — set by «Сохраните данные для входа» when the customer detours
+  // here to link Telegram or e-mail on the way to somewhere else (a deep link
+  // such as `/renew`). «Продолжить» takes them on; without it the detour would
+  // strand them in settings with the destination lost.
+  const continueTo = sanitizeNextDestination(searchParams.get("next"));
 
   // The documents an operator published. Listed here so a user can read what
   // they accepted at sign-up at any time — the consent screen is a moment, the
@@ -128,9 +139,47 @@ export default function PrivacyPage() {
             onClick={() => setActiveSheet("email")}
           />
         )}
+        {/* Only an account with a web login has a password to change and a
+            place for the panel to keep the moment; a Telegram-only one signs in
+            through Telegram and has neither. */}
+        {session?.webAccount && (
+          <PrivacyItem
+            icon={<LogOut className="h-5 w-5" />}
+            iconBg="bg-red-500/10 text-red-400"
+            label={t("signOutEverywhere.label")}
+            sublabel={t("signOutEverywhere.sub")}
+            onClick={() => setActiveSheet("signOutEverywhere")}
+          />
+        )}
       </div>
 
+      {continueTo !== null && (
+        <div className="mx-5 mt-6">
+          <Button
+            type="button"
+            className="w-full"
+            onClick={() => navigate(continueTo, { replace: true })}
+            data-testid="privacy-continue"
+          >
+            {t("auth.saveCredentials.continue")}
+          </Button>
+        </div>
+      )}
+
       <LegalDocumentDialog document={openDocument} onClose={() => setOpenDocument(null)} />
+
+      {/* «Выйти на всех устройствах» — asked once more, because it cannot be undone */}
+      <Dialog
+        open={activeSheet === "signOutEverywhere"}
+        onOpenChange={(open) => !open && setActiveSheet(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("signOutEverywhere.title")}</DialogTitle>
+          </DialogHeader>
+          <SignOutEverywhereForm onDone={() => setActiveSheet(null)} />
+        </DialogContent>
+      </Dialog>
 
       {/* Change Password Dialog */}
       <Dialog open={activeSheet === "password"} onOpenChange={(open) => !open && setActiveSheet(null)}>
@@ -138,7 +187,10 @@ export default function PrivacyPage() {
           <DialogHeader>
             <DialogTitle>{t("privacy.changePassword")}</DialogTitle>
           </DialogHeader>
-          <ChangePasswordForm onSuccess={() => setActiveSheet(null)} />
+          <ChangePasswordForm
+            login={session?.webAccount?.login ?? ""}
+            onSuccess={() => setActiveSheet(null)}
+          />
         </DialogContent>
       </Dialog>
 
@@ -204,6 +256,51 @@ function PrivacyItem({
         </span>
       )}
     </button>
+  );
+}
+
+// ── Signing out everywhere else ──────────────────────────────────────────────
+
+/**
+ * Every other device and browser signed in to this account leaves it within a
+ * minute (each asks the server at most once a minute); this one stays. The
+ * server hands this browser a fresh session for that, so nothing here has to
+ * sign back in.
+ */
+function SignOutEverywhereForm({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation();
+  const mutation = useMutation({
+    mutationFn: signOutOtherDevices,
+    onSuccess: () => {
+      toast.success(t("signOutEverywhere.done"));
+      onDone();
+    },
+    onError: (err: unknown) => {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      // 409: the panel cannot keep the moment for this account (an older
+      // panel, or no web account) — trying again will not change that.
+      toast.error(t(status === 409 ? "signOutEverywhere.unavailable" : "signOutEverywhere.failed"));
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-[var(--brand-muted-foreground)]">{t("signOutEverywhere.body")}</p>
+      <div className="flex flex-col gap-2">
+        <Button
+          type="button"
+          variant="destructive"
+          className="w-full"
+          disabled={mutation.isPending}
+          onClick={() => mutation.mutate()}
+        >
+          {mutation.isPending ? t("common.loading") : t("signOutEverywhere.confirm")}
+        </Button>
+        <Button type="button" variant="outline" className="w-full" disabled={mutation.isPending} onClick={onDone}>
+          {t("signOutEverywhere.cancel")}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -461,7 +558,13 @@ function LinkEmailForm({
 
 // ── Change password ──────────────────────────────────────────────────────────
 
-function ChangePasswordForm({ onSuccess }: { onSuccess: () => void }) {
+/**
+ * A real `<form>` with named, autocomplete-tagged fields and a hidden username:
+ * that is what lets a password manager offer the saved password for "current"
+ * and save the new one against the right account. It used to be three loose
+ * controls with a click handler, which no password manager recognises.
+ */
+function ChangePasswordForm({ login, onSuccess }: { login: string; onSuccess: () => void }) {
   const { t } = useTranslation();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -479,35 +582,59 @@ function ChangePasswordForm({ onSuccess }: { onSuccess: () => void }) {
     onError: () => toast.error(t("privacy.passwordError")),
   });
 
+  const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && !mutation.isPending;
+
   return (
-    <div className="py-4 space-y-4">
+    <form
+      className="py-4 space-y-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSubmit) mutation.mutate();
+      }}
+    >
+      <input
+        type="text"
+        name="username"
+        autoComplete="username"
+        value={login}
+        readOnly
+        hidden
+        tabIndex={-1}
+        aria-hidden="true"
+      />
       <div className="space-y-2">
-        <Label>{t("privacy.currentPassword")}</Label>
+        <Label htmlFor="privacy-current-password">{t("privacy.currentPassword")}</Label>
         <Input
+          id="privacy-current-password"
+          name="current-password"
           type="password"
+          autoComplete="current-password"
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
           placeholder="••••••••"
         />
       </div>
       <div className="space-y-2">
-        <Label>{t("privacy.newPassword")}</Label>
+        <Label htmlFor="privacy-new-password">{t("privacy.newPassword")}</Label>
         <Input
+          id="privacy-new-password"
+          name="new-password"
           type="password"
+          autoComplete="new-password"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           placeholder="••••••••"
         />
       </div>
       <Button
+        type="submit"
         className="w-full"
         style={{ backgroundColor: "var(--brand-primary)", color: "var(--brand-primary-fg)" }}
-        disabled={!currentPassword || newPassword.length < 8 || mutation.isPending}
-        onClick={() => mutation.mutate()}
+        disabled={!canSubmit}
       >
         {mutation.isPending ? t("common.loading") : t("privacy.changePassword")}
       </Button>
-    </div>
+    </form>
   );
 }
 

@@ -111,6 +111,17 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'paysupport.unavailable':
     '💳 Payment questions\n\nNo support contact is configured yet. Write through the cabinet — your payment history is there too.',
   'paysupport.prefill': 'Hello! I have a question about a payment.',
+  'password_reset.link':
+    '🔑 Password reset\n\nYour cabinet login: {{login}}\n\nTap the button below and choose a new password. The link works once and is valid for 15 minutes.\n\nIf you did not ask for a reset, just don’t tap the button — your password stays the same.',
+  'password_reset.button': '🔑 Set a new password',
+  'password_reset.no_account':
+    'No cabinet login is linked to this Telegram account, so there is nothing to reset. Open the cabinet from the bot’s main menu (/start) — signing in through the bot needs no password.',
+  'password_reset.recently_sent':
+    'A reset link was sent less than a minute ago — check the messages above or your email. You can request a new one in a minute.',
+  'password_reset.hourly_limit':
+    'Five reset links have already been sent in the last hour — that’s the limit. Please try again later.',
+  'password_reset.unavailable':
+    'We can’t send a reset link right now. Please try later or contact support.',
   'rules.unavailable': '📜 Service rules are still being prepared. If you have a question — message support.',
   'help.contact_support': 'Contact support: @{{username}}',
   'help.contact_button': '🆘 Message support',

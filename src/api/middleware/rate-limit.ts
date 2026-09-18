@@ -1,3 +1,5 @@
+import { isIPv4, isIPv6 } from "node:net";
+
 import rateLimit from "express-rate-limit";
 import type { Request, Response, NextFunction } from "express";
 import type { Redis } from "ioredis";
@@ -225,7 +227,10 @@ function isRefundableOutcome(statusCode: number): boolean {
  * Sign-in: 5 requests/15min/IP — 5 attempts pass, the 6th is blocked
  * Registration: 5 signups/hour/IP — the 6th is blocked; attempts that created
  *   nothing (400/422/5xx) are refunded, so the budget caps accounts, not typos
- * Recovery: 3 requests/hour/IP — the 3rd is blocked for the remaining window
+ * Recovery: 3 requests/hour per address (an IPv6 /64) — 3 pass, the 4th is
+ *   blocked for the remaining window
+ * Password reset by link, reading a link's state, and recovery by subscription
+ *   link each have their own budget per address (an IPv6 /64) — see below.
  */
 export const RATE_LIMITS = {
   login: {
@@ -252,12 +257,49 @@ export const RATE_LIMITS = {
   recover: {
     maxAttempts: 3,
     windowSeconds: TTL.RATE_RECOVER,
-    keyBuilder: rateRecoverKey,
+    keyBuilder: (ip) => rateRecoverKey(ipRateBucket(ip)),
     // Blocks recovery for the window instead of locking the IP out of every
     // endpoint for a day: three recovery attempts is a person who forgot which
     // login they used, and behind CGNAT the day-long ban lands on bystanders.
     onExceed: "block",
-    blockBehavior: "at_limit",
+    // Three pass. It read "at_limit", which refused the 3rd — an advertised 3
+    // that behaved like 2, the same defect `register` had.
+    blockBehavior: "after_limit",
+  } satisfies RateLimitConfig,
+
+  // Setting a new password with a reset link. A sign-in in all but name — it
+  // ends in a session — but with its own counter: sharing the sign-in form's
+  // would let a few wrong passwords block the reset that fixes them, and the
+  // other way round. The link itself is single-use and 32 random bytes, so
+  // this bounds load, not guessing.
+  passwordReset: {
+    maxAttempts: 10,
+    windowSeconds: 15 * 60,
+    keyBuilder: (ip) => `rate:pwreset:${ipRateBucket(ip)}`,
+    onExceed: "block",
+    blockBehavior: "after_limit",
+  } satisfies RateLimitConfig,
+
+  // Reading a reset link's state — once per page load, and again on a retry.
+  // Kept apart from `authLimiter`, whose 20 per 15 minutes the Mini App
+  // bootstrap and Telegram linking spend too.
+  passwordResetInspect: {
+    maxAttempts: 30,
+    windowSeconds: 15 * 60,
+    keyBuilder: (ip) => `rate:pwreset_inspect:${ipRateBucket(ip)}`,
+    onExceed: "block",
+    blockBehavior: "after_limit",
+  } satisfies RateLimitConfig,
+
+  // Recovery by subscription link. The panel meters the same address at 5 an
+  // hour and every account a link names at 5 a day; this outer budget keeps a
+  // flood from reaching the panel at all.
+  recoverSubscription: {
+    maxAttempts: 10,
+    windowSeconds: 60 * 60,
+    keyBuilder: (ip) => `rate:recover_sub:${ipRateBucket(ip)}`,
+    onExceed: "block",
+    blockBehavior: "after_limit",
   } satisfies RateLimitConfig,
 
   // Anonymous guest support: open at most 5 conversations/hour/IP (bounds the
@@ -323,6 +365,45 @@ export const RATE_LIMITS = {
 } as const;
 
 export type RateLimitEndpoint = keyof typeof RATE_LIMITS;
+
+/**
+ * The unit an address budget counts in.
+ *
+ * IPv4: the address. IPv6: its /64 — one subscriber line is handed a whole
+ * /64 (often a /56), so a budget keyed on the full address is 2^64 budgets for
+ * one person. An IPv4-mapped IPv6 address (`::ffff:192.0.2.1`, how a
+ * dual-stack socket reports IPv4) counts as the IPv4 address it carries.
+ * Anything that is not an address is its own key, unchanged.
+ */
+export function ipRateBucket(ip: string): string {
+  const raw = ip.trim();
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(raw);
+  if (mapped !== null && isIPv4(mapped[1])) return mapped[1];
+  if (isIPv4(raw)) return raw;
+  const address = raw.split("%", 1)[0] ?? "";
+  if (!isIPv6(address)) return raw;
+  const hextets = expandIPv6(address);
+  return hextets === null ? raw : `${hextets.slice(0, 4).join(":")}::/64`;
+}
+
+/** The eight hextets of a valid IPv6 address, lower-case and unpadded, or `null`. */
+function expandIPv6(address: string): string[] | null {
+  let text = address.toLowerCase();
+  // A trailing embedded IPv4 (`64:ff9b::192.0.2.1`) is the last two hextets.
+  const embedded = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  if (embedded !== null) {
+    const [a, b, c, d] = embedded.slice(1).map(Number);
+    text = `${text.slice(0, embedded.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] === "" ? [] : halves[0].split(":");
+  const tail = halves.length === 2 && halves[1] !== "" ? halves[1].split(":") : [];
+  const fill = 8 - head.length - tail.length;
+  if (halves.length === 1 ? fill !== 0 : fill < 1) return null;
+  const all = [...head, ...Array.from({ length: halves.length === 2 ? fill : 0 }, () => "0"), ...tail];
+  return all.map((part) => (Number.parseInt(part, 16) || 0).toString(16));
+}
 
 const INCREMENT_WITH_TTL_SCRIPT = `
 local count = redis.call("INCR", KEYS[1])

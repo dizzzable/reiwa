@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, Link } from 'react-router'
+import { Link } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { UserPlus, Eye, EyeOff, Loader2, Mail } from 'lucide-react'
@@ -12,6 +12,7 @@ import { useLegalDocuments } from '@/lib/use-legal-documents'
 import { LegalDocumentDialog } from '@/components/legal-document-dialog'
 import type { LegalDocument } from '@/lib/api-client'
 import { ExternalAuthButtons } from './external-auth-buttons'
+import { SaveCredentialsScreen, type SavedCredentials } from './save-credentials'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { AccessModeBanner } from '@/components/access-mode-banner'
 
@@ -47,7 +48,6 @@ async function sha256(message: string): Promise<string> {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function RegisterPage() {
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { t } = useTranslation()
   const { registrationBlocked, restricted, inviteOnly, isLoading: accessModeLoading } = useAccessMode()
@@ -119,6 +119,9 @@ export default function RegisterPage() {
   // Submission state
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  // What was just registered, shown on «Сохраните данные для входа» before the
+  // cabinet opens. Component memory only.
+  const [saved, setSaved] = useState<{ credentials: SavedCredentials; next: string } | null>(null)
 
   // Legal consent. `failed` is NOT the same as "no documents": an outage
   // leaves the list empty, and treating that as "nothing to accept" would let
@@ -251,16 +254,19 @@ export default function RegisterPage() {
 
       // Registration succeeded — backend confirmed both Web_Account and User creation
       // Now attempt automatic sign-in
+      let next = '/dashboard'
       try {
         const loginResult = await login({ username, passwordHash })
-        // Sign-in succeeded — update session and redirect
+        // Sign-in succeeded — refresh the session; the cabinet opens after the
+        // save-your-details screen.
         queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
-        navigate(loginResult.redirectUrl || '/dashboard', { replace: true })
+        next = loginResult.redirectUrl || '/dashboard'
       } catch {
-        // Auto sign-in failed after successful registration
-        // Still display success and redirect since registration itself succeeded
-        navigate('/dashboard', { replace: true })
+        // Auto sign-in failed after successful registration. The account
+        // exists, so the details are still worth saving; the cabinet's own
+        // gate sends them to sign in afterwards.
       }
+      setSaved({ credentials: { login: username, password }, next })
     } catch (err: unknown) {
       // Registration failed — prevent redirection, show error, remain on form
       setSubmitting(false)
@@ -315,6 +321,16 @@ export default function RegisterPage() {
     }
     setInviteError(null)
     setInviteAccepted(true)
+  }
+
+  if (saved !== null) {
+    return (
+      <SaveCredentialsScreen
+        login={saved.credentials.login}
+        password={saved.credentials.password}
+        continueTo={saved.next}
+      />
+    )
   }
 
   // Loading state
@@ -430,6 +446,7 @@ export default function RegisterPage() {
               </label>
               <input
                 id="register-username"
+                name="username"
                 type="text"
                 autoComplete="username"
                 value={username}
@@ -467,6 +484,7 @@ export default function RegisterPage() {
               <div className="relative">
                 <input
                   id="register-password"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   value={password}

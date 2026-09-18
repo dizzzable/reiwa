@@ -63,3 +63,22 @@ export function useRenewalAddOnsEnabled(): boolean {
   });
   return data?.renewalAddOns === true;
 }
+
+/**
+ * «Восстановление пароля по ссылке подписки» — the operator's switch, from the
+ * same shared platform-policy query. Fails CLOSED: absent (a panel that
+ * predates the switch, which has no subscription-recovery endpoint either) and
+ * an unanswered policy both read as OFF, so the cabinet never offers a path the
+ * panel will refuse. `isLoading` lets a page wait instead of flashing "off".
+ */
+export function useSubscriptionLinkRecovery(): { readonly enabled: boolean; readonly isLoading: boolean } {
+  const { data, isLoading } = useQuery({
+    queryKey: ["platform-policy"],
+    queryFn: getPlatformPolicy,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+  return { enabled: data?.subscriptionLinkRecovery === true, isLoading };
+}

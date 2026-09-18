@@ -104,6 +104,12 @@ vi.mock("lucide-react", () => ({
   Eye: () => null,
   EyeOff: () => null,
   Loader2: () => null,
+  // «Сохраните данные для входа», which a successful claim shows first.
+  Copy: () => null,
+  KeyRound: () => null,
+  Mail: () => null,
+  Send: () => null,
+  Share2: () => null,
 }));
 vi.mock("motion/react", () => ({
   motion: new Proxy(
@@ -159,6 +165,23 @@ async function submit(): Promise<void> {
   if (!form) throw new Error("no form rendered");
   await act(async () => {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+}
+
+/** The save-your-details screen a claim ends on: shown, and nothing navigated yet. */
+function expectSaveScreenFor(login: string): void {
+  expect(container?.querySelector('[data-testid="saved-login"]')?.textContent).toBe(login);
+  expect(navigate, "the claim left before the new login and password were shown").not.toHaveBeenCalled();
+}
+
+/** Presses «Продолжить» on it. `t` is the identity here, so the label is the key. */
+async function pressContinue(): Promise<void> {
+  const button = [...(container?.querySelectorAll("button") ?? [])].find(
+    (candidate) => candidate.textContent === "auth.saveCredentials.continue",
+  );
+  if (!button) throw new Error("no «Продолжить» on the save screen");
+  await act(async () => {
+    button.click();
   });
 }
 
@@ -254,10 +277,12 @@ describe("the claim gate honours the destination it was given", () => {
     await submit();
 
     expect(api.claimAccount).toHaveBeenCalledWith("new-user", "hashed-password");
+    expectSaveScreenFor("new-user");
+    await pressContinue();
     expect(
-      navigate,
+      navigate.mock.calls,
       "the claim finished on /dashboard — the deep-link the user tapped is spent and /renew is only reachable if they go looking for it",
-    ).toHaveBeenCalledWith("/renew", { replace: true });
+    ).toEqual([["/renew", { replace: true }]]);
   });
 
   it("sends an already-claimed user straight to the deep-link page", async () => {
@@ -283,9 +308,11 @@ describe("the claim gate honours the destination it was given", () => {
     type("#claim-password", "correct horse battery");
     await submit();
 
+    expectSaveScreenFor("new-user");
+    await pressContinue();
     expect(
-      navigate,
+      navigate.mock.calls,
       "a crafted `next` was honoured — the credential gate now redirects off-origin",
-    ).toHaveBeenCalledWith("/dashboard", { replace: true });
+    ).toEqual([["/dashboard", { replace: true }]]);
   });
 });

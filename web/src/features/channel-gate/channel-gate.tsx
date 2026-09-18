@@ -92,6 +92,12 @@
  *   - `/legal` — the operator's public documents: readable by anyone without an
  *     account, linked from the bot and from the sign-up form, and holding
  *     nothing of the cabinet.
+ *   - `/recover`, `/recover/subscription`, `/reset-password` — getting back
+ *     into the WEB cabinet, which the owner decided is not behind the channel
+ *     (14.09.2026); the bot's `pwreset` start makes the same exception. A reset
+ *     link opened inside Telegram must not be swapped for the wall: the link
+ *     is single-use and lives fifteen minutes. Setting the password signs the
+ *     customer in and goes on to a cabinet route, which is gated.
  *
  * The check itself still runs on those routes; only the screen waits.
  */
@@ -136,6 +142,9 @@ export const CHANNEL_GATE_EXEMPT_PATHS: readonly string[] = [
   "/bootstrap",
   "/payment-return",
   "/legal",
+  "/recover",
+  "/recover/subscription",
+  "/reset-password",
 ];
 
 /** Matched the way the router matches: whole path, trailing slash and case tolerated. */

@@ -30,6 +30,49 @@ export interface WebSession {
   standalone?: boolean;
   /** Latest-seen PWA platform (`ios`/`android`/`desktop`). */
   platform?: string;
+  /**
+   * The panel's `sessionsRevokedAt` (ms) this session was opened by — set when
+   * the session belongs to the browser that made the change which signed every
+   * other session out: a password change, a reset, a first password, «Выйти на
+   * всех устройствах». The session counts as starting at the later of this and
+   * `createdAt` (`sessionEpoch`), so its own change never signs it out, whatever
+   * the cabinet's clock says against the panel's.
+   */
+  authFloor?: number;
+  /** When this session last asked the panel whether it had been signed out (ms). */
+  revocationCheckedAt?: number;
+}
+
+// ── Signing sessions out from the panel ─────────────────────────────────────
+//
+// A session is an opaque key with no index by customer, so nothing here can
+// find a customer's sessions to end them. The panel instead keeps one moment
+// per account (`web_accounts.sessions_revoked_at`, in Postgres, where memory
+// pressure cannot evict it): every session that started before it is signed
+// out. Each session asks at most once per `SESSION_REVOCATION_CHECK_INTERVAL_MS`
+// — no panel round trip on every request — so a session signed out elsewhere
+// keeps working for at most that long before its next request ends it.
+
+/** How often a session asks the panel whether it was signed out: at most once a minute. */
+export const SESSION_REVOCATION_CHECK_INTERVAL_MS = 60_000;
+
+/**
+ * The panel's answer: `revokedAt` is its moment in ms, `null` when nothing was
+ * ever revoked. A `null` verdict means "could not tell" — an older panel, or
+ * one that did not answer — and signs nothing out.
+ */
+export type SessionRevocationVerdict = { readonly revokedAt: number | null } | null;
+
+export type SessionRevocationCheck = (userId: string) => Promise<SessionRevocationVerdict>;
+
+/** When a session counts as having started: the later of its creation and its `authFloor`. */
+export function sessionEpoch(session: WebSession): number {
+  return Math.max(session.createdAt, session.authFloor ?? 0);
+}
+
+/** Whether the panel's verdict signs this session out. */
+export function isSignedOutBy(session: WebSession, verdict: SessionRevocationVerdict): boolean {
+  return verdict !== null && verdict.revokedAt !== null && sessionEpoch(session) < verdict.revokedAt;
 }
 
 export interface SessionConfig {
@@ -91,7 +134,10 @@ export class WebSessionStore {
     this.redis.disconnect();
   }
 
-  async create(data: Omit<WebSession, "createdAt" | "lastActivity" | "ip">, ip: string): Promise<string> {
+  async create(
+    data: Omit<WebSession, "createdAt" | "lastActivity" | "ip" | "revocationCheckedAt">,
+    ip: string,
+  ): Promise<string> {
     const sessionId = uuidv4();
     const now = Date.now();
     const session: WebSession = {
@@ -99,14 +145,44 @@ export class WebSessionStore {
       ip,
       createdAt: now,
       lastActivity: now,
+      // A session opened now cannot have been signed out before it existed;
+      // its first question to the panel is due a full interval from now.
+      revocationCheckedAt: now,
     };
     await this.redis.set(
       sessionKey(sessionId),
       JSON.stringify(session),
       "EX",
-      TTL.SESSION,
+      sessionTtlSeconds(session),
     );
     return sessionId;
+  }
+
+  /**
+   * The browser that just signed every other session out gets a fresh one:
+   * a NEW id — a copy of the old cookie, wherever it is, stays behind and dies
+   * with the rest — that keeps the installed-app flag and counts from
+   * `authFloor`. The old session is destroyed. `null` when it is already gone.
+   */
+  async renew(
+    sessionId: string,
+    ip: string,
+    authFloor: number,
+  ): Promise<{ readonly sessionId: string; readonly session: WebSession } | null> {
+    const current = await this.get(sessionId);
+    if (!current) return null;
+    const renewedId = await this.create(
+      {
+        userId: current.userId,
+        authFloor,
+        ...(current.standalone === true ? { standalone: true } : {}),
+        ...(current.platform !== undefined ? { platform: current.platform } : {}),
+      },
+      ip,
+    );
+    await this.destroy(sessionId);
+    const renewed = await this.get(renewedId);
+    return renewed ? { sessionId: renewedId, session: renewed } : null;
   }
 
   async get(sessionId: string): Promise<WebSession | null> {
@@ -119,11 +195,17 @@ export class WebSessionStore {
     }
   }
 
-  async touch(sessionId: string, ip: string): Promise<void> {
+  /**
+   * Slide the session's window. `revocationCheckedAt`, when given, records that
+   * the panel was just asked — in the same write, so the check costs Redis
+   * nothing extra.
+   */
+  async touch(sessionId: string, ip: string, revocationCheckedAt?: number): Promise<void> {
     const session = await this.get(sessionId);
     if (!session) return;
     session.lastActivity = Date.now();
     session.ip = ip;
+    if (revocationCheckedAt !== undefined) session.revocationCheckedAt = revocationCheckedAt;
     await this.redis.set(
       sessionKey(sessionId),
       JSON.stringify(session),
@@ -237,17 +319,35 @@ function resolveSecureCookieOptions(
 
 // ── Session Middleware Factory ───────────────────────────────────────────────
 
+export interface WebSessionMiddlewareOptions {
+  /**
+   * Asks the panel whether a customer's sessions were signed out, and when.
+   * Absent (no panel configured), nothing is ever signed out this way.
+   */
+  readonly revocation?: SessionRevocationCheck;
+  /**
+   * Which request paths may carry that question (all, when absent). The
+   * cabinet asks on its API only: a static file must never wait on the panel.
+   */
+  readonly revocationCheckedPath?: (path: string) => boolean;
+}
+
 /**
  * Creates Express session middleware that:
  * 1. Reads the session cookie from the request
  * 2. Loads the session from Redis
- * 3. Attaches session data to `req.webSession`
- * 4. Provides `req.createWebSession()` and `req.destroyWebSession()` helpers
+ * 3. At most once a minute per session, asks the panel whether the session
+ *    was signed out (a password change or reset, «Выйти на всех устройствах»
+ *    elsewhere) and ends it if so
+ * 4. Attaches session data to `req.webSession`
+ * 5. Provides `req.createWebSession()`, `req.renewWebSession()` and
+ *    `req.destroyWebSession()` helpers
  */
 export function createWebSessionMiddleware(
   store: WebSessionStore,
   config: SessionConfig,
   logger?: LoggerPort,
+  options: WebSessionMiddlewareOptions = {},
 ): RequestHandler {
   const cookieName = config.cookieName ?? DEFAULT_COOKIE_NAME;
   // Resolve cookie options eagerly at construction. In production this
@@ -268,13 +368,34 @@ export function createWebSessionMiddleware(
 
     // Attach session data if cookie present
     if (sessionId) {
-      const session = await store.get(sessionId);
+      let session = await store.get(sessionId);
+      // Signed out elsewhere? Asked at most once an interval per session; a
+      // panel that cannot tell signs nothing out, and is asked again next time.
+      let revocationCheckedAt: number | undefined;
+      const pathAsks = options.revocationCheckedPath?.(req.path) ?? true;
+      if (session && options.revocation && pathAsks) {
+        const now = Date.now();
+        if (now - (session.revocationCheckedAt ?? 0) >= SESSION_REVOCATION_CHECK_INTERVAL_MS) {
+          let verdict: SessionRevocationVerdict = null;
+          try {
+            verdict = await options.revocation(session.userId);
+          } catch (err: unknown) {
+            logger?.warn({ err, component: "WebSession" }, "session revocation check failed");
+          }
+          if (isSignedOutBy(session, verdict)) {
+            await store.destroy(sessionId);
+            session = null;
+          } else {
+            revocationCheckedAt = now;
+          }
+        }
+      }
       if (session) {
         req.webSession = session;
         req.webSessionId = sessionId;
         // Touch session to update lastActivity (slides the Redis TTL).
         const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
-        await store.touch(sessionId, ip);
+        await store.touch(sessionId, ip, revocationCheckedAt);
         // Slide the COOKIE too: re-issue it with a fresh maxAge so an actively
         // used session never expires out from under the user. Without this the
         // cookie keeps the lifetime it was handed at sign-in regardless of
@@ -298,12 +419,38 @@ export function createWebSessionMiddleware(
       req.webSessionId = null;
     }
 
-    // Attach helper: create a new web session
-    req.createWebSession = async (userId: string): Promise<string> => {
+    // Attach helper: create a new web session. `authFloor` for a session opened
+    // by the change that signed every other session out (a reset).
+    req.createWebSession = async (
+      userId: string,
+      sessionOptions?: { readonly authFloor?: number },
+    ): Promise<string> => {
       const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
-      const newSessionId = await store.create({ userId }, ip);
+      const authFloor = sessionOptions?.authFloor;
+      const newSessionId = await store.create(
+        authFloor === undefined ? { userId } : { userId, authFloor },
+        ip,
+      );
       res.cookie(cookieName, newSessionId, cookieOptions);
       return newSessionId;
+    };
+
+    // Attach helper: this browser just signed every other session out (a
+    // password change, a first password, «Выйти на всех устройствах»). It
+    // continues on a fresh session that counts from `authFloor`.
+    req.renewWebSession = async (sessionOptions: { readonly authFloor: number }): Promise<string | null> => {
+      if (!req.webSessionId) return null;
+      const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+      const renewed = await store.renew(req.webSessionId, ip, sessionOptions.authFloor);
+      if (!renewed) return null;
+      req.webSession = renewed.session;
+      req.webSessionId = renewed.sessionId;
+      res.cookie(
+        cookieName,
+        renewed.sessionId,
+        renewed.session.standalone === true ? pwaCookieOptions : cookieOptions,
+      );
+      return renewed.sessionId;
     };
 
     // Attach helper: upgrade the current session to an installed-PWA session.

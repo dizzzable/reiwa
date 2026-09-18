@@ -4,9 +4,10 @@ import { createHash, randomBytes } from "node:crypto";
 import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
-import type { ReiwaConfig } from "../../config.js";
+import { resolveReiwaPublicUrl, type ReiwaConfig } from "../../config.js";
 import { diagnoseTelegramInitData, parseUnverifiedTelegramInitData, validateTelegramInitData, validateTelegramWidget } from "../../lib/telegram-auth.js";
 import { LEGAL_DOCUMENT_KEYS } from "../../infrastructure/admin-client/namespaces/legal-documents.js";
+import type { WebFirstPasswordResult } from "../../infrastructure/admin-client/namespaces/web-auth.js";
 import { requireMode } from "../middleware/access-mode.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
@@ -156,12 +157,68 @@ const loginSchema = z.object({
     .max(128, "Password exceeds maximum length"),
 });
 
+// `username` keeps its name for older bundles; it carries a login OR the e-mail
+// verified on the account.
 const recoverSchema = z.object({
   username: z
     .string()
+    .trim()
     .min(1, "Username is required")
     .max(254, "Username exceeds maximum length"),
 });
+
+const hex64 = z
+  .string()
+  .length(64, "Expected a 64-character hex string")
+  .regex(/^[a-f0-9]+$/i, "Expected a hex string");
+
+const resetPasswordSchema = z.object({
+  token: hex64,
+  // The new password, hashed in the browser exactly as on registration.
+  passwordHash: hex64,
+});
+
+const subscriptionRecoverySchema = z.object({
+  link: z.string().trim().min(1).max(4096),
+  username: z.string().trim().min(1).max(64),
+});
+
+// A first password: only the new one — the account has no current one.
+const firstPasswordSchema = z.object({
+  newPasswordHash: hex64,
+});
+
+/**
+ * The panel's `sessionsRevokedAt` as the floor of this browser's new session,
+ * or `undefined` from a panel older than the sign-out (which revoked nothing).
+ */
+function revocationFloor(sessionsRevokedAt: unknown): number | undefined {
+  if (typeof sessionsRevokedAt !== "string") return undefined;
+  const at = Date.parse(sessionsRevokedAt);
+  return Number.isNaN(at) ? undefined : at;
+}
+
+/**
+ * After a change that signed every session of the account out — a password
+ * change, a first password, «Выйти на всех устройствах» — this browser carries
+ * on, on a fresh session counting from that moment. A panel older than the
+ * sign-out sends no moment and revoked nothing, so the session stays as it is.
+ * A renewal that fails does not undo the change: this browser is then signed
+ * out at its next check like the others, and signs in again.
+ */
+async function continueAfterRevocation(
+  req: Request,
+  sessionsRevokedAt: unknown,
+  context: string,
+): Promise<void> {
+  const authFloor = revocationFloor(sessionsRevokedAt);
+  if (authFloor === undefined) return;
+  try {
+    await req.renewWebSession({ authFloor });
+  } catch (err) {
+    getRequestLogger(req).error({ err }, `${context}: renewing the session failed`);
+  }
+}
 
 const changePasswordSchema = z.object({
   currentPasswordHash: z
@@ -225,6 +282,9 @@ export function createAuthRouter(deps: {
   const loginRateLimiter = createRedisRateLimiter(redis, "login");
   const registerRateLimiter = createRedisRateLimiter(redis, "register");
   const recoverRateLimiter = createRedisRateLimiter(redis, "recover");
+  const passwordResetLimiter = createRedisRateLimiter(redis, "passwordReset");
+  const passwordResetInspectLimiter = createRedisRateLimiter(redis, "passwordResetInspect");
+  const recoverSubscriptionLimiter = createRedisRateLimiter(redis, "recoverSubscription");
 
   // Create brute-force detection middleware
   const bruteForceDetection = createAuthBruteForceDetection(getRedis);
@@ -472,7 +532,26 @@ export function createAuthRouter(deps: {
 
         try {
           result = await adminClient.webAuth.login(username, passwordHash);
-        } catch {
+        } catch (loginError: unknown) {
+          // A refused sign-in may be an account imported WITHOUT a password —
+          // one the panel no longer lets anybody claim by typing one. Its owner
+          // gets in through a reset link, which the panel sends here.
+          if (isUpstreamStatus(loginError, 401)) {
+            const firstPassword = await askFirstPasswordLink(adminClient, username, config, req);
+            if (firstPassword !== null) {
+              // A distinct answer, deliberately. It tells a visitor nothing they
+              // could not learn already — whether a login exists is public
+              // through `/auth/check-username` — and it is the only thing that
+              // gets the real owner in. No session is opened, and the typed
+              // password was never looked at.
+              res.status(401).json({
+                code: "PASSWORD_NOT_SET",
+                delivery: firstPassword,
+                message: "This account has no password yet",
+              });
+              return;
+            }
+          }
           // Authentication failure — generic error (no username/password distinction)
           // Deny authentication even if the error message fails to display
           res.status(401).json({ message: "Invalid username or password" });
@@ -538,49 +617,230 @@ export function createAuthRouter(deps: {
   });
 
   // ── POST /api/v1/auth/recover ───────────────────────────────────────────────
+  //
+  // "Forgot password". The panel sends a reset link to the account's Telegram
+  // and/or verified e-mail and answers at once; delivery runs behind the
+  // answer. What the VISITOR gets is the same for every login — existing or
+  // not, linked or not — so this form cannot be used to find out whether a
+  // login exists or where it can be reached. The panel's `method` stays here.
+  //
+  // It used to be forwarded, together with a sentence per method, and the SPA
+  // then told the customer "a confirmation was sent to your Telegram" while
+  // nothing at all had been sent.
   router.post(
     "/auth/recover",
     recoverRateLimiter,
     bruteForceDetection,
     async (req: Request, res: Response) => {
+      const parsed = recoverSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          message: "Validation failed",
+          errors: parsed.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+          })),
+        });
+        return;
+      }
+      if (!adminClient) {
+        res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
+        return;
+      }
+      const identifier = parsed.data.username;
+      // Shorter than any login can be: nothing to look up, and the answer is
+      // still the uniform one.
+      if (identifier.length < 3) {
+        res.json(RECOVER_ACCEPTED);
+        return;
+      }
       try {
-        // Validate request body with Zod
-        const parsed = recoverSchema.safeParse(req.body);
-        if (!parsed.success) {
-          res.status(400).json({
-            message: "Validation failed",
-            errors: parsed.error.issues.map((i) => ({
-              field: i.path.join("."),
-              message: i.message,
-            })),
-          });
-          return;
-        }
-
-        const { username } = parsed.data;
-
-        if (!adminClient) {
-          res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
-          return;
-        }
-
-        // Proxy to Rezeis_Admin
-        const result = await adminClient.webAuth.recover(username);
-
-        res.json({
-          method: result.method,
-          message: getRecoveryMessage(result.method),
-        });
+        const result = await adminClient.webAuth.requestPasswordReset(
+          identifier,
+          // THIS cabinet's configured address — never the request's Host
+          // header, which the visitor controls and would redirect the link.
+          resolveReiwaPublicUrl(config),
+        );
+        res.json(result.resetLinks === true ? RECOVER_ACCEPTED : RECOVER_UNAVAILABLE);
       } catch (e: unknown) {
-        getRequestLogger(req).error({ err: e }, "auth/recover failed");
-        // Anti-enumeration: return a generic response even on error
-        res.json({
-          method: "none" as const,
-          message: "If an account with that username exists, recovery instructions have been sent.",
-        });
+        // An older panel has no such route. Saying so is the same for every
+        // visitor, so it tells nobody anything about an account.
+        if (isUpstreamStatus(e, 404)) {
+          res.json(RECOVER_UNAVAILABLE);
+          return;
+        }
+        const { status: upstreamStatus, message } = describeUpstreamError(e);
+        getRequestLogger(req).error({ err: message, upstreamStatus }, "auth/recover failed");
+        res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
       }
     },
   );
+
+  // ── POST /api/v1/auth/reset-password/inspect ────────────────────────────────
+  //
+  // Whether a reset link still works, and for which login — so the page can
+  // say "expired" or "already used" before anyone types a new password, and
+  // can name the login (the customer may have forgotten it). Spends nothing.
+  router.post("/auth/reset-password/inspect", passwordResetInspectLimiter, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const parsed = hex64.safeParse(req.body?.token);
+    if (!parsed.success) {
+      res.json({ status: "expired" });
+      return;
+    }
+    if (!adminClient) {
+      res.status(503).json({ code: "RESET_UNAVAILABLE", message: "Service unavailable" });
+      return;
+    }
+    try {
+      const result = await adminClient.webAuth.inspectPasswordReset(parsed.data);
+      if (result.status === "valid") {
+        res.json({ status: "valid", login: result.login, expiresAt: result.expiresAt });
+        return;
+      }
+      res.json({ status: result.status === "used" ? "used" : "expired" });
+    } catch (e: unknown) {
+      const { status: upstreamStatus, message } = describeUpstreamError(e);
+      getRequestLogger(req).warn({ err: message, upstreamStatus }, "auth/reset-password/inspect failed");
+      res.status(503).json({ code: "RESET_UNAVAILABLE", message: "Service unavailable" });
+    }
+  });
+
+  // ── POST /api/v1/auth/reset-password ────────────────────────────────────────
+  //
+  // Spend a reset link, set the new password, and sign the customer in the
+  // way register and login do. The token is single-use at the panel (one Redis
+  // step); this route has its own budget (`RATE_LIMITS.passwordReset`), so a
+  // few wrong passwords on the sign-in form cannot block the reset that fixes
+  // them.
+  //
+  // Every other session of the account ends: the panel writes the moment of
+  // the reset (`sessionsRevokedAt`) with the new password, and each session
+  // that started before it is signed out at its next check (at most a minute
+  // away — `SESSION_REVOCATION_CHECK_INTERVAL_MS`). The session opened here
+  // counts from that moment, so it is not one of them.
+  router.post("/auth/reset-password", passwordResetLimiter, async (req: AuthRequest, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const parsed = resetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ code: "VALIDATION_FAILED", message: "Validation failed" });
+      return;
+    }
+    if (!adminClient) {
+      res.status(503).json({ code: "RESET_UNAVAILABLE", message: "Service unavailable" });
+      return;
+    }
+    let result;
+    try {
+      result = await adminClient.webAuth.consumePasswordReset(parsed.data.token, parsed.data.passwordHash);
+    } catch (e: unknown) {
+      const { status: upstreamStatus, message } = describeUpstreamError(e);
+      getRequestLogger(req).error({ err: message, upstreamStatus }, "auth/reset-password failed");
+      res.status(503).json({ code: "RESET_UNAVAILABLE", message: "Service unavailable" });
+      return;
+    }
+    if (result.status !== "ok") {
+      res.status(410).json(
+        result.status === "used"
+          ? { code: "RESET_LINK_USED", message: "This link has already been used" }
+          : { code: "RESET_LINK_EXPIRED", message: "This link has expired" },
+      );
+      return;
+    }
+    // Whoever was signed in in this browser before is not who the link was for.
+    try {
+      await req.destroyWebSession?.();
+    } catch {
+      /* best-effort: createWebSession below replaces the cookie anyway */
+    }
+    try {
+      // A panel older than the sign-out sends no moment: opened as before.
+      const authFloor = revocationFloor(result.sessionsRevokedAt);
+      if (authFloor === undefined) await req.createWebSession(result.userId);
+      else await req.createWebSession(result.userId, { authFloor });
+    } catch (err) {
+      getRequestLogger(req).error({ err }, "auth/reset-password createWebSession failed");
+      // The password IS changed. The login rides along so the page can hand it
+      // to the sign-in form — the customer may be here because they forgot it.
+      res.status(500).json({
+        code: "SESSION_FAILED",
+        message: "Password changed but session setup failed. Please sign in.",
+        login: result.login,
+      });
+      return;
+    }
+    res.json({ success: true, redirectUrl: "/dashboard", login: result.login });
+  });
+
+  // ── POST /api/v1/auth/recover/subscription ──────────────────────────────────
+  //
+  // Recovery for a customer with neither Telegram nor e-mail. The VPN
+  // subscription link is the proof; the login only picks the account and adds
+  // friction — it is not a secret (the panel names VPN profiles after it). So
+  // the panel lets this path set a password ONLY for an account that has no
+  // other way in; an account with Telegram or a verified e-mail gets the
+  // ordinary reset link there instead, and the visitor gets the answer the
+  // "forgot password" form gives everybody. Every failed check is one answer.
+  // On success the reset token comes back in the BODY — the SPA carries it to
+  // `/reset-password` in memory, never in an address that would land in
+  // history or a Referer.
+  router.post("/auth/recover/subscription", recoverSubscriptionLimiter, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const parsed = subscriptionRecoverySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ code: "VALIDATION_FAILED", message: "Validation failed" });
+      return;
+    }
+    if (!adminClient) {
+      res.status(503).json({ code: "RECOVERY_UNAVAILABLE", message: "Service unavailable" });
+      return;
+    }
+    try {
+      const result = await adminClient.webAuth.recoverPasswordBySubscription({
+        link: parsed.data.link,
+        login: parsed.data.username,
+        clientIp: req.ip ?? req.socket.remoteAddress ?? null,
+        // THIS cabinet's configured address — the reset link sent to the
+        // account's channels points there, never at the request's Host.
+        cabinetUrl: resolveReiwaPublicUrl(config),
+      });
+      switch (result.status) {
+        case "verified":
+          res.json({
+            status: "verified",
+            success: true,
+            token: result.token,
+            login: result.login,
+            expiresAt: result.expiresAt,
+          });
+          return;
+        case "sent_to_channels":
+          res.json(RECOVER_ACCEPTED);
+          return;
+        case "mismatch":
+          res.status(400).json({ code: "NOT_VERIFIED", message: "Could not verify the link and the login" });
+          return;
+        case "disabled":
+          // The operator switched this path off. The panel says so before it
+          // looks anything up, so this answer is the same for every visitor.
+          res.status(403).json({
+            code: "RECOVERY_DISABLED",
+            message: "Password recovery by subscription link is turned off",
+          });
+          return;
+        case "rate_limited":
+          res.setHeader("Retry-After", String(result.retryAfterSeconds));
+          res.status(429).json({ code: "RATE_LIMITED", retryAfter: result.retryAfterSeconds });
+          return;
+        default:
+          res.status(503).json({ code: "RECOVERY_UNAVAILABLE", message: "Service unavailable" });
+      }
+    } catch (e: unknown) {
+      const { status: upstreamStatus, message } = describeUpstreamError(e);
+      getRequestLogger(req).warn({ err: message, upstreamStatus }, "auth/recover/subscription failed");
+      res.status(503).json({ code: "RECOVERY_UNAVAILABLE", message: "Service unavailable" });
+    }
+  });
 
   // ── GET /api/v1/auth/status ─────────────────────────────────────────────────
   router.get("/auth/status", async (req: Request, res: Response) => {
@@ -663,6 +923,10 @@ export function createAuthRouter(deps: {
         newPasswordHash,
       );
 
+      // The panel signed every session of the account out as of the change.
+      // This browser carries on, on a fresh session that counts from it.
+      await continueAfterRevocation(req, result.sessionsRevokedAt, "auth/change-password");
+
       res.json({
         success: result.success,
         redirectUrl: "/dashboard",
@@ -684,6 +948,110 @@ export function createAuthRouter(deps: {
       getRequestLogger(req).error({ err: errMsg }, "auth/change-password failed");
       res.status(500).json({ message: "Internal server error" });
     }
+  });
+
+  // ── GET /api/v1/auth/password-state ─────────────────────────────────────────
+  //
+  // Whether the signed-in customer's account has a password yet. The password
+  // page asks before it draws its form: an account imported without one, and
+  // signed in through the Mini App (which needs none), gets "set a password"
+  // instead of "current and new", which it could never fill in. `null` when
+  // there is no answer — an older panel, no web account, the panel down — and
+  // the page keeps its ordinary form.
+  router.get("/auth/password-state", async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!req.webSession) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    if (!adminClient) {
+      res.json({ hasPassword: null });
+      return;
+    }
+    try {
+      const state = await adminClient.webAuth.passwordState(req.webSession.userId);
+      res.json({ hasPassword: state.hasPassword });
+    } catch (e: unknown) {
+      if (!isUpstreamStatus(e, 404)) {
+        const { status: upstreamStatus, message } = describeUpstreamError(e);
+        getRequestLogger(req).warn({ err: message, upstreamStatus }, "auth/password-state failed");
+      }
+      res.json({ hasPassword: null });
+    }
+  });
+
+  // ── POST /api/v1/auth/first-password ────────────────────────────────────────
+  //
+  // A first password for the signed-in customer's account, which has none. The
+  // account is the SESSION's — nothing in the body names one — and the panel
+  // writes only where no password exists, so this can never replace a
+  // password: not one that was there, and not one set a moment earlier.
+  router.post("/auth/first-password", async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!req.webSession || !req.webSessionId) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const parsed = firstPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ code: "VALIDATION_FAILED", message: "Validation failed" });
+      return;
+    }
+    if (!adminClient) {
+      res.status(503).json({ code: "FIRST_PASSWORD_UNAVAILABLE", message: "Service unavailable" });
+      return;
+    }
+    let result: WebFirstPasswordResult;
+    try {
+      result = await adminClient.webAuth.setFirstPassword(req.webSession.userId, parsed.data.newPasswordHash);
+    } catch (e: unknown) {
+      const { status: upstreamStatus, message } = describeUpstreamError(e);
+      getRequestLogger(req).error({ err: message, upstreamStatus }, "auth/first-password failed");
+      res.status(503).json({ code: "FIRST_PASSWORD_UNAVAILABLE", message: "Service unavailable" });
+      return;
+    }
+    if (result.status === "has_password") {
+      res.status(409).json({ code: "PASSWORD_ALREADY_SET", message: "This account already has a password" });
+      return;
+    }
+    if (result.status !== "set") {
+      res.status(409).json({ code: "NO_WEB_ACCOUNT", message: "This account has no login to set a password for" });
+      return;
+    }
+    // Like any new password it signed the account's other sessions out.
+    await continueAfterRevocation(req, result.sessionsRevokedAt, "auth/first-password");
+    res.json({ success: true, login: result.login });
+  });
+
+  // ── POST /api/v1/auth/sessions/revoke-others ────────────────────────────────
+  //
+  // «Выйти на всех устройствах». Every session of the account that started
+  // before now is signed out at its next check — within a minute — and this
+  // browser carries on, on a fresh session. A 404 from the panel is an older
+  // panel, or a customer with no web account to keep the moment in.
+  router.post("/auth/sessions/revoke-others", async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!req.webSession || !req.webSessionId) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    if (!adminClient) {
+      res.status(503).json({ code: "SIGN_OUT_EVERYWHERE_UNAVAILABLE", message: "Service unavailable" });
+      return;
+    }
+    let revoked: { readonly sessionsRevokedAt: string };
+    try {
+      revoked = await adminClient.webAuth.revokeSessions(req.webSession.userId);
+    } catch (e: unknown) {
+      const { status: upstreamStatus, message } = describeUpstreamError(e);
+      getRequestLogger(req).warn({ err: message, upstreamStatus }, "auth/sessions/revoke-others failed");
+      res
+        .status(isUpstreamStatus(e, 404) ? 409 : 503)
+        .json({ code: "SIGN_OUT_EVERYWHERE_UNAVAILABLE", message: "Signing out everywhere is not available" });
+      return;
+    }
+    await continueAfterRevocation(req, revoked.sessionsRevokedAt, "auth/sessions/revoke-others");
+    res.json({ success: true });
   });
 
   // ── POST /api/v1/auth/claim ─────────────────────────────────────────────────
@@ -1262,13 +1630,62 @@ export function createAuthRouter(deps: {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function getRecoveryMessage(method: "telegram" | "email" | "none"): string {
-  switch (method) {
-    case "telegram":
-      return "A password reset confirmation has been sent to your linked Telegram account.";
-    case "email":
-      return "Recovery instructions have been sent to your registered email address.";
-    case "none":
-      return "No recovery method is available for this account. Please contact support.";
+/**
+ * The ONE answer "forgot password" gives, whatever the login. Frozen, so a
+ * later edit cannot quietly make it depend on the account.
+ */
+const RECOVER_ACCEPTED = Object.freeze({
+  status: "accepted" as const,
+  message: "If this login exists and has Telegram or an email linked, a reset link has been sent.",
+});
+
+/** The answer when the panel does not send reset links (an older panel). */
+const RECOVER_UNAVAILABLE = Object.freeze({
+  status: "unavailable" as const,
+  message: "Password recovery by link is not available. Please contact support.",
+});
+
+/**
+ * What the sign-in page says to the owner of an account that has no password
+ * yet: where the link went (`telegram` / `email`), that the hour's links
+ * already went (`hourly_limit`), that the bot will send one (`bot`), or that
+ * nothing could be sent right now (`unavailable`).
+ */
+type FirstPasswordDelivery = "telegram" | "email" | "hourly_limit" | "bot" | "unavailable";
+
+/**
+ * After a refused sign-in, has the panel send the reset link to an account
+ * imported without a password. `null` for every other login — and for a panel
+ * that predates the route, or cannot be asked — so the sign-in form keeps its
+ * ordinary refusal.
+ */
+async function askFirstPasswordLink(
+  adminClient: AdminClient,
+  login: string,
+  config: ReiwaConfig,
+  req: Request,
+): Promise<FirstPasswordDelivery | null> {
+  let answer;
+  try {
+    // THIS cabinet's configured address — never the request's Host.
+    answer = await adminClient.webAuth.sendFirstPasswordLink(login, resolveReiwaPublicUrl(config));
+  } catch (e: unknown) {
+    if (!isUpstreamStatus(e, 404)) {
+      const { status: upstreamStatus, message } = describeUpstreamError(e);
+      getRequestLogger(req).warn({ err: message, upstreamStatus }, "auth/login first-password check failed");
+    }
+    return null;
+  }
+  switch (answer.status) {
+    case "sent":
+      return answer.channel;
+    case "hourly_limit":
+      return "hourly_limit";
+    case "use_bot":
+      return "bot";
+    case "unavailable":
+      return "unavailable";
+    default:
+      return null;
   }
 }

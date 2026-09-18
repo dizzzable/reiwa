@@ -19,6 +19,8 @@ import {
   payWithPartnerBalance,
 } from "@/lib/api-client";
 import type { EligibleAddOn } from "@/lib/api-client";
+import { PartnerBalanceHoldNotice } from "@/features/partner/partner-balance-hold-notice";
+import { balanceHoldRefusalMessage, standingBalanceHold } from "@/lib/partner-balance-hold";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { Switch } from "@/components/ui/switch";
@@ -1159,8 +1161,11 @@ function SelectGateway() {
   );
 }
 
+/** The notice a held partner balance puts under its disabled button. */
+const RENEWAL_BALANCE_HOLD_NOTICE_ID = "renewal-partner-balance-hold";
+
 function RenewalReview() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const {
@@ -1274,8 +1279,24 @@ function RenewalReview() {
       void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
       navigate("/dashboard", { replace: true });
     },
-    onError: () => toast.error(t("renewal.balanceError")),
+    onError: (err) => {
+      // The balance went on hold after this page read the partner info: say
+      // so, and re-read it so the notice below the button takes over.
+      const holdMessage = balanceHoldRefusalMessage(
+        err,
+        t,
+        partner?.balanceHold?.timezone ?? null,
+        i18n.language,
+      );
+      if (holdMessage !== null) {
+        toast.error(holdMessage);
+        void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
+        return;
+      }
+      toast.error(t("renewal.balanceError"));
+    },
   });
+  const balanceHold = standingBalanceHold(partner?.balanceHold);
 
   // Offline, the re-price this visit starts is paused, not running: neither
   // loading nor fetching, with `data` still the copy an earlier visit left, or
@@ -1451,19 +1472,28 @@ function RenewalReview() {
       >
         {t("renewal.pay")}
       </StadiumButton>
+      {/* On hold after a password recovery the balance is still offered — so
+          the subscriber sees which option it is — but it takes no tap, and the
+          notice under it says for how long and why. */}
       {balanceEligible && balanceItem && partner && (
-        <StadiumButton
-          fullWidth
-          variant="secondary"
-          loading={balanceMutation.isPending}
-          disabled={!isCurrentStep || balanceMutation.isSuccess}
-          onClick={() => balanceMutation.mutate(balanceItem)}
-        >
-          {t("renewal.payWithBalance", {
-            amount: (partner.balance / 100).toFixed(2),
-            currency: partner.balanceCurrency,
-          })}
-        </StadiumButton>
+        <>
+          <StadiumButton
+            fullWidth
+            variant="secondary"
+            loading={balanceMutation.isPending}
+            disabled={!isCurrentStep || balanceMutation.isSuccess || balanceHold !== null}
+            aria-describedby={balanceHold ? RENEWAL_BALANCE_HOLD_NOTICE_ID : undefined}
+            onClick={() => balanceMutation.mutate(balanceItem)}
+          >
+            {t("renewal.payWithBalance", {
+              amount: (partner.balance / 100).toFixed(2),
+              currency: partner.balanceCurrency,
+            })}
+          </StadiumButton>
+          {balanceHold && (
+            <PartnerBalanceHoldNotice hold={balanceHold} id={RENEWAL_BALANCE_HOLD_NOTICE_ID} />
+          )}
+        </>
       )}
       <StadiumButton fullWidth variant="ghost" onClick={() => navigate("/dashboard")}>
         {t("renewal.home")}

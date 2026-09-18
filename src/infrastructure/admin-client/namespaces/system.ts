@@ -37,6 +37,12 @@ export interface PlatformPolicyShape {
    * Consumed by the cabinet's route guard.
    */
   readonly requireTelegramWebCredentials?: boolean;
+  /**
+   * «Восстановление пароля по ссылке подписки» — the operator's switch. A
+   * panel that predates it sends nothing, and the cabinet reads that as OFF:
+   * such a panel has no subscription-recovery endpoint either.
+   */
+  readonly subscriptionLinkRecovery?: boolean;
   readonly defaultCurrency: string;
   /** Capability: renewal add-on composition enabled (rezeis env). The cabinet
    *  gates the renewal add-on selection step on this. Optional for back-compat

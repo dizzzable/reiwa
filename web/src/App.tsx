@@ -53,6 +53,8 @@ const LandingPage = lazy(() => import("@/features/landing/landing-page"));
 const RegisterPage = lazy(() => import("@/features/auth/register-page"));
 const LegalPage = lazy(() => import("@/features/legal/legal-page"));
 const RecoverPage = lazy(() => import("@/features/auth/recover-page"));
+const RecoverSubscriptionPage = lazy(() => import("@/features/auth/recover-subscription-page"));
+const ResetPasswordPage = lazy(() => import("@/features/auth/reset-password-page"));
 const SignInPage = lazy(() => import("@/features/auth/sign-in-page"));
 const ChangePasswordPage = lazy(() => import("@/features/auth/change-password-page"));
 const DashboardPage = lazy(() => import("@/features/dashboard/dashboard-page"));
@@ -140,6 +142,10 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/ref/:token" element={<ReferralLinkRedirect />} />
           <Route path="/recover" element={<RecoverPage />} />
+          <Route path="/recover/subscription" element={<RecoverSubscriptionPage />} />
+          {/* A single-use password reset link lands here — from Telegram, e-mail
+              or recovery by subscription link. Public: the link is the credential. */}
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/claim" element={<ClaimPage />} />
           <Route path="/finish-setup" element={<FinishSetupPage />} />

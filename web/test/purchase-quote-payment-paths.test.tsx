@@ -41,7 +41,9 @@ const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), warning: vi.
 vi.mock("@/lib/api-client", () => api);
 vi.mock("react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  // `i18n` as the real hook returns it: a refused balance payment reads the
+  // language to word a hold on the balance (`balanceHoldRefusalMessage`).
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "ru" } }),
 }));
 vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/use-access-mode", () => ({

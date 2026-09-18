@@ -14,6 +14,8 @@ import {
   type CreationPurchaseType,
 } from "@/lib/api-client";
 import { getPartnerInfo, payWithPartnerBalance } from "@/lib/api-client";
+import { PartnerBalanceHoldNotice } from "@/features/partner/partner-balance-hold-notice";
+import { balanceHoldRefusalMessage, standingBalanceHold } from "@/lib/partner-balance-hold";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { Switch } from "@/components/ui/switch";
@@ -428,6 +430,9 @@ function useLeaveWithdrawnPlan(): () => void {
   };
 }
 
+/** The notice a held partner balance puts under its disabled button. */
+const PURCHASE_BALANCE_HOLD_NOTICE_ID = "purchase-partner-balance-hold";
+
 function QuoteView({
   purchaseType,
   slotIndex,
@@ -440,7 +445,7 @@ function QuoteView({
   /** The panel refused this very quote at checkout without saying why — see `CheckoutStep`. */
   refused: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     step,
     selectedPlan,
@@ -549,6 +554,19 @@ function QuoteView({
       navigate("/dashboard", { replace: true });
     },
     onError: (err) => {
+      // The balance went on hold after this page read the partner info: say
+      // so, and re-read it so the notice below the button takes over.
+      const holdMessage = balanceHoldRefusalMessage(
+        err,
+        t,
+        partner?.balanceHold?.timezone ?? null,
+        i18n.language,
+      );
+      if (holdMessage !== null) {
+        toast.error(holdMessage);
+        void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
+        return;
+      }
       if (isSubscriptionLimitError(err)) {
         notifySubscriptionLimitReached(t);
         navigate("/dashboard", { replace: true });
@@ -557,6 +575,7 @@ function QuoteView({
       toast.error(t("purchase.quote.balanceError"));
     },
   });
+  const balanceHold = standingBalanceHold(partner?.balanceHold);
 
   if (isLoading || withdrawn) {
     return (
@@ -701,24 +720,33 @@ function QuoteView({
           {t("purchase.quote.pay")}
         </StadiumButton>
       )}
+      {/* On hold after a password recovery the balance is still offered — so
+          the buyer sees which option it is — but it takes no tap, and the
+          notice under it says for how long and why. */}
       {!refused &&
         partner &&
         partner.isActive &&
         partner.balancePaymentEnabled &&
         partner.balanceCurrency === quote.currency &&
         partner.balance >= Math.round(quote.finalPrice * 100) && (
-          <StadiumButton
-            fullWidth
-            variant="secondary"
-            loading={balanceMutation.isPending}
-            disabled={!isCurrentStep || balanceMutation.isSuccess}
-            onClick={() => balanceMutation.mutate()}
-          >
-            {t("purchase.quote.payWithBalance", {
-              amount: (partner.balance / 100).toFixed(2),
-              currency: partner.balanceCurrency,
-            })}
-          </StadiumButton>
+          <>
+            <StadiumButton
+              fullWidth
+              variant="secondary"
+              loading={balanceMutation.isPending}
+              disabled={!isCurrentStep || balanceMutation.isSuccess || balanceHold !== null}
+              aria-describedby={balanceHold ? PURCHASE_BALANCE_HOLD_NOTICE_ID : undefined}
+              onClick={() => balanceMutation.mutate()}
+            >
+              {t("purchase.quote.payWithBalance", {
+                amount: (partner.balance / 100).toFixed(2),
+                currency: partner.balanceCurrency,
+              })}
+            </StadiumButton>
+            {balanceHold && (
+              <PartnerBalanceHoldNotice hold={balanceHold} id={PURCHASE_BALANCE_HOLD_NOTICE_ID} />
+            )}
+          </>
         )}
       <StadiumButton fullWidth variant="ghost" onClick={goBack}>
         {t("purchase.quote.change")}

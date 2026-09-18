@@ -44,6 +44,12 @@ function createMockAdminClient() {
         method: "telegram" as const,
         challengeId: "challenge-789",
       })),
+      // What `/auth/recover` calls now. `method` is the panel's own business:
+      // the route answers every visitor the same.
+      requestPasswordReset: vi.fn(async () => ({
+        method: "telegram" as const,
+        resetLinks: true as const,
+      })),
       changePassword: vi.fn(async () => ({
         success: true,
       })),
@@ -376,7 +382,7 @@ describe("POST /api/v1/auth/recover", () => {
     assert.equal(res.status, 400);
   });
 
-  it("returns recovery method on success", async () => {
+  it("answers the same accepted message whatever the panel said about the account", async () => {
     const { app } = await buildApp();
     const res = await request(app, {
       method: "POST",
@@ -384,7 +390,8 @@ describe("POST /api/v1/auth/recover", () => {
       body: { username: "testuser" },
     });
     assert.equal(res.status, 200);
-    assert.equal(res.body.method, "telegram");
+    assert.equal(res.body.status, "accepted");
+    assert.equal(res.body.method, undefined);
     assert.ok(typeof res.body.message === "string");
   });
 

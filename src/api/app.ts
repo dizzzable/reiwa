@@ -16,6 +16,7 @@ import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
 import { resolveReiwaPublicUrl, resolveRezeisAdminUrl } from "../config.js";
+import { createSessionRevocationCheck, isRevocationCheckedPath } from "./lib/session-revocation.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
 import { readBodyRefusal } from "./middleware/body-parser-refusal.js";
 import { apiLimiter } from "./middleware/rate-limit.js";
@@ -310,7 +311,20 @@ export function createApp(deps: CreateAppDeps) {
       isProduction: config.NODE_ENV === "production",
       allowInsecureCookies: config.REIWA_ALLOW_INSECURE_COOKIES,
     };
-    app.use(createWebSessionMiddleware(deps.webSessionStore, sessionConfig, logger));
+    app.use(
+      createWebSessionMiddleware(deps.webSessionStore, sessionConfig, logger, {
+        // A password change, a reset or «Выйти на всех устройствах» signs the
+        // customer's other sessions out; each session asks the panel at most
+        // once a minute, on an API request, and waits at most two seconds for
+        // the answer. Without a panel nothing is signed out this way.
+        ...(deps.adminClient
+          ? {
+              revocation: createSessionRevocationCheck(deps.adminClient.webAuth, { logger }),
+              revocationCheckedPath: isRevocationCheckedPath,
+            }
+          : {}),
+      }),
+    );
   }
 
   // ── Global rate limit ─────────────────────────────────────────────────────

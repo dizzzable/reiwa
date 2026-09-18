@@ -33,6 +33,7 @@ import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/b
 import { isSameChannelChat, resolveChannelChatId, resolveChannelGateVerdict } from '../lib/channel-gate.js';
 import { inlineButton } from '../widgets/inline-button.js';
 import { sendChannelJoinPrompt } from './channel-join-prompt.js';
+import { PASSWORD_RESET_START_PAYLOAD, replyWithPasswordReset } from './password-reset.js';
 import { QUEST_ID_RE, replyWithQuestChannelPrompt, type ChannelTarget } from './quest-channel.js';
 import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl, attachSigninTokenToUrl } from '../widgets/main-keyboard.js';
 import { pickScreenText, buildScreenKeyboard } from './screen-renderer.js';
@@ -656,6 +657,17 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
         // send the plain acknowledgement (dev/localhost has no HTTPS target).
         reply_markup: keyboard.inline_keyboard.length > 0 ? keyboard : undefined,
       });
+      return;
+    }
+
+    // Phase 0c: "send me a password reset link" from the cabinet's recovery
+    // screen (`t.me/<bot>?start=pwreset`). Handled before the access-mode check —
+    // which would read an unknown payload as a referral code — before bootstrap
+    // (a customer asking to reset a web password already has an account) and
+    // before the channel gate, like `payment_return`: this is a way into the
+    // WEB cabinet. See `pages/password-reset.ts`.
+    if (startPayload === PASSWORD_RESET_START_PAYLOAD) {
+      await replyWithPasswordReset(ctx, deps, tgUser.id);
       return;
     }
 

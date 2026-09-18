@@ -11,6 +11,7 @@ import { claimAccount, linkExistingAccount } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
 import { nextDestinationQuery, readNextDestination } from '@/lib/next-destination'
 import { readTelegramLaunchInitData } from '@/lib/telegram-launch-params'
+import { SaveCredentialsScreen, type SavedCredentials } from './save-credentials'
 
 // ── Validation (mirrors register-page rules) ─────────────────────────────────
 
@@ -88,6 +89,9 @@ export default function ClaimPage() {
   const initData = launchInitData ?? window.Telegram?.WebApp?.initData ?? ''
   const canLinkExisting = initData.length > 0
   const [mode, setMode] = useState<'claim' | 'login'>('claim')
+  // The login + password just created, for «Сохраните данные для входа».
+  // Component memory only; set only when a NEW password was chosen here.
+  const [saved, setSaved] = useState<SavedCredentials | null>(null)
 
   // Where the user was actually going. StealthLayout forwards it here
   // (`/claim?next=%2Frenew`) because this gate stands between a Mini App
@@ -96,6 +100,18 @@ export default function ClaimPage() {
   // they meet. Finishing it on `/dashboard` spends the deep-link — the
   // notification that carried it is not coming again.
   const nextDestination = readNextDestination()
+
+  // Ahead of the redirects below: the claim that just succeeded is exactly
+  // what makes "already claimed" true, and the details must be seen first.
+  if (saved !== null) {
+    return (
+      <SaveCredentialsScreen
+        login={saved.login}
+        password={saved.password}
+        continueTo={nextDestination ?? '/dashboard'}
+      />
+    )
+  }
 
   // No session → send back through the entry router (which routes to sign-in),
   // still carrying the destination so the bootstrap can restore it.
@@ -151,6 +167,12 @@ export default function ClaimPage() {
       // Refetch the session so StealthLayout sees the linked WebAccount and
       // lets the user through — to where they were going, not to /dashboard.
       await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
+      if (mode === 'claim') {
+        // A password was just CHOSEN: show it before going on. Linking an
+        // existing account used a password the customer already has.
+        setSaved({ login: username, password })
+        return
+      }
       navigate(nextDestination ?? '/dashboard', { replace: true })
     } catch (err: unknown) {
       setSubmitting(false)
@@ -258,6 +280,7 @@ export default function ClaimPage() {
             </label>
             <input
               id="claim-username"
+              name="username"
               type="text"
               autoComplete="username"
               value={username}
@@ -289,8 +312,9 @@ export default function ClaimPage() {
             <div className="relative">
               <input
                 id="claim-password"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
-                autoComplete="new-password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 value={password}
                 onChange={(e) => handlePasswordChange(e.target.value)}
                 placeholder={t('claim.passwordPlaceholder')}

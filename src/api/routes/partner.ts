@@ -7,6 +7,7 @@ import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-
 import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 import { extractSubscriptionLimitCode } from "./payments-errors.js";
+import { readBalanceHoldRefusal } from "./partner-errors.js";
 
 export function createPartnerRouter(deps: {
   adminClient: AdminClient | null;
@@ -48,6 +49,13 @@ export function createPartnerRouter(deps: {
       });
       res.json(result ?? {});
     } catch (e: unknown) {
+      // The balance on hold after a password recovery: forwarded with its code
+      // and end, so the page can say it is temporary and until when.
+      const hold = readBalanceHoldRefusal(e);
+      if (hold !== null) {
+        res.status(400).json(hold);
+        return;
+      }
       // Same capacity gate as gateway checkout (createDraft NEW/ADDITIONAL).
       // Surface the typed code so the SPA shows "limit reached", not a generic
       // balance failure.
@@ -129,6 +137,12 @@ export function createPartnerRouter(deps: {
       });
       res.json(result ?? {});
     } catch (e: unknown) {
+      // The same hold, the same answer as `/partner/pay` above.
+      const hold = readBalanceHoldRefusal(e);
+      if (hold !== null) {
+        res.status(400).json(hold);
+        return;
+      }
       sendSafeError(req, res, e, 400, "Withdrawal request failed", "partner/withdraw");
     }
   });

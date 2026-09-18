@@ -10,6 +10,7 @@ import { SESSION_QUERY_KEY, useSession } from '@/hooks/use-session'
 import { finishExternalSetup, signOut } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
 import { nextDestinationQuery, readNextDestination } from '@/lib/next-destination'
+import { SaveCredentialsScreen, type SavedCredentials } from './save-credentials'
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,32}$/
 
@@ -51,11 +52,24 @@ export default function FinishSetupPage() {
   const [submitting, setSubmitting] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  // The login + password just chosen, for «Сохраните данные для входа».
+  const [saved, setSaved] = useState<SavedCredentials | null>(null)
 
   // Where the user was going before this gate stopped them. StealthLayout
   // forwards it here (`/finish-setup?next=%2Frenew`); dropping it would land a
   // deep-linked user on /dashboard with the link already spent.
   const nextDestination = readNextDestination()
+
+  // Ahead of the redirects below, which the finished setup itself satisfies.
+  if (saved !== null) {
+    return (
+      <SaveCredentialsScreen
+        login={saved.login}
+        password={saved.password}
+        continueTo={nextDestination ?? '/dashboard'}
+      />
+    )
+  }
 
   // No session → back through the entry router, destination still attached.
   if (!isLoading && !isAuthenticated) {
@@ -111,7 +125,7 @@ export default function FinishSetupPage() {
       const passwordHash = await hashPassword(password)
       await finishExternalSetup({ username, passwordHash })
       await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
-      navigate(nextDestination ?? '/dashboard', { replace: true })
+      setSaved({ login: username, password })
     } catch (err: unknown) {
       setSubmitting(false)
       if (err && typeof err === 'object' && 'response' in err) {
@@ -189,6 +203,7 @@ export default function FinishSetupPage() {
             </label>
             <input
               id="finish-username"
+              name="username"
               type="text"
               autoComplete="username"
               value={username}
@@ -214,6 +229,7 @@ export default function FinishSetupPage() {
             <div className="relative">
               <input
                 id="finish-password"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="new-password"
                 value={password}
