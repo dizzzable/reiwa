@@ -20,6 +20,7 @@ import {
 } from "@/lib/api-client";
 import type { EligibleAddOn } from "@/lib/api-client";
 import { PartnerBalanceHoldNotice } from "@/features/partner/partner-balance-hold-notice";
+import { markPushPromptEligible } from "@/features/push-prompt/push-prompt-storage";
 import { balanceHoldRefusalMessage, standingBalanceHold } from "@/lib/partner-balance-hold";
 import { readSessionCheckRefusal } from "@/lib/session-check";
 import { StadiumButton } from "@/components/ui/stadium-button";
@@ -1278,6 +1279,7 @@ function RenewalReview() {
       toast.success(t("renewal.balancePaid"));
       void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
       void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
+      markPushPromptEligible();
       navigate("/dashboard", { replace: true });
     },
     onError: (err) => {

@@ -48,6 +48,7 @@ import {
   subscriptionCarouselItemKey,
 } from "./subscription-lifecycle-policy";
 import { useSubscriptionProvisioning } from "./use-subscription-provisioning";
+import { PushPromptCard } from "@/features/push-prompt/push-prompt-card";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import type { Subscription } from "@/types/api";
 
@@ -433,6 +434,10 @@ export default function DashboardPage() {
               onRenew={() => navigate("/renew")}
             />
           </div>
+
+          {/* Browser push, offered once right after a purchase or a trial.
+              Renders nothing unless every condition in the card holds. */}
+          <PushPromptCard />
 
           {/* Devices — scoped to the selected subscription */}
           {activeSubscriptionId && (

@@ -33,6 +33,7 @@ import { useBranding } from "@/lib/branding-provider";
 import { openExternalUrl } from "@/lib/utils";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import { readPendingCheckout, readPendingCheckoutReturnTo, readPendingCheckoutLabel, clearPendingCheckout } from "@/lib/pending-checkout";
+import { markPushPromptEligible } from "@/features/push-prompt/push-prompt-storage";
 import {
   clearSubscriptionProvisioningReceipt,
   ensureSubscriptionProvisioningReceipt,
@@ -199,6 +200,9 @@ export default function PaymentReturnPage() {
         }
         if (result === "success") {
           clearPendingCheckout(paymentId);
+          // Paid: the dashboard this page hands over to may offer browser push
+          // (a renewal, an upgrade, an add-on — paid in another tab or the Mini App).
+          markPushPromptEligible();
           // Only a real, positive number is worth a sentence. Absent, null, 0
           // and NaN from an older panel all collapse to "say nothing".
           const credited = status.cashbackPoints;

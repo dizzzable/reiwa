@@ -6,7 +6,9 @@
  * Layout:
  *   1. Invite link hero (same component as referrals).
  *   2. Four stat cards: Level | Referrals | Balance | Info.
- *   3. Bottom sheets for details.
+ *   3. The recovery hold on the balance, while it stands.
+ *   4. Bottom sheets for details; «Вывести средства» in the balance sheet opens
+ *      the withdrawal request, and the requests are listed under it.
  */
 
 import { useState } from "react";
@@ -15,9 +17,10 @@ import { Info, Star, Trophy, Users, Wallet } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
-import { getPartnerInfo, getPartnerEarnings, getPartnerWithdrawals } from "@/lib/api-client";
+import { getPartnerInfo, getPartnerEarnings } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
+import { standingBalanceHold } from "@/lib/partner-balance-hold";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,8 +29,22 @@ import { InviteLinkHero } from "../referrals/components/invite-link-hero";
 import { StatCard } from "../referrals/components/stat-card";
 import { PartnerReferralsList } from "./components/partner-referrals-list";
 import { PartnerAdvertisingSection } from "./components/partner-advertising-section";
+import { PartnerWithdrawDialog, withdrawalBlockText } from "./components/partner-withdraw-dialog";
+import { PartnerWithdrawalsList } from "./components/partner-withdrawals-list";
+import { PartnerBalanceHoldNotice } from "./partner-balance-hold-notice";
+import {
+  fetchPartnerWithdrawals,
+  PARTNER_INFO_QUERY_KEY,
+  PARTNER_WITHDRAWALS_QUERY_KEY,
+} from "./partner-queries";
+import { withdrawalBlock } from "./partner-withdraw-policy";
 
-type ActiveSheet = "level" | "referrals" | "balance" | "info" | null;
+type ActiveSheet = "level" | "referrals" | "balance" | "info" | "withdraw" | null;
+
+/** The hold notice on the page itself. */
+const PAGE_BALANCE_HOLD_NOTICE_ID = "partner-page-balance-hold";
+/** Why «Вывести средства» takes no tap; the button points at it. */
+const WITHDRAW_BLOCK_NOTICE_ID = "partner-withdraw-block";
 
 export default function PartnerPage() {
   const { t } = useTranslation();
@@ -37,7 +54,7 @@ export default function PartnerPage() {
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
   const { data: partnerInfo, isLoading } = useQuery({
-    queryKey: ["partner", "info"],
+    queryKey: PARTNER_INFO_QUERY_KEY,
     queryFn: getPartnerInfo,
     staleTime: 30_000,
   });
@@ -48,10 +65,25 @@ export default function PartnerPage() {
     enabled: activeSheet === "balance",
   });
 
+  // Read while the money is on screen: the balance sheet lists the requests,
+  // and the withdrawal dialog compares against this list when an answer is lost.
+  const { data: withdrawals } = useQuery({
+    queryKey: PARTNER_WITHDRAWALS_QUERY_KEY,
+    queryFn: fetchPartnerWithdrawals,
+    enabled: activeSheet === "balance" || activeSheet === "withdraw",
+  });
+
   const info = partnerInfo as any;
   const balance = info?.balance ?? 0;
   const totalEarned = info?.totalEarned ?? 0;
   const totalWithdrawn = info?.totalWithdrawn ?? 0;
+
+  // After a password recovery by subscription link nothing leaves the balance
+  // for a while. The page says so where the balance is, and «Вывести средства»
+  // stays in view but takes no tap, pointing at the reason — the hold with its
+  // end, or why else no request can be made (`withdrawalBlock`).
+  const balanceHold = standingBalanceHold(info?.balanceHold);
+  const withdrawBlock = withdrawalBlock(info);
 
   // Referral points (`User.points`) the partner earned BEFORE the
   // appointment. A DIFFERENT POT from `balance`: points are a dimensionless
@@ -148,6 +180,14 @@ export default function PartnerPage() {
           onClick={() => setActiveSheet("info")}
         />
       </div>
+
+      {/* The balance on hold after a password recovery, while it stands: on
+          the page itself, not only behind the balance card. */}
+      {balanceHold && (
+        <div className="mx-5 mt-5">
+          <PartnerBalanceHoldNotice hold={balanceHold} id={PAGE_BALANCE_HOLD_NOTICE_ID} />
+        </div>
+      )}
 
       {/* Referral points carried over from before the partner appointment —
           its own row, in its own unit, and the only remaining entry point to
@@ -253,14 +293,29 @@ export default function PartnerPage() {
               </p>
             </div>
 
-            {/* Withdraw button */}
+            {/* Withdraw button — visible whatever holds it back, and saying what */}
             <Button
               className="w-full"
               style={{ backgroundColor: "var(--brand-primary)", color: "var(--brand-primary-fg)" }}
-              disabled={balance <= 0}
+              disabled={withdrawBlock !== null}
+              aria-describedby={withdrawBlock !== null ? WITHDRAW_BLOCK_NOTICE_ID : undefined}
+              onClick={() => setActiveSheet("withdraw")}
+              data-testid="partner-withdraw-open"
             >
               {t("partner.withdraw")}
             </Button>
+            {withdrawBlock?.kind === "hold" ? (
+              <PartnerBalanceHoldNotice hold={withdrawBlock.hold} id={WITHDRAW_BLOCK_NOTICE_ID} />
+            ) : withdrawBlock !== null ? (
+              <p id={WITHDRAW_BLOCK_NOTICE_ID} className="text-xs text-[var(--brand-muted-foreground)]">
+                {withdrawalBlockText(withdrawBlock, t)}
+              </p>
+            ) : null}
+
+            <PartnerWithdrawalsList
+              withdrawals={withdrawals ?? []}
+              currency={info?.balanceCurrency ?? null}
+            />
 
             {/* Recent earnings */}
             {earnings.length > 0 && (
@@ -286,6 +341,15 @@ export default function PartnerPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Withdrawal request — opened by «Вывести средства»; «Готово» comes
+          back to the balance, where the new request is listed. */}
+      <PartnerWithdrawDialog
+        open={activeSheet === "withdraw"}
+        onOpenChange={(open) => !open && setActiveSheet(null)}
+        info={partnerInfo ?? null}
+        onFinished={() => setActiveSheet("balance")}
+      />
 
       {/* Info Sheet */}
       <Sheet open={activeSheet === "info"} onOpenChange={(open) => !open && setActiveSheet(null)}>

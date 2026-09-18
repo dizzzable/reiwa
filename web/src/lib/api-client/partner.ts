@@ -94,3 +94,113 @@ export const createWithdrawal = (data: {
   requisites: string;
 }) =>
   apiClient.post("/partner/withdraw", data).then((r) => r.data);
+
+// ── Withdrawals: what the panel takes and what it answers ───────────────────
+//
+// Read from the panel's own code (`InternalPartnerController.withdraw` and
+// `PartnersService.createWithdrawalRequest`), because the route declares no
+// DTO and the rules exist nowhere else:
+//   - `amount` is minor units of the balance currency, a positive integer, at
+//     most the balance. The debit and the check are one statement, so a request
+//     for the whole balance lands it on exactly zero.
+//   - `method` and `requisites` are free text the panel stores as they come; the
+//     operator reads both in «Выплаты партнёрам» and pays by hand. No list of
+//     methods, no length limit, no format check exists on that side.
+//   - There is NO minimum and NO "one pending request at a time". The operator's
+//     «Минимальная сумма вывода» setting is stored but never enforced, and never
+//     sent to the cabinet, so no screen here can state it.
+//   - Several refusals come back as a 2xx body `{ error }` rather than an HTTP
+//     error: `PARTNER_PROGRAM_INVITED_ONLY`, `Partner not found`, `User not found`.
+//     A caller that only catches would report each of them as a created request.
+//   - Every other refusal reaches the browser as a bare 400 (the cabinet strips
+//     the panel's sentence) — except the recovery hold, forwarded with its code
+//     (`partner-balance-hold.ts`).
+
+/** A withdrawal request as `GET /partner/withdrawals` lists it. */
+export interface PartnerWithdrawal {
+  readonly id: string;
+  /** Minor units of the balance currency. */
+  readonly amount: number;
+  /**
+   * `PENDING` → `COMPLETED` (paid) or `REJECTED` (money back on the balance);
+   * `CANCELED` exists in the panel's vocabulary but nothing sets it today. Kept
+   * a string: a status this build does not know is shown as it came.
+   */
+  readonly status: string;
+  readonly method: string;
+  readonly requisites: string;
+  /** The operator's note, usually the reason for a rejection. */
+  readonly adminComment: string | null;
+  readonly processedAt: string | null;
+  readonly createdAt: string;
+}
+
+/** The payout methods this cabinet offers, sent to the panel exactly as written here. */
+export const PARTNER_WITHDRAWAL_METHODS = ["card", "sbp", "crypto", "other"] as const;
+export type PartnerWithdrawalMethod = (typeof PARTNER_WITHDRAWAL_METHODS)[number];
+
+/**
+ * A cabinet-side cap on the requisites, not a panel rule (the panel has none):
+ * the operator's own comment on a withdrawal stops at the same 500.
+ */
+export const PARTNER_WITHDRAWAL_REQUISITES_MAX_LENGTH = 500;
+
+/** Why the panel refused a request it answered with a 2xx `{ error }` body. */
+export type PartnerWithdrawalRefusalCode = "INVITED_ONLY" | "NOT_A_PARTNER" | "UNKNOWN";
+
+export type PartnerWithdrawalAnswer =
+  | { readonly kind: "created"; readonly withdrawal: PartnerWithdrawal }
+  | { readonly kind: "refused"; readonly code: PartnerWithdrawalRefusalCode };
+
+/** One list entry, or `null` when the value is not a withdrawal at all. */
+export function readPartnerWithdrawal(value: unknown): PartnerWithdrawal | null {
+  if (typeof value !== "object" || value === null) return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row["id"] !== "string" || row["id"].length === 0) return null;
+  const amount = row["amount"];
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return null;
+  if (typeof row["status"] !== "string" || row["status"].length === 0) return null;
+  const text = (key: string): string => (typeof row[key] === "string" ? (row[key] as string) : "");
+  const optional = (key: string): string | null =>
+    typeof row[key] === "string" && (row[key] as string).length > 0 ? (row[key] as string) : null;
+  return {
+    id: row["id"],
+    amount,
+    status: row["status"],
+    method: text("method"),
+    requisites: text("requisites"),
+    adminComment: optional("adminComment"),
+    processedAt: optional("processedAt"),
+    createdAt: text("createdAt"),
+  };
+}
+
+/** The list from `GET /partner/withdrawals`, newest first; anything unreadable is dropped. */
+export function readPartnerWithdrawals(data: unknown): PartnerWithdrawal[] {
+  if (typeof data !== "object" || data === null) return [];
+  const list = (data as { withdrawals?: unknown }).withdrawals;
+  if (!Array.isArray(list)) return [];
+  const rows: PartnerWithdrawal[] = [];
+  for (const entry of list) {
+    const row = readPartnerWithdrawal(entry);
+    if (row !== null) rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * What a 2xx answer to `POST /partner/withdraw` means. Only a body that IS a
+ * withdrawal is a created request: `{ error }` is a refusal, and so is anything
+ * else (`{}` when the cabinet has no panel to ask).
+ */
+export function readWithdrawalAnswer(data: unknown): PartnerWithdrawalAnswer {
+  const withdrawal = readPartnerWithdrawal(data);
+  if (withdrawal !== null) return { kind: "created", withdrawal };
+  const error =
+    typeof data === "object" && data !== null ? (data as { error?: unknown }).error : undefined;
+  if (error === "PARTNER_PROGRAM_INVITED_ONLY") return { kind: "refused", code: "INVITED_ONLY" };
+  if (error === "Partner not found" || error === "User not found") {
+    return { kind: "refused", code: "NOT_A_PARTNER" };
+  }
+  return { kind: "refused", code: "UNKNOWN" };
+}

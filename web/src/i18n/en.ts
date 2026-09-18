@@ -652,6 +652,82 @@ export const en: RuDict = {
       EXPIRED: 'Expired',
     },
   },
+  partnerWithdraw: {
+    title: 'Withdraw funds',
+    available: 'Balance: {{amount}}',
+    amountLabel: 'Amount',
+    amountLimits: 'You can withdraw from {{min}} to {{max}} — no more than your current balance.',
+    amountAll: 'Whole balance',
+    methodLabel: 'Payout method',
+    methods: {
+      card: 'Bank card',
+      sbp: 'SBP (Faster Payments)',
+      crypto: 'Cryptocurrency',
+      other: 'Another method',
+    },
+    requisitesLabel: {
+      card: 'Card number and bank',
+      sbp: 'Phone number and recipient’s bank',
+      crypto: 'Coin, network and wallet address',
+      other: 'Where to send the money',
+    },
+    requisitesPlaceholder: {
+      card: '0000 0000 0000 0000, bank',
+      sbp: '+7 900 000-00-00, bank',
+      crypto: 'USDT, TRC-20, address',
+      other: 'Describe where and how to send it',
+    },
+    requisitesHint: 'The administrator sends the money using these details, so check them carefully.',
+    howItWorks:
+      'An administrator reviews the request and sends the money manually. The amount leaves your balance right away and comes back if the request is rejected.',
+    next: 'Next',
+    confirmTitle: 'Check your request',
+    rowAmount: 'Amount',
+    rowMethod: 'Method',
+    rowRequisites: 'Details',
+    rowStatus: 'Status',
+    rowCreated: 'Created',
+    confirmNote:
+      'Once you send it, {{amount}} leaves your balance and waits for the payout. If the administrator rejects the request, the money comes back to your balance.',
+    submit: 'Send request',
+    edit: 'Change',
+    doneTitle: 'Request sent',
+    doneBody:
+      'An administrator will review it and send the money manually. You can follow its status under “Balance” on this page.',
+    done: 'Done',
+    errors: {
+      amountRequired: 'Enter an amount.',
+      amountInvalid: 'Enter the amount as a number, for example 1500 or 1500.50.',
+      amountTooSmall: 'The minimum is {{min}}.',
+      amountTooLarge: 'That is more than your balance. Available: {{max}}.',
+      requisitesRequired: 'Say where to send the money.',
+      requisitesTooLong: 'Too long — {{max}} characters at most.',
+    },
+    refused: {
+      insufficient: 'Your balance is now {{balance}}, which is less than the request. Lower the amount.',
+      inactive: 'Your partner account is switched off, so you can’t withdraw right now. Please contact support.',
+      invitedOnly:
+        'Withdrawals are unavailable: the partner programme is currently open only to invited users. Please contact support.',
+      notPartner: 'You are no longer in the partner programme, so withdrawals are unavailable.',
+      failed:
+        'The request could not be sent. Before trying again, check the list of requests under “Balance”: if the new request is there, don’t send it again.',
+    },
+    empty: 'There is nothing on your balance to withdraw yet.',
+    history: {
+      title: 'Withdrawal requests',
+      statuses: {
+        PENDING: 'Under review',
+        COMPLETED: 'Paid',
+        REJECTED: 'Rejected',
+        CANCELED: 'Cancelled',
+      },
+      unknownStatus: 'Status: {{status}}',
+      requested: 'Requested {{date}}',
+      processed: 'Processed {{date}}',
+      comment: 'Administrator’s comment: {{comment}}',
+      refunded: 'The amount is back on your balance.',
+    },
+  },
   settings: {
     title: 'Settings',
     profile: 'Profile',
@@ -1463,6 +1539,17 @@ export const en: RuDict = {
     pushEnableFailed: 'Failed to enable notifications',
     pushEnabled: 'Notifications enabled',
     pushDisabledLocally: 'Notifications disabled',
+  },
+  pushPrompt: {
+    text: 'We’ll remind you to renew and help if you can’t connect',
+    enable: 'Turn on',
+    later: 'Not now',
+    enabled: 'Notifications are on',
+    blocked: 'Your browser has blocked notifications for this site. You can allow them in the browser settings.',
+    notEnabled:
+      'Notifications are off. You can turn them on later in Settings → Notifications → Notification settings.',
+    failed:
+      'Couldn’t turn on notifications. Try again later in Settings → Notifications → Notification settings.',
   },
   faq: {
     q1: 'How to connect VPN?',

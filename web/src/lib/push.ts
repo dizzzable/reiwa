@@ -81,6 +81,21 @@ export async function getCurrentSubscription(): Promise<PushSubscription | null>
 }
 
 /**
+ * "Is this an iPhone, iPad or iPod?" — whatever browser it is and whatever the
+ * user agent pretends. iPadOS 13+ sends a desktop Mac user agent in every
+ * browser, so `detectPushSupport()`'s `iPhone|iPad|iPod` test misses every
+ * iPad; the touch points tell them apart (no Mac has a touch screen). The same
+ * test `detectIosSafari()` in `hooks/use-install-prompt.ts` makes, without its
+ * "and it is Safari" half: for push the browser does not matter, because on
+ * iOS and iPadOS web push works only in a web app added to the Home Screen.
+ */
+export function isAppleMobileDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  return /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1)
+}
+
+/**
  * Request permission + subscribe. Returns a structured outcome so
  * the UI can render specific messages per failure mode.
  */
@@ -104,6 +119,36 @@ export async function subscribeToPush(): Promise<PushSubscribeOutcome> {
     return { ok: false, reason: 'no-public-key' }
   }
 
+  return subscribeWithGrantedPermission(publicKey)
+}
+
+/**
+ * Request permission + subscribe, with the VAPID key already in hand.
+ *
+ * For a button that asks for permission in the SAME tap: the permission
+ * request is the first thing awaited, so it runs inside the tap's user
+ * activation — a permission request made after an await on the network is
+ * made outside it, and browsers then refuse it or never show it.
+ * `subscribeToPush()` asks first and learns only afterwards whether the install
+ * has a key at all, so a customer could grant permission to nothing. Here the
+ * caller fetched the key BEFORE it showed the button and hands it in; nothing
+ * between the tap and `Notification.requestPermission()` waits.
+ */
+export async function subscribeToPushWithKey(publicKey: string): Promise<PushSubscribeOutcome> {
+  // Synchronous checks only above the permission request.
+  if (publicKey.length === 0) return { ok: false, reason: 'no-public-key' }
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return { ok: false, reason: 'unsupported-browser' }
+  }
+  const permission = await Notification.requestPermission()
+  if (permission !== 'granted') {
+    return { ok: false, reason: 'permission-denied' }
+  }
+  return subscribeWithGrantedPermission(publicKey)
+}
+
+/** Steps 3 and 4: once permission is granted and the key is known. */
+async function subscribeWithGrantedPermission(publicKey: string): Promise<PushSubscribeOutcome> {
   // 3. Subscribe. `userVisibleOnly: true` is the only mode browsers
   //    accept — silent pushes are forbidden by all major engines.
   const reg = await navigator.serviceWorker.ready
