@@ -82,6 +82,24 @@ describe('client-errors route', () => {
     });
   });
 
+  it('forwards the page address without any query value, so a sign-in token never leaves', async () => {
+    // A tab still running an older cabinet bundle sends `pathname + search`
+    // whole, and a bot sign-in link keeps its token in the address until the
+    // home page has exchanged it.
+    const token = '5f'.repeat(32);
+    const report = vi.fn(async (_report: unknown) => ({ ok: true }));
+    const status = await post(makeApp(report), '/api/v1/client-errors', {
+      message: 'TypeError: boom',
+      url: `/renew?utm_source=tg&signin=${token}&utm_source=again`,
+    });
+    expect(status).toBe(204);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(report).toHaveBeenCalledTimes(1);
+    const ctx = (report.mock.calls[0][0] as { context: Record<string, unknown> }).context;
+    expect(ctx['url']).toBe('/renew?utm_source&signin');
+    expect(JSON.stringify(report.mock.calls[0][0])).not.toContain(token);
+  });
+
   it('rejects an empty message with 400 and does not report', async () => {
     const report = vi.fn(async (_report: unknown) => ({ ok: true }));
     const status = await post(makeApp(report), '/api/v1/client-errors', { message: '   ' });

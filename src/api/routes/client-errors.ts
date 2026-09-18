@@ -50,8 +50,8 @@ export function createClientErrorsRouter(deps: { adminClient: AdminClient | null
       scope: `web.${kind}`,
       surface,
     };
-    const url = str("url");
-    if (url !== undefined) context["url"] = url.slice(0, 512);
+    const url = addressWithoutValues(str("url"));
+    if (url !== undefined) context["url"] = url;
     const userAgent = str("userAgent") ?? (typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined);
     if (userAgent !== undefined) context["userAgent"] = userAgent.slice(0, 512);
     if (componentStack !== undefined) context["componentStack"] = componentStack.slice(0, 4000);
@@ -85,6 +85,30 @@ export function createClientErrorsRouter(deps: { adminClient: AdminClient | null
   });
 
   return router;
+}
+
+/**
+ * The page address a report names: its path and the NAMES of its query
+ * parameters, never their values, at most 512 characters.
+ *
+ * A value can be a live credential — a bot sign-in link keeps `signin=<token>`
+ * in the address bar until the home page has exchanged it — and this report is
+ * logged here, then stored in the panel's audit log and sent to the developer's
+ * Telegram. The cabinet bundle already sends the address this way; this holds
+ * for a tab still running an older bundle, which sends `pathname + search`
+ * whole.
+ */
+function addressWithoutValues(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw, "http://cabinet.invalid");
+  } catch {
+    return undefined;
+  }
+  const names = [...new Set(parsed.searchParams.keys())];
+  const address = names.length > 0 ? `${parsed.pathname}?${names.join("&")}` : parsed.pathname;
+  return address.slice(0, 512);
 }
 
 function positiveInteger(value: unknown): number | undefined {

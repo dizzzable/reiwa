@@ -122,6 +122,23 @@ export interface ClientErrorInput {
   readonly errorName?: string;
 }
 
+/**
+ * The page address a report carries: its path and the NAMES of its query
+ * parameters, never their values.
+ *
+ * A value can be a live credential. A bot sign-in link opens the cabinet with
+ * `signin=<token>`, and the token stays in the address bar until the home page
+ * has exchanged it — long enough, on a slow network, for an error to be
+ * reported. And a report does not stay in the browser: the cabinet's backend
+ * logs it, and it lands in the panel's audit log and in the developer's
+ * Telegram. The names still say which kind of address broke. (The backend
+ * strips values as well, for a tab still running an older bundle.)
+ */
+export function addressForReport(pathname: string, search: string): string {
+  const names = [...new Set(new URLSearchParams(search).keys())];
+  return names.length > 0 ? `${pathname}?${names.join('&')}` : pathname;
+}
+
 export function reportClientError(input: ClientErrorInput): void {
   try {
     const message = (input.message || '').toString().slice(0, 2000);
@@ -170,7 +187,7 @@ export function reportClientError(input: ClientErrorInput): void {
       ...(errorName ? { errorName } : {}),
       url:
         typeof location !== 'undefined'
-          ? `${location.pathname}${location.search}`
+          ? addressForReport(location.pathname, location.search)
           : undefined,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
     });
