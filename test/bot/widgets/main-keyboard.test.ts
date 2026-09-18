@@ -194,3 +194,103 @@ describe('buildMainKeyboard', () => {
     expect(rows[1]).toHaveLength(1);
   });
 });
+
+/**
+ * The one-time sign-in token is a live session credential for five minutes:
+ * whoever posts it to `/api/v1/auth/bot-signin` is signed in as this customer.
+ * It used to be stamped onto EVERY url button — an operator's link to a news
+ * channel or a partner site received it on every press, and since the customer
+ * went there instead of to the cabinet, nothing ever spent it.
+ */
+describe('buildMainKeyboard — where the sign-in token goes', () => {
+  const TOKEN = 'a'.repeat(64);
+
+  function urlButton(id: string, target: string | null): BotMenuButton {
+    return { ...btn({ id, label: id, onePerRow: true }), actionType: 'url', actionTarget: target };
+  }
+
+  function urlsOf(buttons: BotMenuButton[], publicWebUrl: string | null = 'https://cabinet.example'): string[] {
+    const kb = buildMainKeyboard({
+      buttons,
+      miniAppUrl: null,
+      publicWebUrl,
+      lang: 'ru',
+      translator: passthroughTranslator,
+      signinToken: TOKEN,
+    });
+    return kb.inline_keyboard.flat().map((button) => (button as { url?: string }).url ?? '');
+  }
+
+  it('signs the customer in on the cabinet button, as before', () => {
+    expect(urlsOf([btn({ id: 'cabinet', label: 'Cabinet' })])).toEqual([
+      `https://cabinet.example/?signin=${TOKEN}`,
+    ]);
+  });
+
+  it('carries it onto a cabinet page other than the root, relative or absolute', () => {
+    expect(
+      urlsOf([
+        urlButton('plans', '/plans'),
+        urlButton('renew', 'https://cabinet.example/renew?utm_source=tg'),
+      ]),
+    ).toEqual([
+      `https://cabinet.example/plans?signin=${TOKEN}`,
+      `https://cabinet.example/renew?utm_source=tg&signin=${TOKEN}`,
+    ]);
+  });
+
+  it('never hands it to another site', () => {
+    const urls = urlsOf([
+      urlButton('channel', 'https://t.me/cabinet_news'),
+      urlButton('partner', 'https://partner.example/offer'),
+      // The same host on another port or scheme is another origin.
+      urlButton('port', 'https://cabinet.example:8443/'),
+      urlButton('lookalike', 'https://cabinet.example.evil.example/'),
+    ]);
+
+    expect(urls).toEqual([
+      'https://t.me/cabinet_news',
+      'https://partner.example/offer',
+      'https://cabinet.example:8443/',
+      'https://cabinet.example.evil.example/',
+    ]);
+    for (const url of urls) expect(url).not.toContain(TOKEN);
+  });
+
+  it('compares addresses as a browser reads them, so only another spelling of the HOST loses it', () => {
+    // The same origin however it is spelt: letter case and the default port.
+    // The button opens the address as a browser writes it back.
+    expect(
+      urlsOf([
+        urlButton('upper', 'https://CABINET.example/renew'),
+        urlButton('port443', 'https://cabinet.example:443/plans'),
+      ]),
+    ).toEqual([
+      `https://cabinet.example/renew?signin=${TOKEN}`,
+      `https://cabinet.example/plans?signin=${TOKEN}`,
+    ]);
+
+    // Another origin, though it may be the same cabinet: the bot cannot tell a
+    // mirror from a landing page on another host, so these open without it and
+    // the customer signs in there by hand.
+    const other = urlsOf([
+      urlButton('www', 'https://www.cabinet.example/'),
+      urlButton('trailing-dot', 'https://cabinet.example./'),
+      urlButton('plain-http', 'http://cabinet.example/'),
+      urlButton('mirror', 'https://cabinet-mirror.example/'),
+    ]);
+    expect(other).toEqual([
+      'https://www.cabinet.example/',
+      'https://cabinet.example./',
+      'http://cabinet.example/',
+      'https://cabinet-mirror.example/',
+    ]);
+    for (const url of other) expect(url).not.toContain(TOKEN);
+  });
+
+  it('hands it to nobody when there is no cabinet address to compare with', () => {
+    expect(urlsOf([urlButton('site', 'https://cabinet.example/')], null)).toEqual([
+      'https://cabinet.example/',
+    ]);
+  });
+});

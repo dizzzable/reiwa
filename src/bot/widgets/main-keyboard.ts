@@ -173,10 +173,12 @@ export interface MainKeyboardOptions {
    */
   readonly supportUrl?: string | null;
   /**
-   * One-time bot-signin token for URL-kind buttons. When set, the
-   * URL gets a `?signin=<token>` query parameter so the SPA's
-   * `WebHomePage` recognises the magic-link flow and authenticates
-   * the user without sending them through `/sign-in`.
+   * One-time bot-signin token for URL-kind buttons that open the cabinet
+   * (the origin of `publicWebUrl`). When set, such a URL gets a
+   * `?signin=<token>` query parameter so the SPA recognises the
+   * magic-link flow on whatever path the button opens and authenticates
+   * the user without sending them through `/sign-in`. Buttons on any other
+   * origin never carry it — see `attachSigninTokenToCabinetUrl`.
    *
    * `null` / `undefined` is the legacy path: the URL is opened raw,
    * SPA falls through to `/sign-in` if no cookie exists. This is the
@@ -281,6 +283,55 @@ export function attachSigninTokenToUrl(url: string, token: string | null | undef
 }
 
 /**
+ * The URL a keyboard button opens, carrying the sign-in token ONLY when that
+ * URL is the cabinet.
+ *
+ * ── Why the origin is checked ──────────────────────────────────────────────
+ *
+ * The token is a credential, not a tracking tag: whoever presents it to
+ * `/api/v1/auth/bot-signin` within its five minutes gets a cabinet session for
+ * this customer — subscription links, payment methods, everything. And an
+ * operator's `url` button can point anywhere: a news channel, a review site, a
+ * partner. Every one of those used to receive `?signin=<token>` on every press,
+ * in its access log and in anything it forwards the address to, and because
+ * the customer went THERE rather than to the cabinet, nothing ever spent the
+ * token before it expired. The pages already refuse to post this keyboard into
+ * a group for the same reason (`isOwnPrivateChat`); the URL was the hole left.
+ *
+ * "The cabinet" is the origin of `publicWebUrl` — scheme, host and port, as
+ * `URL` normalises them (letter case, a default port, a Cyrillic domain in
+ * either spelling). Everything else is another origin: `www.` in front of the
+ * cabinet's host, a trailing dot, `http://`, another port, a mirror domain.
+ * Those may well serve the same cabinet — and they may just as well be a
+ * landing page on another host with analytics that records every address, and
+ * the bot cannot tell which. Such a button, or one whose address does not
+ * parse, opens as the operator wrote it WITHOUT a token, and the customer has
+ * to sign in there by hand: somebody who arrived through Telegram has no
+ * password, so only the site's other sign-in options are left to them. A lost
+ * convenience, never a leaked session — and the operator's fix is to write the
+ * button with the cabinet's own address. With no `publicWebUrl` there is
+ * nothing to compare against, so no token leaves at all.
+ */
+export function attachSigninTokenToCabinetUrl(
+  url: string,
+  token: string | null | undefined,
+  cabinetUrl: string | null | undefined,
+): string {
+  if (token === null || token === undefined || token.length === 0) return url;
+  if (!isSameOrigin(url, cabinetUrl)) return url;
+  return attachSigninTokenToUrl(url, token);
+}
+
+function isSameOrigin(url: string, cabinetUrl: string | null | undefined): boolean {
+  if (cabinetUrl === null || cabinetUrl === undefined || cabinetUrl.length === 0) return false;
+  try {
+    return new URL(url).origin === new URL(cabinetUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * STEALTHNET-style keyboard builder. Walks visible buttons in order,
  * places each on its own row when `onePerRow=true` or pairs them when
  * `onePerRow=false` (max 2 per row).
@@ -370,10 +421,11 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
         : fallbackUrl;
       if (!baseUrl) continue;
       // Magic-link: stamp `?signin=<token>` so the SPA can complete
-      // the auth handshake without bouncing the user through /sign-in.
-      // Only applied to URL-kind buttons because they're the only
-      // ones whose target is the cabinet domain we control.
-      const finalUrl = attachSigninTokenToUrl(baseUrl, signinToken);
+      // the auth handshake without bouncing the user through /sign-in —
+      // and only onto the cabinet's own origin. An operator's `url`
+      // button may point at any site, and the token is a live session
+      // credential; see `attachSigninTokenToCabinetUrl`.
+      const finalUrl = attachSigninTokenToCabinetUrl(baseUrl, signinToken, publicWebUrl);
       closeRowIfNeeded(btn.onePerRow);
       kb.url({ text: label, ...buttonExtras }, finalUrl);
       placed = true;

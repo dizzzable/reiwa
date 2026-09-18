@@ -13,6 +13,52 @@ import { LANDING_QUERY_KEY } from '@/features/landing/landing-page'
 import { parseLandingPayload } from '@/features/landing/landing-schema'
 import { detectTelegramInitData } from './telegram-launch'
 import { keepQuery } from '@/lib/keep-query'
+import { SIGNIN_TOKEN_PARAM, isSigninTokenShape } from '@/lib/magic-link'
+import { readNextDestination } from '@/lib/next-destination'
+
+/**
+ * Puts `params` back into the address bar without a navigation.
+ *
+ * The router's own history state is carried over, not replaced with `{}`: it
+ * holds the entry's index, and without it every later navigation records
+ * `idx: NaN` — `useSafeBack` then reads no history at all, and each back arrow
+ * in the cabinet jumps to its fallback page instead of the page before, for the
+ * rest of the visit.
+ */
+function replaceSearch(params: URLSearchParams): void {
+  const search = params.toString()
+  window.history.replaceState(
+    window.history.state,
+    '',
+    window.location.pathname + (search.length > 0 ? `?${search}` : ''),
+  )
+}
+
+/**
+ * This address's validated `?next=`, removed from the address bar as it is
+ * taken — or `null`.
+ *
+ * Removed because the navigation that follows carries `next` along with the
+ * other acquisition parameters (`keepQuery`): left in place, the page it leads
+ * to would open as `/renew?next=%2Frenew`, and a gate in the protected shell
+ * would wrap that into a `next` of its own.
+ *
+ * A `next` that leads back to this page is no destination: navigating from `/`
+ * to `/` re-renders this page without re-running it, and the visitor would sit
+ * on the splash.
+ */
+function takeNextDestination(): string | null {
+  const destination = readNextDestination()
+  const params = new URLSearchParams(window.location.search)
+  if (params.has('next')) {
+    // A value that failed validation goes too: it is not followed, and it must
+    // not ride along to the default page either.
+    params.delete('next')
+    replaceSearch(params)
+  }
+  if (destination === null) return null
+  return new URL(destination, window.location.origin).pathname === '/' ? null : destination
+}
 
 /**
  * WebHomePage — entry point for browser users (`/`).
@@ -26,10 +72,12 @@ import { keepQuery } from '@/lib/keep-query'
  *   1. **Magic-link from bot**: when the URL carries `?signin=<token>`,
  *      exchange it for a real WebSession via the BFF, strip the param
  *      from the address bar (so a refresh doesn't replay it) and push
- *      to `/dashboard`. Token is single-use; the strip prevents leaking
- *      it in the browser history when the user shares the page.
+ *      to the page in `?next=` — where `MagicLinkHandoff` records a link
+ *      that was aimed at another cabinet page — or `/dashboard`. Token is
+ *      single-use; the strip prevents leaking it in the browser history
+ *      when the user shares the page.
  *   2. **Existing cookie**: probe `GET /api/v1/session` and route to
- *      `/dashboard` on success.
+ *      `?next=` or `/dashboard` on success.
  *   3. **No session**: route to the landing when the operator published one,
  *      else `/sign-in`.
  *
@@ -83,36 +131,52 @@ export default function WebHomePage() {
       }
 
       // Step 1 — magic-link consume (when present).
+      //
+      // A link the bot aimed at another cabinet page arrives here too, handed
+      // over by `MagicLinkHandoff` with that page in `next` — this is the one
+      // place the token is spent, so the page it was going to is where a
+      // successful sign-in continues to.
       const params = new URLSearchParams(window.location.search)
-      const signinToken = params.get('signin')
-      if (signinToken !== null && signinToken.length === 64 && /^[a-f0-9]+$/i.test(signinToken)) {
+      const signinToken = params.get(SIGNIN_TOKEN_PARAM)
+      if (isSigninTokenShape(signinToken)) {
         setStatusKey('signin')
         try {
           const result = await botSignin(signinToken)
           // Strip the `?signin=` param either way: success means cookie
           // is set, failure means the token was bad and replays will
           // keep failing — leaving it in the URL just adds noise.
-          params.delete('signin')
-          const cleanedSearch = params.toString()
-          const cleanedUrl =
-            window.location.pathname + (cleanedSearch.length > 0 ? `?${cleanedSearch}` : '')
-          window.history.replaceState({}, '', cleanedUrl)
+          params.delete(SIGNIN_TOKEN_PARAM)
+          replaceSearch(params)
           if (result.success) {
-            // Pre-warm the session cache so /dashboard doesn't show a
-            // skeleton on first paint.
-            queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
-            navigate(keepQuery(result.redirectUrl ?? '/dashboard'), { replace: true })
+            // The new session is in the cache BEFORE the navigation, not on its
+            // way. The app root has already asked for the session on this mount
+            // and cached "none"; a navigation that only invalidated it reached
+            // the protected shell while that "none" was still the answer, and
+            // the shell sent the customer who had just signed in round through
+            // `/bootstrap` and back here — another wait for the Telegram SDK a
+            // plain browser never loads.
+            //
+            // Cancelled first: that root ask is often still in flight, sent
+            // before the cookie existed, and a fetch that joined it would be
+            // handed its "none".
+            await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY })
+            await queryClient.fetchQuery({
+              queryKey: SESSION_QUERY_KEY,
+              queryFn: fetchSessionOrNull,
+              staleTime: 0,
+              retry: false,
+            })
+            navigate(keepQuery(takeNextDestination() ?? result.redirectUrl ?? '/dashboard'), {
+              replace: true,
+            })
             return
           }
         } catch {
           // Bad / expired token. Strip the param and fall through to
           // the standard cookie probe. /sign-in will surface the
           // generic `expired link` hint.
-          params.delete('signin')
-          const cleanedSearch = params.toString()
-          const cleanedUrl =
-            window.location.pathname + (cleanedSearch.length > 0 ? `?${cleanedSearch}` : '')
-          window.history.replaceState({}, '', cleanedUrl)
+          params.delete(SIGNIN_TOKEN_PARAM)
+          replaceSearch(params)
         }
       }
 
@@ -140,7 +204,10 @@ export default function WebHomePage() {
           retry: false,
         })
         if (session) {
-          navigate(keepQuery('/dashboard'), { replace: true })
+          // Where a link was going, when one says so: an expired bot link to
+          // `/renew` opened by somebody who is still signed in belongs on
+          // `/renew`, not on the default page.
+          navigate(keepQuery(takeNextDestination() ?? '/dashboard'), { replace: true })
           return
         }
       } catch {

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation, useParams } from "react-router";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
+import { MagicLinkHandoff } from "@/features/auth/magic-link-handoff";
 import { ChannelGate } from "@/features/channel-gate/channel-gate";
 import { useAdAttribution } from "@/hooks/use-ad-attribution";
 import { useDeviceSignals } from "@/hooks/use-device-signals";
@@ -123,6 +124,10 @@ export default function App() {
           `features/channel-gate/channel-gate.tsx` for the rules and for why
           each of those routes is exempt. */}
       <ChannelGate fallback={<PageLoader />}>
+        {/* A bot sign-in link (`?signin=`) on any path but `/` is handed to `/`
+            before a route can redirect it away — the home page is the one place
+            that spends the token. See `lib/magic-link.ts`. */}
+        <MagicLinkHandoff>
         <Routes>
           {/* Entry points */}
           <Route path="/" element={<WebHomePage />} />
@@ -185,8 +190,14 @@ export default function App() {
 
           {/* Unknown paths fall through to the web home which routes the
               user to /sign-in or /dashboard depending on cookie state. */}
-          <Route path="*" element={<WebHomePage />} />
+          {/* KEYED, so it is a page of its own. Without the key React keeps the
+              `/` route's instance when a navigation lands here — same component,
+              same place — and the page, which decides once per mount, sat on its
+              splash: a bot sign-in link to a path with no route went `/` →
+              sign-in → here and never moved again. */}
+          <Route path="*" element={<WebHomePage key="catch-all" />} />
         </Routes>
+        </MagicLinkHandoff>
       </ChannelGate>
     </Suspense>
   );

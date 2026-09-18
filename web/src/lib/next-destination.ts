@@ -17,9 +17,24 @@
  * route — so `next` must start with exactly one `/`.
  */
 
+/**
+ * A backslash, a space, or an ASCII control character.
+ *
+ * Browsers parse a path as a URL, and a URL parser discards tabs and newlines
+ * and reads `\` as `/`: `/<TAB>/evil.example` passes a check for "starts with
+ * one slash" and is then `//evil.example`, another origin. Every consumer
+ * navigates with `replace`, so today that ends in a SecurityError thrown out of
+ * `history.replaceState` — a page frozen on its splash — rather than a redirect;
+ * one consumer switching to `push` would make it an open redirect. A path the
+ * router itself built never contains these characters (they arrive
+ * percent-encoded), so refusing them costs no genuine destination.
+ */
+const UNSAFE_IN_PATH = /[\\\x00-\x20\x7f]/
+
 /** A `next` value that is safe to navigate to, or `null`. */
 export function sanitizeNextDestination(raw: string | null | undefined): string | null {
   if (typeof raw !== 'string') return null
+  if (UNSAFE_IN_PATH.test(raw)) return null
   return raw.startsWith('/') && !raw.startsWith('//') ? raw : null
 }
 
