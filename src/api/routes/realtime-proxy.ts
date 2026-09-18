@@ -89,6 +89,26 @@ export const CLIENT_RETRY_MS = 3_000;
 export const CLIENT_BACKOFF_RETRY_MS = 15_000;
 
 /**
+ * How often an open stream asks whether the session it was opened with is
+ * still good. The session check itself asks the panel at most once a minute
+ * per session, so asking more often here would buy nothing.
+ */
+export const SESSION_WATCH_INTERVAL_MS = 60_000;
+
+/**
+ * The session a stream was opened with. `stillValid` answers `false` once the
+ * session is gone — signed out here, ended by a check, expired — or signed out
+ * elsewhere according to the panel. It is asked at most once per
+ * `intervalMs`, one question at a time; a question that fails keeps the stream
+ * (the next one decides), exactly as the session check lets a request through
+ * when the panel cannot tell.
+ */
+export interface StreamSessionWatch {
+  readonly stillValid: () => Promise<boolean>;
+  readonly intervalMs?: number;
+}
+
+/**
  * Narrow contract — only the bits of `AdminClient` proxyStream needs.
  * Lets tests pass a thin fake without instantiating the full client.
  */
@@ -134,6 +154,7 @@ export async function proxyStream(
   userRef: string,
   res: Response,
   onUpstreamError?: (error: unknown) => void,
+  session?: StreamSessionWatch,
 ): Promise<void> {
   // Pre-set SSE headers on the browser side so the connection upgrades
   // cleanly even if the upstream open is slow.
@@ -171,11 +192,16 @@ export async function proxyStream(
   // the process alive on shutdown / in tests.
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  let sessionWatch: ReturnType<typeof setInterval> | null = null;
 
   const cleanup = (): void => {
     if (heartbeat !== null) {
       clearInterval(heartbeat);
       heartbeat = null;
+    }
+    if (sessionWatch !== null) {
+      clearInterval(sessionWatch);
+      sessionWatch = null;
     }
     if (idleTimer !== null) {
       clearTimeout(idleTimer);
@@ -224,6 +250,29 @@ export async function proxyStream(
     }
   }, 20_000);
   heartbeat.unref?.();
+
+  // The session the stream was opened with — see `StreamSessionWatch`. Ended
+  // without the backoff frame: this is no outage, and the browser's reconnect
+  // is answered 401 by the session check, which is where it should stop.
+  if (session !== undefined) {
+    let asking = false;
+    sessionWatch = setInterval(() => {
+      if (asking || res.writableEnded) return;
+      asking = true;
+      session
+        .stillValid()
+        .then((valid) => {
+          if (valid || res.writableEnded) return;
+          cleanup();
+          res.end();
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          asking = false;
+        });
+    }, session.intervalMs ?? SESSION_WATCH_INTERVAL_MS);
+    sessionWatch.unref?.();
+  }
 
   stream.on('data', (chunk: Buffer) => {
     if (res.writableEnded) return;

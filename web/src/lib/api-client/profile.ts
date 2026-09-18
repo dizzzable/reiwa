@@ -1,5 +1,7 @@
 /**
- * Profile namespace — name, language, password, email-verification flow.
+ * Profile namespace — name, language, email-verification flow. A password
+ * changes through `auth.changePasswordAuth` (`/auth/change-password`); the old
+ * `PATCH /me/password` asked for no proof and is gone.
  */
 import { apiClient } from "./transport.js";
 
@@ -8,9 +10,6 @@ export const updateProfile = (data: { name?: string }) =>
 
 export const updateLanguage = (language: string) =>
   apiClient.patch("/me/language", { language }).then((r) => r.data);
-
-export const changePassword = (newPasswordHash: string) =>
-  apiClient.patch("/me/password", { newPasswordHash }).then((r) => r.data);
 
 export const requestEmailVerification = (email: string) =>
   apiClient.post("/me/email/challenge", { email }).then((r) => r.data);

@@ -873,6 +873,10 @@ export const en: RuDict = {
     continueWith: 'Continue with {{provider}}',
     errorExternal: 'External sign-in failed. Please try again.',
     errorExternalDenied: 'Access denied.',
+    errorExternalEmailUnverified:
+      'An account with this email already exists, but the email was never confirmed on it, so signing in to it with Google, Yandex or Mail.ru is not possible. Sign in with your login or through Telegram, or contact support.',
+    sessionCheckUnavailable:
+      'Could not confirm that you are still signed in. Nothing was changed — try again in a minute.',
     forgotPassword: 'Forgot password?',
     passwordNotSet: {
       sentTelegram: 'This account has no password yet. We have sent a link to your Telegram — open it and set a password.',

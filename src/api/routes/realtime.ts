@@ -34,6 +34,14 @@ import { proxyStream } from "./realtime-proxy.js";
  *
  * Wave 8F: the bytes-through-pipe logic lives in `realtime-proxy.ts`
  * so it can be unit-tested without the full router stack.
+ *
+ * A stream outlives the request that opened it, and the session check
+ * runs on requests: a stream opened before «Выйти на всех устройствах» or a
+ * password change elsewhere kept delivering to a session that no longer
+ * existed. The proxy now asks, at most once a minute, whether the session it
+ * was opened with is still good (`sessionStillValid`), and ends the stream
+ * when it is not: signed out here, ended by a check, expired, or signed out
+ * elsewhere according to the panel.
  */
 export function createRealtimeRouter(deps: {
   adminClient: AdminClient | null;
@@ -54,13 +62,33 @@ export function createRealtimeRouter(deps: {
       res.status(503).json({ message: "Realtime backend unavailable" });
       return;
     }
-    await proxyStream(adminClient, userRef, res, (error) => {
-      getRequestLogger(req).warn(
-        { err: error },
-        "Realtime upstream connection failed",
-      );
-    });
+    await proxyStream(
+      adminClient,
+      userRef,
+      res,
+      (error) => {
+        getRequestLogger(req).warn(
+          { err: error },
+          "Realtime upstream connection failed",
+        );
+      },
+      { stillValid: () => sessionStillValid(req, sessionStore) },
+    );
   });
 
   return router;
+}
+
+/**
+ * Whether the session a stream was opened with is still good. A web session
+ * is judged by the session middleware's own rules (`revalidateWebSession`:
+ * gone, or signed out according to the panel, asked at most once a minute); a
+ * Telegram session only by whether it still exists. With neither, the stream
+ * was authorised by nothing that can end.
+ */
+async function sessionStillValid(req: AuthRequest, sessionStore: SessionStore | null): Promise<boolean> {
+  if (req.webSessionId) return (await req.revalidateWebSession?.()) ?? true;
+  const legacyId = req.cookies?.reiwa_session as string | undefined;
+  if (legacyId && sessionStore) return (await sessionStore.get(legacyId)) !== null;
+  return true;
 }

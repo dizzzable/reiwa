@@ -19,7 +19,7 @@ export interface SocketlessResponse {
 }
 
 export interface SocketlessRequest {
-  readonly method: 'GET' | 'POST';
+  readonly method: 'GET' | 'POST' | 'PATCH';
   readonly url: string;
   readonly headers?: Readonly<Record<string, string>>;
   /** Sent as JSON when present. */

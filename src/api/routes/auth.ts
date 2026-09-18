@@ -12,6 +12,7 @@ import { requireMode } from "../middleware/access-mode.js";
 import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createSessionMiddleware } from "../middleware/session.js";
 import { createAuthBruteForceDetection } from "../middleware/brute-force-detection.js";
+import { createFreshSessionCheck } from "../middleware/fresh-session-check.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { clearAdCodeCookie, readAdCodeCookie } from "../middleware/ad-capture.js";
 import {
@@ -288,6 +289,10 @@ export function createAuthRouter(deps: {
 
   // Create brute-force detection middleware
   const bruteForceDetection = createAuthBruteForceDetection(getRedis);
+
+  // A credential changes on `/auth/change-password`: a session signed out a
+  // moment ago must not get its last minute in (`fresh-session-check.ts`).
+  const requireFreshSession = createFreshSessionCheck(adminClient?.webAuth ?? null);
 
   // ── GET /api/v1/auth/bot-signin ─────────────────────────────────────────────
   //
@@ -887,7 +892,7 @@ export function createAuthRouter(deps: {
   });
 
   // ── POST /api/v1/auth/change-password ───────────────────────────────────────
-  router.post("/auth/change-password", async (req: Request, res: Response) => {
+  router.post("/auth/change-password", requireFreshSession, async (req: Request, res: Response) => {
     try {
       // Must be authenticated
       if (!req.webSession || !req.webSessionId) {
@@ -1577,7 +1582,14 @@ export function createAuthRouter(deps: {
       res.redirect(resolution.action === "finish_setup" ? "/finish-setup" : "/dashboard");
     } catch (e: unknown) {
       getRequestLogger(req).warn({ err: describeUpstreamError(e).message }, "auth/ext/callback failed");
-      res.redirect("/sign-in?error=ext_failed");
+      // The provider's e-mail matches an account where the panel never verified
+      // it: refused, not linked, and nobody is signed in. Said as such — "sign-in
+      // failed, try again" would send the customer round the same loop forever.
+      res.redirect(
+        readUpstreamCode(e) === "EXTERNAL_EMAIL_UNVERIFIED_ACCOUNT"
+          ? "/sign-in?error=ext_email_unverified"
+          : "/sign-in?error=ext_failed",
+      );
     }
   });
 

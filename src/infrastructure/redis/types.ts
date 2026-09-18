@@ -31,6 +31,13 @@ declare global {
       markSessionStandalone: (platform: string) => Promise<void>;
       /** Destroy the current web session and clear the cookie */
       destroyWebSession: () => Promise<void>;
+      /**
+       * Whether the current web session is still good — for a request that
+       * stays open (a realtime stream). `false` once the session is gone or the
+       * panel says it was signed out; asks the panel at most once a minute.
+       * `true` when there is no web session to judge.
+       */
+      revalidateWebSession: () => Promise<boolean>;
       /** Request context: "tma" if Telegram Mini App, "web" if browser */
       context: RequestContext;
     }

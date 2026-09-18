@@ -9,7 +9,9 @@ import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { hashPassword } from '@/lib/crypto'
 import { changePasswordAuth } from '@/lib/api-client'
+import { leaveForSignIn } from '@/lib/api-client/transport'
 import { readNextDestination } from '@/lib/next-destination'
+import { readSessionCheckRefusal } from '@/lib/session-check'
 import { useAuthStore } from '@/stores/auth.store'
 import { SESSION_QUERY_KEY, useSession } from '@/hooks/use-session'
 import { SaveCredentialsScreen, type SavedCredentials } from './save-credentials'
@@ -92,7 +94,15 @@ export default function ChangePasswordPage() {
         response?: { status?: number; data?: { code?: string; message?: string } }
       })?.response
       const code = response?.data?.code
-      if (code === 'CURRENT_PASSWORD_INCORRECT') {
+      const sessionRefusal = readSessionCheckRefusal(err)
+      if (sessionRefusal === 'revoked') {
+        // Signed out elsewhere a moment ago; the check before the change ended
+        // this session. A 401 from the auth routes is the page's own to act on,
+        // so the page goes.
+        leaveForSignIn()
+      } else if (sessionRefusal === 'unavailable') {
+        setError(t('auth.sessionCheckUnavailable'))
+      } else if (code === 'CURRENT_PASSWORD_INCORRECT') {
         setError(t('changePassword.errorCurrentWrong'))
       } else if (code === 'PASSWORD_ALREADY_SET') {
         // Set a moment ago — by a reset link, or in another tab. Nothing was

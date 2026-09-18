@@ -59,12 +59,18 @@ export default function SignInPage() {
   }, [searchParams, setSearchParams, t])
 
   // Surface an external-auth failure passed back by the BFF as `?error=...`
-  // (denied / ext_state / ext_failed / ext_unavailable), then strip the param
-  // so a refresh doesn't re-show it.
+  // (denied / ext_email_unverified / ext_state / ext_failed / ext_unavailable),
+  // then strip the param so a refresh doesn't re-show it.
   useEffect(() => {
     const extError = searchParams.get('error')
     if (!extError) return
-    setError(extError === 'denied' ? t('auth.errorExternalDenied') : t('auth.errorExternal'))
+    setError(
+      extError === 'denied'
+        ? t('auth.errorExternalDenied')
+        : extError === 'ext_email_unverified'
+          ? t('auth.errorExternalEmailUnverified')
+          : t('auth.errorExternal'),
+    )
     searchParams.delete('error')
     setSearchParams(searchParams, { replace: true })
   }, [searchParams, setSearchParams, t])

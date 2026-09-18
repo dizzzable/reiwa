@@ -27,8 +27,10 @@ import {
 } from "@/lib/api-client";
 import { useSession, SESSION_QUERY_KEY } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
+import { leaveForSignIn } from "@/lib/api-client/transport";
 import { sanitizeNextDestination } from "@/lib/next-destination";
 import { resolvePrivacyDeepLink } from "@/lib/privacy-deep-link";
+import { readSessionCheckRefusal } from "@/lib/session-check";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -306,6 +308,26 @@ function SignOutEverywhereForm({ onDone }: { onDone: () => void }) {
 
 // ── Telegram linking ─────────────────────────────────────────────────────────
 
+/**
+ * The fresh session check before linking a Telegram or an e-mail and before a
+ * password change (`lib/session-check.ts`): a session signed out elsewhere goes
+ * to sign-in, and a panel that could not say is told as such — not as "could
+ * not link", which sends the customer looking for a problem with the address.
+ * `true` when the error was one of those two and has been handled.
+ */
+function sessionRefusalHandled(err: unknown, t: (key: string) => string): boolean {
+  const refusal = readSessionCheckRefusal(err);
+  if (refusal === "revoked") {
+    leaveForSignIn();
+    return true;
+  }
+  if (refusal === "unavailable") {
+    toast.error(t("auth.sessionCheckUnavailable"));
+    return true;
+  }
+  return false;
+}
+
 function LinkTelegramForm({ linked }: { linked: boolean }) {
   const { t } = useTranslation();
   const [code, setCode] = useState<string | null>(null);
@@ -318,6 +340,7 @@ function LinkTelegramForm({ linked }: { linked: boolean }) {
       setBotUsername(data.botUsername);
     },
     onError: (err: unknown) => {
+      if (sessionRefusalHandled(err, t)) return;
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
         toast.error(t("privacy.telegramAlreadyLinked"));
@@ -428,6 +451,7 @@ function LinkEmailForm({
       }
     },
     onError: (err: unknown) => {
+      if (sessionRefusalHandled(err, t)) return;
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
         toast.error(t("privacy.emailAlreadyLinked"));
@@ -449,6 +473,7 @@ function LinkEmailForm({
       }
     },
     onError: (err: unknown) => {
+      if (sessionRefusalHandled(err, t)) return;
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 410) {
         toast.error(t("privacy.emailCodeExpired"));
@@ -579,7 +604,10 @@ function ChangePasswordForm({ login, onSuccess }: { login: string; onSuccess: ()
       toast.success(t("privacy.passwordChanged"));
       onSuccess();
     },
-    onError: () => toast.error(t("privacy.passwordError")),
+    onError: (err: unknown) => {
+      if (sessionRefusalHandled(err, t)) return;
+      toast.error(t("privacy.passwordError"));
+    },
   });
 
   const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && !mutation.isPending;

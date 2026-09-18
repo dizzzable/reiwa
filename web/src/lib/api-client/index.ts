@@ -220,7 +220,6 @@ export {
 
 // Profile
 export {
-  changePassword,
   completeEmailVerification,
   requestEmailVerification,
   updateLanguage,

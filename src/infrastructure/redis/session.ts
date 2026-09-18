@@ -31,12 +31,13 @@ export interface WebSession {
   /** Latest-seen PWA platform (`ios`/`android`/`desktop`). */
   platform?: string;
   /**
-   * The panel's `sessionsRevokedAt` (ms) this session was opened by — set when
-   * the session belongs to the browser that made the change which signed every
-   * other session out: a password change, a reset, a first password, «Выйти на
-   * всех устройствах». The session counts as starting at the later of this and
-   * `createdAt` (`sessionEpoch`), so its own change never signs it out, whatever
-   * the cabinet's clock says against the panel's.
+   * The panel's `sessionsRevokedAt` (ms, on the PANEL's clock) this session was
+   * opened by — set when the session belongs to the browser that made the change
+   * which signed every other session out: a password change, a reset, a first
+   * password, «Выйти на всех устройствах». The session counts as starting at the
+   * later of this and `createdAt` read on the panel's clock (`sessionEpoch`), so
+   * its own change never signs it out, whatever the estimate of the two clocks'
+   * difference — and a later change still does.
    */
   authFloor?: number;
   /** When this session last asked the panel whether it had been signed out (ms). */
@@ -57,22 +58,36 @@ export interface WebSession {
 export const SESSION_REVOCATION_CHECK_INTERVAL_MS = 60_000;
 
 /**
- * The panel's answer: `revokedAt` is its moment in ms, `null` when nothing was
- * ever revoked. A `null` verdict means "could not tell" — an older panel, or
- * one that did not answer — and signs nothing out.
+ * The panel's answer: `revokedAt` is its moment in ms ON THE PANEL'S CLOCK,
+ * `null` when nothing was ever revoked; `panelOffsetMs` is the panel's clock
+ * minus this server's, estimated from the round trip that brought the answer
+ * (0 when the panel sent no clock). A `null` verdict means "could not tell" —
+ * an older panel, or one that did not answer — and signs nothing out.
  */
-export type SessionRevocationVerdict = { readonly revokedAt: number | null } | null;
+export type SessionRevocationVerdict = {
+  readonly revokedAt: number | null;
+  readonly panelOffsetMs?: number;
+} | null;
 
 export type SessionRevocationCheck = (userId: string) => Promise<SessionRevocationVerdict>;
 
-/** When a session counts as having started: the later of its creation and its `authFloor`. */
-export function sessionEpoch(session: WebSession): number {
-  return Math.max(session.createdAt, session.authFloor ?? 0);
+/**
+ * When a session counts as having started, on the PANEL's clock — the clock the
+ * moment it is compared with was written on: the later of its creation (stamped
+ * on this server's clock, moved onto the panel's by `panelOffsetMs`) and its
+ * `authFloor` (already the panel's).
+ */
+export function sessionEpoch(session: WebSession, panelOffsetMs = 0): number {
+  return Math.max(session.createdAt + panelOffsetMs, session.authFloor ?? Number.NEGATIVE_INFINITY);
 }
 
-/** Whether the panel's verdict signs this session out. */
+/** Whether the panel's verdict signs this session out: it started before the moment, on one clock. */
 export function isSignedOutBy(session: WebSession, verdict: SessionRevocationVerdict): boolean {
-  return verdict !== null && verdict.revokedAt !== null && sessionEpoch(session) < verdict.revokedAt;
+  return (
+    verdict !== null &&
+    verdict.revokedAt !== null &&
+    sessionEpoch(session, verdict.panelOffsetMs ?? 0) < verdict.revokedAt
+  );
 }
 
 export interface SessionConfig {
@@ -212,6 +227,18 @@ export class WebSessionStore {
       "EX",
       sessionTtlSeconds(session),
     );
+  }
+
+  /**
+   * Record that the panel was just asked about this session, WITHOUT sliding
+   * its window: an open realtime stream re-asks every minute, and a tab left
+   * open must not keep a session alive past its 30 days of inactivity.
+   */
+  async recordRevocationCheck(sessionId: string, revocationCheckedAt: number): Promise<void> {
+    const session = await this.get(sessionId);
+    if (!session) return;
+    session.revocationCheckedAt = revocationCheckedAt;
+    await this.redis.set(sessionKey(sessionId), JSON.stringify(session), "KEEPTTL");
   }
 
   /**
@@ -451,6 +478,33 @@ export function createWebSessionMiddleware(
         renewed.session.standalone === true ? pwaCookieOptions : cookieOptions,
       );
       return renewed.sessionId;
+    };
+
+    // Attach helper: is the current session still good — for a request that
+    // stays open (a realtime stream), which the check above ran for only once,
+    // at its start. `false` once the session is gone (signed out here, ended by
+    // an earlier check, expired) or the panel says it was signed out; asks the
+    // panel at most once an interval, like any request.
+    req.revalidateWebSession = async (): Promise<boolean> => {
+      const id = req.webSessionId;
+      if (!id) return true;
+      const current = await store.get(id);
+      if (!current) return false;
+      if (!options.revocation) return true;
+      const now = Date.now();
+      if (now - (current.revocationCheckedAt ?? 0) < SESSION_REVOCATION_CHECK_INTERVAL_MS) return true;
+      let verdict: SessionRevocationVerdict = null;
+      try {
+        verdict = await options.revocation(current.userId);
+      } catch (err: unknown) {
+        logger?.warn({ err, component: "WebSession" }, "session revocation check failed");
+      }
+      if (isSignedOutBy(current, verdict)) {
+        await store.destroy(id);
+        return false;
+      }
+      await store.recordRevocationCheck(id, now);
+      return true;
     };
 
     // Attach helper: upgrade the current session to an installed-PWA session.

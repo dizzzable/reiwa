@@ -4,6 +4,7 @@ import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
 import { resolveClientIp } from "../lib/client-ip.js";
 import { createFlexibleSessionMiddleware, createOptionalSessionMiddleware } from "../middleware/session.js";
+import { createFreshSessionCheck } from "../middleware/fresh-session-check.js";
 import type { AuthRequest } from "../middleware/session.js";
 import { resolveUserIdentity, hasUserIdentity } from "../middleware/user-identity.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
@@ -25,6 +26,9 @@ export function createProfileRouter(deps: {
   // every web-auth user even after a successful login.
   const requireSession = createFlexibleSessionMiddleware(sessionStore);
   const optionalSession = createOptionalSessionMiddleware(sessionStore);
+  // An e-mail verified here becomes a way into the account: a session signed
+  // out a moment ago must not get its last minute in (`fresh-session-check.ts`).
+  const requireFreshSession = createFreshSessionCheck(adminClient?.webAuth ?? null);
   const router = Router();
 
   // GET /api/v1/session
@@ -186,32 +190,17 @@ export function createProfileRouter(deps: {
     }
   });
 
-  // PATCH /api/v1/me/password
-  router.patch(
-    "/me/password",
-    requireSession,
-    async (req: AuthRequest, res) => {
-      try {
-        const { newPasswordHash } = (req.body ?? {}) as Record<string, unknown>;
-        if (!newPasswordHash) {
-          res.status(400).json({ message: "newPasswordHash is required" });
-          return;
-        }
-        const result = await adminClient?.user.changeWebAccountPassword(
-          resolveUserIdentity(req),
-          String(newPasswordHash),
-        );
-        res.json(result ?? { ok: true });
-      } catch (e: unknown) {
-        sendSafeError(req, res, e, 500, "Failed to change password", "me/password");
-      }
-    },
-  );
+  // PATCH /api/v1/me/password is gone. It set a password with no proof — no
+  // current password, no reset link, no sign-out of the other sessions — and
+  // the panel route behind it refused every call it ever made (400: no login),
+  // so nothing used it. A password changes on `/auth/change-password`, is set
+  // for the first time on `/auth/first-password`, and is reset by a link.
 
   // POST /api/v1/me/email/challenge — send email OTP
   router.post(
     "/me/email/challenge",
     requireSession,
+    requireFreshSession,
     async (req: AuthRequest, res) => {
       try {
         const { email } = (req.body ?? {}) as Record<string, unknown>;
@@ -234,6 +223,7 @@ export function createProfileRouter(deps: {
   router.patch(
     "/me/email/verify",
     requireSession,
+    requireFreshSession,
     async (req: AuthRequest, res) => {
       try {
         const { code } = (req.body ?? {}) as Record<string, unknown>;

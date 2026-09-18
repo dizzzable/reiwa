@@ -4,6 +4,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../../config.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
+import { createFreshSessionCheck } from "../middleware/fresh-session-check.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────────
@@ -31,10 +32,14 @@ export function createLinkingRouter(deps: {
   config: ReiwaConfig;
 }) {
   const { adminClient, config } = deps;
+  // A Telegram or an e-mail linked here becomes a way into the account: a
+  // session signed out a moment ago must not get its last minute in
+  // (`fresh-session-check.ts`).
+  const requireFreshSession = createFreshSessionCheck(adminClient?.webAuth ?? null);
   const router = Router();
 
   // ── POST /api/v1/link/telegram/initiate ─────────────────────────────────────
-  router.post("/link/telegram/initiate", async (req: Request, res: Response) => {
+  router.post("/link/telegram/initiate", requireFreshSession, async (req: Request, res: Response) => {
     try {
       // Require authentication
       if (!req.webSession || !req.webSessionId) {
@@ -95,7 +100,7 @@ export function createLinkingRouter(deps: {
   });
 
   // ── POST /api/v1/link/email/initiate ────────────────────────────────────────
-  router.post("/link/email/initiate", async (req: Request, res: Response) => {
+  router.post("/link/email/initiate", requireFreshSession, async (req: Request, res: Response) => {
     try {
       // Require authentication
       if (!req.webSession || !req.webSessionId) {
@@ -149,7 +154,7 @@ export function createLinkingRouter(deps: {
   });
 
   // ── POST /api/v1/link/email/verify ──────────────────────────────────────────
-  router.post("/link/email/verify", async (req: Request, res: Response) => {
+  router.post("/link/email/verify", requireFreshSession, async (req: Request, res: Response) => {
     try {
       // Require authentication
       if (!req.webSession || !req.webSessionId) {

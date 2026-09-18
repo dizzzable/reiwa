@@ -13,9 +13,15 @@
  *     request), so the staleness is bounded by that minute;
  *   - the browser that made the change carries on, on a NEW session that counts
  *     from the moment — even when the panel's clock runs ahead of this one;
- *   - a panel that cannot answer signs nothing out: an older one (404) is left
- *     alone for ten minutes, one that fails is asked again next interval, and
- *     with no panel at all nothing is asked;
+ *   - the panel's moment and a session's start are compared on ONE clock: the
+ *     panel answers with its `now`, and at ±30 s between the two servers a
+ *     session opened just before a sign-out still ends and one opened just
+ *     after it still stays — the Mini App's re-opened sessions included;
+ *   - a panel that cannot answer signs nothing out: an older one — its own 404
+ *     for a route it does not have, nothing else — is left alone for two
+ *     minutes, a proxy's 404 or a port in an error's text silences nobody, one
+ *     that fails is asked again next interval, and with no panel at all nothing
+ *     is asked;
  *   - `/auth/first-password`, `/auth/password-state` and
  *     `/auth/sessions/revoke-others` act for the SESSION's customer only, and
  *     refuse without a session.
@@ -34,10 +40,13 @@ import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  askSessionState,
   createSessionRevocationCheck,
   isRevocationCheckedPath,
   OLDER_PANEL_BACKOFF_MS,
+  type SessionStateSource,
 } from "../src/api/lib/session-revocation.js";
+import { UpstreamError } from "../src/core/errors/index.js";
 import { createAuthRouter } from "../src/api/routes/auth.js";
 import { loadConfig } from "../src/core/config/index.js";
 import { AdminClient } from "../src/infrastructure/admin-client/admin-client.js";
@@ -113,7 +122,7 @@ async function standInPanel(routes: Record<string, PanelRoute>) {
       const body = chunks.length > 0 ? (JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>) : {};
       calls.push({ path, body });
       const route = routes[path];
-      const answer = route === undefined ? { status: 404, body: { statusCode: 404, message: `Cannot POST ${req.url}` } } : route(body);
+      const answer = route === undefined ? { status: 404, body: missingRoute(req.url ?? "") } : route(body);
       const send = () => {
         res.statusCode = answer.status;
         res.setHeader("Content-Type", "application/json");
@@ -130,10 +139,38 @@ async function standInPanel(routes: Record<string, PanelRoute>) {
   return { client, calls };
 }
 
-/** A panel that keeps one sign-out moment per customer, as the real one does. */
-function revocationRoutes(moments: Map<string, string>): Record<string, PanelRoute> {
+/**
+ * What a panel older than a route answers for it: Nest's router refuses it, and
+ * the panel's `AdminSafeExceptionFilter` writes the refusal — its message
+ * scrubbed to "Request failed" because the path names `auth`
+ * (`rezeis-admin/test/unknown-api-route-envelope.http.spec.ts` pins it there).
+ */
+function missingRoute(url: string): Record<string, unknown> {
   return {
-    "sessions/state": (body) => ({ status: 200, body: { sessionsRevokedAt: moments.get(String(body["userId"])) ?? null } }),
+    timestamp: new Date().toISOString(),
+    path: url.split("?")[0],
+    requestId: null,
+    statusCode: 404,
+    message: "Request failed",
+    errorCode: "NOT_FOUND",
+    error: "Not Found",
+  };
+}
+
+/**
+ * A panel that keeps one sign-out moment per customer, as the real one does,
+ * and answers with its own clock — `skewMs` ahead of this server's (behind,
+ * when negative).
+ */
+function revocationRoutes(moments: Map<string, string>, skewMs = 0): Record<string, PanelRoute> {
+  return {
+    "sessions/state": (body) => ({
+      status: 200,
+      body: {
+        sessionsRevokedAt: moments.get(String(body["userId"])) ?? null,
+        now: new Date(Date.now() + skewMs).toISOString(),
+      },
+    }),
   };
 }
 
@@ -362,8 +399,124 @@ describe("the browser that made the change", () => {
   });
 });
 
+describe("one clock: the panel's moment against a session's start", () => {
+  const SKEW = 30_000;
+
+  it("panel 30 s AHEAD: a session opened just after a sign-out stays, one opened just before still ends", async () => {
+    const now = Date.now();
+    const signedOutAt = now - MINUTE; // real time of the sign-out
+    const { store, patch } = liveStore();
+    // The panel wrote the moment on ITS clock, 30 s ahead of this one.
+    const moments = new Map([["user-a", new Date(signedOutAt + SKEW).toISOString()]]);
+    const panel = await standInPanel(revocationRoutes(moments, SKEW));
+    const app = cabinet(store, createSessionRevocationCheck(panel.client.webAuth));
+
+    const { sessionId: after } = await openSession(store, "user-a");
+    patch(after, { createdAt: signedOutAt + 5_000, revocationCheckedAt: 0 });
+    const { sessionId: before } = await openSession(store, "user-a");
+    patch(before, { createdAt: signedOutAt - 5_000, revocationCheckedAt: 0 });
+
+    expect((await call(app, "GET", "/probe", after)).body, "a session opened AFTER the sign-out was ended by it").toEqual({
+      signedIn: true,
+      userId: "user-a",
+    });
+    expect((await call(app, "GET", "/probe", before)).body).toEqual({ signedIn: false, userId: null });
+  });
+
+  it("panel 30 s BEHIND: a session opened just before a sign-out still ends, one opened just after stays", async () => {
+    const now = Date.now();
+    const signedOutAt = now - MINUTE;
+    const { store, patch } = liveStore();
+    const moments = new Map([["user-a", new Date(signedOutAt - SKEW).toISOString()]]);
+    const panel = await standInPanel(revocationRoutes(moments, -SKEW));
+    const app = cabinet(store, createSessionRevocationCheck(panel.client.webAuth));
+
+    const { sessionId: before } = await openSession(store, "user-a");
+    patch(before, { createdAt: signedOutAt - 5_000, revocationCheckedAt: 0 });
+    const { sessionId: after } = await openSession(store, "user-a");
+    patch(after, { createdAt: signedOutAt + 5_000, revocationCheckedAt: 0 });
+
+    expect((await call(app, "GET", "/probe", before)).body, "a session opened BEFORE the sign-out survived it").toEqual({
+      signedIn: false,
+      userId: null,
+    });
+    expect((await call(app, "GET", "/probe", after)).body).toEqual({ signedIn: true, userId: "user-a" });
+  });
+
+  it("does not end the Mini App's re-opened session again and again while the panel's moment is in this clock's future", async () => {
+    // Signed out 10 s ago on a panel 30 s ahead: its moment reads 20 s in THIS
+    // server's future. Compared on this clock, every session the Mini App opens
+    // to get back in "started before" it — and is ended, and re-opened, for 20 s.
+    const now = Date.now();
+    const { store, patch } = liveStore();
+    const moments = new Map([["user-a", new Date(now - 10_000 + SKEW).toISOString()]]);
+    const panel = await standInPanel(revocationRoutes(moments, SKEW));
+    const app = cabinet(store, createSessionRevocationCheck(panel.client.webAuth));
+
+    for (let bootstrap = 0; bootstrap < 3; bootstrap += 1) {
+      const { sessionId } = await openSession(store, "user-a");
+      patch(sessionId, { revocationCheckedAt: 0 });
+      expect((await call(app, "GET", "/probe", sessionId)).body, `re-opened session ${bootstrap + 1} was ended`).toEqual({
+        signedIn: true,
+        userId: "user-a",
+      });
+    }
+  });
+
+  it("keeps the browser that made the change on its floor whatever the clocks — and a LATER sign-out still ends it", async () => {
+    const now = Date.now();
+    const { store, patch } = liveStore();
+    const moments = new Map<string, string>();
+    const panel = await standInPanel(revocationRoutes(moments, SKEW));
+    const app = cabinet(store, createSessionRevocationCheck(panel.client.webAuth));
+    const changedAt = now + SKEW; // the panel's moment for this browser's own change
+    const { sessionId } = await openSession(store, "user-a");
+    patch(sessionId, { authFloor: changedAt, revocationCheckedAt: 0 });
+    moments.set("user-a", new Date(changedAt).toISOString());
+
+    expect((await call(app, "GET", "/probe", sessionId)).body, "its own change signed it out").toEqual({
+      signedIn: true,
+      userId: "user-a",
+    });
+
+    moments.set("user-a", new Date(changedAt + 2 * MINUTE).toISOString());
+    patch(sessionId, { revocationCheckedAt: 0 });
+    expect((await call(app, "GET", "/probe", sessionId)).body, "the floor outlived a later sign-out").toEqual({
+      signedIn: false,
+      userId: null,
+    });
+  });
+
+  it("reads the two clocks' difference against the middle of the round trip", async () => {
+    let clock = 1_000_000;
+    const source: SessionStateSource = {
+      sessionsState: async () => {
+        clock += 400; // the round trip
+        return { sessionsRevokedAt: null, now: new Date(1_000_200 + SKEW).toISOString() };
+      },
+    };
+
+    const answer = await askSessionState(source, "user-a", { clock: () => clock });
+
+    expect(answer).toEqual({ kind: "answered", state: { revokedAt: null, panelOffsetMs: SKEW } });
+  });
+
+  it("takes a panel that sends no clock to agree with this one", async () => {
+    const source: SessionStateSource = { sessionsState: async () => ({ sessionsRevokedAt: "2026-09-18T10:00:00.000Z" }) };
+
+    expect(await askSessionState(source, "user-a")).toEqual({
+      kind: "answered",
+      state: { revokedAt: Date.parse("2026-09-18T10:00:00.000Z"), panelOffsetMs: 0 },
+    });
+  });
+});
+
 describe("a panel that cannot tell signs nothing out", () => {
-  it("an older panel (404): no error, nobody signed out, and it is left alone for ten minutes", async () => {
+  it("backs off for two minutes, not ten", () => {
+    expect(OLDER_PANEL_BACKOFF_MS).toBe(2 * MINUTE);
+  });
+
+  it("an older panel (its own 404 for a route it does not have): nobody signed out, and it is left alone for the back-off", async () => {
     const now = Date.now();
     const { store, patch } = liveStore();
     const panel = await standInPanel({});
@@ -383,6 +536,65 @@ describe("a panel that cannot tell signs nothing out", () => {
     patch(sessions[0]!.sessionId, { revocationCheckedAt: 0 });
     await call(app, "GET", "/probe", sessions[0]!.sessionId);
     expect(panel.calls).toHaveLength(2);
+  });
+
+  it("a proxy's 404 while the panel restarts silences nobody — the next customer is still asked", async () => {
+    const { store, patch } = liveStore();
+    const panel = await standInPanel({
+      "sessions/state": () => ({ status: 404, body: "<html><body><h1>404 Not Found</h1></body></html>" }),
+    });
+    const app = cabinet(store, createSessionRevocationCheck(panel.client.webAuth));
+    const sessions = [await openSession(store, "user-a"), await openSession(store, "user-b")];
+    for (const { sessionId } of sessions) patch(sessionId, { revocationCheckedAt: 0 });
+
+    for (const { sessionId } of sessions) {
+      expect(((await call(app, "GET", "/probe", sessionId)).body as { signedIn: boolean }).signedIn).toBe(true);
+    }
+    expect(panel.calls.filter((c) => c.path === "sessions/state"), "one proxy 404 silenced every customer").toHaveLength(2);
+  });
+
+  it("a route that exists answering 404 for something else is not the missing route either", async () => {
+    const { store, patch } = liveStore();
+    const panel = await standInPanel({
+      "sessions/state": () => ({ status: 404, body: { statusCode: 404, message: "Web account not found", error: "Not Found" } }),
+    });
+    const app = cabinet(store, createSessionRevocationCheck(panel.client.webAuth));
+    const sessions = [await openSession(store, "user-a"), await openSession(store, "user-b")];
+    for (const { sessionId } of sessions) patch(sessionId, { revocationCheckedAt: 0 });
+
+    for (const { sessionId } of sessions) await call(app, "GET", "/probe", sessionId);
+
+    expect(panel.calls.filter((c) => c.path === "sessions/state")).toHaveLength(2);
+  });
+
+  it("the text \"4040\" in an error is a port, not a 404, and silences nobody", async () => {
+    let asked = 0;
+    const source: SessionStateSource = {
+      sessionsState: async () => {
+        asked += 1;
+        throw new Error("connect ECONNREFUSED 10.0.0.5:4040");
+      },
+    };
+    const check = createSessionRevocationCheck(source);
+
+    expect(await check("user-a")).toBeNull();
+    expect(await check("user-b")).toBeNull();
+    expect(asked, "a port in the message read as a missing route").toBe(2);
+  });
+
+  it("a typed 404 whose body is not the panel's is not the missing route", async () => {
+    let asked = 0;
+    const source: SessionStateSource = {
+      sessionsState: async () => {
+        asked += 1;
+        throw new UpstreamError("POST", "/api/internal/web-auth/sessions/state", 404, "Not Found");
+      },
+    };
+    const check = createSessionRevocationCheck(source);
+
+    await check("user-a");
+    await check("user-b");
+    expect(asked).toBe(2);
   });
 
   it("a panel that fails: nobody signed out, and asked again only at the next interval", async () => {

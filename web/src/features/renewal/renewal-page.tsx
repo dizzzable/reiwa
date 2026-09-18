@@ -21,6 +21,7 @@ import {
 import type { EligibleAddOn } from "@/lib/api-client";
 import { PartnerBalanceHoldNotice } from "@/features/partner/partner-balance-hold-notice";
 import { balanceHoldRefusalMessage, standingBalanceHold } from "@/lib/partner-balance-hold";
+import { readSessionCheckRefusal } from "@/lib/session-check";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { Switch } from "@/components/ui/switch";
@@ -1280,6 +1281,14 @@ function RenewalReview() {
       navigate("/dashboard", { replace: true });
     },
     onError: (err) => {
+      // The check before money moves (`lib/session-check.ts`): signed out
+      // elsewhere — the transport is already on its way to sign-in — or the
+      // panel could not say, and nothing was paid.
+      const sessionRefusal = readSessionCheckRefusal(err);
+      if (sessionRefusal !== null) {
+        if (sessionRefusal === "unavailable") toast.error(t("auth.sessionCheckUnavailable"));
+        return;
+      }
       // The balance went on hold after this page read the partner info: say
       // so, and re-read it so the notice below the button takes over.
       const holdMessage = balanceHoldRefusalMessage(

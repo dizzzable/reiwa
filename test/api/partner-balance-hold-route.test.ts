@@ -80,6 +80,13 @@ async function stand(reply: PanelReply): Promise<Stand> {
   const panel = http.createServer((req, res) => {
     req.resume();
     req.on('end', () => {
+      // The fresh session check both routes ask first (`fresh-session-check.ts`):
+      // this customer's sessions were never signed out.
+      if ((req.url ?? '').startsWith('/api/internal/web-auth/sessions/state')) {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ sessionsRevokedAt: null, now: new Date().toISOString() }));
+        return;
+      }
       calls.push(`${req.method ?? ''} ${req.url ?? ''}`);
       res.statusCode = state.reply.status;
       res.setHeader('Content-Type', 'application/json');

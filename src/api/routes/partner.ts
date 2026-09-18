@@ -3,6 +3,7 @@ import type { AdminClient } from "../../lib/admin-client.js";
 import type { SessionStore } from "../../lib/session-store.js";
 import type { ReiwaConfig } from "../../config.js";
 import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware/session.js";
+import { createFreshSessionCheck } from "../middleware/fresh-session-check.js";
 import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
@@ -16,6 +17,9 @@ export function createPartnerRouter(deps: {
 }) {
   const { adminClient, sessionStore } = deps;
   const requireSession = createFlexibleSessionMiddleware(sessionStore);
+  // Money leaves the balance on the two POSTs below: a session signed out a
+  // moment ago must not get its last minute in (`fresh-session-check.ts`).
+  const requireFreshSession = createFreshSessionCheck(adminClient?.webAuth ?? null);
   const router = Router();
 
   // GET /api/v1/partner/info
@@ -29,7 +33,7 @@ export function createPartnerRouter(deps: {
   });
 
   // POST /api/v1/partner/pay — pay for a subscription with the partner balance.
-  router.post("/partner/pay", requireSession, async (req: AuthRequest, res) => {
+  router.post("/partner/pay", requireSession, requireFreshSession, async (req: AuthRequest, res) => {
     try {
       const { purchaseType, planId, durationDays, subscriptionId, deviceType } =
         (req.body ?? {}) as Record<string, unknown>;
@@ -123,7 +127,7 @@ export function createPartnerRouter(deps: {
   });
 
   // POST /api/v1/partner/withdraw
-  router.post("/partner/withdraw", requireSession, async (req: AuthRequest, res) => {
+  router.post("/partner/withdraw", requireSession, requireFreshSession, async (req: AuthRequest, res) => {
     try {
       const { amount, method, requisites } = (req.body ?? {}) as Record<string, unknown>;
       if (!amount || !method || !requisites) {

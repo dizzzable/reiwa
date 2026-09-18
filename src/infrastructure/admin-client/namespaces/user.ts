@@ -133,14 +133,6 @@ export class UserNamespace {
     );
   }
 
-  changeWebAccountPassword(identity: UserIdentity, newPassword: string): Promise<unknown> {
-    return this.transport.request(
-      'PATCH',
-      '/api/internal/user/session/web-account-password',
-      { ...identityBody(identity), password: newPassword },
-    );
-  }
-
   snoozeWebAccountLinkPrompt(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'PATCH',

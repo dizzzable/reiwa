@@ -19,7 +19,12 @@
  *     the privacy page, which then offers «Продолжить»;
  *   - registration ends on that screen instead of jumping into the cabinet;
  *   - the privacy dialog's password change is a real form a password manager
- *     can read.
+ *     can read;
+ *   - a refused Google / Yandex / Mail.ru sign-in into an account whose e-mail
+ *     was never verified says so on /sign-in, not "try again";
+ *   - the check before a password change says "could not confirm you are still
+ *     signed in, nothing changed" when the panel could not answer, and leaves
+ *     for sign-in when the session was signed out elsewhere.
  *
  * Network functions are the only thing replaced; the pages, the hashing, the
  * clipboard fallback and the translations are the real ones.
@@ -68,6 +73,13 @@ const appApi = vi.hoisted(() => ({
   getPlatformPolicy: vi.fn(),
 }));
 vi.mock('@/lib/api-client', () => appApi);
+
+// Only the way out to sign-in is observed; the transport itself stays real.
+const transportSpy = vi.hoisted(() => ({ leaveForSignIn: vi.fn() }));
+vi.mock('@/lib/api-client/transport', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  ...transportSpy,
+}));
 
 const route = vi.hoisted(() => ({
   location: { pathname: '/', search: '', hash: '', state: null as unknown },
@@ -225,6 +237,7 @@ beforeEach(async () => {
     ...Object.values(appApi),
     ...Object.values(securityApi),
     ...Object.values(toastSpy),
+    ...Object.values(transportSpy),
     route.navigate,
   ]) {
     fn.mockReset();
@@ -1153,5 +1166,76 @@ describe('privacy: change password', () => {
     expect(appApi.changePasswordAuth.mock.calls).toEqual([
       [{ currentPasswordHash: sha256('old-password-1'), newPasswordHash: sha256('new-password-2') }],
     ]);
+  });
+});
+
+// ── Round 6: the refused Google sign-in, and the check before a credential changes ──
+
+describe('/sign-in after a refused Google / Yandex / Mail.ru sign-in', () => {
+  it('says the e-mail was never confirmed on that account, and which ways in are left', async () => {
+    route.location = { pathname: '/sign-in', search: '?error=ext_email_unverified', hash: '', state: null };
+
+    const page = await mount(React.createElement(SignInPage));
+
+    expect(page.textContent).toContain(tr('auth.errorExternalEmailUnverified'));
+    expect(page.textContent, 'the generic "try again" sends the customer round the same loop').not.toContain(
+      tr('auth.errorExternal'),
+    );
+  });
+});
+
+describe('the check before a password change', () => {
+  async function changePassword(): Promise<HTMLElement> {
+    sessionState.value = {
+      session: { telegramId: null, webAccount: { login: 'alice', emailVerifiedAt: null } },
+      isLoading: false,
+      isAuthenticated: true,
+    };
+    const page = await mount(React.createElement(ChangePasswordPage));
+    await typeInto(page.querySelector('#current-password'), 'Old-Password-1');
+    await typeInto(page.querySelector('#new-password'), 'New-Password-22');
+    await submit(page.querySelector('form'));
+    return page;
+  }
+
+  it('says it could not confirm the sign-in and that nothing changed, when the panel could not answer', async () => {
+    appApi.changePasswordAuth.mockRejectedValue(upstreamError(503, { code: 'SESSION_CHECK_UNAVAILABLE', message: 'x' }));
+
+    const page = await changePassword();
+
+    expect(page.textContent).toContain(tr('auth.sessionCheckUnavailable'));
+    expect(page.textContent).not.toContain(tr('changePassword.errorRetryLater'));
+    expect(transportSpy.leaveForSignIn).not.toHaveBeenCalled();
+  });
+
+  it('leaves for sign-in when the session was signed out elsewhere — never "the current password is wrong"', async () => {
+    appApi.changePasswordAuth.mockRejectedValue(upstreamError(401, { code: 'SESSION_REVOKED', message: 'x' }));
+
+    const page = await changePassword();
+
+    expect(transportSpy.leaveForSignIn).toHaveBeenCalledTimes(1);
+    expect(page.textContent).not.toContain(tr('changePassword.errorCurrentWrong'));
+  });
+
+  it('in the privacy dialog, says the same instead of "could not change the password"', async () => {
+    appApi.changePasswordAuth.mockRejectedValue(upstreamError(503, { code: 'SESSION_CHECK_UNAVAILABLE', message: 'x' }));
+    sessionState.value = {
+      session: { telegramId: '700001', webAccount: { login: 'alice', emailVerifiedAt: null } },
+      isLoading: false,
+      isAuthenticated: true,
+    };
+    route.location = { pathname: '/settings/privacy', search: '', hash: '', state: null };
+    const page = await mount(React.createElement(PrivacyPage));
+    const item = [...page.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes(tr('privacy.changePasswordSub')),
+    );
+    await press(item!);
+    const form = page.querySelector('form');
+    await typeInto(form!.querySelector('input[name="current-password"]'), 'old-password-1');
+    await typeInto(form!.querySelector('input[name="new-password"]'), 'new-password-2');
+
+    await submit(form);
+
+    expect(toastSpy.error.mock.calls).toEqual([[tr('auth.sessionCheckUnavailable')]]);
   });
 });

@@ -69,12 +69,14 @@ export function readUpstreamCode(e: unknown): string | null {
 /**
  * True when the failure represents the given upstream HTTP status.
  * Prefers the typed `UpstreamError.status`; falls back to scanning the
- * message text for plain errors so existing behaviour is preserved.
+ * message text for plain errors so existing behaviour is preserved — for the
+ * status as a NUMBER of its own: "404" in "connect ECONNREFUSED 10.0.0.5:4040"
+ * is a port, not a status.
  */
 export function isUpstreamStatus(e: unknown, status: number): boolean {
   if (e instanceof UpstreamError) return e.status === status;
   const message = e instanceof Error ? e.message : String(e ?? '');
-  return message.includes(String(status));
+  return new RegExp('(^|[^0-9])' + String(status) + '([^0-9]|$)').test(message);
 }
 
 /**
@@ -88,4 +90,35 @@ export function isUpstreamUserNotFound(e: unknown): boolean {
     e.status === 404 &&
     /\buser not found\b/i.test(e.body)
   );
+}
+
+/**
+ * True only when the panel said it has no such ROUTE — a panel older than the
+ * route asked, answering through its own error filter. A 404 from anything
+ * else is not that: a proxy answering while the panel restarts (HTML or plain
+ * text), or a route that exists and found no RECORD. Decided on the typed
+ * error's status and body, never on message text.
+ *
+ * The panel's filter writes `{ statusCode: 404, errorCode: 'NOT_FOUND', path }`
+ * with no product `code` (the router's "Cannot POST …" is scrubbed there to
+ * "Request failed", because the path names `auth`); a Nest app without that
+ * filter writes `{ statusCode: 404, error: 'Not Found', message: 'Cannot POST …' }`.
+ * Either names the path it was asked for, which a proxy's page does not.
+ */
+export function isUpstreamMissingRoute(e: unknown): boolean {
+  if (!(e instanceof UpstreamError) || e.status !== 404) return false;
+  let body: unknown;
+  try {
+    body = JSON.parse(e.body);
+  } catch {
+    return false;
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return false;
+  const record = body as Record<string, unknown>;
+  if (record.statusCode !== 404 || record.code !== undefined) return false;
+  const asked = e.path.split('?')[0] ?? e.path;
+  const answeredFor = (value: unknown): boolean => typeof value === 'string' && value.split('?')[0]!.endsWith(asked);
+  if (record.errorCode === 'NOT_FOUND') return answeredFor(record.path);
+  const message = record.message;
+  return record.error === 'Not Found' && typeof message === 'string' && /^Cannot [A-Z]+ \//.test(message) && answeredFor(message.replace(/^Cannot [A-Z]+ /, ''));
 }

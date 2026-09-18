@@ -90,9 +90,15 @@ export interface WebAuthChangePasswordResult {
   readonly sessionsRevokedAt?: string;
 }
 
-/** `null`: nothing was ever revoked for this customer (or they have no web account). */
+/**
+ * `sessionsRevokedAt` `null`: nothing was ever revoked for this customer (or
+ * they have no web account). `now` is the panel's clock when it answered — the
+ * moment is on that clock, a session's start on this server's — and is absent
+ * from a panel older than it.
+ */
 export interface WebSessionsStateResult {
   readonly sessionsRevokedAt: string | null;
+  readonly now?: string;
 }
 
 export interface WebSessionsRevokeResult {

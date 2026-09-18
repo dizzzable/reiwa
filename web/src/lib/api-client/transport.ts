@@ -137,6 +137,18 @@ function signedOutDestination(): string {
   }
 }
 
+/**
+ * Leaves this page for sign-in (inside the Mini App, `/bootstrap`) — for a page
+ * whose request answered a 401 this interceptor deliberately leaves to the page:
+ * a session ended by the fresh check before `/auth/change-password`
+ * (`SESSION_REVOKED`, `lib/session-check.ts`).
+ */
+export function leaveForSignIn(): void {
+  if (redirectingToSignIn) return;
+  redirectingToSignIn = true;
+  window.location.replace(signedOutDestination());
+}
+
 apiClient.interceptors.response.use(
   (res) => res,
   (error) => {

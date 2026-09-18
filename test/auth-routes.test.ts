@@ -53,6 +53,12 @@ function createMockAdminClient() {
       changePassword: vi.fn(async () => ({
         success: true,
       })),
+      // The fresh session check `/auth/change-password` asks first
+      // (`fresh-session-check.ts`): nothing was ever revoked here.
+      sessionsState: vi.fn(async () => ({
+        sessionsRevokedAt: null,
+        now: new Date().toISOString(),
+      })),
     },
     system: {
       getRegistrationToggle: vi.fn(async () => ({
