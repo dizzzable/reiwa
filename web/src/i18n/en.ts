@@ -1237,6 +1237,12 @@ export const en: RuDict = {
     cashbackCredited_other: 'You earned +{{count}} points',
     cashbackExchange: 'Exchange points',
   },
+  paymentNumber: {
+    label: 'Payment number',
+    copy: 'Copy payment number',
+    copied: 'Number copied',
+    copyFailed: "Couldn't copy. Select the number and copy it by hand.",
+  },
   privacy: {
     changePassword: 'Change password',
     changePasswordSub: 'Update your sign-in password',

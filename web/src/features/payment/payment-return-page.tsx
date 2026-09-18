@@ -27,6 +27,7 @@ import { toast } from "sonner";
 
 import { abandonCheckout, getPaymentStatus } from "@/lib/api-client";
 import { resolvePaymentResult } from "./payment-result-policy";
+import { PaymentNumber } from "./payment-number";
 import { Button } from "@/components/ui/button";
 import { useBranding } from "@/lib/branding-provider";
 import { openExternalUrl } from "@/lib/utils";
@@ -349,6 +350,15 @@ export default function PaymentReturnPage() {
             />
           )}
         </AnimatePresence>
+        {/* Outside the animated states, so it stays put while they swap: the
+            number is the same whichever way the payment ends, and it matters
+            most on the failure screen, where the next step is support. */}
+        {paymentId ? (
+          <PaymentNumber
+            paymentId={paymentId}
+            className="relative z-10 mt-8 items-center text-muted-foreground"
+          />
+        ) : null}
       </div>
     </div>
   );

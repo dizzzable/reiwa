@@ -2,7 +2,7 @@
  * TransactionsPage
  * ────────────────
  * Payment history — shows all user transactions with date, amount, gateway,
- * and status badge.
+ * status badge, and the payment number support finds a payment by.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ import { getTransactions } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/utils";
+import { PaymentNumber } from "@/features/payment/payment-number";
 
 export default function TransactionsPage() {
   const { t } = useTranslation();
@@ -75,6 +76,9 @@ export default function TransactionsPage() {
                       {tx.pricing?.finalPrice ?? tx.amount ?? "—"} {tx.pricing?.currency ?? tx.currency ?? ""}
                     </p>
                   </div>
+                  {tx.paymentId ? (
+                    <PaymentNumber paymentId={tx.paymentId} className="theme-subtle mt-1.5" />
+                  ) : null}
                 </div>
               </motion.div>
             ))}

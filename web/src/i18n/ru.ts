@@ -1250,6 +1250,12 @@ export const ru = {
     cashbackCredited_other: 'Начислено +{{count}} баллов',
     cashbackExchange: 'Обменять баллы',
   },
+  paymentNumber: {
+    label: 'Номер платежа',
+    copy: 'Скопировать номер платежа',
+    copied: 'Номер скопирован',
+    copyFailed: 'Не удалось скопировать. Выделите номер и скопируйте его вручную.',
+  },
   privacy: {
     changePassword: 'Сменить пароль',
     changePasswordSub: 'Обновите пароль для входа',
