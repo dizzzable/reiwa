@@ -117,9 +117,10 @@ describe("the modes this cabinet declares to the panel", () => {
     // The list is worth nothing unless it is sent — and it must not be sent in
     // the BODY. The panel validates bodies with `forbidNonWhitelisted`, so a
     // panel that has not learned the field answers 400 rather than ignoring it,
-    // and this route swallows that into `{ hint: null }` at debug level: a
-    // cabinet upgraded before its panel would show nobody a single hint, with
-    // nothing anywhere saying why.
+    // and this route swallows that into `{ hint: null }`: a cabinet upgraded
+    // before its panel would show nobody a single hint, and the only trace of
+    // it would be the route's throttled warn — at most one per route per
+    // minute, carrying the 400 and the panel's message.
     const source = read("src/api/routes/user-hints.ts");
 
     expect(source, "the modes are not sent at all").toContain("[...DRAWABLE_HINT_MODES]");

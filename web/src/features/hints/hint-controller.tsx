@@ -17,6 +17,38 @@ import { HintModal } from "./hint-modal";
 import { showHintToast } from "./hint-toast";
 
 /**
+ * When the controller looks at the queue again after the ask on entry,
+ * measured from the mount.
+ *
+ * ── Why it looks again at all ─────────────────────────────────────────────
+ *
+ * The welcome pop-up is not written by the sign-up request. The panel's
+ * registration handler emits an event, and an automation job writes the
+ * delivery a fraction of a second to a few seconds later — by which time the
+ * new customer has been navigated into the cabinet, the shell has mounted, and
+ * the one ask on entry has been answered `null`. The welcome then waited for
+ * their NEXT visit: the one hint written for this exact moment arrived just
+ * after it.
+ *
+ * ── Why after every mount, and not only after a sign-in ───────────────────
+ *
+ * There is no single place in this SPA that every sign-in passes. Google,
+ * Yandex and the site's Telegram button come back through a SERVER redirect
+ * that lands the browser straight on `/dashboard` (`auth/ext/:provider/
+ * callback`), and that page load cannot be told apart from a returning
+ * customer opening a bookmark. A marker left by the sign-in pages would miss
+ * exactly those paths, silently. Two more reads of a queue that answers `null`
+ * almost every time is the cheaper mistake.
+ *
+ * ── Why two, and never a third ────────────────────────────────────────────
+ *
+ * Four seconds covers the ordinary automation; fifteen covers a slow queue.
+ * Then it stops for the life of the page: whatever is raised later is found by
+ * the next thing that happens, or by the next visit.
+ */
+const FOLLOW_UP_ASK_DELAYS_MS = [4_000, 15_000] as const;
+
+/**
  * Draws at most one queued hint at a time.
  *
  * ── Why one, and why not on every navigation ──────────────────────────────
@@ -27,8 +59,9 @@ import { showHintToast } from "./hint-toast";
  * all would mean a modal on every screen they walk through, which is how people
  * learn to close hints without reading them — and then the useful ones go too.
  *
- * So it asks on entry, and again only when something HAPPENS that could have
- * queued one. Polling would turn a convenience into a nag.
+ * So it asks on entry — plus at most two follow-ups in the first seconds of the
+ * visit, see `FOLLOW_UP_ASK_DELAYS_MS` — and again only when something HAPPENS
+ * that could have queued one. Polling would turn a convenience into a nag.
  *
  * ── The one thing that happens mid-visit ──────────────────────────────────
  *
@@ -83,12 +116,27 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
    * wait for. A ref keeps one definition of each rather than a second copy of
    * the asking.
    */
-  const askRef = useRef<(() => Promise<void>) | null>(null);
+  const askRef = useRef<((followUp?: boolean) => Promise<void>) | null>(null);
 
   /**
    * One fetch at a time. See the guard at the top of `ask`.
    */
   const asking = useRef(false);
+
+  /**
+   * The fetch in flight was started by a follow-up — a clock, not something
+   * that happened. See the guard at the top of `ask` for why that matters.
+   *
+   * Read only while `asking` is set, and every ask writes it as it sets
+   * `asking`, so it never needs clearing on the way out.
+   */
+  const followUpInFlight = useRef(false);
+
+  /**
+   * Something happened while a follow-up's fetch was in flight, so that fetch
+   * cannot be its answer: ask again the moment it comes back.
+   */
+  const askAfterFollowUp = useRef(false);
 
   /**
    * Deliveries this visit has already put on screen.
@@ -143,25 +191,38 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
     void askRef.current?.();
   }, []);
 
-  const ask = useCallback(async () => {
+  const ask = useCallback(async (followUp = false) => {
     if (audience === null) return;
 
     // ── ONE ASK AT A TIME ────────────────────────────────────────────────
     //
     // `getNextHint` is a pure read and the queue filters on `shownAt: null`,
     // so two asks in flight together are handed the SAME head-of-queue row —
-    // and both then draw it and both stamp it shown. Six separate paths can
-    // start an ask (mount, provisioning, a modal close, a toast close, the
-    // undrawable retry, a drain), and until this guard existed nothing stopped
-    // two of them overlapping.
+    // and both then draw it and both stamp it shown. Seven separate paths can
+    // start an ask (mount, the follow-ups, provisioning, a modal close, a
+    // toast close, the undrawable retry, a drain), and until this guard
+    // existed nothing stopped two of them overlapping.
     //
     // The loser is recorded as suppressed rather than dropped, so the winner's
     // close comes back for whatever it was going to fetch.
     if (asking.current) {
+      // …EXCEPT behind a follow-up. Every other fetch left because something
+      // happened, so an ask raised during it is satisfied by its answer. A
+      // follow-up's fetch left on a CLOCK, possibly before the purchase that
+      // raised this ask was even written — and the follow-ups sit in the first
+      // seconds of a visit, which is exactly when a customer back from the
+      // payment page finishes provisioning. Counted as answered, the flagship
+      // hint waited for the next visit, reintroduced by the feature that exists
+      // to stop hints arriving late.
+      if (followUpInFlight.current && !followUp) {
+        askAfterFollowUp.current = true;
+        return;
+      }
       askSuppressed.current = true;
       return;
     }
     asking.current = true;
+    followUpInFlight.current = followUp;
 
     let next;
     try {
@@ -173,6 +234,18 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
       asking.current = false;
     }
 
+    // The follow-up's answer is DISCARDED, not drawn. The ask that came in
+    // behind it needs a read issued after whatever raised it, and that read
+    // hands back this same row if it is still first in line — nothing was
+    // stamped, so nothing is lost. If the row has left the queue in between
+    // (shown in another tab, say), the fresher read is the one that knows.
+    // Not after an unmount: nobody is left to answer.
+    if (askAfterFollowUp.current) {
+      askAfterFollowUp.current = false;
+      if (alive.current) void askRef.current?.();
+      return;
+    }
+
     // CLEARED AFTER THE READ, not before it — and this is the whole of the
     // second defect. Clearing it on the way IN satisfied only the asks that had
     // already been deferred; an ask turned away DURING this one's await set the
@@ -182,8 +255,18 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
     // — opening a modal minutes later, out of a timeout the customer never
     // touched, which is exactly the nagging the expiry branch refuses.
     //
-    // Here it is safe: this read was ISSUED after the deferred ask was raised,
-    // so whatever that ask would have been handed, this one has already seen.
+    // What clearing it here does NOT promise. An ask deferred BEFORE this read
+    // left is answered by it: the read was issued after that ask was raised.
+    // An ask turned away DURING this one's await is counted as answered too,
+    // by a read that may predate whatever raised it — a purchase written a
+    // moment after this read left is simply not in it. Keeping the flag for
+    // that ask would bring back the stale flag above, so the case stays open
+    // on purpose: in the first seconds of a visit a follow-up still due picks
+    // it up, provided nothing has been drawn; after that it waits for the next
+    // thing that happens, or for the next visit. (An ask raised by something
+    // that happened is never counted as answered by a FOLLOW-UP's read — see
+    // `askAfterFollowUp` above.)
+    //
     // The two guards below re-arm the flag if THIS ask is itself turned away,
     // which is the only case where somebody must come back.
     askSuppressed.current = false;
@@ -348,6 +431,41 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
     askedOnMount.current = true;
     void ask();
   }, [audience, ask]);
+
+  // ── TWO FOLLOW-UPS PER MOUNT, ONLY WHILE NOTHING HAS BEEN DRAWN ──────────
+  //
+  // `FOLLOW_UP_ASK_DELAYS_MS` says why they exist. This is how they stay
+  // bounded.
+  //
+  // Armed ONCE PER MOUNT, deliberately with no dependencies. `ask` gets a new
+  // identity on every page the customer moves to — react-router hands down a
+  // new `navigate` for each pathname — and on a language switch, and
+  // `audience` can get one when the session is refetched. Re-arming on any of
+  // them would turn "two follow-ups" into two more after every navigation: a
+  // poll with extra steps. The timers reach `ask` through the ref instead, for
+  // the reason the toast's handlers do: the locale at the moment they fire,
+  // not the one captured at mount.
+  //
+  // "Nothing drawn this visit" is the whole condition, and it covers "nothing
+  // on screen" too, since only this controller puts a hint there. A toast that
+  // simply ran out of seconds still counts as drawn: asking after it would be
+  // the nagging its expiry refuses, and after `acted` it would open a hint on
+  // the page the customer was just sent to.
+  //
+  // Cleared on unmount, so a sign-out never asks on behalf of a session that is
+  // gone. Under StrictMode the rehearsal unmount clears the first pair and the
+  // real mount arms the only pair that fires.
+  useEffect(() => {
+    const timers = FOLLOW_UP_ASK_DELAYS_MS.map((delay) =>
+      setTimeout(() => {
+        if (drawn.current.size > 0) return;
+        void askRef.current?.(true);
+      }, delay),
+    );
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const onProvisioningCompleted = () => {

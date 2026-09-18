@@ -535,7 +535,7 @@ describe("the queue while a toast is on screen", () => {
 
 describe("two asks that overlap", () => {
   it("makes one request, not two", async () => {
-    // Six paths can start an ask. Two of them running together is one wasted
+    // Seven paths can start an ask. Two of them running together is one wasted
     // read of a queue that answers `null` almost every time — and the loser is
     // recorded as suppressed rather than dropped, so the winner's close comes
     // back for whatever it was going to fetch.
