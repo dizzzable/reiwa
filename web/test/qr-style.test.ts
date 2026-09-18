@@ -327,13 +327,262 @@ describe('drawQr', () => {
   })
 })
 
+/* ─────────────────────────── reading the SVG back ─────────────────────────── */
+
+interface Box {
+  readonly x0: number
+  readonly y0: number
+  readonly x1: number
+  readonly y1: number
+}
+
+/** One painted outline, read back out of the markup. */
+interface Piece {
+  /** Which element, in document order: pieces of one `<path>` share it. */
+  readonly element: number
+  readonly tag: 'path' | 'circle' | 'rect'
+  readonly fill: string
+  readonly crisp: boolean
+  readonly box: Box
+  /** A subpath with corner arcs, or a circle. */
+  readonly curved: boolean
+  /** A subpath's corner radii; a circle's radius twice. */
+  readonly rx: number
+  readonly ry: number
+  /** A circle's centre, as written. */
+  readonly centre?: string
+}
+
+/** Relative path arithmetic lands on 13.000000000000002; the writer never means that. */
+const snap = (value: number): number => Math.round(value * 1e9) / 1e9
+
+const attribute = (attributes: string, name: string): string | undefined =>
+  new RegExp(`\\s${name}="([^"]*)"`).exec(attributes)?.[1]
+
+/**
+ * Path data as the SVG grammar reads it: a number may drop its leading zero,
+ * and needs no separator before a minus sign, or before a point when the one
+ * ahead of it already has one. Written independently of the renderer, so a
+ * writer that leaves out a separator the grammar needs reads back as the wrong
+ * geometry, and the fidelity case below fails on it.
+ */
+function subpathsOf(d: string): Array<{ box: Box; curved: boolean; rx: number; ry: number }> {
+  const tokens = d.match(/[MmHhVvAaZz]|-?(?:\d+\.?\d*|\.\d+)/g) ?? []
+  expect(tokens.join(''), `path data has characters the grammar does not read: ${d}`).toBe(d.replace(/[\s,]/g, ''))
+  const out: Array<{ box: Box; curved: boolean; rx: number; ry: number }> = []
+  let at = 0
+  let x = 0
+  let y = 0
+  let points: Array<[number, number]> = []
+  let curved = false
+  let radii: [number, number] = [0, 0]
+  const next = (): number => {
+    const token = tokens[at++]
+    if (token === undefined || /[A-Za-z]/.test(token)) throw new Error(`a number was expected in ${d}`)
+    return Number(token)
+  }
+  while (at < tokens.length) {
+    const command = tokens[at++]
+    if (command === 'M') {
+      x = next()
+      y = next()
+      points = [[x, y]]
+      curved = false
+    } else if (command === 'h') {
+      x = snap(x + next())
+      points.push([x, y])
+    } else if (command === 'v') {
+      y = snap(y + next())
+      points.push([x, y])
+    } else if (command === 'a') {
+      const rx = next()
+      const ry = next()
+      const [rotation, large, sweep] = [next(), next(), next()]
+      // A convex corner, drawn clockwise: anything else is not the corner of a rect.
+      expect([rotation, large, sweep], `an arc that is not a rect's corner in ${d}`).toEqual([0, 0, 1])
+      x = snap(x + next())
+      y = snap(y + next())
+      points.push([x, y])
+      curved = true
+      radii = [rx, ry]
+    } else if (command === 'z') {
+      const xs = points.map(([px]) => px)
+      const ys = points.map(([, py]) => py)
+      out.push({
+        box: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) },
+        curved,
+        rx: curved ? radii[0] : 0,
+        ry: curved ? radii[1] : 0,
+      })
+    } else {
+      throw new Error(`the writer is not expected to use "${command}": ${d}`)
+    }
+  }
+  return out
+}
+
+function piecesOf(svg: string): Piece[] {
+  const pieces: Piece[] = []
+  let element = 0
+  for (const [, tag, attributes = ''] of svg.matchAll(/<(path|circle|rect|image)\b([^>]*)\/>/g)) {
+    if (tag === 'image') continue
+    const fill = attribute(attributes, 'fill') ?? ''
+    const crisp = attribute(attributes, 'shape-rendering') === 'crispEdges'
+    if (tag === 'path') {
+      for (const sub of subpathsOf(attribute(attributes, 'd') ?? '')) {
+        pieces.push({ element, tag, fill, crisp, ...sub })
+      }
+    } else if (tag === 'circle') {
+      const [cx, cy, r] = ['cx', 'cy', 'r'].map((name) => Number(attribute(attributes, name))) as [number, number, number]
+      const box = { x0: snap(cx - r), y0: snap(cy - r), x1: snap(cx + r), y1: snap(cy + r) }
+      pieces.push({ element, tag, fill, crisp, box, curved: true, rx: r, ry: r, centre: `${cx},${cy}` })
+    } else {
+      const [px, py, w, h] = ['x', 'y', 'width', 'height'].map((name) => Number(attribute(attributes, name) ?? 0))
+      const r = Number(attribute(attributes, 'rx') ?? 0)
+      pieces.push({ element, tag: 'rect', fill, crisp, box: { x0: px, y0: py, x1: px + w, y1: py + h }, curved: r > 0, rx: r, ry: r })
+    }
+    element += 1
+  }
+  return pieces
+}
+
+/** Overlap, or an edge of some length in common — the shared corner of two diagonal modules is not touching. */
+function touches(a: Box, b: Box): boolean {
+  const x = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)
+  const y = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)
+  return x >= 0 && y >= 0 && x + y > 0
+}
+
+/** Consecutive things of one colour: what is painted over each other with nothing between. */
+function colourRuns<T extends { readonly fill: string }>(items: readonly T[]): T[][] {
+  const runs: T[][] = []
+  for (const item of items) {
+    const run = runs[runs.length - 1]
+    if (run !== undefined && run[0]?.fill === item.fill) run.push(item)
+    else runs.push([item])
+  }
+  return runs
+}
+
+/** Every styling the renderer draws, at the sizes the cabinet shows codes at. */
+const WRITER_CASES: ReadonlyArray<readonly [string, QrStyle, number | undefined]> = [
+  ['square modules in a colour', { ...QR_STYLE_PLAIN, dark: '#1e3a8a' }, 208],
+  ['square modules, rounded eyes', { ...QR_STYLE_PLAIN, eyes: 'rounded', dark: '#1e3a8a' }, 208],
+  ['rounded modules and eyes', { modules: 'rounded', eyes: 'rounded', dark: '#1e3a8a', logo: null }, 256],
+  ['rounded modules, square eyes', { ...QR_STYLE_PLAIN, modules: 'rounded' }, 208],
+  ['dots, square eyes', { ...QR_STYLE_PLAIN, modules: 'dots' }, 208],
+  ['dots stepped down to rounded squares', { modules: 'dots', eyes: 'rounded', dark: '#1e3a8a', logo: null }, 96],
+  ['dots with no size given', { modules: 'dots', eyes: 'rounded', dark: '#1e3a8a', logo: null }, undefined],
+  [
+    'rounded, with a logo on a dark plate',
+    {
+      modules: 'rounded',
+      eyes: 'rounded',
+      dark: '#1e3a8a',
+      logo: { src: '/uploads/branding/brand-mark.png', size: 'large', plate: 'dark' },
+    },
+    208,
+  ],
+]
+
+/** The drawing a caller gets — with its logo drawn, where the style has one. */
+function drawnFor(style: QrStyle, px: number | undefined): QrDrawing {
+  if (style.logo === null || px === undefined) return drawQr(REFERRAL_66, style, px === undefined ? {} : { displayPixels: px })
+  const plan = planQrLogo(REFERRAL_66, style, px)
+  if (plan === null) throw new Error('precondition: the planner has room for this logo')
+  return drawQr(REFERRAL_66, style, { displayPixels: px, logo: { plan, href: PNG_HREF } })
+}
+
 describe('qrDrawingToSvg', () => {
-  it('writes one element per shape, inside the viewBox of the drawing', () => {
+  it('writes the drawing inside its own viewBox', () => {
     const drawing = drawQr(LINK, { modules: 'dots', eyes: 'rounded', dark: '#1e3a8a', logo: null })
-    const svg = qrDrawingToSvg(drawing)
-    expect(svg).toContain(`viewBox="0 0 ${drawing.size} ${drawing.size}"`)
-    const elements = (svg.match(/<(rect|circle)\b/g) ?? []).length
-    expect(elements).toBe(drawing.shapes.length)
+    expect(qrDrawingToSvg(drawing)).toContain(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${drawing.size} ${drawing.size}">`)
+  })
+
+  /**
+   * THE GUARD FOR THE SEAMS. Two anti-aliased elements that share an edge each
+   * cover the pixel on it only in part, and the parts compound instead of
+   * adding up: a light grid through every styled code, a quarter of the way to
+   * white, measured in Chromium at every pixel density — and a navy square code
+   * at 256 px that no longer decoded on 2× and 3× screens. So whatever of one
+   * colour is painted in one go must be ONE element wherever it touches.
+   */
+  it.each(WRITER_CASES)('never lets two elements of one colour share an edge — %s', (_name, style, px) => {
+    const pieces = piecesOf(qrDrawingToSvg(drawnFor(style, px)))
+    // No module is its own <rect> any more: a rect element per module is the seam.
+    expect(pieces.filter((piece) => piece.tag === 'rect')).toEqual([])
+    const shared: string[] = []
+    for (const run of colourRuns(pieces)) {
+      for (let i = 0; i < run.length; i += 1) {
+        for (let j = i + 1; j < run.length; j += 1) {
+          const [a, b] = [run[i] as Piece, run[j] as Piece]
+          if (a.element !== b.element && touches(a.box, b.box)) {
+            shared.push(`${a.tag}#${a.element} and ${b.tag}#${b.element} at ${a.box.x0},${a.box.y0} / ${b.box.x0},${b.box.y0}`)
+          }
+        }
+      }
+    }
+    expect(shared, 'touching shapes of one colour written as separate elements').toEqual([])
+  })
+
+  it.each(WRITER_CASES)('draws what has no curve crisp, like the plain code, and keeps every curve smooth — %s', (_name, style, px) => {
+    const pieces = piecesOf(qrDrawingToSvg(drawnFor(style, px)))
+    const elements = new Map<number, Piece[]>()
+    for (const piece of pieces) elements.set(piece.element, [...(elements.get(piece.element) ?? []), piece])
+    for (const [element, own] of elements) {
+      const hasCurve = own.some((piece) => piece.curved)
+      expect(own[0]?.crisp, `element #${element} (${own[0]?.tag}, ${own.length} outlines, curved: ${hasCurve})`).toBe(!hasCurve)
+    }
+    // And there is always at least one of the kind the styling calls for.
+    expect(pieces.some((piece) => piece.crisp)).toBe(true)
+  })
+
+  /**
+   * The markup draws exactly the drawing — nothing lost, nothing added, nothing
+   * moved — read back through the grammar, so a separator the writer leaves out
+   * shows up here as geometry. Square outlines may cover several modules of a
+   * row; they are compared module by module.
+   */
+  it.each(WRITER_CASES)('writes exactly the shapes of the drawing, colour by colour, in paint order — %s', (_name, style, px) => {
+    const drawing = drawnFor(style, px)
+    const pieces = piecesOf(qrDrawingToSvg(drawing))
+
+    // Colour runs in the drawing's order: the ring before its hole, the hole before its core.
+    expect(colourRuns(pieces).map((run) => run[0]?.fill)).toEqual(colourRuns(drawing.shapes).map((run) => run[0]?.fill))
+
+    const cells = (box: Box, fill: string): string[] => {
+      const out: string[] = []
+      for (let y = box.y0; y < box.y1; y += 1) for (let x = box.x0; x < box.x1; x += 1) out.push(`${fill} ${x},${y}`)
+      return out
+    }
+    const sorted = (values: string[]): string[] => [...values].sort()
+
+    const written = { sharp: [] as string[], curved: [] as string[], circles: [] as string[] }
+    for (const piece of pieces) {
+      if (piece.tag === 'circle') {
+        written.circles.push(`${piece.fill} ${piece.centre} r${piece.rx}`)
+      } else if (piece.curved) {
+        const { x0, y0, x1, y1 } = piece.box
+        written.curved.push(`${piece.fill} ${x0},${y0} ${snap(x1 - x0)}x${snap(y1 - y0)} r${piece.rx}/${piece.ry}`)
+      } else {
+        written.sharp.push(...cells(piece.box, piece.fill))
+      }
+    }
+    const expected = { sharp: [] as string[], curved: [] as string[], circles: [] as string[] }
+    for (const shape of drawing.shapes) {
+      if (shape.kind === 'circle') {
+        expected.circles.push(`${shape.fill} ${shape.cx},${shape.cy} r${shape.r}`)
+      } else if (shape.r > 0) {
+        // `rx` on a <rect>, as SVG reads it: each axis clamped to half its side.
+        const [rx, ry] = [Math.min(shape.r, shape.w / 2), Math.min(shape.r, shape.h / 2)].map(snap)
+        expected.curved.push(`${shape.fill} ${snap(shape.x)},${snap(shape.y)} ${snap(shape.w)}x${snap(shape.h)} r${rx}/${ry}`)
+      } else {
+        expected.sharp.push(...cells({ x0: shape.x, y0: shape.y, x1: shape.x + shape.w, y1: shape.y + shape.h }, shape.fill))
+      }
+    }
+    expect(sorted(written.circles)).toEqual(sorted(expected.circles))
+    expect(sorted(written.curved)).toEqual(sorted(expected.curved))
+    expect(sorted(written.sharp)).toEqual(sorted(expected.sharp))
   })
 
   it('escapes the colour attribute, because an SVG is markup', () => {
@@ -639,47 +888,54 @@ describe('qrSvg — the logo', () => {
   })
 })
 
-describe('the bytes of every code drawn without a logo are frozen at what the renderer drew before logos existed', () => {
+describe('the bytes of every code drawn without a logo are frozen — and a logo nobody loaded changes none of them', () => {
   // sha256 (first 16 hex) of `qrSvg` at no size, 96, 208 and 256 px, each
-  // followed by a NUL — computed from the renderer at HEAD 67bc08c, BEFORE the logo was
-  // written, by a script outside this repository. Not from this renderer: a
-  // freeze the code under test computed for itself would agree with whatever
-  // it drew. Plain styles pin `qrcode`'s own writer, styled ones the matrix
-  // path; and a style carrying a logo nobody has loaded must hash the same.
+  // followed by a NUL, computed by a script outside this repository — never by
+  // this renderer: a freeze the code under test computed for itself would
+  // agree with whatever it drew. Plain styles pin `qrcode`'s own writer, styled
+  // ones the matrix path; and a style carrying a logo nobody has loaded must
+  // hash the same.
+  //
+  // First frozen from the renderer at 67bc08c, BEFORE the logo was written.
+  // The styled entries were recomputed once since, on 18.09.2026, when touching
+  // shapes began to be written as one path (see "How the shapes are written"
+  // in `qr-style.ts`): the model — `drawQr`, unchanged — taken from the
+  // renderer at 65eb5af and written by a separate implementation of the new
+  // writing rule. The plain entries did not move by a byte.
   // prettier-ignore
   const GOLDEN: Readonly<Record<string, string>> = {
-    'referral short · plain': 'feb4f31328160785', 'referral short · rounded': 'be80b418911714a0',
-    'referral short · dots': '982ff0e29539a89f', 'referral short · rounded eyes': 'da1e602c5e0a414f',
-    'referral short · dots navy': '0ab845d9c57699ec', 'referral short · grey floor': '6bdfff47fb07b636',
-    'referral short · rounded grey': '0d64dcf3706ca99c',
-    'invite web · plain': '9b30bdb29c5633fd', 'invite web · rounded': 'e4db251af4ed8b61',
-    'invite web · dots': '567d5a76f1472303', 'invite web · rounded eyes': '3dd57ef95dc0f105',
-    'invite web · dots navy': '828d43d8ab0a31b0', 'invite web · grey floor': '7199d9003ad5ed12',
-    'invite web · rounded grey': '0a674e8faa50b233',
-    'referral 66B · plain': '6b695b91565c42f0', 'referral 66B · rounded': '3b3d6d7415173fb8',
-    'referral 66B · dots': 'f2b6fbffef338837', 'referral 66B · rounded eyes': '4ff87c0072e321f5',
-    'referral 66B · dots navy': '7b89f612945320fb', 'referral 66B · grey floor': 'e91cdbd8665583bf',
-    'referral 66B · rounded grey': 'c02459e70ffa3f96',
-    'bot ad · plain': '47f5ff196e8a50c5', 'bot ad · rounded': '5ed139f110a61597',
-    'bot ad · dots': '75aed2a0a6244e00', 'bot ad · rounded eyes': '7eb21501fe570c17',
-    'bot ad · dots navy': 'a3cc98ce5c38b077', 'bot ad · grey floor': 'c28ca8b9be37eab0',
-    'bot ad · rounded grey': 'bab7cad520d86d50',
-    'web ad 77B · plain': '524197ab97fde035', 'web ad 77B · rounded': '0309c9ab83b23f6d',
-    'web ad 77B · dots': '1f42b4b380bbb093', 'web ad 77B · rounded eyes': 'dc9e891ba3d6f873',
-    'web ad 77B · dots navy': 'ae757df78defb70b', 'web ad 77B · grey floor': '0f25c190f3a7d89a',
-    'web ad 77B · rounded grey': '7c25d1b7ac3042cf',
-    'subscription · plain': '1f0fdf9b42b686bd', 'subscription · rounded': '530e24c20e198508',
-    'subscription · dots': 'fed5727ae0593ae0', 'subscription · rounded eyes': '684ebe848e87d7ae',
-    'subscription · dots navy': 'f5955c70a6ec422a', 'subscription · grey floor': '675cc651ca11752c',
-    'subscription · rounded grey': 'f5ecad3675a298b5',
-    'free Q · plain': '2248dec6a43fcfcf', 'free Q · rounded': '8d893f5082c13af8',
-    'free Q · dots': '87498c36b75c40d0', 'free Q · rounded eyes': '009c1b21bfe15a3d',
-    'free Q · dots navy': 'a5fc37323e8c0f48', 'free Q · grey floor': 'cf96bc174cc33c96',
-    'free Q · rounded grey': 'adc601f29503e183',
-    'free H · plain': '679b72144cd861ae', 'free H · rounded': 'e4fc152b576f74ae',
-    'free H · dots': 'e7801d493a6bb24c', 'free H · rounded eyes': '42d682a5d81d5f55',
-    'free H · dots navy': 'aabe4bbd79b4252b', 'free H · grey floor': 'e7c8478647ad89dc',
-    'free H · rounded grey': 'd50ab8abe4341b0c',
+    'referral short · plain': 'feb4f31328160785', 'referral short · rounded': 'fd8d5894c75ebcdd',
+    'referral short · dots': 'f1a8ff53c4fa0964', 'referral short · rounded eyes': '2cd08792871088bc',
+    'referral short · dots navy': '3936267af92cc02c', 'referral short · grey floor': 'b9aa17f7483cf311',
+    'referral short · rounded grey': '35b40f6350d36284',
+    'invite web · plain': '9b30bdb29c5633fd', 'invite web · rounded': '3965a8cf2233ce8a',
+    'invite web · dots': 'f4b2527e29fc0e55', 'invite web · rounded eyes': '9177f2821bbb7b07',
+    'invite web · dots navy': '455f01ab9f2a745b', 'invite web · grey floor': '61ae23c8aa5059ac',
+    'invite web · rounded grey': '438394de806ad360',
+    'referral 66B · plain': '6b695b91565c42f0', 'referral 66B · rounded': 'e24a6a8691015c56',
+    'referral 66B · dots': '12a23e8b579e7c5a', 'referral 66B · rounded eyes': 'bd65d68ff74e16f4',
+    'referral 66B · dots navy': 'b5e8c17d1462cf0c', 'referral 66B · grey floor': '1e48fdb2dd048702',
+    'referral 66B · rounded grey': '264d5a0cbd6bdfe9',
+    'bot ad · plain': '47f5ff196e8a50c5', 'bot ad · rounded': '6ec65933097be97a',
+    'bot ad · dots': '57de168375a4bb1b', 'bot ad · rounded eyes': 'c51238fcb36614e5',
+    'bot ad · dots navy': '0a0bb8adab6e0d5a', 'bot ad · grey floor': '5e8e0d323262d345',
+    'bot ad · rounded grey': 'bbbf1942872dabbc',
+    'web ad 77B · plain': '524197ab97fde035', 'web ad 77B · rounded': '61e2ab515fb18264',
+    'web ad 77B · dots': 'ebbdb4a762070e2c', 'web ad 77B · rounded eyes': '12da3866c78986fc',
+    'web ad 77B · dots navy': '0177bbac5420fd73', 'web ad 77B · grey floor': 'dea217c15a0e6f80',
+    'web ad 77B · rounded grey': 'ed615b970659da00',
+    'subscription · plain': '1f0fdf9b42b686bd', 'subscription · rounded': '5059baeaef73a805',
+    'subscription · dots': '20f0e139c7529b70', 'subscription · rounded eyes': '4a70a92bef5ec196',
+    'subscription · dots navy': 'e8b74c7e83fd48b9', 'subscription · grey floor': '9df525cfbb3d3abd',
+    'subscription · rounded grey': 'a85a37bdac317e2f',
+    'free Q · plain': '2248dec6a43fcfcf', 'free Q · rounded': '9e722d8c7b20e73b',
+    'free Q · dots': '0c36dc4baa9e744d', 'free Q · rounded eyes': 'f8e2e9bd4ecb2352',
+    'free Q · dots navy': '9ed21c9e53d67e32', 'free Q · grey floor': '917bf032f1ce01f7',
+    'free Q · rounded grey': '16126f9ff9579798',
+    'free H · plain': '679b72144cd861ae', 'free H · rounded': '7f44a130f5e9d85a',
+    'free H · dots': '61b938dbfd9b464b', 'free H · rounded eyes': '15b45dde65cb5ff0',
+    'free H · dots navy': '482b5f53ce3be59e', 'free H · grey floor': '03a846f6b63e5633',
+    'free H · rounded grey': '66413a47b68b33db',
   }
 
   const TEXTS: ReadonlyArray<readonly [string, string]> = [

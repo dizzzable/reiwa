@@ -92,6 +92,27 @@
  * The connect code never carries a logo. It never receives a style at all, and
  * a logo additionally needs the fourth argument of `qrSvg`, which `LocalQr` —
  * the component the connect sheet draws through — has no way to pass.
+ *
+ * ── How the shapes are written ──────────────────────────────────────────────
+ *
+ * Shapes that touch are ONE path. Written as separate elements — as they once
+ * were, a `<rect>` per module — every edge two modules share was anti-aliased
+ * twice: the pixel on it is covered half by each, and two half coverages
+ * compound to 75%, not 100%. That drew a light grid through every styled code,
+ * a quarter of the way to white, at every pixel density — measured in Chromium
+ * at 1, 1.25, 1.5, 2 and 3 device pixels per CSS pixel — and a navy square
+ * code at the partner's 256 px stopped decoding on 2× and 3× screens. Within
+ * one path the rasteriser sums coverage over the whole outline, so a shared
+ * edge is no edge at all.
+ *
+ * A group of touching shapes with no curve in it is drawn `crispEdges`, the
+ * way `qrcode`'s own writer draws the plain code: square modules stay as sharp
+ * as the unstyled code's, not fringed. A group with a curve in it — a rounded
+ * module, and every square it touches — stays anti-aliased, because
+ * `crispEdges` on a curve turns it into steps. So each run of one colour is at
+ * most two paths, and nothing in one touches anything in the other. Dots stay
+ * `<circle>` elements: they never touch, and callers tell dots from the
+ * rounded squares they step down to by that element.
  */
 import QRCode, { type QRCodeErrorCorrectionLevel } from 'qrcode'
 
@@ -454,10 +475,181 @@ export function drawQr(text: string, style: QrStyle, options: DrawQrOptions = {}
   return { size, shapes, version: qr.version, errorCorrectionLevel, logo: image }
 }
 
+/**
+ * The drawing as SVG markup, painted in the drawing's order — see "How the
+ * shapes are written" in the header for why touching shapes share a path.
+ *
+ * Shapes are taken in runs of one colour. Inside a run the order of painting
+ * cannot change a pixel (one colour over itself is the same colour whichever
+ * goes first), so a run may be regrouped freely; between runs the order is
+ * kept, which is what puts a rounded eye's white hole over its ring.
+ */
 export function qrDrawingToSvg(drawing: QrDrawing): string {
-  const body = drawing.shapes.map(shapeToSvg).join('')
+  const body = runsOfOneColour(drawing.shapes).map(runToSvg).join('')
   const logo = drawing.logo !== undefined && isQrLogoHref(drawing.logo.href) ? imageToSvg(drawing.logo) : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${drawing.size} ${drawing.size}">${body}${logo}</svg>`
+}
+
+type QrRect = Extract<QrShape, { kind: 'rect' }>
+type QrCircle = Extract<QrShape, { kind: 'circle' }>
+
+function runsOfOneColour(shapes: readonly QrShape[]): QrShape[][] {
+  const runs: QrShape[][] = []
+  for (const shape of shapes) {
+    const run = runs[runs.length - 1]
+    if (run !== undefined && run[0]?.fill === shape.fill) run.push(shape)
+    else runs.push([shape])
+  }
+  return runs
+}
+
+/**
+ * A run of one colour: at most one crisp path, one anti-aliased path, and the
+ * circles. A rect goes to the anti-aliased path when anything it touches, or
+ * anything touching that, has a curve — so no rect in one path touches a rect
+ * in the other.
+ */
+function runToSvg(run: readonly QrShape[]): string {
+  const rects = run.filter((shape): shape is QrRect => shape.kind === 'rect')
+  const circles = run.filter((shape): shape is QrCircle => shape.kind === 'circle')
+  const smooth = rectsTouchingACurve(rects)
+  const fill = escapeAttribute(run[0]?.fill ?? '')
+  const sharp = joinRowNeighbours(rects.filter((_, i) => !smooth[i]))
+  const curved = rects.filter((_, i) => smooth[i])
+  return (
+    (sharp.length > 0 ? `<path fill="${fill}" shape-rendering="crispEdges" d="${sharp.map(rectPath).join('')}"/>` : '') +
+    (curved.length > 0 ? `<path fill="${fill}" d="${curved.map(rectPath).join('')}"/>` : '') +
+    circles.map(circleToSvg).join('')
+  )
+}
+
+const isCurved = (rect: QrRect): boolean => rect.r > 0 && rect.w > 0 && rect.h > 0
+
+/**
+ * For each rect: does its group of touching rects — touching counted
+ * transitively — contain a curve? Union-find over the touching pairs. A module
+ * is a unit square on whole coordinates, so modules find their neighbours by
+ * cell; the few other rects (eyes, a plate) are tested against every rect.
+ */
+function rectsTouchingACurve(rects: readonly QrRect[]): boolean[] {
+  const parent = rects.map((_, i) => i)
+  const root = (i: number): number => {
+    let at = i
+    while (parent[at] !== at) {
+      const up = parent[parent[at] as number] as number
+      parent[at] = up
+      at = up
+    }
+    return at
+  }
+  const join = (a: number, b: number): void => {
+    parent[root(a)] = root(b)
+  }
+
+  const cells = new Map<string, number>()
+  const others: number[] = []
+  rects.forEach((rect, i) => {
+    if (rect.w === 1 && rect.h === 1 && Number.isInteger(rect.x) && Number.isInteger(rect.y)) {
+      const key = `${rect.x},${rect.y}`
+      const twin = cells.get(key)
+      if (twin !== undefined) join(i, twin)
+      else cells.set(key, i)
+    } else {
+      others.push(i)
+    }
+  })
+  for (const i of cells.values()) {
+    const { x, y } = rects[i] as QrRect
+    for (const key of [`${x + 1},${y}`, `${x},${y + 1}`]) {
+      const neighbour = cells.get(key)
+      if (neighbour !== undefined) join(i, neighbour)
+    }
+  }
+  for (const i of others) {
+    rects.forEach((rect, j) => {
+      if (j !== i && rectsTouch(rects[i] as QrRect, rect)) join(i, j)
+    })
+  }
+
+  const curvedRoot = new Set<number>()
+  rects.forEach((rect, i) => {
+    if (isCurved(rect)) curvedRoot.add(root(i))
+  })
+  return rects.map((_, i) => curvedRoot.has(root(i)))
+}
+
+/** Boxes that overlap, or share an edge of some length — a shared corner is not touching. */
+function rectsTouch(a: QrRect, b: QrRect): boolean {
+  const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+  const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+  return overlapX >= 0 && overlapY >= 0 && overlapX + overlapY > 0
+}
+
+/** Sharp rects side by side in one row, as one rect: the same area in far fewer bytes. */
+function joinRowNeighbours(rects: readonly QrRect[]): QrRect[] {
+  const joined: QrRect[] = []
+  for (const rect of rects) {
+    const last = joined[joined.length - 1]
+    if (last !== undefined && last.y === rect.y && last.h === rect.h && last.x + last.w === rect.x) {
+      joined[joined.length - 1] = { ...last, w: last.w + rect.w }
+    } else {
+      joined.push(rect)
+    }
+  }
+  return joined
+}
+
+/**
+ * One rect as one clockwise subpath — clockwise for every rect, so where two
+ * meet their shared edge cancels out under the nonzero rule. A rounded one
+ * takes the corner radii `rx` gives a `<rect>`: `rx` for both axes, each
+ * clamped to half its side.
+ */
+function rectPath(rect: QrRect): string {
+  const rx = Math.max(0, Math.min(rect.r, rect.w / 2))
+  const ry = Math.max(0, Math.min(rect.r, rect.h / 2))
+  if (rx === 0 || ry === 0) {
+    return `M${pathNumbers(rect.x, rect.y)}h${pathNumbers(rect.w)}v${pathNumbers(rect.h)}h${pathNumbers(-rect.w)}z`
+  }
+  const acrossX = rect.w - 2 * rx
+  const acrossY = rect.h - 2 * ry
+  const corner = (dx: number, dy: number): string => `a${pathNumbers(rx, ry)} 0 0 1 ${pathNumbers(dx, dy)}`
+  return (
+    `M${pathNumbers(rect.x + rx, rect.y)}` +
+    (acrossX > 0 ? `h${pathNumbers(acrossX)}` : '') +
+    corner(rx, ry) +
+    (acrossY > 0 ? `v${pathNumbers(acrossY)}` : '') +
+    corner(-rx, ry) +
+    (acrossX > 0 ? `h${pathNumbers(-acrossX)}` : '') +
+    corner(-rx, -ry) +
+    (acrossY > 0 ? `v${pathNumbers(-acrossY)}` : '') +
+    corner(rx, -ry) +
+    'z'
+  )
+}
+
+/**
+ * Numbers as path data takes them, in few bytes — the markup reaches the page
+ * percent-encoded, where a space costs three. At most three decimals, no
+ * leading zero, and a separator only where the grammar needs one: never
+ * before a minus sign, never between `.3` and `.3` (a number has one point).
+ * Arc flags are spelled out with spaces around them by the caller: a parser
+ * that took `1.3` for a number instead of a flag and `.3` would draw nonsense.
+ */
+function pathNumbers(...values: number[]): string {
+  let text = ''
+  let previous = ''
+  for (const value of values) {
+    const next = n3(value).replace(/^(-?)0\./, '$1.')
+    const joins = next.startsWith('-') || (next.startsWith('.') && previous.includes('.'))
+    text += previous === '' || joins ? next : ` ${next}`
+    previous = next
+  }
+  return text
+}
+
+function circleToSvg(circle: QrCircle): string {
+  return `<circle cx="${n3(circle.cx)}" cy="${n3(circle.cy)}" r="${n3(circle.r)}" fill="${escapeAttribute(circle.fill)}"/>`
 }
 
 function dataModule(shape: QrModuleShape, x: number, y: number, fill: string): QrShape {
@@ -477,15 +669,6 @@ function roundedEye(x: number, y: number, fill: string): QrShape[] {
     { kind: 'rect', x: x + 1, y: y + 1, w: 5, h: 5, r: EYE_RADII.hole, fill: LIGHT },
     { kind: 'rect', x: x + 2, y: y + 2, w: 3, h: 3, r: EYE_RADII.core, fill },
   ]
-}
-
-function shapeToSvg(shape: QrShape): string {
-  const fill = escapeAttribute(shape.fill)
-  if (shape.kind === 'circle') {
-    return `<circle cx="${n3(shape.cx)}" cy="${n3(shape.cy)}" r="${n3(shape.r)}" fill="${fill}"/>`
-  }
-  const radius = shape.r > 0 ? ` rx="${n3(shape.r)}"` : ''
-  return `<rect x="${n3(shape.x)}" y="${n3(shape.y)}" width="${n3(shape.w)}" height="${n3(shape.h)}"${radius} fill="${fill}"/>`
 }
 
 /**
