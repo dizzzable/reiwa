@@ -1020,7 +1020,7 @@ function SelectGateway() {
     if (!isProviderSubscriptionGateway(gw.type)) return true;
     if (selectedSubscriptionIds.length !== 1) return false;
     const days = renewalDays(selectedSubscriptionIds[0]!);
-    return days !== null && isProviderPeriod(days);
+    return days !== null && isProviderPeriod(gw.type, days);
   };
   const renewalAddOns = useRenewalAddOnsEnabled();
   // Policy-settled signal (same shared query): the add-on capability must be

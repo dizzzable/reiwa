@@ -17,13 +17,22 @@ import {
 describe("isProviderPeriod", () => {
   it("accepts the terms Platega has a period for", () => {
     for (const days of [1, 7, 14, 28, 30, 31, 60, 90, 180, 360, 365, 730, 1095]) {
-      expect(isProviderPeriod(days), String(days)).toBe(true);
+      expect(isProviderPeriod("PLATEGA", days), String(days)).toBe(true);
     }
   });
 
   it("refuses a term the provider would charge on a schedule nobody bought", () => {
     for (const days of [0, -30, 32, 45, 100, 364, 390, 1460, 30.5]) {
-      expect(isProviderPeriod(days), String(days)).toBe(false);
+      expect(isProviderPeriod("PLATEGA", days), String(days)).toBe(false);
+    }
+  });
+
+  it("gives RollyPay only its month, quarter, half-year and year tariffs", () => {
+    for (const days of [30, 90, 180, 365]) {
+      expect(isProviderPeriod("ROLLYPAY", days), String(days)).toBe(true);
+    }
+    for (const days of [1, 7, 31, 60, 360, 730]) {
+      expect(isProviderPeriod("ROLLYPAY", days), String(days)).toBe(false);
     }
   });
 });
@@ -66,6 +75,12 @@ describe("offersAutopay", () => {
     expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: null })).toBe(false);
     // Never where the operator has not confirmed approval.
     expect(offersAutopay({ gatewayType: "PLATEGA", autopay: false, purchase: monthly })).toBe(false);
+  });
+
+  it("offers RollyPay's option on its own periods only", () => {
+    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: monthly })).toBe(true);
+    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: { ...monthly, durationDays: 60 } })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: null })).toBe(false);
   });
 });
 

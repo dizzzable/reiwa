@@ -859,7 +859,7 @@ export const en: RuDict = {
       everyYear_other: 'every {{count}} years',
       via: 'Automatic charging over SBP',
       nextCharge: 'Next charge {{date}}',
-      pastDue: 'The last charge failed and will not be retried. Renew manually or turn automatic charging off.',
+      pastDue: 'The last charge failed. To keep your access, renew manually or turn automatic charging off.',
       cancel: 'Turn off automatic charging',
       cancelling: 'Turning off…',
       cancelTitle: 'Turn off automatic charging?',
