@@ -36,6 +36,7 @@ import { getPlatformPolicy } from "@/lib/api-client";
 import { ensurePushSubscription } from "@/lib/push";
 import { isPushResyncFresh, rememberPushResync } from "@/lib/push-resync-marker";
 import { nextDestinationQuery } from "@/lib/next-destination";
+import { connectHelpReturnPath } from "@/features/dashboard/connect-help";
 import { useServiceWorkerNavigate } from "@/lib/sw-navigate";
 import { readTelegramLaunchInitData } from "@/lib/telegram-launch-params";
 import { resolveAppBackgroundKind } from "@/types/branding";
@@ -319,11 +320,23 @@ export default function StealthLayout() {
   // finished on /dashboard, because the `next` built here was handed to
   // /bootstrap and to nothing else. `/renew` was reachable only if they went
   // looking for it.
+  //
+  // `/` and `/dashboard` are where every sign-in ends anyway, so a `next`
+  // naming them is noise — EXCEPT the connect-help deep link,
+  // `/dashboard?connect=help[&subscriptionId=…]`. The push, the bot's
+  // «Подключить» and the pop-up all land there, and somebody who must sign in
+  // first — a Mini App opened without the cabinet's cookie, the bot's button
+  // opened in a browser — has to come back to it, not to a plain dashboard
+  // that no longer knows which subscription needed help. Rebuilt from its two
+  // parameters and validated like every other `next`.
   const intended = `${location.pathname}${location.search}`;
+  const connectHelpReturn = connectHelpReturnPath(location.pathname, location.search);
   const next =
-    location.pathname !== "/" && location.pathname !== "/dashboard"
-      ? nextDestinationQuery(intended)
-      : "";
+    connectHelpReturn !== null
+      ? nextDestinationQuery(connectHelpReturn)
+      : location.pathname !== "/" && location.pathname !== "/dashboard"
+        ? nextDestinationQuery(intended)
+        : "";
 
   if (!session) {
     return <Navigate to={`/bootstrap${next}`} replace />;

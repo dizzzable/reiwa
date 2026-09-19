@@ -32,7 +32,7 @@ vi.mock("react-i18next", () => ({
 vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/api-client", () => api);
 vi.mock("@/lib/push", () => ({
-  detectPushSupport: async () => ({ supported: false, reason: "unsupported" }),
+  detectPushSupport: () => "unsupported-browser",
   getCurrentSubscription: async () => null,
   subscribeToPush: vi.fn(),
   unsubscribeFromPush: vi.fn(),

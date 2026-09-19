@@ -71,7 +71,11 @@ export default function NotificationsFeedPage() {
 
   function openNotification(n: PresentedNotification): void {
     if (!n.isRead) markOne.mutate(n.id);
-    const target = resolveNotificationTarget(n.type);
+    // The raw row's payload travels with the type: a connect-help notice names
+    // its subscription there, and the presented copy carries only the words.
+    // Every other type is decided by its type alone, exactly as before.
+    const payload = (data?.notifications ?? []).find((row) => row.id === n.id)?.payload ?? null;
+    const target = resolveNotificationTarget(n.type, payload);
     if (target.kind === "route") {
       navigate(target.path);
       return;

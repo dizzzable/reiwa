@@ -144,6 +144,21 @@ export function readConnectHelpDeepLink(
   };
 }
 
+/**
+ * Where somebody who opened the deep link must come back to after signing in
+ * — for `?next=` — or `null` when the address is not the deep link.
+ *
+ * REBUILT from the two parameters it means rather than copied from the
+ * address: a `next` names a page, and whatever else the address carried (an
+ * ad's `utm_*`, a stray `next` of its own) is carried by the hops that own it,
+ * or not at all. The id passes the same shape check as everywhere else, so
+ * what comes back is always `/dashboard?connect=help[&subscriptionId=…]`.
+ */
+export function connectHelpReturnPath(pathname: string, search: string): string | null {
+  const request = readConnectHelpDeepLink(pathname, search);
+  return request === null ? null : connectHelpDeepLink(request.subscriptionId);
+}
+
 function createdAtOf(subscription: Pick<Subscription, "createdAt">): number {
   const at = Date.parse(subscription.createdAt);
   return Number.isFinite(at) ? at : Number.NEGATIVE_INFINITY;
