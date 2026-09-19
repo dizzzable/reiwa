@@ -12,6 +12,7 @@ import { SESSION_QUERY_KEY } from '@/hooks/use-session'
 import { ExternalAuthButtons } from './external-auth-buttons'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { keepQuery } from '@/lib/keep-query'
+import { nextDestinationQuery, readNextDestination, sanitizeNextDestination } from '@/lib/next-destination'
 import { useBranding } from '@/lib/branding-provider'
 import { readSignInHandoff } from './password-reset-api'
 
@@ -21,6 +22,33 @@ import { readSignInHandoff } from './password-reset-api'
 // hardware keyboard is already attached — keeps the convenience.
 const autoFocusFinePointer =
   typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches
+
+/**
+ * Where a successful password sign-in goes: a step the SERVER requires, then
+ * the page the visitor was going to, then the dashboard.
+ *
+ * What `redirectUrl` can be, read at the source: the panel's login answer
+ * carries no redirect at all (`WebAuthLoginResultInterface`), and the BFF's
+ * `POST /auth/login` sets `/change-password` when a password change is forced
+ * — handled before this is asked — and `/dashboard` otherwise. So today it is
+ * only ever the default, and `next` wins. Anything else a server says here one
+ * day is a step it requires, so it goes first and `next` rides along with it.
+ */
+function signInDestination(redirectUrl: string | undefined, next: string | null): string {
+  const server = sanitizeNextDestination(redirectUrl)
+  if (server !== null && pathOf(server) !== '/' && pathOf(server) !== '/dashboard') {
+    return server.includes('?') ? server : `${server}${nextDestinationQuery(next)}`
+  }
+  // A `next` that leads back to this form is no destination.
+  return next !== null && pathOf(next) !== '/sign-in' ? next : '/dashboard'
+}
+
+/** The path of a same-origin target, lower-cased, with no trailing slash. */
+function pathOf(target: string): string {
+  let path = new URL(target, 'https://cabinet.invalid').pathname.toLowerCase()
+  while (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1)
+  return path
+}
 
 export default function SignInPage() {
   const { t } = useTranslation()
@@ -134,12 +162,16 @@ export default function SignInPage() {
           // Invalidate session query to refetch
           await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
 
+          // Where the visitor was going when sign-in stopped them — a push, a
+          // bot button, a bookmark to a cabinet page — carried here as `?next=`
+          // by the pages in between, and checked by the rule every hop shares.
+          const nextDestination = readNextDestination()
           if (response.requiresPasswordChange) {
-            // Block access to protected routes — redirect to password change
-            navigate('/change-password', { replace: true })
+            // The server's required step first. The destination rides along,
+            // and the change-password page continues to it afterwards.
+            navigate(`/change-password${nextDestinationQuery(nextDestination)}`, { replace: true })
           } else {
-            // Normal sign-in — redirect to dashboard or specified URL
-            navigate(response.redirectUrl || '/dashboard', { replace: true })
+            navigate(signInDestination(response.redirectUrl, nextDestination), { replace: true })
           }
         }
       } catch (err: unknown) {
