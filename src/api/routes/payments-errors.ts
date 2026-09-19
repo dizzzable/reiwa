@@ -105,6 +105,11 @@ const CHECKOUT_ERROR_CODES = new Set([
   // answers by saying the plan is gone and sending the buyer back to a freshly
   // loaded catalogue — an answer that is only right for this refusal.
   "PAYMENT_DRAFT_PLAN_NOT_AVAILABLE",
+  // «для автоматического списания» is refused for this purchase (a promo
+  // price, kopecks, a term the provider has no period for, add-ons, several
+  // subscriptions, or approval switched off since the list loaded). Nothing
+  // was created; the page offers the ordinary payment instead.
+  "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE",
 ]);
 
 /** Abandon refusals, reported by rezeis as 409. */
@@ -168,6 +173,13 @@ const RENEWAL_ERROR_MESSAGES: Record<string, { status: number; message: string }
   RENEWAL_ITEM_NOT_PRICEABLE: {
     status: 409,
     message: "A subscription can no longer be renewed on these terms. Review the renewal again.",
+  },
+  // «для автоматического списания» refused for this renewal; nothing was
+  // created. A 400, not a conflict: reviewing again changes nothing, the
+  // ordinary payment does.
+  AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE: {
+    status: 400,
+    message: "Automatic charging is not available for this renewal. Choose the ordinary payment.",
   },
 };
 

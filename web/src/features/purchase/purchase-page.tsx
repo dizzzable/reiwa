@@ -42,6 +42,11 @@ import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
+import {
+  isAutopayNotAvailableRefusal,
+  isProviderSubscriptionGateway,
+  offersAutopay,
+} from "@/lib/autopay-offer";
 import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
 import {
   formatSavedPaymentMethodMeta,
@@ -232,11 +237,27 @@ function SelectGateway({
   const selectedGateway = usePurchaseStore((s) => s.selectedGateway);
   const selectedSavedPaymentMethodId = usePurchaseStore((s) => s.selectedSavedPaymentMethodId);
   const selectSavedPaymentMethod = usePurchaseStore((s) => s.selectSavedPaymentMethod);
+  const selectedPlan = usePurchaseStore((s) => s.selectedPlan);
+  const selectedDuration = usePurchaseStore((s) => s.selectedDuration);
   const { data: gateways = [], isLoading } = useQuery({
     queryKey: ["gateways"],
     queryFn: getEnabledGateways,
     staleTime: 300_000,
   });
+  // Platega's option only where the provider can repeat this exact sum and term.
+  const autopayOffered = (gw: { type: string; autopay?: boolean }) =>
+    offersAutopay({
+      gatewayType: gw.type,
+      autopay: gw.autopay,
+      purchase:
+        selectedDuration === null
+          ? null
+          : {
+              durationDays: selectedDuration.days,
+              price: selectedDuration.prices.find((price) => price.gatewayType === gw.type),
+              isTrial: selectedPlan?.isTrial === true,
+            },
+    });
   const yookassaEnabled = gateways.some((gw) => gw.type === "YOOKASSA" && gw.isActive !== false);
   const { data: paymentMethodsData, isPending: paymentMethodsPending } = useQuery({
     queryKey: ["payment-methods"],
@@ -263,7 +284,7 @@ function SelectGateway({
     if (
       !isLoading &&
       gateways.length === 1 &&
-      gateways[0].autopay !== true &&
+      !autopayOffered(gateways[0]) &&
       lastNav === "forward" &&
       !savedMethodsUnknown &&
       savedYookassaMethods.length === 0
@@ -371,7 +392,7 @@ function SelectGateway({
                 <p className="text-xs text-muted-foreground">{gw.currency}</p>
               </div>
             </button>
-            {gw.autopay === true && (
+            {autopayOffered(gw) && (
               <button
                 onClick={() =>
                   onSelect({
@@ -680,7 +701,13 @@ function QuoteView({
       {showAutopayNotice && (
         <div className="rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-snug text-foreground">
           <p className="font-medium">{t("purchase.quote.autopayTitle")}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t("purchase.quote.autopayHint")}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t(
+              isProviderSubscriptionGateway(selectedGateway?.id)
+                ? "purchase.quote.autopayProviderHint"
+                : "purchase.quote.autopayHint",
+            )}
+          </p>
         </div>
       )}
 
@@ -797,6 +824,11 @@ function CheckoutStep({
     mutationFn: () => {
       const interactiveYookassa =
         selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
+      // On Platega «для автоматического списания» is a subscription the provider
+      // runs, and this consent is what tells the panel to create one instead of
+      // a one-off payment.
+      const providerSubscription =
+        selectedGateway?.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
       return createCheckout(
         selectedPlan!.id,
         selectedDuration!.days,
@@ -804,7 +836,7 @@ function CheckoutStep({
         selectedDevice ?? undefined,
         selectedSavedPaymentMethodId,
         interactiveYookassa ? savePaymentMethodConsent : undefined,
-        interactiveYookassa ? savePaymentMethodConsent : undefined,
+        interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
         purchaseType,
       );
     },
@@ -831,6 +863,13 @@ function CheckoutStep({
       if (isSubscriptionLimitError(err)) {
         notifySubscriptionLimitReached(t);
         navigate("/dashboard", { replace: true });
+        return;
+      }
+      if (isAutopayNotAvailableRefusal(err)) {
+        // Nothing was created. Back to the quote, where «Изменить» leads to the
+        // ordinary payment.
+        toast.error(t("purchase.checkout.autopayNotAvailable"));
+        goBack();
         return;
       }
       if (isPlanUnavailableRefusal(err)) {

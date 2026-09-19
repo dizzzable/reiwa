@@ -44,6 +44,7 @@ import {
 import { useSession } from "@/hooks/use-session";
 import { useInstallPrompt } from "@/hooks/use-install-prompt";
 import { updateLanguage, getNotifications, getPaymentMethods } from "@/lib/api-client";
+import { hasManageablePaymentMethods } from "@/lib/api-client/payment-methods";
 import { setLocale } from "@/i18n/i18n";
 import { useBranding } from "@/lib/branding-provider";
 import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
@@ -107,7 +108,8 @@ export default function SettingsPage() {
     staleTime: 15_000,
     retry: false,
   });
-  const hasPaymentMethods = (paymentMethodsData?.methods ?? []).length > 0;
+  // A card to manage, or automatic charging the provider runs (Platega).
+  const hasPaymentMethods = hasManageablePaymentMethods(paymentMethodsData);
   const supportUnread = (notifData?.notifications ?? []).filter(
     (n) => n.type === "support_reply" && !n.readAt,
   ).length;

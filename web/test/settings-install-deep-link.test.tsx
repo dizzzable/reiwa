@@ -29,7 +29,10 @@ const installState = vi.hoisted(() => ({
   },
 }));
 /** What the payment-methods read answers: nothing saved unless a case says otherwise. */
-const paymentMethodsState = vi.hoisted(() => ({ methods: [] as Array<{ id: string }> }));
+const paymentMethodsState = vi.hoisted(() => ({
+  methods: [] as Array<{ id: string }>,
+  providerSubscriptions: [] as Array<{ id: string }>,
+}));
 
 const routerState = vi.hoisted(() => ({
   params: new URLSearchParams(),
@@ -63,7 +66,11 @@ vi.mock("@/hooks/use-is-desktop", () => ({ useIsDesktop: () => false }));
 vi.mock("@/lib/api-client", () => ({
   updateLanguage: vi.fn(),
   getNotifications: vi.fn(async () => ({ items: [], total: 0 })),
-  getPaymentMethods: vi.fn(async () => ({ methods: paymentMethodsState.methods, total: paymentMethodsState.methods.length })),
+  getPaymentMethods: vi.fn(async () => ({
+    methods: paymentMethodsState.methods,
+    total: paymentMethodsState.methods.length,
+    providerSubscriptions: paymentMethodsState.providerSubscriptions,
+  })),
 }));
 vi.mock("@/i18n/i18n", () => ({ setLocale: vi.fn() }));
 vi.mock("@/lib/branding-provider", () => ({
@@ -105,6 +112,7 @@ beforeEach(() => {
   root = createRoot(container);
   routerState.params = new URLSearchParams();
   paymentMethodsState.methods = [];
+  paymentMethodsState.providerSubscriptions = [];
   routerState.setSearchParams = vi.fn();
   installState.current = {
     canInstall: false,
@@ -218,6 +226,14 @@ describe("the «Способы оплаты» row", () => {
 
   it("is shown once a method is saved", async () => {
     paymentMethodsState.methods = [{ id: "pm-1" }];
+    await render();
+    expect(container.textContent).toContain("settings.paymentMethods");
+  });
+
+  it("is shown for automatic charging the provider runs, with no card saved", async () => {
+    // Platega saves nothing on our side: the subscription is the only thing to
+    // manage, and switching it off lives on that page.
+    paymentMethodsState.providerSubscriptions = [{ id: "ps-1" }];
     await render();
     expect(container.textContent).toContain("settings.paymentMethods");
   });

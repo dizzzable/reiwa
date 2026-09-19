@@ -73,6 +73,17 @@ export class PaymentMethodsNamespace {
     );
   }
 
+  /**
+   * «Отключить автосписание» for a subscription the provider runs (Platega):
+   * the panel cancels it at the provider, then marks it cancelled.
+   */
+  cancelProviderSubscription(identity: UserIdentity, subscriptionId: string): Promise<unknown> {
+    return this.transport.request(
+      'POST',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}/provider-subscriptions/${encodeURIComponent(subscriptionId)}/cancel`,
+    );
+  }
+
   getSetupStatus(identity: UserIdentity, setupId: string): Promise<unknown> {
     return this.transport.request(
       'GET',

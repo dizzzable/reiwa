@@ -20,13 +20,17 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
 import {
+  cancelProviderSubscription,
   getPaymentMethods,
   getPaymentMethodSetupStatus,
   startPaymentMethodSetup,
   setPaymentMethodAutopay,
   unbindPaymentMethod,
+  type ProviderSubscription,
   type SavedPaymentMethod,
 } from '@/lib/api-client';
+import { formatDate } from '@/lib/utils';
+import { AutopayGatewayMark } from '@/components/ui/gateway-icon';
 import { BackButton } from '@/components/ui/back-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StadiumButton } from '@/components/ui/stadium-button';
@@ -44,6 +48,7 @@ export default function PaymentMethodsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [unbindId, setUnbindId] = useState<string | null>(null);
+  const [cancelSubscriptionId, setCancelSubscriptionId] = useState<string | null>(null);
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
   const [setupConsent, setSetupConsent] = useState(false);
   const completedSetupRef = useRef<string | null>(null);
@@ -56,6 +61,7 @@ export default function PaymentMethodsPage() {
   });
 
   const methods = data?.methods ?? [];
+  const providerSubscriptions = data?.providerSubscriptions ?? [];
   const setupId = searchParams.get('setupId');
   const canAddCard = data?.capabilities?.yookassaStandaloneSetup === true;
 
@@ -117,6 +123,19 @@ export default function PaymentMethodsPage() {
     },
     onError: () => toast.error(t('paymentMethods.error')),
     onSettled: () => setUnbindId(null),
+  });
+
+  const cancelSubscriptionMutation = useMutation({
+    mutationFn: (subscriptionId: string) => cancelProviderSubscription(subscriptionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+      toast.success(t('paymentMethods.providerSubscriptions.cancelled'));
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+    },
+    // Nothing was cancelled (the provider may be unreachable): the row stays,
+    // and so does the button.
+    onError: () => toast.error(t('paymentMethods.providerSubscriptions.cancelError')),
+    onSettled: () => setCancelSubscriptionId(null),
   });
 
   const autopayMutation = useMutation({
@@ -201,6 +220,19 @@ export default function PaymentMethodsPage() {
         </div>
       )}
 
+      {!isLoading && providerSubscriptions.length > 0 && (
+        <div className="mx-5 mb-4 space-y-2">
+          {providerSubscriptions.map((subscription) => (
+            <ProviderSubscriptionCard
+              key={subscription.id}
+              subscription={subscription}
+              busy={cancelSubscriptionMutation.isPending && cancelSubscriptionMutation.variables === subscription.id}
+              onCancel={() => setCancelSubscriptionId(subscription.id)}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="mx-5">
         {isLoading ? (
           <div className="space-y-3">
@@ -208,7 +240,7 @@ export default function PaymentMethodsPage() {
               <Skeleton key={i} className="h-16 w-full rounded-2xl" />
             ))}
           </div>
-        ) : methods.length === 0 ? (
+        ) : methods.length === 0 && providerSubscriptions.length > 0 ? null : methods.length === 0 ? (
           <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-8 text-center">
             <CreditCard className="mx-auto h-8 w-8 text-[var(--brand-muted-foreground)] opacity-60" />
             <p className="mt-2 text-sm text-[var(--brand-muted-foreground)]">{t('paymentMethods.empty')}</p>
@@ -310,6 +342,39 @@ export default function PaymentMethodsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={cancelSubscriptionId !== null}
+        onOpenChange={(open) => !open && setCancelSubscriptionId(null)}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">{t('paymentMethods.providerSubscriptions.cancelTitle')}</DialogTitle>
+            <DialogDescription className="text-sm text-[var(--brand-muted-foreground)]">
+              {t('paymentMethods.providerSubscriptions.cancelConfirm')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 flex gap-2">
+            <StadiumButton
+              variant="ghost"
+              className="flex-1"
+              onClick={() => setCancelSubscriptionId(null)}
+              disabled={cancelSubscriptionMutation.isPending}
+            >
+              {t('common.cancel')}
+            </StadiumButton>
+            <StadiumButton
+              className="flex-1 bg-red-600 hover:bg-red-500"
+              disabled={!cancelSubscriptionId || cancelSubscriptionMutation.isPending}
+              onClick={() => cancelSubscriptionId && cancelSubscriptionMutation.mutate(cancelSubscriptionId)}
+            >
+              {cancelSubscriptionMutation.isPending
+                ? t('paymentMethods.providerSubscriptions.cancelling')
+                : t('paymentMethods.providerSubscriptions.cancel')}
+            </StadiumButton>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -342,6 +407,82 @@ export default function PaymentMethodsPage() {
       </Dialog>
     </div>
   );
+}
+
+/**
+ * A subscription the provider runs (Platega): what it charges and when, and the
+ * one thing the customer can do with it here — switch it off.
+ */
+function ProviderSubscriptionCard({
+  subscription,
+  busy,
+  onCancel,
+}: {
+  subscription: ProviderSubscription;
+  busy: boolean;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const pastDue = subscription.status === 'PAST_DUE';
+  return (
+    <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3.5">
+      <div className="flex items-center gap-3">
+        <AutopayGatewayMark type={subscription.gatewayType} currency={subscription.currency} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-[var(--brand-foreground)]">
+            {subscription.planName ?? t('paymentMethods.providerSubscriptions.fallbackPlan')}
+          </p>
+          <p className="mt-0.5 text-xs text-[var(--brand-muted-foreground)]">
+            {formatCharge(subscription, t)}
+          </p>
+        </div>
+      </div>
+      <p
+        className={
+          pastDue
+            ? 'mt-3 text-[11px] leading-snug text-amber-300'
+            : 'mt-3 text-[11px] leading-snug text-[var(--brand-muted-foreground)]'
+        }
+      >
+        {pastDue
+          ? t('paymentMethods.providerSubscriptions.pastDue')
+          : subscription.nextChargeAt
+            ? t('paymentMethods.providerSubscriptions.nextCharge', { date: formatDate(subscription.nextChargeAt) })
+            : t('paymentMethods.providerSubscriptions.via')}
+      </p>
+      <StadiumButton
+        variant="ghost"
+        size="sm"
+        className="mt-3 w-full"
+        disabled={busy}
+        onClick={onCancel}
+      >
+        {busy ? t('paymentMethods.providerSubscriptions.cancelling') : t('paymentMethods.providerSubscriptions.cancel')}
+      </StadiumButton>
+    </div>
+  );
+}
+
+/** «299 ₽ каждый месяц», «990 ₽ раз в 3 месяца». */
+function formatCharge(
+  subscription: Pick<ProviderSubscription, 'amount' | 'currency' | 'intervalUnit' | 'intervalCount'>,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  const amount = Number(subscription.amount);
+  const sum = `${Number.isFinite(amount) ? amount.toLocaleString() : subscription.amount} ${
+    subscription.currency === 'RUB' ? '₽' : subscription.currency
+  }`;
+  const unit = ['day', 'week', 'month', 'year'].includes(subscription.intervalUnit)
+    ? subscription.intervalUnit
+    : null;
+  if (unit === null) return sum;
+  const period =
+    subscription.intervalCount === 1
+      ? t(`paymentMethods.providerSubscriptions.everyUnit.${unit}`)
+      : t(`paymentMethods.providerSubscriptions.every${unit[0]!.toUpperCase()}${unit.slice(1)}`, {
+          count: subscription.intervalCount,
+        });
+  return `${sum} ${period}`;
 }
 
 function formatMethodMeta(

@@ -25,12 +25,40 @@ export interface SavedPaymentMethod {
   updatedAt: string;
 }
 
+/**
+ * Automatic charging the PROVIDER runs (Platega): a fixed sum every period,
+ * confirmed once in the bank. Nothing is saved on our side, so it has no card
+ * row; «Способы оплаты» lists it to let the customer switch it off.
+ */
+export interface ProviderSubscription {
+  id: string;
+  gatewayType: string;
+  /** PAST_DUE: the last charge failed, and the provider does not retry it. */
+  status: "PENDING" | "ACTIVE" | "PAST_DUE" | "CANCELLED" | "FAILED";
+  amount: string;
+  currency: string;
+  intervalUnit: "day" | "week" | "month" | "year" | string;
+  intervalCount: number;
+  durationDays: number;
+  planName: string | null;
+  subscriptionId: string | null;
+  nextChargeAt: string | null;
+  lastChargeAt: string | null;
+}
+
 export interface SavedPaymentMethodsResponse {
   methods: SavedPaymentMethod[];
   total: number;
   capabilities?: {
     yookassaStandaloneSetup: boolean;
   };
+  /** Absent from a panel older than this cabinet. */
+  providerSubscriptions?: ProviderSubscription[];
+}
+
+/** Whether «Способы оплаты» has anything for this customer to manage. */
+export function hasManageablePaymentMethods(data: SavedPaymentMethodsResponse | undefined): boolean {
+  return (data?.methods ?? []).length > 0 || (data?.providerSubscriptions ?? []).length > 0;
 }
 
 export interface PaymentMethodSetup {
@@ -58,6 +86,11 @@ export const setPaymentMethodAutopay = (methodId: string, autopayEnabled: boolea
   apiClient
     .patch(`/payment-methods/${encodeURIComponent(methodId)}`, { autopayEnabled })
     .then((r) => r.data as { id: string; autopayEnabled: boolean });
+
+export const cancelProviderSubscription = (subscriptionId: string) =>
+  apiClient
+    .post(`/payment-methods/provider-subscriptions/${encodeURIComponent(subscriptionId)}/cancel`)
+    .then((r) => r.data as { cancelled: true });
 
 export const startPaymentMethodSetup = () =>
   apiClient

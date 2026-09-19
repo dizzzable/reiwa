@@ -35,6 +35,12 @@ import { TariffCard } from "@/features/plans/tariff-card";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { createRenewalIdempotencyKey } from "./renewal-idempotency";
 import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
+import {
+  isAutopayNotAvailableRefusal,
+  isProviderPeriod,
+  isProviderSubscriptionGateway,
+} from "@/lib/autopay-offer";
+import type { RenewalOptions } from "@/types/api";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
@@ -982,15 +988,40 @@ function RenewalAddOnSection({
 
 function SelectGateway() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const {
     selectGateway,
     selectSavedPaymentMethod,
     selectedGateway,
     selectedSavedPaymentMethodId,
+    selectedSubscriptionIds,
+    selectedDurations,
     setStep,
     goBack,
     navDirection,
   } = useRenewalStore();
+  // The term this renewal buys: the one picked, else the one the options
+  // already priced. Unknown means the Platega option is not offered.
+  const renewalDays = (subscriptionId: string): number | null => {
+    const picked = selectedDurations[subscriptionId];
+    if (typeof picked === "number") return picked;
+    for (const [, data] of queryClient.getQueriesData<RenewalOptions>({ queryKey: ["renewal-options"] })) {
+      const days = data?.items?.find((item) => item.subscriptionId === subscriptionId)?.durationDays;
+      if (typeof days === "number") return days;
+    }
+    return null;
+  };
+  // On Platega the provider repeats one sum for one subscription on its own
+  // period, so its option needs exactly one subscription on such a term. The
+  // price (kopecks, a promo) and add-ons are only known later; the panel
+  // refuses those, and the checkout says so.
+  const autopayOffered = (gw: { type: string; autopay?: boolean }): boolean => {
+    if (gw.autopay !== true) return false;
+    if (!isProviderSubscriptionGateway(gw.type)) return true;
+    if (selectedSubscriptionIds.length !== 1) return false;
+    const days = renewalDays(selectedSubscriptionIds[0]!);
+    return days !== null && isProviderPeriod(days);
+  };
   const renewalAddOns = useRenewalAddOnsEnabled();
   // Policy-settled signal (same shared query): the add-on capability must be
   // resolved before we auto-advance a single gateway, otherwise a one-gateway
@@ -1049,7 +1080,7 @@ function SelectGateway() {
       !isLoading &&
       !policyLoading &&
       gateways.length === 1 &&
-      gateways[0]!.autopay !== true &&
+      !autopayOffered(gateways[0]!) &&
       navDirection === "forward" &&
       !savedMethodsUnknown &&
       savedYookassaMethods.length === 0
@@ -1132,7 +1163,7 @@ function SelectGateway() {
                 <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
               </div>
             </button>
-            {gw.autopay === true && (
+            {autopayOffered(gw) && (
               <button
                 onClick={() => choose(gw, null, true)}
                 className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
@@ -1443,7 +1474,13 @@ function RenewalReview() {
       {showAutopayNotice && (
         <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-4 py-3 text-sm leading-snug text-[color:var(--brand-foreground)]">
           <p className="font-medium text-[color:var(--brand-foreground)]">{t("purchase.quote.autopayTitle")}</p>
-          <p className="mt-0.5 text-xs text-[color:var(--brand-muted-foreground)]">{t("purchase.quote.autopayHint")}</p>
+          <p className="mt-0.5 text-xs text-[color:var(--brand-muted-foreground)]">
+            {t(
+              isProviderSubscriptionGateway(selectedGateway?.id)
+                ? "purchase.quote.autopayProviderHint"
+                : "purchase.quote.autopayHint",
+            )}
+          </p>
         </div>
       )}
 
@@ -1560,6 +1597,10 @@ function CheckoutStep() {
       }
       const interactiveYookassa =
         selectedGateway.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
+      // Platega's «для автоматического списания» is a subscription the provider
+      // runs; this consent is what tells the panel to create one.
+      const providerSubscription =
+        selectedGateway.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
       return createRenewalCheckout(
         selectedSubscriptionIds,
         selectedGateway.id,
@@ -1570,7 +1611,7 @@ function CheckoutStep() {
         idempotencyKey,
         selectedSavedPaymentMethodId,
         interactiveYookassa ? savePaymentMethodConsent : undefined,
-        interactiveYookassa ? savePaymentMethodConsent : undefined,
+        interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
       );
     },
     onSuccess: (result) => {
@@ -1582,7 +1623,14 @@ function CheckoutStep() {
       if (result.checkoutUrl) startCheckoutRedirect(result.checkoutUrl);
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
-    onError: () => {
+    onError: (err) => {
+      if (isAutopayNotAvailableRefusal(err)) {
+        // Nothing was created, and paying again the same way changes nothing:
+        // back to choosing the payment, where the ordinary one is.
+        toast.error(t("purchase.checkout.autopayNotAvailable"));
+        goBack("gateway");
+        return;
+      }
       // A refused checkout means the reviewed quote may no longer hold — the
       // chosen plan withdrawn, or the price changed (`QUOTE_CHANGED`). Re-price
       // it on the way back: still fresh for 30 s, the review re-offered the

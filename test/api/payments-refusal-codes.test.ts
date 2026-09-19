@@ -29,6 +29,8 @@ describe("checkout refusal codes", () => {
     "PAYMENT_DRAFT_QUOTE_NOT_ELIGIBLE",
     // A plan or term withdrawn while the buyer still had the old catalogue on screen.
     "PAYMENT_DRAFT_PLAN_NOT_AVAILABLE",
+    // «для автоматического списания» refused for this purchase; the page offers the ordinary payment.
+    "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE",
   ])("forwards %s", (code) => {
     expect(extractCheckoutRefusalCode(JSON.stringify({ code, message: "x" }))).toBe(code);
   });

@@ -116,6 +116,42 @@ export function createPaymentMethodsRouter(deps: {
     }
   });
 
+  // POST /api/v1/payment-methods/provider-subscriptions/:subscriptionId/cancel —
+  // «Отключить автосписание» for a subscription the provider runs (Platega).
+  router.post(
+    '/provider-subscriptions/:subscriptionId/cancel',
+    requireSession,
+    async (req: AuthRequest, res) => {
+      try {
+        if (!adminClient) {
+          res.status(503).json({ message: 'Admin client unavailable' });
+          return;
+        }
+        const subscriptionId = String(req.params['subscriptionId'] ?? '').trim();
+        if (!subscriptionId) {
+          res.status(400).json({ message: 'subscriptionId is required' });
+          return;
+        }
+        const result = await adminClient.paymentMethods.cancelProviderSubscription(
+          resolveUserIdentity(req),
+          subscriptionId,
+        );
+        res.json(result ?? { cancelled: true });
+      } catch (e) {
+        // The provider may be unreachable: nothing was cancelled, and the
+        // subscriber must be able to try again rather than read it as done.
+        sendSafeError(
+          req,
+          res,
+          e,
+          502,
+          'Failed to cancel automatic charging',
+          'payment-methods/provider-subscription-cancel',
+        );
+      }
+    },
+  );
+
   // DELETE /api/v1/payment-methods/:methodId — soft-unbind (stop using for autopay)
   router.delete('/:methodId', requireSession, async (req: AuthRequest, res) => {
     try {
