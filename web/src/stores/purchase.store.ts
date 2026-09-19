@@ -15,6 +15,12 @@ export type GatewayOption = {
   label: string;
   icon: string;
   currency: string;
+  /**
+   * The gateway's «для автоматического списания» option. Picking it is the
+   * customer's consent to save the method for automatic renewals, so
+   * `selectGateway` turns it into `savePaymentMethodConsent`.
+   */
+  autopay?: boolean;
 };
 
 /** Device the user intends to use the subscription on. */
@@ -36,7 +42,8 @@ interface PurchaseState {
   selectedSavedPaymentMethodId: string | null;
   /**
    * Consent to bind a new YooKassa payment method for future autopay.
-   * Only relevant for interactive YOOKASSA checkout (no saved method selected).
+   * Only relevant for interactive YOOKASSA checkout (no saved method selected);
+   * set by picking the «для автоматического списания» option.
    */
   savePaymentMethodConsent: boolean;
   quote: SubscriptionQuote | null;
@@ -87,7 +94,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
     set({
       selectedGateway: gateway,
       selectedSavedPaymentMethodId: null,
-      savePaymentMethodConsent: false,
+      savePaymentMethodConsent: gateway.autopay === true,
       step: "quote",
       lastNav: "forward",
     }),

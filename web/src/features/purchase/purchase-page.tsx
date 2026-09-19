@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
+import { Fragment, useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { useNavigate } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
@@ -19,7 +19,6 @@ import { balanceHoldRefusalMessage, standingBalanceHold } from "@/lib/partner-ba
 import { readSessionCheckRefusal } from "@/lib/session-check";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
-import { Switch } from "@/components/ui/switch";
 import { AppleGlyph, AndroidGlyph, WindowsGlyph, MacosGlyph } from "@/components/ui/device-glyphs";
 import { usePurchaseStore } from "@/stores/purchase.store";
 import { useBranding } from "@/lib/branding-provider";
@@ -43,7 +42,7 @@ import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
-import { GatewayIcon } from "@/components/ui/gateway-icon";
+import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
 import {
   formatSavedPaymentMethodMeta,
   formatSavedPaymentMethodTitle,
@@ -257,12 +256,14 @@ function SelectGateway({
   // And never over a saved card: for a YooKassa subscriber this screen offers
   // "charge a saved card" beside "new payment page", which is a choice even
   // with one gateway. Decide only once the cards are known — while their read
-  // is still out, "no cards yet" looks exactly like "no cards".
+  // is still out, "no cards yet" looks exactly like "no cards". Nor over a
+  // gateway offering «для автоматического списания»: that is a second option.
   const savedMethodsUnknown = yookassaEnabled && paymentMethodsPending;
   useEffect(() => {
     if (
       !isLoading &&
       gateways.length === 1 &&
+      gateways[0].autopay !== true &&
       lastNav === "forward" &&
       !savedMethodsUnknown &&
       savedYookassaMethods.length === 0
@@ -346,60 +347,51 @@ function SelectGateway({
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() => {
-              const yookassa = gateways.find((gw) => gw.type === "YOOKASSA");
-              if (!yookassa) return;
-              onSelect({
-                id: yookassa.type,
-                label: gatewayLabel(yookassa.type, yookassa.displayName),
-                icon: GATEWAY_ICONS[yookassa.type] ?? "💳",
-                currency: yookassa.currency,
-              });
-              queueMicrotask(() => selectSavedPaymentMethod(null));
-            }}
-            className={cn(
-              "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
-              selectedGateway?.id === "YOOKASSA" &&
-                selectedSavedPaymentMethodId === null &&
-                "border-(--brand-primary)/40 bg-(--brand-primary)/5",
-            )}
-          >
-            <span className="flex h-7 w-7 items-center justify-center text-2xl">
-              <GatewayIcon type="YOOKASSA" currency="RUB" className="h-7 w-7" />
-            </span>
-            <div className="text-left">
-              <p className="font-medium text-foreground">{t("purchase.gateway.newCard")}</p>
-              <p className="text-xs text-muted-foreground">YooKassa</p>
-            </div>
-          </button>
         </div>
       )}
       <div className="px-5 space-y-2">
-        {sortedGateways
-          .filter((gw) => !(savedYookassaMethods.length > 0 && gw.type === "YOOKASSA"))
-          .map((gw) => (
-          <button
-            key={gw.type}
-            onClick={() =>
-              onSelect({
-                id: gw.type,
-                label: gatewayLabel(gw.type, gw.displayName),
-                icon: GATEWAY_ICONS[gw.type] ?? "💳",
-                currency: gw.currency,
-              })
-            }
-            className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-          >
-            <span className="flex h-7 w-7 items-center justify-center text-2xl">
-              <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
-            </span>
-            <div className="text-left">
-              <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
-              <p className="text-xs text-muted-foreground">{gw.currency}</p>
-            </div>
-          </button>
+        {sortedGateways.map((gw) => (
+          <Fragment key={gw.type}>
+            <button
+              onClick={() =>
+                onSelect({
+                  id: gw.type,
+                  label: gatewayLabel(gw.type, gw.displayName),
+                  icon: GATEWAY_ICONS[gw.type] ?? "💳",
+                  currency: gw.currency,
+                })
+              }
+              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+            >
+              <span className="flex h-7 w-7 items-center justify-center text-2xl">
+                <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
+              </span>
+              <div className="text-left">
+                <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
+                <p className="text-xs text-muted-foreground">{gw.currency}</p>
+              </div>
+            </button>
+            {gw.autopay === true && (
+              <button
+                onClick={() =>
+                  onSelect({
+                    id: gw.type,
+                    label: `${gatewayLabel(gw.type, gw.displayName)} · ${t("purchase.gateway.autopayCaption")}`,
+                    icon: GATEWAY_ICONS[gw.type] ?? "💳",
+                    currency: gw.currency,
+                    autopay: true,
+                  })
+                }
+                className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+              >
+                <AutopayGatewayMark type={gw.type} currency={gw.currency} />
+                <div className="text-left">
+                  <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
+                  <p className="text-xs text-muted-foreground">{t("purchase.gateway.autopayCaption")}</p>
+                </div>
+              </button>
+            )}
+          </Fragment>
         ))}
         {gateways.length === 0 && (
           <div className="py-8 text-center text-sm text-muted-foreground">
@@ -454,16 +446,15 @@ function QuoteView({
     selectedGateway,
     selectedDevice,
     selectedSavedPaymentMethodId,
-    savePaymentMethodConsent,
-    setSavePaymentMethodConsent,
     setQuote,
     goBack,
   } = usePurchaseStore();
   // `AnimatePresence mode="wait"` keeps a step it is leaving mounted for its
   // exit (about 200 ms), and that copy keeps re-rendering from the store.
   const isCurrentStep = step === "quote";
-  const showSaveCardConsent =
-    selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
+  // Picking «для автоматического списания» is the customer's consent to save
+  // the method; this says what that consent means before they pay.
+  const showAutopayNotice = selectedGateway?.autopay === true && !selectedSavedPaymentMethodId;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -686,21 +677,10 @@ function QuoteView({
         }}
       />
 
-      {showSaveCardConsent && (
-        <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-card px-4 py-3 text-sm">
-          <div className="min-w-0 leading-snug text-foreground">
-            <p className="font-medium">{t("purchase.quote.saveCardTitle")}</p>
-            <p id="purchase-save-card-hint" className="mt-0.5 text-xs text-muted-foreground">
-              {t("purchase.quote.saveCardHint")}
-            </p>
-          </div>
-          <Switch
-            className="mt-0.5"
-            checked={savePaymentMethodConsent}
-            onCheckedChange={setSavePaymentMethodConsent}
-            aria-label={t("purchase.quote.saveCardTitle")}
-            aria-describedby="purchase-save-card-hint"
-          />
+      {showAutopayNotice && (
+        <div className="rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-snug text-foreground">
+          <p className="font-medium">{t("purchase.quote.autopayTitle")}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t("purchase.quote.autopayHint")}</p>
         </div>
       )}
 

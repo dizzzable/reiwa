@@ -28,6 +28,9 @@ const installState = vi.hoisted(() => ({
     promptInstall: vi.fn(async () => undefined),
   },
 }));
+/** What the payment-methods read answers: nothing saved unless a case says otherwise. */
+const paymentMethodsState = vi.hoisted(() => ({ methods: [] as Array<{ id: string }> }));
+
 const routerState = vi.hoisted(() => ({
   params: new URLSearchParams(),
   setSearchParams: vi.fn(),
@@ -60,6 +63,7 @@ vi.mock("@/hooks/use-is-desktop", () => ({ useIsDesktop: () => false }));
 vi.mock("@/lib/api-client", () => ({
   updateLanguage: vi.fn(),
   getNotifications: vi.fn(async () => ({ items: [], total: 0 })),
+  getPaymentMethods: vi.fn(async () => ({ methods: paymentMethodsState.methods, total: paymentMethodsState.methods.length })),
 }));
 vi.mock("@/i18n/i18n", () => ({ setLocale: vi.fn() }));
 vi.mock("@/lib/branding-provider", () => ({
@@ -100,6 +104,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   routerState.params = new URLSearchParams();
+  paymentMethodsState.methods = [];
   routerState.setSearchParams = vi.fn();
   installState.current = {
     canInstall: false,
@@ -199,5 +204,21 @@ describe("the install deep link", () => {
     routerState.params = new URLSearchParams("install=1");
     await render();
     expect(container.textContent).toContain("settings.installAlreadyTitle");
+  });
+});
+
+describe("the «Способы оплаты» row", () => {
+  // The page manages saved methods and automatic charging; with nothing saved
+  // there is nothing to manage, and the way in is the payment step's
+  // «для автоматического списания» option.
+  it("is hidden from a customer with nothing saved", async () => {
+    await render();
+    expect(container.textContent).not.toContain("settings.paymentMethods");
+  });
+
+  it("is shown once a method is saved", async () => {
+    paymentMethodsState.methods = [{ id: "pm-1" }];
+    await render();
+    expect(container.textContent).toContain("settings.paymentMethods");
   });
 });

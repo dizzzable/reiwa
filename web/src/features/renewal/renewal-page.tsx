@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Check, RotateCcw } from "lucide-react";
@@ -25,7 +25,6 @@ import { balanceHoldRefusalMessage, standingBalanceHold } from "@/lib/partner-ba
 import { readSessionCheckRefusal } from "@/lib/session-check";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
-import { Switch } from "@/components/ui/switch";
 import { PromoInput } from "@/features/purchase/components/promo-input";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
@@ -35,7 +34,7 @@ import { savePendingCheckout } from "@/lib/pending-checkout";
 import { TariffCard } from "@/features/plans/tariff-card";
 import { gatewayLabel } from "@/lib/gateway-display";
 import { createRenewalIdempotencyKey } from "./renewal-idempotency";
-import { GatewayIcon } from "@/components/ui/gateway-icon";
+import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
@@ -1021,12 +1020,16 @@ function SelectGateway() {
   const choose = (
     gw: { type: string; displayName: string; currency: string },
     savedPaymentMethodId: string | null = null,
+    autopay = false,
   ): void => {
     selectGateway({
       id: gw.type,
-      label: gatewayLabel(gw.type, gw.displayName),
+      label: autopay
+        ? `${gatewayLabel(gw.type, gw.displayName)} · ${t("purchase.gateway.autopayCaption")}`
+        : gatewayLabel(gw.type, gw.displayName),
       icon: GATEWAY_ICONS[gw.type] ?? "💳",
       currency: gw.currency,
+      ...(autopay ? { autopay: true } : {}),
     } satisfies GatewayOption);
     // selectGateway clears saved method; re-apply after the store update.
     queueMicrotask(() => selectSavedPaymentMethod(savedPaymentMethodId));
@@ -1039,12 +1042,14 @@ function SelectGateway() {
   // FORWARD. Without the guard, pressing "back" from review re-mounts this and
   // immediately re-advances to review (a trap). Skip auto-advance when the
   // user has saved YooKassa methods so they can pick a card — decided once the
-  // methods are known, not on the render before their read has answered.
+  // methods are known, not on the render before their read has answered. Nor
+  // over a gateway offering «для автоматического списания»: a second option.
   useEffect(() => {
     if (
       !isLoading &&
       !policyLoading &&
       gateways.length === 1 &&
+      gateways[0]!.autopay !== true &&
       navDirection === "forward" &&
       !savedMethodsUnknown &&
       savedYookassaMethods.length === 0
@@ -1112,43 +1117,34 @@ function SelectGateway() {
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() => {
-              const yookassa = gateways.find((gw) => gw.type === "YOOKASSA");
-              if (!yookassa) return;
-              choose(yookassa, null);
-            }}
-            className={cn(
-              "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
-              selectedGateway?.id === "YOOKASSA" &&
-                selectedSavedPaymentMethodId === null &&
-                "border-(--brand-primary)/40 bg-(--brand-primary)/5",
-            )}
-          >
-            <GatewayIcon type="YOOKASSA" currency="RUB" className="h-7 w-7" />
-            <div className="text-left">
-              <p className="font-medium text-[color:var(--brand-foreground)]">{t("purchase.gateway.newCard")}</p>
-              <p className="text-xs text-[color:var(--brand-muted-foreground)]">YooKassa</p>
-            </div>
-          </button>
         </div>
       )}
       <div className="px-5 space-y-2">
-        {sorted
-          .filter((gw) => !(savedYookassaMethods.length > 0 && gw.type === "YOOKASSA"))
-          .map((gw) => (
-          <button
-            key={gw.type}
-            onClick={() => choose(gw)}
-            className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-          >
-            <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
-            <div className="text-left">
-              <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
-              <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
-            </div>
-          </button>
+        {sorted.map((gw) => (
+          <Fragment key={gw.type}>
+            <button
+              onClick={() => choose(gw)}
+              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+            >
+              <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
+              <div className="text-left">
+                <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
+                <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
+              </div>
+            </button>
+            {gw.autopay === true && (
+              <button
+                onClick={() => choose(gw, null, true)}
+                className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+              >
+                <AutopayGatewayMark type={gw.type} currency={gw.currency} />
+                <div className="text-left">
+                  <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
+                  <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t("purchase.gateway.autopayCaption")}</p>
+                </div>
+              </button>
+            )}
+          </Fragment>
         ))}
         {gateways.length === 0 && (
           <div className="py-8 text-center text-sm text-[color:var(--brand-muted-foreground)]">{t("purchase.gateway.empty")}</div>
@@ -1178,8 +1174,6 @@ function RenewalReview() {
     selectedAddOns,
     selectedGateway,
     selectedSavedPaymentMethodId,
-    savePaymentMethodConsent,
-    setSavePaymentMethodConsent,
     setReviewQuote,
     setStep,
     goBack,
@@ -1191,8 +1185,9 @@ function RenewalReview() {
   // time on that answer. It asks for a price, and acts on one, only while it is
   // the step on screen.
   const isCurrentStep = step === "review";
-  const showSaveCardConsent =
-    selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
+  // Picking «для автоматического списания» is the customer's consent to save
+  // the method; this says what that consent means before they pay.
+  const showAutopayNotice = selectedGateway?.autopay === true && !selectedSavedPaymentMethodId;
 
   const durationsPayload = selectedSubscriptionIds
     .filter((id) => selectedDurations[id] !== undefined)
@@ -1445,21 +1440,10 @@ function RenewalReview() {
         }}
       />
 
-      {showSaveCardConsent && (
-        <div className="flex items-start justify-between gap-4 rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-4 py-3 text-sm">
-          <div className="min-w-0 leading-snug text-[color:var(--brand-foreground)]">
-            <p className="font-medium text-[color:var(--brand-foreground)]">{t("purchase.quote.saveCardTitle")}</p>
-            <p id="renewal-save-card-hint" className="mt-0.5 text-xs text-[color:var(--brand-muted-foreground)]">
-              {t("purchase.quote.saveCardHint")}
-            </p>
-          </div>
-          <Switch
-            className="mt-0.5"
-            checked={savePaymentMethodConsent}
-            onCheckedChange={setSavePaymentMethodConsent}
-            aria-label={t("purchase.quote.saveCardTitle")}
-            aria-describedby="renewal-save-card-hint"
-          />
+      {showAutopayNotice && (
+        <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-4 py-3 text-sm leading-snug text-[color:var(--brand-foreground)]">
+          <p className="font-medium text-[color:var(--brand-foreground)]">{t("purchase.quote.autopayTitle")}</p>
+          <p className="mt-0.5 text-xs text-[color:var(--brand-muted-foreground)]">{t("purchase.quote.autopayHint")}</p>
         </div>
       )}
 

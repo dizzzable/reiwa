@@ -18,6 +18,12 @@ export interface GatewayOption {
   displayName: string;
   currency: string;
   isActive: boolean;
+  /**
+   * The operator confirmed the provider approved repeat charges, and the panel
+   * can run them: the picker offers a second, «для автоматического списания»,
+   * option. Absent from panels older than 0.9.7.62.
+   */
+  autopay?: boolean;
 }
 
 export const getEnabledGateways = () =>

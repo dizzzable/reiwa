@@ -189,7 +189,7 @@ export const useRenewalStore = create<RenewalState>((set) => ({
     set({
       selectedGateway: gateway,
       selectedSavedPaymentMethodId: null,
-      savePaymentMethodConsent: false,
+      savePaymentMethodConsent: gateway.autopay === true,
       navDirection: "forward",
       reviewQuote: null,
     }),

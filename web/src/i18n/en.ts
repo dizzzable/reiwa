@@ -375,7 +375,7 @@ export const en: RuDict = {
       title: 'Payment method',
       empty: 'Payment methods are temporarily unavailable',
       savedTitle: 'Saved cards',
-      newCard: 'New card / payment page',
+      autopayCaption: 'for automatic charging',
       useSaved: 'Charge saved method',
     },
     quote: {
@@ -393,9 +393,9 @@ export const en: RuDict = {
       payWithBalance: 'Pay with balance ({{amount}} {{currency}})',
       balancePaid: 'Paid from partner balance',
       balanceError: 'Failed to pay with balance',
-      saveCardTitle: 'Save card for autopay',
-      saveCardHint:
-        'Consent to store this payment method. You can disable autopay in settings later.',
+      autopayTitle: 'Automatic charging',
+      autopayHint:
+        'The payment method is saved, and when your subscription is about to end the renewal is charged to it automatically. You can turn this off at any time under Payment methods.',
     },
     checkout: {
       creating: 'Creating payment…',

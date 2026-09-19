@@ -43,7 +43,7 @@ import {
 
 import { useSession } from "@/hooks/use-session";
 import { useInstallPrompt } from "@/hooks/use-install-prompt";
-import { updateLanguage, getNotifications } from "@/lib/api-client";
+import { updateLanguage, getNotifications, getPaymentMethods } from "@/lib/api-client";
 import { setLocale } from "@/i18n/i18n";
 import { useBranding } from "@/lib/branding-provider";
 import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
@@ -98,6 +98,16 @@ export default function SettingsPage() {
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
+  // «Способы оплаты» is shown only to a customer with something there to
+  // manage; the way in is picking «для автоматического списания» at checkout.
+  // Same key as the payment step, so one read serves both.
+  const { data: paymentMethodsData } = useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: getPaymentMethods,
+    staleTime: 15_000,
+    retry: false,
+  });
+  const hasPaymentMethods = (paymentMethodsData?.methods ?? []).length > 0;
   const supportUnread = (notifData?.notifications ?? []).filter(
     (n) => n.type === "support_reply" && !n.readAt,
   ).length;
@@ -222,14 +232,16 @@ export default function SettingsPage() {
           sublabel={t("settings.transactionsSub")}
           onClick={() => navigate("/settings/transactions")}
         />
-        <MenuItem
-          icon={<WalletCards className="h-5 w-5" />}
-          iconBg="bg-violet-500/10 text-violet-400"
-          tint={iconTint("paymentMethods")}
-          label={t("settings.paymentMethods")}
-          sublabel={t("settings.paymentMethodsSub")}
-          onClick={() => navigate("/settings/payment-methods")}
-        />
+        {hasPaymentMethods && (
+          <MenuItem
+            icon={<WalletCards className="h-5 w-5" />}
+            iconBg="bg-violet-500/10 text-violet-400"
+            tint={iconTint("paymentMethods")}
+            label={t("settings.paymentMethods")}
+            sublabel={t("settings.paymentMethodsSub")}
+            onClick={() => navigate("/settings/payment-methods")}
+          />
+        )}
         <MenuItem
           icon={<PackagePlus className="h-5 w-5" />}
           iconBg="bg-emerald-500/10 text-emerald-400"
