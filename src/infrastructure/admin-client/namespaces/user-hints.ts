@@ -47,6 +47,16 @@ export interface HintAudienceInput {
  */
 export const HINT_MODES_HEADER = 'x-reiwa-hint-modes';
 
+/**
+ * The header this cabinet declares the symbolic button targets ("doors") it
+ * opens in — `@connect` today, comma-separated, exact and case-sensitive.
+ *
+ * A header for the same reason as the modes: an older panel does not read it,
+ * and a panel that does holds a door back from a cabinet that did not declare
+ * it — because an older cabinet would navigate to `@connect` as a path.
+ */
+export const HINT_DOORS_HEADER = 'x-reiwa-hint-doors';
+
 export class UserHintsNamespace {
   public constructor(private readonly transport: AdminTransport) {}
 
@@ -61,14 +71,24 @@ export class UserHintsNamespace {
     input: HintAudienceInput,
     /** What this build can draw. Omitted means the panel assumes MODAL only. */
     drawableModes?: readonly string[],
+    /** The doors this build opens. Omitted means none: the panel holds every door back. */
+    drawableDoors?: readonly string[],
   ): Promise<{ hint: CabinetHint | null }> {
+    const headers: Record<string, string> = {};
+    // Each header only when there is something in it. An EMPTY list is a
+    // different claim from silence — "this build draws nothing" — and would
+    // hold every hint back for ever.
+    if (drawableModes !== undefined && drawableModes.length > 0) {
+      headers[HINT_MODES_HEADER] = drawableModes.join(',');
+    }
+    if (drawableDoors !== undefined && drawableDoors.length > 0) {
+      headers[HINT_DOORS_HEADER] = drawableDoors.join(',');
+    }
     return this.transport.request<{ hint: CabinetHint | null }>(
       'POST',
       '/api/internal/user-hints/next',
       input,
-      drawableModes === undefined || drawableModes.length === 0
-        ? undefined
-        : { [HINT_MODES_HEADER]: drawableModes.join(',') },
+      Object.keys(headers).length === 0 ? undefined : headers,
     );
   }
 

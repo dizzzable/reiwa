@@ -138,6 +138,14 @@ export interface Subscription {
    * every other route.
    */
   connectSignature?: string;
+  /**
+   * «Помощь с подключением» for this subscription, decided by the panel on
+   * `GET /subscriptions/all` and relayed by the BFF untouched. ABSENT from a
+   * panel older than the feature, which must read exactly like `null`: no
+   * banner, no help pending. Read it through `readConnectHelp`
+   * (`features/dashboard/connect-help.ts`), never directly.
+   */
+  connectHelp?: SubscriptionConnectHelp | null;
   configUrl?: string | null;
   plan: {
     id: string | null;
@@ -153,6 +161,17 @@ export interface Subscription {
   createdAt: string;
   startedAt?: string | null;
   updatedAt?: string;
+}
+
+/**
+ * The panel's answer about one subscription that was bought and never
+ * connected. `null` on the wire when nothing is owed.
+ */
+export interface SubscriptionConnectHelp {
+  /** Help was sent (bot, push, e-mail, the banner or a broadcast) and the VPN has still never connected. */
+  readonly pending: boolean;
+  /** The help could reach the customer only here: the dashboard banner. Not dismissed, not opted out. */
+  readonly banner: boolean;
 }
 
 // ─── Action policy ───────────────────────────────────────────────────────────

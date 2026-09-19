@@ -92,6 +92,24 @@ export class SubscriptionNamespace {
     );
   }
 
+  /**
+   * × on «Не получилось подключиться?» — the panel records it against the
+   * subscription, so the banner does not come back on another device.
+   *
+   * Path-shaped like the servers above: the panel resolves `:userRef` itself
+   * and refuses a subscription that is not that user's. No body — there is
+   * nothing to say beyond the address, and a body an older panel's DTO has not
+   * learned would be a 400. A panel older than the banner answers 404 for the
+   * route; the caller treats that as "nothing to record".
+   */
+  dismissConnectHelp(identity: UserIdentity, subscriptionId: string): Promise<unknown> {
+    return this.transport.request(
+      'POST',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}` +
+        `/subscriptions/${encodeURIComponent(subscriptionId)}/connect-help/dismiss`,
+    );
+  }
+
   getQuote(
     identity: UserIdentity,
     purchaseType: PurchaseType,

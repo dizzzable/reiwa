@@ -9,6 +9,16 @@ import type { AuthRequest } from "../middleware/session.js";
 import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
 import { attachConnectSignatures, createConnectHandoffSigner } from "../lib/connect-handoff-signature.js";
+import { invalidateStaleUserSession } from "../lib/stale-user-session.js";
+import { describeUpstreamError } from "../lib/upstream-error.js";
+
+/**
+ * A subscription id as the panel mints them (cuid), with room for other id
+ * schemes — and nothing that could reshape the upstream path it is put into.
+ * The namespace encodes it as well; a state-changing call is refused here
+ * before it is encoded into anything.
+ */
+const SUBSCRIPTION_ID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
  * Flatten the rezeis nested quote shape
@@ -256,6 +266,50 @@ export function createSubscriptionRouter(deps: {
           "GET /subscription/:id/servers failed; answering an empty list",
         );
         res.json(empty);
+      }
+    },
+  );
+
+  // POST /api/v1/subscription/:subscriptionId/connect-help/dismiss — × on the
+  // dashboard's «Не получилось подключиться?».
+  //
+  // The customer is the SESSION's, never anything in the request: there is no
+  // body to read, and the panel refuses a subscription that is not the resolved
+  // user's. The id comes from the path and must look like one.
+  //
+  // `{ dismissed: false }` with a 200 when there is nothing to record: no panel
+  // connection, or a 404 — a panel older than the banner has no such route, and
+  // a subscription that is not this customer's is not one to confirm or deny.
+  // The SPA has already hidden the banner and does not wait for this answer, so
+  // the only thing a failure can usefully leave is a line in the log.
+  router.post(
+    "/subscription/:subscriptionId/connect-help/dismiss",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      const subscriptionId = String(req.params["subscriptionId"] ?? "");
+      if (!SUBSCRIPTION_ID_SHAPE.test(subscriptionId)) {
+        res.status(400).json({ message: "subscriptionId is invalid" });
+        return;
+      }
+      if (!adminClient) {
+        res.json({ dismissed: false });
+        return;
+      }
+      try {
+        await adminClient.subscription.dismissConnectHelp(resolveUserIdentity(req), subscriptionId);
+        res.json({ dismissed: true });
+      } catch (error: unknown) {
+        // First, because a deleted or blocked account also answers 404/403,
+        // and its cookie must not outlive the answer.
+        if (await invalidateStaleUserSession(req, error)) {
+          res.status(401).json({ message: "Session expired" });
+          return;
+        }
+        if (describeUpstreamError(error).status === 404) {
+          res.json({ dismissed: false });
+          return;
+        }
+        sendSafeError(req, res, error, 502, "Failed to hide the tip", "subscription/connect-help/dismiss");
       }
     },
   );

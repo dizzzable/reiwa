@@ -53,6 +53,23 @@ import type { AuthRequest } from "../middleware/session.js";
 const DRAWABLE_HINT_MODES = ["MODAL", "TOAST"] as const;
 
 /**
+ * The symbolic button targets ("doors") THIS cabinet image opens itself.
+ *
+ * `@connect` is a pop-up button that means «Подключить» exactly as the
+ * dashboard means it — the operator's switch between the cabinet's connect
+ * screen and the external subscription page, which a plain route would bypass.
+ * The single source of truth is the handler (`HINT_DOORS` and `openHintDoor`
+ * in `web/src/features/hints/hint-cta.ts`), and this must name exactly what it
+ * opens: a door declared and not handled is a dead button, a door handled and
+ * not declared is a pop-up the panel never sends. `hint-doors-are-declared.test.ts`
+ * compares them.
+ *
+ * Sent as its own HEADER, `x-reiwa-hint-doors`, for the reason the modes are:
+ * an older panel does not read it, where a body field would be a 400.
+ */
+const DRAWABLE_HINT_DOORS = ["@connect"] as const;
+
+/**
  * How often one route may say that the panel failed it, per process.
  *
  * ── Why these failures are WARN now ────────────────────────────────────────
@@ -181,6 +198,7 @@ export function createUserHintsRouter(deps: {
       const answer = await adminClient.userHints.next(
         { ...identity, ...audienceOf(req) },
         [...DRAWABLE_HINT_MODES],
+        [...DRAWABLE_HINT_DOORS],
       );
       res.json(answer);
     } catch (err: unknown) {

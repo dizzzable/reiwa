@@ -19,7 +19,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { ShoppingCart, TicketPercent } from "lucide-react";
 
 import { getActionPolicy, getAllSubscriptions,
-  getConnectPage, getSubscriptionDevices } from "@/lib/api-client";
+  getSubscriptionDevices } from "@/lib/api-client";
 import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import { useAccessMode } from "@/lib/use-access-mode";
@@ -28,11 +28,17 @@ import {
   isSubscriptionLimitReached,
   notifySubscriptionLimitReached,
 } from "@/lib/subscription-limit";
-import { openExternalUrl, cn } from "@/lib/utils";
-import { isConnectScreenEnabled } from "@/features/connect/connect-catalog";
+import { cn } from "@/lib/utils";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
 import { SubscriptionActions } from "./components/subscription-actions";
+import { ConnectHelpBanner } from "./components/connect-help-banner";
+import {
+  pickConnectHelpSubscription,
+  readConnectHelpDeepLink,
+  type ConnectHelpRequest,
+} from "./connect-help";
+import { useConnectDoor } from "./use-connect-door";
 import { DevicesList } from "./components/devices-list";
 import { resolveDevicesViewState } from "@/lib/devices-view-state";
 import { NotificationBell } from "./components/notification-bell";
@@ -73,20 +79,13 @@ export default function DashboardPage() {
   const hasPurchaseDiscount = (session?.purchaseDiscount ?? 0) > 0;
   const promoGlowStyle = buildPromoGlowStyle(hasPersonalDiscount, hasPurchaseDiscount);
 
-  // Fetch all subscriptions for the carousel
-  // Fetched here as well as on the screen itself, and deliberately: this is
-  // what decides where "Подключить" goes, and fetching it now also warms the
-  // shared cache so the screen opens with its catalog already in hand.
-  const { data: connectCatalog, isPending: connectPending } = useQuery({
-    queryKey: ["connect-page"],
-    queryFn: getConnectPage,
-    staleTime: 60_000,
-  });
-  // "Not answered yet" is not "off". Treating it as off meant the same customer
-  // tapping twice on a cold start got two different destinations, with the
-  // switch on the whole time.
-  const connectScreenEnabled = !connectPending && isConnectScreenEnabled(connectCatalog);
+  // What «Подключить» means — the operator's door switch, read in one place
+  // (`connect-door.ts`) for this page's button, the banner under the card and
+  // the deep link below. The hook owns the catalog read, which also warms the
+  // shared cache so the connect screen opens with its catalog already in hand.
+  const door = useConnectDoor();
 
+  // Fetch all subscriptions for the carousel
   const { data: allSubsData, isLoading: subsLoading } = useQuery({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions,
@@ -211,6 +210,73 @@ export default function DashboardPage() {
       setActiveItemKey(focusKey);
     }
   }, [provisioningRuntimes]);
+
+  // ── `/dashboard?connect=help[&subscriptionId=…]` ──────────────────────────
+  //
+  // Where a push click, the bot's «Подключить», the notification feed and the
+  // pop-up all land: pick the card, then open the operator's door for it.
+  //
+  // READ OFF THE ADDRESS BAR, not through a router location hook. The app has
+  // one router, a `BrowserRouter`, whose location IS the address bar, and this
+  // page re-renders on every navigation (`useNavigate` subscribes it to the
+  // location) — so a link that arrives while the dashboard is already open, a
+  // push clicked with the cabinet on screen, is seen on the render that
+  // navigation causes. The link is taken out of the address as it is read, so
+  // a reload or Back never runs it twice.
+  const addressPath = typeof window === "undefined" ? "" : window.location.pathname;
+  const addressSearch = typeof window === "undefined" ? "" : window.location.search;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const [connectRequest, setConnectRequest] = useState<ConnectHelpRequest | null>(null);
+  useEffect(() => {
+    const request = readConnectHelpDeepLink(addressPath, addressSearch);
+    if (request === null) return;
+    setConnectRequest(request);
+    // `replace`: Back from the connect screen returns to the dashboard, not to
+    // an address that would send the customer forward again.
+    void navigateRef.current(request.cleanedPath, { replace: true });
+  }, [addressPath, addressSearch]);
+
+  // The card the deep link pointed at, while «Подключить» is ringed for it.
+  const [connectHighlight, setConnectHighlight] = useState<string | null>(null);
+  useEffect(() => {
+    if (connectRequest === null) return;
+    // It needs both answers: which cards exist, and what the operator's switch
+    // says. Deciding before the switch is read would either bypass it or
+    // point at a button that was about to do something else.
+    if (subsLoading || door.kind === null) return;
+    setConnectRequest(null);
+    const target = pickConnectHelpSubscription(
+      subscriptions,
+      connectRequest.subscriptionId,
+      activeSubscriptionId,
+    );
+    if (target === null) return;
+    setActiveItemKey(subscriptionCarouselItemKey(target.id));
+    // Internal: the screen opens, no gesture needed. External: NEVER opened
+    // from here — a new tab without a tap is a blocked pop-up — so the button
+    // is pointed at and the customer's own tap opens it.
+    if (door.openWithoutGesture(target) === "highlight" && target.url) {
+      setConnectHighlight(target.id);
+    }
+  }, [activeSubscriptionId, connectRequest, door, subscriptions, subsLoading]);
+
+  const connectHighlighted =
+    connectHighlight !== null && connectHighlight === activeSubscriptionId;
+  useEffect(() => {
+    if (!connectHighlighted) return;
+    const frame = window.requestAnimationFrame(() => {
+      const button = document.querySelector<HTMLElement>("[data-connect-action]");
+      button?.scrollIntoView?.({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+      button?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [connectHighlighted, reduceMotion]);
+
+  const handleConnect = () => {
+    setConnectHighlight(null);
+    door.openFromTap(activeSubscription);
+  };
 
   const buyLimitReached = isSubscriptionLimitReached(actionPolicy);
 
@@ -398,6 +464,14 @@ export default function DashboardPage() {
             />
           </div>
 
+          {/* «Не получилось подключиться?» — between the card and its buttons,
+              for the card on screen only. Renders nothing unless the panel
+              raised it for that subscription. */}
+          <ConnectHelpBanner
+            subscription={deleteGuardActive ? null : activeSubscription}
+            onConnect={handleConnect}
+          />
+
           {/* Action buttons — actions on the current subscription */}
           <div data-tour="subscription-actions">
             <SubscriptionActions
@@ -406,33 +480,20 @@ export default function DashboardPage() {
               purchasesBlocked={purchasesBlocked}
               restricted={restricted}
               policyCanRenew={activeSubscriptionPolicy?.canRenew}
-              // The one place that decides what connecting means. The button
-              // raises the intent and has no opinion; the switch lives in the
-              // catalog the panel owns, and its off position is the rollback —
-              // no deploy, one toggle, back to the external page.
-              onConnect={() => {
-                if (connectScreenEnabled) {
-                  // The id travels with it, exactly as it does for add-ons: a
-                  // customer can hold several subscriptions, this button belongs
-                  // to one card, and the screen names none of them — so handing
-                  // over the first in the list would give somebody another
-                  // subscription's key with nothing on screen to notice it by.
-                  navigate(
-                    activeSubscription?.id
-                      ? `/subscription/connect?subscriptionId=${encodeURIComponent(activeSubscription.id)}`
-                      : "/subscription/connect",
-                  );
-                  return;
-                }
-                const url = activeSubscription?.url;
-                if (url) {
-                  openExternalUrl(url);
-                  window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-                }
-              }}
+              // What connecting means is decided by the door (`connect-door.ts`):
+              // the button raises the intent and has no opinion; the switch
+              // lives in the catalog the panel owns, and its off position is the
+              // rollback — no deploy, one toggle, back to the external page.
+              onConnect={handleConnect}
+              connectHighlighted={connectHighlighted}
               onUpgrade={() => navigate("/upgrade")}
               onRenew={() => navigate("/renew")}
             />
+            {connectHighlighted ? (
+              <p role="status" className="sr-only" data-testid="connect-highlight-note">
+                {t("connectHelp.tapConnect")}
+              </p>
+            ) : null}
           </div>
 
           {/* Browser push, offered once right after a purchase or a trial.

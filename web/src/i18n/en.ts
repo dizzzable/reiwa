@@ -234,6 +234,18 @@ export const en: RuDict = {
     unread_many: '{{count}} unread',
     unread_other: '{{count}} unread',
   },
+  connectHelp: {
+    bannerTitle: "Couldn't connect?",
+    bannerBody:
+      "Your subscription is active, but the VPN hasn't connected yet. Tap “Connect” — we'll suggest an app for your device and add your subscription in one tap.",
+    connect: 'Connect',
+    support: 'Contact support',
+    dismiss: 'Hide',
+    tapConnect: 'Tap “Connect” to open the connection page.',
+    settingsGroup: 'Connection',
+    settingsSwitch: 'Connection help',
+    settingsHint: "We'll remind you if the VPN never connects after a purchase or the start of a trial.",
+  },
   trialCta: {
     titleFree: 'Try it free',
     subtitleFree: 'Activate a free trial and explore the service right away.',

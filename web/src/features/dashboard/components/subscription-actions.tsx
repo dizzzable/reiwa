@@ -20,6 +20,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import type { Subscription } from "@/types/api";
 import { getSubscriptionAddOns } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import {
   canRenewSubscription,
   invokeRenewSubscriptionAction,
@@ -38,6 +39,12 @@ interface SubscriptionActionsProps {
   policyCanRenew?: boolean;
   /** A transient presentation (for example deletion) owns the card. */
   disabled?: boolean;
+  /**
+   * Draw a ring round «Подключить» — a deep link asked for the connect page and
+   * the operator's door is the EXTERNAL one, which only the customer's own tap
+   * may open (a new tab without a gesture is a blocked pop-up).
+   */
+  connectHighlighted?: boolean;
 }
 
 export function SubscriptionActions({
@@ -49,6 +56,7 @@ export function SubscriptionActions({
   restricted = false,
   policyCanRenew,
   disabled = false,
+  connectHighlighted = false,
 }: SubscriptionActionsProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -95,6 +103,10 @@ export function SubscriptionActions({
         // The parent owns the action because the parent is where "outside vs
         // inside the cabinet" will be decided.
         onClick={onConnect}
+        // Found by the dashboard to scroll to and focus when a deep link
+        // points the customer here.
+        connectAction
+        highlighted={connectHighlighted}
       />
       <ActionButton
         icon={<ArrowUpCircle className="h-5 w-5" />}
@@ -145,19 +157,29 @@ function ActionButton({
   disabled,
   onClick,
   ariaDescribedBy,
+  connectAction = false,
+  highlighted = false,
 }: {
   icon: React.ReactNode;
   label: string;
   disabled?: boolean;
   onClick: () => void;
   ariaDescribedBy?: string;
+  connectAction?: boolean;
+  highlighted?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       aria-describedby={ariaDescribedBy}
-      className="flex flex-col items-center gap-1.5 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-1 py-3 transition-all duration-150 hover:bg-[color:var(--color-surface-high)] active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+      data-connect-action={connectAction ? "" : undefined}
+      data-highlighted={highlighted ? "" : undefined}
+      className={cn(
+        "flex flex-col items-center gap-1.5 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-1 py-3 transition-all duration-150 hover:bg-[color:var(--color-surface-high)] active:scale-95 disabled:pointer-events-none disabled:opacity-40",
+        highlighted &&
+          "border-(--brand-primary) ring-2 ring-(--brand-primary) ring-offset-2 ring-offset-(--brand-bg-primary)",
+      )}
     >
       <span className="text-(--brand-primary)">{icon}</span>
       <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-[color:var(--brand-foreground)]">{label}</span>

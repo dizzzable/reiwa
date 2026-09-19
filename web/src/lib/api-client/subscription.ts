@@ -52,6 +52,21 @@ export const deleteSubscription = (subscriptionId: string) =>
     .then((r) => r.data);
 
 /**
+ * × on «Не получилось подключиться?». Recorded by the panel, so the banner does
+ * not come back on another device; the caller hides it first and does not wait.
+ *
+ * `{ dismissed: false }` is not a failure the customer can act on — a panel that
+ * predates the banner has nothing to record it in — and the route answers it
+ * with a 200. No body: the customer comes from the session, never from here.
+ */
+export const dismissConnectHelp = (subscriptionId: string) =>
+  apiClient
+    .post<{ dismissed: boolean }>(
+      `/subscription/${encodeURIComponent(subscriptionId)}/connect-help/dismiss`,
+    )
+    .then((r) => r.data);
+
+/**
  * Lists the user's renewable subscriptions with per-item renewal pricing.
  * Pass the selected `gatewayType` for an accurate combined total; omit it
  * for an indicative price using the default-resolved gateway. `subscriptionIds`

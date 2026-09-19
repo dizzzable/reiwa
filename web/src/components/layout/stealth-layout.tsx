@@ -36,6 +36,7 @@ import { getPlatformPolicy } from "@/lib/api-client";
 import { ensurePushSubscription } from "@/lib/push";
 import { isPushResyncFresh, rememberPushResync } from "@/lib/push-resync-marker";
 import { nextDestinationQuery } from "@/lib/next-destination";
+import { useServiceWorkerNavigate } from "@/lib/sw-navigate";
 import { readTelegramLaunchInitData } from "@/lib/telegram-launch-params";
 import { resolveAppBackgroundKind } from "@/types/branding";
 import { usePageBackdropStore } from "@/stores/page-backdrop.store";
@@ -278,6 +279,12 @@ export default function StealthLayout() {
   // The hook is a no-op until `isAuthenticated` becomes true, and tears
   // down its EventSource on unmount.
   useUserRealtime();
+
+  // A push clicked while this window is open: the service worker focuses it and
+  // posts the destination, and this routes there (`lib/sw-navigate.ts`). Here,
+  // above every early return, because hooks must not be conditional and the
+  // shell is what every push destination renders inside.
+  useServiceWorkerNavigate();
 
   if (isLoading) {
     return (

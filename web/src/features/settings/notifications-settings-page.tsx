@@ -1,7 +1,8 @@
 /**
  * NotificationsSettingsPage
  * ─────────────────────────
- * Browser web-push opt-in + subscription expiry switches. Reached from the
+ * Browser web-push opt-in + the switches for the subscription notices (the
+ * expiry reminders and «Помощь с подключением»). Reached from the
  * Notifications hub.
  *
  * The expiry switches used to be seven `<Switch defaultChecked>` with no
@@ -53,7 +54,7 @@ export default function NotificationsSettingsPage() {
       <div className="mx-5 space-y-6">
         <BrowserPushSection />
 
-        <ExpiryNotificationSwitches />
+        <NotificationSwitches />
 
         <p className="text-xs text-[var(--brand-muted-foreground)]">{t("notifications.hint")}</p>
       </div>
@@ -199,23 +200,35 @@ function BrowserPushSection() {
  *
  * The two "after 2 days" / "after 3 days" rows are gone: no emitter produces
  * those reminders, so those controls governed nothing even in principle.
+ *
+ * `connect_help` — «Помощь с подключением» — is ONE switch for two types: the
+ * panel files the trial-and-gift notice (`connect_help_trial`) under the same
+ * key, so there is nothing a second row could switch that this one does not.
  */
-const EXPIRY_SWITCHES: ReadonlyArray<{
+const NOTIFICATION_SWITCHES: ReadonlyArray<{
   type: string;
   labelKey: string;
-  group: "before" | "after";
+  group: "before" | "after" | "connect";
+  /** A line under the switch, for a type whose name alone does not say when it comes. */
+  hintKey?: string;
 }> = [
   { type: "expires_in_3_days", labelKey: "notifications.days3", group: "before" },
   { type: "expires_in_2_days", labelKey: "notifications.days2", group: "before" },
   { type: "expires_in_1_days", labelKey: "notifications.days1", group: "before" },
   { type: "expired", labelKey: "notifications.dayOf", group: "before" },
   { type: "expired_1_day_ago", labelKey: "notifications.after1", group: "after" },
+  {
+    type: "connect_help",
+    labelKey: "connectHelp.settingsSwitch",
+    group: "connect",
+    hintKey: "connectHelp.settingsHint",
+  },
 ];
 
 /** One key, so the optimistic write and the read cannot drift apart. */
 const PREFS_KEY = ["notification-preferences"] as const;
 
-function ExpiryNotificationSwitches() {
+function NotificationSwitches() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
@@ -259,7 +272,7 @@ function ExpiryNotificationSwitches() {
   // Only what the panel says it honours. An empty list — an older panel, or
   // an unreachable one — draws no switches rather than dead ones.
   const available = new Set(data?.available ?? []);
-  const rows = EXPIRY_SWITCHES.filter((row) => available.has(row.type));
+  const rows = NOTIFICATION_SWITCHES.filter((row) => available.has(row.type));
   if (rows.length === 0) return null;
 
   const isOn = (type: string): boolean => data?.prefs?.[type] !== false;
@@ -277,6 +290,9 @@ function ExpiryNotificationSwitches() {
                 checked={isOn(row.type)}
                 onCheckedChange={(next) => save.mutate({ [row.type]: next })}
               />
+              {row.hintKey ? (
+                <p className="mt-2 text-xs text-[var(--brand-muted-foreground)]">{t(row.hintKey)}</p>
+              ) : null}
             </div>
           ))}
         </div>
@@ -287,6 +303,7 @@ function ExpiryNotificationSwitches() {
     <>
       {renderGroup(t("notifications.beforeExpiry"), rows.filter((r) => r.group === "before"))}
       {renderGroup(t("notifications.afterExpiry"), rows.filter((r) => r.group === "after"))}
+      {renderGroup(t("connectHelp.settingsGroup"), rows.filter((r) => r.group === "connect"))}
     </>
   );
 }

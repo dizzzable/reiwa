@@ -6,12 +6,40 @@
  * modal in place; actionable types route to the page where the user can act
  * (subscription expiry/limit → renewal, referral events → referral cabinet).
  */
+import { connectHelpDeepLink } from '@/features/dashboard/connect-help';
+
 export type NotificationTarget =
   | { readonly kind: 'modal' }
   | { readonly kind: 'route'; readonly path: string };
 
-export function resolveNotificationTarget(type: string): NotificationTarget {
+/**
+ * «Помощь с подключением» — the paid notice and its twin for trials and gifts.
+ * Matched EXACTLY, and first: the substring rules below were written for other
+ * families, and a help message must never fall into one of them by accident.
+ */
+const CONNECT_HELP_TYPES: ReadonlySet<string> = new Set(['connect_help', 'connect_help_trial']);
+
+export function resolveNotificationTarget(
+  type: string,
+  /**
+   * The notification's payload, when the caller has it. `subscriptionId` in it
+   * names the card a connect-help notice is about; without it the dashboard
+   * picks the newest subscription still waiting for help.
+   */
+  payload?: Record<string, unknown> | null,
+): NotificationTarget {
   const t = (type ?? '').toLowerCase();
+
+  // «Не получилось подключиться?» → the dashboard's deep link, which picks the
+  // card and opens the operator's connect door — the same address a push, the
+  // bot's button and the pop-up use.
+  if (CONNECT_HELP_TYPES.has(t)) {
+    const subscriptionId = payload?.['subscriptionId'];
+    return {
+      kind: 'route',
+      path: connectHelpDeepLink(typeof subscriptionId === 'string' ? subscriptionId : null),
+    };
+  }
 
   // Support replies → the Support section so the user can open the ticket
   // and read / continue the conversation.
