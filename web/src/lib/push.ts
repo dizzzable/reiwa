@@ -29,7 +29,10 @@ import {
   pushSubscribe,
   pushUnsubscribe,
 } from '@/lib/api-client'
+import { isAppleMobileDevice } from '@/lib/apple-mobile-device'
 import { matchApplicationServerKey } from '@/lib/push-key-match'
+
+export { isAppleMobileDevice }
 
 export type PushSupportStatus =
   | 'supported'
@@ -53,15 +56,15 @@ export function detectPushSupport(): PushSupportStatus {
   if (!hasServiceWorker || !hasPushManager || !hasNotification) {
     return 'unsupported-browser'
   }
-  // iOS 16.4+ Safari supports web-push only for PWAs added to the
+  // iOS 16.4+ and iPadOS support web-push only for PWAs added to the
   // Home Screen ("standalone" display mode). Detect that case so the
-  // UI can prompt installation instead of silently failing.
-  const ua = navigator.userAgent
-  const isIOS = /iPhone|iPad|iPod/.test(ua) && !window.matchMedia('(display-mode: standalone)').matches
+  // UI can prompt installation instead of silently failing. An iPad sends
+  // a Mac user agent, which is why this is not a user-agent regex: an
+  // iPad tab used to read "supported", offer the switch, and fail.
   const standalone =
     window.matchMedia('(display-mode: standalone)').matches ||
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-  if (isIOS && !standalone) {
+  if (isAppleMobileDevice() && !standalone) {
     return 'unsupported-ios-not-installed'
   }
   if (Notification.permission === 'denied') {
@@ -78,21 +81,6 @@ export async function getCurrentSubscription(): Promise<PushSubscription | null>
   if (!('serviceWorker' in navigator)) return null
   const reg = await navigator.serviceWorker.ready
   return reg.pushManager.getSubscription()
-}
-
-/**
- * "Is this an iPhone, iPad or iPod?" — whatever browser it is and whatever the
- * user agent pretends. iPadOS 13+ sends a desktop Mac user agent in every
- * browser, so `detectPushSupport()`'s `iPhone|iPad|iPod` test misses every
- * iPad; the touch points tell them apart (no Mac has a touch screen). The same
- * test `detectIosSafari()` in `hooks/use-install-prompt.ts` makes, without its
- * "and it is Safari" half: for push the browser does not matter, because on
- * iOS and iPadOS web push works only in a web app added to the Home Screen.
- */
-export function isAppleMobileDevice(): boolean {
-  if (typeof navigator === 'undefined') return false
-  const ua = navigator.userAgent || ''
-  return /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1)
 }
 
 /**

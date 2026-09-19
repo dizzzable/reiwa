@@ -5,8 +5,9 @@
  *
  * Inline, never a modal: right after a purchase the dashboard may also be
  * showing the «subscription ready» hint and the onboarding tour, and a card in
- * the page cannot stack on either. It waits while the tour runs (or is about to
- * start) and appears once it has closed. Shown once per browser, whatever the
+ * the page cannot stack on either. It waits while the tour runs or is about to
+ * start — the tour provider says which (`isActive`, `autoStartPending`) — and
+ * appears once it has closed. Shown once per browser, whatever the
  * answer; the switch in «Настройки» → «Уведомления» → «Настройка уведомлений»
  * stays for anyone who changes their mind.
  *
@@ -35,11 +36,10 @@ import {
 import { SUBSCRIPTION_PROVISIONING_COMPLETED_EVENT } from "@/lib/subscription-provisioning-receipt";
 import { isTelegramMiniAppSurface } from "@/lib/telegram-launch-params";
 import { isStandalonePwa } from "@/hooks/use-install-prompt";
-import { useSession } from "@/hooks/use-session";
+import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
 import { StadiumButton } from "@/components/ui/stadium-button";
 
 import {
-  isOnboardingTourOnScreen,
   mustWaitForTour,
   pushPromptRefusal,
   type PushPromptRefusal,
@@ -58,14 +58,12 @@ import {
  * this, the card does not appear.
  */
 export const PUSH_PROMPT_SW_READY_TIMEOUT_MS = 5_000;
-/** How often a waiting card looks whether the tour has closed. */
-export const PUSH_PROMPT_TOUR_POLL_MS = 400;
 
 type PromptResult = "enabled" | "blocked" | "notEnabled" | "failed";
 
 type Phase =
   | { readonly kind: "hidden" }
-  | { readonly kind: "waiting"; readonly publicKey: string; readonly readyAt: number }
+  | { readonly kind: "waiting"; readonly publicKey: string }
   | { readonly kind: "offer"; readonly publicKey: string }
   | { readonly kind: "working" }
   | { readonly kind: "result"; readonly result: PromptResult }
@@ -135,14 +133,10 @@ function within<T>(start: () => Promise<T>, ms: number): Promise<T | undefined> 
 
 export function PushPromptCard() {
   const { t } = useTranslation();
-  const { session } = useSession();
+  const tour = useOnboardingContext();
   const [phase, setPhase] = useState<Phase>({ kind: "hidden" });
   const [eligibilityTick, setEligibilityTick] = useState(0);
   const busy = useRef(false);
-  // The tour has never run for this customer, so it starts as soon as the new
-  // card is ready (it marks itself completed the moment it starts).
-  const tourDue = useRef(false);
-  tourDue.current = session?.onboardingCompleted === false;
 
   // A subscription just became ready — a purchase or a free trial. Heard here,
   // on the dashboard, because that is where the handoff completes.
@@ -173,7 +167,7 @@ export function PushPromptCard() {
       // would wait on it too.
       if (cancelled || existing !== null) return;
       if (currentRefusal() !== null) return;
-      setPhase({ kind: "waiting", publicKey, readyAt: Date.now() });
+      setPhase({ kind: "waiting", publicKey });
     })();
     return () => {
       cancelled = true;
@@ -183,34 +177,19 @@ export function PushPromptCard() {
   }, [eligibilityTick]);
 
   // Wait out the onboarding tour, then show — and only then count it as shown.
+  // No polling: the provider re-renders this card whenever the tour starts,
+  // stops, or stops being due.
   useEffect(() => {
     if (phase.kind !== "waiting") return;
-    const waiting = phase;
-    const showIfClear = (): boolean => {
-      if (
-        mustWaitForTour({
-          tourOnScreen: isOnboardingTourOnScreen(),
-          tourDue: tourDue.current,
-          msSinceReady: Date.now() - waiting.readyAt,
-        })
-      ) {
-        return false;
-      }
-      if (!stillOffered()) {
-        setPhase({ kind: "closed" });
-        return true;
-      }
-      writePushPromptRecord("shown");
-      clearPushPromptEligibility();
-      setPhase({ kind: "offer", publicKey: waiting.publicKey });
-      return true;
-    };
-    if (showIfClear()) return;
-    const timer = window.setInterval(() => {
-      if (showIfClear()) window.clearInterval(timer);
-    }, PUSH_PROMPT_TOUR_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [phase]);
+    if (mustWaitForTour({ tourActive: tour.isActive, tourPending: tour.autoStartPending })) return;
+    if (!stillOffered()) {
+      setPhase({ kind: "closed" });
+      return;
+    }
+    writePushPromptRecord("shown");
+    clearPushPromptEligibility();
+    setPhase({ kind: "offer", publicKey: phase.publicKey });
+  }, [phase, tour.isActive, tour.autoStartPending]);
 
   const finish = (outcome: PushSubscribeOutcome | null): void => {
     busy.current = false;

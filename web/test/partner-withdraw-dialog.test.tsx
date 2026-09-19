@@ -4,8 +4,8 @@
  * «Вывести средства» on the partner page — rendered, in Russian, with the app's
  * own dictionaries, sheets and readers. Only the network functions are
  * replaced; the panel's answers are shaped as the panel and the cabinet send
- * them (a created request, a 2xx `{ error }`, the hold's 400 with its code, a
- * bare 400, a 401).
+ * them: a created request, a coded 409 or 422, the hold's 400 with its code, a
+ * 401 — and, from a panel from before the codes, a 2xx `{ error }` or a bare 400.
  *
  * ── What was wrong ──────────────────────────────────────────────────────────
  *
@@ -18,9 +18,10 @@
  *
  * Read from `InternalPartnerController.withdraw` and
  * `PartnersService.createWithdrawalRequest`: a positive whole number of minor
- * units, at most the balance; free-text method and requisites; no minimum past
- * one minor unit, no "one pending request at a time". The amount leaves the
- * balance at once; an operator pays by hand, or rejects and the amount returns.
+ * units, at most the balance and at least the operator's minimum (none on a
+ * panel from before it was enforced); free-text method and requisites; no "one
+ * pending request at a time". The amount leaves the balance at once; an
+ * operator pays by hand, or rejects and the amount returns.
  */
 
 import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -662,5 +663,141 @@ describe("the requests, and where each one stands", () => {
     // The sheet around it is on screen.
     expect(withdrawButton()).not.toBeNull();
     expect(api.getPartnerWithdrawals).toHaveBeenCalled();
+  });
+});
+
+describe("a refusal the panel names with a code", () => {
+  async function submitRefused(failure: Error, amount = "150,50"): Promise<{ infoReads: number; listReads: number }> {
+    api.createWithdrawal.mockRejectedValue(failure);
+    await mount();
+    await openWithdraw();
+    await fillAndConfirm(amount, "card", REQUISITES);
+    const infoReads = api.getPartnerInfo.mock.calls.length;
+    const listReads = api.getPartnerWithdrawals.mock.calls.length;
+    await click(submitButton(), "«Отправить заявку»");
+    return { infoReads, listReads };
+  }
+
+  it.each([
+    [409, "PARTNER_PROGRAM_INVITED_ONLY", "partnerWithdraw.refused.invitedOnly"],
+    [409, "PARTNER_NOT_ACTIVE", "partnerWithdraw.refused.inactive"],
+    [409, "PARTNER_NOT_FOUND", "partnerWithdraw.refused.notPartner"],
+  ] as const)("%i %s: its own words, and the partner info read again", async (status, code, key) => {
+    const reads = await submitRefused(httpFailure(status, { code, message: "x" }));
+
+    expect(await refusal()).toBe(tr(key));
+    await waitUntil(() => api.getPartnerInfo.mock.calls.length > reads.infoReads, "the partner info re-read");
+    // A named refusal is a refusal: nothing to look for on the list.
+    expect(api.getPartnerWithdrawals.mock.calls.length).toBe(reads.listReads);
+    expect(document.body.querySelector("[data-testid='partner-withdraw-done']")).toBeNull();
+  });
+
+  it("422 WITHDRAWAL_INSUFFICIENT_BALANCE: how much there is now, and back to the amount", async () => {
+    api.getPartnerInfo.mockResolvedValueOnce(partnerInfo()).mockResolvedValue(partnerInfo({ balance: 10_000 }));
+
+    await submitRefused(httpFailure(422, { code: "WITHDRAWAL_INSUFFICIENT_BALANCE", message: "x" }));
+
+    expect(await refusal()).toBe(tr("partnerWithdraw.refused.insufficient", { balance: "100.00 ₽" }));
+    expect(amountField(), "the refusal did not go back to the amount").not.toBeNull();
+  });
+
+  it("422 WITHDRAWAL_BELOW_MINIMUM: the minimum it carried, and back to the amount", async () => {
+    await submitRefused(
+      httpFailure(422, { code: "WITHDRAWAL_BELOW_MINIMUM", message: "x", minWithdrawalAmount: 30_700 }),
+    );
+
+    expect(await refusal()).toBe(tr("partnerWithdraw.refused.belowMinimum", { min: "307.00 ₽" }));
+    expect(amountField(), "the refusal did not go back to the amount").not.toBeNull();
+    expect(refusalText()).not.toBe(tr("partnerWithdraw.refused.failed"));
+  });
+});
+
+describe("the operator's minimum, before anything is sent", () => {
+  it("is in the limits, and a smaller amount is refused on the form", async () => {
+    api.getPartnerInfo.mockResolvedValue(partnerInfo({ minWithdrawalAmount: 30_700 }));
+    await mount();
+    await openWithdraw();
+
+    expect(dialog()!.textContent).toContain(tr("partnerWithdraw.amountLimits", { min: "307.00 ₽", max: "500.00 ₽" }));
+    setField("#partner-withdraw-amount", "306.99");
+    setField("#partner-withdraw-requisites", REQUISITES);
+    await click(document.body.querySelector("[data-testid='partner-withdraw-next']"), "«Далее»");
+
+    expect(document.body.querySelector("[data-testid='partner-withdraw-amount-error']")?.textContent).toBe(
+      tr("partnerWithdraw.errors.amountTooSmall", { min: "307.00 ₽" }),
+    );
+    expect(document.body.querySelector("[data-testid='partner-withdraw-confirm']")).toBeNull();
+    expect(api.createWithdrawal).not.toHaveBeenCalled();
+
+    // Exactly the minimum is enough.
+    setField("#partner-withdraw-amount", "307");
+    await click(document.body.querySelector("[data-testid='partner-withdraw-next']"), "«Далее»");
+    expect(document.body.querySelector("[data-testid='partner-withdraw-confirm']")?.textContent).toContain("307.00 ₽");
+  });
+
+  it("takes no tap on «Вывести средства» when the whole balance is below it, and says so", async () => {
+    api.getPartnerInfo.mockResolvedValue(partnerInfo({ balance: 20_000, minWithdrawalAmount: 30_700 }));
+    await mount();
+    await openBalance();
+
+    const button = withdrawButton();
+    expect(button?.disabled).toBe(true);
+    const reason = document.getElementById(button?.getAttribute("aria-describedby") ?? "");
+    expect(reason?.textContent).toBe(tr("partnerWithdraw.belowMinimum", { min: "307.00 ₽", balance: "200.00 ₽" }));
+  });
+});
+
+describe("the balance in its own currency", () => {
+  it("prints the balance currency everywhere the page shows money — no «₽» for a dollar balance", async () => {
+    api.getPartnerInfo.mockResolvedValue(partnerInfo({ balanceCurrency: "USD" }));
+    api.getPartnerEarnings.mockResolvedValue({
+      earnings: [{ id: "e-1", level: 1, percent: 10, earnedAmount: 150, createdAt: "2026-09-18T10:00:00.000Z" }],
+    });
+    api.getPartnerWithdrawals.mockResolvedValue({ withdrawals: [panelRequest({ amount: 12_345 })] });
+    await mount();
+
+    // The stat card, before anything is opened.
+    expect(container?.textContent).toContain("500.00 $");
+    expect(container?.textContent).toContain(tr("partner.earned", { amount: "900.00 $" }));
+
+    await openBalance();
+    await waitUntil(() => (document.body.textContent ?? "").includes("+1.50 $"), "the earnings list");
+    await waitUntil(() => document.body.querySelector("[data-testid='partner-withdrawal']") !== null, "the requests");
+    const sheet = document.body.textContent ?? "";
+    expect(sheet).toContain(`${tr("partner.totalEarned")}: 900.00 $`);
+    expect(sheet).toContain("123.45 $");
+    expect(sheet).not.toContain("₽");
+  });
+});
+
+describe("every sheet on the page is described, or says it is not", () => {
+  const SHEETS = [
+    ["partner.level", "partner.levelDescription"],
+    ["partner.referrals", null],
+    ["partner.balance", null],
+    ["partner.info", "partner.infoDescription"],
+  ] as const;
+
+  it.each(SHEETS)("%s: no «Missing Description» from Radix", async (label, description) => {
+    const warnings: string[] = [];
+    const record = (...args: unknown[]) => warnings.push(args.map(String).join(" "));
+    vi.spyOn(console, "warn").mockImplementation(record);
+    vi.spyOn(console, "error").mockImplementation(record);
+    await mount();
+
+    const card = buttons().find((candidate) => candidate.textContent?.includes(tr(label)));
+    await click(card, `the ${label} card`);
+
+    const content = document.body.querySelector<HTMLElement>("[role='dialog']");
+    expect(content, `the ${label} sheet did not open`).not.toBeNull();
+    expect(warnings.filter((line) => line.includes("Missing `Description`"))).toEqual([]);
+    if (description === null) {
+      expect(content!.hasAttribute("aria-describedby")).toBe(false);
+    } else {
+      const describedBy = content!.getAttribute("aria-describedby");
+      expect(describedBy).toBeTruthy();
+      expect(document.getElementById(describedBy!)?.textContent).toBe(tr(description));
+    }
+    vi.restoreAllMocks();
   });
 });

@@ -1,15 +1,17 @@
 /**
  * The partner withdrawal as decisions: what the customer typed, in the unit the
- * panel takes; why no request can be made; and what a refusal meant, read from
- * the partner info AFTER it — because the refusal itself reaches the browser as
- * a bare 400.
+ * panel takes; why no request can be made; and what a refusal meant. A current
+ * panel names its refusal with a code (409 for a state, 422 for an amount); a
+ * panel from before the codes sends a bare 400, and then the refusal is read
+ * from the partner info AFTER it.
  *
  * The rules are the panel's (`InternalPartnerController.withdraw`,
  * `PartnersService.createWithdrawalRequest`): a positive whole number of minor
  * units, at most the balance — the debit and the check are one statement, so a
- * request for exactly the whole balance lands it on zero — and free-text method
- * and requisites. There is no minimum beyond one minor unit and no "one pending
- * request at a time".
+ * request for exactly the whole balance lands it on zero — and at least the
+ * operator's minimum (`minWithdrawalAmount`, `0` = none; absent from an older
+ * panel, which enforces none), with free-text method and requisites. There is
+ * no "one pending request at a time".
  */
 
 import { describe, expect, it } from "vitest";
@@ -28,6 +30,7 @@ import {
   parseWithdrawalAmount,
   PARTNER_WITHDRAWAL_MIN_MINOR,
   withdrawalBlock,
+  withdrawalMinimum,
 } from "@/features/partner/partner-withdraw-policy";
 
 const NOW = Date.parse("2026-09-19T10:00:00.000Z");
@@ -239,5 +242,32 @@ describe("money in a sentence", () => {
     expect(formatPartnerMoney(15_050, "USD")).toBe("150.50 $");
     expect(formatPartnerMoney(1, "USDT")).toBe("0.01 USDT");
     expect(formatPartnerMoney(12_345, null)).toBe("123.45 ₽");
+  });
+});
+
+describe("the operator's minimum («Минимальная сумма вывода»), as the panel now enforces it", () => {
+  it("is read from the partner info, never below one minor unit, and absent means the old floor", () => {
+    expect(withdrawalMinimum({ minWithdrawalAmount: 30_700 })).toBe(30_700);
+    expect(withdrawalMinimum({ minWithdrawalAmount: 0 })).toBe(1);
+    expect(withdrawalMinimum({})).toBe(1);
+    expect(withdrawalMinimum(null)).toBe(1);
+    for (const junk of ["30700", 307.5, -5, Number.NaN, null]) {
+      expect(withdrawalMinimum({ minWithdrawalAmount: junk }), String(junk)).toBe(1);
+    }
+  });
+
+  it("refuses less than it on the form, and takes exactly it", () => {
+    expect(parseWithdrawalAmount("306.99", 1_000_000, 30_700)).toEqual({ ok: false, error: "tooSmall" });
+    expect(parseWithdrawalAmount("307", 1_000_000, 30_700)).toEqual({ ok: true, minor: 30_700 });
+    // A minimum above the balance: the balance still caps the other end.
+    expect(parseWithdrawalAmount("400", 35_000, 30_700)).toEqual({ ok: false, error: "tooLarge" });
+  });
+
+  it("blocks the button when the whole balance is below it — after the hold, the program and an empty balance", () => {
+    const partner = { balance: 20_000, isActive: true, programAvailable: true, balanceHold: null, minWithdrawalAmount: 30_700 };
+    expect(withdrawalBlock(partner, NOW)).toEqual({ kind: "belowMinimum", minimum: 30_700, balance: 20_000 });
+    expect(withdrawalBlock({ ...partner, balance: 30_700 }, NOW)).toBeNull();
+    expect(withdrawalBlock({ ...partner, balance: 0 }, NOW)).toEqual({ kind: "empty" });
+    expect(withdrawalBlock({ ...partner, isActive: false }, NOW)).toEqual({ kind: "inactive" });
   });
 });

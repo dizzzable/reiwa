@@ -12,17 +12,22 @@
  *
  * ── Refusals ────────────────────────────────────────────────────────────────
  *
- * The panel's refusals arrive three ways, and each is read where it arrives:
- *   - a 2xx body `{ error }` (invited-only program, not a partner) — a request
- *     "that worked" unless the body is read (`readWithdrawalAnswer`);
+ * The panel's refusals arrive four ways, and each is read where it arrives:
+ *   - a coded 409 or 422 (not a partner, invited-only program, partner switched
+ *     off, more than the balance, below the minimum), forwarded by the cabinet
+ *     (`readWithdrawalRefusal`) — each in its own words, the partner info read
+ *     again so the page shows the balance and the minimum as they now stand;
  *   - the recovery hold, forwarded with its code and end — worded exactly as
  *     the purchase and renewal pages word it, and the partner info re-read so
  *     the standing notice takes over;
- *   - every other 400, stripped of its reason by the cabinet. The partner info
- *     and the request list are read again and the refusal is explained from
- *     what they now say — and a request that DID get created (the answer was
- *     lost, not the request) is shown as created, so a second tap cannot take
- *     the money twice.
+ *   - from a panel from before the codes, a 2xx body `{ error }` (invited-only
+ *     program, not a partner) — a request "that worked" unless the body is
+ *     read (`readWithdrawalAnswer`);
+ *   - from the same older panel, every other 400, stripped of its reason by the
+ *     cabinet. The partner info and the request list are read again and the
+ *     refusal is explained from what they now say — and a request that DID get
+ *     created (the answer was lost, not the request) is shown as created, so a
+ *     second tap cannot take the money twice.
  *
  * Before any of those, the cabinet's fresh session check (`lib/session-check.ts`,
  * the same reader the purchase and renewal pages use): `unavailable` — the panel
@@ -42,6 +47,7 @@ import {
   PARTNER_WITHDRAWAL_METHODS,
   PARTNER_WITHDRAWAL_REQUISITES_MAX_LENGTH,
   readWithdrawalAnswer,
+  readWithdrawalRefusal,
   type PartnerInfo,
   type PartnerWithdrawal,
   type PartnerWithdrawalMethod,
@@ -67,8 +73,8 @@ import {
   formatAmountForInput,
   formatPartnerMoney,
   parseWithdrawalAmount,
-  PARTNER_WITHDRAWAL_MIN_MINOR,
   withdrawalBlock,
+  withdrawalMinimum,
   type WithdrawalBlock,
 } from "../partner-withdraw-policy";
 import { isKnownWithdrawalMethod } from "./partner-withdrawals-list";
@@ -145,7 +151,9 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
   const currency = info?.balanceCurrency ?? null;
   const money = (minor: number): string => formatPartnerMoney(minor, currency);
   const block = withdrawalBlock(info);
-  const amount = parseWithdrawalAmount(amountText, balance);
+  // The operator's minimum, which the panel enforces; one minor unit without one.
+  const minimum = withdrawalMinimum(info);
+  const amount = parseWithdrawalAmount(amountText, balance, minimum);
   const details = checkWithdrawalRequisites(requisites);
   const methodLabel = (value: string): string =>
     isKnownWithdrawalMethod(value) ? t(`partnerWithdraw.methods.${value}`) : value;
@@ -158,7 +166,7 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
         : amount.error === "invalid"
           ? t("partnerWithdraw.errors.amountInvalid")
           : amount.error === "tooSmall"
-            ? t("partnerWithdraw.errors.amountTooSmall", { min: money(PARTNER_WITHDRAWAL_MIN_MINOR) })
+            ? t("partnerWithdraw.errors.amountTooSmall", { min: money(minimum) })
             : t("partnerWithdraw.errors.amountTooLarge", { max: money(balance) });
   const requisitesError =
     !showErrors || details.ok
@@ -208,6 +216,45 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
       void queryClient.invalidateQueries({ queryKey: PARTNER_INFO_QUERY_KEY });
       return;
     }
+    // A refusal the panel named with a code: its own words, and a re-read of
+    // the partner info it depends on, so the form around it is current too.
+    const coded = readWithdrawalRefusal(error);
+    if (coded !== null) {
+      const reread = (): Promise<PartnerInfo | null> =>
+        queryClient
+          .fetchQuery({ queryKey: PARTNER_INFO_QUERY_KEY, queryFn: getPartnerInfo, staleTime: 0 })
+          .catch(() => null);
+      switch (coded.code) {
+        case "WITHDRAWAL_BELOW_MINIMUM": {
+          // The operator may have raised it after this page read the info.
+          const fresh = await reread();
+          const least = coded.minWithdrawalAmount ?? withdrawalMinimum(fresh ?? info);
+          setRefusal(t("partnerWithdraw.refused.belowMinimum", { min: money(least) }));
+          setStep("form");
+          return;
+        }
+        case "WITHDRAWAL_INSUFFICIENT_BALANCE": {
+          const fresh = await reread();
+          const current = typeof fresh?.balance === "number" ? fresh.balance : balance;
+          setRefusal(t("partnerWithdraw.refused.insufficient", { balance: money(Math.max(0, current)) }));
+          setStep("form");
+          return;
+        }
+        case "PARTNER_NOT_ACTIVE":
+          setRefusal(t("partnerWithdraw.refused.inactive"));
+          break;
+        case "PARTNER_PROGRAM_INVITED_ONLY":
+          setRefusal(t("partnerWithdraw.refused.invitedOnly"));
+          break;
+        case "PARTNER_NOT_FOUND":
+          setRefusal(t("partnerWithdraw.refused.notPartner"));
+          break;
+      }
+      void queryClient.invalidateQueries({ queryKey: PARTNER_INFO_QUERY_KEY });
+      return;
+    }
+    // A panel from before the codes: the refusal came without its reason, so
+    // it is read back from what the partner info and the list now say.
     const [fresh, list] = await Promise.all([
       queryClient
         .fetchQuery({ queryKey: PARTNER_INFO_QUERY_KEY, queryFn: getPartnerInfo, staleTime: 0 })
@@ -317,7 +364,7 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
     );
   }
 
-  const blockNotice = block === null ? null : <BlockNotice block={block} />;
+  const blockNotice = block === null ? null : <BlockNotice block={block} currency={currency} />;
   const refusalNotice =
     refusal === null ? null : (
       <TipCard tone="danger" role="alert" data-testid="partner-withdraw-refusal">
@@ -381,7 +428,7 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
           <button
             type="button"
             className="text-xs font-medium text-(--brand-primary) disabled:opacity-40"
-            disabled={balance < PARTNER_WITHDRAWAL_MIN_MINOR}
+            disabled={balance < minimum}
             onClick={() => setAmountText(formatAmountForInput(balance))}
           >
             {t("partnerWithdraw.amountAll")}
@@ -400,7 +447,7 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
         />
         <p id={AMOUNT_HELP_ID} className="text-xs text-[var(--brand-muted-foreground)]">
           {t("partnerWithdraw.amountLimits", {
-            min: money(PARTNER_WITHDRAWAL_MIN_MINOR),
+            min: money(minimum),
             max: money(balance),
           })}
         </p>
@@ -475,12 +522,12 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
   );
 }
 
-function BlockNotice({ block }: { block: WithdrawalBlock }) {
+function BlockNotice({ block, currency }: { block: WithdrawalBlock; currency: string | null }) {
   const { t } = useTranslation();
   if (block.kind === "hold") return <PartnerBalanceHoldNotice hold={block.hold} id={BLOCK_NOTICE_ID} />;
   return (
     <TipCard tone="warning" id={BLOCK_NOTICE_ID}>
-      {withdrawalBlockText(block, t)}
+      {withdrawalBlockText(block, t, currency)}
     </TipCard>
   );
 }
@@ -488,7 +535,8 @@ function BlockNotice({ block }: { block: WithdrawalBlock }) {
 /** The reason under a disabled «Вывести средства» that is not the hold. */
 export function withdrawalBlockText(
   block: Exclude<WithdrawalBlock, { kind: "hold" }>,
-  t: (key: string) => string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  currency: string | null,
 ): string {
   switch (block.kind) {
     case "invitedOnly":
@@ -497,6 +545,11 @@ export function withdrawalBlockText(
       return t("partnerWithdraw.refused.inactive");
     case "empty":
       return t("partnerWithdraw.empty");
+    case "belowMinimum":
+      return t("partnerWithdraw.belowMinimum", {
+        min: formatPartnerMoney(block.minimum, currency),
+        balance: formatPartnerMoney(block.balance, currency),
+      });
   }
 }
 

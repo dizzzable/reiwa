@@ -23,7 +23,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api-client", () => api);
 
-import { isAppleMobileDevice, subscribeToPush, subscribeToPushWithKey } from "@/lib/push";
+import { detectPushSupport, isAppleMobileDevice, subscribeToPush, subscribeToPushWithKey } from "@/lib/push";
 
 /** A real-looking P-256 public key, URL-safe base64 without padding. */
 const KEY = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U";
@@ -153,5 +153,29 @@ describe("isAppleMobileDevice — iPadOS behind a Mac user agent", () => {
   ] as const)("%s", (_case, userAgent, touchPoints, expected) => {
     stubDevice(userAgent, touchPoints);
     expect(isAppleMobileDevice()).toBe(expected);
+  });
+});
+
+describe("detectPushSupport — iOS and iPadOS deliver push only to a Home-Screen app", () => {
+  const IPHONE_UA =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
+  const IPAD_AS_MAC_UA =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
+  const ANDROID_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0 Mobile Safari/537.36";
+
+  it.each([
+    ["an iPad in a browser tab, behind a Mac user agent", IPAD_AS_MAC_UA, 5, false, "unsupported-ios-not-installed"],
+    ["an iPhone in a Safari tab", IPHONE_UA, 5, false, "unsupported-ios-not-installed"],
+    ["an iPad added to the Home Screen", IPAD_AS_MAC_UA, 5, true, "supported"],
+    ["a real Mac", IPAD_AS_MAC_UA, 0, false, "supported"],
+    ["an Android phone", ANDROID_UA, 5, false, "supported"],
+  ] as const)("%s", (_case, userAgent, touchPoints, standalone, expected) => {
+    stubDevice(userAgent, touchPoints);
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (media: string) => ({ matches: media.includes("standalone") ? standalone : false }),
+    });
+
+    expect(detectPushSupport()).toBe(expected);
   });
 });

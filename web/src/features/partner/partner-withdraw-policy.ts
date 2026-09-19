@@ -16,8 +16,21 @@ import {
 } from "@/lib/api-client/partner";
 import { standingBalanceHold, type PartnerBalanceHold } from "@/lib/partner-balance-hold";
 
-/** One minor unit (0.01): the panel refuses zero and less, and nothing more. */
+/** One minor unit (0.01): the smallest amount there is, whatever the operator set. */
 export const PARTNER_WITHDRAWAL_MIN_MINOR = 1;
+
+/**
+ * The smallest amount this partner may ask for: the operator's «Минимальная
+ * сумма вывода» from the partner info, which the panel enforces, and never less
+ * than one minor unit. A panel from before it was enforced sends none, and then
+ * the old floor — one minor unit — is all there is.
+ */
+export function withdrawalMinimum(info: { readonly minWithdrawalAmount?: unknown } | null | undefined): number {
+  const raw = info?.minWithdrawalAmount;
+  return typeof raw === "number" && Number.isSafeInteger(raw) && raw > PARTNER_WITHDRAWAL_MIN_MINOR
+    ? raw
+    : PARTNER_WITHDRAWAL_MIN_MINOR;
+}
 
 /**
  * Whole units above this are not read as an amount. Far above any balance a
@@ -37,7 +50,11 @@ export type WithdrawalAmount =
  * or a comma between them, spaces anywhere (a pasted «1 500,50» is fine). Done
  * on the digits, never through a float, so «0.29» is 29 and not 28.999….
  */
-export function parseWithdrawalAmount(text: string, balanceMinor: number): WithdrawalAmount {
+export function parseWithdrawalAmount(
+  text: string,
+  balanceMinor: number,
+  minimumMinor: number = PARTNER_WITHDRAWAL_MIN_MINOR,
+): WithdrawalAmount {
   const compact = text.replace(/\s/g, "");
   if (compact.length === 0) return { ok: false, error: "required" };
   const match = /^(\d+)(?:[.,](\d{0,2}))?$/.exec(compact);
@@ -46,7 +63,7 @@ export function parseWithdrawalAmount(text: string, balanceMinor: number): Withd
   if (whole.length > MAX_WHOLE_DIGITS) return { ok: false, error: "tooLarge" };
   const cents = (match[2] ?? "").padEnd(2, "0");
   const minor = Number(whole) * 100 + Number(cents);
-  if (minor < PARTNER_WITHDRAWAL_MIN_MINOR) return { ok: false, error: "tooSmall" };
+  if (minor < Math.max(PARTNER_WITHDRAWAL_MIN_MINOR, minimumMinor)) return { ok: false, error: "tooSmall" };
   if (minor > balanceMinor) return { ok: false, error: "tooLarge" };
   return { ok: true, minor };
 }
@@ -71,9 +88,14 @@ export type WithdrawalBlock =
   | { readonly kind: "hold"; readonly hold: PartnerBalanceHold }
   | { readonly kind: "invitedOnly" }
   | { readonly kind: "inactive" }
-  | { readonly kind: "empty" };
+  | { readonly kind: "empty" }
+  /** Money on the balance, but less than the operator's minimum. */
+  | { readonly kind: "belowMinimum"; readonly minimum: number; readonly balance: number };
 
-type PartnerInfoView = Pick<PartnerInfo, "balance" | "isActive" | "programAvailable" | "balanceHold">;
+type PartnerInfoView = Pick<
+  PartnerInfo,
+  "balance" | "isActive" | "programAvailable" | "balanceHold" | "minWithdrawalAmount"
+>;
 
 export function withdrawalBlock(
   info: Partial<PartnerInfoView> | null | undefined,
@@ -88,6 +110,8 @@ export function withdrawalBlock(
   if (typeof balance !== "number" || !Number.isFinite(balance) || balance < PARTNER_WITHDRAWAL_MIN_MINOR) {
     return { kind: "empty" };
   }
+  const minimum = withdrawalMinimum(info);
+  if (balance < minimum) return { kind: "belowMinimum", minimum, balance };
   return null;
 }
 

@@ -36,10 +36,12 @@ import '../../src/infrastructure/redis/types.js';
  * client — interceptors and all — calls that router over HTTP; and the page's
  * own reader turns the failure into the hold and its sentence.
  *
- * `createWithdrawal` has no caller yet: the partner page's «Вывести средства»
- * button opens nothing. This pins what that caller will get, so the dialog,
- * when it is built, reads the hold with the same `readBalanceHoldRefusal` the
- * two payment pages use — rather than showing "failed".
+ * `createWithdrawal`'s caller is the withdrawal dialog behind the partner
+ * page's «Вывести средства» (`web/src/features/partner/components/
+ * partner-withdraw-dialog.tsx`). This pins what it gets, so it reads the hold
+ * with the same `readBalanceHoldRefusal` the two payment pages use — rather
+ * than showing "failed". Its other refusals travel the same way with codes of
+ * their own: `partner-withdraw-refusal-contract.test.ts`.
  */
 
 const HOLD_CODE = 'WITHDRAWAL_HOLD_AFTER_RECOVERY';

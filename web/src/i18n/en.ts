@@ -581,7 +581,7 @@ export const en: RuDict = {
     levelPercent: 'Level {{level}}',
     referrals: 'Referrals',
     balance: 'Balance',
-    earned: 'Earned: {{amount}} ₽',
+    earned: 'Earned: {{amount}}',
     totalEarned: 'Total earned',
     info: 'Terms',
     infoDescription: 'The partner program lets you earn a percentage of every payment made by users you refer.',
@@ -717,6 +717,7 @@ export const en: RuDict = {
     },
     refused: {
       insufficient: 'Your balance is now {{balance}}, which is less than the request. Lower the amount.',
+      belowMinimum: 'The minimum withdrawal is {{min}}. Raise the amount.',
       inactive: 'Your partner account is switched off, so you can’t withdraw right now. Please contact support.',
       invitedOnly:
         'Withdrawals are unavailable: the partner programme is currently open only to invited users. Please contact support.',
@@ -725,6 +726,7 @@ export const en: RuDict = {
         'The request could not be sent. Before trying again, check the list of requests under “Balance”: if the new request is there, don’t send it again.',
     },
     empty: 'There is nothing on your balance to withdraw yet.',
+    belowMinimum: 'You can withdraw from {{min}}; your balance is {{balance}} so far.',
     history: {
       title: 'Withdrawal requests',
       statuses: {

@@ -8,7 +8,7 @@ import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-
 import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
 import { extractSubscriptionLimitCode } from "./payments-errors.js";
-import { readBalanceHoldRefusal } from "./partner-errors.js";
+import { readBalanceHoldRefusal, readPartnerWithdrawalRefusal } from "./partner-errors.js";
 
 export function createPartnerRouter(deps: {
   adminClient: AdminClient | null;
@@ -145,6 +145,13 @@ export function createPartnerRouter(deps: {
       const hold = readBalanceHoldRefusal(e);
       if (hold !== null) {
         res.status(400).json(hold);
+        return;
+      }
+      // Every other refusal the panel names: its code, its status, and for the
+      // minimum the minimum — so the dialog can say which one it was.
+      const refusal = readPartnerWithdrawalRefusal(e);
+      if (refusal !== null) {
+        res.status(refusal.status).json(refusal.body);
         return;
       }
       sendSafeError(req, res, e, 400, "Withdrawal request failed", "partner/withdraw");

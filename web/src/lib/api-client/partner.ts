@@ -28,6 +28,12 @@ export interface PartnerInfo {
    * older than the hold's report — read both through `standingBalanceHold`.
    */
   balanceHold?: PartnerBalanceHold | null;
+  /**
+   * The operator's minimum withdrawal, in minor units of `balanceCurrency`;
+   * `0` when none is set. Absent from a panel from before it was enforced —
+   * read it through `withdrawalMinimum` (partner feature), never directly.
+   */
+  minWithdrawalAmount?: number;
   createdAt: string;
 }
 
@@ -101,20 +107,26 @@ export const createWithdrawal = (data: {
 // `PartnersService.createWithdrawalRequest`), because the route declares no
 // DTO and the rules exist nowhere else:
 //   - `amount` is minor units of the balance currency, a positive integer, at
-//     most the balance. The debit and the check are one statement, so a request
-//     for the whole balance lands it on exactly zero.
+//     most the balance and at least the operator's «Минимальная сумма вывода»
+//     (`PartnerInfo.minWithdrawalAmount`, `0` when none is set). The minimum is
+//     read, and the balance checked and debited, inside one transaction; the
+//     debit and the balance check are one statement, so a request for the whole
+//     balance lands it on exactly zero.
 //   - `method` and `requisites` are free text the panel stores as they come; the
-//     operator reads both in «Выплаты партнёрам» and pays by hand. No list of
-//     methods, no length limit, no format check exists on that side.
-//   - There is NO minimum and NO "one pending request at a time". The operator's
-//     «Минимальная сумма вывода» setting is stored but never enforced, and never
-//     sent to the cabinet, so no screen here can state it.
-//   - Several refusals come back as a 2xx body `{ error }` rather than an HTTP
-//     error: `PARTNER_PROGRAM_INVITED_ONLY`, `Partner not found`, `User not found`.
-//     A caller that only catches would report each of them as a created request.
-//   - Every other refusal reaches the browser as a bare 400 (the cabinet strips
-//     the panel's sentence) — except the recovery hold, forwarded with its code
-//     (`partner-balance-hold.ts`).
+//     operator reads both in «Выплаты партнёрам» — the four methods below by
+//     name, anything else as it came — and pays by hand. No length limit and no
+//     format check exists on that side.
+//   - There is NO "one pending request at a time".
+//   - A refusal comes with a code and a 4xx: 409 for the program's or the
+//     partner's state, 422 for an amount the panel cannot take — forwarded by
+//     the cabinet (`readWithdrawalRefusal` below) — and the recovery hold with
+//     its own code (`partner-balance-hold.ts`).
+//   - A panel from before those codes enforces no minimum and sends none. It
+//     answers three refusals with a 2xx body `{ error }` instead —
+//     `PARTNER_PROGRAM_INVITED_ONLY`, `Partner not found`, `User not found` —
+//     which a caller that only catches would report as a created request
+//     (`readWithdrawalAnswer`), and every other one with a bare 400 (the
+//     cabinet strips the panel's sentence).
 
 /** A withdrawal request as `GET /partner/withdrawals` lists it. */
 export interface PartnerWithdrawal {
@@ -203,4 +215,51 @@ export function readWithdrawalAnswer(data: unknown): PartnerWithdrawalAnswer {
     return { kind: "refused", code: "NOT_A_PARTNER" };
   }
   return { kind: "refused", code: "UNKNOWN" };
+}
+
+/**
+ * The refusals a current panel names with a code, forwarded by the cabinet
+ * (`src/api/routes/partner-errors.ts`): 409 for the program's or the partner's
+ * state, 422 for an amount it cannot take. A panel from before them answers the
+ * old way — a 2xx `{ error }` body (`readWithdrawalAnswer`) or a bare 400.
+ */
+export type PartnerWithdrawalRefusalReason =
+  | "PARTNER_NOT_FOUND"
+  | "PARTNER_PROGRAM_INVITED_ONLY"
+  | "PARTNER_NOT_ACTIVE"
+  | "WITHDRAWAL_INSUFFICIENT_BALANCE"
+  | "WITHDRAWAL_BELOW_MINIMUM";
+
+const WITHDRAWAL_REFUSAL_REASONS: ReadonlySet<string> = new Set<PartnerWithdrawalRefusalReason>([
+  "PARTNER_NOT_FOUND",
+  "PARTNER_PROGRAM_INVITED_ONLY",
+  "PARTNER_NOT_ACTIVE",
+  "WITHDRAWAL_INSUFFICIENT_BALANCE",
+  "WITHDRAWAL_BELOW_MINIMUM",
+]);
+
+/**
+ * The coded refusal behind a failed `/partner/withdraw`, or `null` when the
+ * failure is anything else. `minWithdrawalAmount` is the minimum a
+ * `WITHDRAWAL_BELOW_MINIMUM` carried, or `null` when it carried none usable.
+ */
+export function readWithdrawalRefusal(
+  err: unknown,
+): { readonly code: PartnerWithdrawalRefusalReason; readonly minWithdrawalAmount: number | null } | null {
+  if (typeof err !== "object" || err === null) return null;
+  const response = (err as { response?: { status?: unknown; data?: unknown } }).response;
+  const status = response?.status;
+  if (typeof status !== "number" || status < 400 || status > 499 || status === 401 || status === 403) return null;
+  const data = response?.data;
+  if (typeof data !== "object" || data === null) return null;
+  const code = (data as { code?: unknown }).code;
+  if (typeof code !== "string" || !WITHDRAWAL_REFUSAL_REASONS.has(code)) return null;
+  const minimum = (data as { minWithdrawalAmount?: unknown }).minWithdrawalAmount;
+  return {
+    code: code as PartnerWithdrawalRefusalReason,
+    minWithdrawalAmount:
+      code === "WITHDRAWAL_BELOW_MINIMUM" && typeof minimum === "number" && Number.isSafeInteger(minimum) && minimum >= 0
+        ? minimum
+        : null,
+  };
 }

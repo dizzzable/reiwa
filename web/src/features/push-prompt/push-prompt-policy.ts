@@ -8,8 +8,10 @@
  *   - not inside the Telegram Mini App: the bot is the channel there;
  *   - `detectPushSupport()` says `supported`;
  *   - on an iPhone or iPad only as a web app added to the Home Screen — the one
- *     place iOS and iPadOS deliver web push. iPadOS sends a Mac user agent, which
- *     `detectPushSupport()` cannot see through, hence `isAppleMobileDevice()`;
+ *     place iOS and iPadOS deliver web push. `detectPushSupport()` already
+ *     refuses a browser tab there (both read `isAppleMobileDevice()`, which sees
+ *     through iPadOS's Mac user agent); the card asks again with its own
+ *     `appleMobile` and `standalone`, so the offer never rests on one reader;
  *   - the permission is still `default`: after `denied` the browser would not
  *     ask again, and `granted` needs no asking;
  * and then, before the card appears (`push-prompt-card.tsx`): the operator's
@@ -50,39 +52,13 @@ export function pushPromptRefusal(env: PushPromptEnvironment): PushPromptRefusal
 }
 
 /**
- * The onboarding tour's spotlight layer (`SpotlightOverlay`, a full-screen
- * `fixed inset-0 z-[9998]` sheet over the cabinet). The tour exposes no state
- * of its own outside its provider, so its layer is how its presence is read —
- * by the one class token nothing else in the cabinet uses.
- * `web/test/push-prompt-tour-contract.test.tsx` renders the real tour and fails
- * if this stops finding it.
+ * Whether the prompt must keep waiting for the onboarding tour: it is on screen
+ * (`isActive`), or it is about to start by itself (`autoStartPending` — a
+ * customer who has not seen it, 600 ms after the new subscription's card
+ * settles). Both come from the tour provider (`onboarding-tour-controller.tsx`),
+ * which owns them; `web/test/push-prompt-tour-contract.test.tsx` holds the
+ * prompt to the real tour.
  */
-export const ONBOARDING_TOUR_LAYER_SELECTOR = '[class~="z-[9998]"]';
-
-export function isOnboardingTourOnScreen(root: ParentNode | null = typeof document === "undefined" ? null : document): boolean {
-  if (root === null) return false;
-  return root.querySelector(ONBOARDING_TOUR_LAYER_SELECTOR) !== null;
-}
-
-/**
- * How long after the prompt is ready it keeps waiting for a tour that has not
- * appeared yet. The tour starts 600 ms after a new subscription's card settles,
- * for a customer who has not seen it (`onboarding-tour-controller.tsx`); past
- * this, a tour that has not started is not going to, and the prompt stops
- * waiting for it.
- */
-export const TOUR_START_GRACE_MS = 3_000;
-
-/**
- * Whether the prompt must keep waiting: the tour is on screen, or it is still
- * due — the session says it has never run — and has had less than the grace
- * period to start.
- */
-export function mustWaitForTour(input: {
-  readonly tourOnScreen: boolean;
-  readonly tourDue: boolean;
-  readonly msSinceReady: number;
-}): boolean {
-  if (input.tourOnScreen) return true;
-  return input.tourDue && input.msSinceReady < TOUR_START_GRACE_MS;
+export function mustWaitForTour(input: { readonly tourActive: boolean; readonly tourPending: boolean }): boolean {
+  return input.tourActive || input.tourPending;
 }

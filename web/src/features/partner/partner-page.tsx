@@ -22,7 +22,7 @@ import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import { standingBalanceHold } from "@/lib/partner-balance-hold";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { InviteLinkHero } from "../referrals/components/invite-link-hero";
@@ -37,7 +37,7 @@ import {
   PARTNER_INFO_QUERY_KEY,
   PARTNER_WITHDRAWALS_QUERY_KEY,
 } from "./partner-queries";
-import { withdrawalBlock } from "./partner-withdraw-policy";
+import { formatPartnerMoney, withdrawalBlock } from "./partner-withdraw-policy";
 
 type ActiveSheet = "level" | "referrals" | "balance" | "info" | "withdraw" | null;
 
@@ -116,9 +116,10 @@ export default function PartnerPage() {
     ? `https://t.me/${botUsername}?start=ref_${referralCode}`
     : webLink;
 
-  // Format balance in rubles (stored in kopecks)
-  const balanceRub = (balance / 100).toFixed(2);
-  const totalEarnedRub = (totalEarned / 100).toFixed(2);
+  // Minor units in the balance's own currency — «₽» only where it IS roubles
+  // (an operator's default currency, or a per-partner override, can be another).
+  const currency: string | null = info?.balanceCurrency ?? null;
+  const money = (minor: number): string => formatPartnerMoney(minor, currency);
 
   const earnings = (earningsData as any)?.earnings ?? [];
 
@@ -167,9 +168,9 @@ export default function PartnerPage() {
         <StatCard
           icon={Wallet}
           iconColor="#22c55e"
-          value={`${balanceRub} ₽`}
+          value={money(balance)}
           label={t("partner.balance")}
-          sublabel={t("partner.earned", { amount: totalEarnedRub })}
+          sublabel={t("partner.earned", { amount: money(totalEarned) })}
           onClick={() => setActiveSheet("balance")}
         />
         <StatCard
@@ -229,7 +230,7 @@ export default function PartnerPage() {
         <PartnerAdvertisingSection />
       </div>
 
-      {/* Level Sheet */}
+      {/* Level Sheet — described by its one sentence about the level */}
       <Sheet open={activeSheet === "level"} onOpenChange={(open) => !open && setActiveSheet(null)}>
         <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
           <SheetHeader>
@@ -238,7 +239,9 @@ export default function PartnerPage() {
           <div className="space-y-4 py-4">
             <div className="rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 text-center">
               <p className="text-4xl font-bold text-amber-400">L1</p>
-              <p className="mt-1 text-xs text-muted-foreground">{t("partner.levelDescription")}</p>
+              <SheetDescription className="mt-1 text-xs text-muted-foreground">
+                {t("partner.levelDescription")}
+              </SheetDescription>
             </div>
             <div className="space-y-2">
               {["L1", "L2", "L3"].map((level, i) => (
@@ -254,9 +257,9 @@ export default function PartnerPage() {
         </SheetContent>
       </Sheet>
 
-      {/* Referrals Sheet */}
+      {/* Referrals Sheet — three counters, nothing that describes them */}
       <Sheet open={activeSheet === "referrals"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto" aria-describedby={undefined}>
           <SheetHeader>
             <SheetTitle>{t("partner.referrals")}</SheetTitle>
           </SheetHeader>
@@ -279,17 +282,17 @@ export default function PartnerPage() {
         </SheetContent>
       </Sheet>
 
-      {/* Balance Sheet */}
+      {/* Balance Sheet — figures and actions, no sentence describing them */}
       <Sheet open={activeSheet === "balance"} onOpenChange={(open) => !open && setActiveSheet(null)}>
-        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto" aria-describedby={undefined}>
           <SheetHeader>
             <SheetTitle>{t("partner.balance")}</SheetTitle>
           </SheetHeader>
           <div className="space-y-4 py-4">
             <div className="rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4 text-center">
-              <p className="text-3xl font-bold text-emerald-400">{balanceRub} ₽</p>
+              <p className="text-3xl font-bold text-emerald-400">{money(balance)}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {t("partner.totalEarned")}: {totalEarnedRub} ₽
+                {t("partner.totalEarned")}: {money(totalEarned)}
               </p>
             </div>
 
@@ -308,7 +311,7 @@ export default function PartnerPage() {
               <PartnerBalanceHoldNotice hold={withdrawBlock.hold} id={WITHDRAW_BLOCK_NOTICE_ID} />
             ) : withdrawBlock !== null ? (
               <p id={WITHDRAW_BLOCK_NOTICE_ID} className="text-xs text-[var(--brand-muted-foreground)]">
-                {withdrawalBlockText(withdrawBlock, t)}
+                {withdrawalBlockText(withdrawBlock, t, currency)}
               </p>
             ) : null}
 
@@ -332,7 +335,7 @@ export default function PartnerPage() {
                       </p>
                     </div>
                     <p className="text-sm font-medium text-emerald-400">
-                      +{(e.earnedAmount / 100).toFixed(2)} ₽
+                      +{money(e.earnedAmount)}
                     </p>
                   </div>
                 ))}
@@ -358,9 +361,9 @@ export default function PartnerPage() {
             <SheetTitle>{t("partner.info")}</SheetTitle>
           </SheetHeader>
           <div className="space-y-3 py-4">
-            <p className="text-sm text-[var(--brand-muted-foreground)]">
+            <SheetDescription className="text-sm text-[var(--brand-muted-foreground)]">
               {t("partner.infoDescription")}
-            </p>
+            </SheetDescription>
             <div className="space-y-2">
               {[1, 2, 3].map((step) => (
                 <div key={step} className="flex items-start gap-3">

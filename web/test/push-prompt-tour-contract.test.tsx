@@ -3,10 +3,9 @@
 /**
  * The push prompt and the REAL onboarding tour, together.
  *
- * The tour keeps its running state inside its own provider and exposes none of
- * it, so the prompt reads the tour's presence from its spotlight layer
- * (`isOnboardingTourOnScreen`). That is a contract with a file the prompt does
- * not own — a renamed class, a different layer — and it would break silently:
+ * The prompt waits on the tour provider's public state — `isActive` while the
+ * tour runs, `autoStartPending` in the moment before it starts itself. That is
+ * a contract with a file the prompt does not own, and it would break silently:
  * the card would just appear under the tour. This renders the real provider,
  * lets it start the tour the way it does for a first purchase (600 ms after the
  * dashboard has an active subscription), and holds the prompt to it: nothing
@@ -57,7 +56,6 @@ vi.mock("motion/react", async () => {
 import { i18n } from "@/i18n/i18n";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
 import { PushPromptCard } from "@/features/push-prompt/push-prompt-card";
-import { isOnboardingTourOnScreen } from "@/features/push-prompt/push-prompt-policy";
 import {
   markPushPromptEligible,
   resetPushPromptMemoryForTests,
@@ -98,6 +96,13 @@ async function advance(ms: number): Promise<void> {
 
 function card(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-testid='push-prompt']");
+}
+
+/** The real tour's own «Пропустить», present exactly while its tooltip is. */
+function skipButton(): HTMLButtonElement | undefined {
+  return [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === i18n.t("onboarding.skip"),
+  );
 }
 
 beforeAll(async () => {
@@ -149,9 +154,14 @@ describe("the push prompt waits for the real onboarding tour", () => {
       );
     });
 
+    // Before the start: the provider says the tour is due, and the card waits.
+    await advance(300);
+    expect(skipButton(), "the tour started early").toBeUndefined();
+    expect(card(), "the prompt appeared in the moment before the tour").toBeNull();
+
     // The provider starts the tour 600 ms after it has an active subscription.
-    await advance(1_000);
-    expect(isOnboardingTourOnScreen(), "the prompt cannot see the tour the provider started").toBe(true);
+    await advance(700);
+    expect(skipButton(), "the real tour did not start").toBeDefined();
     expect(card(), "the prompt appeared under the tour").toBeNull();
 
     // A long read of the tour: still nothing, and nothing counted as shown.
@@ -159,16 +169,14 @@ describe("the push prompt waits for the real onboarding tour", () => {
     expect(card()).toBeNull();
     expect(wasPushPromptShown()).toBe(false);
 
-    const skip = [...document.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === i18n.t("onboarding.skip"),
-    );
+    const skip = skipButton();
     expect(skip, "no «Пропустить» on the tour").toBeDefined();
     await act(async () => {
       skip!.click();
     });
     await advance(1_000);
 
-    expect(isOnboardingTourOnScreen()).toBe(false);
+    expect(skipButton(), "the tour is still on screen").toBeUndefined();
     expect(card(), "the prompt never appeared after the tour closed").not.toBeNull();
     expect(wasPushPromptShown()).toBe(true);
   });

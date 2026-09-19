@@ -13,10 +13,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  isOnboardingTourOnScreen,
   mustWaitForTour,
   pushPromptRefusal,
-  TOUR_START_GRACE_MS,
   type PushPromptEnvironment,
 } from "@/features/push-prompt/push-prompt-policy";
 import {
@@ -157,21 +155,9 @@ describe("the synchronous conditions", () => {
 });
 
 describe("the onboarding tour", () => {
-  it("is on screen while its spotlight layer is", () => {
-    expect(isOnboardingTourOnScreen()).toBe(false);
-    const layer = document.createElement("div");
-    layer.className = "fixed inset-0 z-[9998]";
-    document.body.append(layer);
-    expect(isOnboardingTourOnScreen()).toBe(true);
-    layer.remove();
-    expect(isOnboardingTourOnScreen()).toBe(false);
-  });
-
-  it("is waited for while on screen, and while due for up to three seconds", () => {
-    expect(TOUR_START_GRACE_MS).toBe(3_000);
-    expect(mustWaitForTour({ tourOnScreen: true, tourDue: false, msSinceReady: 60_000 })).toBe(true);
-    expect(mustWaitForTour({ tourOnScreen: false, tourDue: true, msSinceReady: 2_999 })).toBe(true);
-    expect(mustWaitForTour({ tourOnScreen: false, tourDue: true, msSinceReady: 3_000 })).toBe(false);
-    expect(mustWaitForTour({ tourOnScreen: false, tourDue: false, msSinceReady: 0 })).toBe(false);
+  it("is waited for while it runs and while it is about to start — as its provider says", () => {
+    expect(mustWaitForTour({ tourActive: true, tourPending: false })).toBe(true);
+    expect(mustWaitForTour({ tourActive: false, tourPending: true })).toBe(true);
+    expect(mustWaitForTour({ tourActive: false, tourPending: false })).toBe(false);
   });
 });

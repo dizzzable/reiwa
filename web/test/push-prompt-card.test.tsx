@@ -29,14 +29,38 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api-client", () => api);
 
-const sessionState = vi.hoisted(() => ({ onboardingCompleted: true as boolean | undefined }));
-vi.mock("@/hooks/use-session", () => ({
-  useSession: () => ({
-    session: { id: "u-1", telegramId: null, name: "U", role: "USER", onboardingCompleted: sessionState.onboardingCompleted },
-    isLoading: false,
-    isAuthenticated: true,
-  }),
-}));
+/**
+ * The onboarding tour's public state, as its provider publishes it. A store the
+ * card subscribes to through the real hook shape, so a change re-renders the
+ * card exactly as a provider re-render does. The real provider is held to it in
+ * `push-prompt-tour-contract.test.tsx`.
+ */
+const tour = vi.hoisted(() => {
+  let snapshot = { isActive: false, autoStartPending: false };
+  const listeners = new Set<() => void>();
+  return {
+    get: () => snapshot,
+    set(next: { isActive: boolean; autoStartPending: boolean }) {
+      snapshot = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+});
+vi.mock("@/features/onboarding/onboarding-tour-controller", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useOnboardingContext: () => ({
+      startTour: () => undefined,
+      replayTour: () => undefined,
+      startDemo: () => undefined,
+      ...useSyncExternalStore(tour.subscribe, tour.get),
+    }),
+  };
+});
 
 import { i18n } from "@/i18n/i18n";
 import { PUSH_PROMPT_SW_READY_TIMEOUT_MS, PushPromptCard } from "@/features/push-prompt/push-prompt-card";
@@ -193,7 +217,7 @@ beforeEach(() => {
   window.sessionStorage.clear();
   window.localStorage.clear();
   resetPushPromptMemoryForTests();
-  sessionState.onboardingCompleted = true;
+  tour.set({ isActive: false, autoStartPending: false });
   log = [];
   browser = {
     userAgent: DESKTOP_CHROME,
@@ -470,10 +494,8 @@ describe("not offered where it cannot work", () => {
 });
 
 describe("the onboarding tour", () => {
-  it("waits while the tour is on screen, and shows once it has closed", async () => {
-    const tour = document.createElement("div");
-    tour.className = "fixed inset-0 z-[9998]";
-    document.body.append(tour);
+  it("waits while the tour runs, and shows once it has closed", async () => {
+    tour.set({ isActive: true, autoStartPending: false });
     markPushPromptEligible();
     await mountCard();
     await advance(10_000);
@@ -481,20 +503,25 @@ describe("the onboarding tour", () => {
     expect(card(), "shown over the running tour").toBeNull();
     expect(wasPushPromptShown(), "counted as shown while the tour covered it").toBe(false);
 
-    tour.remove();
-    await advance(500);
+    await act(async () => tour.set({ isActive: false, autoStartPending: false }));
+    await advance(0);
     expect(card(), "never shown after the tour closed").not.toBeNull();
     expect(readPushPromptRecord()?.state).toBe("shown");
   });
 
-  it("waits for a tour that is due but has not started yet — and not forever", async () => {
-    sessionState.onboardingCompleted = false;
+  it("waits for a tour about to start, through its start, until it has closed", async () => {
+    tour.set({ isActive: false, autoStartPending: true });
     markPushPromptEligible();
     await mountCard();
-    await advance(2_000);
-    expect(card(), "shown before a due tour had its chance to start").toBeNull();
+    await advance(5_000);
+    expect(card(), "shown in the moment before the tour starts").toBeNull();
 
-    await advance(1_500);
-    expect(card(), "waited forever for a tour that never came").not.toBeNull();
+    await act(async () => tour.set({ isActive: true, autoStartPending: false }));
+    await advance(0);
+    expect(card(), "shown as the tour started").toBeNull();
+
+    await act(async () => tour.set({ isActive: false, autoStartPending: false }));
+    await advance(0);
+    expect(card()).not.toBeNull();
   });
 });

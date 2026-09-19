@@ -46,6 +46,90 @@ export function readBalanceHoldRefusal(e: unknown): BalanceHoldRefusal | null {
   };
 }
 
+/**
+ * The other refusals of a withdrawal request, each with its own code
+ * (rezeis-admin `partners/utils/partner-withdrawal-rules.ts`, allowlisted by its
+ * error filter). Stripped down to "Withdrawal request failed" the customer was
+ * sent to try again at a refusal that would not change — or told nothing at
+ * all about a minimum. Forwarded like the hold: the code, the panel's own
+ * status, a fixed message — never the panel's sentence — and for the minimum,
+ * the minimum itself. A panel from before these codes answers without them,
+ * and the generic handling below takes over as it always did.
+ */
+export const PARTNER_WITHDRAWAL_REFUSAL_CODES = [
+  "PARTNER_NOT_FOUND",
+  "PARTNER_PROGRAM_INVITED_ONLY",
+  "PARTNER_NOT_ACTIVE",
+  "WITHDRAWAL_INSUFFICIENT_BALANCE",
+  "WITHDRAWAL_BELOW_MINIMUM",
+] as const;
+export type PartnerWithdrawalRefusalCode = (typeof PARTNER_WITHDRAWAL_REFUSAL_CODES)[number];
+
+const REFUSAL_MESSAGES: Readonly<Record<PartnerWithdrawalRefusalCode, string>> = {
+  PARTNER_NOT_FOUND: "Partner not found",
+  PARTNER_PROGRAM_INVITED_ONLY: "The partner program is open to invited users only",
+  PARTNER_NOT_ACTIVE: "Partner is not active",
+  WITHDRAWAL_INSUFFICIENT_BALANCE: "Insufficient partner balance",
+  WITHDRAWAL_BELOW_MINIMUM: "The amount is below the minimum withdrawal",
+};
+
+export interface PartnerWithdrawalRefusal {
+  /**
+   * The panel's own 4xx: 409 for the program's or the partner's state (no
+   * partner, invited-only, switched off), 422 for an amount it cannot take
+   * (more than the balance, below the minimum). Never 401/403, which this
+   * client reads as the panel rejecting its token.
+   */
+  readonly status: number;
+  readonly body: {
+    readonly code: PartnerWithdrawalRefusalCode;
+    readonly message: string;
+    /** Minor units; only on `WITHDRAWAL_BELOW_MINIMUM`, and only when the panel sent a whole number. */
+    readonly minWithdrawalAmount?: number;
+  };
+}
+
+const FORWARDED_STATUSES: ReadonlySet<number> = new Set([400, 404, 409, 422]);
+
+function isRefusalCode(value: unknown): value is PartnerWithdrawalRefusalCode {
+  return (PARTNER_WITHDRAWAL_REFUSAL_CODES as readonly unknown[]).includes(value);
+}
+
+/**
+ * The coded refusal inside a failed withdraw call, or `null` when the failure
+ * is anything else — including the hold, which `readBalanceHoldRefusal` reads.
+ */
+export function readPartnerWithdrawalRefusal(e: unknown): PartnerWithdrawalRefusal | null {
+  // Only statuses that mean a refusal. A 401 forwarded to the browser would
+  // send the customer to sign-in, and 401/403 from the panel mean this
+  // cabinet's own credentials, whatever the body says.
+  if (!(e instanceof UpstreamError) || !FORWARDED_STATUSES.has(e.status)) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(e.body);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const body = parsed as { code?: unknown; errorCode?: unknown; minWithdrawalAmount?: unknown };
+  const code = typeof body.code === "string" ? body.code : body.errorCode;
+  if (!isRefusalCode(code)) return null;
+  const minimum = body.minWithdrawalAmount;
+  const carriesMinimum =
+    code === "WITHDRAWAL_BELOW_MINIMUM" &&
+    typeof minimum === "number" &&
+    Number.isSafeInteger(minimum) &&
+    minimum >= 0;
+  return {
+    status: e.status,
+    body: {
+      code,
+      message: REFUSAL_MESSAGES[code],
+      ...(carriesMinimum ? { minWithdrawalAmount: minimum } : {}),
+    },
+  };
+}
+
 /** An ISO-8601 instant exactly as `Date#toISOString` writes it, or `null`. */
 function exactInstant(value: unknown): string | null {
   if (typeof value !== "string") return null;

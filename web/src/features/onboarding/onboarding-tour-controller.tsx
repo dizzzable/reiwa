@@ -35,12 +35,26 @@ interface OnboardingContextValue {
   replayTour: () => void;
   /** Open the demo tutorial (sample data) — used when the trial is declined. */
   startDemo: () => void;
+  /** The spotlight tour is on screen now. */
+  isActive: boolean;
+  /**
+   * The tour is about to start by itself: this customer has not seen it, the
+   * dashboard has an active subscription, no new card is still being made, and
+   * the 600 ms start timer is running. False once it has started — `isActive`
+   * says so then — and for the rest of this provider's life after that.
+   *
+   * For anything that must not appear under the tour: the push prompt waits
+   * while `isActive || autoStartPending`.
+   */
+  autoStartPending: boolean;
 }
 
 const OnboardingContext = createContext<OnboardingContextValue>({
   startTour: () => {},
   replayTour: () => {},
   startDemo: () => {},
+  isActive: false,
+  autoStartPending: false,
 });
 
 export function useOnboardingContext() {
@@ -69,6 +83,10 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   });
   const hasActiveSubscription =
     subsData?.subscriptions?.some((s) => s.status === "ACTIVE" || s.status === "LIMITED") ?? false;
+  // Set when the auto-start timer fires. The flag the start reads
+  // (`shouldAutoStart`) only falls once the server confirms the tour was seen,
+  // so without this a failed confirmation would leave the tour "due" forever.
+  const [autoStarted, setAutoStarted] = useState(false);
 
   // Provisioning lives in session storage because it bridges purchase and
   // dashboard routes. This notification keeps the tour's visible state in
@@ -112,6 +130,7 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
     ) {
       // Small delay so the DOM elements are rendered before we try to measure them
       const timer = setTimeout(() => {
+        setAutoStarted(true);
         tour.start();
         // Mark the tour as seen the moment it auto-starts (not only on
         // finish/skip), so a page reload mid-tour doesn't relaunch it for the
@@ -146,7 +165,24 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   const body = t(`${step.i18nKey}.body` as any) as string;
 
   return (
-    <OnboardingContext.Provider value={{ startTour: tour.start, replayTour, startDemo }}>
+    <OnboardingContext.Provider
+      value={{
+        startTour: tour.start,
+        replayTour,
+        startDemo,
+        isActive: tour.isActive,
+        // The same decision the auto-start effect above makes, read in render.
+        autoStartPending:
+          !autoStarted &&
+          !tour.isActive &&
+          shouldAutoStartOnboardingTour({
+            pathname: location.pathname,
+            shouldAutoStart: tour.shouldAutoStart,
+            hasActiveSubscription,
+            hasPendingProvisioning,
+          }),
+      }}
+    >
       {children}
       <DemoTutorial open={demoOpen} onClose={closeDemo} />
       <AnimatePresence>

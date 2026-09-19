@@ -5,6 +5,7 @@ import {
   readDeferredInstallPrompt,
   subscribeToInstallPromptCapture,
 } from "@/lib/install-prompt-capture";
+import { isAppleMobileDevice } from "@/lib/apple-mobile-device";
 import { isTelegramMiniAppSurface } from "@/lib/telegram-launch-params";
 
 /**
@@ -137,10 +138,8 @@ export function isStandalonePwa(): boolean {
 function detectIosSafari(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || "";
-  const isIosDevice =
-    /iphone|ipad|ipod/i.test(ua) ||
-    // iPadOS 13+ masquerades as macOS — disambiguate via touch points.
-    (/macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1);
+  // iPadOS 13+ masquerades as macOS — the shared test reads the touch points.
+  const isIosDevice = isAppleMobileDevice();
   // Exclude the third-party iOS browsers that DO announce themselves (Chrome,
   // Firefox, Edge) — they are WebKit too, and they cannot add to home either.
   // Only as good as the hosts that choose to be honest; see the header.
