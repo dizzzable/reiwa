@@ -1545,7 +1545,7 @@ export const en: RuDict = {
     pushToggleEnable: 'Enable browser notifications',
     pushToggleEnabled: 'Browser notifications are on',
     pushUnsupported: 'Your browser does not support push notifications.',
-    pushIosInstall: 'To get notifications on iPhone, install the app to your Home Screen.',
+    pushIosInstall: 'To get notifications on iPhone or iPad, install the app to your Home Screen.',
     pushIosInstallHow: 'Open the Share menu and tap "Add to Home Screen".',
     pushIosInstallHowTelegram: 'This cannot be done from inside Telegram: open the cabinet in Safari and add it to the Home Screen from there.',
     pushPermissionDenied: 'Notification permission was denied. Enable it in your browser settings and refresh.',
