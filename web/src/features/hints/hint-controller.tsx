@@ -11,8 +11,11 @@ import {
   type HintDevice,
 } from "@/lib/api-client/hints";
 import { reportClientError } from "@/lib/client-error-reporter";
+import { useOnboardingContext } from "@/features/onboarding/onboarding-tour-controller";
+import { mustWaitForTour } from "@/features/push-prompt/push-prompt-policy";
 import { SUBSCRIPTION_PROVISIONING_COMPLETED_EVENT } from "@/lib/subscription-provisioning-receipt";
 
+import { setHintOnScreen } from "./hint-presence";
 import { HintModal } from "./hint-modal";
 import { showHintToast } from "./hint-toast";
 
@@ -167,17 +170,65 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
    */
   const openToast = useRef<(() => void) | null>(null);
 
+  // ── THE TUTORIAL GOES FIRST ───────────────────────────────────────────
+  //
+  // Read through the context's own default when the provider is missing, so
+  // this stays the component that degrades to "no hint" rather than taking a
+  // page down. `mustWaitForTour` is the push prompt's rule, reused rather
+  // than restated: the two things that can appear over a fresh dashboard now
+  // queue behind the tour identically.
+  const tour = useOnboardingContext();
+  const tourIsBusy = mustWaitForTour({
+    tourActive: tour.isActive,
+    tourPending: tour.autoStartPending,
+  });
+  /** The answer above, reachable from inside `ask`'s async body. */
+  const tourBusy = useRef(tourIsBusy);
+  tourBusy.current = tourIsBusy;
+  /**
+   * An ask that was turned away because the tour was on screen or due.
+   *
+   * Deliberately NOT `askSuppressed`: that flag means "another hint held the
+   * screen", it is cleared by any later ask's read, and the tour can outlast
+   * several of those. This one is cleared in exactly one place — the effect
+   * that watches the tour let go.
+   */
+  const waitingForTour = useRef(false);
+
+  /**
+   * Claim and release the one on-screen slot.
+   *
+   * The ref and the flag the tour reads (`hint-presence.ts`) MUST move
+   * together. A flag left set after a hint closed holds the tutorial back for
+   * the rest of the visit; a flag left clear under an open hint puts the
+   * spotlight straight over it — the defect this whole pair exists to fix.
+   * Seven places set this ref, which is seven chances to update one and not
+   * the other, so neither is written directly any more.
+   */
+  const claimSlot = useCallback((deliveryId: string): void => {
+    openDeliveryId.current = deliveryId;
+    setHintOnScreen(true);
+  }, []);
+  const releaseSlot = useCallback((): void => {
+    openDeliveryId.current = null;
+    setHintOnScreen(false);
+  }, []);
+
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
+      // The slot goes with it. `openDeliveryId` dies with the instance, but
+      // the flag the tour reads is a module and does not — a sign-out with a
+      // hint on screen left the tutorial permanently held back.
+      releaseSlot();
       // Reports NOTHING, by design — see `dismissSilently` in `hint-toast`.
       // The customer did not close this; the app went away underneath it, and
       // recording a dismissal would destroy a hint they never answered.
       openToast.current?.();
       openToast.current = null;
     };
-  }, []);
+  }, [releaseSlot]);
 
   /**
    * Come back for a hint that was turned away while the screen was busy.
@@ -193,6 +244,21 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
 
   const ask = useCallback(async (followUp = false) => {
     if (audience === null) return;
+
+    // ── NOTHING IS DRAWN UNDER THE TUTORIAL ──────────────────────────────
+    //
+    // The hint worth showing most — «Готово! Подписка оформлена», with the
+    // «Подключиться» that is the whole point of it — is raised by the same
+    // moment the tour has been waiting for: a purchase finishing. They drew
+    // together, and the spotlight dimmed the modal it could not see.
+    //
+    // Returned BEFORE the fetch, so nothing is stamped shown and nothing is
+    // lost: the queue still holds it, and the effect below comes back for it
+    // the moment the tour is over or turns out not to be due.
+    if (tourBusy.current) {
+      waitingForTour.current = true;
+      return;
+    }
 
     // ── ONE ASK AT A TIME ────────────────────────────────────────────────
     //
@@ -321,7 +387,7 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
         navigate,
         onAct: () => {
           void closeHint(next.deliveryId, 'acted');
-          openDeliveryId.current = null;
+          releaseSlot();
           openToast.current = null;
           // NOT drained, and the modal path says why: acting NAVIGATES, and a
           // dialog opening on the page somebody was just sent to is the nagging
@@ -334,7 +400,7 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
         },
         onDismiss: () => {
           void closeHint(next.deliveryId, 'dismissed');
-          openDeliveryId.current = null;
+          releaseSlot();
           openToast.current = null;
           // Asked again on a deliberate close only, exactly as the modal does:
           // a hint raised while an older one was on screen would otherwise wait
@@ -351,7 +417,7 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
           // and recording it as a dismissal would destroy a hint the customer
           // may not have read. Nor do we ask again — a toast every eight
           // seconds is the nagging this design refuses.
-          openDeliveryId.current = null;
+          releaseSlot();
           openToast.current = null;
           // …but a hint that ARRIVED while it was up is a different matter: it
           // was turned away, not shown, and nothing else in the visit would
@@ -371,7 +437,7 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
         return;
       }
 
-      openDeliveryId.current = next.deliveryId;
+      claimSlot(next.deliveryId);
       drawn.current.add(next.deliveryId);
       openToast.current = dismissToast;
       void markHintShown(next.deliveryId);
@@ -418,13 +484,29 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
       askSuppressed.current = true;
       return;
     }
-    openDeliveryId.current = next.deliveryId;
+    claimSlot(next.deliveryId);
     drawn.current.add(next.deliveryId);
     setHint(next);
     void markHintShown(next.deliveryId);
-  }, [audience, i18n?.language, navigate, t]);
+  }, [audience, claimSlot, i18n?.language, navigate, releaseSlot, t]);
 
   askRef.current = ask;
+
+  // ── THE TUTORIAL LET GO ───────────────────────────────────────────────
+  //
+  // It finished, was skipped, or turned out not to be due at all — and this
+  // is where the hint it held comes back. No polling and no timer: the
+  // provider re-renders this controller whenever the tour starts, stops or
+  // stops being due, which is exactly the push prompt's arrangement.
+  //
+  // Guarded on the flag, so this is not an unconditional second fetch on
+  // every tour transition for the customers — most of them — who had no hint
+  // waiting.
+  useEffect(() => {
+    if (tourIsBusy || !waitingForTour.current) return;
+    waitingForTour.current = false;
+    if (alive.current) void askRef.current?.();
+  }, [tourIsBusy]);
 
   useEffect(() => {
     if (audience === null || askedOnMount.current) return;
@@ -505,12 +587,12 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
         // Released together, always. `openDeliveryId` is what lets the next ask
         // through; leaving it set would wedge the controller on the first hint
         // of the visit as surely as the old state check did.
-        openDeliveryId.current = null;
+        releaseSlot();
         setHint(null);
       }}
       onDismiss={() => {
         void closeHint(hint.deliveryId, "dismissed");
-        openDeliveryId.current = null;
+        releaseSlot();
         setHint(null);
         // Asked again on DISMISS only. A hint raised while an older one was on
         // screen was otherwise deferred to the customer's next visit, which is

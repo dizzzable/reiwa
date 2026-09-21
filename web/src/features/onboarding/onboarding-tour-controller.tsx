@@ -19,6 +19,10 @@ import { useQuery } from "@tanstack/react-query";
 import { SpotlightOverlay } from "./components/spotlight-overlay";
 import { TourTooltip } from "./components/tour-tooltip";
 import { DemoTutorial } from "./demo-tutorial";
+import {
+  HINT_PRESENCE_CHANGED_EVENT,
+  isHintOnScreen,
+} from "@/features/hints/hint-presence";
 import { useOnboardingTour } from "@/hooks/use-onboarding-tour";
 import { getAllSubscriptions } from "@/lib/api-client";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
@@ -26,7 +30,10 @@ import {
   listSubscriptionProvisioningReceipts,
   SUBSCRIPTION_PROVISIONING_RECEIPTS_CHANGED_EVENT,
 } from "@/lib/subscription-provisioning-receipt";
-import { shouldAutoStartOnboardingTour } from "./onboarding-tour-policy";
+import {
+  onboardingTourMayStillStart,
+  shouldAutoStartOnboardingTour,
+} from "./onboarding-tour-policy";
 
 interface OnboardingContextValue {
   /** Programmatically start (or restart) the spotlight tour (real mode). */
@@ -38,13 +45,17 @@ interface OnboardingContextValue {
   /** The spotlight tour is on screen now. */
   isActive: boolean;
   /**
-   * The tour is about to start by itself: this customer has not seen it, the
-   * dashboard has an active subscription, no new card is still being made, and
-   * the 600 ms start timer is running. False once it has started — `isActive`
-   * says so then — and for the rest of this provider's life after that.
+   * The tour MAY start by itself: this customer has not seen it, they are on
+   * the dashboard, and nothing has yet ruled it out — including the moment
+   * before the subscription list has answered, which is the beat a hint used
+   * to slip through. False once it has started — `isActive` says so then —
+   * and for the rest of this provider's life after that.
    *
-   * For anything that must not appear under the tour: the push prompt waits
-   * while `isActive || autoStartPending`.
+   * For anything that must not appear under the tour: the push prompt and the
+   * hint controller both wait while `isActive || autoStartPending`.
+   *
+   * FALSE while a hint is on screen, and correctly so: the tour is not about
+   * to start then — it is waiting for that hint to close.
    */
   autoStartPending: boolean;
 }
@@ -76,7 +87,11 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
 
   // The real spotlight tour must never target a non-existent subscription
   // (Property 8). It only auto-starts once an active subscription exists.
-  const { data: subsData } = useQuery<AllSubscriptionsShape>({
+  // `isPending` is read as well as the data: «not answered yet» is not «no
+  // subscription», and telling the two apart is what keeps a hint from
+  // drawing in the beat before this read lands. See
+  // `onboardingTourMayStillStart`.
+  const { data: subsData, isPending: subscriptionsPending } = useQuery<AllSubscriptionsShape>({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions as () => Promise<AllSubscriptionsShape>,
     staleTime: 30_000,
@@ -87,6 +102,28 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   // (`shouldAutoStart`) only falls once the server confirms the tour was seen,
   // so without this a failed confirmation would leave the tour "due" forever.
   const [autoStarted, setAutoStarted] = useState(false);
+  // The other half of «the tutorial goes first» — see `hint-presence.ts`.
+  // Read at mount as well as watched, because the hint controller and this
+  // provider mount in whichever order the shell renders them, and a hint
+  // raised before this effect ran would otherwise be invisible to it.
+  const [hintOnScreen, setHintOnScreen] = useState(() => isHintOnScreen());
+
+  useEffect(() => {
+    const updateFromHintPresence = (event: Event) => {
+      const detail = event as CustomEvent<{ readonly onScreen?: unknown }>;
+      setHintOnScreen(
+        typeof detail.detail?.onScreen === "boolean"
+          ? detail.detail.onScreen
+          : isHintOnScreen(),
+      );
+    };
+
+    window.addEventListener(HINT_PRESENCE_CHANGED_EVENT, updateFromHintPresence);
+    return () => {
+      window.removeEventListener(HINT_PRESENCE_CHANGED_EVENT, updateFromHintPresence);
+    };
+  }, []);
+
 
   // Provisioning lives in session storage because it bridges purchase and
   // dashboard routes. This notification keeps the tour's visible state in
@@ -126,6 +163,7 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
         shouldAutoStart: tour.shouldAutoStart,
         hasActiveSubscription,
         hasPendingProvisioning,
+        hintOnScreen,
       })
     ) {
       // Small delay so the DOM elements are rendered before we try to measure them
@@ -142,6 +180,7 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   }, [
     hasActiveSubscription,
     hasPendingProvisioning,
+    hintOnScreen,
     location.pathname,
     tour.shouldAutoStart,
   ]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -171,15 +210,18 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
         replayTour,
         startDemo,
         isActive: tour.isActive,
-        // The same decision the auto-start effect above makes, read in render.
+        // WIDER than the decision the auto-start effect above makes — see
+        // `onboardingTourMayStillStart` for the beat that difference covers.
         autoStartPending:
           !autoStarted &&
           !tour.isActive &&
-          shouldAutoStartOnboardingTour({
+          onboardingTourMayStillStart({
             pathname: location.pathname,
             shouldAutoStart: tour.shouldAutoStart,
+            subscriptionsAnswered: !subscriptionsPending,
             hasActiveSubscription,
             hasPendingProvisioning,
+            hintOnScreen,
           }),
       }}
     >

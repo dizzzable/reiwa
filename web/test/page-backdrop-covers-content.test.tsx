@@ -105,6 +105,15 @@ vi.mock("@/components/layout/route-content-boundary", () => ({
 }));
 vi.mock("@/features/onboarding/onboarding-tour-controller", () => ({
   OnboardingTourProvider: ({ children }: { readonly children?: ReactNode }) => children,
+  // The shell's hint controller reads this too, since it started queueing
+  // behind the tutorial: no tour here, so nothing is ever held back.
+  useOnboardingContext: () => ({
+    startTour: () => undefined,
+    replayTour: () => undefined,
+    startDemo: () => undefined,
+    isActive: false,
+    autoStartPending: false,
+  }),
 }));
 vi.mock("@/components/ui/network-bg", () => ({ NetworkBg: () => <div data-testid="network-bg" /> }));
 vi.mock("@/components/layout/app-background", () => ({ AppBackground: () => null }));

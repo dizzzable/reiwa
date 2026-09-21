@@ -52,12 +52,17 @@ export function pushPromptRefusal(env: PushPromptEnvironment): PushPromptRefusal
 }
 
 /**
- * Whether the prompt must keep waiting for the onboarding tour: it is on screen
- * (`isActive`), or it is about to start by itself (`autoStartPending` — a
- * customer who has not seen it, 600 ms after the new subscription's card
- * settles). Both come from the tour provider (`onboarding-tour-controller.tsx`),
+ * Whether an overlay must keep waiting for the onboarding tour: it is on screen
+ * (`isActive`), or it may still start by itself (`autoStartPending` — a
+ * customer who has not seen it, on a dashboard where nothing has ruled it out
+ * yet). Both come from the tour provider (`onboarding-tour-controller.tsx`),
  * which owns them; `web/test/push-prompt-tour-contract.test.tsx` holds the
  * prompt to the real tour.
+ *
+ * Used by the cabinet hint too, since 21.09.2026 — the two things that can
+ * appear over a fresh dashboard queue behind the tutorial by the same rule
+ * rather than two copies of it. The hint needs a second rule as well, because
+ * it can already BE on screen when the tour comes due; see `hint-presence.ts`.
  */
 export function mustWaitForTour(input: { readonly tourActive: boolean; readonly tourPending: boolean }): boolean {
   return input.tourActive || input.tourPending;
