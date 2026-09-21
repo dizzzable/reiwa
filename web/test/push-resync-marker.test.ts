@@ -30,9 +30,13 @@ import {
   PUSH_RESYNC_MAX_AGE_MS,
   forgetPushResync,
   isPushResyncFresh,
+  pushResyncAccountKey,
   rememberPushResync,
   watchForPushResyncFailure,
 } from "@/lib/push-resync-marker";
+
+/** The signed-in account a heal is recorded for. */
+const ACCOUNT = "usr_the_one_signed_in";
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -45,17 +49,17 @@ afterEach(() => {
 
 describe("the tab's `already healed` marker", () => {
   it("holds for a heal that has just happened", () => {
-    rememberPushResync();
+    rememberPushResync(ACCOUNT);
 
-    expect(isPushResyncFresh()).toBe(true);
+    expect(isPushResyncFresh(ACCOUNT)).toBe(true);
   });
 
   it("stops holding once it is old enough", () => {
     const at = Date.now() - PUSH_RESYNC_MAX_AGE_MS - 1;
-    rememberPushResync(at);
+    rememberPushResync(ACCOUNT, at);
 
     expect(
-      isPushResyncFresh(),
+      isPushResyncFresh(ACCOUNT),
       "a marker written this morning still suppresses the heal tonight, so a tab whose subscription broke in between never repairs it",
     ).toBe(false);
   });
@@ -63,9 +67,9 @@ describe("the tab's `already healed` marker", () => {
   it("does not hold for a stamp from the future", () => {
     // A clock that moved backwards would otherwise pin the marker open for as
     // long as the skew lasts — the same "for ever" this file exists to remove.
-    rememberPushResync(Date.now() + 60 * 60 * 1000);
+    rememberPushResync(ACCOUNT, Date.now() + 60 * 60 * 1000);
 
-    expect(isPushResyncFresh()).toBe(false);
+    expect(isPushResyncFresh(ACCOUNT)).toBe(false);
   });
 
   it("treats the value written by an older build as absent", () => {
@@ -73,20 +77,75 @@ describe("the tab's `already healed` marker", () => {
     // would carry the defect straight through the deploy that fixes it.
     sessionStorage.setItem(PUSH_RESYNC_KEY, "1");
 
-    expect(isPushResyncFresh()).toBe(false);
+    expect(isPushResyncFresh(ACCOUNT)).toBe(false);
   });
 
   it("treats anything unparseable as absent, rather than throwing", () => {
     sessionStorage.setItem(PUSH_RESYNC_KEY, "{not json");
 
-    expect(isPushResyncFresh()).toBe(false);
+    expect(isPushResyncFresh(ACCOUNT)).toBe(false);
   });
 
   it("is retracted by hand", () => {
-    rememberPushResync();
+    rememberPushResync(ACCOUNT);
     forgetPushResync();
 
-    expect(isPushResyncFresh()).toBe(false);
+    expect(isPushResyncFresh(ACCOUNT)).toBe(false);
+  });
+
+  it("does not answer for a DIFFERENT account, however young it is", () => {
+    // THE DEFECT, stated as a test. One browser, two people: a shared test
+    // device, a household, one phone carrying two subscriptions. The endpoint
+    // belongs to the browser and the row belongs to an account, and only a
+    // heal binds the two — so a marker left by whoever signed in first used to
+    // refuse the next account a heal for six hours. Their pushes went to the
+    // previous account, the settings switch read "on" because the browser did
+    // hold a subscription, and there was nothing left to switch on.
+    rememberPushResync("usr_whoever_was_here_before");
+
+    expect(isPushResyncFresh(ACCOUNT)).toBe(false);
+  });
+
+  it("treats a marker with no account as absent", () => {
+    // ANTI-VACUITY for the case above AND the upgrade path: a tab carrying a
+    // marker from the build before this one must heal once, not carry the
+    // defect through the deploy that fixes it.
+    sessionStorage.setItem(PUSH_RESYNC_KEY, JSON.stringify({ at: Date.now() }));
+
+    expect(isPushResyncFresh(ACCOUNT)).toBe(false);
+  });
+
+  it("still holds for the SAME account, so an ordinary tab heals once", () => {
+    // ANTI-VACUITY the other way. "Never fresh" would pass every case above
+    // and re-register the endpoint on every session change, against the per-IP
+    // budget every customer behind one NAT shares.
+    rememberPushResync(ACCOUNT);
+
+    expect(isPushResyncFresh(ACCOUNT)).toBe(true);
+  });
+});
+
+describe("which account a heal is recorded for", () => {
+  it("prefers the canonical reiwa id", () => {
+    expect(pushResyncAccountKey({ id: "usr_abc", telegramId: "777" })).toBe("usr_abc");
+  });
+
+  it("falls back to the Telegram id, tagged so it can never collide with a cuid", () => {
+    expect(pushResyncAccountKey({ telegramId: "777" })).toBe("tg:777");
+  });
+
+  it("answers the empty string for a session that identifies nobody", () => {
+    // Which `readMarker` refuses, so the heal runs every time rather than
+    // being skipped on a marker that could belong to anyone.
+    expect(pushResyncAccountKey(null)).toBe("");
+    expect(pushResyncAccountKey({ telegramId: null })).toBe("");
+    expect(pushResyncAccountKey({ id: "   " })).toBe("");
+  });
+
+  it("does not let an unidentifiable session read a stored marker as its own", () => {
+    rememberPushResync(ACCOUNT);
+
+    expect(isPushResyncFresh(pushResyncAccountKey(null))).toBe(false);
   });
 });
 
@@ -100,7 +159,7 @@ describe("the worker's report that a re-registration was refused", () => {
   it("retracts the marker, so the next session change heals", () => {
     const target = withServiceWorker();
     watchForPushResyncFailure();
-    rememberPushResync();
+    rememberPushResync(ACCOUNT);
 
     target.dispatchEvent(
       new MessageEvent("message", {
@@ -109,7 +168,7 @@ describe("the worker's report that a re-registration was refused", () => {
     );
 
     expect(
-      isPushResyncFresh(),
+      isPushResyncFresh(ACCOUNT),
       "the worker knew push had stopped and the page went on believing itself healed",
     ).toBe(false);
   });
@@ -119,14 +178,14 @@ describe("the worker's report that a re-registration was refused", () => {
     // anything at all would make the marker meaningless.
     const target = withServiceWorker();
     watchForPushResyncFailure();
-    rememberPushResync();
+    rememberPushResync(ACCOUNT);
 
     target.dispatchEvent(
       new MessageEvent("message", { data: { type: "STRATEGY_VIOLATION", message: "x" } }),
     );
     target.dispatchEvent(new MessageEvent("message", { data: undefined }));
 
-    expect(isPushResyncFresh()).toBe(true);
+    expect(isPushResyncFresh(ACCOUNT)).toBe(true);
   });
 
   it("does nothing where there is no service worker at all", () => {

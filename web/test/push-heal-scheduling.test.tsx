@@ -89,8 +89,15 @@ function sessionInvalidated(): void {
   });
 }
 
-const markerAt = (at: number): void => {
-  sessionStorage.setItem(PUSH_RESYNC_KEY, JSON.stringify({ at }));
+/**
+ * The signed-in account, as `pushResyncAccountKey` derives it from the mocked
+ * session above: no canonical `id`, so the Telegram id tagged `tg:`.
+ */
+const SIGNED_IN = "tg:42";
+
+/** A heal recorded at `at` — for this account unless another is named. */
+const markerAt = (at: number, who: string = SIGNED_IN): void => {
+  sessionStorage.setItem(PUSH_RESYNC_KEY, JSON.stringify({ at, who }));
 };
 
 beforeEach(() => {
@@ -172,6 +179,25 @@ describe("the shell's push heal", () => {
     });
 
     expect(push.ensurePushSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs for an account the marker was not written for", async () => {
+    // ONE BROWSER, TWO PEOPLE — a shared test device, a household, one phone
+    // with two subscriptions. The marker is minutes old and belonged to
+    // whoever signed in before. Believing it left THIS account's endpoint
+    // registered to the previous one: their pushes arrived at somebody else's
+    // browser, and the settings switch read "on" with nothing to switch.
+    markerAt(Date.now(), "tg:99");
+
+    mount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      push.ensurePushSubscription,
+      "a fresh marker from another account still suppresses the heal, so this account never binds this browser",
+    ).toHaveBeenCalledTimes(1);
   });
 
   it("retries on the next session change when a heal did not land", async () => {

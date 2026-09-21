@@ -34,7 +34,7 @@ import { reportSurface } from "@/lib/api-client";
 import { HintController } from "@/features/hints/hint-controller";
 import { getPlatformPolicy } from "@/lib/api-client";
 import { ensurePushSubscription } from "@/lib/push";
-import { isPushResyncFresh, rememberPushResync } from "@/lib/push-resync-marker";
+import { isPushResyncFresh, pushResyncAccountKey, rememberPushResync } from "@/lib/push-resync-marker";
 import { nextDestinationQuery } from "@/lib/next-destination";
 import { connectHelpReturnPath } from "@/features/dashboard/connect-help";
 import { useServiceWorkerNavigate } from "@/lib/sw-navigate";
@@ -232,7 +232,11 @@ export default function StealthLayout() {
     // and got a 401. `push-resync-marker.ts` carries the full reasoning; the
     // short version is that a wrong "done" now expires, and the worker can also
     // retire it outright the moment it knows better.
-    if (isPushResyncFresh()) return;
+    // AND SCOPED TO THE ACCOUNT. The endpoint is the browser's, the row is an
+    // account's, and only a heal binds them — so a marker left by whoever was
+    // signed in before must not answer for whoever is signed in now.
+    const accountKey = pushResyncAccountKey(session);
+    if (isPushResyncFresh(accountKey)) return;
     healingPush.current = true;
     // MARKED DONE ONLY ONCE IT IS DONE. The marker used to be written before
     // the call, so an attempt that failed for any reason — a 429 from the
@@ -252,7 +256,7 @@ export default function StealthLayout() {
     void (async () => {
       try {
         const healed = await ensurePushSubscription();
-        if (healed === true) rememberPushResync();
+        if (healed === true) rememberPushResync(accountKey);
       } finally {
         // Released whatever happened, so the NEXT session change may retry.
         // The marker, not this flag, is what stops a successful heal repeating.

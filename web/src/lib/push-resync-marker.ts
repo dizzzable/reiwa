@@ -58,6 +58,19 @@ export const PUSH_RESYNC_FAILED_MESSAGE = 'PUSH_RESYNC_FAILED'
 interface PushResyncMarker {
   /** `Date.now()` when the heal landed. */
   readonly at: number
+  /**
+   * WHOSE heal it was.
+   *
+   * The endpoint belongs to the BROWSER and the row belongs to an ACCOUNT, and
+   * a heal is what binds the two. Without this the marker said only "a heal
+   * landed in this tab", so a second account signing in behind the first —
+   * a shared test device, a household, one phone and two subscriptions — was
+   * refused a heal for up to six hours. Its endpoint stayed registered to the
+   * PREVIOUS account: pushes went to the wrong person, the settings switch
+   * still read "on" because the browser did hold a subscription, and there was
+   * nothing left to switch on.
+   */
+  readonly who: string
 }
 
 function readMarker(): PushResyncMarker | null {
@@ -68,7 +81,13 @@ function readMarker(): PushResyncMarker | null {
     if (typeof parsed !== 'object' || parsed === null) return null
     const at = (parsed as { at?: unknown }).at
     if (typeof at !== 'number' || !Number.isFinite(at)) return null
-    return { at }
+    // A marker from a build that did not record the account reads as ABSENT,
+    // exactly as the legacy `"1"` does: one unnecessary heal on upgrade is the
+    // cheap direction, and believing it would keep the very bug `who` exists
+    // to close open for the rest of the tab's life.
+    const who = (parsed as { who?: unknown }).who
+    if (typeof who !== 'string' || who.length === 0) return null
+    return { at, who }
   } catch {
     // Storage unavailable (private mode), or a value from another build.
     return null
@@ -81,21 +100,44 @@ function readMarker(): PushResyncMarker | null {
  * A stamp from the FUTURE counts as stale, not as fresh: a clock that moved
  * backwards would otherwise pin the marker open for as long as the skew lasts,
  * which is the same "for ever" this file exists to remove.
+ *
+ * A heal recorded for a DIFFERENT account is stale too, whatever its age —
+ * see `PushResyncMarker.who`.
  */
-export function isPushResyncFresh(now: number = Date.now()): boolean {
+export function isPushResyncFresh(accountKey: string, now: number = Date.now()): boolean {
   const marker = readMarker()
   if (marker === null) return false
+  if (marker.who !== accountKey) return false
   const age = now - marker.at
   return age >= 0 && age < PUSH_RESYNC_MAX_AGE_MS
 }
 
-/** Records a heal that actually landed. Never throws. */
-export function rememberPushResync(now: number = Date.now()): void {
+/** Records a heal that actually landed, for this account. Never throws. */
+export function rememberPushResync(accountKey: string, now: number = Date.now()): void {
   try {
-    sessionStorage.setItem(PUSH_RESYNC_KEY, JSON.stringify({ at: now }))
+    sessionStorage.setItem(PUSH_RESYNC_KEY, JSON.stringify({ at: now, who: accountKey }))
   } catch {
     // Nothing to do — the next mount simply tries again.
   }
+}
+
+/**
+ * The key a heal is recorded under, from whatever the session offers.
+ *
+ * Structural on purpose: this module is imported by the payment-return and
+ * renewal paths and must stay free of the session and API types.
+ *
+ * An unidentifiable session answers the empty string, which `readMarker`
+ * refuses — so the heal simply runs every time rather than being skipped on a
+ * marker that could belong to anyone.
+ */
+export function pushResyncAccountKey(
+  session: { readonly id?: string; readonly telegramId?: string | null } | null | undefined,
+): string {
+  const id = typeof session?.id === 'string' ? session.id.trim() : ''
+  if (id.length > 0) return id
+  const telegramId = typeof session?.telegramId === 'string' ? session.telegramId.trim() : ''
+  return telegramId.length > 0 ? `tg:${telegramId}` : ''
 }
 
 /** Forgets it, so the next session change heals. Never throws. */

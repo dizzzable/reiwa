@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
   detectPushSupport,
+  ensurePushSubscription,
   getCurrentSubscription,
   subscribeToPush,
   unsubscribeFromPush,
@@ -91,7 +92,25 @@ function BrowserPushSection() {
       if (cap === "supported" || cap === "permission-denied") {
         const current = await getCurrentSubscription();
         if (cancelled) return;
-        setIsSubscribed(current !== null);
+        if (current === null) {
+          setIsSubscribed(false);
+          return;
+        }
+        // THE SWITCH MUST MEAN "THE SERVER CAN REACH THIS BROWSER".
+        //
+        // It used to mean "this browser holds a subscription object", which is
+        // a different fact and the one that cannot be acted on. A second
+        // device, a reinstalled app, an account signed in after another one,
+        // an endpoint pruned by the panel's 410 sweep — in every one of those
+        // the browser still holds a subscription, so the switch read ON, no
+        // notification ever arrived, and there was nothing left to switch on.
+        // `ensurePushSubscription()` re-registers the endpoint against the
+        // account signed in NOW (idempotent, never prompts) and answers
+        // whether that landed. A blip answers `false`, which leaves the switch
+        // OFF and therefore usable — the honest direction for a wrong guess.
+        const bound = await ensurePushSubscription();
+        if (cancelled) return;
+        setIsSubscribed(bound);
       }
     })();
     return () => {

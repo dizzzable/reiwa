@@ -33,6 +33,7 @@ vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/api-client", () => api);
 vi.mock("@/lib/push", () => ({
   detectPushSupport: () => "unsupported-browser",
+  ensurePushSubscription: vi.fn(async () => false),
   getCurrentSubscription: async () => null,
   subscribeToPush: vi.fn(),
   unsubscribeFromPush: vi.fn(),
