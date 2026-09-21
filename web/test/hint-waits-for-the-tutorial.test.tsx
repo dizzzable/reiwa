@@ -153,6 +153,11 @@ beforeEach(() => {
   // as a mystery failure two cases later.
   setHintOnScreen(false);
   route.pathname = "/dashboard";
+  // CLEARED, not just re-implemented. `mockResolvedValue` leaves the call
+  // history in place, so `markHintShown` still carried the stamps of every
+  // earlier case — and a `not.toHaveBeenCalled()` below failed on two calls
+  // that belonged to two other tests.
+  vi.clearAllMocks();
   hintsApi.getNextHint.mockReset();
   hintsApi.markHintShown.mockResolvedValue(true);
   hintsApi.closeHint.mockResolvedValue(true);
@@ -251,6 +256,72 @@ describe("the connect helper and the tutorial never share the screen", () => {
     expect(isHintOnScreen()).toBe(false);
     expect(laterButton(), "the hint is still on screen").toBeUndefined();
     expect(skipButton(), "the tour never ran").toBeDefined();
+  });
+
+
+  it("throws away an answer that came back after the tour had started", async () => {
+    // The gate at the top of `ask` is read BEFORE the request leaves, and a
+    // request is not instant. Any read issued while the tour was not in the
+    // way can return into a tour that has since started — here by walking
+    // onto the dashboard mid-read, but a dismissal does the same thing:
+    // releasing the slot both asks again and lets the tour start 600 ms
+    // later, so any read slower than that lands on top of it.
+    route.pathname = "/settings";
+    api.getAllSubscriptions.mockResolvedValue({ subscriptions: [{ id: "sub-1", status: "ACTIVE" }] });
+    hintsApi.getNextHint.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(CONNECT_HINT), 3_000);
+        }),
+    );
+
+    await mount();
+    await advance(100);
+
+    // NON-VACUITY: away from the dashboard nothing holds the hint, so the
+    // read really left. Without this the case would pass just as well if the
+    // FIRST gate had stopped everything, and it would guard nothing — which
+    // is exactly what an earlier version of it did.
+    expect(hintsApi.getNextHint, "no read was ever issued").toHaveBeenCalled();
+    expect(laterButton(), "the slow read drew instantly").toBeUndefined();
+
+    // Onto the dashboard while that read is still in flight. The tour starts
+    // 600 ms later; the answer is due at 3 s.
+    route.pathname = "/dashboard";
+    // TWO events, with a tick between them. The provider re-reads the route
+    // only when something makes it render, and a receipt notification that
+    // repeats the value it already holds makes React bail out — so one
+    // dispatch of `false` over a `false` changes nothing at all.
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("reiwa:subscription-provisioning-receipts-changed", {
+          detail: { hasPendingProvisioning: true },
+        }),
+      );
+    });
+    await advance(10);
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("reiwa:subscription-provisioning-receipts-changed", {
+          detail: { hasPendingProvisioning: false },
+        }),
+      );
+    });
+    await advance(5_000);
+
+    expect(skipButton(), "the tour never started").toBeDefined();
+    expect(laterButton(), "a late answer was drawn on top of the tour").toBeUndefined();
+    // …and NOT stamped: a hint marked shown but never drawn leaves the queue
+    // for good, which is worse than showing it late.
+    expect(hintsApi.markHintShown).not.toHaveBeenCalled();
+
+    // It is not lost either — the tour letting go brings it back.
+    hintsApi.getNextHint.mockResolvedValue(CONNECT_HINT);
+    await act(async () => {
+      skipButton()!.click();
+    });
+    await advance(1_000);
+    expect(laterButton(), "the deferred hint never came back").toBeDefined();
   });
 
   it("draws the hint at once when the tour is not due at all", async () => {

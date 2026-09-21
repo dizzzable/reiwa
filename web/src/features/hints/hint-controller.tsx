@@ -346,6 +346,23 @@ export function HintController({ audience }: { readonly audience: HintDevice | n
     // took the layout down rather than degrading to no hint.
     if (!alive.current || next === null || next === undefined) return;
 
+    // ── AND AGAIN, NOW THAT THE ANSWER IS BACK ───────────────────────────
+    //
+    // The gate at the top of this function was read before the request left,
+    // and a request is not instant. Dismissing a hint releases the slot and
+    // asks again in the same handler — and releasing the slot is ALSO what
+    // lets the tour start 600 ms later. A read slower than that returns into
+    // a tour that is now on screen, and the hint would be drawn over it: the
+    // exact overlap this all exists to prevent, reintroduced by latency.
+    //
+    // Checked before anything is drawn or stamped, so the delivery stays in
+    // the queue and the effect that watches the tour let go comes back for it.
+    if (tourBusy.current) {
+      waitingForTour.current = true;
+      return;
+    }
+
+
     // ── A MODE THIS BUILD CANNOT DRAW IS CLOSED, NOT SKIPPED ──────────────
     //
     // Returning silently left the row unshown, undismissed and unexpired, so

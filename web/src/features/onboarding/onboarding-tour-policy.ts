@@ -40,14 +40,29 @@ export function shouldAutoStartOnboardingTour({
   );
 }
 
-export interface OnboardingTourOverlayWaitInput extends OnboardingTourAutoStartInput {
+export interface OnboardingTourOverlayWaitInput {
+  readonly pathname: string;
+  readonly shouldAutoStart: boolean;
+  readonly hasActiveSubscription: boolean;
+  readonly hasPendingProvisioning: boolean;
   /**
-   * The dashboard's subscription list has come back — with rows or without.
-   * An ERROR counts as answered: the tour will not start off a failed read,
-   * so nothing should wait for it either.
+   * The dashboard's subscription list has come back — with rows, without
+   * them, with an error, or paused because the browser is offline. All four
+   * count as answered: the tour will not start off any of them, so nothing
+   * should wait for them either. Only a read still genuinely in flight is
+   * worth waiting out.
    */
   readonly subscriptionsAnswered: boolean;
 }
+
+// NOTE the field this input does NOT have: `hintOnScreen`. A hint holding the
+// screen does not mean the tour is not coming — it means the tour is WAITING,
+// and everything that must not appear under the tour has to keep waiting with
+// it. Reading it here cost the push prompt its one shot: with the hint up,
+// `autoStartPending` went false, the card decided its turn had come, wrote
+// `shown` and cleared its eligibility — all of it underneath a modal the
+// customer had not closed yet, and before the tour it was supposed to follow.
+// The card is once per browser. There is no second one.
 
 /**
  * Might the tutorial still open by itself on this screen?
@@ -71,8 +86,12 @@ export interface OnboardingTourOverlayWaitInput extends OnboardingTourAutoStartI
  * `hasPendingProvisioning` is NOT treated that way, and that asymmetry is
  * deliberate: a provisioning receipt lives for 24 hours and an abandoned one
  * really does linger, so waiting on it could hold a hint for a day. The tour
- * simply starts later there, and `hintOnScreen` is what stops it landing on
- * anything.
+ * simply starts later there, and `hintOnScreen` in the start decision is what
+ * stops it landing on anything.
+ *
+ * There is no deadlock in a hint waiting while a hint is on screen: the one
+ * ON SCREEN is not waiting for anything, and closing it is what moves
+ * everything else along — tour first, then whatever was queued behind it.
  */
 export function onboardingTourMayStillStart({
   pathname,
@@ -80,13 +99,8 @@ export function onboardingTourMayStillStart({
   subscriptionsAnswered,
   hasActiveSubscription,
   hasPendingProvisioning,
-  hintOnScreen,
 }: OnboardingTourOverlayWaitInput): boolean {
   if (pathname !== "/dashboard" || !shouldAutoStart) return false;
-  // A hint already holds the screen: the tour is not about to start, it is
-  // waiting for that hint. Saying otherwise would hold the NEXT hint behind a
-  // tour that is itself waiting — each for the other, for the whole visit.
-  if (hintOnScreen) return false;
   if (!subscriptionsAnswered) return true;
   return hasActiveSubscription && !hasPendingProvisioning;
 }

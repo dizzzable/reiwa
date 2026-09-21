@@ -54,8 +54,10 @@ interface OnboardingContextValue {
    * For anything that must not appear under the tour: the push prompt and the
    * hint controller both wait while `isActive || autoStartPending`.
    *
-   * FALSE while a hint is on screen, and correctly so: the tour is not about
-   * to start then — it is waiting for that hint to close.
+   * TRUE while a hint is on screen, deliberately: the tour is not about to
+   * start then, it is WAITING for that hint — and everything that must not
+   * appear under the tour has to keep waiting with it. Reading it the other
+   * way cost the push prompt its one shot per browser, spent under a modal.
    */
   autoStartPending: boolean;
 }
@@ -91,7 +93,11 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
   // subscription», and telling the two apart is what keeps a hint from
   // drawing in the beat before this read lands. See
   // `onboardingTourMayStillStart`.
-  const { data: subsData, isPending: subscriptionsPending } = useQuery<AllSubscriptionsShape>({
+  const {
+    data: subsData,
+    isPending: subscriptionsPending,
+    fetchStatus: subscriptionsFetchStatus,
+  } = useQuery<AllSubscriptionsShape>({
     queryKey: subscriptionQueryKeys.all,
     queryFn: getAllSubscriptions as () => Promise<AllSubscriptionsShape>,
     staleTime: 30_000,
@@ -218,10 +224,16 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
           onboardingTourMayStillStart({
             pathname: location.pathname,
             shouldAutoStart: tour.shouldAutoStart,
-            subscriptionsAnswered: !subscriptionsPending,
+            // PAUSED counts as answered. React Query holds a query in
+            // `pending` while the browser reports itself offline — it is not
+            // retrying, it is parked — so an offline tab would have waited out
+            // a read that never arrives and shown no hint for the whole visit.
+            // The tour will not start off a paused read either, so there is
+            // nothing to wait for.
+            subscriptionsAnswered:
+              !subscriptionsPending || subscriptionsFetchStatus === "paused",
             hasActiveSubscription,
             hasPendingProvisioning,
-            hintOnScreen,
           }),
       }}
     >
