@@ -24,6 +24,7 @@ import { createCsrfProtection } from "./middleware/csrf-protection.js";
 import { createContextDetectionMiddleware } from "./middleware/context-detection.js";
 import { createAdCaptureMiddleware } from "./middleware/ad-capture.js";
 import { createAuthRouter } from "./routes/auth.js";
+import { createBrowserKeyRouter } from "./routes/browser-key.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createBrandingRouter, getPublicConfigPayload } from "./routes/branding.js";
 import {
@@ -376,6 +377,9 @@ export function createApp(deps: CreateAppDeps) {
   // address. Public like the catalog: the page asking has no session.
   app.use("/api/v1", createConnectHandoffRouter({ config }));
   app.use("/api/v1", createAuthRouter(deps));
+  // «Кабинет» in the bot: the Mini App asks for a one-time key to open the
+  // cabinet in the phone's own browser, signed in (`/open-in-browser`).
+  app.use("/api/v1", createBrowserKeyRouter(deps));
   app.use("/api/v1", createProfileRouter(deps));
   // «Канал обязателен» inside the Mini App. The SPA asks only when it runs in
   // Telegram and draws the join screen itself; the browser cabinet is not gated,

@@ -95,6 +95,19 @@ export const botSignin = (token: string) =>
     .post<BotSigninResponse>("/auth/bot-signin", { token })
     .then((r) => r.data);
 
+export interface BrowserKeyResponse {
+  /** A one-time sign-in key for this account: the same kind `botSignin` spends. */
+  readonly key: string;
+  readonly expiresAt: string | null;
+}
+
+/**
+ * A one-time key to open this cabinet in the phone's own browser, signed in —
+ * asked by the Mini App's `/open-in-browser`, for its own account only.
+ */
+export const getBrowserKey = () =>
+  apiClient.post<BrowserKeyResponse>("/auth/browser-key").then((r) => r.data);
+
 // ── Status / register / recover ──────────────────────────────────────────────
 export const getAuthStatus = () =>
   apiClient.get<AuthStatusResponse>("/auth/status").then((r) => r.data);

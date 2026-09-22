@@ -60,6 +60,7 @@ export {
 export {
   bootstrapTelegram,
   botSignin,
+  getBrowserKey,
   changePasswordAuth,
   checkUsername,
   claimAccount,
@@ -71,6 +72,7 @@ export {
   signOut,
   type AuthStatusResponse,
   type BotSigninResponse,
+  type BrowserKeyResponse,
   type ClaimResponse,
   type LinkExistingResponse,
   type LoginRequest,

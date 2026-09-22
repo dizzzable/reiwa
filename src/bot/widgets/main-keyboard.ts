@@ -134,6 +134,18 @@ export interface ResolvedBinding {
   readonly target: string | null;
 }
 
+/**
+ * «Кабинет» meaning the cabinet itself. It has two such shapes: the panel
+ * seeds it as a link with no address (`actionType` url, `actionTarget`
+ * null), and a config from before action types has no action at all and
+ * reaches `BUTTON_KIND_MAP`, whose `/` is a path, not the operator's choice.
+ * An address the operator typed, or any other action, is not this.
+ */
+function isDefaultCabinet(button: BotMenuButton, binding: ResolvedBinding): boolean {
+  if (button.id !== 'cabinet' || binding.kind !== 'url') return false;
+  return button.actionType === undefined || (button.actionTarget ?? '').length === 0;
+}
+
 export function resolveButtonBinding(button: BotMenuButton): ResolvedBinding {
   const operatorAction = button.actionType;
   const operatorTarget = button.actionTarget ?? null;
@@ -267,6 +279,25 @@ export function resolveConfiguredSupportUrl(
  * Returns the input unchanged when token is null/empty so the
  * tokenless fallback path is identical.
  */
+/**
+ * Where «Кабинет» sends a tap when it names no address of its own: the Mini
+ * App's `/open-in-browser`, which opens the cabinet in the phone's own browser,
+ * already signed in (owner's decision, 22.09.2026).
+ *
+ * Why not a link, as it used to be: Telegram, not the bot, picks where a link
+ * opens — on a phone, its own in-app browser — and the sign-in key stamped
+ * into it lived five minutes while the menu stayed in the chat for days, so
+ * any later tap met the sign-in form; the key also went wherever the message
+ * was forwarded. The Mini App is signed in by Telegram's launch data at the
+ * moment of the tap, so nothing sits in the message at all.
+ *
+ * `null` without an HTTPS Mini App (dev): «Кабинет» stays the stamped link.
+ */
+export function cabinetBrowserEntryUrl(miniAppUrl: string | null | undefined): string | null {
+  if (!isTelegramSafeButtonUrl(miniAppUrl)) return null;
+  return `${(miniAppUrl as string).replace(/\/+$/, '')}/open-in-browser`;
+}
+
 export function attachSigninTokenToUrl(url: string, token: string | null | undefined): string {
   if (token === null || token === undefined || token.length === 0) return url;
   // Bail out cleanly on URLs we can't parse (unlikely but cheap to
@@ -410,6 +441,12 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
       if (!finalUrl) continue;
       closeRowIfNeeded(btn.onePerRow);
       kb.webApp({ text: label, ...buttonExtras }, finalUrl);
+      placed = true;
+    } else if (isDefaultCabinet(btn, binding) && cabinetBrowserEntryUrl(miniAppUrl) !== null) {
+      // «Кабинет» meaning the cabinet itself (`isDefaultCabinet`). An operator
+      // who typed an address, or chose another action, keeps exactly that.
+      closeRowIfNeeded(btn.onePerRow);
+      kb.webApp({ text: label, ...buttonExtras }, cabinetBrowserEntryUrl(miniAppUrl) as string);
       placed = true;
     } else if (binding.kind === 'url') {
       const operatorUrl = binding.target !== null && binding.target.length > 0

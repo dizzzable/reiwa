@@ -70,6 +70,8 @@ const ConnectPage = lazy(
 const ConnectOpenPage = lazy(
   () => import("@/features/connect/connect-open-page"),
 );
+const AuthOpenPage = lazy(() => import("@/features/auth/auth-open-page"));
+const OpenInBrowserPage = lazy(() => import("@/features/auth/open-in-browser-page"));
 const PartnerPage = lazy(
   () => import("@/features/partner/partner-page"),
 );
@@ -161,10 +163,18 @@ export default function App() {
               cookies; it opens only a link the public catalog vouches for,
               around a subscription this cabinet signed. */}
           <Route path="/connect/open" element={<ConnectOpenPage />} />
+          {/* Where the Mini App's «Открыть в браузере» lands with a one-time
+              key: public for the same reason as `/connect/open`. It spends
+              the key through the home page, or — inside Telegram's in-app
+              browser on Android — hands it on to the default browser. */}
+          <Route path="/auth/open" element={<AuthOpenPage />} />
 
           {/* Protected shell */}
           <Route element={<StealthLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            {/* «Кабинет» in the bot: signed in and past «Канал обязателен»
+                like every Mini App page, then out to the phone's browser. */}
+            <Route path="/open-in-browser" element={<OpenInBrowserPage />} />
             <Route path="/subscription" element={<SubscriptionPage />} />
             <Route path="/subscription/devices" element={<DevicesPage />} />
             <Route path="/subscription/connect" element={<ConnectPage />} />

@@ -117,7 +117,9 @@ describe('buildMainKeyboard', () => {
   });
 
   it('drops url buttons when publicWebUrl is null', () => {
-    const kb = buildKb([btn({ id: 'cabinet', label: 'Cabinet' })], 'https://app.x', null);
+    // No Mini App either: with one, «Кабинет» is a Mini App button now and does
+    // not need `publicWebUrl` at all (see «Кабинет» → the browser, below).
+    const kb = buildKb([btn({ id: 'cabinet', label: 'Cabinet' })], null, null);
     expect(kb.inline_keyboard.flat()).toHaveLength(0);
   });
 
@@ -134,7 +136,8 @@ describe('buildMainKeyboard', () => {
   });
 
   it('builds url buttons by concatenating publicWebUrl + binding.path', () => {
-    const kb = buildKb([btn({ id: 'cabinet', label: 'Cabinet' })]);
+    // Without an HTTPS Mini App (dev) «Кабинет» stays the link it always was.
+    const kb = buildKb([btn({ id: 'cabinet', label: 'Cabinet' })], null);
     const flat = kb.inline_keyboard.flat();
     expect(flat).toHaveLength(1);
     expect((flat[0] as { url?: string }).url).toBe('https://example.com/');
@@ -292,5 +295,72 @@ describe('buildMainKeyboard — where the sign-in token goes', () => {
     expect(urlsOf([urlButton('site', 'https://cabinet.example/')], null)).toEqual([
       'https://cabinet.example/',
     ]);
+  });
+});
+
+describe('«Кабинет» → the browser, through the Mini App', () => {
+  // The owner's decision of 22.09.2026: «Кабинет» opens the cabinet in the
+  // phone's own browser, signed in. It does so by opening the Mini App's
+  // `/open-in-browser`, which Telegram signs in at the moment of the tap —
+  // so nothing is stamped into the message, and nothing there goes stale.
+  const TOKEN = 'b'.repeat(64);
+
+  function only(buttons: BotMenuButton[], miniAppUrl: string | null = 'https://cabinet.example') {
+    const kb = buildMainKeyboard({
+      buttons,
+      miniAppUrl,
+      publicWebUrl: 'https://cabinet.example',
+      lang: 'ru',
+      translator: passthroughTranslator,
+      signinToken: TOKEN,
+    });
+    const flat = kb.inline_keyboard.flat();
+    expect(flat).toHaveLength(1);
+    return flat[0] as { url?: string; web_app?: { url: string } };
+  }
+
+  it('opens the Mini App page for the panel-seeded «Кабинет» — a link with no address', () => {
+    const button = only([{ ...btn({ id: 'cabinet', label: 'Кабинет' }), actionType: 'url', actionTarget: null }]);
+    expect(button.web_app?.url).toBe('https://cabinet.example/open-in-browser');
+    expect(button.url).toBeUndefined();
+  });
+
+  it('does the same for a config from before action types, which routes by the built-in map', () => {
+    // ANTI-VACUITY for a real trap: the built-in map gives «Кабинет» the path `/`,
+    // which must not read as an address the operator typed.
+    const button = only([btn({ id: 'cabinet', label: 'Кабинет' })]);
+    expect(button.web_app?.url).toBe('https://cabinet.example/open-in-browser');
+  });
+
+  it('puts no sign-in key anywhere in the button: the Mini App is signed in by Telegram', () => {
+    const button = only([btn({ id: 'cabinet', label: 'Кабинет' })]);
+    expect(JSON.stringify(button)).not.toContain(TOKEN);
+  });
+
+  it('joins the Mini App address without doubling a slash', () => {
+    const button = only([btn({ id: 'cabinet', label: 'Кабинет' })], 'https://cabinet.example/');
+    expect(button.web_app?.url).toBe('https://cabinet.example/open-in-browser');
+  });
+
+  it('keeps an address the operator typed exactly as it was, key and all', () => {
+    const button = only([
+      { ...btn({ id: 'cabinet', label: 'Кабинет' }), actionType: 'url', actionTarget: 'https://cabinet.example/plans' },
+    ]);
+    expect(button.url).toBe(`https://cabinet.example/plans?signin=${TOKEN}`);
+    expect(button.web_app).toBeUndefined();
+  });
+
+  it('keeps the stamped link where there is no HTTPS Mini App to open', () => {
+    for (const miniAppUrl of [null, 'http://localhost:5173']) {
+      const button = only([btn({ id: 'cabinet', label: 'Кабинет' })], miniAppUrl);
+      expect(button.url).toBe(`https://cabinet.example/?signin=${TOKEN}`);
+    }
+  });
+
+  it('changes nothing for any other link button', () => {
+    const button = only([
+      { ...btn({ id: 'plans', label: 'Тарифы' }), actionType: 'url', actionTarget: null },
+    ]);
+    expect(button.web_app).toBeUndefined();
   });
 });

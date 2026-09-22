@@ -77,6 +77,9 @@ const PUBLIC_PATHS = [
   // Mini App. It has no session by construction, and a 401 from anything else
   // on the page must not replace the one button the subscriber came for.
   "/connect/open",
+  // Where «Открыть в браузере» lands from the Mini App with a one-time key.
+  // A browser with no session yet, by construction — the key is what makes one.
+  "/auth/open",
 ];
 
 // `/advertising/click` is fire-and-forget analytics behind a session guard: a
