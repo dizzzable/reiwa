@@ -272,14 +272,6 @@ export function resolveConfiguredSupportUrl(
 }
 
 /**
- * Append `?signin=<token>` to a URL in a way that's robust to URLs
- * that already carry query parameters (operator-configured
- * `actionTarget` e.g. `https://example.com/?utm_source=tg`).
- *
- * Returns the input unchanged when token is null/empty so the
- * tokenless fallback path is identical.
- */
-/**
  * Where «Кабинет» sends a tap when it names no address of its own: the Mini
  * App's `/open-in-browser`, which opens the cabinet in the phone's own browser,
  * already signed in (owner's decision, 22.09.2026).
@@ -298,6 +290,14 @@ export function cabinetBrowserEntryUrl(miniAppUrl: string | null | undefined): s
   return `${(miniAppUrl as string).replace(/\/+$/, '')}/open-in-browser`;
 }
 
+/**
+ * Append `?signin=<token>` to a URL in a way that's robust to URLs
+ * that already carry query parameters (operator-configured
+ * `actionTarget` e.g. `https://example.com/?utm_source=tg`).
+ *
+ * Returns the input unchanged when token is null/empty so the
+ * tokenless fallback path is identical.
+ */
 export function attachSigninTokenToUrl(url: string, token: string | null | undefined): string {
   if (token === null || token === undefined || token.length === 0) return url;
   // Bail out cleanly on URLs we can't parse (unlikely but cheap to
