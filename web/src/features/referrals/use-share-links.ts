@@ -58,7 +58,12 @@ export function useShareLinks(): ShareLinks {
     queryKey: ['referrals', 'share-invite'],
     queryFn: createReferralInvite,
     enabled: needsInvite,
-    staleTime: 5 * 60_000,
+    // Never from cache. A friend may have spent this invite since it was
+    // fetched, and a spent token is the refused link all over again. The panel
+    // hands back the live invite while there is one, so asking on every visit
+    // costs no slot.
+    staleTime: 0,
+    gcTime: 0,
     retry: false,
   })
 

@@ -35,11 +35,12 @@ function Probe() {
 let root: Root | null = null
 let host: HTMLDivElement | null = null
 
-async function mount(): Promise<void> {
+async function mount(
+  client: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+): Promise<void> {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   act(() =>
     root?.render(
       <QueryClientProvider client={client}>
@@ -119,6 +120,20 @@ describe('the code a share link carries', () => {
     api.getReferralSummary.mockRejectedValue(new Error('panel down'))
     await mount()
     expect(seen).toMatchObject({ state: 'ready', telegramLink: 'https://t.me/reiwa_bot?start=ref_session-id-7' })
+  })
+
+  it('asks for the invite again on the next visit instead of reusing a cached one', async () => {
+    // A friend may have spent the invite since it was fetched, and a cached
+    // token is the refused link all over again. One client across both visits,
+    // as in the running app, so a cache would have been there to reuse.
+    api.getReferralSummary.mockResolvedValue({ admissionRequiresInvite: true })
+    api.createReferralInvite.mockResolvedValueOnce({ token: 'tok-1' }).mockResolvedValueOnce({ token: 'tok-2' })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    await mount(client)
+    expect(seen).toMatchObject({ telegramLink: 'https://t.me/reiwa_bot?start=ref_tok-1' })
+    act(() => root?.unmount())
+    await mount(client)
+    expect(seen).toMatchObject({ telegramLink: 'https://t.me/reiwa_bot?start=ref_tok-2' })
   })
 
   it('makes both links the website one without a bot username', async () => {
