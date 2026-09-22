@@ -32,6 +32,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   getReferralSummary: vi.fn(),
   getInviteCapacity: vi.fn(),
+  // `useShareLinks` imports it; only «только по приглашениям» calls it.
+  createReferralInvite: vi.fn(),
   getInvitedUsers: vi.fn(),
   getPointsLedger: vi.fn(),
   getPointsExchangeOptions: vi.fn(),

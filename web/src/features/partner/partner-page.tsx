@@ -18,14 +18,14 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
 import { getPartnerInfo, getPartnerEarnings } from "@/lib/api-client";
-import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import { standingBalanceHold } from "@/lib/partner-balance-hold";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { InviteLinkHero } from "../referrals/components/invite-link-hero";
+import { ShareLinksHero } from "../referrals/components/share-links-hero";
+import { useShareLinks } from "../referrals/use-share-links";
 import { StatCard } from "../referrals/components/stat-card";
 import { PartnerReferralsList } from "./components/partner-referrals-list";
 import { PartnerAdvertisingSection } from "./components/partner-advertising-section";
@@ -48,8 +48,7 @@ const WITHDRAW_BLOCK_NOTICE_ID = "partner-withdraw-block";
 
 export default function PartnerPage() {
   const { t } = useTranslation();
-  const { session } = useSession();
-  const { branding, botUsername } = useBranding();
+  const { branding } = useBranding();
   const navigate = useNavigate();
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
@@ -105,16 +104,9 @@ export default function PartnerPage() {
     typeof rawPoints === "number" && Number.isFinite(rawPoints) ? rawPoints : null;
   const hasReferralPoints = referralPoints !== null && referralPoints > 0;
 
-  // Build invite links. Bot username comes from the public config
-  // (reiwa `BOT_USERNAME`); the web origin is this SPA's own domain.
-  const referralCode = session?.id ?? session?.telegramId ?? session?.username ?? "";
-  const reiwaDomain = window.location.origin;
-  const webLink = `${reiwaDomain}/register?ref=${referralCode}`;
-  // `ref_` prefix is required for the bot to attribute the referrer — a bare
-  // `?start=<code>` is read as the plain menu entry (see `parseDeeplink`).
-  const telegramLink = botUsername
-    ? `https://t.me/${botUsername}?start=ref_${referralCode}`
-    : webLink;
+  // Both links, with a code the platform admits — under «только по
+  // приглашениям» that is a single-use invite, not the permanent code.
+  const shareLinks = useShareLinks();
 
   // Minor units in the balance's own currency — «₽» only where it IS roubles
   // (an operator's default currency, or a per-partner override, can be another).
@@ -146,7 +138,7 @@ export default function PartnerPage() {
       </div>
 
       {/* Invite link hero */}
-      <InviteLinkHero telegramLink={telegramLink} webLink={webLink} brandName={branding.brandName} />
+      <ShareLinksHero links={shareLinks} brandName={branding.brandName} />
 
       {/* Stat cards — 2x2 grid */}
       <div className="mt-5 grid grid-cols-2 gap-3 px-5">

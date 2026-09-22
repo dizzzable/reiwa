@@ -13,7 +13,6 @@ import { Info, Star, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { getReferralSummary, getInviteCapacity } from "@/lib/api-client";
-import { useSession } from "@/hooks/use-session";
 import { useBranding } from "@/lib/branding-provider";
 import {
   Dialog,
@@ -24,7 +23,8 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { InviteLinkHero } from "./components/invite-link-hero";
+import { ShareLinksHero } from "./components/share-links-hero";
+import { useShareLinks } from "./use-share-links";
 import { StatRow } from "./components/stat-row";
 import { InvitedUsersList } from "./components/invited-users-list";
 import { PointsHistoryDialog } from "./components/points-history-dialog";
@@ -33,8 +33,7 @@ type ActiveSheet = "invited" | "points" | "info" | null;
 
 export default function ReferralsPage() {
   const { t } = useTranslation();
-  const { session } = useSession();
-  const { branding, botUsername } = useBranding();
+  const { branding } = useBranding();
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
   const { data: summary, isLoading } = useQuery({
@@ -49,21 +48,9 @@ export default function ReferralsPage() {
     staleTime: 30_000,
   });
 
-  // Build invite links. Reiwa_id (session.id, CUID) is the canonical
-  // referral code — it works for web-first users with no Telegram. We fall
-  // back to telegramId / username only if id is somehow absent. The bot
-  // username comes from the public config (reiwa `BOT_USERNAME`); the web
-  // origin is this SPA's own domain.
-  const referralCode = session?.id ?? session?.telegramId ?? session?.username ?? "";
-  const reiwaDomain = window.location.origin;
-  const webLink = `${reiwaDomain}/register?ref=${referralCode}`;
-  // The bot only attributes a referrer when the deep-link payload carries the
-  // `ref_` prefix (see `parseDeeplink`); a bare `?start=<code>` is read as the
-  // plain menu entry and the referrer is silently lost. rezeis resolves the
-  // reiwa_id / telegramId / username that follows the prefix.
-  const telegramLink = botUsername
-    ? `https://t.me/${botUsername}?start=ref_${referralCode}`
-    : webLink;
+  // Both links, with a code the platform admits — under «только по
+  // приглашениям» that is a single-use invite, not the permanent code.
+  const shareLinks = useShareLinks();
 
   const totalInvited = (summary as any)?.totalReferrals ?? 0;
   const qualified = (summary as any)?.qualifiedReferrals ?? 0;
@@ -91,7 +78,7 @@ export default function ReferralsPage() {
       </div>
 
       {/* Invite link hero */}
-      <InviteLinkHero telegramLink={telegramLink} webLink={webLink} brandName={branding.brandName} />
+      <ShareLinksHero links={shareLinks} brandName={branding.brandName} />
 
       {/* Stat rows — each metric on its own full-width line */}
       <div className="mx-5 mt-5 space-y-2.5">

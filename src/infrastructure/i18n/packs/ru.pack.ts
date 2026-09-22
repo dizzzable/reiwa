@@ -91,6 +91,8 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'invite.share': '🔗 Реферальная программа\n\nПоделитесь ссылкой с друзьями — за каждого, кто оформит подписку, вы получите бонус.\n\nВаша ссылка:\n{{link}}',
   'invite.share_button': '📤 Поделиться в Telegram',
   'invite.copy_button': '📋 Скопировать ссылку',
+  'invite.copy_web_button': '🌐 Скопировать ссылку на сайт',
+  'invite.share_web_line': 'Без Telegram — через сайт: {{link}}',
   'invite.share_prompt': 'Привет! Попробуй Rezeis VPN — быстрый и надёжный.',
   // Инлайн-режим: @бот в любом чате. Два набора, потому что отправитель
   // может быть человеком без учётной записи — тогда ссылка обычная, без
@@ -216,6 +218,7 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'referral.hub.stat_pending': '⏳ В ожидании: {{count}}',
   'referral.hub.stat_points': '⭐ Баллов: {{count}}',
   'referral.hub.link_label': '🔗 Ваша реферальная ссылка:',
+  'referral.hub.web_link_label': '🌐 Ссылка на сайт — для тех, кто без Telegram:',
   'referral.hub.open_cabinet': '👤 Профиль в кабинете',
   'referral.hub.open_exchange': '💱 Обменять баллы',
   'partner.hub.title': '🤝 Партнёрская программа',

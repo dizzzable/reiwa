@@ -49,6 +49,11 @@ const api = vi.hoisted(() => ({
   getPartnerInfo: vi.fn(),
   getPartnerEarnings: vi.fn(),
   getPartnerWithdrawals: vi.fn(),
+  // «Партнёрка» builds its share links through `useShareLinks`, which reads
+  // the referral summary (and, under «только по приглашениям», the invite).
+  // Plain functions, so a mock reset between cases cannot empty them.
+  getReferralSummary: () => Promise.resolve({ referralCode: 'reiwa-id-1' }),
+  createReferralInvite: () => Promise.resolve({}),
 }));
 
 const navigate = vi.hoisted(() => vi.fn());

@@ -357,3 +357,95 @@ describe('registerInvitePage (hub)', () => {
     ).toBe(false);
   });
 });
+
+describe('the website link beside the Telegram one', () => {
+  // The owner's order of 22.09.2026: an invite shared from the bot also carries
+  // a link to the web cabinet, for a friend who would rather sign up in a
+  // browser, or has no Telegram at all.
+  const WEB = 'https://reiwa.example/ref/reiwa-id-1';
+
+  async function openHub(options: {
+    readonly publicWebUrl: string | null;
+    readonly summary?: Record<string, unknown>;
+    readonly createInvite?: ReturnType<typeof vi.fn>;
+    readonly partner?: Record<string, unknown>;
+    readonly username?: string;
+  }) {
+    const adminClient = {
+      referrals: {
+        createInvite: options.createInvite ?? vi.fn(),
+        getSummary: vi.fn().mockResolvedValue(options.summary ?? { referralCode: 'reiwa-id-1' }),
+      },
+      partner: options.partner ?? {},
+    } as unknown as PageDeps['adminClient'];
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient as unknown as Record<string, unknown>,
+      publicWebUrl: options.publicWebUrl,
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx({ from: { id: 5 }, ...(options.username === undefined ? {} : { me: { username: options.username } }) });
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    const text = ctx.editMessageText.mock.calls[0]?.[0] as string;
+    const buttons = buttonsOf(ctx);
+    const share = buttons.find((b) => b.url?.startsWith('https://t.me/share/url?'));
+    const shared = share?.url === undefined ? null : new URL(share.url).searchParams.get('text');
+    return { text, buttons, shared };
+  }
+
+  it('prints it, copies it, and puts it into the shared message', async () => {
+    const { text, buttons, shared } = await openHub({ publicWebUrl: 'https://reiwa.example' });
+    expect(text).toContain('https://t.me/reiwa_test_bot?start=ref_reiwa-id-1');
+    expect(text).toContain(`ru:referral.hub.web_link_label\n${WEB}`);
+    expect(buttons.some((b) => b.copy_text?.text === WEB)).toBe(true);
+    // Telegram's share sheet takes one link and a text: the website link rides in the text.
+    expect(shared).toBe(`ru:invite.share_prompt\n\nru:invite.share_web_line(link=${WEB})`);
+  });
+
+  it('carries the SAME single-use token under «только по приглашениям»: one friend, either link', async () => {
+    const createInvite = vi.fn().mockResolvedValue({ invite: { token: 'tok-9' } });
+    const { text, buttons } = await openHub({
+      publicWebUrl: 'https://reiwa.example',
+      summary: { referralCode: 'reiwa-id-1', admissionRequiresInvite: true },
+      createInvite,
+    });
+    expect(text).toContain('https://t.me/reiwa_test_bot?start=ref_tok-9');
+    expect(text).toContain('https://reiwa.example/ref/tok-9');
+    expect(text).not.toContain('reiwa-id-1');
+    expect(buttons.some((b) => b.copy_text?.text === 'https://reiwa.example/ref/tok-9')).toBe(true);
+    expect(createInvite).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not printed twice without a bot username — then the one link IS the website link', async () => {
+    const { text, buttons, shared } = await openHub({ publicWebUrl: 'https://reiwa.example', username: '' });
+    expect(text.split(WEB)).toHaveLength(2);
+    expect(text).not.toContain('ru:referral.hub.web_link_label');
+    expect(buttons.filter((b) => b.copy_text !== undefined)).toHaveLength(1);
+    expect(shared).toBe('ru:invite.share_prompt');
+  });
+
+  it('is left out without a public HTTPS cabinet to send anybody to', async () => {
+    // ANTI-VACUITY for the first case: the same hub, no cabinet.
+    for (const publicWebUrl of [null, 'http://localhost:5173']) {
+      const { text, buttons, shared } = await openHub({ publicWebUrl });
+      expect(text, String(publicWebUrl)).not.toContain('/ref/');
+      expect(buttons.filter((b) => b.copy_text !== undefined)).toHaveLength(1);
+      expect(shared).toBe('ru:invite.share_prompt');
+    }
+  });
+
+  it('reaches a partner’s hub too', async () => {
+    const { text, buttons, shared } = await openHub({
+      publicWebUrl: 'https://reiwa.example',
+      partner: {
+        getStatus: vi.fn().mockResolvedValue({ isActive: true }),
+        getInfo: vi.fn().mockResolvedValue({ balance: 0, totalEarned: 0 }),
+        getReferrals: vi.fn().mockResolvedValue({ total: 0 }),
+      },
+    });
+    expect(text).toContain('ru:partner.hub.title');
+    expect(text).toContain(`ru:referral.hub.web_link_label\n${WEB}`);
+    expect(buttons.some((b) => b.copy_text?.text === WEB)).toBe(true);
+    expect(shared).toBe(`ru:invite.share_prompt\n\nru:invite.share_web_line(link=${WEB})`);
+  });
+});

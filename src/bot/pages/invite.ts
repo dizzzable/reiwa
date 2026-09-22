@@ -121,6 +121,30 @@ function buildReferralLink(
   return null;
 }
 
+/**
+ * The same code as a link to the web cabinet — for a friend who would rather
+ * sign up in a browser, or has no Telegram at all (owner's order, 22.09.2026).
+ *
+ * `/ref/<code>` is the path `buildReferralLink` already falls back to without
+ * a bot username, and the cabinet turns it into `/register?ref=<code>` keeping
+ * every other parameter. The code is the SAME one the Telegram link carries,
+ * so under «только по приглашениям» it is the same single-use token: one
+ * friend, whichever of the two links they open.
+ *
+ * `null` without a public HTTPS cabinet to send anybody to.
+ */
+function buildWebReferralLink(deps: PageDeps, code: string): string | null {
+  const base = deps.urls.publicWebUrl;
+  if (!isTelegramSafeButtonUrl(base)) return null;
+  return `${(base as string).replace(/\/+$/, '')}/ref/${encodeURIComponent(code)}`;
+}
+
+/** The share message: the owner's prompt, and the website link under it when there is one. */
+function shareText(t: (key: string, vars?: Record<string, string | number>) => string, webLink: string | null): string {
+  const prompt = t('invite.share_prompt');
+  return webLink === null ? prompt : `${prompt}\n\n${t('invite.share_web_line', { link: webLink })}`;
+}
+
 export const registerInvitePage: PageRegistrar = (bot, deps) => {
   const { adminClient, translator, userLocale, getConfig, urls } = deps;
 
@@ -180,9 +204,12 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
     // and lives there forever, so publishing a raw Telegram ID because the
     // admin API blipped is not an acceptable degradation.
     const inviteLink = code.length > 0 ? buildReferralLink(deps, code, ctx.me.username) : null;
+    // Only beside a Telegram link: without a bot username `inviteLink` IS the
+    // website link already, and the hub would print it twice.
+    const webLink = code.length > 0 && ctx.me.username ? buildWebReferralLink(deps, code) : null;
 
     if (isPartner) {
-      await renderPartnerHub(ctx, deps, lang, telegramId, inviteLink, backLabel, botCfg);
+      await renderPartnerHub(ctx, deps, lang, telegramId, inviteLink, webLink, backLabel, botCfg);
       return;
     }
 
@@ -216,7 +243,7 @@ export const registerInvitePage: PageRegistrar = (bot, deps) => {
       return;
     }
 
-    await renderReferralHub(ctx, deps, lang, summary, inviteLink, backLabel, botCfg);
+    await renderReferralHub(ctx, deps, lang, summary, inviteLink, webLink, backLabel, botCfg);
   });
 };
 
@@ -226,6 +253,7 @@ async function renderReferralHub(
   lang: SupportedLocale,
   summary: ReferralSummaryShape | null | undefined,
   inviteLink: string,
+  webLink: string | null,
   backLabel: string,
   botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
 ): Promise<void> {
@@ -235,7 +263,8 @@ async function renderReferralHub(
   const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
   const parts: string[] = [];
   if (overrideScreen) {
-    parts.push(applyScreenTemplate(overrideScreen, lang, { link: inviteLink }));
+    // `{{web_link}}` for an operator's own screen; empty where there is none.
+    parts.push(applyScreenTemplate(overrideScreen, lang, { link: inviteLink, web_link: webLink ?? '' }));
   } else {
     parts.push(t('referral.hub.title'));
     parts.push(t('referral.hub.description'));
@@ -253,10 +282,12 @@ async function renderReferralHub(
   if (points !== null) stats.push(t('referral.hub.stat_points', { count: points }));
   if (stats.length > 0) parts.push(stats.join('\n'));
 
-  if (!overrideScreen) parts.push(`${t('referral.hub.link_label')}\n${inviteLink}`);
+  if (!overrideScreen) {
+    parts.push(`${t('referral.hub.link_label')}\n${inviteLink}`);
+    if (webLink !== null) parts.push(`${t('referral.hub.web_link_label')}\n${webLink}`);
+  }
 
-  const sharePrompt = t('invite.share_prompt');
-  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(sharePrompt)}`;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText(t, webLink))}`;
 
   const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
   const copy = renderSystemButton(t('invite.copy_button'), 'invite_copy', botCfg);
@@ -274,6 +305,7 @@ async function renderReferralHub(
         : copy.text,
       inviteLink,
     );
+  appendWebLinkCopy(kb, webLink, t, botCfg);
   if (isTelegramSafeButtonUrl(urls.publicWebUrl)) {
     kb.row().webApp(hubButton(t('referral.hub.open_cabinet'), botCfg), `${urls.publicWebUrl}/referrals`);
     kb.row().webApp(hubButton(t('referral.hub.open_exchange'), botCfg), `${urls.publicWebUrl}/referrals/exchange`);
@@ -304,12 +336,30 @@ async function renderReferralHub(
   });
 }
 
+/** «Скопировать ссылку на сайт», on a row of its own, when there is a website link. */
+function appendWebLinkCopy(
+  kb: InlineKeyboard,
+  webLink: string | null,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
+): void {
+  if (webLink === null) return;
+  const copyWeb = renderSystemButton(t('invite.copy_web_button'), 'invite_copy_web', botCfg);
+  kb.row().copyText(
+    copyWeb.iconCustomEmojiId !== undefined
+      ? { text: copyWeb.text, icon_custom_emoji_id: copyWeb.iconCustomEmojiId }
+      : copyWeb.text,
+    webLink,
+  );
+}
+
 async function renderPartnerHub(
   ctx: BotContext,
   deps: PageDeps,
   lang: SupportedLocale,
   telegramId: string,
   inviteLink: string | null,
+  webLink: string | null,
   backLabel: string,
   botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
 ): Promise<void> {
@@ -352,8 +402,8 @@ async function renderPartnerHub(
   const kb = new InlineKeyboard();
   if (inviteLink !== null) {
     parts.push(`${t('referral.hub.link_label')}\n${inviteLink}`);
-    const sharePrompt = t('invite.share_prompt');
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(sharePrompt)}`;
+    if (webLink !== null) parts.push(`${t('referral.hub.web_link_label')}\n${webLink}`);
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText(t, webLink))}`;
     const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
     const copy = renderSystemButton(t('invite.copy_button'), 'invite_copy', botCfg);
     kb.url(
@@ -367,6 +417,7 @@ async function renderPartnerHub(
         : copy.text,
       inviteLink,
     );
+    appendWebLinkCopy(kb, webLink, t, botCfg);
   }
   if (isTelegramSafeButtonUrl(urls.publicWebUrl)) {
     if (inviteLink !== null) kb.row();

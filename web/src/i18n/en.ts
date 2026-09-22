@@ -560,6 +560,7 @@ export const en: RuDict = {
     exchangePoints: 'Exchange points',
     inviteSlots: 'Invite slots',
     inviteSlotsRemaining: '{{count}} remaining',
+    inviteLinkUnavailable: 'An invite link can’t be issued right now. Try again later, or check whether you have invites left.',
     inviteSlotsFull: 'All slots used',
     // Desktop sidebar card. The reward unit is the operator’s choice, so
     // both forms exist and neither is a default.

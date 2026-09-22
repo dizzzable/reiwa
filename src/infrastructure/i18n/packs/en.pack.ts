@@ -83,6 +83,8 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'invite.share': '🔗 Referral program\n\nShare this link with your friends — for every one who subscribes, you earn a bonus.\n\nYour link:\n{{link}}',
   'invite.share_button': '📤 Share on Telegram',
   'invite.copy_button': '📋 Copy link',
+  'invite.copy_web_button': '🌐 Copy website link',
+  'invite.share_web_line': 'No Telegram? Sign up on the website: {{link}}',
   // Inline mode: @bot in any chat. Two sets, because the sender may be
   // somebody with no account here — then the link is the plain bot link with
   // no referral code, and no bonus can be promised for it.
@@ -198,6 +200,7 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'referral.hub.stat_pending': '⏳ Pending: {{count}}',
   'referral.hub.stat_points': '⭐ Points: {{count}}',
   'referral.hub.link_label': '🔗 Your referral link:',
+  'referral.hub.web_link_label': '🌐 Website link — for friends without Telegram:',
   'referral.hub.open_cabinet': '👤 Open in cabinet',
   'referral.hub.open_exchange': '💱 Exchange points',
   'partner.hub.title': '🤝 Partner program',
