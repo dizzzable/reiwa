@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation, useParams } from "react-router";
 import { lazy, Suspense } from "react";
 import StealthLayout from "@/components/layout/stealth-layout";
+import { LaunchAccountGate } from "@/features/auth/launch-account-switch";
 import { MagicLinkHandoff } from "@/features/auth/magic-link-handoff";
 import { ChannelGate } from "@/features/channel-gate/channel-gate";
 import { useAdAttribution } from "@/hooks/use-ad-attribution";
@@ -121,6 +122,12 @@ export default function App() {
   useDeviceSignals();
   return (
     <Suspense fallback={<PageLoader />}>
+      {/* The account that opened the Mini App is the account shown: a cookie
+          session of another Telegram account is switched for the launch's
+          before anything below draws. OUTSIDE the channel gate, which asks
+          about the session's account — inside it, B met A's channel screen.
+          See `features/auth/launch-account-switch.tsx`. */}
+      <LaunchAccountGate fallback={<PageLoader />}>
       {/* «Канал обязателен», Telegram Mini App only: until Telegram confirms
           the subscription, every route below except the sign-in handshake,
           /payment-return and /legal is replaced by the subscribe screen. In a
@@ -215,6 +222,7 @@ export default function App() {
         </Routes>
         </MagicLinkHandoff>
       </ChannelGate>
+      </LaunchAccountGate>
     </Suspense>
   );
 }

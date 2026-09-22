@@ -3,15 +3,19 @@
 /**
  * One app, several Telegram accounts, one cookie store.
  *
- * The shell signs in from the cookie whenever there is one, so account B
+ * The cabinet signs in from the cookie whenever there is one, so account B
  * opening the Mini App on a phone where account A signed in earlier was shown
  * A's cabinet without a word. Now the account that opened the app is the
- * account shown: the shell signs in as it — before any other gate, and without
- * asking. But only in a Telegram client's webview: in a browser the launch data
- * came from a link. Each case is one way to get that wrong again.
+ * account shown: `LaunchAccountGate` signs in as it — above the channel gate,
+ * without asking — and reloads, so nothing of A's survives. But only in a
+ * Telegram client's webview: in a browser the launch data came from a link.
+ * Each case is one way to get that wrong again.
  */
 
-import { act, type ReactNode, type SVGProps } from 'react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -21,88 +25,27 @@ const ANDROID_WEBVIEW =
 const DESKTOP_CHROME =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
 
-const Icon = (_props: SVGProps<SVGSVGElement>) => <svg />
-
-const api = vi.hoisted(() => ({
-  reportSurface: vi.fn(),
-  getPlatformPolicy: vi.fn(),
-  bootstrapTelegram: vi.fn(),
-}))
-const sessionState = vi.hoisted(() => ({
-  session: null as unknown,
-  isLoading: false,
-  isAuthenticated: true,
-}))
+const api = vi.hoisted(() => ({ bootstrapTelegram: vi.fn() }))
+const sessionState = vi.hoisted(() => ({ session: null as unknown, isLoading: false }))
 /** What `/session` answers when the switch reads it back. */
 const readBack = vi.hoisted(() => ({ fetchSessionOrNull: vi.fn() }))
-const platformPolicy = vi.hoisted(() => ({ data: { requireTelegramWebCredentials: false } as unknown }))
-const queryClient = vi.hoisted(() => ({ resetQueries: vi.fn(), invalidateQueries: vi.fn() }))
 const launch = vi.hoisted(() => ({ value: null as string | null }))
-const redirects = vi.hoisted(() => [] as string[])
+const leave = vi.hoisted(() => ({ reloadPage: vi.fn(), replacePage: vi.fn(), followLink: vi.fn() }))
 
 vi.mock('@/lib/api-client', () => api)
-vi.mock('@/lib/push', () => ({ ensurePushSubscription: vi.fn(async () => false) }))
 vi.mock('@/hooks/use-session', () => ({
   SESSION_QUERY_KEY: ['session'],
   useSession: () => sessionState,
   fetchSessionOrNull: () => readBack.fetchSessionOrNull(),
 }))
-vi.mock('@/hooks/use-user-realtime', () => ({ useUserRealtime: () => undefined }))
-vi.mock('@/hooks/use-is-desktop', () => ({ useIsDesktop: () => true }))
-vi.mock('@/hooks/use-install-prompt', () => ({ isStandalonePwa: () => false }))
-vi.mock('@/lib/branding-provider', () => ({ useBranding: () => ({ branding: {} }) }))
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => platformPolicy,
-  useQueryClient: () => queryClient,
-}))
 vi.mock('@/lib/telegram-launch-params', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/telegram-launch-params')>()),
   readTelegramLaunchInitData: () => launch.value,
 }))
-vi.mock('react-router', () => ({
-  Navigate: ({ to }: { readonly to: string }) => {
-    redirects.push(to)
-    return null
-  },
-  NavLink: ({ to, children, ...rest }: { readonly to: string; readonly children?: ReactNode } & Record<string, unknown>) => (
-    <a href={to} {...rest}>
-      {children}
-    </a>
-  ),
-  Outlet: () => <div data-testid="route-content" />,
-  useLocation: () => ({ pathname: '/dashboard', search: '' }),
-  useNavigate: () => vi.fn(),
-}))
+vi.mock('../src/features/auth/leave-page', () => leave)
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
-vi.mock('motion/react', () => ({
-  domMax: {},
-  LazyMotion: ({ children }: { readonly children?: ReactNode }) => <>{children}</>,
-  m: { span: (props: Record<string, unknown>) => <span {...(props as object)} /> },
-}))
-vi.mock('@/components/layout/use-nav-tabs', () => ({
-  useNavTabs: () => [
-    { to: '/dashboard', icon: Icon, label: 'Подписки', testId: 'tab-dashboard', matchPrefix: ['/dashboard'] },
-  ],
-  resolveActiveTabTo: () => '/dashboard',
-}))
-vi.mock('@/components/layout/side-nav', () => ({ SideNav: () => <nav data-testid="side-nav" /> }))
-vi.mock('@/components/layout/route-content-boundary', () => ({
-  RouteContentBoundary: ({ children }: { readonly children?: ReactNode }) => children,
-}))
-vi.mock('@/features/onboarding/onboarding-tour-controller', () => ({
-  OnboardingTourProvider: ({ children }: { readonly children?: ReactNode }) => children,
-  useOnboardingContext: () => ({
-    startTour: () => undefined,
-    replayTour: () => undefined,
-    startDemo: () => undefined,
-    isActive: false,
-    autoStartPending: false,
-  }),
-}))
-vi.mock('@/components/ui/network-bg', () => ({ NetworkBg: () => null }))
-vi.mock('@/components/layout/app-background', () => ({ AppBackground: () => null }))
 
-const { default: StealthLayout } = await import('@/components/layout/stealth-layout')
+const { LaunchAccountGate } = await import('../src/features/auth/launch-account-switch')
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -112,7 +55,13 @@ function render(): HTMLDivElement {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  act(() => root?.render(<StealthLayout />))
+  act(() =>
+    root?.render(
+      <LaunchAccountGate fallback={<div data-testid="loader" />}>
+        <div data-testid="route-content" />
+      </LaunchAccountGate>,
+    ),
+  )
   return host
 }
 
@@ -137,17 +86,14 @@ const ACCOUNT_B = { id: 'acc-b', telegramId: '5151', name: 'Anna', webAccount: {
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.clearAllMocks()
-  redirects.length = 0
   launch.value = LAUNCH
   // Inside Telegram (iOS, Desktop): the bridge the client injects.
   setUserAgent(DESKTOP_CHROME)
   window.TelegramWebviewProxy = { postEvent: () => undefined }
   sessionState.session = ACCOUNT_A
-  platformPolicy.data = { requireTelegramWebCredentials: false }
-  api.reportSurface.mockResolvedValue({ ok: true })
+  sessionState.isLoading = false
   api.bootstrapTelegram.mockResolvedValue({ ok: true, redirectUrl: '/dashboard' })
   readBack.fetchSessionOrNull.mockResolvedValue(ACCOUNT_B)
-  queryClient.resetQueries.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -171,12 +117,12 @@ describe('a session that is another Telegram account than the launch', () => {
     expect(api.bootstrapTelegram).toHaveBeenCalledTimes(1)
   })
 
-  it('resets every query once the session IS the launch’s account — not only the session', async () => {
+  it('reloads once the session IS the launch’s account, so nothing of the previous one survives', async () => {
     render()
     await settle()
     expect(readBack.fetchSessionOrNull).toHaveBeenCalled()
-    // No filter: the channel gate and anything else read for A answer again for B.
-    expect(queryClient.resetQueries).toHaveBeenCalledWith()
+    // A cache reset would leave the previous account's live-updates stream running.
+    expect(leave.reloadPage).toHaveBeenCalledTimes(1)
   })
 
   it('never shows the previous account’s cabinet while switching, and says whose it opens', () => {
@@ -186,13 +132,13 @@ describe('a session that is another Telegram account than the launch', () => {
     expect(el.textContent).toContain('launchSwitch.signingInAs')
   })
 
-  it('a switch that did not take is an error screen — no reset, no loop, no cabinet of A', async () => {
+  it('a switch that did not take is an error screen — no reload, no loop, no cabinet of A', async () => {
     // The bootstrap answered, and the cookie is still A's.
     readBack.fetchSessionOrNull.mockResolvedValue(ACCOUNT_A)
     const el = render()
     await settle()
     expect(switching(el)?.getAttribute('data-state')).toBe('failed')
-    expect(queryClient.resetQueries).not.toHaveBeenCalled()
+    expect(leave.reloadPage).not.toHaveBeenCalled()
     expect(api.bootstrapTelegram).toHaveBeenCalledTimes(1)
     expect(cabinet(el)).toBeNull()
   })
@@ -208,15 +154,7 @@ describe('a session that is another Telegram account than the launch', () => {
     act(() => el.querySelector<HTMLButtonElement>('[data-launch-switch-retry]')?.click())
     await settle()
     expect(api.bootstrapTelegram).toHaveBeenCalledTimes(2)
-    expect(queryClient.resetQueries).toHaveBeenCalledTimes(1)
-  })
-
-  it('is switched BEFORE the claim gate, which would send the launch’s user to set the session’s password', () => {
-    sessionState.session = { ...ACCOUNT_A, webAccount: null }
-    platformPolicy.data = { requireTelegramWebCredentials: true }
-    const el = render()
-    expect(switching(el)).not.toBeNull()
-    expect(redirects).toEqual([])
+    expect(leave.reloadPage).toHaveBeenCalledTimes(1)
   })
 
   it('is switched in an Android WebView too, where the bridge may not be there yet', async () => {
@@ -226,6 +164,14 @@ describe('a session that is another Telegram account than the launch', () => {
     expect(switching(el)).not.toBeNull()
     await settle()
     expect(api.bootstrapTelegram).toHaveBeenCalledWith(LAUNCH)
+  })
+
+  it('draws nothing below while the session is still being read', () => {
+    sessionState.isLoading = true
+    const el = render()
+    expect(el.querySelector('[data-testid="loader"]')).not.toBeNull()
+    expect(cabinet(el)).toBeNull()
+    expect(api.bootstrapTelegram).not.toHaveBeenCalled()
   })
 })
 
@@ -239,6 +185,13 @@ describe('everyone else goes straight in', () => {
 
   it('a website account with no Telegram — it may be the same person', () => {
     sessionState.session = { id: 'acc-w', telegramId: null, name: 'Web', webAccount: { login: 'web' } }
+    const el = render()
+    expect(switching(el)).toBeNull()
+    expect(cabinet(el)).not.toBeNull()
+  })
+
+  it('nobody signed in — the Mini App sign-in takes it from there', () => {
+    sessionState.session = null
     const el = render()
     expect(switching(el)).toBeNull()
     expect(cabinet(el)).not.toBeNull()
@@ -259,5 +212,20 @@ describe('everyone else goes straight in', () => {
     expect(cabinet(el)).not.toBeNull()
     await settle()
     expect(api.bootstrapTelegram).not.toHaveBeenCalled()
+  })
+})
+
+describe('App.tsx', () => {
+  it('puts the switch OUTSIDE «Канал обязателен», which asks about the session’s account', () => {
+    // Inside it, B met A's channel screen — which no subscription of B's lifts —
+    // or walked in on A's subscription.
+    const app = readFileSync(join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+    const open = app.indexOf('<LaunchAccountGate')
+    const gate = app.indexOf('<ChannelGate')
+    const gateEnd = app.indexOf('</ChannelGate>')
+    const close = app.indexOf('</LaunchAccountGate>')
+    expect(open).toBeGreaterThan(-1)
+    expect(gate).toBeGreaterThan(open)
+    expect(close).toBeGreaterThan(gateEnd)
   })
 })

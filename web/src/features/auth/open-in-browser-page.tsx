@@ -28,13 +28,13 @@ import { BROWSER_KEY_REFRESH_MS, browserOpenUrl, opensWithoutTap } from './brows
  *
  * Telegram keeps several accounts in one app with ONE cookie store, so the
  * session may be a different Telegram account from the one that tapped. The
- * shell switches to the tapping account before this page draws
- * (`LaunchAccountSwitch`), and the key request carries the tap's launch data so
+ * app switches to the tapping account before this page draws
+ * (`LaunchAccountGate`), and the key request carries the tap's launch data so
  * that the server can refuse a mismatch all the same (`LAUNCH_ACCOUNT_MISMATCH`).
- * This page never switches by itself: the shell does not either where this
+ * This page never switches by itself: the gate does not either where this
  * page can still meet a mismatch — outside a Telegram webview, where launch
  * data in the URL came from a link — and a fresh «Кабинет» from the bot goes
- * through the shell again.
+ * through the gate again.
  */
 
 const BUTTON =

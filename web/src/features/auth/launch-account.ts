@@ -8,8 +8,8 @@
  * account A signed in earlier used to land in A's cabinet, silently.
  *
  * What is read here serves one thing only: NOTICING that the session is
- * another Telegram account than the launch. The shell then signs in as the
- * launch's account (`LaunchAccountSwitch`) through `/auth/telegram/bootstrap`,
+ * another Telegram account than the launch. The app then signs in as the
+ * launch's account (`LaunchAccountGate`) through `/auth/telegram/bootstrap`,
  * which checks the bot token's HMAC before it signs anybody in. Never an
  * identity, never an authorisation.
  *

@@ -1,31 +1,91 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
 
-import { fetchSessionOrNull } from '@/hooks/use-session'
+import { fetchSessionOrNull, useSession } from '@/hooks/use-session'
 import { bootstrapTelegram } from '@/lib/api-client'
+import { readTelegramLaunchInitData } from '@/lib/telegram-launch-params'
 
-import type { LaunchAccount } from './launch-account'
+import { isOtherTelegramAccount, isTelegramWebview, readLaunchAccount, type LaunchAccount } from './launch-account'
+import { reloadPage } from './leave-page'
 
 /**
- * What the shell shows while it signs in as the Telegram account that opened
- * the Mini App, when the cookie session is another one (`launch-account.ts`).
+ * ONE APP, SEVERAL ACCOUNTS, ONE COOKIE STORE. Telegram lets a phone hold
+ * several accounts and gives them one WebView cookie store, and the cabinet
+ * signs in from the cookie whenever there is one. So account B opening the
+ * Mini App where account A signed in earlier was shown A's cabinet — and could
+ * pay into it — without a word.
  *
- * `/auth/telegram/bootstrap` verifies the launch data's HMAC with the bot token
- * and mints that account's session over the shared cookie. The session is then
- * read back and must BE that account before anything is reset: a bootstrap that
- * answers but leaves the cookie as it was would otherwise loop — the reset
- * remounts the shell, which finds the old session and switches again. Checked
- * first, a switch that did not take is an error screen, and the previous
- * account's cabinet is never drawn.
+ * Now the account that opened the app is the account shown: when the session
+ * is another Telegram account than the launch's, this signs in as the launch's
+ * account before anything else draws (`launch-account.ts` has the why, and
+ * where it does not).
  *
- * Then EVERY query is reset, not only the session: the channel gate and
- * whatever else was read for the previous account must not answer for this one.
+ * Above «Канал обязателен» on purpose — see `App.tsx`. The gate asks about the
+ * SESSION's account, so below it B met A's channel screen, which no
+ * subscription of B's lifts, or walked in on A's subscription.
  */
+
+interface Launch {
+  readonly account: LaunchAccount
+  readonly initData: string
+}
+
+export function LaunchAccountGate({
+  children,
+  fallback,
+}: {
+  readonly children: ReactNode
+  /** Shown while the session is read, where there is a launch to compare it with. */
+  readonly fallback: ReactNode
+}) {
+  // Read once: the launch and where the document runs do not change while it lives.
+  const [launch] = useState<Launch | null>(() => {
+    if (!isTelegramWebview()) return null
+    const initData = readTelegramLaunchInitData()
+    const account = readLaunchAccount(initData)
+    return initData !== null && account !== null ? { account, initData } : null
+  })
+  if (launch === null) return children
+  return (
+    <LaunchAccountCheck launch={launch} fallback={fallback}>
+      {children}
+    </LaunchAccountCheck>
+  )
+}
+
+function LaunchAccountCheck({
+  launch,
+  fallback,
+  children,
+}: {
+  readonly launch: Launch
+  readonly fallback: ReactNode
+  readonly children: ReactNode
+}) {
+  const { session, isLoading } = useSession()
+  // Nothing below may start on the previous account's behalf while this is unknown.
+  if (isLoading) return fallback
+  if (session !== null && isOtherTelegramAccount(session.telegramId, launch.account)) {
+    return <LaunchAccountSwitch launch={launch.account} initData={launch.initData} />
+  }
+  return children
+}
 
 const BUTTON =
   'flex w-full items-center justify-center gap-2 rounded-[var(--radius-item)] px-4 py-3 text-sm font-semibold'
 
+/**
+ * `/auth/telegram/bootstrap` verifies the launch data's HMAC with the bot token
+ * and mints that account's session over the shared cookie. The session is then
+ * read back and must BE that account before the page reloads: a bootstrap that
+ * answers but leaves the cookie as it was would otherwise reload into the same
+ * switch forever. Checked first, a switch that did not take is an error
+ * screen, and the previous account's cabinet is never drawn.
+ *
+ * A reload, not a cache reset: the query cache is not all the previous account
+ * left behind — its live-updates stream would go on delivering its payments to
+ * the new account's screen, and nothing in the stream notices a switch.
+ */
 export function LaunchAccountSwitch({
   launch,
   initData,
@@ -34,7 +94,6 @@ export function LaunchAccountSwitch({
   readonly initData: string
 }) {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
   const started = useRef(false)
   const [failed, setFailed] = useState(false)
 
@@ -48,11 +107,11 @@ export function LaunchAccountSwitch({
         setFailed(true)
         return
       }
-      await queryClient.resetQueries()
+      reloadPage()
     } catch {
       setFailed(true)
     }
-  }, [initData, launch.id, queryClient])
+  }, [initData, launch.id])
 
   useEffect(() => {
     // Once per mount: React runs effects twice in development.

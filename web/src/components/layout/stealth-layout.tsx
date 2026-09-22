@@ -24,12 +24,6 @@ import { RouteContentBoundary } from "@/components/layout/route-content-boundary
 import { AppBackground } from "@/components/layout/app-background";
 import { NetworkBg } from "@/components/ui/network-bg";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
-import { LaunchAccountSwitch } from "@/features/auth/launch-account-switch";
-import {
-  isOtherTelegramAccount,
-  isTelegramWebview,
-  readLaunchAccount,
-} from "@/features/auth/launch-account";
 import { useBranding } from "@/lib/branding-provider";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { isStandalonePwa } from "@/hooks/use-install-prompt";
@@ -297,14 +291,6 @@ export default function StealthLayout() {
   // shell is what every push destination renders inside.
   useServiceWorkerNavigate();
 
-  // The Telegram account this launch names, READ AND NOT VERIFIED — only to
-  // notice that the cookie session is somebody else's (see the gate below and
-  // `features/auth/launch-account.ts`). The launch does not change during a
-  // document's life, so it is read once, and so is where the document runs.
-  const launchInitData = useMemo(() => readTelegramLaunchInitData(), []);
-  const launchAccount = useMemo(() => readLaunchAccount(launchInitData), [launchInitData]);
-  const inTelegramWebview = useMemo(() => isTelegramWebview(), []);
-
   if (isLoading) {
     return (
       <div
@@ -360,23 +346,10 @@ export default function StealthLayout() {
     return <Navigate to={`/bootstrap${next}`} replace />;
   }
 
-  // ONE APP, SEVERAL ACCOUNTS, ONE COOKIE STORE. Telegram lets a phone hold
-  // several accounts and gives them one WebView cookie store, and this shell
-  // signs in from the cookie whenever there is one. So account B opening the
-  // Mini App where account A signed in earlier was shown A's cabinet — and could
-  // pay into it — without a word. Now the account that opened the app is the
-  // account shown: the shell signs in as it, before any gate below (the claim
-  // gate would otherwise send B to set A's password). Only in a Telegram
-  // client's webview — in a browser, launch data in the URL came from a link,
-  // and following it would move a signed-in customer into whoever made it.
-  if (
-    launchInitData !== null &&
-    launchAccount !== null &&
-    inTelegramWebview &&
-    isOtherTelegramAccount(session.telegramId, launchAccount)
-  ) {
-    return <LaunchAccountSwitch launch={launchAccount} initData={launchInitData} />;
-  }
+  // In a Telegram webview the session here IS the account that opened the Mini
+  // App: another Telegram account's is switched for it above the channel gate,
+  // before this shell or the claim gate below can draw (`LaunchAccountGate` in
+  // `App.tsx`).
 
   // A signed Telegram Mini App launch already is an authentication credential.
   // Auto-login is the default; an operator may explicitly enable the extra
