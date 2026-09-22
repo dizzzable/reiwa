@@ -104,9 +104,18 @@ export interface BrowserKeyResponse {
 /**
  * A one-time key to open this cabinet in the phone's own browser, signed in —
  * asked by the Mini App's `/open-in-browser`, for its own account only.
+ *
+ * Carries the tap's launch data, as `bootstrapTelegram` does: the server
+ * issues the key only when the signed launch user IS this session's Telegram
+ * account (409 `LAUNCH_ACCOUNT_MISMATCH` when another account's session is in
+ * the app's shared cookie store).
  */
-export const getBrowserKey = () =>
-  apiClient.post<BrowserKeyResponse>("/auth/browser-key").then((r) => r.data);
+export const getBrowserKey = (initData: string) =>
+  apiClient
+    .post<BrowserKeyResponse>("/auth/browser-key", undefined, {
+      headers: { Authorization: `tma ${initData}` },
+    })
+    .then((r) => r.data);
 
 // ── Status / register / recover ──────────────────────────────────────────────
 export const getAuthStatus = () =>

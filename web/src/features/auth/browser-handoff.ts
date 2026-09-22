@@ -102,3 +102,26 @@ export function androidDefaultBrowserIntent(target: string): string | null {
 export function opensWithoutTap(platform: string | null): boolean {
   return platform === 'tdesktop'
 }
+
+/**
+ * The name the launch data gives its user, for a BUTTON LABEL only.
+ *
+ * Unverified — the payload is read, not checked. That is fine for a label and
+ * for nothing else: the account switch it offers goes through
+ * `/auth/telegram/bootstrap`, which checks the bot token's HMAC before it signs
+ * anybody in. `null` when there is no readable name.
+ */
+export function launchUserLabel(initData: string | null): string | null {
+  if (initData === null) return null
+  try {
+    const raw = new URLSearchParams(initData).get('user')
+    if (raw === null) return null
+    const user = JSON.parse(raw) as { first_name?: unknown; username?: unknown }
+    const first = typeof user.first_name === 'string' ? user.first_name.trim() : ''
+    if (first.length > 0) return first
+    const username = typeof user.username === 'string' ? user.username.trim() : ''
+    return username.length > 0 ? `@${username}` : null
+  } catch {
+    return null
+  }
+}

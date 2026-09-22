@@ -6,8 +6,12 @@
  * other; this route only decides WHO may ask. Each case is one way that could
  * go wrong: a caller with no session, a session asking for somebody else's
  * account, a website account with no Telegram behind it, a panel that could not
- * issue — and a key left behind in a cache.
+ * issue — a key left behind in a cache — and a session that is another Telegram
+ * account's than the one whose tap asked (one app, several accounts, ONE cookie
+ * store), which must be refused on launch data verified with the bot token.
  */
+import { createHmac } from 'node:crypto';
+
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,12 +21,33 @@ import { sendSocketless, type SocketlessResponse } from './socketless-request.js
 
 const ACCOUNT = 'cm0account000000000000001';
 const KEY = 'e5'.repeat(32);
+const BOT_TOKEN = '123456:TEST-bot-token-for-launch-data';
+
+/** Launch data as Telegram signs it: HMAC-SHA256 keyed by HMAC("WebAppData", bot token). */
+function signedLaunchData(
+  userId: number,
+  options: { readonly token?: string; readonly authDate?: number } = {},
+): string {
+  const fields: Record<string, string> = {
+    auth_date: String(options.authDate ?? Math.floor(Date.now() / 1000)),
+    query_id: 'AAE-test',
+    user: JSON.stringify({ id: userId, first_name: 'Anna' }),
+  };
+  const dataCheckString = Object.keys(fields)
+    .sort()
+    .map((key) => `${key}=${fields[key]}`)
+    .join('\n');
+  const secret = createHmac('sha256', 'WebAppData').update(options.token ?? BOT_TOKEN).digest();
+  const hash = createHmac('sha256', secret).update(dataCheckString).digest('hex');
+  return new URLSearchParams({ ...fields, hash }).toString();
+}
 
 interface Options {
   /** The signed-in account; absent for no session. */
   readonly account?: string;
   readonly telegramId?: string | null;
   readonly issue?: (telegramId: string) => Promise<{ token: string | null; expiresAt: string | null }>;
+  readonly botToken?: string | null;
 }
 
 function harness(options: Options) {
@@ -48,13 +73,20 @@ function harness(options: Options) {
     createBrowserKeyRouter({
       adminClient: { user: { getSession }, webAuth: { issueBotSigninToken } } as never,
       sessionStore: { get: async () => null, refresh: async () => undefined } as never,
+      config: { BOT_TOKEN: options.botToken === undefined ? BOT_TOKEN : options.botToken },
     }),
   );
   return { app, getSession, issueBotSigninToken, log };
 }
 
-function ask(app: express.Express): Promise<SocketlessResponse> {
-  return sendSocketless(app, { method: 'POST', url: '/api/v1/auth/browser-key', body: {} });
+/** The tap of Telegram user 4242 — the session's own account unless a case says otherwise. */
+function ask(app: express.Express, initData: string | null = signedLaunchData(4242)): Promise<SocketlessResponse> {
+  return sendSocketless(app, {
+    method: 'POST',
+    url: '/api/v1/auth/browser-key',
+    body: {},
+    ...(initData === null ? {} : { headers: { authorization: `tma ${initData}` } }),
+  });
 }
 
 describe('who may ask for a key', () => {
@@ -83,6 +115,53 @@ describe('who may ask for a key', () => {
   it('refuses a website account with no Telegram behind it: it is in a browser already', async () => {
     const h = harness({ account: ACCOUNT, telegramId: null });
     expect(await ask(h.app)).toMatchObject({ status: 409, body: { message: 'NOT_A_TELEGRAM_ACCOUNT' } });
+    expect(h.issueBotSigninToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('the account that tapped', () => {
+  it('refuses a session that is ANOTHER Telegram account than the tap’s', async () => {
+    // THE CASE. Account 5151 taps «Кабинет» on a phone whose shared cookie store
+    // holds account 4242's session. A key for the session would open 4242's
+    // cabinet in 5151's browser.
+    const h = harness({ account: ACCOUNT, telegramId: '4242' });
+    expect(await ask(h.app, signedLaunchData(5151))).toMatchObject({
+      status: 409,
+      body: { message: 'LAUNCH_ACCOUNT_MISMATCH' },
+    });
+    expect(h.issueBotSigninToken).not.toHaveBeenCalled();
+  });
+
+  it('asks for the launch data, and issues nothing without it', async () => {
+    const h = harness({ account: ACCOUNT });
+    expect(await ask(h.app, null)).toMatchObject({ status: 401, body: { message: 'LAUNCH_DATA_REQUIRED' } });
+    expect(h.getSession).not.toHaveBeenCalled();
+    expect(h.issueBotSigninToken).not.toHaveBeenCalled();
+  });
+
+  it('never trusts an unsigned id: launch data signed with another token is refused', async () => {
+    // The user id in it matches the session — only the signature is wrong. An
+    // id read without checking the HMAC would pass this; the route must not.
+    const h = harness({ account: ACCOUNT, telegramId: '4242' });
+    expect(await ask(h.app, signedLaunchData(4242, { token: '999:not-our-bot' }))).toMatchObject({
+      status: 401,
+      body: { message: 'LAUNCH_DATA_INVALID' },
+    });
+    expect(h.issueBotSigninToken).not.toHaveBeenCalled();
+  });
+
+  it('refuses launch data past its 24-hour window', async () => {
+    const h = harness({ account: ACCOUNT, telegramId: '4242' });
+    const dayAndAMinuteAgo = Math.floor(Date.now() / 1000) - 86_400 - 60;
+    expect(await ask(h.app, signedLaunchData(4242, { authDate: dayAndAMinuteAgo }))).toMatchObject({
+      status: 401,
+      body: { message: 'LAUNCH_DATA_INVALID' },
+    });
+  });
+
+  it('issues nothing when it has no bot token to check the launch data with', async () => {
+    const h = harness({ account: ACCOUNT, botToken: null });
+    expect(await ask(h.app)).toMatchObject({ status: 503 });
     expect(h.issueBotSigninToken).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,11 @@
  *   - `/auth/open`, where that address lands. Inside Telegram's in-app browser
  *     on Android it must NOT spend the key but hand it to the default browser;
  *     anywhere else it IS the browser, and the key goes to the home page.
+ *
+ * And whose key: the request carries the tap's launch data, and when the
+ * session is another Telegram account's (one app, several accounts, one cookie
+ * store) the page offers to sign in as the account that tapped — on a tap,
+ * never by itself.
  */
 
 import { act } from 'react'
@@ -23,7 +28,12 @@ const ANDROID_WEBVIEW =
 const IPHONE_SAFARI =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
 
-const getBrowserKey = vi.fn<() => Promise<{ key: string; expiresAt: string | null }>>()
+const LAUNCH = `query_id=AAE&user=${encodeURIComponent(JSON.stringify({ id: 5151, first_name: 'Anna' }))}&auth_date=1&hash=ab`
+
+const getBrowserKey = vi.fn<(initData: string) => Promise<{ key: string; expiresAt: string | null }>>()
+const bootstrapTelegram = vi.fn<(initData: string) => Promise<{ ok: boolean }>>()
+const invalidateQueries = vi.fn<(filters: unknown) => Promise<void>>()
+const launch = vi.hoisted(() => ({ value: null as string | null }))
 const openExternalUrl = vi.fn<(url: string) => void>()
 const navigate = vi.fn<(to: string) => void>()
 const platform = vi.hoisted(() => ({ value: 'android' as string | null }))
@@ -33,9 +43,17 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'ru' } }),
 }))
 vi.mock('react-router', () => ({ useNavigate: () => navigate }))
-vi.mock('@/lib/api-client', () => ({ getBrowserKey: () => getBrowserKey() }))
+vi.mock('@/lib/api-client', () => ({
+  getBrowserKey: (initData: string) => getBrowserKey(initData),
+  bootstrapTelegram: (initData: string) => bootstrapTelegram(initData),
+}))
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries }) }))
+vi.mock('@/hooks/use-session', () => ({ SESSION_QUERY_KEY: ['session'] }))
 vi.mock('@/lib/utils', () => ({ openExternalUrl: (url: string) => openExternalUrl(url) }))
-vi.mock('@/lib/telegram-launch-params', () => ({ readTelegramLaunchPlatform: () => platform.value }))
+vi.mock('@/lib/telegram-launch-params', () => ({
+  readTelegramLaunchPlatform: () => platform.value,
+  readTelegramLaunchInitData: () => launch.value,
+}))
 vi.mock('../src/features/auth/leave-page', () => leave)
 
 const { default: OpenInBrowserPage } = await import('../src/features/auth/open-in-browser-page')
@@ -67,7 +85,10 @@ function setUserAgent(ua: string): void {
 beforeEach(() => {
   vi.clearAllMocks()
   platform.value = 'android'
+  launch.value = LAUNCH
   getBrowserKey.mockResolvedValue({ key: KEY, expiresAt: null })
+  bootstrapTelegram.mockResolvedValue({ ok: true })
+  invalidateQueries.mockResolvedValue(undefined)
   window.history.replaceState({}, '', '/')
 })
 
@@ -126,6 +147,59 @@ describe('/open-in-browser — the Mini App page «Кабинет» opens', () =
     await settle()
     act(() => el.querySelector<HTMLButtonElement>('[data-open-in-browser-stay]')?.click())
     expect(navigate).toHaveBeenCalledWith('/dashboard')
+  })
+})
+
+function refusal(status: number, message: string): Error & { response: unknown } {
+  return Object.assign(new Error(String(status)), { response: { status, data: { message } } })
+}
+
+describe('/open-in-browser — whose key', () => {
+  it('asks with the launch data of the tap', async () => {
+    render(<OpenInBrowserPage />)
+    await settle()
+    expect(getBrowserKey).toHaveBeenCalledWith(LAUNCH)
+  })
+
+  it('offers to sign in as the account that tapped when the session is another one — and waits for the tap', async () => {
+    // Account 5151 tapped «Кабинет»; the app's shared cookie store holds another
+    // account's session, and the server refused to key that session.
+    getBrowserKey.mockRejectedValueOnce(refusal(409, 'LAUNCH_ACCOUNT_MISMATCH'))
+    const el = render(<OpenInBrowserPage />)
+    await settle()
+    expect(el.querySelector('[data-testid="open-in-browser"]')?.getAttribute('data-state')).toBe('mismatch')
+    expect(el.querySelector('[role="alert"]')?.textContent).toBe('openInBrowser.mismatchBody')
+    expect(el.querySelector('[data-open-in-browser]')).toBeNull()
+    // Never by itself: launch data can also arrive in a crafted link.
+    expect(bootstrapTelegram).not.toHaveBeenCalled()
+    expect(openExternalUrl).not.toHaveBeenCalled()
+
+    const switchButton = el.querySelector<HTMLButtonElement>('[data-open-in-browser-switch]')
+    expect(switchButton?.textContent).toBe('openInBrowser.switchAs')
+    act(() => switchButton?.click())
+    await settle()
+    // The server checks the HMAC before it signs anybody in; the page only asks.
+    expect(bootstrapTelegram).toHaveBeenCalledWith(LAUNCH)
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['session'] })
+    expect(el.querySelector('[data-testid="open-in-browser"]')?.getAttribute('data-state')).toBe('ready')
+  })
+
+  it('asks to reopen from the bot when there is no launch data, and asks the server nothing', async () => {
+    launch.value = null
+    const el = render(<OpenInBrowserPage />)
+    await settle()
+    expect(el.querySelector('[data-testid="open-in-browser"]')?.getAttribute('data-state')).toBe('relaunch')
+    expect(el.querySelector('[role="alert"]')?.textContent).toBe('openInBrowser.relaunchBody')
+    expect(getBrowserKey).not.toHaveBeenCalled()
+  })
+
+  it('asks to reopen from the bot when the server will not take the launch data', async () => {
+    // Past its 24 hours, say — a retry would send the same bytes to the same refusal.
+    getBrowserKey.mockRejectedValueOnce(refusal(401, 'LAUNCH_DATA_INVALID'))
+    const el = render(<OpenInBrowserPage />)
+    await settle()
+    expect(el.querySelector('[data-testid="open-in-browser"]')?.getAttribute('data-state')).toBe('relaunch')
+    expect(el.querySelector('[data-open-in-browser-retry]')).toBeNull()
   })
 })
 
