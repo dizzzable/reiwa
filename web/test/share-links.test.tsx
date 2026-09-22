@@ -105,6 +105,22 @@ describe('the code a share link carries', () => {
     expect(seen).toEqual({ state: 'unavailable' })
   })
 
+  it('shows no link at all until the summary says which mode this is', async () => {
+    // Answering from the session while the summary was in flight put the
+    // permanent code on screen under «только по приглашениям» — the very link
+    // the platform refuses — for as long as the summary took.
+    api.getReferralSummary.mockReturnValue(new Promise(() => undefined))
+    await mount()
+    expect(seen).toEqual({ state: 'pending' })
+    expect(api.createReferralInvite).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the permanent code when the summary fails — as before it was asked', async () => {
+    api.getReferralSummary.mockRejectedValue(new Error('panel down'))
+    await mount()
+    expect(seen).toMatchObject({ state: 'ready', telegramLink: 'https://t.me/reiwa_bot?start=ref_session-id-7' })
+  })
+
   it('makes both links the website one without a bot username', async () => {
     branding.botUsername = null
     api.getReferralSummary.mockResolvedValue({ referralCode: 'reiwa-id-1' })

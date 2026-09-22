@@ -62,6 +62,14 @@ export function useShareLinks(): ShareLinks {
     retry: false,
   })
 
+  // Not before the summary has said which mode this is: answering from the
+  // session meanwhile showed the permanent code under «только по
+  // приглашениям» until it arrived — on «Партнёрка», which does not wait for
+  // the summary itself, long enough to copy. A summary that FAILS still falls
+  // through to the permanent code below: without it this link has never
+  // needed the panel, and the ordinary mode is the one nearly everyone runs.
+  if (summary.isPending) return { state: 'pending' }
+
   let code: string
   if (needsInvite) {
     if (invite.isPending) return { state: 'pending' }
