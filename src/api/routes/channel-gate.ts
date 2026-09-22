@@ -40,7 +40,7 @@ import { createFlexibleSessionMiddleware, type AuthRequest } from "../middleware
  *   GET  /api/v1/channel-gate
  *   POST /api/v1/channel-gate/check        body: {} (ignored)
  *
- *   200 { "status": "off" | "subscribed" | "not-subscribed" | "unverified",
+ *   200 { "status": "off" | "subscribed" | "not-subscribed" | "unverified" | "exempt",
  *         "joinUrl": string | null }
  *       `Cache-Control: no-store` — the answer is about one person, right now.
  *

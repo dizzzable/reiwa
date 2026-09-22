@@ -70,8 +70,13 @@ export class UserNamespace {
    * brand-new Telegram user under platform `INVITED` / `REG_BLOCKED`
    * mode (so the bot shows a banner instead of bootstrapping the user).
    */
-  exists(identity: UserIdentity): Promise<{ exists: boolean }> {
-    return this.transport.request<{ exists: boolean }>(
+  /**
+   * `createdAt` (ISO) is the account's creation — what «Проверять только
+   * новых» compares. Absent from a panel that predates it, which reads as
+   * «cannot date this account» and asks it as usual.
+   */
+  exists(identity: UserIdentity): Promise<{ exists: boolean; createdAt?: string | null }> {
+    return this.transport.request<{ exists: boolean; createdAt?: string | null }>(
       'GET',
       `/api/internal/user/exists?${identityQuery(identity)}`,
     );

@@ -105,6 +105,12 @@ export interface ChannelGatePolicy {
   readonly channelId?: string | number | null;
   readonly channelUsername?: string | null;
   readonly channelRecheck?: boolean;
+  /**
+   * «Проверять только новых»: an ISO instant, or `null`/absent to ask
+   * everyone. Set, only accounts created at or after it are asked; older
+   * ones pass every door (`predatesNewUsersOnly`).
+   */
+  readonly channelNewUsersSince?: string | null;
 }
 
 /** A public Telegram username, as `@name` and `t.me/name` carry it. */
@@ -196,7 +202,13 @@ export type ChannelGateVerdict =
   /** Telegram says the user is not in the chat: show the join prompt. */
   | 'not-subscribed'
   /** The gate is on but this user could not be checked: let them in. */
-  | 'unverified';
+  | 'unverified'
+  /**
+   * «Проверять только новых» is on and this account predates its moment:
+   * let them in without asking Telegram. Every door already lets in
+   * anything but `not-subscribed`, so this needs no handling of its own.
+   */
+  | 'exempt';
 
 export interface ChatMemberApi {
   getChatMember(chatId: string, userId: number): Promise<ChatMemberLike>;
@@ -248,6 +260,16 @@ export const FRESH_CHECK_WINDOW_MS = 2 * 1000;
 export const ALERT_INTERVAL_MS = 60 * 60 * 1000;
 /** One log line per condition per this long, per process. */
 export const LOG_INTERVAL_MS = 10 * 60 * 1000;
+/**
+ * «Проверять только новых»: how long a dated account's answer is kept. The
+ * answer cannot change for a given moment — the moment is part of the key —
+ * so this only bounds how long a process holds it.
+ */
+export const ACCOUNT_AGE_MEMO_MS = 6 * 60 * 60 * 1000;
+/** How long an account the panel could not date is asked as usual before the panel is asked again. */
+export const ACCOUNT_AGE_UNKNOWN_MEMO_MS = 60 * 1000;
+/** The panel's answer about an account's age is raced against this. */
+export const ACCOUNT_AGE_DEADLINE_MS = 3 * 1000;
 
 /**
  * Telegram's words for "this USER cannot be looked up here". TDLib answers
@@ -284,6 +306,10 @@ const memory = {
   /** Causes this process tried to claim an alert for, won or lost: a flood is not a store write per update. */
   alertAttempts: new TtlMap<string>({ maxEntries: 1_000 }),
   loggedAt: new TtlMap<string>({ maxEntries: 1_000 }),
+  /** «Проверять только новых», per user + moment: whether the account predates it. */
+  accountPredates: new TtlMap<string, boolean>({ maxEntries: MAX_USER_ENTRIES }),
+  /** One panel lookup of an account's age per user at a time. */
+  accountLookups: new Map<string, Promise<number | null>>(),
   running: new Map<string, RunningCheck>(),
   /** Store writes and alerts running in the background. */
   background: new Set<Promise<void>>(),
@@ -363,6 +389,10 @@ export async function resolveChannelGateVerdict(
   // The policy comes off the wire unvalidated (the admin transport casts the
   // body): anything but an object is no gate, never a throw.
   if (typeof policy !== 'object' || policy === null || policy.channelRequired !== true) return 'off';
+  // Before every pass and memory below: an old account is not a member who
+  // might have left — it is outside the gate altogether, so an unsubscribe
+  // must not bring the prompt back to it.
+  if (await predatesNewUsersOnly(policy, userId, deps)) return 'exempt';
   const chatId = resolveChannelChatId(policy);
   if (chatId === null) {
     inBackground(alertUnresolvable(deps, policy));
@@ -404,6 +434,89 @@ export async function resolveChannelGateVerdict(
   const answer = await verdict;
   if (fresh) memory.lastFresh.set(key, answer, FRESH_CHECK_WINDOW_MS);
   return answer;
+}
+
+// ── «Проверять только новых» ────────────────────────────────────────────────
+
+/** An ISO instant as epoch milliseconds; `null` for anything that is not one. */
+function parseInstant(value: unknown): number | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * Whether this account was created before the moment «Проверять только
+ * новых» names, and so passes as if the gate were off.
+ *
+ * ONLY EVER RELAXES THE GATE. Anything short of a dated account — the switch
+ * off, an unreadable moment, no admin client, no account yet, a panel that
+ * failed, took too long or predates the field — answers `false`, and the user
+ * is asked exactly as before the switch existed. A new Telegram user has no
+ * row until `/start` creates it, and is new by definition.
+ *
+ * «Account» means the panel's row, wherever it began: someone who registered
+ * on the website long ago and opens the bot for the first time today is the
+ * same customer, and is old (the owner's decision, 22.09.2026).
+ */
+async function predatesNewUsersOnly(
+  policy: ChannelGatePolicy,
+  userId: number,
+  deps: ChannelGateDeps,
+): Promise<boolean> {
+  const since = parseInstant(policy.channelNewUsersSince);
+  if (since === null) return false;
+  const key = `${userId}:${since}`;
+  const known = memory.accountPredates.get(key);
+  if (known !== undefined) return known;
+  const createdAt = await accountCreatedAt(userId, deps);
+  if (createdAt === null) {
+    // Kept briefly, so a panel outage or a user who never finishes /start is
+    // not a panel request per update.
+    memory.accountPredates.set(key, false, ACCOUNT_AGE_UNKNOWN_MEMO_MS);
+    return false;
+  }
+  const predates = createdAt < since;
+  memory.accountPredates.set(key, predates, ACCOUNT_AGE_MEMO_MS);
+  return predates;
+}
+
+/** The account's creation, in epoch ms, or `null` when the panel cannot say. One lookup per user at a time. */
+function accountCreatedAt(userId: number, deps: ChannelGateDeps): Promise<number | null> {
+  const key = String(userId);
+  const running = memory.accountLookups.get(key);
+  if (running !== undefined) return running;
+  const lookup = askPanelForAccountAge(userId, deps);
+  memory.accountLookups.set(key, lookup);
+  void lookup.finally(() => {
+    if (memory.accountLookups.get(key) === lookup) memory.accountLookups.delete(key);
+  });
+  return lookup;
+}
+
+/** `internal/user/exists`, raced against a deadline. Never throws. */
+async function askPanelForAccountAge(userId: number, deps: ChannelGateDeps): Promise<number | null> {
+  const client = deps.adminClient;
+  if (client === null) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const answer = await Promise.race([
+      client.user.exists({ telegramId: String(userId) }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`the panel did not date the account within ${ACCOUNT_AGE_DEADLINE_MS} ms`)),
+          ACCOUNT_AGE_DEADLINE_MS,
+        );
+      }),
+    ]);
+    return answer.exists === true ? parseInstant(answer.createdAt) : null;
+  } catch (err: unknown) {
+    logAtMostEvery(deps, 'warn', 'account-age', { err },
+      'Channel gate: the panel could not say how old an account is; «Проверять только новых» asks it as usual');
+    return null;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /** Asks Telegram, remembers what the answer allows, reports what it must. Never throws. */
@@ -595,6 +708,8 @@ export function resetChannelGateMemory(): void {
   memory.unknownRefusals.clear();
   memory.alertAttempts.clear();
   memory.loggedAt.clear();
+  memory.accountPredates.clear();
+  memory.accountLookups.clear();
   memory.running.clear();
   memory.background.clear();
   processStore.clear();

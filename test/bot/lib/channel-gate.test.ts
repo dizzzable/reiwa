@@ -917,3 +917,115 @@ describe('reporting', () => {
     await expect(settleChannelGateBackground()).resolves.toBeUndefined();
   });
 });
+
+// ── «Проверять только новых» ─────────────────────────────────────────────────
+
+describe('«Проверять только новых»', () => {
+  const SINCE = '2026-09-22T09:00:00.000Z';
+  const NEW_ONLY = { ...STRICT, channelNewUsersSince: SINCE } as const;
+  const OLD_ACCOUNT = { exists: true, createdAt: '2026-01-01T00:00:00.000Z' } as const;
+
+  type ExistsAnswer = { readonly exists: boolean; readonly createdAt?: string | null };
+
+  function withAccount(answer: () => Promise<ExistsAnswer>) {
+    const base = gateDeps();
+    const lookup = vi.fn(async (_identity: { readonly telegramId?: string }) => answer());
+    const deps: ChannelGateDeps = {
+      ...base.deps,
+      adminClient: {
+        system: { reportError: base.reportError },
+        user: { exists: lookup },
+      } as unknown as ChannelGateDeps['adminClient'],
+    };
+    return { deps, lookup, warn: base.warn };
+  }
+
+  it('lets an account created before the moment in, without asking Telegram', async () => {
+    const api = member('left');
+    const { deps, lookup } = withAccount(async () => OLD_ACCOUNT);
+    expect(await resolveChannelGateVerdict(api, NEW_ONLY, 42, deps)).toBe('exempt');
+    expect(api.getChatMember).not.toHaveBeenCalled();
+    expect(lookup).toHaveBeenCalledWith({ telegramId: '42' });
+  });
+
+  it('asks an account created at or after the moment exactly as before', async () => {
+    // ANTI-VACUITY for the one above: the same user, the same «left», one
+    // account that is new — at the moment itself, which counts as new.
+    const api = member('left');
+    const { deps } = withAccount(async () => ({ exists: true, createdAt: SINCE }));
+    expect(await resolveChannelGateVerdict(api, NEW_ONLY, 42, deps)).toBe('not-subscribed');
+    expect(api.getChatMember).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an old account in at a fresh door too: it is outside the gate, not a member who left', async () => {
+    // «Я подписался» and the Mini App's POST ask Telegram afresh under
+    // «Перепроверять подписку» ON. An old account must not be walled in by them
+    // after unsubscribing — that is the whole point of the switch.
+    const api = member('left');
+    const { deps } = withAccount(async () => OLD_ACCOUNT);
+    expect(await resolveChannelGateVerdict(api, NEW_ONLY, 42, deps, { fresh: true })).toBe('exempt');
+    expect(api.getChatMember).not.toHaveBeenCalled();
+  });
+
+  it('asks a Telegram user with no account yet: until /start creates one, they are new', async () => {
+    const api = member('left');
+    const { deps } = withAccount(async () => ({ exists: false, createdAt: null }));
+    expect(await resolveChannelGateVerdict(api, NEW_ONLY, 42, deps)).toBe('not-subscribed');
+  });
+
+  it('only ever relaxes: a panel that fails, or predates the field, changes nothing', async () => {
+    const failing = withAccount(async () => {
+      throw new Error('panel down');
+    });
+    expect(await resolveChannelGateVerdict(member('left'), NEW_ONLY, 42, failing.deps)).toBe('not-subscribed');
+    expect(failing.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining('«Проверять только новых» asks it as usual'),
+    );
+
+    // A panel before 22.09.2026 answers `exists` without the date.
+    const olderPanel = withAccount(async () => ({ exists: true }));
+    expect(await resolveChannelGateVerdict(member('left'), NEW_ONLY, 43, olderPanel.deps)).toBe('not-subscribed');
+  });
+
+  it('treats a panel that stalls past 3 s as unable to date the account', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { deps } = withAccount(() => new Promise<ExistsAnswer>(() => undefined));
+    const verdict = resolveChannelGateVerdict(member('left'), NEW_ONLY, 42, deps);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(await verdict).toBe('not-subscribed');
+  });
+
+  it('asks the panel once per account, not once per update', async () => {
+    const api = member('left');
+    const { deps, lookup } = withAccount(async () => OLD_ACCOUNT);
+    const concurrent = await Promise.all([
+      resolveChannelGateVerdict(api, NEW_ONLY, 42, deps),
+      resolveChannelGateVerdict(api, NEW_ONLY, 42, deps),
+      resolveChannelGateVerdict(api, NEW_ONLY, 42, deps),
+    ]);
+    expect(concurrent).toEqual(['exempt', 'exempt', 'exempt']);
+    expect(await resolveChannelGateVerdict(api, NEW_ONLY, 42, deps)).toBe('exempt');
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('dates the account again when the operator moves the moment', async () => {
+    // The moment is part of what is remembered: created 1 September is OLD
+    // against 22 September and NEW against 1 August.
+    const api = member('left');
+    const { deps, lookup } = withAccount(async () => ({ exists: true, createdAt: '2026-09-01T00:00:00.000Z' }));
+    expect(await resolveChannelGateVerdict(api, NEW_ONLY, 42, deps)).toBe('exempt');
+    const earlier = { ...STRICT, channelNewUsersSince: '2026-08-01T00:00:00.000Z' } as const;
+    expect(await resolveChannelGateVerdict(api, earlier, 42, deps)).toBe('not-subscribed');
+    expect(lookup).toHaveBeenCalledTimes(2);
+  });
+
+  it('never asks the panel while the switch is off', async () => {
+    const { deps, lookup } = withAccount(async () => OLD_ACCOUNT);
+    expect(await resolveChannelGateVerdict(member('member'), STRICT, 42, deps)).toBe('subscribed');
+    expect(await resolveChannelGateVerdict(member('member'), { ...STRICT, channelNewUsersSince: null }, 43, deps)).toBe(
+      'subscribed',
+    );
+    expect(lookup).not.toHaveBeenCalled();
+  });
+});
