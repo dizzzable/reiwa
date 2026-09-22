@@ -9,7 +9,8 @@ import { bootstrapTelegram, getBrowserKey } from '@/lib/api-client'
 import { readTelegramLaunchInitData, readTelegramLaunchPlatform } from '@/lib/telegram-launch-params'
 import { openExternalUrl } from '@/lib/utils'
 
-import { BROWSER_KEY_REFRESH_MS, browserOpenUrl, launchUserLabel, opensWithoutTap } from './browser-handoff'
+import { BROWSER_KEY_REFRESH_MS, browserOpenUrl, opensWithoutTap } from './browser-handoff'
+import { readLaunchAccount } from './launch-account'
 
 /**
  * `/open-in-browser` — what «Кабинет» in the bot opens: the Mini App, whose one
@@ -73,7 +74,7 @@ export default function OpenInBrowserPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const initData = useMemo(() => launchInitData(), [])
-  const launchName = useMemo(() => launchUserLabel(initData), [initData])
+  const launchName = useMemo(() => readLaunchAccount(initData)?.label ?? null, [initData])
   const [state, setState] = useState<KeyState>({ kind: 'loading' })
   const [opened, setOpened] = useState(false)
   const alive = useRef(true)

@@ -4,7 +4,6 @@ import {
   androidDefaultBrowserIntent,
   browserOpenUrl,
   isAndroidWebView,
-  launchUserLabel,
   opensWithoutTap,
   readBrowserKey,
   signInAddress,
@@ -148,21 +147,5 @@ describe('when the Mini App may open the browser without a tap', () => {
     for (const platform of ['android', 'ios', 'macos', 'weba', 'webk', 'unknown', null]) {
       expect(opensWithoutTap(platform), String(platform)).toBe(false)
     }
-  })
-})
-
-describe('the name on «Войти как …»', () => {
-  const launch = (user: unknown) => `query_id=Q&user=${encodeURIComponent(JSON.stringify(user))}&auth_date=1&hash=ab`
-
-  it('is the first name the launch data carries, else the username', () => {
-    expect(launchUserLabel(launch({ id: 1, first_name: 'Anna', username: 'anna' }))).toBe('Anna')
-    expect(launchUserLabel(launch({ id: 1, first_name: '  ', username: 'anna' }))).toBe('@anna')
-  })
-
-  it('is nothing — never a guess — when there is no readable name', () => {
-    expect(launchUserLabel(null)).toBeNull()
-    expect(launchUserLabel('query_id=Q&auth_date=1&hash=ab')).toBeNull()
-    expect(launchUserLabel('user=%7Bnot-json&hash=ab')).toBeNull()
-    expect(launchUserLabel(launch({ id: 1 }))).toBeNull()
   })
 })

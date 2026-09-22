@@ -1898,6 +1898,15 @@ export const en: RuDict = {
     relaunchBody:
       'Could not confirm which Telegram account opened this screen. Close it and tap “Cabinet” in the bot again.',
   },
+  launchChoice: {
+    title: 'Signed in as another account',
+    body: 'You are signed in here as {{session}}, but opened the app from the Telegram account {{launch}}. Whose account should open?',
+    switch: 'Sign in as {{name}}',
+    stay: 'Stay as {{name}}',
+    thisAccount: 'this account',
+    currentAccount: 'the current account',
+    failed: 'Could not sign in as this account. Try again, or close the app and open it from the bot again.',
+  },
   authOpen: {
     signingIn: 'Signing you in…',
     hopTitle: 'Opening your browser',
