@@ -1892,20 +1892,15 @@ export const en: RuDict = {
     failed: 'Could not prepare the sign-in. Try again, or stay in Telegram.',
     retry: 'Try again',
     mismatchBody:
-      'The cabinet here is signed in as another Telegram account than the one that tapped “Cabinet”. Sign in as this account to open its cabinet.',
-    switchAs: 'Sign in as {{name}}',
-    switchAsThis: 'Sign in as this Telegram account',
+      'The cabinet here is signed in as another Telegram account than the one that tapped “Cabinet”. Close this screen and tap “Cabinet” in the bot again — the cabinet of the account you tapped from will open.',
     relaunchBody:
       'Could not confirm which Telegram account opened this screen. Close it and tap “Cabinet” in the bot again.',
   },
-  launchChoice: {
-    title: 'Signed in as another account',
-    body: 'You are signed in here as {{session}}, but opened the app from the Telegram account {{launch}}. Whose account should open?',
-    switch: 'Sign in as {{name}}',
-    stay: 'Stay as {{name}}',
-    thisAccount: 'this account',
-    currentAccount: 'the current account',
-    failed: 'Could not sign in as this account. Try again, or close the app and open it from the bot again.',
+  launchSwitch: {
+    signingIn: 'Signing in…',
+    signingInAs: 'Signing in as {{name}}…',
+    failed: 'Could not sign in as the Telegram account that opened the app. Try again, or close the app and open it from the bot again.',
+    retry: 'Try again',
   },
   authOpen: {
     signingIn: 'Signing you in…',

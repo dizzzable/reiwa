@@ -12,7 +12,7 @@
  * checking on its own.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -24,13 +24,11 @@ import { RouteContentBoundary } from "@/components/layout/route-content-boundary
 import { AppBackground } from "@/components/layout/app-background";
 import { NetworkBg } from "@/components/ui/network-bg";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
-import { LaunchAccountChoice } from "@/features/auth/launch-account-choice";
+import { LaunchAccountSwitch } from "@/features/auth/launch-account-switch";
 import {
   isOtherTelegramAccount,
+  isTelegramWebview,
   readLaunchAccount,
-  readStayChoice,
-  rememberStay,
-  stayChoiceFor,
 } from "@/features/auth/launch-account";
 import { useBranding } from "@/lib/branding-provider";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
@@ -302,10 +300,10 @@ export default function StealthLayout() {
   // The Telegram account this launch names, READ AND NOT VERIFIED — only to
   // notice that the cookie session is somebody else's (see the gate below and
   // `features/auth/launch-account.ts`). The launch does not change during a
-  // document's life, so it is read once.
+  // document's life, so it is read once, and so is where the document runs.
   const launchInitData = useMemo(() => readTelegramLaunchInitData(), []);
   const launchAccount = useMemo(() => readLaunchAccount(launchInitData), [launchInitData]);
-  const [stayChoice, setStayChoice] = useState<string | null>(() => readStayChoice());
+  const inTelegramWebview = useMemo(() => isTelegramWebview(), []);
 
   if (isLoading) {
     return (
@@ -366,25 +364,18 @@ export default function StealthLayout() {
   // several accounts and gives them one WebView cookie store, and this shell
   // signs in from the cookie whenever there is one. So account B opening the
   // Mini App where account A signed in earlier was shown A's cabinet — and could
-  // pay into it — without a word. The shell now ASKS which one, before any gate
-  // below (the claim gate would otherwise send B to set A's password). Asked,
-  // never decided: launch data can arrive in a crafted link too, and a silent
-  // switch would move a signed-in visitor into whoever made the link.
+  // pay into it — without a word. Now the account that opened the app is the
+  // account shown: the shell signs in as it, before any gate below (the claim
+  // gate would otherwise send B to set A's password). Only in a Telegram
+  // client's webview — in a browser, launch data in the URL came from a link,
+  // and following it would move a signed-in customer into whoever made it.
   if (
     launchInitData !== null &&
     launchAccount !== null &&
-    isOtherTelegramAccount(session.telegramId, launchAccount) &&
-    stayChoice !== stayChoiceFor(launchAccount, String(session.telegramId))
+    inTelegramWebview &&
+    isOtherTelegramAccount(session.telegramId, launchAccount)
   ) {
-    const ownName = session.name?.trim() ?? "";
-    return (
-      <LaunchAccountChoice
-        sessionLabel={ownName.length > 0 ? ownName : session.username ? `@${session.username}` : null}
-        launch={launchAccount}
-        initData={launchInitData}
-        onStay={() => setStayChoice(rememberStay(launchAccount, String(session.telegramId)))}
-      />
-    );
+    return <LaunchAccountSwitch launch={launchAccount} initData={launchInitData} />;
   }
 
   // A signed Telegram Mini App launch already is an authentication credential.

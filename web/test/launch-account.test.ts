@@ -1,26 +1,17 @@
 // @vitest-environment jsdom
 
 /**
- * The Telegram account a Mini App launch names — read, not verified — and the
- * one question it lets the shell ask: is the cookie session somebody else's?
+ * The Telegram account a Mini App launch names — read, not verified — the one
+ * question it lets the shell ask (is the cookie session somebody else's?), and
+ * where the answer may switch accounts at all.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  isOtherTelegramAccount,
-  readLaunchAccount,
-  readStayChoice,
-  rememberStay,
-  stayChoiceFor,
-} from '../src/features/auth/launch-account'
+import { isOtherTelegramAccount, isTelegramWebview, readLaunchAccount } from '../src/features/auth/launch-account'
 
 const launchOf = (user: unknown) =>
   `query_id=Q&user=${encodeURIComponent(JSON.stringify(user))}&auth_date=1&hash=ab`
-
-beforeEach(() => {
-  window.sessionStorage.clear()
-})
 
 describe('the account a launch names', () => {
   it('is the user id as a string, with the first name for a label', () => {
@@ -66,14 +57,40 @@ describe('is the session another Telegram account?', () => {
   })
 })
 
-describe('«Остаться как …»', () => {
-  const anna = { id: '5151', label: 'Anna' }
+describe('where a launch may take over the session: a Telegram client’s webview', () => {
+  // A link can carry launch data anywhere; what it cannot bring is the client.
+  const ANDROID_WEBVIEW =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A.240805.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/128.0.6613.127 Mobile Safari/537.36'
+  const ANDROID_CHROME =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.127 Mobile Safari/537.36'
+  const DESKTOP_CHROME =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+  const originalUserAgent = navigator.userAgent
 
-  it('is remembered for this launch, for that exact pair of accounts', () => {
-    expect(readStayChoice()).toBeNull()
-    expect(rememberStay(anna, '4242')).toBe(stayChoiceFor(anna, '4242'))
-    expect(readStayChoice()).toBe(stayChoiceFor(anna, '4242'))
-    // Another session under the same launch is a new question.
-    expect(readStayChoice()).not.toBe(stayChoiceFor(anna, '7777'))
+  function setUserAgent(ua: string): void {
+    Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true })
+  }
+
+  afterEach(() => {
+    delete window.TelegramWebviewProxy
+    setUserAgent(originalUserAgent)
+  })
+
+  it('yes, with the bridge Telegram injects — iOS, Telegram Desktop', () => {
+    setUserAgent(DESKTOP_CHROME)
+    window.TelegramWebviewProxy = { postEvent: () => undefined }
+    expect(isTelegramWebview()).toBe(true)
+  })
+
+  it('yes, in an Android WebView, where the bridge may arrive after the page', () => {
+    setUserAgent(ANDROID_WEBVIEW)
+    expect(isTelegramWebview()).toBe(true)
+  })
+
+  it('no, in a browser — whatever the address says', () => {
+    setUserAgent(ANDROID_CHROME)
+    expect(isTelegramWebview()).toBe(false)
+    setUserAgent(DESKTOP_CHROME)
+    expect(isTelegramWebview()).toBe(false)
   })
 })

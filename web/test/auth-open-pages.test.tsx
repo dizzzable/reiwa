@@ -13,8 +13,9 @@
  *
  * And whose key: the request carries the tap's launch data, and when the
  * session is another Telegram account's (one app, several accounts, one cookie
- * store) the page offers to sign in as the account that tapped — on a tap,
- * never by itself.
+ * store) the server keys nobody. The shell switches accounts before this page
+ * draws (`launch-account-switch-shell.test.tsx`); the page itself only says to
+ * reopen «Кабинет», and switches nothing.
  */
 
 import { act } from 'react'
@@ -32,7 +33,6 @@ const LAUNCH = `query_id=AAE&user=${encodeURIComponent(JSON.stringify({ id: 5151
 
 const getBrowserKey = vi.fn<(initData: string) => Promise<{ key: string; expiresAt: string | null }>>()
 const bootstrapTelegram = vi.fn<(initData: string) => Promise<{ ok: boolean }>>()
-const invalidateQueries = vi.fn<(filters: unknown) => Promise<void>>()
 const launch = vi.hoisted(() => ({ value: null as string | null }))
 const openExternalUrl = vi.fn<(url: string) => void>()
 const navigate = vi.fn<(to: string) => void>()
@@ -47,8 +47,6 @@ vi.mock('@/lib/api-client', () => ({
   getBrowserKey: (initData: string) => getBrowserKey(initData),
   bootstrapTelegram: (initData: string) => bootstrapTelegram(initData),
 }))
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries }) }))
-vi.mock('@/hooks/use-session', () => ({ SESSION_QUERY_KEY: ['session'] }))
 vi.mock('@/lib/utils', () => ({ openExternalUrl: (url: string) => openExternalUrl(url) }))
 vi.mock('@/lib/telegram-launch-params', () => ({
   readTelegramLaunchPlatform: () => platform.value,
@@ -88,7 +86,6 @@ beforeEach(() => {
   launch.value = LAUNCH
   getBrowserKey.mockResolvedValue({ key: KEY, expiresAt: null })
   bootstrapTelegram.mockResolvedValue({ ok: true })
-  invalidateQueries.mockResolvedValue(undefined)
   window.history.replaceState({}, '', '/')
 })
 
@@ -161,27 +158,22 @@ describe('/open-in-browser — whose key', () => {
     expect(getBrowserKey).toHaveBeenCalledWith(LAUNCH)
   })
 
-  it('offers to sign in as the account that tapped when the session is another one — and waits for the tap', async () => {
+  it('when the session is another account, says to reopen «Кабинет» — and neither switches nor asks', async () => {
     // Account 5151 tapped «Кабинет»; the app's shared cookie store holds another
-    // account's session, and the server refused to key that session.
+    // account's session, and the server refused to key that session. In a
+    // Telegram webview the shell has switched before this page draws, so this
+    // is a page the shell would not switch for: launch data from a link.
     getBrowserKey.mockRejectedValueOnce(refusal(409, 'LAUNCH_ACCOUNT_MISMATCH'))
     const el = render(<OpenInBrowserPage />)
     await settle()
     expect(el.querySelector('[data-testid="open-in-browser"]')?.getAttribute('data-state')).toBe('mismatch')
     expect(el.querySelector('[role="alert"]')?.textContent).toBe('openInBrowser.mismatchBody')
     expect(el.querySelector('[data-open-in-browser]')).toBeNull()
-    // Never by itself: launch data can also arrive in a crafted link.
+    // No «Войти как …» either: the only button left is «Остаться в Telegram».
+    const buttons = [...el.querySelectorAll('button')]
+    expect(buttons.map((button) => button.hasAttribute('data-open-in-browser-stay'))).toEqual([true])
     expect(bootstrapTelegram).not.toHaveBeenCalled()
     expect(openExternalUrl).not.toHaveBeenCalled()
-
-    const switchButton = el.querySelector<HTMLButtonElement>('[data-open-in-browser-switch]')
-    expect(switchButton?.textContent).toBe('openInBrowser.switchAs')
-    act(() => switchButton?.click())
-    await settle()
-    // The server checks the HMAC before it signs anybody in; the page only asks.
-    expect(bootstrapTelegram).toHaveBeenCalledWith(LAUNCH)
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['session'] })
-    expect(el.querySelector('[data-testid="open-in-browser"]')?.getAttribute('data-state')).toBe('ready')
   })
 
   it('asks to reopen from the bot when there is no launch data, and asks the server nothing', async () => {

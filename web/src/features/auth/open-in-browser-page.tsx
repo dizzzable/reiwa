@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
 import { ExternalLink } from 'lucide-react'
 
-import { SESSION_QUERY_KEY } from '@/hooks/use-session'
-import { bootstrapTelegram, getBrowserKey } from '@/lib/api-client'
+import { getBrowserKey } from '@/lib/api-client'
 import { readTelegramLaunchInitData, readTelegramLaunchPlatform } from '@/lib/telegram-launch-params'
 import { openExternalUrl } from '@/lib/utils'
 
 import { BROWSER_KEY_REFRESH_MS, browserOpenUrl, opensWithoutTap } from './browser-handoff'
-import { readLaunchAccount } from './launch-account'
 
 /**
  * `/open-in-browser` — what «Кабинет» in the bot opens: the Mini App, whose one
@@ -29,13 +26,15 @@ import { readLaunchAccount } from './launch-account'
  *
  * ── Whose key ───────────────────────────────────────────────────────────────
  *
- * The shell signs in from its cookie when there is one, and Telegram keeps
- * several accounts in one app with ONE cookie store — so the session may be a
- * different Telegram account from the one that tapped. The key request carries
- * the tap's launch data, and the server refuses a mismatch
- * (`LAUNCH_ACCOUNT_MISMATCH`); this page then offers to sign in as the account
- * that tapped, by a tap of its own — never silently, since launch data can
- * also arrive in a crafted link.
+ * Telegram keeps several accounts in one app with ONE cookie store, so the
+ * session may be a different Telegram account from the one that tapped. The
+ * shell switches to the tapping account before this page draws
+ * (`LaunchAccountSwitch`), and the key request carries the tap's launch data so
+ * that the server can refuse a mismatch all the same (`LAUNCH_ACCOUNT_MISMATCH`).
+ * This page never switches by itself: the shell does not either where this
+ * page can still meet a mismatch — outside a Telegram webview, where launch
+ * data in the URL came from a link — and a fresh «Кабинет» from the bot goes
+ * through the shell again.
  */
 
 const BUTTON =
@@ -72,9 +71,7 @@ function launchInitData(): string | null {
 export default function OpenInBrowserPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const initData = useMemo(() => launchInitData(), [])
-  const launchName = useMemo(() => readLaunchAccount(initData)?.label ?? null, [initData])
   const [state, setState] = useState<KeyState>({ kind: 'loading' })
   const [opened, setOpened] = useState(false)
   const alive = useRef(true)
@@ -121,20 +118,6 @@ export default function OpenInBrowserPage() {
     [fetchKey],
   )
 
-  // Sign in as the account that tapped: the server verifies the launch data's
-  // HMAC and mints that account's session over the shared cookie.
-  const switchAccount = useCallback(async (): Promise<void> => {
-    if (initData === null) return
-    setState({ kind: 'loading' })
-    try {
-      await bootstrapTelegram(initData)
-      await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY })
-      await fetchKey()
-    } catch {
-      if (alive.current) setState({ kind: 'failed' })
-    }
-  }, [initData, queryClient, fetchKey])
-
   // Telegram Desktop needs no tap: there «Кабинет» is one press in the bot.
   useEffect(() => {
     if (state.kind !== 'ready' || autoOpened.current) return
@@ -155,21 +138,9 @@ export default function OpenInBrowserPage() {
         <h1 className="text-xl font-semibold">{t('openInBrowser.title')}</h1>
 
         {state.kind === 'mismatch' ? (
-          <>
-            <p role="alert" className="text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">
-              {t('openInBrowser.mismatchBody')}
-            </p>
-            <button
-              type="button"
-              data-open-in-browser-switch=""
-              onClick={() => void switchAccount()}
-              className={`${BUTTON} bg-[color:var(--brand-primary)] text-[color:var(--brand-primary-fg)]`}
-            >
-              {launchName === null
-                ? t('openInBrowser.switchAsThis')
-                : t('openInBrowser.switchAs', { name: launchName })}
-            </button>
-          </>
+          <p role="alert" className="text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">
+            {t('openInBrowser.mismatchBody')}
+          </p>
         ) : state.kind === 'relaunch' ? (
           <p role="alert" className="text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">
             {t('openInBrowser.relaunchBody')}

@@ -7,16 +7,20 @@
  * `tma-bootstrap-page.tsx`) — so account B opening the Mini App on a phone where
  * account A signed in earlier used to land in A's cabinet, silently.
  *
- * What is read here serves two things only: NOTICING that the session is
- * another Telegram account than the launch, and a name for the buttons that
- * ask which one to use. The switch itself is `/auth/telegram/bootstrap`, which
- * checks the bot token's HMAC before it signs anybody in. Never an identity,
- * never an authorisation.
+ * What is read here serves one thing only: NOTICING that the session is
+ * another Telegram account than the launch. The shell then signs in as the
+ * launch's account (`LaunchAccountSwitch`) through `/auth/telegram/bootstrap`,
+ * which checks the bot token's HMAC before it signs anybody in. Never an
+ * identity, never an authorisation.
  *
- * And never a silent switch: launch data can also arrive in a crafted link,
- * and a signed payload of somebody else's in one would move a signed-in
- * visitor into that person's account. So the shell ASKS (`LaunchAccountChoice`).
+ * Switched, not asked — the owner's decision (23.09.2026): the account that
+ * opened the app is the account shown. But only inside a Telegram client's
+ * webview (`isTelegramWebview`): launch data can also arrive in a crafted link,
+ * and followed in a browser it would move a signed-in customer into whoever
+ * made the link.
  */
+
+import { isAndroidWebView } from './browser-handoff'
 
 export interface LaunchAccount {
   /** The Telegram user id, as a string — the shape the session carries it in. */
@@ -58,36 +62,29 @@ export function isOtherTelegramAccount(
   return own.length > 0 && own !== launch.id
 }
 
-const STAY_KEY = 'reiwa_launch_account_stay'
-
-/** The pair a «Остаться как …» answers: this launch's account over this session's. */
-export function stayChoiceFor(launch: LaunchAccount, sessionTelegramId: string): string {
-  return `${launch.id}>${sessionTelegramId}`
-}
-
 /**
- * The stay chosen earlier in THIS launch, if any.
+ * Whether this document runs in a Telegram client's own webview — the only
+ * place a launch's account may take over the session.
  *
- * `sessionStorage`, so it lasts exactly as long as the Mini App's document —
- * the next launch asks again. Unreadable storage reads as «not chosen»; the
- * shell keeps its own copy in state, so the question is not repeated inside
- * one visit even then.
+ * NOT `isTelegramMiniAppSurface()`: that answers from the launch parameters in
+ * the URL, and a link carries those anywhere. A crafted link with somebody
+ * else's signed payload, opened in a browser where a customer is signed in, is
+ * exactly what must not switch accounts. What a link cannot bring with it:
+ *   - `window.TelegramWebviewProxy`, which Telegram for iOS and Telegram
+ *     Desktop (Windows, macOS) inject into the Mini App;
+ *   - an Android WebView. Telegram for Android defines its bridge from a
+ *     document-start script only where the WebView supports one, and later
+ *     where it does not, so the bridge alone would miss Mini Apps there.
+ * Telegram Web and Desktop for Linux frame the Mini App cross-site, where the
+ * SameSite=Lax session cookie is neither sent nor set: there is no session to
+ * take over.
+ *
+ * What this cannot tell apart is Telegram for Android's in-app browser, which
+ * has the same bridge and shares the Mini App's cookie store: a crafted link
+ * opened from a chat there does switch. Accepted with the decision above.
  */
-export function readStayChoice(): string | null {
-  try {
-    return sessionStorage.getItem(STAY_KEY)
-  } catch {
-    return null
-  }
-}
-
-/** Remembers a «Остаться как …» for the rest of this launch, and returns the pair it was for. */
-export function rememberStay(launch: LaunchAccount, sessionTelegramId: string): string {
-  const choice = stayChoiceFor(launch, sessionTelegramId)
-  try {
-    sessionStorage.setItem(STAY_KEY, choice)
-  } catch {
-    // Private mode and the like: the shell's state still holds it.
-  }
-  return choice
+export function isTelegramWebview(): boolean {
+  if (typeof window === 'undefined') return false
+  if (window.TelegramWebviewProxy !== undefined) return true
+  return typeof navigator !== 'undefined' && isAndroidWebView(navigator.userAgent)
 }
