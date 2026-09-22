@@ -189,7 +189,7 @@ export function OnboardingTourProvider({ children }: PropsWithChildren) {
     hintOnScreen,
     location.pathname,
     tour.shouldAutoStart,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps
+  ]);
 
   const replayTour = () => {
     tour.resetOnboarding();

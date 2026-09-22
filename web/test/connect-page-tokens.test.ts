@@ -104,7 +104,7 @@ describe("the connect screen borrows the cabinet's tokens", () => {
         (m) => m[1],
       ).filter(
         (value) =>
-          !/var\(--radius-(card|item)\)/.test(value) || /[\d.](px|rem|em)/.test(value),
+          !/var\(--radius-(card|item)\)/.test(value) || /[\d.](px|rem|em)\b/.test(value),
       );
       expect(corners, `${screen} pins a corner the theme cannot move`).toEqual([]);
     }

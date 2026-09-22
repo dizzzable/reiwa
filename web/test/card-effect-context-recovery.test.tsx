@@ -45,22 +45,27 @@ const control = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/components/reactbits/card-effect-manifest", () => {
-  const components = {
-    threads: () => {
-      const ref = useRef<HTMLCanvasElement>(null);
-      useEffect(() => {
-        control.mounts += 1;
-        if (!control.failContextCreation) return;
-        // What the browser does when `getContext()` is refused, at the moment it
-        // does it: inside the renderer's own mount effect, on a canvas that is
-        // already in the document. Nothing about this is dispatched later or
-        // from somewhere else, which is exactly why a listener that waits for
-        // the renderer to announce itself can never receive it.
-        ref.current?.dispatchEvent(new Event("webglcontextcreationerror"));
-      }, []);
-      return <canvas data-test-effect ref={ref} />;
-    },
+  // NAMED LIKE A COMPONENT, because it is one. React reads the capital, and
+  // so does `rules-of-hooks`: as `threads` the two hook calls below sat in a
+  // plain function as far as the linter could tell, which is the shape that
+  // takes a page down when it is not a test double. Nothing here ran linted
+  // until this repository had a linter at all.
+  const Threads = () => {
+    const ref = useRef<HTMLCanvasElement>(null);
+    useEffect(() => {
+      control.mounts += 1;
+      if (!control.failContextCreation) return;
+      // What the browser does when `getContext()` is refused, at the moment it
+      // does it: inside the renderer's own mount effect, on a canvas that is
+      // already in the document. Nothing about this is dispatched later or
+      // from somewhere else, which is exactly why a listener that waits for
+      // the renderer to announce itself can never receive it.
+      ref.current?.dispatchEvent(new Event("webglcontextcreationerror"));
+    }, []);
+    return <canvas data-test-effect ref={ref} />;
   };
+  // The manifest key stays lowercase: that is the effect id the layer looks up.
+  const components = { threads: Threads };
   const defaults: Record<string, Record<string, unknown>> = { threads: {} };
   return {
     CARD_EFFECT_COMPONENTS: components,

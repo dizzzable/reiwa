@@ -359,7 +359,6 @@ export function CardEffectLayer({
       ([entry]) => setVisible(entry.isIntersecting),
       { threshold: 0.01 },
     );
-    // eslint-disable-next-line react-doctor/no-adjust-state-on-prop-change
     io.observe(el);
     return () => io.disconnect();
   }, [active]);

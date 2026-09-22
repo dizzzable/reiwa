@@ -29,6 +29,10 @@
  * router itself built never contains these characters (they arrive
  * percent-encoded), so refusing them costs no genuine destination.
  */
+// The control characters ARE the point: this is the list a browser strips or
+// rewrites on its way to a URL, which is how «/%0a/evil» becomes a second
+// origin. Written as escapes, not as literal bytes.
+// eslint-disable-next-line no-control-regex
 const UNSAFE_IN_PATH = /[\\\x00-\x20\x7f]/
 
 /** A `next` value that is safe to navigate to, or `null`. */

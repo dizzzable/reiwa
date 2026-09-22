@@ -47,7 +47,10 @@ export default function FaqSection({ section, locale, defaultLocale }: Props) {
               {answer.length > 0 && (
                 <div
                   className="ls-muted mt-3 text-sm leading-relaxed"
-                  // eslint-disable-next-line react/no-danger
+                  // Deliberate: `sanitizeRichText` is the gate this passes through.
+                  // As prose rather than an eslint directive — `eslint-plugin-react`
+                  // has no ESLint 10 build, and a directive naming a rule ESLint
+                  // cannot find is itself an error.
                   dangerouslySetInnerHTML={{ __html: sanitizeRichText(answer) }}
                 />
               )}

@@ -48,7 +48,7 @@ jobs:
         run: npm run test:pbt
 
   web:
-    name: Web (typecheck + build)
+    name: Web (lint + typecheck + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -61,6 +61,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      # Errors only. The React-Compiler rules and the unused-var pass run as
+      # warnings while nobody has audited this tree for them; what gates the
+      # build is the set that costs a page - rules-of-hooks above all, which
+      # never ran here at all until this step existed.
+      - name: Lint
+        run: npm run lint
       - name: Typecheck
         run: npm run typecheck
       - name: Build
