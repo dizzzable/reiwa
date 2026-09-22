@@ -5,6 +5,7 @@ import { fetchSessionOrNull, useSession } from '@/hooks/use-session'
 import { bootstrapTelegram } from '@/lib/api-client'
 import { readTelegramLaunchInitData } from '@/lib/telegram-launch-params'
 
+import { isAxiosErrorLike, resolveBootstrapError } from './bootstrap-error'
 import { isOtherTelegramAccount, isTelegramWebview, readLaunchAccount, type LaunchAccount } from './launch-account'
 import { reloadPage } from './leave-page'
 
@@ -95,23 +96,29 @@ export function LaunchAccountSwitch({
 }) {
   const { t } = useTranslation()
   const started = useRef(false)
-  const [failed, setFailed] = useState(false)
+  /** What the failure screen says; `null` while switching. */
+  const [failed, setFailed] = useState<string | null>(null)
 
   const signIn = useCallback(async (): Promise<void> => {
     started.current = true
-    setFailed(false)
+    setFailed(null)
     try {
       await bootstrapTelegram(initData)
       const session = await fetchSessionOrNull()
       if (session === null || String(session.telegramId ?? '') !== launch.id) {
-        setFailed(true)
+        setFailed(t('launchSwitch.failed'))
         return
       }
       reloadPage()
-    } catch {
-      setFailed(true)
+    } catch (err: unknown) {
+      // A refusal (403, or 503 «сервис ограничен») says why, in the words the
+      // Mini App's first launch uses: reopening the app only repeats it, so
+      // «try again» alone would be a dead end. Anything else is a failure
+      // worth retrying.
+      const status = isAxiosErrorLike(err) ? err.response?.status : undefined
+      setFailed(status === 403 || status === 503 ? resolveBootstrapError(err, t) : t('launchSwitch.failed'))
     }
-  }, [initData, launch.id])
+  }, [initData, launch.id, t])
 
   useEffect(() => {
     // Once per mount: React runs effects twice in development.
@@ -122,13 +129,13 @@ export function LaunchAccountSwitch({
   return (
     <div
       data-testid="launch-account-switch"
-      data-state={failed ? 'failed' : 'switching'}
+      data-state={failed !== null ? 'failed' : 'switching'}
       className="relative flex min-h-dvh items-center justify-center bg-(--brand-bg-primary) px-6 text-[color:var(--brand-foreground)]"
     >
-      {failed ? (
+      {failed !== null ? (
         <div className="flex w-full max-w-sm flex-col gap-4 py-10">
           <p role="alert" className="text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">
-            {t('launchSwitch.failed')}
+            {failed}
           </p>
           <button
             type="button"

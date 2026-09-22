@@ -157,6 +157,21 @@ describe('a session that is another Telegram account than the launch', () => {
     expect(leave.reloadPage).toHaveBeenCalledTimes(1)
   })
 
+  it('a refusal says why — reopening the app would only repeat it', async () => {
+    // The account that opened the app may not sign in at all: invite-only
+    // registration, registration closed, a ban. The first launch explains that;
+    // the switch said only «try again».
+    api.bootstrapTelegram.mockRejectedValue(
+      Object.assign(new Error('403'), { response: { status: 403, data: { code: 'INVITE_REQUIRED' } } }),
+    )
+    const el = render()
+    await settle()
+    expect(switching(el)?.getAttribute('data-state')).toBe('failed')
+    expect(el.querySelector('[role="alert"]')?.textContent).toBe('bootstrap.inviteRequired')
+    expect(cabinet(el)).toBeNull()
+    expect(leave.reloadPage).not.toHaveBeenCalled()
+  })
+
   it('is switched in an Android WebView too, where the bridge may not be there yet', async () => {
     delete window.TelegramWebviewProxy
     setUserAgent(ANDROID_WEBVIEW)
