@@ -9,10 +9,13 @@ import {
   createUpgradeCheckout,
   getAllSubscriptions,
   getEnabledGateways,
+  getPlans,
   getQuote,
   getUpgradeOptions,
 } from "@/lib/api-client";
 import type { UpgradePlanOption } from "@/lib/api-client/subscription";
+import { TariffCard } from "@/features/plans/tariff-card";
+import { upgradeCardPlan } from "./upgrade-card-plan";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { useUpgradeStore } from "@/stores/upgrade.store";
@@ -181,12 +184,21 @@ function SelectPlan() {
     queryFn: () => getUpgradeOptions(selectedSubscriptionId!),
     enabled: !!selectedSubscriptionId,
   });
+  // The cards «Тарифы» and renewal draw, from the same catalog query they hold
+  // (same key, same freshness). An upgrade option carries only what this flow
+  // needs — no icon, description, prices or card look — so each is drawn as
+  // its catalog plan; see `upgradeCardPlan`.
+  const { data: catalog, isLoading: catalogLoading } = useQuery({
+    queryKey: ["plans"],
+    queryFn: getPlans,
+    staleTime: 300_000,
+  });
 
-  if (isLoading) {
+  if (isLoading || catalogLoading) {
     return (
-      <div className="px-5 space-y-2">
+      <div className="px-5 space-y-3">
         {[1, 2].map((i) => (
-          <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
+          <div key={i} className="theme-skeleton h-[150px] animate-pulse rounded-card" />
         ))}
       </div>
     );
@@ -204,28 +216,35 @@ function SelectPlan() {
     );
   }
 
+  const catalogById = new Map((catalog ?? []).map((plan) => [String(plan.id), plan]));
+
   return (
     <div className="space-y-3">
       <h2 className="px-5 text-base font-semibold">{t("upgrade.choosePlan")}</h2>
-      <div className="px-5 space-y-2">
-        {plans.map((plan) => (
-          <button
-            key={plan.id}
-            onClick={() => selectPlan(plan)}
-            className="w-full glass-card flex items-center justify-between gap-3 p-4 text-left transition-all hover:border-(--brand-primary)/30 active:scale-[0.98]"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-[color:var(--brand-foreground)]">{plan.name}</p>
-              <p className="text-xs text-[color:var(--brand-muted-foreground)]">
-                {plan.deviceLimit} {t("upgrade.devices")} ·{" "}
-                {plan.trafficLimit === null
-                  ? t("upgrade.unlimited")
-                  : `${plan.trafficLimit} ${t("upgrade.gb")}`}
-              </p>
-            </div>
-            <Check className="h-4 w-4 shrink-0 text-[color:var(--brand-muted-foreground)]" />
-          </button>
-        ))}
+      <div className="px-5 space-y-3">
+        {plans.map((option, idx) => {
+          const cardPlan = upgradeCardPlan(option, catalogById.get(String(option.id)));
+          return cardPlan ? (
+            <TariffCard key={option.id} plan={cardPlan} index={idx} onClick={() => selectPlan(option)} />
+          ) : (
+            <button
+              key={option.id}
+              onClick={() => selectPlan(option)}
+              className="w-full glass-card flex items-center justify-between gap-3 p-4 text-left transition-all hover:border-(--brand-primary)/30 active:scale-[0.98]"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-[color:var(--brand-foreground)]">{option.name}</p>
+                <p className="text-xs text-[color:var(--brand-muted-foreground)]">
+                  {option.deviceLimit} {t("upgrade.devices")} ·{" "}
+                  {option.trafficLimit === null
+                    ? t("upgrade.unlimited")
+                    : `${option.trafficLimit} ${t("upgrade.gb")}`}
+                </p>
+              </div>
+              <Check className="h-4 w-4 shrink-0 text-[color:var(--brand-muted-foreground)]" />
+            </button>
+          );
+        })}
       </div>
       <div className="px-5">
         <StadiumButton fullWidth variant="ghost" onClick={() => setStep("subscriptions")}>
