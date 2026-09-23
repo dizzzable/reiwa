@@ -31,6 +31,9 @@ describe("checkout refusal codes", () => {
     "PAYMENT_DRAFT_PLAN_NOT_AVAILABLE",
     // «для автоматического списания» refused for this purchase; the page offers the ordinary payment.
     "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE",
+    // The buyer holds a trial; the purchase converts it instead. The page re-reads
+    // the subscriptions and prices the conversion.
+    "TRIAL_UPGRADE_REQUIRED",
   ])("forwards %s", (code) => {
     expect(extractCheckoutRefusalCode(JSON.stringify({ code, message: "x" }))).toBe(code);
   });

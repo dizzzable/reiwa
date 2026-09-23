@@ -110,6 +110,11 @@ const CHECKOUT_ERROR_CODES = new Set([
   // subscriptions, or approval switched off since the list loaded). Nothing
   // was created; the page offers the ordinary payment instead.
   "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE",
+  // The buyer holds a trial, so the panel will not create a second
+  // subscription: the purchase converts the trial instead (an UPGRADE). The
+  // page re-reads the subscriptions and prices the conversion. Also forwarded
+  // by `/partner/pay`, where the same draft guard answers a balance payment.
+  "TRIAL_UPGRADE_REQUIRED",
 ]);
 
 /** Abandon refusals, reported by rezeis as 409. */

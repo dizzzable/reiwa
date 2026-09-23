@@ -27,6 +27,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   getPlans: vi.fn(),
   getActionPolicy: vi.fn(),
+  // No trial here, so the purchase creates a subscription (`lib/trial-conversion`).
+  getAllSubscriptions: vi.fn(async () => ({ subscriptions: [] })),
+  getUpgradeOptions: vi.fn(),
 }));
 
 const navigate = vi.hoisted(() => vi.fn());

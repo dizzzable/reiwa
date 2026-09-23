@@ -77,6 +77,16 @@ describe("offersAutopay", () => {
     expect(offersAutopay({ gatewayType: "PLATEGA", autopay: false, purchase: monthly })).toBe(false);
   });
 
+  // Buying beside a trial converts it: an UPGRADE, on which the panel refuses a
+  // provider subscription. ЮKassa saves a card on any purchase, so it stays.
+  it("offers no provider subscription on a change of plan, and still ЮKassa's", () => {
+    const change = { ...monthly, planChange: true };
+    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: change })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: change })).toBe(false);
+    expect(offersAutopay({ gatewayType: "YOOKASSA", autopay: true, purchase: change })).toBe(true);
+    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: { ...monthly, planChange: false } })).toBe(true);
+  });
+
   it("offers RollyPay's option on its own periods only", () => {
     expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: monthly })).toBe(true);
     expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: { ...monthly, durationDays: 60 } })).toBe(false);

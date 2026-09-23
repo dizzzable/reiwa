@@ -28,6 +28,7 @@ import {
   isSubscriptionLimitReached,
   notifySubscriptionLimitReached,
 } from "@/lib/subscription-limit";
+import { trialToConvert } from "@/lib/trial-conversion";
 import { cn } from "@/lib/utils";
 import { ReiwaLogo } from "@/components/ui/reiwa-logo";
 import { SubscriptionCarousel } from "./components/subscription-carousel";
@@ -278,7 +279,10 @@ export default function DashboardPage() {
     door.openFromTap(activeSubscription);
   };
 
-  const buyLimitReached = isSubscriptionLimitReached(actionPolicy);
+  // Beside a trial «Купить» converts it (`lib/trial-conversion`), which needs no
+  // free slot: the catalogue it opens is what the trial can become.
+  const buyLimitReached =
+    trialToConvert(allSubsData?.subscriptions) === null && isSubscriptionLimitReached(actionPolicy);
 
   const handleBuy = () => {
     if (purchasesBlocked) return;

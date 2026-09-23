@@ -17,6 +17,7 @@ import { formatDate, getDaysLeft } from '@/lib/utils'
 import { toast } from 'sonner'
 import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
 import { canRenewSubscription } from '@/features/dashboard/components/subscription-action-policy'
+import { useTrialToConvert } from '@/lib/trial-conversion'
 
 export default function SubscriptionPage() {
   const navigate = useNavigate()
@@ -42,6 +43,10 @@ export default function SubscriptionPage() {
   const isExpiringSoon = daysLeft !== null && daysLeft <= 3 && (sub?.status === 'ACTIVE' || sub?.status === 'LIMITED')
   const canRenew = canRenewSubscription(sub ?? null, false, policy?.canRenew)
   const trialRenewalReason = sub?.isTrial === true ? t('renewal.reason.trial') : null
+  // Beside a trial a purchase converts it (`lib/trial-conversion`): the panel
+  // then closes «buy another» (`canBuy`), yet buying is exactly what converts
+  // it, and it takes no free slot.
+  const { trial } = useTrialToConvert()
 
   function copyUrl() {
     if (!sub?.url) return
@@ -176,19 +181,19 @@ export default function SubscriptionPage() {
                 {trialRenewalReason}
               </p>
             )}
-            {policy?.canBuy && !policy.canRenew && (
+            {(policy?.canBuy === true || trial !== null) && policy?.canRenew !== true && (
               <StadiumButton
                 fullWidth size="lg"
                 onClick={() => navigate('/plans')}
                 icon={<ShoppingCart className="h-5 w-5" />}
                 glow
               >
-                {t('subscription.buyNew')}
+                {t(trial !== null ? 'subscription.buyForTrial' : 'subscription.buyNew')}
               </StadiumButton>
             )}
             {/* Capacity full: no Buy CTA, only an explanation. Server also
                 rejects NEW/ADDITIONAL checkout with SUBSCRIPTION_LIMIT_REACHED. */}
-            {isSubscriptionLimitReached(policy) && (
+            {trial === null && isSubscriptionLimitReached(policy) && (
               <TipCard tone="warning">
                 {typeof policy?.activeSubscriptionCount === 'number' &&
                 typeof policy?.maxSubscriptions === 'number'

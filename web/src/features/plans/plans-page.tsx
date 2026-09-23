@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { Shield, TriangleAlert } from 'lucide-react'
-import { getActionPolicy, getPlans } from '@/lib/api-client'
+import { Info, Shield, TriangleAlert } from 'lucide-react'
+import { getActionPolicy, getPlans, getUpgradeOptions } from '@/lib/api-client'
 import type { Plan } from '@/types/api'
 import { usePurchaseStore } from '@/stores/purchase.store'
 import {
@@ -10,6 +10,7 @@ import {
   notifySubscriptionLimitReached,
 } from '@/lib/subscription-limit'
 import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
+import { useTrialToConvert } from '@/lib/trial-conversion'
 import { BackButton } from '@/components/ui/back-button'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { TariffCard } from './tariff-card'
@@ -42,12 +43,35 @@ export default function PlansPage() {
     staleTime: 30_000,
   })
 
+  // A subscriber holding a trial buys by converting it (`lib/trial-conversion`):
+  // the purchase is an upgrade of the trial, so the list is what the trial can
+  // become — the same plans as below unless the operator narrowed its upgrade
+  // targets — and a slot is not needed. Same query as the upgrade page's.
+  const { trial, settled: trialKnown } = useTrialToConvert()
+  const {
+    data: upgradeOptions,
+    isLoading: targetsLoading,
+    isError: targetsFailed,
+    isFetching: targetsFetching,
+    refetch: refetchTargets,
+  } = useQuery({
+    queryKey: ['upgrade-options', trial?.id ?? null],
+    queryFn: () => getUpgradeOptions(trial!.id),
+    enabled: trial !== null,
+  })
+  const trialTargets =
+    upgradeOptions === undefined ? null : new Set(upgradeOptions.plans.map((option) => String(option.id)))
+
   // The public catalog endpoint already returns ONLY active, non-archived,
   // context-available plans. Free trials are CLAIMED (not bought) via the
   // dashboard TrialCta, so they must not appear in the paid "Buy" catalog;
   // paid trials (`trialFree === false`) stay purchasable.
-  const activePlans = plans.filter((p) => !(p.isTrial && p.trialFree))
-  const limitReached = isSubscriptionLimitReached(actionPolicy)
+  const activePlans = plans
+    .filter((p) => !(p.isTrial && p.trialFree))
+    .filter((p) => trial === null || trialTargets?.has(String(p.id)) === true)
+  const limitReached = trial === null && isSubscriptionLimitReached(actionPolicy)
+  const listLoading = isLoading || !trialKnown || (trial !== null && targetsLoading)
+  const listFailed = loadFailed || (trial !== null && targetsFailed && upgradeOptions === undefined)
 
   function handleSelect(plan: Plan) {
     if (limitReached) {
@@ -103,15 +127,36 @@ export default function PlansPage() {
           </div>
         ) : null}
 
-        {isLoading ? (
+        {/* Said before the choice, not after the payment: the plan picked here
+            replaces the trial rather than joining it. */}
+        {trial !== null ? (
+          <div
+            role="note"
+            className="flex items-start gap-3 rounded-2xl border border-(--brand-primary)/25 bg-(--brand-primary)/10 px-4 py-3"
+          >
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-primary)" />
+            <p className="text-xs leading-relaxed text-[color:var(--brand-foreground)]">
+              {t('plans.trialConversion')}
+            </p>
+          </div>
+        ) : null}
+
+        {listLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="theme-skeleton h-[150px] animate-pulse rounded-card" />
           ))
-        ) : loadFailed ? (
+        ) : listFailed ? (
           <div className="flex flex-col items-center gap-3 py-16 text-[color:var(--brand-muted-foreground)]">
             <Shield className="h-12 w-12 opacity-30" />
             <p>{t('plans.empty')}</p>
-            <StadiumButton variant="secondary" loading={isFetching} onClick={() => void refetch()}>
+            <StadiumButton
+              variant="secondary"
+              loading={isFetching || targetsFetching}
+              onClick={() => {
+                if (loadFailed) void refetch()
+                if (trial !== null && targetsFailed) void refetchTargets()
+              }}
+            >
               {t('common.retry')}
             </StadiumButton>
           </div>

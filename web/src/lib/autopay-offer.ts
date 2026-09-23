@@ -17,7 +17,9 @@
  *     or 365 days;
  *   - no one-time promo discount (`discountSource: "PURCHASE"`), which would be
  *     charged again every period; a personal discount is permanent and may be;
- *   - a new purchase or a renewal, never a trial.
+ *   - a new purchase or a renewal: never a trial, and never a change of plan —
+ *     which is what buying beside a trial is (`lib/trial-conversion.ts`); the
+ *     panel refuses a provider subscription on an UPGRADE.
  * The refusal stays the authority: this is the same rule written twice, and a
  * panel that changes it answers with the code, which the pages handle. RollyPay
  * also needs a tariff the operator named for that sum and period, which only
@@ -59,12 +61,14 @@ export function offersAutopay(input: {
     readonly durationDays: number;
     readonly price: Pick<PlanPrice, "currency" | "price" | "discountSource"> | undefined;
     readonly isTrial: boolean;
+    /** An UPGRADE rather than a subscription created or renewed. */
+    readonly planChange?: boolean;
   } | null;
 }): boolean {
   if (input.autopay !== true) return false;
   if (!isProviderSubscriptionGateway(input.gatewayType)) return true;
   const purchase = input.purchase;
-  if (purchase === null || purchase.isTrial) return false;
+  if (purchase === null || purchase.isTrial || purchase.planChange === true) return false;
   return isProviderPeriod(input.gatewayType, purchase.durationDays) && isRepeatablePrice(purchase.price);
 }
 

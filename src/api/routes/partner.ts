@@ -7,7 +7,7 @@ import { createFreshSessionCheck } from "../middleware/fresh-session-check.js";
 import { resolvePurchaseChannel, resolveUserIdentity } from "../middleware/user-identity.js";
 import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError, isUpstreamStatus } from "../lib/upstream-error.js";
-import { extractSubscriptionLimitCode } from "./payments-errors.js";
+import { extractCheckoutRefusalCode, extractSubscriptionLimitCode } from "./payments-errors.js";
 import { readBalanceHoldRefusal, readPartnerWithdrawalRefusal } from "./partner-errors.js";
 
 export function createPartnerRouter(deps: {
@@ -64,11 +64,22 @@ export function createPartnerRouter(deps: {
       // Surface the typed code so the SPA shows "limit reached", not a generic
       // balance failure.
       if (isUpstreamStatus(e, 400)) {
-        const code = extractSubscriptionLimitCode(describeUpstreamError(e).message);
+        const body = describeUpstreamError(e).message;
+        const code = extractSubscriptionLimitCode(body);
         if (code === "SUBSCRIPTION_LIMIT_REACHED") {
           res.status(400).json({
             code: "SUBSCRIPTION_LIMIT_REACHED",
             message: "Subscription limit reached",
+          });
+          return;
+        }
+        // Its sibling at the same draft guard: the buyer holds a trial, and the
+        // payment has to convert it. Typed, so the page re-prices the purchase
+        // as that conversion instead of reporting a failed balance payment.
+        if (extractCheckoutRefusalCode(body) === "TRIAL_UPGRADE_REQUIRED") {
+          res.status(400).json({
+            code: "TRIAL_UPGRADE_REQUIRED",
+            message: "The purchase converts the trial subscription",
           });
           return;
         }

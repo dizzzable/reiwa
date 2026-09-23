@@ -8,6 +8,7 @@ import {
   getActionPolicy,
   getQuote,
   createCheckout,
+  createUpgradeCheckout,
   getEnabledGateways,
   activatePromocode,
   getPaymentMethods,
@@ -58,6 +59,7 @@ import {
   isSubscriptionLimitReached,
   notifySubscriptionLimitReached,
 } from "@/lib/subscription-limit";
+import { isTrialConversionRequiredRefusal, useTrialToConvert } from "@/lib/trial-conversion";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -229,8 +231,11 @@ const GATEWAY_ICONS: Record<string, string> = {
 
 function SelectGateway({
   onSelect,
+  planChange,
 }: {
   onSelect: (gw: GatewayOption) => void;
+  /** The purchase converts the buyer's trial: an UPGRADE, see `offersAutopay`. */
+  planChange: boolean;
 }) {
   const { t } = useTranslation();
   const lastNav = usePurchaseStore((s) => s.lastNav);
@@ -256,6 +261,7 @@ function SelectGateway({
               durationDays: selectedDuration.days,
               price: selectedDuration.prices.find((price) => price.gatewayType === gw.type),
               isTrial: selectedPlan?.isTrial === true,
+              planChange,
             },
     });
   const yookassaEnabled = gateways.some((gw) => gw.type === "YOOKASSA" && gw.isActive !== false);
@@ -444,6 +450,22 @@ function useLeaveWithdrawnPlan(): () => void {
   };
 }
 
+/**
+ * The panel would not create a subscription: the buyer holds a trial this page
+ * did not know of — claimed in another tab, or after the list was read. Nothing
+ * was charged. Re-reading the list makes this purchase that trial's conversion,
+ * so the quote on screen is priced again as one and the buyer pays from it.
+ */
+function useNoticeTrialConversion(): () => void {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  return () => {
+    toast.warning(t("purchase.checkout.trialConversionRequired"), { duration: 6_000 });
+    void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
+    void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.actionPolicyRoot });
+  };
+}
+
 /** The notice a held partner balance puts under its disabled button. */
 const PURCHASE_BALANCE_HOLD_NOTICE_ID = "purchase-partner-balance-hold";
 
@@ -451,11 +473,18 @@ function QuoteView({
   purchaseType,
   slotIndex,
   slotIndexSource,
+  convertTrialId,
   refused,
 }: {
   purchaseType: CreationPurchaseType;
   slotIndex: number;
   slotIndexSource: SubscriptionProvisioningSlotIndexSource;
+  /**
+   * The trial this purchase converts (`lib/trial-conversion`), or null for a
+   * purchase that creates a subscription. Set, the quote and both payments are
+   * an UPGRADE of it, and there is no new subscription to wait for.
+   */
+  convertTrialId: string | null;
   /** The panel refused this very quote at checkout without saying why — see `CheckoutStep`. */
   refused: boolean;
 }) {
@@ -498,6 +527,7 @@ function QuoteView({
   const deviceLabel = selectedDevice
     ? t(`purchase.device.${selectedDevice.toLowerCase()}`)
     : null;
+  const noticeTrialConversion = useNoticeTrialConversion();
 
   const {
     data: quote,
@@ -509,9 +539,18 @@ function QuoteView({
       selectedPlan?.id,
       selectedDuration?.days,
       selectedGateway?.id,
+      convertTrialId,
     ],
     queryFn: () =>
-      getQuote(selectedPlan!.id, selectedDuration!.days, selectedGateway!.id),
+      convertTrialId === null
+        ? getQuote(selectedPlan!.id, selectedDuration!.days, selectedGateway!.id)
+        : getQuote(
+            selectedPlan!.id,
+            selectedDuration!.days,
+            selectedGateway!.id,
+            "UPGRADE",
+            convertTrialId,
+          ),
     enabled: !!(selectedPlan && selectedDuration && selectedGateway),
   });
 
@@ -528,19 +567,26 @@ function QuoteView({
   const verdict = unpriced ? readUnpricedQuote(quote, selectedPlan?.isTrial === true) : null;
   const withdrawn = verdict?.kind === "withdrawn";
   const leaveWithdrawnPlan = useLeaveWithdrawnPlan();
-  // No latch against StrictMode's second effect run: leaving resets the store,
-  // and without a plan the page renders nothing, so this step is gone before it.
+  // StrictMode runs a mount effect twice. This step used to mount with the page,
+  // and leaving reset the store before the second run could come; it now mounts
+  // once the subscription list is read (a trial changes what is priced), and in
+  // that commit the second run comes first. A ref survives the simulated
+  // remount — the upgrade review's latch, for the same reason.
+  const leftWithdrawnPlan = useRef(false);
   useEffect(() => {
-    if (withdrawn) leaveWithdrawnPlan();
+    if (!withdrawn || leftWithdrawnPlan.current) return;
+    leftWithdrawnPlan.current = true;
+    leaveWithdrawnPlan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [withdrawn]);
 
   const balanceMutation = useMutation({
     mutationFn: async () => {
       const result = await payWithPartnerBalance({
-        purchaseType,
+        purchaseType: convertTrialId === null ? purchaseType : "UPGRADE",
         planId: String(selectedPlan!.id),
         durationDays: selectedDuration!.days,
+        subscriptionId: convertTrialId ?? undefined,
         deviceType: selectedDevice ?? undefined,
       });
       if (!result.paymentId) {
@@ -549,13 +595,17 @@ function QuoteView({
       return { ...result, paymentId: result.paymentId };
     },
     onSuccess: (result) => {
-      saveSubscriptionProvisioningReceipt({
-        paymentId: result.paymentId,
-        purchaseType,
-        slotIndex,
-        slotIndexSource,
-        phase: "PROVISIONING",
-      });
+      // A converted trial is the subscription the buyer already has: nothing
+      // new appears for the dashboard to wait for.
+      if (convertTrialId === null) {
+        saveSubscriptionProvisioningReceipt({
+          paymentId: result.paymentId,
+          purchaseType,
+          slotIndex,
+          slotIndexSource,
+          phase: "PROVISIONING",
+        });
+      }
       toast.success(t("purchase.quote.balancePaid"));
       void queryClient.invalidateQueries({
         queryKey: subscriptionQueryKeys.all,
@@ -586,6 +636,10 @@ function QuoteView({
       if (holdMessage !== null) {
         toast.error(holdMessage);
         void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
+        return;
+      }
+      if (isTrialConversionRequiredRefusal(err)) {
+        noticeTrialConversion();
         return;
       }
       if (isSubscriptionLimitError(err)) {
@@ -638,6 +692,12 @@ function QuoteView({
   return (
     <div className="px-5 space-y-4">
       <h2 className="text-base font-semibold">{t("purchase.quote.title")}</h2>
+
+      {/* What is being paid for differs from the plain purchase, so it is said
+          where the price is: the trial becomes this plan, and its link stays. */}
+      {convertTrialId !== null && (
+        <TipCard tone="info">{t("purchase.quote.trialConversion", { plan: quote.planName })}</TipCard>
+      )}
 
       <div className="glass-card divide-y divide-border overflow-hidden">
         <Row label={t("purchase.quote.plan")} value={quote.planName} />
@@ -797,11 +857,14 @@ function CheckoutStep({
   purchaseType,
   slotIndex,
   slotIndexSource,
+  convertTrialId,
   onQuoteRefused,
 }: {
   purchaseType: CreationPurchaseType;
   slotIndex: number;
   slotIndexSource: SubscriptionProvisioningSlotIndexSource;
+  /** The trial this purchase converts, or null — see `QuoteView`. */
+  convertTrialId: string | null;
   /** Marks the current quote as refused by the panel without a reason. */
   onQuoteRefused: () => void;
 }) {
@@ -819,6 +882,7 @@ function CheckoutStep({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const leaveWithdrawnPlan = useLeaveWithdrawnPlan();
+  const noticeTrialConversion = useNoticeTrialConversion();
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -829,6 +893,21 @@ function CheckoutStep({
       // a one-off payment.
       const providerSubscription =
         selectedGateway?.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
+      if (convertTrialId !== null) {
+        // The trial's UPGRADE. A card is still charged or saved as on any
+        // purchase; a provider subscription is not offered for it (the panel
+        // refuses one on an UPGRADE), so no consent is sent for one.
+        return createUpgradeCheckout(
+          selectedPlan!.id,
+          selectedDuration!.days,
+          selectedGateway!.id,
+          convertTrialId,
+          selectedSavedPaymentMethodId,
+          interactiveYookassa ? savePaymentMethodConsent : undefined,
+          interactiveYookassa ? savePaymentMethodConsent : undefined,
+          selectedDevice ?? undefined,
+        );
+      }
       return createCheckout(
         selectedPlan!.id,
         selectedDuration!.days,
@@ -846,13 +925,17 @@ function CheckoutStep({
       // Telegram Mini App (no gesture on this path), so the buyer finishes from
       // the button on the return page — and that button needs this URL.
       savePendingCheckout(result.paymentId, result.checkoutUrl ?? null);
-      saveSubscriptionProvisioningReceipt({
-        paymentId: result.paymentId,
-        purchaseType,
-        slotIndex,
-        slotIndexSource,
-        phase: "AWAITING_PAYMENT",
-      });
+      // A converted trial stays the subscription it was; there is no new one for
+      // the dashboard to wait for.
+      if (convertTrialId === null) {
+        saveSubscriptionProvisioningReceipt({
+          paymentId: result.paymentId,
+          purchaseType,
+          slotIndex,
+          slotIndexSource,
+          phase: "AWAITING_PAYMENT",
+        });
+      }
       if (result.checkoutUrl) startCheckoutRedirect(result.checkoutUrl);
       // Navigate to payment return to poll status
       navigate(`/payment-return?paymentId=${result.paymentId}`, {
@@ -860,6 +943,12 @@ function CheckoutStep({
       });
     },
     onError: (err) => {
+      if (isTrialConversionRequiredRefusal(err)) {
+        // Back to the quote, which the re-read list turns into the conversion.
+        noticeTrialConversion();
+        goBack();
+        return;
+      }
       if (isSubscriptionLimitError(err)) {
         notifySubscriptionLimitReached(t);
         navigate("/dashboard", { replace: true });
@@ -944,7 +1033,12 @@ export default function PurchasePage() {
   // reason. Held here because the checkout step that learns it unmounts on the
   // way back to the quote step that has to show it.
   const [refusedQuoteKey, setRefusedQuoteKey] = useState<string | null>(null);
-  const quoteKey = `${String(selectedPlan?.id)}|${String(selectedDuration?.days)}|${String(selectedGateway?.id)}`;
+
+  // Beside a trial the purchase converts it (`lib/trial-conversion`): an UPGRADE
+  // of that subscription, which creates none and so takes no slot.
+  const { trial, settled: trialKnown } = useTrialToConvert();
+  const convertTrialId = trial?.id ?? null;
+  const quoteKey = `${String(selectedPlan?.id)}|${String(selectedDuration?.days)}|${String(selectedGateway?.id)}|${String(convertTrialId)}`;
 
   // Hard capacity gate: never let the wizard complete a NEW/ADDITIONAL buy
   // when the effective multi-sub limit is full (deep-link / stale store).
@@ -953,7 +1047,11 @@ export default function PurchasePage() {
     queryFn: () => getActionPolicy(),
     staleTime: 15_000,
   });
-  const limitReached = isSubscriptionLimitReached(actionPolicy);
+  // Not before the list is read: until then a trial holder at capacity — every
+  // trial holder where multi-subscription is off — would be sent away as "limit
+  // reached" from the very purchase that converts their trial.
+  const limitReached =
+    trialKnown && convertTrialId === null && isSubscriptionLimitReached(actionPolicy);
   const provisioningSlotIndex = actionPolicy?.activeSubscriptionCount ?? 0;
   const provisioningSlotIndexSource: SubscriptionProvisioningSlotIndexSource =
     typeof actionPolicy?.activeSubscriptionCount === "number"
@@ -988,6 +1086,16 @@ export default function PurchasePage() {
   // Block the entire purchase wizard at capacity (server also rejects checkout).
   if (limitReached || !selectedPlan) {
     return null;
+  }
+
+  // What this purchase is — a new subscription or the trial's conversion — is
+  // not known until the list is read. Usually it is already in the cache.
+  if (!trialKnown) {
+    return (
+      <div className="flex h-48 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      </div>
+    );
   }
 
   const steps = ["duration", "device", "gateway", "quote", "checkout"] as const;
@@ -1047,12 +1155,15 @@ export default function PurchasePage() {
           {step === "device" && selectedDuration && (
             <SelectDevice onSelect={selectDevice} />
           )}
-          {step === "gateway" && <SelectGateway onSelect={selectGateway} />}
+          {step === "gateway" && (
+            <SelectGateway onSelect={selectGateway} planChange={convertTrialId !== null} />
+          )}
           {step === "quote" && (
             <QuoteView
               purchaseType={purchaseType}
               slotIndex={provisioningSlotIndex}
               slotIndexSource={provisioningSlotIndexSource}
+              convertTrialId={convertTrialId}
               refused={refusedQuoteKey === quoteKey}
             />
           )}
@@ -1061,6 +1172,7 @@ export default function PurchasePage() {
               purchaseType={purchaseType}
               slotIndex={provisioningSlotIndex}
               slotIndexSource={provisioningSlotIndexSource}
+              convertTrialId={convertTrialId}
               onQuoteRefused={() => setRefusedQuoteKey(quoteKey)}
             />
           )}

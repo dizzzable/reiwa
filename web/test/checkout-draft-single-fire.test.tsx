@@ -138,6 +138,9 @@ describe("checkout draft auto-start under StrictMode", () => {
     });
 
     await mountInStrictMode(<PurchasePage />);
+    // The wizard reads the subscription list before its checkout step mounts:
+    // beside a trial the purchase would be that trial's conversion.
+    await settle();
 
     expect(api.createCheckout).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledTimes(1);

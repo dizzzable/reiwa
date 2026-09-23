@@ -28,6 +28,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   createCheckout: vi.fn(),
   getActionPolicy: vi.fn(),
+  // No trial here, so the purchase creates a subscription (`lib/trial-conversion`).
+  getAllSubscriptions: vi.fn(async () => ({ subscriptions: [] })),
   getQuote: vi.fn(),
   getEnabledGateways: vi.fn(),
   getPaymentMethods: vi.fn(),

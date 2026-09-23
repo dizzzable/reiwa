@@ -214,6 +214,8 @@ beforeEach(() => {
   });
   api.getPartnerInfo.mockResolvedValue(null);
   api.getPaymentMethods.mockResolvedValue({ methods: [] });
+  // No trial: a purchase creates a subscription (`lib/trial-conversion`).
+  api.getAllSubscriptions.mockResolvedValue({ subscriptions: [] });
 });
 
 afterEach(() => {
@@ -963,7 +965,8 @@ describe("under StrictMode, a withdrawal the step meets on mount is announced on
   }
 
   it("purchase quote", async () => {
-    queryClient.setQueryData(["quote", "plan-archived", 30, "YOOKASSA"], unpricedQuote("PLAN_NOT_AVAILABLE"));
+    // The last slot is the trial a purchase would convert — none here.
+    queryClient.setQueryData(["quote", "plan-archived", 30, "YOOKASSA", null], unpricedQuote("PLAN_NOT_AVAILABLE"));
     enterPurchase("quote");
 
     await mountStrict(<PurchasePage />);

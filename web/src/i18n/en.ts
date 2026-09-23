@@ -304,6 +304,7 @@ export const en: RuDict = {
     expiresInWarning_other: 'Subscription expires in {{count}} days. Renew now.',
     renewFull: 'Renew subscription',
     buyNew: 'Buy a new subscription',
+    buyForTrial: 'Buy a subscription',
     upgradePlan: 'Upgrade plan',
     manageDevices: 'Manage devices',
     limitReached:
@@ -323,6 +324,8 @@ export const en: RuDict = {
     trafficPerMonth: '{{value}} GB/mo',
     devicesLimit: 'up to {{count}}',
     emptyAvailable: 'No plans available',
+    trialConversion:
+      'You have a trial subscription. The plan you choose will replace it: your connection link stays the same, and the term starts when you pay.',
     trialBadge: 'Trial',
     unlimited: 'Unlimited',
     devicesSuffix_one: '{{count}} device',
@@ -398,9 +401,13 @@ export const en: RuDict = {
         'The payment method is saved, and when your subscription is about to end the renewal is charged to it automatically. You can turn this off at any time under Payment methods.',
       autopayProviderHint:
         'Your bank sets up a subscription over SBP: this amount is charged now and then at the start of each term. You can turn it off at any time under Payment methods.',
+      trialConversion:
+        'Your trial subscription will become the «{{plan}}» plan. Your connection link stays the same, and the term starts when you pay.',
     },
     checkout: {
       creating: 'Creating payment…',
+      trialConversionRequired:
+        'You have a trial subscription — this purchase will move it onto the chosen plan. Check the amount and pay again.',
       autopayNotAvailable: 'Automatic charging is not available for this purchase. Choose the ordinary payment.',
       error: 'Failed to create payment. Try again later.',
       planUnavailable: 'This plan is no longer available. Please choose one from the updated list.',

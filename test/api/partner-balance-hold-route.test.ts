@@ -203,6 +203,20 @@ describe('every other refusal keeps the generic answer', () => {
     expect(answer).toEqual({ status: 400, body: { code: 'SUBSCRIPTION_LIMIT_REACHED', message: 'Subscription limit reached' } });
   });
 
+  it('forwards the trial conversion the balance checkout asks for, typed', async () => {
+    const target = await stand({
+      status: 400,
+      body: { statusCode: 400, message: 'x', errorCode: 'TRIAL_UPGRADE_REQUIRED', code: 'TRIAL_UPGRADE_REQUIRED' },
+    });
+
+    const answer = await post(target, '/api/v1/partner/pay', PURCHASE);
+
+    expect(answer).toEqual({
+      status: 400,
+      body: { code: 'TRIAL_UPGRADE_REQUIRED', message: 'The purchase converts the trial subscription' },
+    });
+  });
+
   it('answers an older panel — whose filter strips the code — as before', async () => {
     // A panel from before the allowlist entry: the code and the end of the
     // hold never leave it, and its sentence is not forwarded either.

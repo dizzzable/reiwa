@@ -92,6 +92,8 @@ export const createUpgradeCheckout = (
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
+  /** Sent by the purchase wizard when the upgrade is a trial's conversion. */
+  deviceType?: string,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -100,6 +102,7 @@ export const createUpgradeCheckout = (
       gatewayType,
       purchaseType: "UPGRADE",
       subscriptionId,
+      ...(typeof deviceType === "string" ? { deviceType } : {}),
       source: getClientSource(),
       ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
         ? { savedPaymentMethodId }
