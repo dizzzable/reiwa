@@ -44,6 +44,7 @@ import type { Plan, PlanDuration } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import {
+  autopayRefusalMessage,
   isAutopayNotAvailableRefusal,
   isProviderSubscriptionGateway,
   offersAutopay,
@@ -231,11 +232,11 @@ const GATEWAY_ICONS: Record<string, string> = {
 
 function SelectGateway({
   onSelect,
-  planChange,
+  convertsTrial,
 }: {
   onSelect: (gw: GatewayOption) => void;
   /** The purchase converts the buyer's trial: an UPGRADE, see `offersAutopay`. */
-  planChange: boolean;
+  convertsTrial: boolean;
 }) {
   const { t } = useTranslation();
   const lastNav = usePurchaseStore((s) => s.lastNav);
@@ -250,6 +251,8 @@ function SelectGateway({
     staleTime: 300_000,
   });
   // Platega's option only where the provider can repeat this exact sum and term.
+  // A trial's conversion is an UPGRADE the provider can repeat: it is priced
+  // like a new purchase, and the later charges renew the converted trial.
   const autopayOffered = (gw: { type: string; autopay?: boolean }) =>
     offersAutopay({
       gatewayType: gw.type,
@@ -261,7 +264,8 @@ function SelectGateway({
               durationDays: selectedDuration.days,
               price: selectedDuration.prices.find((price) => price.gatewayType === gw.type),
               isTrial: selectedPlan?.isTrial === true,
-              planChange,
+              planChange: convertsTrial,
+              convertsTrial,
             },
     });
   const yookassaEnabled = gateways.some((gw) => gw.type === "YOOKASSA" && gw.isActive !== false);
@@ -894,9 +898,10 @@ function CheckoutStep({
       const providerSubscription =
         selectedGateway?.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
       if (convertTrialId !== null) {
-        // The trial's UPGRADE. A card is still charged or saved as on any
-        // purchase; a provider subscription is not offered for it (the panel
-        // refuses one on an UPGRADE), so no consent is sent for one.
+        // The trial's UPGRADE, paid every way a purchase is: a card charged or
+        // saved, or «для автоматического списания» — the panel makes the
+        // provider subscription on the conversion, and its later charges renew
+        // the converted trial.
         return createUpgradeCheckout(
           selectedPlan!.id,
           selectedDuration!.days,
@@ -904,7 +909,7 @@ function CheckoutStep({
           convertTrialId,
           selectedSavedPaymentMethodId,
           interactiveYookassa ? savePaymentMethodConsent : undefined,
-          interactiveYookassa ? savePaymentMethodConsent : undefined,
+          interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
           selectedDevice ?? undefined,
         );
       }
@@ -956,8 +961,11 @@ function CheckoutStep({
       }
       if (isAutopayNotAvailableRefusal(err)) {
         // Nothing was created. Back to the quote, where «Изменить» leads to the
-        // ordinary payment.
-        toast.error(t("purchase.checkout.autopayNotAvailable"));
+        // ordinary payment — except when another sign-up for this purchase still
+        // waits for the bank: paid beside it, the trial would convert twice, so
+        // the buyer is told to finish that one or let it lapse.
+        const refusal = autopayRefusalMessage(err);
+        toast.error(t(refusal.key, refusal.values));
         goBack();
         return;
       }
@@ -1156,7 +1164,7 @@ export default function PurchasePage() {
             <SelectDevice onSelect={selectDevice} />
           )}
           {step === "gateway" && (
-            <SelectGateway onSelect={selectGateway} planChange={convertTrialId !== null} />
+            <SelectGateway onSelect={selectGateway} convertsTrial={convertTrialId !== null} />
           )}
           {step === "quote" && (
             <QuoteView

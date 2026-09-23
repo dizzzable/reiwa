@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractAbandonRefusalCode,
   extractCheckoutRefusalCode,
+  extractCheckoutRefusalReason,
 } from "../../src/api/routes/payments-errors.js";
 
 /**
@@ -61,6 +62,29 @@ describe("checkout refusal codes", () => {
     ["an empty body", ""],
   ])("does not forward %s", (_name, body) => {
     expect(extractCheckoutRefusalCode(body)).toBeUndefined();
+  });
+});
+
+describe("checkout refusal reasons", () => {
+  const AUTOPAY = "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE";
+
+  it("forwards the reason of an autopay refusal, at the top level or nested", () => {
+    expect(extractCheckoutRefusalReason(JSON.stringify({ code: AUTOPAY, reason: "PENDING_SIGN_UP" }), AUTOPAY)).toBe(
+      "PENDING_SIGN_UP",
+    );
+    expect(
+      extractCheckoutRefusalReason(JSON.stringify({ message: { code: AUTOPAY, reason: "PLAN_CHANGE" } }), AUTOPAY),
+    ).toBe("PLAN_CHANGE");
+  });
+
+  it.each([
+    ["a reason outside the allowlist", JSON.stringify({ code: AUTOPAY, reason: "/api/internal/payments/checkout" }), AUTOPAY],
+    ["a reason that is not a string", JSON.stringify({ code: AUTOPAY, reason: { sql: "SELECT 1" } }), AUTOPAY],
+    ["a reason on a code that carries none", JSON.stringify({ code: "TRIAL_ALREADY_USED", reason: "PENDING_SIGN_UP" }), "TRIAL_ALREADY_USED"],
+    ["a body with no reason", JSON.stringify({ code: AUTOPAY }), AUTOPAY],
+    ["a non-JSON body", "<html>502 Bad Gateway</html>", AUTOPAY],
+  ])("does not forward %s", (_name, body, code) => {
+    expect(extractCheckoutRefusalReason(body, code)).toBeUndefined();
   });
 });
 

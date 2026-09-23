@@ -14,6 +14,7 @@ import { UpstreamError } from "../../core/errors/upstream-error.js";
 import {
   extractAbandonRefusalCode,
   extractCheckoutRefusalCode,
+  extractCheckoutRefusalReason,
   extractSubscriptionLimitCode,
   normalizeWireDecimal,
   resolveRenewalCheckoutError,
@@ -153,7 +154,11 @@ export function createPaymentsRouter(deps: {
           // anything they can do about it.
           const refusal = extractCheckoutRefusalCode(body);
           if (refusal !== undefined) {
-            res.status(400).json({ code: refusal, message: refusal });
+            // And its reason, where the page answers the reasons differently
+            // (a sign-up already under way, for «для автоматического
+            // списания»): allowlisted per code, nothing else from the body.
+            const reason = extractCheckoutRefusalReason(body, refusal);
+            res.status(400).json({ code: refusal, message: refusal, ...(reason !== undefined ? { reason } : {}) });
             return;
           }
         }

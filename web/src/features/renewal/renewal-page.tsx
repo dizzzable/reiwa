@@ -39,6 +39,7 @@ import {
   isAutopayNotAvailableRefusal,
   isProviderPeriod,
   isProviderSubscriptionGateway,
+  renewsOntoAnotherPlan,
 } from "@/lib/autopay-offer";
 import type { RenewalOptions } from "@/types/api";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
@@ -996,6 +997,7 @@ function SelectGateway() {
     selectedSavedPaymentMethodId,
     selectedSubscriptionIds,
     selectedDurations,
+    selectedPlans,
     setStep,
     goBack,
     navDirection,
@@ -1011,15 +1013,33 @@ function SelectGateway() {
     }
     return null;
   };
+  // The plan it buys: the one chosen at renewal, else the one the options
+  // priced — an archived plan's replacement among them.
+  const renewalPlanId = (subscriptionId: string): string | null => {
+    const chosen = selectedPlans[subscriptionId];
+    if (typeof chosen === "string" && chosen.length > 0) return chosen;
+    for (const [, data] of queryClient.getQueriesData<RenewalOptions>({ queryKey: ["renewal-options"] })) {
+      const planId = data?.items?.find((item) => item.subscriptionId === subscriptionId)?.planId;
+      if (typeof planId === "string" && planId.length > 0) return planId;
+    }
+    return null;
+  };
+  const currentPlanId = (subscriptionId: string): string | null =>
+    queryClient
+      .getQueryData<{ subscriptions?: Subscription[] }>(subscriptionQueryKeys.all)
+      ?.subscriptions?.find((subscription) => subscription.id === subscriptionId)?.plan?.id ?? null;
   // On Platega the provider repeats one sum for one subscription on its own
-  // period, so its option needs exactly one subscription on such a term. The
-  // price (kopecks, a promo) and add-ons are only known later; the panel
-  // refuses those, and the checkout says so.
+  // period, so its option needs exactly one subscription on such a term, and
+  // one it renews on the plan it is on: onto another plan the panel refuses it
+  // (`renewsOntoAnotherPlan`). The price (kopecks, a promo) and add-ons are
+  // only known later; the panel refuses those, and the checkout says so.
   const autopayOffered = (gw: { type: string; autopay?: boolean }): boolean => {
     if (gw.autopay !== true) return false;
     if (!isProviderSubscriptionGateway(gw.type)) return true;
     if (selectedSubscriptionIds.length !== 1) return false;
-    const days = renewalDays(selectedSubscriptionIds[0]!);
+    const subscriptionId = selectedSubscriptionIds[0]!;
+    if (renewsOntoAnotherPlan(currentPlanId(subscriptionId), renewalPlanId(subscriptionId))) return false;
+    const days = renewalDays(subscriptionId);
     return days !== null && isProviderPeriod(gw.type, days);
   };
   const renewalAddOns = useRenewalAddOnsEnabled();

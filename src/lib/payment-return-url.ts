@@ -23,7 +23,11 @@
  * If no destination can be built for the given context (e.g. neither
  * `BOT_USERNAME` nor `REIWA_DOMAIN` is configured), the function
  * returns `null`, signalling to callers that the upstream service should
- * fall back to its own default (the generic `${REZEIS_DOMAIN}/payments/result`).
+ * fall back to its own default: rezeis sends the payer to this cabinet's
+ * `/payment-return` when it knows the cabinet's address (what this cabinet
+ * publishes in `/api/v1/public-config`, else `REIWA_WEB_BASE_URL` or
+ * `MINIAPP_CUSTOM_URL` in the panel's environment), and otherwise to the
+ * panel's own `${REZEIS_DOMAIN}/payments/result`.
  */
 
 import type { ReiwaConfig } from "../config.js";

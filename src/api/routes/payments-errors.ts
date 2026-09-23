@@ -117,6 +117,37 @@ const CHECKOUT_ERROR_CODES = new Set([
   "TRIAL_UPGRADE_REQUIRED",
 ]);
 
+/**
+ * The reasons a checkout refusal may carry to the SPA, per code. Only
+ * `AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE` has any: one code for many reasons, and
+ * `PENDING_SIGN_UP` — another sign-up converting the same trial still waits for
+ * the bank — asks the buyer for the opposite of the rest (not the ordinary
+ * payment, which would convert the trial twice). The same list rezeis's
+ * exception filter lets through (`SAFE_REFUSAL_REASONS`); any other value, and
+ * everything else in the upstream body, stays here.
+ */
+const CHECKOUT_REFUSAL_REASONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  [
+    "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE",
+    new Set([
+      "NOT_APPROVED",
+      "GATEWAY",
+      "PURCHASE_TYPE",
+      "TRIAL",
+      "CURRENCY",
+      "DISCOUNT",
+      "DURATION",
+      "AMOUNT",
+      "ITEMS",
+      "ADD_ONS",
+      "ALREADY_ACTIVE",
+      "PENDING_SIGN_UP",
+      "PLAN",
+      "PLAN_CHANGE",
+    ]),
+  ],
+]);
+
 /** Abandon refusals, reported by rezeis as 409. */
 const ABANDON_ERROR_CODES = new Set([
   "PAYMENT_ALREADY_AT_PROVIDER",
@@ -148,6 +179,33 @@ function upstreamProductCode(body: string): string | undefined {
 export function extractCheckoutRefusalCode(body: string): string | undefined {
   const code = upstreamProductCode(body);
   return code !== undefined && CHECKOUT_ERROR_CODES.has(code) ? code : undefined;
+}
+
+/**
+ * The reason beside a forwarded checkout refusal `code`, when the upstream body
+ * carries one of the reasons allowed for that code; otherwise undefined.
+ */
+export function extractCheckoutRefusalReason(body: string, code: string): string | undefined {
+  const allowed = CHECKOUT_REFUSAL_REASONS.get(code);
+  if (allowed === undefined) return undefined;
+  const reason = upstreamProductReason(body);
+  return reason !== undefined && allowed.has(reason) ? reason : undefined;
+}
+
+/** Pulls a `reason` out of the shapes an admin-side error arrives in, like its `code`. */
+function upstreamProductReason(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as { reason?: unknown; message?: unknown };
+    if (typeof parsed.reason === "string") return parsed.reason;
+    const nested = parsed.message;
+    if (nested && typeof nested === "object" && "reason" in nested) {
+      const reason = (nested as { reason?: unknown }).reason;
+      if (typeof reason === "string") return reason;
+    }
+  } catch {
+    // Not JSON — no reason to find.
+  }
+  return undefined;
 }
 
 /** The abandon refusal in an upstream error body, if it is one we forward. */

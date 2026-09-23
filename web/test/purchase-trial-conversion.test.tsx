@@ -33,11 +33,19 @@ const api = vi.hoisted(() => ({
 }));
 const navigate = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), warning: vi.fn() }));
+/** Every message the page asked for, with the values it gave it. */
+const translated = vi.hoisted(() => [] as Array<[string, unknown]>);
 
 vi.mock("@/lib/api-client", () => api);
 vi.mock("react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "ru" } }),
+  useTranslation: () => ({
+    t: (key: string, values?: unknown) => {
+      translated.push([key, values]);
+      return key;
+    },
+    i18n: { language: "ru" },
+  }),
 }));
 vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/use-access-mode", () => ({
@@ -124,10 +132,71 @@ function button(label: string): HTMLButtonElement | undefined {
   );
 }
 
-async function tap(label: string): Promise<void> {
-  const target = button(label);
-  if (!target) throw new Error(`no "${label}" button on screen; it shows: ${text()}`);
+async function tap(label: string | HTMLButtonElement): Promise<void> {
+  const target = typeof label === "string" ? button(label) : label;
+  if (!target) throw new Error(`no "${String(label)}" button on screen; it shows: ${text()}`);
   act(() => target.click());
+  await settle();
+}
+
+const PLATEGA_WIRE = { type: "PLATEGA", displayName: "Platega", currency: "RUB", isActive: true, autopay: true };
+const AUTOPAY_CAPTION = "purchase.gateway.autopayCaption";
+
+/** Platega's option on the gateway step: the ordinary payment, or «для автоматического списания». */
+function plategaOption(autopay: boolean): HTMLButtonElement | undefined {
+  return [...(container?.querySelectorAll("button") ?? [])].find(
+    (candidate) =>
+      candidate.textContent?.includes("Platega") === true &&
+      candidate.textContent.includes(AUTOPAY_CAPTION) === autopay,
+  );
+}
+
+function autopayOption(): HTMLButtonElement {
+  const found = plategaOption(true);
+  if (!found) throw new Error(`no «для автоматического списания» on screen; it shows: ${text()}`);
+  return found;
+}
+
+function ordinaryOption(): HTMLButtonElement {
+  const found = plategaOption(false);
+  if (!found) throw new Error(`no ordinary Platega payment on screen; it shows: ${text()}`);
+  return found;
+}
+
+/**
+ * The gateway step for Plan P, 30 days, where Platega charges 299 RUB — a sum
+ * and a term the provider can repeat — and offers «для автоматического списания».
+ */
+async function mountGatewayStep(): Promise<void> {
+  api.getEnabledGateways.mockResolvedValue([PLATEGA_WIRE]);
+  api.getQuote.mockResolvedValue({ ...PRICED, gatewayType: "PLATEGA", basePrice: 299, finalPrice: 299 });
+  usePurchaseStore.setState({
+    step: "gateway",
+    lastNav: "forward",
+    selectedPlan: { id: "plan-p", name: "Plan P", type: "BOTH", durations: [], isTrial: false } as never,
+    selectedDuration: {
+      id: "d-30",
+      days: 30,
+      prices: [{ currency: "RUB", price: "299", gatewayType: "PLATEGA", discountSource: "NONE" }],
+    } as never,
+    selectedGateway: null,
+    selectedDevice: null,
+    selectedSavedPaymentMethodId: null,
+    savePaymentMethodConsent: false,
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <PurchasePage />
+      </QueryClientProvider>,
+    );
+  });
+  // Wait for the step to settle rather than for the option, so a step that
+  // offers none (or picks the one gateway itself) fails the test, not the mount.
+  await waitUntil(() => plategaOption(false) !== undefined || button(PAY) !== undefined);
   await settle();
 }
 
@@ -191,6 +260,7 @@ afterEach(() => {
   vi.clearAllMocks();
   api.getAllSubscriptions.mockReset();
   api.createCheckout.mockReset();
+  translated.length = 0;
 });
 
 describe("a purchase beside a trial", () => {
@@ -273,6 +343,87 @@ describe("a purchase beside a trial", () => {
     expect(api.createCheckout).toHaveBeenCalledTimes(1);
     expect(api.createCheckout.mock.calls[0]![7]).toBe("ADDITIONAL");
     expect(window.sessionStorage.getItem(RECEIPTS_KEY)).not.toBeNull();
+  }, 10_000);
+
+  // «для автоматического списания» on Platega/RollyPay is a subscription the
+  // provider repeats. The conversion is priced like a new purchase, and the
+  // panel makes the provider subscription on it; the later charges renew the
+  // converted trial.
+  it("offers «для автоматического списания» on the conversion and asks the panel for it", async () => {
+    api.getAllSubscriptions.mockResolvedValue({ subscriptions: [TRIAL] });
+
+    await mountGatewayStep();
+    await tap(autopayOption());
+    await waitUntil(() => button(PAY) !== undefined);
+    expect(text()).toContain("purchase.quote.autopayProviderHint");
+    await tap(PAY);
+    await waitUntil(() => navigate.mock.calls.length > 0);
+
+    expect(api.createCheckout).not.toHaveBeenCalled();
+    expect(api.createUpgradeCheckout).toHaveBeenCalledTimes(1);
+    expect(api.createUpgradeCheckout.mock.calls[0]).toEqual([
+      "plan-p",
+      30,
+      "PLATEGA",
+      "trial-1",
+      null,
+      undefined,
+      true,
+      undefined,
+    ]);
+  }, 10_000);
+
+  // The panel refuses a second sign-up converting the same trial while the first
+  // waits for the bank (`PENDING_SIGN_UP`). «Выберите обычную оплату» steered the
+  // buyer into paying beside it — two conversions of one trial, one of them held
+  // for a refund — so this refusal says to finish the first or let it lapse.
+  it("says a sign-up is already under way, not to pay the ordinary way, when the panel refuses a second", async () => {
+    api.getAllSubscriptions.mockResolvedValue({ subscriptions: [TRIAL] });
+    api.createUpgradeCheckout.mockRejectedValue({
+      response: { status: 400, data: { code: "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE", reason: "PENDING_SIGN_UP" } },
+    });
+
+    await mountGatewayStep();
+    await tap(autopayOption());
+    await waitUntil(() => button(PAY) !== undefined);
+    await tap(PAY);
+    await waitUntil(() => toast.error.mock.calls.length > 0);
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error.mock.calls[0]![0]).toBe("purchase.checkout.autopaySignUpPending");
+    // With the time it holds for, which the text names.
+    expect(translated).toContainEqual(["purchase.checkout.autopaySignUpPending", { minutes: 30 }]);
+  }, 10_000);
+
+  it.each([
+    ["names no reason (an older panel)", {}],
+    ["names another reason", { reason: "PLAN_CHANGE" }],
+  ])("keeps the ordinary-payment answer for a refusal that %s", async (_case, extra) => {
+    api.getAllSubscriptions.mockResolvedValue({ subscriptions: [TRIAL] });
+    api.createUpgradeCheckout.mockRejectedValue({
+      response: { status: 400, data: { code: "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE", ...extra } },
+    });
+
+    await mountGatewayStep();
+    await tap(autopayOption());
+    await waitUntil(() => button(PAY) !== undefined);
+    await tap(PAY);
+    await waitUntil(() => toast.error.mock.calls.length > 0);
+
+    expect(toast.error.mock.calls[0]![0]).toBe("purchase.checkout.autopayNotAvailable");
+  }, 10_000);
+
+  it("sends no such consent when the buyer picks the ordinary payment", async () => {
+    api.getAllSubscriptions.mockResolvedValue({ subscriptions: [TRIAL] });
+
+    await mountGatewayStep();
+    await tap(ordinaryOption());
+    await waitUntil(() => button(PAY) !== undefined);
+    await tap(PAY);
+    await waitUntil(() => navigate.mock.calls.length > 0);
+
+    expect(api.createUpgradeCheckout).toHaveBeenCalledTimes(1);
+    expect(api.createUpgradeCheckout.mock.calls[0]![6]).toBeUndefined();
   }, 10_000);
 
   it("turns into the conversion when the panel names a trial the list did not show", async () => {
