@@ -79,6 +79,53 @@ describe('inline share', () => {
     expect((ctx as { chat?: unknown }).chat).toBeUndefined();
   });
 
+  // Every text the inline answer carries is plain, and all of them are the
+  // operator's to edit in the panel, whose picker inserts `:slug:` pack emoji
+  // and `{{KEY}}` placeholders. Unresolved, they reached the chat verbatim.
+  it('resolves emoji tokens in every text it sends', async () => {
+    const config: BotConfig = {
+      ...DEFAULT_BOT_CONFIG,
+      customEmojis: { fire: { id: '5368324170671202286', fallback: '🔥' } },
+      botEmojiOwnerHasPremium: true,
+    };
+    const tokens = (deps: ReturnType<typeof buildDeps>['deps']) => ({
+      ...deps,
+      translator: {
+        ...deps.translator,
+        t: (key: string, lang: string) => `:fire: ${lang}:${key} {{GIFT}}`,
+      } as typeof deps.translator,
+    });
+
+    const member = buildDeps({
+      config,
+      adminOverrides: { referrals: { getSummary: async () => ({ referralCode: 'ref-code-1' }) } },
+    });
+    const memberCtx = buildFakeInlineCtx({ from: { id: 7 } });
+    await handlerFor(tokens(member.deps))(memberCtx as never);
+    const [memberResults] = memberCtx.answerInlineQuery.mock.calls[0] as [
+      ReadonlyArray<Record<string, unknown>>,
+    ];
+    const sent = JSON.stringify(memberResults[0]);
+    expect(sent).toContain('🔥 ru:inline.share.title 🎁');
+    expect(sent).toContain('🔥 ru:inline.share.description 🎁');
+    expect(sent).toContain('🔥 ru:inline.share.message 🎁');
+    expect(sent).toContain('🔥 ru:inline.share.open 🎁');
+    expect(sent).not.toContain(':fire:');
+    expect(sent).not.toContain('{{GIFT}}');
+
+    const stranger = buildDeps({
+      config,
+      adminOverrides: { referrals: { getSummary: async () => ({}) } },
+    });
+    const strangerCtx = buildFakeInlineCtx();
+    await handlerFor(tokens(stranger.deps))(strangerCtx as never);
+    const [, options] = strangerCtx.answerInlineQuery.mock.calls[0] as [
+      unknown,
+      { button?: { text?: string } },
+    ];
+    expect(options.button?.text).toBe('🔥 ru:inline.share.start 🎁');
+  });
+
   it('still answers a stranger, with the plain bot link and a way in', async () => {
     // Nobody upstream knows this telegram id — the ordinary case for inline
     // mode, which reaches people who have never opened the bot.

@@ -358,6 +358,54 @@ describe('registerInvitePage (hub)', () => {
   });
 });
 
+describe('the shared message is plain text', () => {
+  // The panel's picker puts `:slug:` pack emoji and `{{KEY}}` placeholders into
+  // these texts, and Telegram's share sheet takes the text as a URL parameter,
+  // which carries no entities: unresolved, the friend read the token itself.
+  it('resolves emoji tokens to their glyphs, in the prompt and the website line', async () => {
+    const adminClient = {
+      referrals: {
+        createInvite: vi.fn(),
+        getSummary: vi.fn().mockResolvedValue({ referralCode: 'reiwa-id-1' }),
+      },
+      partner: {},
+    };
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient,
+      publicWebUrl: 'https://reiwa.example',
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        customEmojis: { fire: { id: '5368324170671202286', fallback: '🔥' } },
+        botEmojiOwnerHasPremium: true,
+      },
+    });
+    const operatorTexts: Record<string, string> = {
+      'invite.share_prompt': ':fire: Привет! {{GIFT}} Попробуй',
+      'invite.share_web_line': ':fire: Сайт: {{link}}',
+    };
+    const translator = {
+      ...deps.translator,
+      t: (key: string, lang: string, vars?: Record<string, string | number>) => {
+        const text = operatorTexts[key];
+        return text === undefined
+          ? deps.translator.t(key, lang as never, vars)
+          : text.replace('{{link}}', String(vars?.link ?? ''));
+      },
+    } as PageDeps['translator'];
+    register(bot, { ...deps, translator });
+    const ctx = buildFakeCtx({ from: { id: 5 } });
+
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+
+    const share = buttonsOf(ctx).find((b) => b.url?.startsWith('https://t.me/share/url?'));
+    expect(share?.url).toBeDefined();
+    expect(new URL(share!.url!).searchParams.get('text')).toBe(
+      '🔥 Привет! 🎁 Попробуй\n\n🔥 Сайт: https://reiwa.example/ref/reiwa-id-1',
+    );
+  });
+});
+
 describe('the website link beside the Telegram one', () => {
   // The owner's order of 22.09.2026: an invite shared from the bot also carries
   // a link to the web cabinet, for a friend who would rather sign up in a

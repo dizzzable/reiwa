@@ -42,6 +42,7 @@ import type { InlineQueryResultArticle } from '@grammyjs/types';
 import { coerceLocale } from './coerce-locale.js';
 import { sweepExpired } from '../lib/bounded-map.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { renderBotCopy } from '../../infrastructure/bot-config/emoji-utils.js';
 import type { PageDeps, PageRegistrar } from './types.js';
 
 /**
@@ -177,21 +178,21 @@ export const registerInlineSharePage: PageRegistrar = (bot, deps) => {
         return;
       }
 
-      const title = translator.t(
-        isPersonalLink ? 'inline.share.title' : 'inline.share.title_plain',
-        lang,
-      );
-      const description = translator.t(
+      // Every text here is plain — a result's title and description, a message
+      // sent without entities, two captions — and all of them are the
+      // operator's to edit in the panel, whose picker inserts `:slug:` pack
+      // emoji and `{{KEY}}` placeholders. Resolved to their glyphs, or they
+      // reach the chat verbatim.
+      const plain = (key: string): string =>
+        renderBotCopy(translator.t(key, lang), botCfg?.botEmojis, botCfg?.customEmojis, false).text;
+      const title = plain(isPersonalLink ? 'inline.share.title' : 'inline.share.title_plain');
+      const description = plain(
         isPersonalLink ? 'inline.share.description' : 'inline.share.description_plain',
-        lang,
       );
-      const body = translator.t(
-        isPersonalLink ? 'inline.share.message' : 'inline.share.message_plain',
-        lang,
-      );
+      const body = plain(isPersonalLink ? 'inline.share.message' : 'inline.share.message_plain');
 
       const keyboard = isTelegramSafeButtonUrl(shareUrl)
-        ? new InlineKeyboard().url(translator.t('inline.share.open', lang), shareUrl)
+        ? new InlineKeyboard().url(plain('inline.share.open'), shareUrl)
         : undefined;
 
       const result: InlineQueryResultArticle = {
@@ -218,7 +219,7 @@ export const registerInlineSharePage: PageRegistrar = (bot, deps) => {
         // open the bot rather than merely mention it.
         ...(isPersonalLink
           ? {}
-          : { button: { text: translator.t('inline.share.start', lang), start_parameter: 'inline' } }),
+          : { button: { text: plain('inline.share.start'), start_parameter: 'inline' } }),
       });
     } catch (err: unknown) {
       // Swallowed on purpose. `bot.catch` apologises by replying into a chat,

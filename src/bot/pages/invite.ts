@@ -139,10 +139,24 @@ function buildWebReferralLink(deps: PageDeps, code: string): string | null {
   return `${(base as string).replace(/\/+$/, '')}/ref/${encodeURIComponent(code)}`;
 }
 
-/** The share message: the owner's prompt, and the website link under it when there is one. */
-function shareText(t: (key: string, vars?: Record<string, string | number>) => string, webLink: string | null): string {
+/**
+ * The share message: the owner's prompt, and the website link under it when there is one.
+ *
+ * Plain text with every emoji token resolved to its glyph. Telegram's share
+ * sheet takes this as a URL parameter, which carries no entities, so a `:slug:`
+ * pack emoji or a `{{KEY}}` placeholder — both of which the panel's picker puts
+ * into these texts — reached the friend verbatim. A premium pack emoji arrives
+ * as its fallback glyph.
+ */
+function shareText(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  webLink: string | null,
+  botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
+): string {
   const prompt = t('invite.share_prompt');
-  return webLink === null ? prompt : `${prompt}\n\n${t('invite.share_web_line', { link: webLink })}`;
+  const composed =
+    webLink === null ? prompt : `${prompt}\n\n${t('invite.share_web_line', { link: webLink })}`;
+  return renderBotCopy(composed, botCfg.botEmojis, botCfg.customEmojis, false).text;
 }
 
 export const registerInvitePage: PageRegistrar = (bot, deps) => {
@@ -287,7 +301,7 @@ async function renderReferralHub(
     if (webLink !== null) parts.push(`${t('referral.hub.web_link_label')}\n${webLink}`);
   }
 
-  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText(t, webLink))}`;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText(t, webLink, botCfg))}`;
 
   const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
   const copy = renderSystemButton(t('invite.copy_button'), 'invite_copy', botCfg);
@@ -403,7 +417,7 @@ async function renderPartnerHub(
   if (inviteLink !== null) {
     parts.push(`${t('referral.hub.link_label')}\n${inviteLink}`);
     if (webLink !== null) parts.push(`${t('referral.hub.web_link_label')}\n${webLink}`);
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText(t, webLink))}`;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText(t, webLink, botCfg))}`;
     const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
     const copy = renderSystemButton(t('invite.copy_button'), 'invite_copy', botCfg);
     kb.url(

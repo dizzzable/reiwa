@@ -96,7 +96,9 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'inline.share.message_plain': '🔗 Try it — fast and reliable VPN.',
   'inline.share.open': '🚀 Open',
   'inline.share.start': 'Start the bot to get your own link',
-  'invite.share_prompt': 'Hey! Try Rezeis VPN — fast and reliable.',
+  // No service name: "Rezeis" is the panel's, not the operator's brand. The
+  // operator writes theirs in «Карта бота» (the invite screen).
+  'invite.share_prompt': 'Hey! Try it — a fast and reliable VPN.',
   'rules.intro': '📜 Service rules\n\nTap the button below to open the full text:',
   'rules.open_button': '📜 Open rules',
   'menu_button.cabinet': 'Cabinet',
