@@ -47,6 +47,7 @@ function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
       discountPercent?: number;
     } | null;
     warnings?: ReadonlyArray<{ code?: string; message?: string }>;
+    carriedAbovePlan?: unknown;
   };
   if (!q.price || !q.selectedPlan) {
     // No priceable selection — surface the first warning code for the SPA.
@@ -57,6 +58,7 @@ function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
   const basePrice = Number.parseFloat(
     q.price.originalPrice ?? q.price.price ?? "0",
   );
+  const carriedAbovePlan = readCarriedAbovePlan(q.carriedAbovePlan);
   return {
     planId: q.selectedPlan.id ?? null,
     planName: q.selectedPlan.name ?? "",
@@ -66,7 +68,44 @@ function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
     finalPrice,
     discountPercent: q.price.discountPercent ?? 0,
     gatewayType: q.price.gatewayType ?? "",
+    ...(carriedAbovePlan === null ? {} : { carriedAbovePlan }),
   };
+}
+
+/**
+ * What an UPGRADE keeps above the new plan (paid add-ons, an operator's raise,
+ * a bonus), re-stated field by field from the panel's `carriedAbovePlan`.
+ *
+ * `null` — and the SPA shows no line — when the panel sends none (one older
+ * than the field: the cabinet ships first), when nothing carries, or when the
+ * field is anything but whole non-negative counts and two booleans. A
+ * malformed field then says nothing rather than something untrue.
+ */
+function readCarriedAbovePlan(raw: unknown): {
+  deviceLimit: number;
+  trafficLimitGb: number;
+  unlimitedDevices: boolean;
+  unlimitedTraffic: boolean;
+} | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const count = (entry: unknown): number | null =>
+    typeof entry === "number" && Number.isSafeInteger(entry) && entry >= 0 ? entry : null;
+  const deviceLimit = count(value.deviceLimit);
+  const trafficLimitGb = count(value.trafficLimitGb);
+  const { unlimitedDevices, unlimitedTraffic } = value;
+  if (
+    deviceLimit === null ||
+    trafficLimitGb === null ||
+    typeof unlimitedDevices !== "boolean" ||
+    typeof unlimitedTraffic !== "boolean"
+  ) {
+    return null;
+  }
+  if (deviceLimit === 0 && trafficLimitGb === 0 && !unlimitedDevices && !unlimitedTraffic) {
+    return null;
+  }
+  return { deviceLimit, trafficLimitGb, unlimitedDevices, unlimitedTraffic };
 }
 
 /**

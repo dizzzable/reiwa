@@ -204,6 +204,22 @@ export interface SubscriptionQuote {
   gatewayType: string;
   /** Present only when the upstream couldn't price the selection. */
   warning?: string;
+  /**
+   * UPGRADE only: what the subscription keeps above the new plan — paid
+   * add-ons, an operator's raise, a bonus. Absent when nothing carries, and
+   * from a panel older than the field.
+   */
+  carriedAbovePlan?: CarriedAbovePlan;
+}
+
+/** What an upgrade keeps above the new plan, as the BFF re-states it. */
+export interface CarriedAbovePlan {
+  deviceLimit: number;
+  trafficLimitGb: number;
+  /** Unlimited devices stay on a finite new plan (an operator's setting). */
+  unlimitedDevices: boolean;
+  /** Unlimited traffic stays on a finite new plan (an operator's setting). */
+  unlimitedTraffic: boolean;
 }
 
 // ─── Renewal (combined multi-subscription) ───────────────────────────────────

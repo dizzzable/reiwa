@@ -16,6 +16,7 @@ import {
 import type { UpgradePlanOption } from "@/lib/api-client/subscription";
 import { TariffCard } from "@/features/plans/tariff-card";
 import { upgradeCardPlan } from "./upgrade-card-plan";
+import { describeCarriedAbovePlan } from "./carried-above-plan";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { useUpgradeStore } from "@/stores/upgrade.store";
@@ -456,6 +457,7 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
   }
 
   const symbol = CURRENCY_SYMBOLS[quote.currency] ?? "";
+  const carriedLine = describeCarriedAbovePlan(quote.carriedAbovePlan, selectedPlan, t);
   return (
     <div className="px-5 space-y-4">
       <h2 className="text-base font-semibold">{t("upgrade.reviewTitle")}</h2>
@@ -475,6 +477,7 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
         </div>
       </div>
       <TipCard tone="info">{t("upgrade.resetsExpiry")}</TipCard>
+      {carriedLine !== null && <TipCard tone="info">{carriedLine}</TipCard>}
       {/* Refused at checkout without a reason, yet priced again: not a
           withdrawn target, and not something another press of Pay changes. */}
       {refused && <TipCard tone="danger">{t("purchase.checkout.notAccepted")}</TipCard>}
