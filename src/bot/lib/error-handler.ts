@@ -27,7 +27,7 @@ import type { TranslatorPort } from '../../application/ports/translator.port.js'
 import type { BotConfig } from '../../infrastructure/bot-config/types.js';
 import { renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import { coerceLocale } from '../pages/coerce-locale.js';
-import { resolveSupportDeepLink } from '../widgets/main-keyboard.js';
+import { resolveSupportDeepLink, supportPrefill } from '../widgets/main-keyboard.js';
 import type { BotContext, UserLocaleSyncCache } from '../pages/types.js';
 
 export interface BotErrorHandlerDeps {
@@ -124,7 +124,7 @@ async function buildSupportKeyboard(
   }
   const adminHandle = (cfg?.visual.supportUsername ?? '').replace(/^@+/, '').trim();
   const handle = adminHandle.length > 0 ? adminHandle : (deps.envSupportUsername ?? '').trim();
-  const url = resolveSupportDeepLink(handle, deps.translator.t('help.contact_prefill', lang));
+  const url = resolveSupportDeepLink(handle, supportPrefill(deps.translator, lang, cfg));
   if (url === null) return null;
   // Same `help_contact` system button the help screens render — resolve the
   // operator's emoji tokens through the same path, or the one button a user

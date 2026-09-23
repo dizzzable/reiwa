@@ -35,7 +35,7 @@ import { inlineButton } from '../widgets/inline-button.js';
 import { sendChannelJoinPrompt } from './channel-join-prompt.js';
 import { PASSWORD_RESET_START_PAYLOAD, replyWithPasswordReset } from './password-reset.js';
 import { QUEST_ID_RE, replyWithQuestChannelPrompt, type ChannelTarget } from './quest-channel.js';
-import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl, attachSigninTokenToUrl } from '../widgets/main-keyboard.js';
+import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl, attachSigninTokenToUrl, supportPrefill } from '../widgets/main-keyboard.js';
 import { pickScreenText, buildScreenKeyboard } from './screen-renderer.js';
 import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial-button.js';
 import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
@@ -231,8 +231,10 @@ async function buildWelcomeView(
   const adminHandle = botCfg.visual.supportUsername.replace(/^@+/, '').trim();
   const supportHandle =
     adminHandle.length > 0 ? adminHandle : (deps.envSupportUsername ?? '').trim();
-  const supportPrefill = deps.translator.t('help.contact_prefill', lang);
-  const supportUrl = resolveSupportDeepLink(supportHandle, supportPrefill);
+  const supportUrl = resolveSupportDeepLink(
+    supportHandle,
+    supportPrefill(deps.translator, lang, botCfg),
+  );
 
   // Issue a one-time magic-link token for URL-kind buttons (Cabinet)
   // so the user lands in the SPA pre-authenticated. Best-effort: if

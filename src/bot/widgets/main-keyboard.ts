@@ -29,10 +29,10 @@
  */
 import { InlineKeyboard } from 'grammy';
 
-import type { BotMenuButton, BotEmojiMap } from '../../infrastructure/bot-config/types.js';
+import type { BotConfig, BotMenuButton, BotEmojiMap } from '../../infrastructure/bot-config/types.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
-import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderBotCopy, renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
 
 export type ButtonKind = 'url' | 'webapp' | 'callback' | 'support_url';
 
@@ -254,6 +254,28 @@ export function resolveSupportDeepLink(
   const text = (prefill ?? '').trim();
   const query = text.length > 0 ? `?text=${encodeURIComponent(text)}` : '';
   return `https://t.me/${encodeURIComponent(cleaned)}${query}`;
+}
+
+/**
+ * The text a support chat opens with — the `?text=` of every support link,
+ * read here and nowhere else.
+ *
+ * Plain text with every emoji token resolved to its glyph. A URL parameter
+ * carries no entities, so a `:slug:` pack emoji or a `{{KEY}}` placeholder the
+ * panel's picker put into `help.contact_prefill` reached support verbatim. A
+ * premium pack emoji arrives as its fallback glyph.
+ */
+export function supportPrefill(
+  translator: TranslatorPort,
+  lang: SupportedLocale,
+  emojis: Pick<BotConfig, 'botEmojis' | 'customEmojis'> | null | undefined,
+): string {
+  return renderBotCopy(
+    translator.t('help.contact_prefill', lang),
+    emojis?.botEmojis,
+    emojis?.customEmojis,
+    false,
+  ).text;
 }
 
 /**

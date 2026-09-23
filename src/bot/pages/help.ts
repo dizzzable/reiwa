@@ -21,7 +21,7 @@ import { InlineKeyboard } from 'grammy';
 import { coerceLocale } from './coerce-locale.js';
 import { replyWithOptionalBanner } from './reply-with-banner.js';
 import { renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
-import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { isTelegramSafeButtonUrl, supportPrefill } from '../widgets/main-keyboard.js';
 import type { PageRegistrar } from './types.js';
 
 const NUMERIC_HANDLE = /^-?\d+$/;
@@ -50,7 +50,7 @@ export const registerHelpCommandPage: PageRegistrar = (bot, deps) => {
       : null;
 
     if (handle.length > 0 && !NUMERIC_HANDLE.test(handle)) {
-      const prefill = deps.translator.t('help.contact_prefill', lang);
+      const prefill = supportPrefill(deps.translator, lang, botCfg);
       const supportUrl = `https://t.me/${encodeURIComponent(handle)}?text=${encodeURIComponent(prefill)}`;
       const kb = new InlineKeyboard();
       // #1 in-app Support page (Mini App) — no leading `.row()` so it lands on

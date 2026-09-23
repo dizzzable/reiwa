@@ -14,6 +14,9 @@
  *       - one-per-row buttons land alone on a row; non-one-per-row
  *         buttons pair up (max 2 per row)
  */
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 import { InlineKeyboard } from 'grammy';
 
@@ -21,7 +24,9 @@ import {
   buildMainKeyboard,
   isTelegramSafeButtonUrl,
   resolveBinding,
+  supportPrefill,
 } from '../../../src/bot/widgets/main-keyboard.js';
+import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
 import type { BotMenuButton } from '../../../src/infrastructure/bot-config/types.js';
 import type { TranslatorPort } from '../../../src/application/ports/translator.port.js';
 import type { SupportedLocale } from '../../../src/core/enums/locale.enum.js';
@@ -411,5 +416,36 @@ describe('a main-menu button the operator set to «Mini App»', () => {
 
   it('drops a button Telegram would refuse — and only that button, not the menu', () => {
     expect(webAppUrlOf('http://insecure.example/')).toBeUndefined();
+  });
+});
+
+describe('supportPrefill — the text a support chat opens with', () => {
+  const operatorTranslator: TranslatorPort = {
+    t: (key) => (key === 'help.contact_prefill' ? ':fire: Здравствуйте! {{GIFT}}' : key),
+    resolveButtonLabel: (_id, fallback) => fallback,
+  };
+
+  // A `?text=` parameter carries no entities, so the tokens the panel's picker
+  // inserts have to become glyphs here — a premium pack emoji its fallback —
+  // or support reads `:fire:` itself.
+  it('resolves emoji tokens to their glyphs, even for an owner with Premium', () => {
+    expect(
+      supportPrefill(operatorTranslator, 'ru', {
+        botEmojis: DEFAULT_BOT_CONFIG.botEmojis,
+        customEmojis: { fire: { id: '5368324170671202286', fallback: '🔥' } },
+      }),
+    ).toBe('🔥 Здравствуйте! 🎁');
+  });
+
+  // Eight support links build this `?text=`. Read anywhere but through
+  // `supportPrefill`, the one that forgot shipped the raw token again.
+  it('is the only place bot code reads help.contact_prefill', () => {
+    const src = resolve(__dirname, '../../../src');
+    const readers = (readdirSync(src, { recursive: true }) as string[])
+      // The i18n packs hold the default text; everything else is a reader.
+      .filter((file) => file.endsWith('.ts') && !file.split(sep).includes('packs'))
+      .filter((file) => readFileSync(join(src, file), 'utf8').includes("t('help.contact_prefill'"))
+      .map((file) => file.split(sep).join('/'));
+    expect(readers).toEqual(['bot/widgets/main-keyboard.ts']);
   });
 });

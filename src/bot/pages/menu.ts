@@ -33,7 +33,7 @@
  */
 import type { AdminClient } from '../../lib/admin-client.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
-import { buildMainKeyboard, resolveSupportDeepLink } from '../widgets/main-keyboard.js';
+import { buildMainKeyboard, resolveSupportDeepLink, supportPrefill } from '../widgets/main-keyboard.js';
 import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/bot-channel-gate.js';
 import { resolveChannelGateVerdict } from '../lib/channel-gate.js';
 
@@ -51,13 +51,13 @@ import type { BotContext, PageDeps, PageRegistrar } from './types.js';
  */
 function resolveSupportUrlForMenu(
   deps: PageDeps,
-  supportUsername: string,
+  botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
   lang: ReturnType<typeof coerceLocale>,
 ): string | null {
-  const adminHandle = supportUsername.replace(/^@+/, '').trim();
+  const adminHandle = botCfg.visual.supportUsername.replace(/^@+/, '').trim();
   const handle =
     adminHandle.length > 0 ? adminHandle : (deps.envSupportUsername ?? '').trim();
-  return resolveSupportDeepLink(handle, deps.translator.t('help.contact_prefill', lang));
+  return resolveSupportDeepLink(handle, supportPrefill(deps.translator, lang, botCfg));
 }
 
 /**
@@ -104,7 +104,7 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       publicWebUrl: deps.urls.publicWebUrl,
       lang,
       translator: deps.translator,
-      supportUrl: resolveSupportUrlForMenu(deps, botCfg.visual.supportUsername, lang),
+      supportUrl: resolveSupportUrlForMenu(deps, botCfg, lang),
       signinToken,
       botEmojis: botCfg.botEmojis,
       customEmojis: botCfg.customEmojis,

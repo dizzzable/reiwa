@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import { registerHelpCommandPage } from '../../../src/bot/pages/help.js';
 import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
-import type { BotContext } from '../../../src/bot/pages/types.js';
+import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
 import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
 
 describe('registerHelpCommandPage', () => {
@@ -57,6 +57,41 @@ describe('registerHelpCommandPage', () => {
     const kb = (opts as { reply_markup: { inline_keyboard: Array<Array<{ url?: string }>> } })
       .reply_markup;
     expect(kb.inline_keyboard[0][0].url).toContain('https://t.me/rezeis_support');
+  });
+
+  // `help.contact_prefill` is on the help screen of «Карта бота», whose picker
+  // inserts `:slug:` pack emoji and `{{KEY}}` placeholders. The text travels as
+  // the link's `?text=`, which carries no entities: unresolved, support read the
+  // token itself.
+  it('pre-fills the support chat with the operator text, emoji tokens resolved', async () => {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        visual: { ...DEFAULT_BOT_CONFIG.visual, supportUsername: '@rezeis_support' },
+        customEmojis: { fire: { id: '5368324170671202286', fallback: '🔥' } },
+        botEmojiOwnerHasPremium: true,
+      },
+    });
+    const translator = {
+      ...deps.translator,
+      t: (key: string, lang: string, vars?: Record<string, string | number>) =>
+        key === 'help.contact_prefill'
+          ? ':fire: Здравствуйте! {{GIFT}}'
+          : deps.translator.t(key, lang as never, vars),
+    } as PageDeps['translator'];
+    registerHelpCommandPage(
+      bot as unknown as Parameters<typeof registerHelpCommandPage>[0],
+      { ...deps, translator },
+    );
+    const ctx = buildFakeCtx();
+    await bot.commandHandlers.get('help')!(ctx as unknown as BotContext);
+    const [, opts] = ctx.reply.mock.calls[0];
+    const kb = (opts as { reply_markup: { inline_keyboard: Array<Array<{ url?: string }>> } })
+      .reply_markup;
+    const contact = kb.inline_keyboard.flat().find((b) => b.url?.startsWith('https://t.me/rezeis_support'));
+    expect(contact?.url).toBeDefined();
+    expect(new URL(contact!.url!).searchParams.get('text')).toBe('🔥 Здравствуйте! 🎁');
   });
 
   it('renders in the user persisted locale (en)', async () => {

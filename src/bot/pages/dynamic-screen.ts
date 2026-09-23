@@ -24,7 +24,7 @@ import {
   pickScreenText,
 } from './screen-renderer.js';
 import { renderScreenOrEdit } from './screen-banner.js';
-import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
+import { resolveConfiguredSupportUrl, supportPrefill } from '../widgets/main-keyboard.js';
 import type { PageRegistrar } from './types.js';
 
 const SCREEN_PREFIX = 'screen:';
@@ -85,7 +85,7 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
         supportUrl: resolveConfiguredSupportUrl(
           config.visual.supportUsername,
           deps.envSupportUsername,
-          translator.t('help.contact_prefill', lang),
+          supportPrefill(translator, lang, config),
         ),
       },
     );

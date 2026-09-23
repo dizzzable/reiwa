@@ -41,7 +41,7 @@ import { InlineKeyboard } from 'grammy';
 
 import { getLegalDocumentsCache } from '../../infrastructure/admin-client/legal-documents-cache.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
-import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
+import { resolveConfiguredSupportUrl, supportPrefill } from '../widgets/main-keyboard.js';
 import { coerceLocale } from './coerce-locale.js';
 import { renderScreenOrEdit } from './screen-banner.js';
 import { replyWithOptionalBanner } from './reply-with-banner.js';
@@ -138,7 +138,7 @@ async function buildRulesView(deps: PageDeps, lang: SupportedLocale): Promise<Ru
         supportUrl: resolveConfiguredSupportUrl(
           botCfg.visual.supportUsername,
           deps.envSupportUsername,
-          translator.t('help.contact_prefill', lang),
+          supportPrefill(translator, lang, botCfg),
         ),
       })
     : new InlineKeyboard();

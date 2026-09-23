@@ -33,7 +33,7 @@ import { InlineKeyboard } from 'grammy';
 import { coerceLocale } from './coerce-locale.js';
 import { renderScreenOrEdit } from './screen-banner.js';
 import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
-import { resolveConfiguredSupportUrl, isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { resolveConfiguredSupportUrl, isTelegramSafeButtonUrl, supportPrefill } from '../widgets/main-keyboard.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
@@ -101,7 +101,7 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
             supportUrl: resolveConfiguredSupportUrl(
               botCfg.visual.supportUsername,
               envSupportUsername,
-              translator.t('help.contact_prefill', lang),
+              supportPrefill(translator, lang, botCfg),
             ),
           })
         : new InlineKeyboard();
@@ -119,7 +119,7 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
     })();
 
     if (handle.length > 0 && !NUMERIC_HANDLE.test(handle)) {
-      const prefill = translator.t('help.contact_prefill', lang);
+      const prefill = supportPrefill(translator, lang, botCfg);
       const supportUrl = `https://t.me/${encodeURIComponent(handle)}?text=${encodeURIComponent(prefill)}`;
       const kb = buildKeyboard();
       let hasRows = (overrideScreen?.buttons.length ?? 0) > 0;
