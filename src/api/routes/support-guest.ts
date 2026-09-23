@@ -41,7 +41,15 @@ function readSignal(body: unknown, key: "installId" | "deviceHash"): string | nu
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= 128 ? trimmed : null;
 }
-const DEFAULT_TTL_HOURS = 72;
+/**
+ * How long the device keeps its key (`reiwa_support`). The key's lifetime must
+ * never be what ends a guest's access — the panel decides that: the support
+ * TTL (72 h by default, up to 8760 h) from the conversation's start, renewed
+ * from each operator reply. At 72 h the cookie dropped the device out of a
+ * conversation an operator had just answered on day 4. A stale key is inert:
+ * the panel refuses it, and the page shows the start form, as with none.
+ */
+const KEY_MAX_AGE_HOURS = 8760;
 const MAX_SUBJECT = 200;
 const MAX_CONTENT = 10_000;
 
@@ -89,7 +97,7 @@ export function createSupportGuestRouter(deps: {
     secure,
     sameSite: "lax" as const,
     path: "/",
-    maxAge: DEFAULT_TTL_HOURS * 3_600_000,
+    maxAge: KEY_MAX_AGE_HOURS * 3_600_000,
   };
 
   // Public widget config — the site key the browser needs to render the

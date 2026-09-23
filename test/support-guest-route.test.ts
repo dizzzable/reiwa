@@ -132,6 +132,21 @@ describe("support-guest router", () => {
     expect(createGuest).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the device's key as long as the panel can keep the conversation open to it", async () => {
+    // The panel decides the access: the TTL (72 h by default, up to 8760 h)
+    // from the conversation's start, renewed from each operator reply. A key
+    // that lived 72 h dropped the device out of a conversation an operator had
+    // just answered — the reply the renewal exists for.
+    const app = makeApp({ createGuest: okCreate() });
+    const res = await request(app, {
+      method: "POST",
+      path: "/api/v1/support/guest",
+      body: { subject: "Help", message: "Payment stuck" },
+    });
+    const maxAge = Number(/Max-Age=(\d+)/i.exec(String(res.headers["set-cookie"]?.[0] ?? ""))?.[1]);
+    expect(maxAge).toBeGreaterThanOrEqual(8760 * 3600);
+  });
+
   it("rejects creation without subject/message (400)", async () => {
     const app = makeApp({ createGuest: vi.fn() });
     const res = await request(app, { method: "POST", path: "/api/v1/support/guest", body: { subject: "x" } });
