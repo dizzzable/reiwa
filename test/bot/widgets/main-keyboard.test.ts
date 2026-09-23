@@ -81,7 +81,8 @@ describe('isTelegramSafeButtonUrl', () => {
 describe('resolveBinding', () => {
   it('returns the documented binding for known ids', () => {
     expect(resolveBinding('cabinet')).toEqual({ kind: 'url', path: '/' });
-    expect(resolveBinding('vpn')).toEqual({ kind: 'webapp', path: '/subscribe' });
+    // The plans page. It was `/subscribe`, a page the cabinet never had.
+    expect(resolveBinding('vpn')).toEqual({ kind: 'webapp', path: '/plans' });
     expect(resolveBinding('miniapp')).toEqual({ kind: 'webapp', path: '/' });
   });
 
@@ -148,7 +149,7 @@ describe('buildMainKeyboard', () => {
     const flat = kb.inline_keyboard.flat();
     expect(flat).toHaveLength(1);
     expect((flat[0] as { web_app?: { url: string } }).web_app?.url).toBe(
-      'https://example.com/app/subscribe',
+      'https://example.com/app/plans',
     );
   });
 
@@ -362,5 +363,53 @@ describe('«Кабинет» → the browser, through the Mini App', () => {
       { ...btn({ id: 'plans', label: 'Тарифы' }), actionType: 'url', actionTarget: null },
     ]);
     expect(button.web_app).toBeUndefined();
+  });
+});
+
+describe('a main-menu button the operator set to «Mini App»', () => {
+  // A tester set «Пригласить» to open the referral program and got the Mini
+  // App's home screen. What the operator saves goes after the Mini App's own
+  // address, so it has to be joined the way the notification sender joins it.
+  function webAppUrlOf(actionTarget: string | null, miniAppUrl = 'https://cabinet.example') {
+    const kb = buildMainKeyboard({
+      buttons: [
+        { ...btn({ id: 'invite', label: 'Пригласить' }), actionType: 'webapp', actionTarget },
+        btn({ id: 'rules', label: 'Правила', order: 1 }),
+      ],
+      miniAppUrl,
+      publicWebUrl: 'https://cabinet.example',
+      lang: 'ru',
+      translator: passthroughTranslator,
+    });
+    const flat = kb.inline_keyboard.flat() as Array<{
+      text: string;
+      web_app?: { url: string };
+      callback_data?: string;
+    }>;
+    // The rest of the menu is there, whatever becomes of this button.
+    expect(flat.some((b) => b.callback_data === 'rules')).toBe(true);
+    return flat.find((b) => b.text.includes('Пригласить'))?.web_app?.url;
+  }
+
+  it('opens the page picked: `/referrals` on the Mini App address', () => {
+    expect(webAppUrlOf('/referrals')).toBe('https://cabinet.example/referrals');
+  });
+
+  it('adds the slash a path typed without one lacks, instead of gluing it onto the host', () => {
+    expect(webAppUrlOf('referrals')).toBe('https://cabinet.example/referrals');
+  });
+
+  it('keeps a page’s parameters, and does not double a slash', () => {
+    expect(webAppUrlOf('/promo?code=SALE', 'https://cabinet.example/')).toBe(
+      'https://cabinet.example/promo?code=SALE',
+    );
+  });
+
+  it('opens an https:// address as it was typed', () => {
+    expect(webAppUrlOf('https://other.example/page')).toBe('https://other.example/page');
+  });
+
+  it('drops a button Telegram would refuse — and only that button, not the menu', () => {
+    expect(webAppUrlOf('http://insecure.example/')).toBeUndefined();
   });
 });

@@ -45,6 +45,21 @@ function ReferralLinkRedirect() {
   return <Navigate to={query ? `/register?${query}` : "/register"} replace />;
 }
 
+/**
+ * `/subscribe` is the plans page.
+ *
+ * «Карта бота» in the panel listed `/subscribe` as «Покупка подписки» until
+ * 23.09.2026, so buttons were set to it, and the cabinet never had such a page:
+ * a Mini App opened on it fell through to the catch-all and showed the home
+ * screen. It goes to `/plans`, query kept, so a button already saved with it
+ * works without anyone editing it. The launch parameters this navigation drops
+ * with the fragment were captured in `main.tsx` before the first render.
+ */
+function SubscribeAlias() {
+  const { search } = useLocation();
+  return <Navigate to={`/plans${search}`} replace />;
+}
+
 const ContextRouter = lazy(() => import("@/features/auth/context-router"));
 const WebHomePage = lazy(() => import("@/features/auth/web-home-page"));
 const TmaBootstrapPage = lazy(() => import("@/features/auth/tma-bootstrap-page"));
@@ -150,6 +165,7 @@ export default function App() {
           <Route path="/sign-in" element={<SignInPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/ref/:token" element={<ReferralLinkRedirect />} />
+          <Route path="/subscribe" element={<SubscribeAlias />} />
           <Route path="/recover" element={<RecoverPage />} />
           <Route path="/recover/subscription" element={<RecoverSubscriptionPage />} />
           {/* A single-use password reset link lands here — from Telegram, e-mail

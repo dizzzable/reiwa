@@ -91,7 +91,9 @@ export const BUTTON_KIND_MAP: Readonly<Record<string, ButtonBinding>> = {
   referrals: { kind: 'callback' },
   profile: { kind: 'callback' },
   activity: { kind: 'callback' },
-  vpn: { kind: 'webapp', path: '/subscribe' },
+  // `/plans`, not the `/subscribe` it was: the cabinet never had that page,
+  // and a Mini App opened on a path with no page shows the home screen.
+  vpn: { kind: 'webapp', path: '/plans' },
   miniapp: { kind: 'webapp', path: '/' },
   support: { kind: 'support_url' },
 };
@@ -291,6 +293,29 @@ export function cabinetBrowserEntryUrl(miniAppUrl: string | null | undefined): s
 }
 
 /**
+ * The address a main-menu «Mini App» button opens: an `http(s)://` target as
+ * the operator typed it, anything else a path on the Mini App's own address.
+ *
+ * The path gets the leading slash it may lack. This was plain concatenation,
+ * so a button set to `referrals` opened `https://cabinet.example.comreferrals`
+ * — a host that does not exist — while the notification sender and the screen
+ * renderer both add the slash. No target at all is the Mini App's own address;
+ * the built-in map's paths (`/`) arrive here as targets too. `null` when there
+ * is no Mini App address to put a path on.
+ */
+export function miniAppButtonUrl(
+  miniAppUrl: string | null | undefined,
+  target: string | null,
+): string | null {
+  const trimmed = (target ?? '').trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (!miniAppUrl) return null;
+  const base = miniAppUrl.replace(/\/+$/, '');
+  if (trimmed.length === 0) return base;
+  return `${base}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+}
+
+/**
  * Append `?signin=<token>` to a URL in a way that's robust to URLs
  * that already carry query parameters (operator-configured
  * `actionTarget` e.g. `https://example.com/?utm_source=tg`).
@@ -429,18 +454,12 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
 
     let placed = false;
     if (binding.kind === 'webapp') {
-      // Operator-supplied absolute URL takes priority; legacy built-in
-      // miniapp routing falls back to `${miniAppUrl}${path}`.
-      const operatorUrl = binding.target !== null && binding.target.length > 0
-        ? binding.target
-        : null;
-      const fallbackUrl = miniAppUrl ? `${miniAppUrl}${binding.target ?? ''}` : null;
-      const finalUrl = operatorUrl !== null && /^https?:\/\//i.test(operatorUrl)
-        ? operatorUrl
-        : fallbackUrl;
-      if (!finalUrl) continue;
+      const finalUrl = miniAppButtonUrl(miniAppUrl, binding.target);
+      // An address Telegram refuses drops this button, not the menu: one bad
+      // `web_app` URL fails the whole message it is attached to.
+      if (!isTelegramSafeButtonUrl(finalUrl)) continue;
       closeRowIfNeeded(btn.onePerRow);
-      kb.webApp({ text: label, ...buttonExtras }, finalUrl);
+      kb.webApp({ text: label, ...buttonExtras }, finalUrl as string);
       placed = true;
     } else if (isDefaultCabinet(btn, binding) && cabinetBrowserEntryUrl(miniAppUrl) !== null) {
       // «Кабинет» meaning the cabinet itself (`isDefaultCabinet`). An operator
