@@ -52,7 +52,7 @@ rezeis-admin, что важно для продакшена, и какой compo
 | `BOT_TOKEN` | Токен бота от @BotFather. | **да** | **секрет** |
 | `BOT_SUPPORT_USERNAME` | Хэндл поддержки (fallback, если в админке не задан). `@` убирается. | — | `@YourSupport` |
 | `BOT_DEV_ID` | Telegram id разработчика/оператора для внутренних алертов. | — | ваш id |
-| `BOT_USERNAME` | Username бота без `@` (для deep-link `?start=payment_return`). | да | `RezeisBot` |
+| `BOT_USERNAME` | Username ВАШЕГО бота без `@` (для deep-link `?start=payment_return`). | да | `YourVpnBot` |
 | `BOT_INVALIDATE_PORT` | Порт, который СЛУШАЕТ приватный listener бота (релей вебхуков). | — | `5100` (закомментирован) |
 | `REIWA_BOT_INTERNAL_URL` | Адрес, на который reiwa-api ШЛЁТ этот релей. Всегда docker-имя внутри своего хоста — **не меняется при split**, reiwa-api и reiwa-bot всегда рядом. Меняете `BOT_INVALIDATE_PORT` — поменяйте порт и здесь. | — | `http://reiwa-bot:5100` (дефолт, закомментирован) |
 

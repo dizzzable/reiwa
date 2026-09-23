@@ -30,6 +30,26 @@ export const en: RuDict = {
       restorePlaceholder: 'Paste the code',
       restoreButton: 'Open',
     },
+    // The «Open conversation» button in a support reply email.
+    link: {
+      opening: 'Opening the conversation…',
+      staleContinue: 'This link no longer opens the conversation. Below is the conversation open on this device.',
+      staleNone:
+        'This link no longer opens the conversation: either support has since sent a newer email, or access to the request has ended. Try “Открыть переписку” in the newest email (the letter is in Russian) or your resume code; if that does not work, write to us again.',
+      failed: 'The conversation could not be opened from the link.',
+      failedCode: 'The conversation could not be opened with the code.',
+      retry: 'Try again',
+      confirmTitle: 'Open a different request?',
+      confirmBody:
+        'This device has the request “{{current}}” open. If you open “{{opening}}”, “{{current}}” stays open, but this device will stop showing it.',
+      // Only ways back that exist: the code field is under the conversation too,
+      // and letters reach only guests who left an email, when the operator has
+      // email turned on.
+      confirmWayBack:
+        'You can return to “{{current}}” with its resume code, if you saved it: the “Have a resume code?” field will be under the conversation. Or with “Открыть переписку” in a support email about it, if such emails reach you.',
+      confirmOpen: 'Open the other request',
+      confirmStay: 'Stay in the current one',
+    },
     chat: {
       you: 'You',
       operator: 'Support',
@@ -409,6 +429,9 @@ export const en: RuDict = {
       trialConversionRequired:
         'You have a trial subscription — this purchase will move it onto the chosen plan. Check the amount and pay again.',
       autopayNotAvailable: 'Automatic charging is not available for this purchase. Choose the ordinary payment.',
+      // The panel's PENDING_SIGN_UP; see the Russian dictionary.
+      autopaySignUpPending:
+        'An automatic payment for this purchase is already under way. Confirm it in your banking app, or wait up to {{minutes}} minutes for the request to expire and start again.',
       error: 'Failed to create payment. Try again later.',
       planUnavailable: 'This plan is no longer available. Please choose one from the updated list.',
       notAccepted: "This purchase can't be completed right now. If it keeps happening, contact support.",
@@ -1643,7 +1666,9 @@ export const en: RuDict = {
     next: 'Next',
     start: 'Start',
     step1: {
-      title: 'Welcome to Rezeis VPN',
+      // {{brand}} is the operator's brand name. Never "Rezeis": that is the
+      // panel's name, not the service the customer bought.
+      title: 'Welcome to {{brand}}',
       description: 'A fast and reliable VPN for your safety online.',
     },
     step2: {

@@ -247,6 +247,7 @@ export {
   attachToTicket,
   createGuestTicket,
   getGuestConversation,
+  resumeGuestConversation,
   replyGuestConversation,
   closeGuestConversation,
   getGuestSupportConfig,
@@ -256,6 +257,7 @@ export {
   type SupportTicketMessage,
   type SupportAttachmentMeta,
   type GuestTicket,
+  type GuestResumeResult,
 } from "./support.js";
 
 // Web push

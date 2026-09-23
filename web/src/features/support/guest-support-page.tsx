@@ -14,6 +14,7 @@ import {
 import {
   createGuestTicket,
   getGuestConversation,
+  resumeGuestConversation,
   replyGuestConversation,
   closeGuestConversation,
   getGuestSupportConfig,
@@ -52,16 +53,42 @@ export default function GuestSupportPage(): JSX.Element {
   const [resumeCode, setResumeCode] = useState<string | null>(null)
   const [closedLocally, setClosedLocally] = useState(false)
 
-  // A resume token may arrive via an emailed link (`?resume=…`). Capture it
-  // once, then strip it from the visible URL/history so the token doesn't
-  // linger in the address bar. The first fetch relays it; the server then
-  // sets the httpOnly cookie and subsequent polls use that.
+  // A reply letter's «Открыть переписку» arrives as `?resume=…`. Captured
+  // once and taken off the address bar — it is a credential for the thread —
+  // then followed through `POST /support/guest/resume`, which decides what
+  // this device keeps (see that route for its four answers). The link is a
+  // way in, never the cookie itself: letters rotate their tokens.
   const [urlResume] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null
     const code = new URLSearchParams(window.location.search).get('resume')
     if (code) window.history.replaceState({}, '', window.location.pathname)
     return code
   })
+  // The visitor's "stay" to «Открыть другое обращение?» — for THAT question.
+  const [stayed, setStayed] = useState(false)
+
+  const followMutation = useMutation({
+    mutationFn: (input: FollowInput) => resumeGuestConversation(input.token, input.confirm),
+    // Every follow gets its own question. A "stay" that outlived its question
+    // silenced the code field under the conversation — the very way back the
+    // question names: the server asked, and the page showed nothing.
+    onMutate: () => setStayed(false),
+    onSuccess: (result, input) => {
+      if (result.status === 'confirm') return
+      if (result.status === 'stale' && input.from === 'code') {
+        toast.error(t('guestSupport.errors.notFound'))
+      }
+      if (result.ticket) qc.setQueryData(QUERY_KEY, result.ticket)
+      void qc.invalidateQueries({ queryKey: QUERY_KEY })
+    },
+  })
+  const follow = followMutation.mutate
+  useEffect(() => {
+    if (urlResume !== null) follow({ token: urlResume, confirm: false, from: 'link' })
+  }, [follow, urlResume])
+  // Until the link has been answered for, the page shows neither the device's
+  // own thread nor the start form: either could be the wrong one.
+  const openingLink = followMutation.isPending || (urlResume !== null && followMutation.isIdle)
 
   const configQuery = useQuery({
     queryKey: ['guest-support-config'],
@@ -69,18 +96,27 @@ export default function GuestSupportPage(): JSX.Element {
     staleTime: Infinity,
   })
 
+  // Every poll rides on the device cookie alone.
   const conversationQuery = useQuery<GuestTicket | null>({
     queryKey: QUERY_KEY,
     queryFn: () =>
-      getGuestConversation(urlResume ?? undefined).catch((err: unknown) => {
+      getGuestConversation().catch((err: unknown) => {
         if (statusOf(err) === 404) return null
         throw err
       }),
+    enabled: !openingLink,
     refetchInterval: (q) => {
       const data = q.state.data
       return data && data.status !== 'closed' ? 5000 : false
     },
   })
+
+  const linkInput = followMutation.variables
+  const linkResult = followMutation.data
+  const confirming =
+    linkResult?.status === 'confirm' && linkInput !== undefined && !stayed ? linkResult : null
+  const staleLink = linkResult?.status === 'stale' && linkInput?.from === 'link' ? linkResult : null
+  const linkFailed = followMutation.isError && linkInput !== undefined ? linkInput : null
 
   const ticket = conversationQuery.data ?? null
 
@@ -134,7 +170,65 @@ export default function GuestSupportPage(): JSX.Element {
           <p className="mt-1 text-sm text-muted-foreground">{t('guestSupport.subtitle')}</p>
         </header>
 
-        {conversationQuery.isLoading ? (
+        {linkFailed !== null && (
+          <div role="alert" className="glass-card mb-4 flex items-center justify-between gap-3 p-4 text-sm">
+            <span className="text-foreground">
+              {linkFailed.from === 'code' ? t('guestSupport.link.failedCode') : t('guestSupport.link.failed')}
+            </span>
+            <button
+              type="button"
+              onClick={() => follow(linkFailed)}
+              className="shrink-0 rounded-xl border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-accent"
+            >
+              {t('guestSupport.link.retry')}
+            </button>
+          </div>
+        )}
+        {staleLink !== null && (
+          <p role="status" className="glass-card mb-4 p-4 text-sm text-foreground">
+            {staleLink.ticket ? t('guestSupport.link.staleContinue') : t('guestSupport.link.staleNone')}
+          </p>
+        )}
+
+        {openingLink ? (
+          <div className="flex h-48 flex-col items-center justify-center gap-3">
+            <Loader2 className="h-7 w-7 animate-spin text-(--brand-primary)" />
+            <span className="text-sm text-muted-foreground">{t('guestSupport.link.opening')}</span>
+          </div>
+        ) : confirming !== null && linkInput !== undefined ? (
+          <div className="glass-card space-y-3 p-6">
+            <div className="text-sm font-medium text-foreground">{t('guestSupport.link.confirmTitle')}</div>
+            <p className="text-sm text-muted-foreground">
+              {t('guestSupport.link.confirmBody', {
+                current: confirming.current.subject,
+                opening: confirming.opening.subject,
+              })}
+            </p>
+            {/* This question is what stands between a crafted link and the
+                visitor's own thread, so it names only ways back that exist:
+                the code field under every open conversation, and a letter
+                about it — which not every guest gets. */}
+            <p className="text-sm text-muted-foreground">
+              {t('guestSupport.link.confirmWayBack', { current: confirming.current.subject })}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => follow({ ...linkInput, confirm: true })}
+                className="rounded-xl bg-(--brand-primary) px-4 py-2 text-sm font-medium text-(--brand-primary-fg)"
+              >
+                {t('guestSupport.link.confirmOpen')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStayed(true)}
+                className="rounded-xl border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent"
+              >
+                {t('guestSupport.link.confirmStay')}
+              </button>
+            </div>
+          </div>
+        ) : conversationQuery.isLoading ? (
           <div className="flex h-48 items-center justify-center">
             <Loader2 className="h-7 w-7 animate-spin text-(--brand-primary)" />
           </div>
@@ -146,6 +240,7 @@ export default function GuestSupportPage(): JSX.Element {
             onClose={() => closeMutation.mutate()}
             closing={closeMutation.isPending}
             resumeCode={resumeCode}
+            onRestore={(code) => follow({ token: code, confirm: false, from: 'code' })}
           />
         ) : configQuery.data && configQuery.data.enabled === false ? (
           <div className="glass-card space-y-2 p-6 text-center">
@@ -159,12 +254,19 @@ export default function GuestSupportPage(): JSX.Element {
             siteKey={configQuery.data?.turnstileSiteKey ?? null}
             submitting={createMutation.isPending}
             onSubmit={(input) => createMutation.mutate(input)}
-            onRestore={() => void conversationQuery.refetch()}
+            onRestore={(code) => follow({ token: code, confirm: false, from: 'code' })}
           />
         )}
       </div>
     </div>
   )
+}
+
+/** A way in to follow: the letter's link, or a code typed into «Есть код возврата?». */
+interface FollowInput {
+  readonly token: string
+  readonly confirm: boolean
+  readonly from: 'link' | 'code'
 }
 
 // ── Start form ───────────────────────────────────────────────────────────────
@@ -173,14 +275,13 @@ function StartForm(props: {
   siteKey: string | null
   submitting: boolean
   onSubmit: (input: { subject: string; message: string; email?: string; captchaToken?: string }) => void
-  onRestore: () => void
+  onRestore: (code: string) => void
 }): JSX.Element {
   const { t } = useTranslation()
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
   const [email, setEmail] = useState('')
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
-  const [resume, setResume] = useState('')
 
   const canSubmit =
     subject.trim().length > 0 &&
@@ -240,29 +341,38 @@ function StartForm(props: {
 
       <div className="border-t border-border pt-4">
         <label className="block text-xs text-muted-foreground">{t('guestSupport.resume.restoreLabel')}</label>
-        <div className="mt-2 flex gap-2">
-          <input
-            value={resume}
-            onChange={(e) => setResume(e.target.value)}
-            placeholder={t('guestSupport.resume.restorePlaceholder')}
-            className={INPUT_CLASS}
-          />
-          <button
-            type="button"
-            disabled={resume.trim().length === 0}
-            onClick={() => {
-              // The resume code is the guest token; setting it as the cookie is
-              // server-side, so we hand it to the query via a one-off fetch.
-              void getGuestConversation(resume.trim())
-                .then(() => props.onRestore())
-                .catch(() => toast.error(t('guestSupport.errors.notFound')))
-            }}
-            className="shrink-0 rounded-xl border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50"
-          >
-            {t('guestSupport.resume.restoreButton')}
-          </button>
-        </div>
+        <RestoreByCode onRestore={props.onRestore} />
       </div>
+    </div>
+  )
+}
+
+/**
+ * The code field of «Есть код возврата?». Followed like a letter's link: the
+ * server decides what the device keeps and writes the cookie; an unknown code
+ * says «не найдено», and a code for another conversation than the one open
+ * here asks first («Открыть другое обращение?»).
+ */
+function RestoreByCode({ onRestore }: { onRestore: (code: string) => void }): JSX.Element {
+  const { t } = useTranslation()
+  const [code, setCode] = useState('')
+  return (
+    <div className="mt-2 flex gap-2">
+      <input
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        placeholder={t('guestSupport.resume.restorePlaceholder')}
+        aria-label={t('guestSupport.resume.restoreLabel')}
+        className={INPUT_CLASS}
+      />
+      <button
+        type="button"
+        disabled={code.trim().length === 0}
+        onClick={() => onRestore(code.trim())}
+        className="shrink-0 rounded-xl border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+      >
+        {t('guestSupport.resume.restoreButton')}
+      </button>
     </div>
   )
 }
@@ -276,6 +386,8 @@ function ChatView(props: {
   replying: boolean
   onClose: () => void
   closing: boolean
+  /** A code typed under the conversation: the way back «Открыть другое обращение?» names. */
+  onRestore: (code: string) => void
 }): JSX.Element {
   const { t } = useTranslation()
   const [text, setText] = useState('')
@@ -360,6 +472,15 @@ function ChatView(props: {
           {props.replying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </button>
       </div>
+
+      {/* The start form's code field lived only on that form, which a device
+          holding an open conversation never shows — so after «Открыть другое
+          обращение» the previous one could not be got back by its code.
+          Folded away: it is for coming back, not for the conversation here. */}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none">{t('guestSupport.resume.restoreLabel')}</summary>
+        <RestoreByCode onRestore={props.onRestore} />
+      </details>
     </div>
   )
 }

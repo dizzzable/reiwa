@@ -160,6 +160,27 @@ export const getGuestConversation = (resume?: string) =>
     .get<GuestTicket>("/support/guest", resume ? { params: { resume } } : undefined)
     .then((r) => r.data);
 
+/**
+ * What following a way in did (`POST /support/guest/resume` in the BFF):
+ * `opened` — this device now holds the conversation; `continued` — it already
+ * did; `stale` — the link is out of date, `ticket` being the conversation the
+ * device already holds, if any; `confirm` — the device holds another open
+ * conversation, and switching needs the visitor's word (`confirm: true`).
+ */
+export type GuestResumeResult =
+  | { readonly status: "opened" | "continued"; readonly ticket: GuestTicket }
+  | { readonly status: "stale"; readonly ticket: GuestTicket | null }
+  | {
+      readonly status: "confirm";
+      readonly opening: { readonly subject: string };
+      readonly current: { readonly subject: string };
+    };
+
+export const resumeGuestConversation = (resume: string, confirm = false) =>
+  apiClient
+    .post<GuestResumeResult>("/support/guest/resume", confirm ? { resume, confirm: true } : { resume })
+    .then((r) => r.data);
+
 export const replyGuestConversation = (content: string, resume?: string) =>
   apiClient
     .post<GuestTicket>("/support/guest/reply", { content, ...(resume ? { resume } : {}) })

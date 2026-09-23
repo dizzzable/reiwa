@@ -201,14 +201,15 @@ export function createSupportGuestRouter(deps: {
       return;
     }
     try {
-      const ticket = await adminClient?.support.getGuest(token);
-      // When the visitor arrived via an emailed resume link (no cookie yet),
-      // persist the token as the httpOnly cookie so the session continues
-      // across subsequent polls without the code in the URL.
-      if (!cookieToken && ticket) {
-        res.cookie(COOKIE_NAME, token, cookieOptions);
+      const found = asGuestThread(await adminClient?.support.getGuest(token));
+      // A token that came WITH the request, on a device with no cookie (a
+      // page from before `/support/guest/resume`), becomes the cookie — as
+      // the conversation's durable credential when the panel exchanged it.
+      // An ordinary poll rides on the cookie and writes nothing.
+      if (found !== null && cookieToken === null) {
+        res.cookie(COOKIE_NAME, found.deviceToken ?? token, cookieOptions);
       }
-      res.json(ticket ?? null);
+      res.json(found?.thread ?? null);
     } catch (err: unknown) {
       if (isUpstreamStatus(err, 404)) {
         res.status(404).json({ error: "not_found" });
@@ -217,6 +218,67 @@ export function createSupportGuestRouter(deps: {
       sendSafeError(req, res, err, 500, "Failed to load conversation", "support/guest/get");
     }
   });
+
+  // POST /support/guest/resume — follow a way in: the «Открыть переписку»
+  // link in a reply letter, or a resume code typed into «Есть код возврата?».
+  //
+  // A letter's token is not the device's key: the panel issues a new one with
+  // every operator reply and forgets the old one. Kept as the cookie, it
+  // dropped the visitor out of the conversation at the operator's next reply —
+  // the device that started the thread included. So the panel answers a link
+  // with the conversation's durable credential, and the device keeps THAT.
+  //
+  //   opened    — the device now holds the conversation (cookie written);
+  //   continued — it already held this very conversation (cookie untouched);
+  //   stale     — the link is out of date or unknown; `ticket` is the
+  //               conversation the device already holds, if any, to carry on;
+  //   confirm   — the device holds ANOTHER open conversation, and a link is
+  //               not allowed to swap it silently (a crafted one would slip
+  //               the visitor into a thread its sender reads). Nothing is
+  //               written until the page sends `confirm: true`.
+  router.post("/support/guest/resume", async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as { resume?: unknown; confirm?: unknown };
+    const resume = typeof body.resume === "string" ? body.resume.trim() : "";
+    if (resume.length === 0) {
+      res.status(400).json({ error: "resume_required" });
+      return;
+    }
+    const cookieToken = (req.cookies?.[COOKIE_NAME] as string | undefined) ?? null;
+    try {
+      const current = cookieToken !== null ? await lookUpGuest(cookieToken) : null;
+      const incoming = await lookUpGuest(resume);
+      if (incoming === null) {
+        res.json({ status: "stale", ticket: current?.thread ?? null });
+        return;
+      }
+      if (current !== null && current.thread.id === incoming.thread.id) {
+        res.json({ status: "continued", ticket: current.thread });
+        return;
+      }
+      if (current !== null && body.confirm !== true) {
+        res.json({
+          status: "confirm",
+          opening: { subject: incoming.thread.subject },
+          current: { subject: current.thread.subject },
+        });
+        return;
+      }
+      res.cookie(COOKIE_NAME, incoming.deviceToken ?? resume, cookieOptions);
+      res.json({ status: "opened", ticket: incoming.thread });
+    } catch (err: unknown) {
+      sendSafeError(req, res, err, 500, "Failed to open conversation", "support/guest/resume");
+    }
+  });
+
+  /** The thread a token opens (with any credential split off), or `null` when it opens none. */
+  async function lookUpGuest(token: string): Promise<GuestThread | null> {
+    try {
+      return asGuestThread(await adminClient?.support.getGuest(token));
+    } catch (err: unknown) {
+      if (isUpstreamStatus(err, 404)) return null;
+      throw err;
+    }
+  }
 
   // POST /support/guest/reply — append a guest message.
   router.post("/support/guest/reply", replyLimiter, async (req: Request, res: Response) => {
@@ -358,8 +420,9 @@ export function createSupportGuestRouter(deps: {
 
   /**
    * Resolve the guest token from the httpOnly cookie first, then an
-   * explicit resume code (header / body / query) so a returning visitor
-   * can restore their conversation on a new device.
+   * explicit resume code (header / body / query), which only a device with
+   * no cookie can use this way. Switching a device to ANOTHER conversation
+   * is `POST /support/guest/resume`'s job alone, where it is confirmed.
    */
   function readToken(req: Request): string | null {
     const cookie = req.cookies?.[COOKIE_NAME] as string | undefined;
@@ -375,4 +438,25 @@ export function createSupportGuestRouter(deps: {
 
   return router;
 
+}
+
+/** A guest thread as the browser may see it, and the credential it must not. */
+interface GuestThread {
+  readonly thread: { readonly id: string; readonly subject?: string } & Record<string, unknown>;
+  /** The conversation's durable credential, when the token was a letter's link. */
+  readonly deviceToken: string | null;
+}
+
+/**
+ * Split the panel's answer: `deviceToken` goes into the cookie and nowhere
+ * else — never into a JSON body the page's scripts can read.
+ */
+function asGuestThread(payload: unknown): GuestThread | null {
+  if (payload === null || typeof payload !== "object") return null;
+  const { deviceToken, ...thread } = payload as Record<string, unknown>;
+  if (typeof thread["id"] !== "string") return null;
+  return {
+    thread: thread as GuestThread["thread"],
+    deviceToken: typeof deviceToken === "string" && deviceToken.length > 0 ? deviceToken : null,
+  };
 }

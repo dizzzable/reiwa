@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'motion/react'
 import { Shield, Zap, Users, Gift, ArrowRight, Check } from 'lucide-react'
 import { useSession } from '@/hooks/use-session'
+import { useBranding } from '@/lib/branding-provider'
 
 const STEPS = [
   {
@@ -40,6 +41,9 @@ export default function OnboardingPage() {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { session } = useSession()
+  // The first step welcomes the customer to the operator's service by name —
+  // the name the header and the sign-in screen carry, never the panel's.
+  const { branding } = useBranding()
   const [step, setStep] = useState(0)
 
   const isLast = step === STEPS.length - 1
@@ -112,7 +116,7 @@ export default function OnboardingPage() {
             </div>
 
             {/* Text */}
-            <h1 className="text-2xl font-bold mb-3">{t(current.titleKey)}</h1>
+            <h1 className="text-2xl font-bold mb-3">{t(current.titleKey, { brand: branding.brandName })}</h1>
             <p className="max-w-xs text-sm leading-relaxed text-[color:var(--brand-muted-foreground)]">{t(current.descriptionKey)}</p>
           </motion.div>
         </AnimatePresence>
