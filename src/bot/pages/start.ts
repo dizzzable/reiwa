@@ -24,6 +24,7 @@
  *     swapping the message's banner back to the MAIN screen's banner
  *     (via `renderViewWithBanner`) so a sub-screen's custom banner
  *     doesn't linger, and refreshing the caption + keyboard.
+ *   • `menu` is answered by the same handler — see where both are registered.
  */
 import { InlineKeyboard } from 'grammy';
 
@@ -31,8 +32,11 @@ import { buildProfileSummary } from '../../infrastructure/bot-message/message-bu
 import { getPolicyCache, type CachedPolicy } from '../../infrastructure/admin-client/policy-cache.js';
 import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/bot-channel-gate.js';
 import { isSameChannelChat, resolveChannelChatId, resolveChannelGateVerdict } from '../lib/channel-gate.js';
+import { configWithin, MESSAGE_CONFIG_BUDGET_MS, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 import { inlineButton } from '../widgets/inline-button.js';
+import { messageCopy, plainCopy } from '../widgets/operator-copy.js';
 import { sendChannelJoinPrompt } from './channel-join-prompt.js';
+import { replyWithEntities } from './reply.js';
 import { PASSWORD_RESET_START_PAYLOAD, replyWithPasswordReset } from './password-reset.js';
 import { QUEST_ID_RE, replyWithQuestChannelPrompt, type ChannelTarget } from './quest-channel.js';
 import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl, attachSigninTokenToUrl, supportPrefill } from '../widgets/main-keyboard.js';
@@ -212,11 +216,11 @@ async function buildWelcomeView(
   // message empty when the user has no subscriptions. Telegram rejects empty
   // text, so fall back to a neutral "choose an action" line — NOT the welcome
   // default (that would defeat the operator's intent to hide the greeting).
-  const safeText =
+  // Operator copy too, so its emoji tokens resolve like the greeting's.
+  const { text: safeText, entities: safeEntities } =
     message.text.trim().length > 0
-      ? message.text
-      : deps.translator.t('menu.choose_action', lang);
-  const safeEntities = message.text.trim().length > 0 ? message.entities : [];
+      ? message
+      : messageCopy(deps.translator.t('menu.choose_action', lang), botCfg);
 
   const miniAppUrl =
     botCfg.features.miniAppEnabled && deps.urls.miniAppUrl !== null
@@ -294,6 +298,8 @@ async function buildWelcomeView(
         miniAppUrl,
         cabinetUrl,
         botEmojis: botCfg.botEmojis,
+        customEmojis: botCfg.customEmojis,
+        ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
         translator: deps.translator,
         lang,
       });
@@ -569,6 +575,16 @@ async function stoppedAtChannelGate(
 }
 
 export const registerStartPage: PageRegistrar = (bot, deps) => {
+  // The config the short answers below are rendered with: `/start`'s one-line
+  // replies, and the RESTRICTED alert of «В меню». Those reads were added with
+  // the emoji tokens, where none was made before. Each is asked for AT its
+  // answer, after the work before it (link consume, quest target, access mode):
+  // a config the panel gives meanwhile is the one used. A refresh against a
+  // hung panel must not hold an answer, and every update queued behind it (they
+  // are handled one at a time): past the budget, the config the bot holds. The
+  // welcome screen reads its own, as it did.
+  const copyConfig = (budgetMs: number) => configWithin(deps, budgetMs);
+
   // ── /start command — cold path with bootstrap + banner ────────────────────
   bot.command('start', async (ctx) => {
     const tgUser = ctx.from;
@@ -580,6 +596,11 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
     // token in «Кабинет» for any member of the group to open first, and a quest
     // link completed its quest there without the gate's channel.
     if (!isOwnPrivateChat(ctx)) return;
+
+    // Every one-line answer below is operator copy: its emoji tokens resolved,
+    // with the pack emoji's entity for an owner with Premium.
+    const say = async (key: string, lang: SupportedLocale): Promise<void> =>
+      replyWithEntities(ctx, messageCopy(deps.translator.t(key, lang), await copyConfig(MESSAGE_CONFIG_BUDGET_MS)));
 
     // Phase 0: account-linking deep-link. `t.me/<bot>?start=link_<code>`
     // delivers the 6-digit code minted by the web cabinet's "Link
@@ -604,7 +625,7 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       // triggers a wasted upstream call and can build a button whose callback_data
       // the callback then rejects (or that breaches Telegram's 64-byte limit).
       if (!QUEST_ID_RE.test(questId)) {
-        await ctx.reply(deps.translator.t('quests.channel.retry', lang));
+        await say('quests.channel.retry', lang);
         return;
       }
       let target: ChannelTarget | null = null;
@@ -624,7 +645,7 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       // the quest otherwise — see `stoppedAtChannelGate`.
       if (await stoppedAtChannelGate(ctx, deps, tgUser.id, { questId, target })) return;
       if (target === null) {
-        await ctx.reply(deps.translator.t('quests.channel.retry', lang));
+        await say('quests.channel.retry', lang);
         return;
       }
       await replyWithQuestChannelPrompt(ctx, deps, questId, target);
@@ -641,20 +662,22 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
     // happened, and this message is its acknowledgement.
     if (startPayload === 'payment_return') {
       const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+      // The release waited for the config here; its caption's emoji and icon
+      // come from the config the bot holds now whenever the read is late.
+      const botCfg = await copyConfig(MESSAGE_CONFIG_BUDGET_MS);
       const keyboard = new InlineKeyboard();
       const miniAppUrl = deps.urls.miniAppUrl;
       const publicWebUrl = deps.urls.publicWebUrl;
-      const returnCfg = await deps.getConfig();
       const openAppLabel = inlineButton(
         deps.translator.t('payment_return.open_app', lang),
-        returnCfg,
+        botCfg,
       );
       if (isTelegramSafeButtonUrl(miniAppUrl)) {
         keyboard.webApp(openAppLabel, miniAppUrl as string);
       } else if (isTelegramSafeButtonUrl(publicWebUrl)) {
         keyboard.url(openAppLabel, `${publicWebUrl}/payment-return`);
       }
-      await ctx.reply(deps.translator.t('payment_return.title', lang), {
+      await replyWithEntities(ctx, messageCopy(deps.translator.t('payment_return.title', lang), botCfg), {
         // Only attach the keyboard when a safe button URL exists; otherwise
         // send the plain acknowledgement (dev/localhost has no HTTPS target).
         reply_markup: keyboard.inline_keyboard.length > 0 ? keyboard : undefined,
@@ -696,13 +719,13 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
               break;
           }
         }
-        await ctx.reply(deps.translator.t(key, lang));
+        await say(key, lang);
       } catch (err: unknown) {
         deps.logger?.warn(
           { err, telegramId: tgUser.id },
           'bot/start: telegram link consume failed',
         );
-        await ctx.reply(deps.translator.t('link.error', lang));
+        await say('link.error', lang);
       }
       // Fall through to the normal welcome flow so the user lands on the
       // main menu after the link result. Bootstrap below is an upsert by
@@ -718,7 +741,7 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
         const policy = await getPolicyCache(deps.adminClient).get();
         const refusal = await accessModeRefusal(deps.adminClient, policy, tgUser.id, startPayload);
         if (refusal !== null) {
-          await ctx.reply(deps.translator.t(refusal, lang));
+          await say(refusal, lang);
           return;
         }
       } catch {
@@ -802,7 +825,7 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
   // Every sub-menu's "В меню" button funnels here. Render the welcome
   // view *in place* on the existing message instead of sending a new
   // one — STEALTHNET-style chrome.
-  bot.callbackQuery('menu:main', async (ctx) => {
+  const showMainMenu = async (ctx: BotContext): Promise<void> => {
     // The welcome screen carries the user's fresh sign-in token: rendered only
     // in their own chat with the bot, never on a message in a group.
     if (!isOwnPrivateChat(ctx)) {
@@ -816,8 +839,9 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
         const policy = await getPolicyCache(deps.adminClient).get();
         if (policy.accessMode === 'RESTRICTED') {
           const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+          // Operator copy in an alert, which carries no entities: glyphs.
           await ctx.answerCallbackQuery({
-            text: deps.translator.t('access_mode.restricted', lang),
+            text: plainCopy(deps.translator.t('access_mode.restricted', lang), await copyConfig(TOAST_CONFIG_BUDGET_MS)),
             show_alert: true,
           });
           return;
@@ -875,5 +899,12 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
         );
       }
     }
-  });
+  };
+  bot.callbackQuery('menu:main', showMainMenu);
+  // `menu` is `menu:main` as an operator types it. The panel's notification
+  // editor takes a button's callback data as free text, and «Карта бота» has
+  // drawn `menu` as the way to the main menu since June — while nothing here
+  // answered it, and such a button only spun. The same handler, not a copy:
+  // the own-chat rule, the RESTRICTED alert and the banner restore included.
+  bot.callbackQuery('menu', showMainMenu);
 };

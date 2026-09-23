@@ -7,6 +7,13 @@ import type {
   BotMenuButtonConfig,
   BotProfileConfig,
 } from '../../../src/infrastructure/bot-config/types.js';
+import {
+  OPERATOR_TEXT,
+  OPERATOR_TEXT_GLYPHS,
+  buildPassthroughTranslator,
+  operatorEmojiConfig,
+  withOperatorText,
+} from '../pages/helpers.js';
 
 /**
  * Pushing the operator's settings from the panel to Telegram.
@@ -344,5 +351,78 @@ describe('applyBotSettings — menu button', () => {
       menu_button: { type: 'commands' },
     });
     expect(result.updated).toStrictEqual(['menuButton']);
+  });
+});
+
+// The profile and the button label are `bot.*` rows «Тексты бота» lists like any
+// other text — its emoji picker in the field — and `menu_button.cabinet` is an
+// ordinary translator key. Telegram shows all of them as plain text: no
+// entities, so every token becomes its glyph, or `:fire:` is the bot's name.
+describe('applyBotSettings — the operator emoji tokens', () => {
+  it('resolves them in every profile field, in both languages', async () => {
+    const api = fakeApi();
+    await run(
+      api,
+      operatorEmojiConfig(
+        configWith({
+          profile: {
+            name: OPERATOR_TEXT,
+            description: OPERATOR_TEXT,
+            shortDescription: OPERATOR_TEXT,
+            nameEn: `${OPERATOR_TEXT} (en)`,
+          },
+        }),
+      ),
+    );
+
+    expect(api.setMyName.mock.calls).toEqual([
+      [OPERATOR_TEXT_GLYPHS, { language_code: undefined }],
+      [`${OPERATOR_TEXT_GLYPHS} (en)`, { language_code: 'en' }],
+    ]);
+    expect(api.setMyDescription).toHaveBeenCalledExactlyOnceWith(OPERATOR_TEXT_GLYPHS, { language_code: undefined });
+    expect(api.setMyShortDescription).toHaveBeenCalledExactlyOnceWith(OPERATOR_TEXT_GLYPHS, {
+      language_code: undefined,
+    });
+  });
+
+  it('compares what Telegram holds with the glyphs, so an applied profile is not written again', async () => {
+    const api = fakeApi({ name: OPERATOR_TEXT_GLYPHS });
+    const result = await run(api, operatorEmojiConfig(configWith({ profile: { name: OPERATOR_TEXT } })));
+
+    expect(api.getMyName).toHaveBeenCalledOnce();
+    expect(api.setMyName).not.toHaveBeenCalled();
+    expect(result.updated).toStrictEqual([]);
+  });
+
+  it('measures the text Telegram receives, not the tokens typed', async () => {
+    // 122 characters as typed, 118 once `:fire:` is its glyph: within the 120.
+    const typed = `:fire: ${'x'.repeat(115)}`;
+    expect(typed.length).toBe(122);
+    const api = fakeApi();
+    const result = await run(api, operatorEmojiConfig(configWith({ profile: { shortDescription: typed } })));
+
+    expect(api.setMyShortDescription).toHaveBeenCalledExactlyOnceWith(`🔥 ${'x'.repeat(115)}`, {
+      language_code: undefined,
+    });
+    expect(result).toStrictEqual({ updated: ['shortDescription'], failed: [] });
+  });
+
+  it('resolves them in the menu button’s label, the operator’s or the bot’s own', async () => {
+    const own = fakeApi();
+    await run(own, operatorEmojiConfig(configWith({ menuButton: { kind: 'web_app', text: OPERATOR_TEXT } })));
+    expect(own.setChatMenuButton).toHaveBeenCalledExactlyOnceWith({
+      menu_button: { type: 'web_app', text: OPERATOR_TEXT_GLYPHS, web_app: { url: 'https://app.example.test' } },
+    });
+
+    const fallback = fakeApi();
+    await applyBotSettings({
+      bot: { api: fallback } as never,
+      config: operatorEmojiConfig(configWith({ menuButton: { kind: 'web_app', text: '' } })),
+      translator: withOperatorText(buildPassthroughTranslator(), ['menu_button.cabinet']),
+      miniAppUrl: 'https://app.example.test',
+    });
+    expect(fallback.setChatMenuButton).toHaveBeenCalledExactlyOnceWith({
+      menu_button: { type: 'web_app', text: OPERATOR_TEXT_GLYPHS, web_app: { url: 'https://app.example.test' } },
+    });
   });
 });

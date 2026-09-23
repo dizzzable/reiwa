@@ -110,3 +110,98 @@ describe('a screen longer than Telegram accepts', () => {
     expect(calls[calls.length - 1][1]?.['reply_markup']).toBe(replyMarkup);
   });
 });
+
+/**
+ * A long screen whose text carries entities — the operator's pack emoji.
+ *
+ * Each part is a message of its own, so it has to carry the entities that fall
+ * in it at offsets counted from ITS start (UTF-16 units). They all used to ride
+ * on the last part at their offsets in the whole text: out of that part's
+ * range, a 400, and the user got the generic apology instead of the screen.
+ *
+ * And Telegram counts the 4096 in characters (code points), not in the UTF-16
+ * units JavaScript's `.length` counts — see memory
+ * `telegram-length-limits-count-code-points` — so a cut must never land inside
+ * a surrogate pair, nor inside the glyph an entity covers.
+ */
+describe('a long screen with the operator’s emoji in it', () => {
+  const FIRE_ID = '5368324170671202286';
+  type Entity = { type: 'custom_emoji'; offset: number; length: number; custom_emoji_id: string };
+  const entitiesOf = (opts: Record<string, unknown> | undefined): Entity[] =>
+    (opts?.['entities'] as Entity[] | undefined) ?? [];
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+  it('gives each part the entities that fall in it, counted from the part’s own start', async () => {
+    const ctx = buildCtx();
+    const lines = Array.from({ length: 300 }, (_, i) => `🔥 Пункт ${i} правил сервиса.`);
+    const entities: Entity[] = [];
+    let offset = 0;
+    for (const line of lines) {
+      entities.push({ type: 'custom_emoji', offset, length: 2, custom_emoji_id: FIRE_ID });
+      offset += line.length + 2;
+    }
+
+    await replyWithOptionalBanner(ctx as unknown as BotContext, deps(), DEFAULT_BOT_CONFIG, {
+      text: lines.join('\n\n'),
+      entities,
+    });
+
+    const calls = ctx.reply.mock.calls;
+    expect(calls.length).toBeGreaterThan(1);
+    let carried = 0;
+    for (const [part, opts] of calls) {
+      const own = entitiesOf(opts);
+      // Every entity sits on a 🔥 of THIS part, and every 🔥 of it carries one.
+      for (const entity of own) expect(part.slice(entity.offset, entity.offset + entity.length)).toBe('🔥');
+      expect(own).toHaveLength([...part.matchAll(/🔥/gu)].length);
+      carried += own.length;
+    }
+    expect(carried).toBe(300);
+  });
+
+  it('measures the limit in characters, as Telegram does: 3000 emoji are one message', async () => {
+    // 3000 characters for Telegram, 6000 UTF-16 units for `.length`.
+    const ctx = buildCtx();
+    const text = '😀'.repeat(3000);
+
+    await replyWithOptionalBanner(ctx as unknown as BotContext, deps(), DEFAULT_BOT_CONFIG, { text });
+
+    expect(ctx.reply.mock.calls.map(([part]) => part)).toEqual([text]);
+  });
+
+  it('never cuts a surrogate pair in half where there is no line break to cut at', async () => {
+    const ctx = buildCtx();
+    const text = `a${'😀'.repeat(5000)}`;
+
+    await replyWithOptionalBanner(ctx as unknown as BotContext, deps(), DEFAULT_BOT_CONFIG, { text });
+
+    const parts = ctx.reply.mock.calls.map(([part]) => part);
+    expect(parts.length).toBeGreaterThan(1);
+    for (const part of parts) {
+      expect(LONE_SURROGATE.test(part)).toBe(false);
+      expect([...part].length).toBeLessThanOrEqual(4096);
+    }
+    expect(parts.join('')).toBe(text);
+  });
+
+  it('never cuts the glyph an entity covers, even when the limit falls inside it', async () => {
+    // A flag is two characters under one entity. Placed so the 4096th character
+    // is its first half, the cut moves back to before it and the flag, whole,
+    // opens the next part with its entity at 0.
+    const ctx = buildCtx();
+    const flag = '🇷🇺';
+    const text = `${'x'.repeat(4095)}${flag}${'y'.repeat(100)}`;
+
+    await replyWithOptionalBanner(ctx as unknown as BotContext, deps(), DEFAULT_BOT_CONFIG, {
+      text,
+      entities: [{ type: 'custom_emoji', offset: 4095, length: flag.length, custom_emoji_id: FIRE_ID }],
+    });
+
+    const calls = ctx.reply.mock.calls;
+    expect(calls.map(([part]) => part)).toEqual(['x'.repeat(4095), `${flag}${'y'.repeat(100)}`]);
+    expect(entitiesOf(calls[0][1])).toEqual([]);
+    expect(entitiesOf(calls[1][1])).toEqual([
+      { type: 'custom_emoji', offset: 0, length: flag.length, custom_emoji_id: FIRE_ID },
+    ]);
+  });
+});

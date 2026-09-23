@@ -14,7 +14,10 @@
 import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
+import { replyWithEntities } from './reply.js';
 import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
+import { configWithin, MESSAGE_CONFIG_BUDGET_MS } from '../lib/config-within.js';
+import { messageCopy } from '../widgets/operator-copy.js';
 import type { PageDeps, PageRegistrar } from './types.js';
 
 /**
@@ -58,7 +61,8 @@ export const registerLangPage: PageRegistrar = (bot, deps) => {
     const kb = new InlineKeyboard()
       .text(localeButton(translator.t('lang.ru', lang), botCfg), 'lang:ru')
       .text(localeButton(translator.t('lang.en', lang), botCfg), 'lang:en');
-    await ctx.reply(translator.t('lang.choose', lang), { reply_markup: kb });
+    // The text above the two labels is operator copy as well.
+    await replyWithEntities(ctx, messageCopy(translator.t('lang.choose', lang), botCfg), { reply_markup: kb });
   });
 
   bot.callbackQuery(LANG_CALLBACK_RE, async (ctx) => {
@@ -82,6 +86,10 @@ export const registerLangPage: PageRegistrar = (bot, deps) => {
     }
 
     const langName = translator.t(`lang.name.${newLang}`, newLang);
-    await ctx.reply(translator.t('lang.changed', newLang, { lang: langName }));
+    const changed = translator.t('lang.changed', newLang, { lang: langName });
+    // The confirmation read no config before its emoji tokens were resolved,
+    // and a switch of language must not wait out a hung panel — nor hold every
+    // update queued behind it. Past the budget: the config the bot holds.
+    await replyWithEntities(ctx, messageCopy(changed, await configWithin(deps, MESSAGE_CONFIG_BUDGET_MS)));
   });
 };

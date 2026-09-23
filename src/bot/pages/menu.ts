@@ -34,12 +34,15 @@
 import type { AdminClient } from '../../lib/admin-client.js';
 import { getPolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import { buildMainKeyboard, resolveSupportDeepLink, supportPrefill } from '../widgets/main-keyboard.js';
+import { messageCopy, plainCopy, type CopyEmojis } from '../widgets/operator-copy.js';
+import { configWithin, MESSAGE_CONFIG_BUDGET_MS, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/bot-channel-gate.js';
 import { resolveChannelGateVerdict } from '../lib/channel-gate.js';
 
 import { CHECK_CHANNEL_CALLBACK_RE, sendNotSubscribedNoticeUnlessRecent } from './channel-join-prompt.js';
 import { coerceLocale } from './coerce-locale.js';
 import { replyWithQuestChannelPrompt, type ChannelTarget } from './quest-channel.js';
+import { replyWithEntities } from './reply.js';
 import { accessModeRefusal, sendWelcomeScreen } from './start.js';
 import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
@@ -110,7 +113,7 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       customEmojis: botCfg.customEmojis,
       ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
     });
-    await ctx.reply(deps.translator.t('menu.choose_action', lang), {
+    await replyWithEntities(ctx, messageCopy(deps.translator.t('menu.choose_action', lang), botCfg), {
       reply_markup: keyboard,
     });
   });
@@ -125,6 +128,14 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       return;
     }
     const lang = coerceLocale(deps.userLocale.getSync(tgUser.id));
+    // Every answer below is operator copy in a toast, which carries no
+    // entities: its emoji tokens go out as glyphs. The config for them — reads
+    // this button made none of before — is asked for AT each answer, after the
+    // policy and Telegram were: a config the panel gives meanwhile is the one
+    // used. A refresh against a hung panel must not hold the spinner, and every
+    // update queued behind it: past the budget, the config the bot holds.
+    const toastConfig = (): Promise<CopyEmojis> => configWithin(deps, TOAST_CONFIG_BUDGET_MS);
+    const toast = (key: string, emojis: CopyEmojis): string => plainCopy(deps.translator.t(key, lang), emojis);
     // grammY puts the trigger's match here: group 1 is the carried quest id.
     const questId = Array.isArray(ctx.match) ? (ctx.match[1] as string | undefined) : undefined;
 
@@ -143,7 +154,7 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
         : await accessModeRefusal(deps.adminClient, policy, tgUser.id, '');
     if (refusal !== null) {
       await ctx.answerCallbackQuery({
-        text: deps.translator.t(refusal, lang),
+        text: toast(refusal, await toastConfig()),
         show_alert: true,
       });
       return;
@@ -166,17 +177,23 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
             { fresh: true },
           );
     if (verdict === 'not-subscribed') {
-      // The toast on every press; the message at most once per prompt interval.
-      await ctx.answerCallbackQuery({ text: deps.translator.t('channel.not_subscribed', lang) });
-      await sendNotSubscribedNoticeUnlessRecent(ctx, deps).catch((err: unknown) => {
+      // The toast on every press; the message at most once per prompt interval,
+      // with the toast's config — it follows the toast at once.
+      const emojis = await toastConfig();
+      await ctx.answerCallbackQuery({ text: toast('channel.not_subscribed', emojis) });
+      await sendNotSubscribedNoticeUnlessRecent(ctx, deps, emojis).catch((err: unknown) => {
         // The toast already said it; a notice that failed is forgotten, and the next press sends it.
         deps.logger?.warn({ err, telegramId: tgUser.id }, 'bot/menu: the not-subscribed notice could not be sent');
       });
       return;
     }
 
-    await ctx.answerCallbackQuery({ text: deps.translator.t('channel.verified', lang) });
-    if (questId !== undefined && deps.adminClient !== null && (await continuedToQuest(ctx, deps, deps.adminClient, questId))) {
+    await ctx.answerCallbackQuery({ text: toast('channel.verified', await toastConfig()) });
+    if (
+      questId !== undefined &&
+      deps.adminClient !== null &&
+      (await continuedToQuest(ctx, deps, deps.adminClient, questId))
+    ) {
       return;
     }
     // Channel check passed — render the FULL welcome screen (banner + greeting
@@ -194,7 +211,8 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
  * `false` when the quest cannot be shown, and the caller falls back to the
  * welcome screen: answering "try again" with nothing else left the user on a
  * dead end that pressing the button again only repeated. A 404 (no account
- * linked to this Telegram) says so first, as the quest's verify button does.
+ * linked to this Telegram) says so first, as the quest's verify button does —
+ * the config for its words asked for at that answer, within its budget.
  */
 async function continuedToQuest(
   ctx: BotContext,
@@ -209,7 +227,8 @@ async function continuedToQuest(
   } catch (err: unknown) {
     deps.logger?.warn({ err, telegramId, questId }, 'bot/menu: quest_channel target failed after the channel gate');
     if (isStatus(err, 404)) {
-      await ctx.reply(deps.translator.t('quests.channel.link_first', coerceLocale(deps.userLocale.getSync(telegramId))));
+      const text = deps.translator.t('quests.channel.link_first', coerceLocale(deps.userLocale.getSync(telegramId)));
+      await replyWithEntities(ctx, messageCopy(text, await configWithin(deps, MESSAGE_CONFIG_BUDGET_MS)));
     }
     return false;
   }

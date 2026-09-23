@@ -13,7 +13,7 @@
  *   - `adminClient` — typed namespace facade (Wave 2)
  *   - `translator`  — TranslatorPort + LocalePackHydrator singleton
  *   - `userLocale`  — sync helper bag for the per-user locale cache
- *   - `getConfig`   — bound BotConfigCache.get
+ *   - `getConfig`   — bound BotConfigCache.get (`peekConfig`: its peek)
  *   - `urls`        — pre-computed Telegram-safe URLs
  *   - `logger`      — LoggerPort for structured records (best-effort:
  *                     pages that don't need it ignore the field)
@@ -64,6 +64,13 @@ export interface PageDeps {
   readonly translator: TranslatorPort;
   readonly userLocale: UserLocaleSyncCache;
   readonly getConfig: () => Promise<BotConfig>;
+  /**
+   * The config the bot holds, whatever its age — `BotConfigCache.peek()`;
+   * `null` when it holds none. Never asks the panel: what a reply that cannot
+   * wait for it falls back on (`lib/config-within.ts`). Wired in `bot/main.ts`;
+   * absent, a reply that cannot wait goes without a config.
+   */
+  readonly peekConfig?: () => BotConfig | null;
   readonly urls: BotUrls;
   /**
    * Resolves the per-page banner asset (filesystem or operator URL).

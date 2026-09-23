@@ -29,6 +29,14 @@
  *
  * Every call is best-effort: a failure is logged and the next item is still
  * attempted. Nothing here may keep the bot from starting.
+ *
+ * ── Plain text, emoji tokens resolved ─────────────────────────────────────
+ *
+ * The profile fields and the button label are `bot.*` rows the panel's «Тексты
+ * бота» lists like any other text, with its emoji picker in the field, and the
+ * label's default is an ordinary translator key. Telegram shows all of them as
+ * plain text — no entities — so every `:slug:` / `{{KEY}}` becomes its glyph
+ * (`plainCopy`) before anything is compared, measured or written.
  */
 import type { Bot } from 'grammy';
 import type { LanguageCode, MenuButton } from '@grammyjs/types';
@@ -36,6 +44,7 @@ import type { LanguageCode, MenuButton } from '@grammyjs/types';
 import { DEFAULT_LOCALE } from '../../core/enums/locale.enum.js';
 import type { BotConfig } from '../../infrastructure/bot-config/types.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { plainCopy } from '../widgets/operator-copy.js';
 import type { BotContext, PageDeps } from '../pages/types.js';
 
 /** Telegram's own limits. Anything longer is refused with a 400. */
@@ -139,7 +148,12 @@ async function applyProfile(ctx: {
   for (const spec of specs) {
     for (const lang of LANGUAGES) {
       const label = lang.code === undefined ? spec.field : `${spec.field}:${lang.code}`;
-      const desired = (profile[`${spec.field}${lang.suffix}` as keyof typeof profile] ?? '').trim();
+      // What Telegram will hold, so the limit below measures it and the read
+      // compares against it — see the header.
+      const desired = plainCopy(
+        (profile[`${spec.field}${lang.suffix}` as keyof typeof profile] ?? '').trim(),
+        config,
+      );
       // Unset — see the header. Not a request to clear.
       if (desired.length === 0) continue;
 
@@ -208,13 +222,15 @@ async function applyMenuButton(ctx: {
     );
   }
 
-  const text =
+  const text = plainCopy(
     (config.menuButton?.text ?? '').trim() ||
-    // Telegram shows ONE label to every user — `setChatMenuButton` takes no
-    // language code — so an operator with a non-Russian audience has to set it
-    // explicitly. The default is the bot's own, in its default locale.
-    ctx.translator?.t('menu_button.cabinet', DEFAULT_LOCALE) ||
-    'Cabinet';
+      // Telegram shows ONE label to every user — `setChatMenuButton` takes no
+      // language code — so an operator with a non-Russian audience has to set it
+      // explicitly. The default is the bot's own, in its default locale.
+      ctx.translator?.t('menu_button.cabinet', DEFAULT_LOCALE) ||
+      'Cabinet',
+    config,
+  );
 
   const desired: MenuButton =
     wanted === 'web_app' && canOpenApp

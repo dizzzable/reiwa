@@ -17,16 +17,21 @@
  * another.
  */
 import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
-import type { BotConfig } from '../../infrastructure/bot-config/types.js';
+import type { CopyEmojis } from './operator-copy.js';
 
 export type InlineButtonText = { text: string } | { text: string; icon_custom_emoji_id: string };
 
-export function inlineButton(label: string, botCfg: BotConfig): InlineButtonText {
+/**
+ * `botCfg` may be `null`: a config the caller could not have in time
+ * (`lib/config-within.ts`). The label then goes out with nothing substituted
+ * from the operator's registry, and no icon.
+ */
+export function inlineButton(label: string, botCfg: CopyEmojis): InlineButtonText {
   const rendered = renderButtonLabel(
     label,
-    botCfg.botEmojis,
-    botCfg.customEmojis,
-    botCfg.botEmojiOwnerHasPremium ?? true,
+    botCfg?.botEmojis,
+    botCfg?.customEmojis,
+    botCfg?.botEmojiOwnerHasPremium ?? true,
   );
   return rendered.iconCustomEmojiId !== undefined
     ? { text: rendered.text, icon_custom_emoji_id: rendered.iconCustomEmojiId }

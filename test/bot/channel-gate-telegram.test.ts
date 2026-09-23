@@ -76,7 +76,13 @@ import type { BotConfig } from '../../src/infrastructure/bot-config/types.js';
 import { RedisChannelGateStore } from '../../src/infrastructure/channel-gate/redis-channel-gate-store.js';
 import { detectLocaleFromTelegram } from '../../src/infrastructure/i18n/locale-detector/locale-detector.js';
 import { FakeRedis } from '../infrastructure/channel-gate/fake-redis.js';
-import { buildPassthroughTranslator } from './pages/helpers.js';
+import {
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildPassthroughTranslator,
+  operatorEmojiConfig,
+  withOperatorText,
+} from './pages/helpers.js';
 
 /** Shaped like a real token; only ever sent to 127.0.0.1. */
 const TOKEN = '123456789:AAHfakeTokenForChannelGateSpecs_0123456';
@@ -394,6 +400,10 @@ interface RunOptions {
   readonly answers?: Readonly<Record<string, Answerer>>;
   readonly translator?: TranslatorPort;
   readonly config?: BotConfig;
+  /** The config read itself, for a spec that needs it to hang; by default it answers `config`. */
+  readonly getConfig?: () => Promise<BotConfig>;
+  /** The config the bot holds (`BotConfigCache.peek()`); none by default. */
+  readonly peekConfig?: () => BotConfig | null;
   /** The gate's shared store, as `main.ts` wires it when REDIS_URL is set. */
   readonly store?: ChannelGateStore;
   /** Session data per chat id, present before the first update. */
@@ -503,7 +513,8 @@ async function runBot(
       },
       hasSync: (id) => locales.has(id),
     },
-    getConfig: async () => options.config ?? DEFAULT_BOT_CONFIG,
+    getConfig: options.getConfig ?? (async () => options.config ?? DEFAULT_BOT_CONFIG),
+    ...(options.peekConfig !== undefined ? { peekConfig: options.peekConfig } : {}),
     urls: options.urls ?? { publicWebUrl: null, miniAppUrl: null, rezeisAdminUrl: null },
     logger: logger as unknown as PageDeps['logger'],
     // The gate's own client, one second here instead of five.
@@ -2009,5 +2020,56 @@ describe('src/bot/main.ts — the gate is wired the way these specs wire it', ()
       redisUrl: 'config.REDIS_URL',
       logger: 'logger',
     });
+  });
+});
+
+// Both texts the gate answers with are translator keys «Тексты бота» can
+// override, with the panel's emoji picker in the field. The prompt's two
+// buttons resolved their tokens; the toast and the prompt's own text did not,
+// so a stopped user read `:fire:` twice. Asserted on what reaches the Bot API.
+describe('channel gate — the operator text, emoji tokens resolved', () => {
+  it('a refused button: the toast in glyphs, the join prompt with the pack emoji’s entity', async () => {
+    const { calls } = await runBot(panelPolicy(), () => member('left'), [callbackUpdate(1900, 'back_to_menu')], {
+      config: operatorEmojiConfig(),
+      translator: withOperatorText(buildPassthroughTranslator(), ['channel.not_subscribed', 'channel.required']),
+    });
+
+    expect(toasts(calls)).toEqual([OPERATOR_TEXT_GLYPHS]);
+    const [prompt] = callsTo(calls, 'sendMessage');
+    expect({ text: prompt?.payload.text, entities: prompt?.payload.entities }).toEqual({
+      text: OPERATOR_TEXT_GLYPHS,
+      entities: [FIRE_ENTITY],
+    });
+  });
+
+  // While the join prompt is held back, the toast's config read is the only one
+  // on the path — every button a non-subscriber presses. Updates are handled
+  // one at a time: a refresh against a hung panel must not hold the spinner, and
+  // every update queued behind it, for the transport's ten seconds.
+  it('a refused button while the config read hangs: the toast at once, its emoji from the config the bot holds', async () => {
+    const config = operatorEmojiConfig();
+    let panelAnswers = true;
+    const { calls, handledInMs } = await runBot(
+      panelPolicy(),
+      () => member('left'),
+      [
+        callbackUpdate(1901, 'back_to_menu'),
+        {
+          run: () => {
+            panelAnswers = false;
+          },
+        },
+        callbackUpdate(1902, 'invite'),
+      ],
+      {
+        config,
+        getConfig: () => (panelAnswers ? Promise.resolve(config) : new Promise<BotConfig>(() => undefined)),
+        peekConfig: () => config,
+        translator: withOperatorText(buildPassthroughTranslator(), ['channel.not_subscribed']),
+      },
+    );
+
+    expect(toasts(calls)).toEqual([OPERATOR_TEXT_GLYPHS, OPERATOR_TEXT_GLYPHS]);
+    expect(handledInMs[1]).toBeLessThan(2_000);
   });
 });

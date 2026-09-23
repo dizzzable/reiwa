@@ -26,8 +26,12 @@
  */
 import { InlineKeyboard } from 'grammy';
 
+import { inlineButton } from '../widgets/inline-button.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { messageCopy, type CopyEmojis } from '../widgets/operator-copy.js';
+import { configWithin, MESSAGE_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 import { coerceLocale } from './coerce-locale.js';
+import { replyWithEntities } from './reply.js';
 import type { BotContext, PageDeps } from './types.js';
 
 /** The `/start` payload the cabinet links to. */
@@ -58,14 +62,23 @@ export function passwordResetUrl(cabinetUrl: string | null, token: string): stri
   return href;
 }
 
+/**
+ * The config for its words is asked for at the answer — after the panel issued
+ * the link, or refused to — within a message's budget: a hung panel cannot hold
+ * the reply, or the updates queued behind it. Past the budget, the config the
+ * bot holds (`lib/config-within.ts`).
+ */
 export async function replyWithPasswordReset(
   ctx: BotContext,
   deps: PageDeps,
   telegramId: number,
 ): Promise<void> {
   const lang = coerceLocale(deps.userLocale.getSync(telegramId));
-  const say = (key: string, vars?: Record<string, string>): Promise<unknown> =>
-    ctx.reply(deps.translator.t(key, lang, vars));
+  // Every text here, and the button's caption, is operator copy: its emoji
+  // tokens resolved, or the one message that carries a credential reads `:fire:`.
+  const copyConfig = (): Promise<CopyEmojis> => configWithin(deps, MESSAGE_CONFIG_BUDGET_MS);
+  const say = async (key: string, vars?: Record<string, string>): Promise<void> =>
+    replyWithEntities(ctx, messageCopy(deps.translator.t(key, lang, vars), await copyConfig()));
 
   if (deps.adminClient === null || deps.urls.publicWebUrl === null) {
     await say('password_reset.unavailable');
@@ -92,12 +105,13 @@ export async function replyWithPasswordReset(
         await say('password_reset.unavailable');
         return;
       }
-      const keyboard = new InlineKeyboard().url(deps.translator.t('password_reset.button', lang), href);
+      const botCfg = await copyConfig();
+      const button = inlineButton(deps.translator.t('password_reset.button', lang), botCfg);
+      const keyboard = new InlineKeyboard().url(button, href);
       // No parse mode: a login is `[A-Za-z0-9._-]`, and plain text cannot be
-      // broken by one either way.
-      await ctx.reply(deps.translator.t('password_reset.link', lang, { login: result.login }), {
-        reply_markup: keyboard,
-      });
+      // broken by one either way — nor can it spell an emoji token.
+      const text = deps.translator.t('password_reset.link', lang, { login: result.login });
+      await replyWithEntities(ctx, messageCopy(text, botCfg), { reply_markup: keyboard });
       return;
     }
     case 'no_account':

@@ -12,7 +12,15 @@ import { describe, expect, it } from 'vitest';
 import { registerHelpCommandPage } from '../../../src/bot/pages/help.js';
 import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
-import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
+import {
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildDeps,
+  buildFakeBot,
+  buildFakeCtx,
+  operatorEmojiConfig,
+  withOperatorText,
+} from './helpers.js';
 
 describe('registerHelpCommandPage', () => {
   it('registers a /help command handler', () => {
@@ -105,5 +113,54 @@ describe('registerHelpCommandPage', () => {
     await bot.commandHandlers.get('help')!(ctx as unknown as BotContext);
     const reply = ctx.reply.mock.calls[0][0] as string;
     expect(reply).toBe('en:support.not_configured');
+  });
+});
+
+// `support.title`, `help.contact_support` and `support.not_configured` are on
+// the help screen of «Карта бота», whose picker inserts `:slug:` pack emoji and
+// `{{KEY}}` placeholders. The keyboard-button route to this screen resolved
+// them; `/help` sent them raw, so the same text read `:fire:` on one door only.
+describe('/help answers with the operator text, emoji tokens resolved', () => {
+  async function helpWith(
+    keys: readonly string[],
+    supportUsername: string,
+  ): Promise<{ text: string; entities: unknown }> {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      config: operatorEmojiConfig({
+        ...DEFAULT_BOT_CONFIG,
+        visual: { ...DEFAULT_BOT_CONFIG.visual, supportUsername },
+      }),
+    });
+    registerHelpCommandPage(bot as unknown as Parameters<typeof registerHelpCommandPage>[0], {
+      ...deps,
+      translator: withOperatorText(deps.translator, keys),
+    });
+    const ctx = buildFakeCtx();
+    await bot.commandHandlers.get('help')!(ctx as unknown as BotContext);
+    const [text, opts] = ctx.reply.mock.calls[0] as [string, { entities?: unknown }];
+    return { text, entities: opts.entities };
+  }
+
+  it('the support screen, beside the contact button', async () => {
+    expect(await helpWith(['support.title'], '@rezeis_support')).toEqual({
+      text: OPERATOR_TEXT_GLYPHS,
+      entities: [FIRE_ENTITY],
+    });
+  });
+
+  it('the support screen and the contact line, for a handle Telegram cannot link to', async () => {
+    const { text, entities } = await helpWith(['support.title', 'help.contact_support'], '123456789');
+    expect(text).toBe(`${OPERATOR_TEXT_GLYPHS}\n\n${OPERATOR_TEXT_GLYPHS}`);
+    // The second line's entity starts after the first line and the blank one.
+    const second = OPERATOR_TEXT_GLYPHS.length + 2;
+    expect(entities).toEqual([FIRE_ENTITY, { ...FIRE_ENTITY, offset: second }]);
+  });
+
+  it('«support is not configured»', async () => {
+    expect(await helpWith(['support.not_configured'], '')).toEqual({
+      text: OPERATOR_TEXT_GLYPHS,
+      entities: [FIRE_ENTITY],
+    });
   });
 });

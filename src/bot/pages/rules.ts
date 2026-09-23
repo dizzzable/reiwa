@@ -54,7 +54,7 @@ import {
 } from './screen-renderer.js';
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import type { BotConfig, BotScreen, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
-import type { PageDeps, PageRegistrar } from './types.js';
+import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 const SCREEN_OVERRIDE_NAME = 'rules';
 
@@ -74,10 +74,10 @@ interface RulesView {
   readonly replyMarkup: InlineKeyboard;
 }
 
-async function buildRulesView(deps: PageDeps, lang: SupportedLocale): Promise<RulesView> {
+async function buildRulesView(deps: PageDeps, lang: SupportedLocale, found?: BotConfig): Promise<RulesView> {
   const { adminClient, translator, getConfig, urls } = deps;
   const backLabel = translator.t('back_to_menu', lang);
-  const botCfg = await getConfig();
+  const botCfg = found ?? (await getConfig());
 
   const policy = adminClient
     ? await getPolicyCache(adminClient).get().catch(() => null)
@@ -178,6 +178,25 @@ async function buildRulesView(deps: PageDeps, lang: SupportedLocale): Promise<Ru
   };
 }
 
+/**
+ * The rules screen, in place. The `rules` button's, and also that of a
+ * `screen:<shortId>` button onto the operator's `rules` screen
+ * (`dynamic-screen.ts`), which has to be THIS screen — its `{{rulesLink}}`
+ * filled in and its system buttons below — not a plain one. The caller answers
+ * the callback, and hands over the config it found that screen in (`found`):
+ * one read per press, as before the hand-off.
+ */
+export async function showRulesScreen(ctx: BotContext, deps: PageDeps, found?: BotConfig): Promise<void> {
+  const view = await buildRulesView(deps, coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0)), found);
+  await renderScreenOrEdit(ctx, deps, view.botCfg.visual, {
+    overrideScreen: view.overrideScreen,
+    text: view.text,
+    ...(view.entities !== undefined ? { entities: view.entities } : {}),
+    ...(view.parseMode !== undefined ? { parseMode: view.parseMode } : {}),
+    replyMarkup: view.replyMarkup,
+  });
+}
+
 export const registerRulesPage: PageRegistrar = (bot, deps) => {
   const { userLocale } = deps;
   const localeOf = (id: number | undefined): SupportedLocale =>
@@ -185,14 +204,7 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
 
   bot.callbackQuery('rules', async (ctx) => {
     await ctx.answerCallbackQuery();
-    const view = await buildRulesView(deps, localeOf(ctx.from?.id));
-    await renderScreenOrEdit(ctx, deps, view.botCfg.visual, {
-      overrideScreen: view.overrideScreen,
-      text: view.text,
-      ...(view.entities !== undefined ? { entities: view.entities } : {}),
-      ...(view.parseMode !== undefined ? { parseMode: view.parseMode } : {}),
-      replyMarkup: view.replyMarkup,
-    });
+    await showRulesScreen(ctx, deps);
   });
 
   // A fresh message, not an edit. There is no previous screen to replace, and

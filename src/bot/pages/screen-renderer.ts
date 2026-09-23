@@ -119,8 +119,8 @@ export function pickButtonLabel(
  *   - `start_over` → `kb.text(label, "menu:main")` (alias for `back`
  *                     today; future iterations may push the user back
  *                     to a per-flow root instead of the global welcome)
- *   - `callback`   → `kb.text(label, callbackAction)` with the raw
- *                     callback id (must match a registered handler;
+ *   - `callback`   → `kb.text(label, callbackAction)` with the callback
+ *                     id trimmed (must match a registered handler;
  *                     unknown ids no-op silently in grammy)
  *   - `url`        → `kb.url(label, url)` — non-HTTPS / localhost
  *                     URLs are dropped silently (Telegram refuses)
@@ -179,11 +179,16 @@ export function buildScreenKeyboard(
       case 'start_over':
         kb.text({ text: label, ...buttonExtras }, 'menu:main');
         break;
-      case 'callback':
-        if (btn.callbackAction !== null && btn.callbackAction.length > 0) {
-          kb.text({ text: label, ...buttonExtras }, btn.callbackAction);
+      case 'callback': {
+        // Trimmed, as the panel's map reads it (`bot-map-composer.service.ts`):
+        // it draws `menu:main ` as the way to the main menu, and no handler
+        // answers the data with its space.
+        const data = (btn.callbackAction ?? '').trim();
+        if (data.length > 0) {
+          kb.text({ text: label, ...buttonExtras }, data);
         }
         break;
+      }
       case 'url': {
         // Empty / non-HTTPS / localhost URLs would 400 the call.
         // Dropping the button silently is preferable to a broken row.

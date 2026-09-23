@@ -28,6 +28,7 @@ import { coerceLocale } from './coerce-locale.js';
 import { replyWithOptionalBanner } from './reply-with-banner.js';
 import { renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import { resolveConfiguredSupportUrl } from '../widgets/main-keyboard.js';
+import { messageCopy, plainCopy } from '../widgets/operator-copy.js';
 import type { PageRegistrar } from './types.js';
 
 /**
@@ -43,10 +44,12 @@ export const registerPaySupportPage: PageRegistrar = (bot, deps) => {
     const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
     const botCfg = await deps.getConfig();
 
+    // The prefill travels as the link's `?text=`, which carries no entities:
+    // the operator's emoji tokens as glyphs, or support reads `:fire:`.
     const supportUrl = resolveConfiguredSupportUrl(
       botCfg.visual.supportUsername,
       deps.envSupportUsername,
-      deps.translator.t('paysupport.prefill', lang),
+      plainCopy(deps.translator.t('paysupport.prefill', lang), botCfg),
     );
 
     const kb = new InlineKeyboard();
@@ -82,6 +85,6 @@ export const registerPaySupportPage: PageRegistrar = (bot, deps) => {
         ? deps.translator.t('paysupport.body', lang)
         : deps.translator.t('paysupport.unavailable', lang);
 
-    await replyWithOptionalBanner(ctx, deps, botCfg, { text: body, replyMarkup: kb });
+    await replyWithOptionalBanner(ctx, deps, botCfg, { ...messageCopy(body, botCfg), replyMarkup: kb });
   });
 };

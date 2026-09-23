@@ -3,6 +3,13 @@ import { GrammyError } from 'grammy';
 
 import { createBotErrorHandler } from '../../src/bot/lib/error-handler.js';
 import { DomainError, UserNotFoundError } from '../../src/core/errors/index.js';
+import {
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildDeps as buildPageDeps,
+  operatorEmojiConfig,
+  withOperatorText,
+} from './pages/helpers.js';
 
 /**
  * Central bot error handler — branching contract (snoups/remnashop parity):
@@ -117,5 +124,23 @@ describe('createBotErrorHandler', () => {
     expect(report).toHaveBeenCalledTimes(1);
     expect(reply).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  // `error.unknown` is a translator key «Тексты бота» can override, with the
+  // panel's emoji picker in the field. Its support button resolved its tokens;
+  // the apology above it sent them raw, so a user who had already hit an error
+  // read `:fire:` as well.
+  it('apologises with the operator text, emoji tokens resolved', async () => {
+    const { deps, reply, ctx } = buildDeps();
+    const { deps: pageDeps } = buildPageDeps({ config: operatorEmojiConfig() });
+    const handler = createBotErrorHandler({
+      ...deps,
+      translator: withOperatorText(pageDeps.translator, ['error.unknown']),
+      getConfig: pageDeps.getConfig,
+    });
+    await handler(botError(new Error('kaboom'), ctx));
+    const [text, opts] = reply.mock.calls[0] as [string, { entities?: unknown }];
+    expect(text).toBe(OPERATOR_TEXT_GLYPHS);
+    expect(opts.entities).toEqual([FIRE_ENTITY]);
   });
 });

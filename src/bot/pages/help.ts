@@ -22,6 +22,7 @@ import { coerceLocale } from './coerce-locale.js';
 import { replyWithOptionalBanner } from './reply-with-banner.js';
 import { renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import { isTelegramSafeButtonUrl, supportPrefill } from '../widgets/main-keyboard.js';
+import { messageCopy } from '../widgets/operator-copy.js';
 import type { PageRegistrar } from './types.js';
 
 const NUMERIC_HANDLE = /^-?\d+$/;
@@ -88,7 +89,9 @@ export const registerHelpCommandPage: PageRegistrar = (bot, deps) => {
             : backBtn.text,
           'menu:main',
         );
-      await replyWithOptionalBanner(ctx, deps, botCfg, { text: title, replyMarkup: kb });
+      // The same copy the `help` callback screen renders — through a renderer
+      // here too, or the operator's `:slug:` shows on one door and leaks on this one.
+      await replyWithOptionalBanner(ctx, deps, botCfg, { ...messageCopy(title, botCfg), replyMarkup: kb });
       return;
     }
 
@@ -113,6 +116,6 @@ export const registerHelpCommandPage: PageRegistrar = (bot, deps) => {
         : fallbackBack.text,
       'menu:main',
     );
-    await replyWithOptionalBanner(ctx, deps, botCfg, { text: fallbackBody, replyMarkup: kb });
+    await replyWithOptionalBanner(ctx, deps, botCfg, { ...messageCopy(fallbackBody, botCfg), replyMarkup: kb });
   });
 };

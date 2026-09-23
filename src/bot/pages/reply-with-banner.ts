@@ -41,6 +41,12 @@ const TELEGRAM_CAPTION_MAX = 1024;
  */
 const TELEGRAM_TEXT_MAX = 4096;
 
+/** One message of a split text: its slice, and the entities that fall in it. */
+interface TextPart {
+  readonly text: string;
+  readonly entities: TgCustomEmojiEntity[];
+}
+
 /**
  * Splits text at the last line break before the ceiling, so a long screen
  * arrives as several messages rather than as an error.
@@ -49,20 +55,76 @@ const TELEGRAM_TEXT_MAX = 4096;
  * break, and only mid-line when a single line is itself longer than the
  * ceiling. Splitting blind would break a word, and worse, could split an HTML
  * tag in half — which turns one rejected message into two.
+ *
+ * Each part carries the entities that fall in it, at offsets counted from ITS
+ * start. They all used to ride on the last part at their offsets in the whole
+ * text — out of that part's range, so Telegram refused it with a 400 and the
+ * user got the generic apology instead of the screen.
+ *
+ * The ceiling is in characters, as Telegram counts it (code points — memory
+ * `telegram-length-limits-count-code-points`); offsets stay in UTF-16 units,
+ * as Telegram reads entities. So a cut always falls between code points, never
+ * inside a surrogate pair, and never inside the glyph a custom emoji covers — a
+ * flag or a keycap is several code points under one entity: it moves back to
+ * where the emoji starts.
  */
-function splitForTelegram(text: string, limit: number): readonly string[] {
-  if (text.length <= limit) return [text];
-  const parts: string[] = [];
-  let rest = text;
-  while (rest.length > limit) {
-    const window = rest.slice(0, limit);
-    const cut = Math.max(window.lastIndexOf('\n\n'), window.lastIndexOf('\n'));
-    const at = cut > limit / 2 ? cut : limit;
-    parts.push(rest.slice(0, at));
-    rest = rest.slice(at).replace(/^\n+/, '');
+function splitForTelegram(
+  text: string,
+  entities: readonly TgCustomEmojiEntity[],
+  limit: number,
+): readonly TextPart[] {
+  const parts: TextPart[] = [];
+  let start = 0;
+  while (start < text.length) {
+    const windowEnd = afterCodePoints(text, start, limit);
+    let end = windowEnd;
+    if (windowEnd < text.length) {
+      const window = text.slice(start, windowEnd);
+      const cut = Math.max(window.lastIndexOf('\n\n'), window.lastIndexOf('\n'));
+      end = cut > window.length / 2 ? start + cut : windowEnd;
+      end = outsideEmoji(end, start, entities);
+    }
+    parts.push({ text: text.slice(start, end), entities: entitiesWithin(entities, start, end) });
+    // The line break that was cut at opens no part.
+    start = end;
+    while (text[start] === '\n') start += 1;
   }
-  if (rest.length > 0) parts.push(rest);
   return parts;
+}
+
+/** The UTF-16 index `count` characters (code points) after `from`, or the end of `text`. */
+function afterCodePoints(text: string, from: number, count: number): number {
+  let index = from;
+  for (let seen = 0; seen < count && index < text.length; seen += 1) {
+    index += (text.codePointAt(index) ?? 0) > 0xffff ? 2 : 1;
+  }
+  return index;
+}
+
+/**
+ * `at`, or the start of the custom emoji it would cut through. A part that
+ * would then be empty — an emoji longer than the whole ceiling — keeps the
+ * emoji whole instead.
+ */
+function outsideEmoji(at: number, partStart: number, entities: readonly TgCustomEmojiEntity[]): number {
+  const cut = entities.find((e) => e.type === 'custom_emoji' && e.offset < at && at < e.offset + e.length);
+  if (cut === undefined) return at;
+  return cut.offset > partStart ? cut.offset : cut.offset + cut.length;
+}
+
+/** The entities inside `[start, end)`, re-based to `start`; one that crosses a cut is clipped to it. */
+function entitiesWithin(
+  entities: readonly TgCustomEmojiEntity[],
+  start: number,
+  end: number,
+): TgCustomEmojiEntity[] {
+  const inside: TgCustomEmojiEntity[] = [];
+  for (const e of entities) {
+    const from = Math.max(start, e.offset);
+    const to = Math.min(end, e.offset + e.length);
+    if (from < to) inside.push({ ...e, offset: from - start, length: to - from });
+  }
+  return inside;
 }
 
 // Telegram file_id cache for the resolved global banner, keyed by the banner
@@ -181,14 +243,15 @@ export async function replyWithOptionalBanner(
   }
 
   // The keyboard rides the LAST part, so a split document still ends with its
-  // buttons rather than putting them in the middle.
-  const parts = splitForTelegram(opts.text, TELEGRAM_TEXT_MAX);
+  // buttons rather than putting them in the middle. Each part carries its own
+  // entities (`splitForTelegram`).
+  const parts = splitForTelegram(opts.text, entities ?? [], TELEGRAM_TEXT_MAX);
   for (const [index, part] of parts.entries()) {
     const last = index === parts.length - 1;
     try {
-      await ctx.reply(part, {
+      await ctx.reply(part.text, {
         parse_mode: html ? 'HTML' : undefined,
-        entities: last ? entities : undefined,
+        entities: part.entities.length > 0 ? part.entities : undefined,
         reply_markup: last ? opts.replyMarkup : undefined,
       });
     } catch (err: unknown) {
@@ -197,7 +260,7 @@ export async function replyWithOptionalBanner(
       // whole message for it. Resend without a parse mode rather than leave the
       // user with nothing: the tags read badly, an empty screen reads as broken.
       deps.logger?.warn({ err }, 'reply-with-banner: HTML rejected; resending as plain text');
-      await ctx.reply(part, { reply_markup: last ? opts.replyMarkup : undefined });
+      await ctx.reply(part.text, { reply_markup: last ? opts.replyMarkup : undefined });
     }
   }
 }

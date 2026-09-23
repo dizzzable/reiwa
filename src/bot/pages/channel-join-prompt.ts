@@ -15,7 +15,8 @@
  *     `check_channel:q:<questId>` when the user came for a quest, so passing the
  *     gate continues to that quest instead of the menu;
  *   - both labels through `inlineButton`, so an operator's `:slug:` renders as
- *     the pack emoji instead of leaking into the caption.
+ *     the pack emoji instead of leaking into the caption — and the text through
+ *     `messageCopy`, with the pack emoji's entity, for the same reason.
  *
  * ── ONE PROMPT PER USER PER {@link CHANNEL_PROMPT_INTERVAL_MS} ─────────────
  *
@@ -42,8 +43,10 @@ import { InlineKeyboard } from 'grammy';
 import { TtlMap } from '../../infrastructure/channel-gate/ttl-map.js';
 import { resolveChannelJoinUrl, type ChannelGatePolicy } from '../lib/channel-gate.js';
 import { inlineButton } from '../widgets/inline-button.js';
+import { messageCopy, type CopyEmojis } from '../widgets/operator-copy.js';
 import { coerceLocale } from './coerce-locale.js';
 import { QUEST_ID_PATTERN, QUEST_ID_RE } from './quest-channel.js';
+import { replyWithEntities } from './reply.js';
 import type { BotContext, PageDeps } from './types.js';
 
 /**
@@ -108,7 +111,9 @@ export async function sendChannelJoinPrompt(
       inlineButton(deps.translator.t('channel.check_button', lang), botCfg),
       checkChannelCallbackData(options.questId),
     );
-    await ctx.reply(deps.translator.t('channel.required', lang), { reply_markup: keyboard });
+    await replyWithEntities(ctx, messageCopy(deps.translator.t('channel.required', lang), botCfg), {
+      reply_markup: keyboard,
+    });
   } catch (err: unknown) {
     if (lastPrompt.get(userId) === sent) lastPrompt.delete(userId);
     throw err;
@@ -141,13 +146,21 @@ export async function sendChannelJoinPromptUnlessRecent(
  * «✅ Я подписался» from somebody still outside the channel: `channel.not_subscribed`
  * as a message at most once per {@link CHANNEL_PROMPT_INTERVAL_MS} per user (the
  * caller answers the toast every time). Throws what `ctx.reply` throws.
+ *
+ * `emojis` is the config the caller's toast was rendered with — the notice
+ * reads none of its own, so a hung panel cannot hold it (or the update queue).
  */
-export async function sendNotSubscribedNoticeUnlessRecent(ctx: BotContext, deps: ChannelJoinPromptDeps): Promise<void> {
+export async function sendNotSubscribedNoticeUnlessRecent(
+  ctx: BotContext,
+  deps: ChannelJoinPromptDeps,
+  emojis: CopyEmojis,
+): Promise<void> {
   const userId = ctx.from?.id ?? 0;
   if (lastNotSubscribedNotice.has(userId)) return;
   lastNotSubscribedNotice.set(userId, true, CHANNEL_PROMPT_INTERVAL_MS);
   try {
-    await ctx.reply(deps.translator.t('channel.not_subscribed', coerceLocale(deps.userLocale.getSync(userId))));
+    const text = deps.translator.t('channel.not_subscribed', coerceLocale(deps.userLocale.getSync(userId)));
+    await replyWithEntities(ctx, messageCopy(text, emojis));
   } catch (err: unknown) {
     lastNotSubscribedNotice.delete(userId);
     throw err;

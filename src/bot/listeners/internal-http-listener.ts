@@ -100,8 +100,9 @@ import { invalidatePolicyCache } from '../../infrastructure/admin-client/policy-
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { htmlCopy, markdownCopy, markdownV2Copy, messageCopy } from '../widgets/operator-copy.js';
 import { loggableTelegramError } from './telegram-error-log.js';
-import { renderButtonLabel, renderBotCopy, renderBotCopyHtml } from '../../infrastructure/bot-config/emoji-utils.js';
+import { renderButtonLabel } from '../../infrastructure/bot-config/emoji-utils.js';
 import type { BotConfig, BotEmojiMap, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 import { resolveBannerSource } from '../pages/banner-resolver.js';
 import {
@@ -760,18 +761,21 @@ async function resolveEmojiContext(
 }
 
 /**
- * Render a notification/broadcast BODY with the operator emoji registry so
- * premium/custom emoji tokens (`{{KEY}}`, `:slug:`) in the message text render
- * as real Telegram custom emoji — mirroring the screen/reply send paths.
+ * Render a notification/broadcast BODY — or a document's caption — with the
+ * operator emoji registry so premium/custom emoji tokens (`{{KEY}}`, `:slug:`)
+ * render as real Telegram custom emoji, in the form the parse mode carries.
  * Previously the registry was applied only to button labels, so tokens in the
  * body leaked as literal text (e.g. `:translucentpack_9:`) or degraded to
  * plain unicode.
  *
- *  - `HTML` parse mode → `<tg-emoji>` tags via `renderBotCopyHtml`.
- *  - otherwise → `custom_emoji` entities via `renderBotCopy`. Entity mode needs
- *    plain text, so we only drop the parse mode when entities are actually
- *    produced; when none are (no premium emoji), the resolved unicode text is
- *    returned with the original parse mode intact.
+ * The parse mode is never dropped: it is the operator's formatting.
+ *  - `HTML` → `<tg-emoji>` tags (`htmlCopy`).
+ *  - `MarkdownV2` → its own syntax, `![🔥](tg://emoji?id=…)` (`markdownV2Copy`).
+ *    It used to get custom-emoji ENTITIES, which cannot travel with a parse
+ *    mode, so the mode was dropped whenever a premium emoji appeared and the
+ *    reader got the markup raw — `*bold*`, and every `\.` escape.
+ *  - legacy `Markdown` → glyphs; it has no custom-emoji syntax (`markdownCopy`).
+ *  - none → `custom_emoji` entities (`messageCopy`).
  */
 function renderNotifyBody(
   text: string,
@@ -781,23 +785,49 @@ function renderNotifyBody(
   if (emojiCtx === undefined) {
     return { text, parseMode, entities: undefined };
   }
-  const ownerHasPremium = emojiCtx.ownerHasPremium ?? true;
-  if (parseMode === 'HTML') {
-    return {
-      text: renderBotCopyHtml(text, emojiCtx.botEmojis, emojiCtx.customEmojis, ownerHasPremium),
-      parseMode: 'HTML',
-      entities: undefined,
-    };
+  const emojis = {
+    botEmojis: emojiCtx.botEmojis,
+    customEmojis: emojiCtx.customEmojis,
+    botEmojiOwnerHasPremium: emojiCtx.ownerHasPremium ?? true,
+  };
+  switch (parseMode) {
+    case 'HTML':
+      return { text: htmlCopy(text, emojis), parseMode, entities: undefined };
+    case 'MarkdownV2':
+      return { text: markdownV2Copy(text, emojis), parseMode, entities: undefined };
+    case 'Markdown':
+      return { text: markdownCopy(text, emojis), parseMode, entities: undefined };
+    default: {
+      const rendered = messageCopy(text, emojis);
+      return {
+        text: rendered.text,
+        parseMode: undefined,
+        entities: rendered.entities.length > 0 ? rendered.entities : undefined,
+      };
+    }
   }
-  const rendered = renderBotCopy(text, emojiCtx.botEmojis, emojiCtx.customEmojis, ownerHasPremium);
-  if (rendered.entities.length > 0) {
-    // Custom-emoji entities can't coexist with a parse_mode — send plain text
-    // carrying the entities.
-    return { text: rendered.text, parseMode: undefined, entities: rendered.entities };
-  }
-  // No premium entities: keep the caller's parse mode; tokens are already
-  // resolved to their unicode/fallback glyphs so nothing leaks as literal.
-  return { text: rendered.text, parseMode, entities: undefined };
+}
+
+/**
+ * A document relay's caption options, the operator's emoji tokens resolved
+ * (`renderNotifyBody`). Without a caption, only the parse mode, as before.
+ */
+async function renderCaption(
+  caption: string | undefined,
+  parseMode: 'HTML' | 'MarkdownV2' | undefined,
+  cache: BotConfigCache | null | undefined,
+): Promise<{
+  caption?: string;
+  parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+  caption_entities?: TgCustomEmojiEntity[];
+}> {
+  if (caption === undefined) return parseMode !== undefined ? { parse_mode: parseMode } : {};
+  const rendered = renderNotifyBody(caption, parseMode, await resolveEmojiContext(cache));
+  return {
+    caption: rendered.text,
+    ...(rendered.parseMode !== undefined ? { parse_mode: rendered.parseMode } : {}),
+    ...(rendered.entities !== undefined ? { caption_entities: rendered.entities } : {}),
+  };
 }
 
 /**
@@ -861,11 +891,11 @@ export function startInternalHttpListener(opts: ListenerOptions): http.Server | 
         return;
       }
       if (url === '/notify-dev') {
-        await handleNotifyDev({ bot, devId, logger, raw, res });
+        await handleNotifyDev({ bot, devId, logger, raw, res, cache });
         return;
       }
       if (url === '/notify-dev-document') {
-        await handleNotifyDevDocument({ bot, devId, logger, raw, res });
+        await handleNotifyDevDocument({ bot, devId, logger, raw, res, cache });
         return;
       }
       if (url === '/notify-backup-document') {
@@ -877,7 +907,7 @@ export function startInternalHttpListener(opts: ListenerOptions): http.Server | 
         return;
       }
       if (url === '/notify-broadcast-document') {
-        await handleNotifyBroadcastDocument({ bot, logger, raw, res });
+        await handleNotifyBroadcastDocument({ bot, logger, raw, res, cache });
         return;
       }
       res.statusCode = 404;
@@ -1010,6 +1040,13 @@ interface DevNotifyHandlerOptions {
   readonly logger: ReturnType<typeof createLogger>;
   readonly raw: string;
   readonly res: http.ServerResponse;
+  /**
+   * For the operator's emoji tokens in the card. The panel builds these cards
+   * itself and does not resolve pack emoji in them (only its broadcasts and
+   * user notifications go through its `CustomEmojiService`), so a `:slug:` in
+   * a plan's or a user's name reached the operator as the token.
+   */
+  readonly cache?: BotConfigCache | null;
 }
 
 /**
@@ -1063,12 +1100,15 @@ async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
   }
   const claimKey = claim.kind === 'claimed' ? claim.key : null;
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
+  // The operator's emoji tokens, in the form the parse mode carries.
+  const card = renderNotifyBody(text, parseMode, await resolveEmojiContext(opts.cache));
   // Universal "Close" button so the dev can dismiss a handled event card
   // (routed by the shared `close` callback → deletes the message).
   const keyboard = new InlineKeyboard().text('❌ Закрыть', 'close');
   try {
-    await bot.api.sendMessage(devId, text, {
-      ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
+    await bot.api.sendMessage(devId, card.text, {
+      ...(card.parseMode !== undefined ? { parse_mode: card.parseMode } : {}),
+      ...(card.entities !== undefined ? { entities: card.entities } : {}),
       link_preview_options: { is_disabled: true },
       reply_markup: keyboard,
     });
@@ -1140,8 +1180,7 @@ async function handleNotifyDevDocument(opts: DevNotifyHandlerOptions): Promise<v
   try {
     const document = new InputFile(Buffer.from(content, 'utf8'), filename);
     await bot.api.sendDocument(devId, document, {
-      ...(caption !== undefined ? { caption } : {}),
-      ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
+      ...(await renderCaption(caption, parseMode, opts.cache)),
       reply_markup: keyboard,
     });
     if (claimKey !== null) IDEMPOTENCY_CACHE.settle(claimKey);
@@ -1163,6 +1202,8 @@ async function handleNotifyBroadcastDocument(opts: {
   readonly logger: ReturnType<typeof createLogger>;
   readonly raw: string;
   readonly res: http.ServerResponse;
+  /** For the operator's emoji tokens in the caption — see `DevNotifyHandlerOptions.cache`. */
+  readonly cache?: BotConfigCache | null;
 }): Promise<void> {
   const { bot, logger, raw, res } = opts;
   if (bot === null) {
@@ -1208,8 +1249,7 @@ async function handleNotifyBroadcastDocument(opts: {
   try {
     const document = new InputFile(Buffer.from(content, 'utf8'), filename);
     await bot.api.sendDocument(chatId, document, {
-      ...(caption !== undefined ? { caption } : {}),
-      ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
+      ...(await renderCaption(caption, parseMode, opts.cache)),
       ...(topicThreadId !== undefined ? { message_thread_id: topicThreadId } : {}),
       reply_markup: keyboard,
     });

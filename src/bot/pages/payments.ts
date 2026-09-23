@@ -33,6 +33,9 @@
  */
 import type { PageDeps, PageRegistrar } from './types.js';
 import { coerceLocale } from './coerce-locale.js';
+import { replyWithEntities } from './reply.js';
+import { messageCopy, plainCopy } from '../widgets/operator-copy.js';
+import { configWithin, MESSAGE_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 
 /**
  * Bound on asking rezeis for the verdict.
@@ -42,6 +45,15 @@ import { coerceLocale } from './coerce-locale.js';
  * should not be taking money on behalf of.
  */
 const VERDICT_BUDGET_MS = 5_000;
+
+/**
+ * Bound on the bot config a refusal's words are rendered with. Its read starts
+ * beside the verdict and is a cache hit nearly always; on a miss it goes to the
+ * same panel the verdict does, and the refusal is not held for it — the words go
+ * out with the config the bot holds (`lib/config-within.ts`) rather than after
+ * Telegram's deadline.
+ */
+const CONFIG_BUDGET_MS = 1_000;
 
 /** Attempts to hand `successful_payment` to rezeis before giving up loudly. */
 const FORWARD_ATTEMPTS = 4;
@@ -67,11 +79,16 @@ const REASON_KEY: Readonly<Record<string, string>> = {
 };
 
 export const registerPaymentsPage: PageRegistrar = (bot, deps) => {
-  const { adminClient, translator, userLocale, logger } = deps;
+  const { adminClient, translator, userLocale, logger, getConfig } = deps;
   const localeOf = (id: number | undefined) => coerceLocale(userLocale.getSync(id ?? 0));
 
   bot.on('pre_checkout_query', async (ctx) => {
     const lang = localeOf(ctx.from?.id);
+    // A refusal's words are operator copy, shown by Telegram as plain text: its
+    // emoji tokens go out as glyphs. The config for them is read beside the
+    // verdict — started here, and joined at the answer (the cache shares a read
+    // in flight). See CONFIG_BUDGET_MS for why not awaited here.
+    void getConfig().catch(() => undefined);
     const query = ctx.preCheckoutQuery;
     // rezeis puts its own `paymentId` in the invoice payload at checkout, so
     // this is the only link between the query and the transaction.
@@ -96,10 +113,12 @@ export const registerPaymentsPage: PageRegistrar = (bot, deps) => {
     }
 
     try {
-      await ctx.answerPreCheckoutQuery(
-        approve,
-        approve ? undefined : { error_message: translator.t(reasonKey, lang) },
-      );
+      const refusal = approve
+        ? undefined
+        : {
+            error_message: plainCopy(translator.t(reasonKey, lang), await configWithin(deps, CONFIG_BUDGET_MS)),
+          };
+      await ctx.answerPreCheckoutQuery(approve, refusal);
     } catch (err: unknown) {
       logger?.warn({ err, paymentId }, 'bot/payments: answering the pre-checkout query failed');
     }
@@ -143,14 +162,14 @@ export const registerPaymentsPage: PageRegistrar = (bot, deps) => {
       chargeId: payment.telegram_payment_charge_id,
     });
 
-    await ctx
-      .reply(
-        translator.t(
-          forwarded ? 'payments.stars.received' : 'payments.stars.received_delayed',
-          lang,
-        ),
-      )
-      .catch(() => undefined);
+    // Operator copy: its emoji tokens resolved, the pack emoji's entity included.
+    // The receipt read no config before they were; a refresh against a hung
+    // panel must not hold it, and every update queued behind it: past the
+    // budget, the config the bot holds.
+    const receipt = translator.t(forwarded ? 'payments.stars.received' : 'payments.stars.received_delayed', lang);
+    await replyWithEntities(ctx, messageCopy(receipt, await configWithin(deps, MESSAGE_CONFIG_BUDGET_MS))).catch(
+      () => undefined,
+    );
   });
 };
 

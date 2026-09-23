@@ -71,6 +71,31 @@ function formatGb(gb: number): string {
 }
 
 /**
+ * `lineWithEmoji` for a line of operator copy: its `{{KEY}}` slots resolved
+ * too, each with its entity.
+ *
+ * «Тексты бота» overrides every `profile.*` key, and its emoji picker writes
+ * `{{KEY}}` slots into them. The `:slug:` pass at the end runs over the whole
+ * message, but the slot pass ran over the welcome template only, so a slot in
+ * a line reached the greeting as `{{GIFT}}`. The line's icon and its separator
+ * lead the line, so every slot moves right by them and the icon's own entity
+ * at 0 stays where it is.
+ */
+function copyLine(
+  key: string,
+  text: string,
+  botEmojis: BotEmojiMap | null | undefined,
+): { text: string; entities: TgCustomEmojiEntity[] } {
+  const slots = resolvePlaceholders(text, botEmojis, 0);
+  const line = lineWithEmoji(key, slots.text, botEmojis);
+  const shift = line.text.length - slots.text.length;
+  return {
+    text: line.text,
+    entities: [...line.entities, ...slots.entities.map((e) => ({ ...e, offset: e.offset + shift }))],
+  };
+}
+
+/**
  * Build the per-subscription traffic line:
  *   "📈 Трафик — 🟢 ░░░░░░░░░░░░░░ 0% (0.00 / 10.00 GB)"
  * The leading 📈 is a (premium-capable) entity; the activity dot (🟢/🟠/🔴)
@@ -88,7 +113,7 @@ function buildTrafficLine(
   // Unlimited plan — no meaningful bar, just mark it unlimited.
   if (limit == null) {
     const okDot = resolveUnicode("TRAFFIC_OK", botEmojis);
-    return lineWithEmoji(
+    return copyLine(
       "SUB_TRAFFIC",
       `${label} — ${okDot} ${translator.t("profile.unlimited", lang)}`,
       botEmojis,
@@ -113,7 +138,7 @@ function buildTrafficLine(
   const dot = resolveUnicode(activityKey, botEmojis);
 
   const text = `${label} — ${dot} ${bar} ${Math.round(pct)}% (${formatGb(used)} / ${formatGb(limit)} GB)`;
-  return lineWithEmoji("SUB_TRAFFIC", text, botEmojis);
+  return copyLine("SUB_TRAFFIC", text, botEmojis);
 }
 
 // ── buildProfileSummary ───────────────────────────────────────────────────────
@@ -164,19 +189,19 @@ export function buildProfileSummary(params: ProfileSummaryParams): {
       sub.profileName?.trim() ||
       sub.plan?.name ||
       translator.t("profile.subscription", lang);
-    lines.push(lineWithEmoji("SUB_PROFILE", profileName, botEmojis));
+    lines.push(copyLine("SUB_PROFILE", profileName, botEmojis));
 
     const devicesText =
       sub.deviceLimit != null
         ? translator.t("profile.devices", lang, { count: sub.deviceLimit })
         : translator.t("profile.devices_unlimited", lang);
-    lines.push(lineWithEmoji("SUB_DEVICES", devicesText, botEmojis));
+    lines.push(copyLine("SUB_DEVICES", devicesText, botEmojis));
 
     lines.push(buildTrafficLine(sub, botEmojis, translator, lang));
 
     const until = formatDate(sub.expiresAt ?? sub.expireAt, translator, lang);
     lines.push(
-      lineWithEmoji(
+      copyLine(
         "SUB_EXPIRY",
         `${translator.t("profile.until", lang)}: ${until}`,
         botEmojis,

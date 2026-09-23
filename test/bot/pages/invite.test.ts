@@ -11,7 +11,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { registerInvitePage } from '../../../src/bot/pages/invite.js';
 import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
-import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
+import {
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildDeps,
+  buildFakeBot,
+  buildFakeCtx,
+  operatorEmojiConfig,
+  withOperatorText,
+} from './helpers.js';
 
 type Btn = { text?: string; url?: string; web_app?: { url: string }; copy_text?: { text: string } };
 
@@ -495,5 +503,176 @@ describe('the website link beside the Telegram one', () => {
     expect(text).toContain(`ru:referral.hub.web_link_label\n${WEB}`);
     expect(buttons.some((b) => b.copy_text?.text === WEB)).toBe(true);
     expect(shared).toBe(`ru:invite.share_prompt\n\nru:invite.share_web_line(link=${WEB})`);
+  });
+});
+
+// The operator adds buttons to the `invite` screen in «Карта бота», as on help
+// and rules — which render theirs above their own. The invite hub never read
+// them: the map showed buttons the bot did not send.
+describe('the operator’s own buttons on the invite screen', () => {
+  const INVITE_SCREEN = {
+    id: 'screen-invite',
+    shortId: 'inv',
+    name: 'invite',
+    textRu: 'Приглашайте друзей: {{link}}',
+    textEn: '',
+    parseMode: 'plain' as const,
+    mediaType: null,
+    mediaFileId: null,
+    mediaUrl: null,
+    isRoot: false,
+    buttons: [
+      {
+        id: 'b-terms',
+        labelRu: 'Условия',
+        labelEn: '',
+        row: 0,
+        col: 0,
+        action: 'url' as const,
+        targetShortId: null,
+        url: 'https://reiwa.example/terms',
+        webAppUrl: null,
+        callbackAction: null,
+        style: 'default' as const,
+        iconCustomEmojiId: null,
+      },
+      {
+        id: 'b-channel',
+        labelRu: 'Канал',
+        labelEn: '',
+        row: 0,
+        col: 1,
+        action: 'url' as const,
+        targetShortId: null,
+        url: 'https://t.me/reiwa_news',
+        webAppUrl: null,
+        callbackAction: null,
+        style: 'default' as const,
+        iconCustomEmojiId: null,
+      },
+    ],
+  };
+
+  async function hubRows(admin: Record<string, unknown>): Promise<Btn[][]> {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: admin,
+      publicWebUrl: 'https://reiwa.example',
+      config: { ...DEFAULT_BOT_CONFIG, screens: [INVITE_SCREEN] },
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx({ from: { id: 5 } });
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    const opts = ctx.editMessageText.mock.calls[0]?.[1] as { reply_markup: { inline_keyboard: Btn[][] } };
+    return opts.reply_markup.inline_keyboard;
+  }
+
+  const OPERATOR_ROW = [
+    { text: 'Условия', url: 'https://reiwa.example/terms' },
+    { text: 'Канал', url: 'https://t.me/reiwa_news' },
+  ];
+
+  it('come first on the referral hub, the hub’s own buttons below them', async () => {
+    const rows = await hubRows({
+      referrals: { getSummary: vi.fn().mockResolvedValue({ referralCode: 'reiwa-id-1' }) },
+      partner: {},
+    });
+    expect(rows[0]).toEqual(OPERATOR_ROW);
+    expect(rows[1]?.[0]?.url?.startsWith('https://t.me/share/url?')).toBe(true);
+    expect(rows.every((row) => row.length > 0)).toBe(true);
+  });
+
+  it('come first on the partner hub too', async () => {
+    const rows = await hubRows({
+      referrals: { getSummary: vi.fn().mockResolvedValue({ referralCode: 'reiwa-id-1' }) },
+      partner: {
+        getStatus: vi.fn().mockResolvedValue({ isActive: true }),
+        getInfo: vi.fn().mockResolvedValue({ balance: 0, totalEarned: 0 }),
+        getReferrals: vi.fn().mockResolvedValue({ total: 0 }),
+      },
+    });
+    expect(rows[0]).toEqual(OPERATOR_ROW);
+    expect(rows[1]?.[0]?.url?.startsWith('https://t.me/share/url?')).toBe(true);
+    expect(rows.every((row) => row.length > 0)).toBe(true);
+  });
+
+  it('leave a hub without an operator screen opening on its own share button, no empty row above it', async () => {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: {
+        referrals: { getSummary: vi.fn().mockResolvedValue({ referralCode: 'reiwa-id-1' }) },
+        partner: {},
+      },
+      publicWebUrl: 'https://reiwa.example',
+    });
+    register(bot, deps);
+    const ctx = buildFakeCtx({ from: { id: 5 } });
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    const rows = (ctx.editMessageText.mock.calls[0]?.[1] as { reply_markup: { inline_keyboard: Btn[][] } })
+      .reply_markup.inline_keyboard;
+    expect(rows[0]?.[0]?.url?.startsWith('https://t.me/share/url?')).toBe(true);
+    expect(rows.every((row) => row.length > 0)).toBe(true);
+  });
+
+  it('leave a partner with no link to share their cabinet button on a row of its own', async () => {
+    const rows = await hubRows({
+      referrals: { getSummary: vi.fn().mockResolvedValue(null) },
+      partner: {
+        getStatus: vi.fn().mockResolvedValue({ isActive: true }),
+        getInfo: vi.fn().mockResolvedValue({ balance: 0, totalEarned: 0 }),
+        getReferrals: vi.fn().mockResolvedValue({ total: 0 }),
+      },
+    });
+    expect(rows[0]).toEqual(OPERATOR_ROW);
+    expect(rows[1]).toEqual([{ text: 'ru:partner.hub.open_cabinet', web_app: { url: 'https://reiwa.example/partner' } }]);
+    expect(rows.every((row) => row.length > 0)).toBe(true);
+  });
+});
+
+// The three screens the invite button shows in place of a hub are translator
+// keys «Тексты бота» can override, with the panel's emoji picker in the field.
+// The hubs resolved their tokens; these three sent them raw.
+describe('the invite button’s refusals carry the operator text, emoji tokens resolved', () => {
+  async function refusal(
+    key: string,
+    options: { summary?: unknown; referralsEnabled?: boolean; publicWebUrl?: string | null; username?: string },
+  ): Promise<{ text: string; entities: unknown }> {
+    const adminClient = {
+      referrals: { getSummary: vi.fn().mockResolvedValue(options.summary ?? null) },
+      partner: {},
+    };
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      adminOverrides: adminClient,
+      publicWebUrl: options.publicWebUrl ?? null,
+      config: operatorEmojiConfig({
+        ...DEFAULT_BOT_CONFIG,
+        features: { ...DEFAULT_BOT_CONFIG.features, referralsEnabled: options.referralsEnabled ?? true },
+      }),
+    });
+    register(bot, { ...deps, translator: withOperatorText(deps.translator, [key]) });
+    const ctx = buildFakeCtx(options.username === undefined ? {} : { me: { username: options.username } });
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    const [text, opts] = ctx.editMessageText.mock.calls[0] as [string, { entities?: unknown }];
+    return { text, entities: opts.entities };
+  }
+
+  it('the program switched off', async () => {
+    expect(await refusal('referral.disabled', { referralsEnabled: false })).toEqual({
+      text: OPERATOR_TEXT_GLYPHS,
+      entities: [FIRE_ENTITY],
+    });
+  });
+
+  it('the program open only to the invited', async () => {
+    expect(
+      await refusal('referral.invited_only', { summary: { referralCode: 'reiwa-id-1', programAvailable: false } }),
+    ).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
+  });
+
+  it('no link to give', async () => {
+    expect(
+      await refusal('referral.link_unavailable', { summary: { referralCode: 'reiwa-id-1' }, username: '' }),
+    ).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
   });
 });

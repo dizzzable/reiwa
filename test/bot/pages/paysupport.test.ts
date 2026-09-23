@@ -4,7 +4,15 @@ import { registerPaySupportPage } from '../../../src/bot/pages/paysupport.js';
 import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
 import type { BotConfig } from '../../../src/infrastructure/bot-config/types.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
-import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
+import {
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildDeps,
+  buildFakeBot,
+  buildFakeCtx,
+  operatorEmojiConfig,
+  withOperatorText,
+} from './helpers.js';
 
 /**
  * `/paysupport`.
@@ -108,5 +116,36 @@ describe('registerPaySupportPage', () => {
     expect(ctx.reply).toHaveBeenCalledOnce();
     expect(ctx.editMessageText).not.toHaveBeenCalled();
     expect(ctx.editMessageCaption).not.toHaveBeenCalled();
+  });
+});
+
+// Every text here is a translator key «Тексты бота» can override, with the
+// panel's emoji picker in the field. The prefill travels as the link's
+// `?text=`, which carries no entities, so its tokens become glyphs; the screen
+// is a message and carries the pack emoji's entity too. Sent raw, support and
+// the buyer both read `:fire:`.
+describe('/paysupport answers with the operator text, emoji tokens resolved', () => {
+  function runWith(keys: readonly string[], supportUsername: string) {
+    const { deps } = buildDeps({ config: operatorEmojiConfig(configWithSupport(supportUsername)) });
+    return run({ ...deps, translator: withOperatorText(deps.translator, keys) });
+  }
+
+  it('the support chat opens pre-filled with glyphs', async () => {
+    const { ctx, invoke } = runWith(['paysupport.prefill'], '@rezeis_help');
+    await invoke();
+    const url = keyboardOf(ctx)[0]?.[0]?.url;
+    expect(url).toBeDefined();
+    expect(new URL(url!).searchParams.get('text')).toBe(OPERATOR_TEXT_GLYPHS);
+  });
+
+  it.each([
+    ['paysupport.body', '@rezeis_help'],
+    ['paysupport.unavailable', ''],
+  ])('the screen: %s', async (key, supportUsername) => {
+    const { ctx, invoke } = runWith([key], supportUsername);
+    await invoke();
+    const [text, opts] = ctx.reply.mock.calls[0] as [string, { entities?: unknown }];
+    expect(text).toBe(OPERATOR_TEXT_GLYPHS);
+    expect(opts.entities).toEqual([FIRE_ENTITY]);
   });
 });

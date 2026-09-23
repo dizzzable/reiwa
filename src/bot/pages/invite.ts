@@ -16,6 +16,9 @@
  *     summary + editable description + share link + deep-links to the cabinet
  *     referrals + points-exchange pages.
  *
+ * On both hubs the operator's own buttons on the `invite` screen come first,
+ * the hub's below them (`operatorButtons`), as on help and rules.
+ *
  * Money-path actions (points exchange, partner withdrawal) are NOT performed in
  * the bot — they open in the cabinet via deep-link buttons. Every probe is
  * best-effort: a failed status/summary lookup degrades to a minimal usable hub
@@ -26,11 +29,14 @@ import { InlineKeyboard } from 'grammy';
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import { coerceLocale } from './coerce-locale.js';
 import { renderScreenOrEdit } from './screen-banner.js';
-import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
+import { isTelegramSafeButtonUrl, resolveConfiguredSupportUrl, supportPrefill } from '../widgets/main-keyboard.js';
+import { messageCopy } from '../widgets/operator-copy.js';
 import { renderBotCopy, renderBotCopyHtml, renderButtonLabel, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
+import type { BotConfig, BotScreen } from '../../infrastructure/bot-config/types.js';
 import {
   applyScreenTemplate,
   appendBackToMenuRow,
+  buildScreenKeyboard,
   findScreenByName,
 } from './screen-renderer.js';
 import type { PageRegistrar, PageDeps, BotContext } from './types.js';
@@ -160,106 +166,121 @@ function shareText(
 }
 
 export const registerInvitePage: PageRegistrar = (bot, deps) => {
-  const { adminClient, translator, userLocale, getConfig, urls } = deps;
-
   bot.callbackQuery('invite', async (ctx) => {
     await ctx.answerCallbackQuery();
-    const telegramId = String(ctx.from?.id);
-    const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
-    const backLabel = translator.t('back_to_menu', lang);
-    const botCfg = await getConfig();
-
-    // Active partners get the partner hub regardless of the referral toggle.
-    const status = await adminClient?.partner
-      ?.getStatus?.({ telegramId })
-      ?.catch(() => null);
-    const isPartner = (status as { isActive?: boolean } | null | undefined)?.isActive === true;
-
-    // The three early-return branches below build their own single-button
-    // keyboard instead of going through `appendBackToMenuRow` (a leading
-    // `.row()` on a fresh keyboard leaves a dangling empty row). They still owe
-    // the operator the same "back" rendering the hubs give it, so each resolves
-    // the label through `renderSystemButton` with the shared 'back' system key.
-    const backButton = (): { text: string } | { text: string; icon_custom_emoji_id: string } => {
-      const back = renderSystemButton(backLabel, 'back', botCfg);
-      return back.iconCustomEmojiId !== undefined
-        ? { text: back.text, icon_custom_emoji_id: back.iconCustomEmojiId }
-        : { text: back.text };
-    };
-
-    if (!isPartner && !botCfg.features.referralsEnabled) {
-      const kb = new InlineKeyboard().text(backButton(), 'menu:main');
-      // Still the invite slot — render with its banner (own / global / none)
-      // so we never leave the previous screen's banner lingering here.
-      await renderScreenOrEdit(ctx, deps, botCfg.visual, {
-        overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
-        text: translator.t('referral.disabled', lang),
-        replyMarkup: kb,
-      });
-      return;
-    }
-
-    // One summary fetch serves both the link and the referral stats below.
-    const summary = (await adminClient?.referrals
-      ?.getSummary?.({ telegramId })
-      ?.catch(() => null)) as ReferralSummaryShape | null | undefined;
-    // Under "invite only" the platform admits a new sign-up ONLY through a
-    // single-use invite token, so the permanent code would hand the friend a
-    // link that gets rejected at registration. Mint a token in that mode; this
-    // is also where the operator's TTL and slot limits are meant to bite.
-    let code = typeof summary?.referralCode === 'string' ? summary.referralCode : '';
-    if (summary?.admissionRequiresInvite === true) {
-      const minted = (await adminClient?.referrals
-        ?.createInvite?.({ telegramId })
-        ?.catch(() => null)) as ReferralInviteShape | null | undefined;
-      code = minted?.invite?.token ?? minted?.token ?? '';
-    }
-    // No telegramId fallback: a share link is pasted into chats and channels
-    // and lives there forever, so publishing a raw Telegram ID because the
-    // admin API blipped is not an acceptable degradation.
-    const inviteLink = code.length > 0 ? buildReferralLink(deps, code, ctx.me.username) : null;
-    // Only beside a Telegram link: without a bot username `inviteLink` IS the
-    // website link already, and the hub would print it twice.
-    const webLink = code.length > 0 && ctx.me.username ? buildWebReferralLink(deps, code) : null;
-
-    if (isPartner) {
-      await renderPartnerHub(ctx, deps, lang, telegramId, inviteLink, webLink, backLabel, botCfg);
-      return;
-    }
-
-    // "Invited users only" mode: the referral program is open exclusively to
-    // users who were themselves invited. Previously this was enforced only
-    // because the hub had to mint an invite (which the admin refused), and the
-    // refusal surfaced as the generic "link temporarily unavailable" — a
-    // permanent state dressed up as a glitch. The link no longer requires an
-    // invite, so check the flag the summary already reports and say plainly why.
-    if (summary?.programAvailable === false) {
-      const kb = new InlineKeyboard().text(backButton(), 'menu:main');
-      await renderScreenOrEdit(ctx, deps, botCfg.visual, {
-        overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
-        text: translator.t('referral.invited_only', lang),
-        replyMarkup: kb,
-      });
-      return;
-    }
-
-    if (inviteLink === null) {
-      deps.logger?.warn(
-        { telegramId, hasPublicUrl: urls.publicWebUrl !== null },
-        'invite: link unavailable — no bot username and no public web URL configured',
-      );
-      const kb = new InlineKeyboard().text(backButton(), 'menu:main');
-      await renderScreenOrEdit(ctx, deps, botCfg.visual, {
-        overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
-        text: translator.t('referral.link_unavailable', lang),
-        replyMarkup: kb,
-      });
-      return;
-    }
-
-    await renderReferralHub(ctx, deps, lang, summary, inviteLink, webLink, backLabel, botCfg);
+    await showInviteScreen(ctx, deps);
   });
 };
+
+/**
+ * The invite screen, in place: the partner hub, the referral hub, or the reason
+ * there is none. The `invite` button's, and also that of a `screen:<shortId>`
+ * button onto the operator's `invite` screen (`dynamic-screen.ts`), which has to
+ * be THIS screen — its `{{link}}` filled in and the hub's buttons below — not a
+ * plain one. The caller answers the callback, and hands over the config it found
+ * that screen in (`found`): one read per press, as before the hand-off.
+ */
+export async function showInviteScreen(ctx: BotContext, deps: PageDeps, found?: BotConfig): Promise<void> {
+  const { adminClient, translator, userLocale, getConfig, urls } = deps;
+  const telegramId = String(ctx.from?.id);
+  const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
+  const backLabel = translator.t('back_to_menu', lang);
+  const botCfg = found ?? (await getConfig());
+
+  // Active partners get the partner hub regardless of the referral toggle.
+  const status = await adminClient?.partner
+    ?.getStatus?.({ telegramId })
+    ?.catch(() => null);
+  const isPartner = (status as { isActive?: boolean } | null | undefined)?.isActive === true;
+
+  // The three early-return branches below build their own single-button
+  // keyboard instead of going through `appendBackToMenuRow` (a leading
+  // `.row()` on a fresh keyboard leaves a dangling empty row). They still owe
+  // the operator the same "back" rendering the hubs give it, so each resolves
+  // the label through `renderSystemButton` with the shared 'back' system key.
+  const backButton = (): { text: string } | { text: string; icon_custom_emoji_id: string } => {
+    const back = renderSystemButton(backLabel, 'back', botCfg);
+    return back.iconCustomEmojiId !== undefined
+      ? { text: back.text, icon_custom_emoji_id: back.iconCustomEmojiId }
+      : { text: back.text };
+  };
+
+  // The same holds for their texts: operator copy, whose emoji tokens the
+  // hubs resolve, so these three resolve them too.
+  const refusal = (key: string): ReturnType<typeof messageCopy> => messageCopy(translator.t(key, lang), botCfg);
+
+  if (!isPartner && !botCfg.features.referralsEnabled) {
+    const kb = new InlineKeyboard().text(backButton(), 'menu:main');
+    // Still the invite slot — render with its banner (own / global / none)
+    // so we never leave the previous screen's banner lingering here.
+    await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+      overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
+      ...refusal('referral.disabled'),
+      replyMarkup: kb,
+    });
+    return;
+  }
+
+  // One summary fetch serves both the link and the referral stats below.
+  const summary = (await adminClient?.referrals
+    ?.getSummary?.({ telegramId })
+    ?.catch(() => null)) as ReferralSummaryShape | null | undefined;
+  // Under "invite only" the platform admits a new sign-up ONLY through a
+  // single-use invite token, so the permanent code would hand the friend a
+  // link that gets rejected at registration. Mint a token in that mode; this
+  // is also where the operator's TTL and slot limits are meant to bite.
+  let code = typeof summary?.referralCode === 'string' ? summary.referralCode : '';
+  if (summary?.admissionRequiresInvite === true) {
+    const minted = (await adminClient?.referrals
+      ?.createInvite?.({ telegramId })
+      ?.catch(() => null)) as ReferralInviteShape | null | undefined;
+    code = minted?.invite?.token ?? minted?.token ?? '';
+  }
+  // No telegramId fallback: a share link is pasted into chats and channels
+  // and lives there forever, so publishing a raw Telegram ID because the
+  // admin API blipped is not an acceptable degradation.
+  const inviteLink = code.length > 0 ? buildReferralLink(deps, code, ctx.me.username) : null;
+  // Only beside a Telegram link: without a bot username `inviteLink` IS the
+  // website link already, and the hub would print it twice.
+  const webLink = code.length > 0 && ctx.me.username ? buildWebReferralLink(deps, code) : null;
+
+  if (isPartner) {
+    await renderPartnerHub(ctx, deps, lang, telegramId, inviteLink, webLink, backLabel, botCfg);
+    return;
+  }
+
+  // "Invited users only" mode: the referral program is open exclusively to
+  // users who were themselves invited. Previously this was enforced only
+  // because the hub had to mint an invite (which the admin refused), and the
+  // refusal surfaced as the generic "link temporarily unavailable" — a
+  // permanent state dressed up as a glitch. The link no longer requires an
+  // invite, so check the flag the summary already reports and say plainly why.
+  if (summary?.programAvailable === false) {
+    const kb = new InlineKeyboard().text(backButton(), 'menu:main');
+    await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+      overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
+      ...refusal('referral.invited_only'),
+      replyMarkup: kb,
+    });
+    return;
+  }
+
+  if (inviteLink === null) {
+    deps.logger?.warn(
+      { telegramId, hasPublicUrl: urls.publicWebUrl !== null },
+      'invite: link unavailable — no bot username and no public web URL configured',
+    );
+    const kb = new InlineKeyboard().text(backButton(), 'menu:main');
+    await renderScreenOrEdit(ctx, deps, botCfg.visual, {
+      overrideScreen: findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME),
+      ...refusal('referral.link_unavailable'),
+      replyMarkup: kb,
+    });
+    return;
+  }
+
+  await renderReferralHub(ctx, deps, lang, summary, inviteLink, webLink, backLabel, botCfg);
+}
 
 async function renderReferralHub(
   ctx: BotContext,
@@ -305,7 +326,7 @@ async function renderReferralHub(
 
   const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
   const copy = renderSystemButton(t('invite.copy_button'), 'invite_copy', botCfg);
-  const kb = new InlineKeyboard()
+  const kb = newRow(operatorButtons(deps, lang, overrideScreen, botCfg))
     .url(
       share.iconCustomEmojiId !== undefined
         ? { text: share.text, icon_custom_emoji_id: share.iconCustomEmojiId }
@@ -348,6 +369,40 @@ async function renderReferralHub(
     entities: rendered.entities,
     replyMarkup: kb,
   });
+}
+
+/**
+ * The operator's own buttons on the `invite` screen, which open both hubs, the
+ * hub's own buttons below them — the way help and rules render theirs. The hubs
+ * never read them, so «Карта бота» showed buttons the bot did not send. An empty
+ * keyboard without a screen.
+ */
+function operatorButtons(
+  deps: PageDeps,
+  lang: SupportedLocale,
+  overrideScreen: BotScreen | null,
+  botCfg: Awaited<ReturnType<PageDeps['getConfig']>>,
+): InlineKeyboard {
+  if (overrideScreen === null) return new InlineKeyboard();
+  return buildScreenKeyboard(overrideScreen, lang, deps.urls.publicWebUrl, deps.urls.miniAppUrl, {
+    botEmojis: botCfg.botEmojis,
+    customEmojis: botCfg.customEmojis,
+    ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
+    supportUrl: resolveConfiguredSupportUrl(
+      botCfg.visual.supportUsername,
+      deps.envSupportUsername,
+      supportPrefill(deps.translator, lang, botCfg),
+    ),
+  });
+}
+
+/**
+ * Starts a new row unless the current one is still empty: grammY's `row()`
+ * always adds one, which would leave an empty row in the keyboard.
+ */
+function newRow(kb: InlineKeyboard): InlineKeyboard {
+  const last = kb.inline_keyboard[kb.inline_keyboard.length - 1];
+  return last !== undefined && last.length > 0 ? kb.row() : kb;
 }
 
 /** «Скопировать ссылку на сайт», on a row of its own, when there is a website link. */
@@ -413,14 +468,18 @@ async function renderPartnerHub(
   if (hasPoints) stats.push(t('referral.hub.stat_points', { count: points }));
   if (stats.length > 0) parts.push(stats.join('\n'));
 
-  const kb = new InlineKeyboard();
+  // The partner hub reuses the 'invite' screen slot, so its per-screen banner
+  // (if the operator set one) applies here too — text stays partner-specific —
+  // and so do the operator's own buttons.
+  const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
+  const kb = operatorButtons(deps, lang, overrideScreen, botCfg);
   if (inviteLink !== null) {
     parts.push(`${t('referral.hub.link_label')}\n${inviteLink}`);
     if (webLink !== null) parts.push(`${t('referral.hub.web_link_label')}\n${webLink}`);
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText(t, webLink, botCfg))}`;
     const share = renderSystemButton(t('invite.share_button'), 'invite_share', botCfg);
     const copy = renderSystemButton(t('invite.copy_button'), 'invite_copy', botCfg);
-    kb.url(
+    newRow(kb).url(
       share.iconCustomEmojiId !== undefined
         ? { text: share.text, icon_custom_emoji_id: share.iconCustomEmojiId }
         : share.text,
@@ -434,8 +493,7 @@ async function renderPartnerHub(
     appendWebLinkCopy(kb, webLink, t, botCfg);
   }
   if (isTelegramSafeButtonUrl(urls.publicWebUrl)) {
-    if (inviteLink !== null) kb.row();
-    kb.webApp(hubButton(t('partner.hub.open_cabinet'), botCfg), `${urls.publicWebUrl}/partner`);
+    newRow(kb).webApp(hubButton(t('partner.hub.open_cabinet'), botCfg), `${urls.publicWebUrl}/partner`);
     // The cabinet has ONE nav slot for both programs and the Partner tab took
     // it, so /referrals/exchange is reachable from nowhere for a partner.
     // This is the way back — the referral hub's own button, same wording key
@@ -451,9 +509,6 @@ async function renderPartnerHub(
   appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
 
   const rendered = renderBotCopy(parts.join('\n\n'), botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
-  // The partner hub reuses the 'invite' screen slot, so its per-screen banner
-  // (if the operator set one) applies here too — text stays partner-specific.
-  const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
   await renderScreenOrEdit(ctx, deps, botCfg.visual, {
     overrideScreen,
     text: rendered.text,

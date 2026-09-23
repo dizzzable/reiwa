@@ -40,129 +40,103 @@ import {
   buildScreenKeyboard,
   findScreenByName,
 } from './screen-renderer.js';
-import type { PageRegistrar } from './types.js';
+import type { BotConfig } from '../../infrastructure/bot-config/types.js';
+import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 const NUMERIC_HANDLE = /^-?\d+$/;
 const SCREEN_OVERRIDE_NAME = 'help';
 
 export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
-  const { translator, userLocale, getConfig, envSupportUsername, urls } = deps;
-
   bot.callbackQuery('help', async (ctx) => {
     await ctx.answerCallbackQuery();
-    const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
-    const botCfg = await getConfig();
+    await showHelpScreen(ctx, deps);
+  });
+};
 
-    const adminHandle = botCfg.visual.supportUsername.replace(/^@+/, '').trim();
-    const handle =
-      adminHandle.length > 0 ? adminHandle : (envSupportUsername ?? '').trim();
-    const backLabel = translator.t('back_to_menu', lang);
-    const supportHandleDisplay = handle.length > 0 ? `@${handle}` : '';
+/**
+ * The help screen, in place. The `help` button's, and also that of a
+ * `screen:<shortId>` button onto the operator's `help` screen
+ * (`dynamic-screen.ts`), which has to be THIS screen — its `{{supportHandle}}`
+ * filled in and its system buttons below — not a plain one. The caller answers
+ * the callback, and hands over the config it found that screen in (`found`):
+ * one read per press, as before the hand-off.
+ */
+export async function showHelpScreen(ctx: BotContext, deps: PageDeps, found?: BotConfig): Promise<void> {
+  const { translator, userLocale, getConfig, envSupportUsername, urls } = deps;
+  const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
+  const botCfg = found ?? (await getConfig());
 
-    // Resolve title text — operator override wins, otherwise i18n
-    // default. System buttons are always appended below.
-    const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
-    const title = overrideScreen
-      ? applyScreenTemplate(overrideScreen, lang, {
-          supportHandle: supportHandleDisplay,
-        })
-      : translator.t('support.title', lang);
-    // HTML screens render the operator's markup via parse_mode; otherwise the
-    // entity-based render keeps premium custom-emoji working.
-    const useHtml = overrideScreen?.parseMode === 'html';
-    const sendCopy = (body: string, kb: InlineKeyboard): Promise<void> => {
-      if (useHtml) {
-        return renderScreenOrEdit(ctx, deps, botCfg.visual, {
-          overrideScreen,
-          text: renderBotCopyHtml(body, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium),
-          parseMode: 'HTML',
-          replyMarkup: kb,
-        });
-      }
-      const rendered = renderBotCopy(body, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
+  const adminHandle = botCfg.visual.supportUsername.replace(/^@+/, '').trim();
+  const handle =
+    adminHandle.length > 0 ? adminHandle : (envSupportUsername ?? '').trim();
+  const backLabel = translator.t('back_to_menu', lang);
+  const supportHandleDisplay = handle.length > 0 ? `@${handle}` : '';
+
+  // Resolve title text — operator override wins, otherwise i18n
+  // default. System buttons are always appended below.
+  const overrideScreen = findScreenByName(botCfg.screens, SCREEN_OVERRIDE_NAME);
+  const title = overrideScreen
+    ? applyScreenTemplate(overrideScreen, lang, {
+        supportHandle: supportHandleDisplay,
+      })
+    : translator.t('support.title', lang);
+  // HTML screens render the operator's markup via parse_mode; otherwise the
+  // entity-based render keeps premium custom-emoji working.
+  const useHtml = overrideScreen?.parseMode === 'html';
+  const sendCopy = (body: string, kb: InlineKeyboard): Promise<void> => {
+    if (useHtml) {
       return renderScreenOrEdit(ctx, deps, botCfg.visual, {
         overrideScreen,
-        text: rendered.text,
-        entities: rendered.entities,
+        text: renderBotCopyHtml(body, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium),
+        parseMode: 'HTML',
         replyMarkup: kb,
       });
-    };
-
-    // Operator's own custom buttons (if any) render FIRST; the system
-    // buttons (open app + contact + back) are appended below. Previously the
-    // custom buttons were dropped whenever a built-in screen added system
-    // buttons.
-    const buildKeyboard = (): InlineKeyboard =>
-      overrideScreen
-        ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl, {
-            botEmojis: botCfg.botEmojis,
-            customEmojis: botCfg.customEmojis,
-            ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
-            supportUrl: resolveConfiguredSupportUrl(
-              botCfg.visual.supportUsername,
-              envSupportUsername,
-              supportPrefill(translator, lang, botCfg),
-            ),
-          })
-        : new InlineKeyboard();
-
-    // System buttons appended after any operator custom buttons, each on its
-    // own row. We track whether the keyboard already has a row so the FIRST
-    // appended button doesn't create a leading empty row (grammy seeds the
-    // markup with one empty row; calling `.row()` before the first button
-    // would leave it dangling).
-    const supportPageUrl = ((): string | null => {
-      const appBase = (urls.miniAppUrl ?? '').trim();
-      if (appBase.length === 0) return null;
-      const candidate = `${appBase.replace(/\/$/, '')}/support`;
-      return isTelegramSafeButtonUrl(candidate) ? candidate : null;
-    })();
-
-    if (handle.length > 0 && !NUMERIC_HANDLE.test(handle)) {
-      const prefill = supportPrefill(translator, lang, botCfg);
-      const supportUrl = `https://t.me/${encodeURIComponent(handle)}?text=${encodeURIComponent(prefill)}`;
-      const kb = buildKeyboard();
-      let hasRows = (overrideScreen?.buttons.length ?? 0) > 0;
-      // #1 in-app Support page (Mini App)
-      if (supportPageUrl !== null) {
-        if (hasRows) kb.row();
-        hasRows = true;
-        const appBtn = renderSystemButton(translator.t('help.open_app_button', lang), 'help_open_app', botCfg);
-        kb.webApp(
-          appBtn.iconCustomEmojiId !== undefined
-            ? { text: appBtn.text, icon_custom_emoji_id: appBtn.iconCustomEmojiId }
-            : appBtn.text,
-          supportPageUrl,
-        );
-      }
-      // #2 contact support chat (Telegram DM deep-link)
-      if (hasRows) kb.row();
-      const contact = renderSystemButton(translator.t('help.contact_button', lang), 'help_contact', botCfg);
-      kb.url(
-        contact.iconCustomEmojiId !== undefined
-          ? { text: contact.text, icon_custom_emoji_id: contact.iconCustomEmojiId }
-          : contact.text,
-        supportUrl,
-      );
-      // #3 back to main menu
-      const back = renderSystemButton(backLabel, 'back', botCfg);
-      appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
-      await sendCopy(title, kb);
-      return;
     }
+    const rendered = renderBotCopy(body, botCfg.botEmojis, botCfg.customEmojis, botCfg.botEmojiOwnerHasPremium);
+    return renderScreenOrEdit(ctx, deps, botCfg.visual, {
+      overrideScreen,
+      text: rendered.text,
+      entities: rendered.entities,
+      replyMarkup: kb,
+    });
+  };
 
-    // Numeric handle (rare — operator's chat id, no public username) —
-    // surface a plain-text fallback so users at least see *something*
-    // actionable. The in-app Support page button is still offered.
-    const fallbackBody =
-      handle.length > 0
-        ? `${title}\n\n${translator.t('help.contact_support', lang, { username: handle })}`
-        : overrideScreen !== null
-          ? title
-          : translator.t('support.not_configured', lang);
+  // Operator's own custom buttons (if any) render FIRST; the system
+  // buttons (open app + contact + back) are appended below. Previously the
+  // custom buttons were dropped whenever a built-in screen added system
+  // buttons.
+  const buildKeyboard = (): InlineKeyboard =>
+    overrideScreen
+      ? buildScreenKeyboard(overrideScreen, lang, urls.publicWebUrl, urls.miniAppUrl, {
+          botEmojis: botCfg.botEmojis,
+          customEmojis: botCfg.customEmojis,
+          ownerHasPremium: botCfg.botEmojiOwnerHasPremium,
+          supportUrl: resolveConfiguredSupportUrl(
+            botCfg.visual.supportUsername,
+            envSupportUsername,
+            supportPrefill(translator, lang, botCfg),
+          ),
+        })
+      : new InlineKeyboard();
 
+  // System buttons appended after any operator custom buttons, each on its
+  // own row. We track whether the keyboard already has a row so the FIRST
+  // appended button doesn't create a leading empty row (grammy seeds the
+  // markup with one empty row; calling `.row()` before the first button
+  // would leave it dangling).
+  const supportPageUrl = ((): string | null => {
+    const appBase = (urls.miniAppUrl ?? '').trim();
+    if (appBase.length === 0) return null;
+    const candidate = `${appBase.replace(/\/$/, '')}/support`;
+    return isTelegramSafeButtonUrl(candidate) ? candidate : null;
+  })();
+
+  if (handle.length > 0 && !NUMERIC_HANDLE.test(handle)) {
+    const prefill = supportPrefill(translator, lang, botCfg);
+    const supportUrl = `https://t.me/${encodeURIComponent(handle)}?text=${encodeURIComponent(prefill)}`;
     const kb = buildKeyboard();
     let hasRows = (overrideScreen?.buttons.length ?? 0) > 0;
+    // #1 in-app Support page (Mini App)
     if (supportPageUrl !== null) {
       if (hasRows) kb.row();
       hasRows = true;
@@ -174,8 +148,46 @@ export const registerHelpCallbackPage: PageRegistrar = (bot, deps) => {
         supportPageUrl,
       );
     }
+    // #2 contact support chat (Telegram DM deep-link)
+    if (hasRows) kb.row();
+    const contact = renderSystemButton(translator.t('help.contact_button', lang), 'help_contact', botCfg);
+    kb.url(
+      contact.iconCustomEmojiId !== undefined
+        ? { text: contact.text, icon_custom_emoji_id: contact.iconCustomEmojiId }
+        : contact.text,
+      supportUrl,
+    );
+    // #3 back to main menu
     const back = renderSystemButton(backLabel, 'back', botCfg);
     appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
-    await sendCopy(fallbackBody, kb);
-  });
-};
+    await sendCopy(title, kb);
+    return;
+  }
+
+  // Numeric handle (rare — operator's chat id, no public username) —
+  // surface a plain-text fallback so users at least see *something*
+  // actionable. The in-app Support page button is still offered.
+  const fallbackBody =
+    handle.length > 0
+      ? `${title}\n\n${translator.t('help.contact_support', lang, { username: handle })}`
+      : overrideScreen !== null
+        ? title
+        : translator.t('support.not_configured', lang);
+
+  const kb = buildKeyboard();
+  let hasRows = (overrideScreen?.buttons.length ?? 0) > 0;
+  if (supportPageUrl !== null) {
+    if (hasRows) kb.row();
+    hasRows = true;
+    const appBtn = renderSystemButton(translator.t('help.open_app_button', lang), 'help_open_app', botCfg);
+    kb.webApp(
+      appBtn.iconCustomEmojiId !== undefined
+        ? { text: appBtn.text, icon_custom_emoji_id: appBtn.iconCustomEmojiId }
+        : appBtn.text,
+      supportPageUrl,
+    );
+  }
+  const back = renderSystemButton(backLabel, 'back', botCfg);
+  appendBackToMenuRow(kb, back.text, back.iconCustomEmojiId);
+  await sendCopy(fallbackBody, kb);
+}

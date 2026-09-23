@@ -24,6 +24,7 @@ import type { BotConfig } from '../infrastructure/bot-config/types.js';
 import { BotConfigCache, DEFAULT_BOT_CONFIG } from '../infrastructure/bot-config/cache.js';
 import { RedisConfigPersistence } from '../infrastructure/bot-config/redis-config-persistence.js';
 import type { ConfigPersistencePort } from '../application/ports/config-persistence.port.js';
+import type { LoggerPort } from '../application/ports/logger.port.js';
 import { BannerStore } from '../infrastructure/banner/index.js';
 import { BOT_COMMANDS } from '../core/enums/command.enum.js';
 import { isTelegramSafeButtonUrl } from './widgets/main-keyboard.js';
@@ -52,6 +53,9 @@ import {
 import { createPollingController } from './lib/polling-controller.js';
 import { installBotShutdownHandlers } from './lib/shutdown.js';
 import { applyBotSettings } from './lib/apply-bot-settings.js';
+import { slashCommands } from './lib/slash-commands.js';
+import { startConfigWarmup } from './lib/config-warmup.js';
+import type { CopyEmojis } from './widgets/operator-copy.js';
 import { runQuestChannelRecheck } from './lib/quest-channel-recheck.js';
 import { printReiwaBanner } from '../core/banner.js';
 import { createErrorReporter } from '../infrastructure/error-reporter/index.js';
@@ -116,17 +120,20 @@ function getConfigPersistence(): ConfigPersistencePort | undefined {
   return configPersistence;
 }
 
-async function getBotConfig(adminClient: AdminClient | null): Promise<BotConfig> {
+async function getBotConfig(adminClient: AdminClient | null, logger?: LoggerPort): Promise<BotConfig> {
   if (botConfigCache !== null) return botConfigCache.get();
   if (!adminClient) return DEFAULT_BOT_CONFIG;
   // Lazy construction so an AdminClient set later (tests, hot-reload)
   // gets picked up. In the regular bootstrap path `startBot()` already
-  // calls this through a primed cache.
+  // calls this through a primed cache — the boot read, which passes the
+  // logger: the cache writes one line per failed fetch, and built without
+  // one, a panel outage left nothing in the log.
   botConfigCache = new BotConfigCache({
     fetcher: () => adminClient.branding.getBotConfig(),
     hydrator: translator,
     fallback: DEFAULT_BOT_CONFIG,
     persistence: getConfigPersistence(),
+    logger,
   });
   return botConfigCache.get();
 }
@@ -174,8 +181,8 @@ async function startBot(): Promise<void> {
   // promise rejections, uncaught throws in timers/listeners).
   installProcessErrorGuards({ logger, errorReporter });
 
-  // Pre-warm the config cache
-  const botConfig = await getBotConfig(adminClient);
+  // Pre-warm the config cache — and build it, with the logger.
+  const botConfig = await getBotConfig(adminClient, logger);
   logger.info(
     {
       emojiKeys: Object.keys(botConfig.botEmojis ?? {}).length,
@@ -261,6 +268,9 @@ async function startBot(): Promise<void> {
       hasSync: (id: number) => userLocaleCache.hasSync(id),
     },
     getConfig: () => getBotConfig(adminClient),
+    // What a reply that cannot wait for the panel renders with: the config the
+    // bot holds, whatever its age (`lib/config-within.ts`).
+    peekConfig: () => botConfigCache?.peek() ?? null,
     urls: {
       publicWebUrl: reiwaUrlButtonUrl,
       miniAppUrl: reiwaWebAppUrl,
@@ -311,10 +321,11 @@ async function startBot(): Promise<void> {
   registerClosePage(bot, pageDeps);
   // AI support — /support command enters AI chat mode
   registerAiSupportPage(bot, pageDeps);
-  // Dynamic screens last — its `screen:*` regex catches anything not
-  // already grabbed by an earlier `bot.callbackQuery(<id>, ...)` so
-  // operator-defined screens can shadow built-in callbacks just by
-  // matching the same id.
+  // Dynamic screens last, and no handler after them. Besides `screen:<shortId>`
+  // this page answers a callback whose whole data is a screen's bare shortId,
+  // and that handler must see only data no page above has claimed: a screen
+  // whose shortId is spelled like `help` must not take `help` over. The order is
+  // pinned by `test/bot/callback-routing.test.ts`.
   registerDynamicScreenPage(bot, pageDeps);
 
   // ── Error handler ──────────────────────────────────────────────────────────
@@ -334,14 +345,11 @@ async function startBot(): Promise<void> {
   //
   // The cache auto-refreshes on next `get()` after `ttlMs`, but a
   // periodic warm-fetch keeps the cache hot so the next user request
-  // doesn't pay the upstream round-trip.
+  // doesn't pay the upstream round-trip — a forced read on every tick, before
+  // the TTL is out (`lib/config-warmup.ts`). No cache, no panel: nothing to warm.
+  // A failed tick is logged by the cache, as every failed fetch is.
 
-  const CONFIG_REFRESH_MS = 5 * 60 * 1000;
-  const configRefreshTimer = setInterval(() => {
-    getBotConfig(adminClient).catch((err: unknown) => {
-      logger.warn({ err }, 'Background bot-config refresh failed');
-    });
-  }, CONFIG_REFRESH_MS);
+  const configRefreshTimer = botConfigCache !== null ? startConfigWarmup(botConfigCache) : null;
 
   // ── Channel-quest membership recheck timer ─────────────────────────────────
   //
@@ -367,7 +375,7 @@ async function startBot(): Promise<void> {
   // form so the autocompletion descriptions follow the user's Telegram
   // language. Failures are non-fatal — the bot still works without
   // command suggestions.
-  let commandSignature = await registerSlashCommands(bot, logger);
+  let commandSignature = await registerSlashCommands(bot, logger, botConfig);
 
   // Push the operator’s Telegram profile (name / description / short
   // description). Fire-and-forget like the startup notices: it is up to six
@@ -456,7 +464,7 @@ async function startBot(): Promise<void> {
     // things Telegram holds a copy of, so they have to be pushed on as well.
     // Both are no-ops when nothing they care about changed.
     onConfigApplied: async (fresh) => {
-      commandSignature = await registerSlashCommands(bot, logger, commandSignature);
+      commandSignature = await registerSlashCommands(bot, logger, fresh, commandSignature);
       await applyBotSettings({
         bot,
         config: fresh,
@@ -486,7 +494,7 @@ async function startBot(): Promise<void> {
     startedAt,
     logger,
     clearTimers: () => {
-      clearInterval(configRefreshTimer);
+      if (configRefreshTimer !== null) clearInterval(configRefreshTimer);
       if (questRecheckTimer !== null) clearInterval(questRecheckTimer);
     },
     // Releases the slot AND waits for the handler still running behind it.
@@ -502,6 +510,7 @@ async function startBot(): Promise<void> {
         logger,
         signal,
         uptimeMs,
+        getConfig: pageDeps.getConfig,
       }),
     closeServer:
       internalListener === null
@@ -519,10 +528,14 @@ async function startBot(): Promise<void> {
  * locales the project supports today. New locales added to
  * `SUPPORTED_LOCALES` automatically get a new scope set without code
  * changes here.
+ *
+ * `emojis` resolves the operator's emoji tokens in the descriptions, which
+ * Telegram shows as plain text — see `lib/slash-commands.ts`.
  */
 async function registerSlashCommands(
   bot: Bot<BotContext>,
   logger: ReturnType<typeof createLogger>,
+  emojis: CopyEmojis,
   previousSignature?: string,
 ): Promise<string> {
   const { SUPPORTED_LOCALES } = await import('../core/enums/locale.enum.js');
@@ -536,9 +549,9 @@ async function registerSlashCommands(
   // The default scope is registered with the RU descriptions, so iterating the
   // supported locales covers every string this function can send.
   const signature = SUPPORTED_LOCALES.map((lang) =>
-    BOT_COMMANDS.map(
-      (command) => `${command}=${translator.t(`commands.${command}.description`, lang)}`,
-    ).join('|'),
+    slashCommands(translator, lang, emojis)
+      .map(({ command, description }) => `${command}=${description}`)
+      .join('|'),
   ).join('||');
   if (previousSignature !== undefined && previousSignature === signature) {
     logger.info('Bot slash-commands unchanged — not re-registering');
@@ -548,10 +561,7 @@ async function registerSlashCommands(
   // Default scope (catches users whose Telegram language isn't one of
   // the per-locale entries below — unlikely with ru/en covering most
   // CIS/global users, but still belt-and-braces).
-  const defaultDescriptions = BOT_COMMANDS.map((command) => ({
-    command,
-    description: translator.t(`commands.${command}.description`, 'ru'),
-  }));
+  const defaultDescriptions = slashCommands(translator, 'ru', emojis);
 
   // Telegram's TLS endpoint is occasionally flaky during cold starts
   // (`ECONNRESET` mid-handshake). Retry the default scope once after a
@@ -581,10 +591,7 @@ async function registerSlashCommands(
   await setDefaultWithRetry();
 
   for (const lang of SUPPORTED_LOCALES) {
-    const descriptions = BOT_COMMANDS.map((command) => ({
-      command,
-      description: translator.t(`commands.${command}.description`, lang),
-    }));
+    const descriptions = slashCommands(translator, lang, emojis);
     try {
       await bot.api.setMyCommands(descriptions, {
         language_code: lang,

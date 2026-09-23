@@ -27,7 +27,9 @@ import type { TranslatorPort } from '../../application/ports/translator.port.js'
 import type { BotConfig } from '../../infrastructure/bot-config/types.js';
 import { renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import { coerceLocale } from '../pages/coerce-locale.js';
+import { replyWithEntities } from '../pages/reply.js';
 import { resolveSupportDeepLink, supportPrefill } from '../widgets/main-keyboard.js';
+import { messageCopy } from '../widgets/operator-copy.js';
 import type { BotContext, UserLocaleSyncCache } from '../pages/types.js';
 
 export interface BotErrorHandlerDeps {
@@ -102,8 +104,15 @@ async function replyWithError(
   // answer.
   if (ctx.chat?.id === undefined) return;
   try {
-    const keyboard = await buildSupportKeyboard(deps, lang);
-    await ctx.reply(deps.translator.t('error.unknown', lang), {
+    let cfg: BotConfig | null = null;
+    try {
+      cfg = await deps.getConfig();
+    } catch {
+      /* config unavailable — the env handle below, and the text as written */
+    }
+    const keyboard = buildSupportKeyboard(deps, lang, cfg);
+    // Operator copy like the button under it: its emoji tokens resolved.
+    await replyWithEntities(ctx, messageCopy(deps.translator.t('error.unknown', lang), cfg), {
       ...(keyboard !== null ? { reply_markup: keyboard } : {}),
       link_preview_options: { is_disabled: true },
     });
@@ -112,16 +121,11 @@ async function replyWithError(
   }
 }
 
-async function buildSupportKeyboard(
+function buildSupportKeyboard(
   deps: BotErrorHandlerDeps,
   lang: SupportedLocale,
-): Promise<InlineKeyboard | null> {
-  let cfg: BotConfig | null = null;
-  try {
-    cfg = await deps.getConfig();
-  } catch {
-    /* config unavailable — fall back to the env handle below */
-  }
+  cfg: BotConfig | null,
+): InlineKeyboard | null {
   const adminHandle = (cfg?.visual.supportUsername ?? '').replace(/^@+/, '').trim();
   const handle = adminHandle.length > 0 ? adminHandle : (deps.envSupportUsername ?? '').trim();
   const url = resolveSupportDeepLink(handle, supportPrefill(deps.translator, lang, cfg));

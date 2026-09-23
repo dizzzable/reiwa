@@ -143,6 +143,64 @@ export function buildPassthroughTranslator(): TranslatorPort {
   };
 }
 
+// ── An operator's text, with the tokens the panel's emoji picker inserts ─────
+//
+// «Тексты бота» overrides ANY translator key, and its picker writes a `:slug:`
+// pack emoji and a `{{KEY}}` bot-emoji slot into the text. Telegram knows
+// neither: the bot swaps them for a glyph (and, in a message sent without a
+// parse mode, a `custom_emoji` entity carrying the pack's id). A text that
+// reaches Telegram with either token still in it was sent past every renderer.
+
+/** The pack emoji's Telegram id — the only thing Telegram knows it by. */
+export const FIRE_EMOJI_ID = '5368324170671202286';
+
+/** What the operator typed. */
+export const OPERATOR_TEXT = ':fire: Здравствуйте! {{GIFT}}';
+
+/**
+ * {@link OPERATOR_TEXT} as it arrives: the pack's fallback glyph and the GIFT
+ * slot's default one (no slot is configured in `DEFAULT_BOT_CONFIG`).
+ */
+export const OPERATOR_TEXT_GLYPHS = '🔥 Здравствуйте! 🎁';
+
+/** The entity a MESSAGE carries for the leading `:fire:`, the owner having Premium. */
+export const FIRE_ENTITY = {
+  type: 'custom_emoji',
+  offset: 0,
+  length: 2,
+  custom_emoji_id: FIRE_EMOJI_ID,
+} as const;
+
+/** A bot config whose pack holds `:fire:` with a premium id, for an owner with Premium. */
+export function operatorEmojiConfig(base: BotConfig = DEFAULT_BOT_CONFIG): BotConfig {
+  return {
+    ...base,
+    customEmojis: { ...base.customEmojis, fire: { id: FIRE_EMOJI_ID, fallback: '🔥' } },
+    botEmojiOwnerHasPremium: true,
+  };
+}
+
+/**
+ * `translator` with the operator's `text` under each of `keys`, interpolated the
+ * way the real translator does it (`{{name}}`), every other key untouched.
+ */
+export function withOperatorText(
+  translator: TranslatorPort,
+  keys: readonly string[],
+  text: string = OPERATOR_TEXT,
+): TranslatorPort {
+  const edited = new Set(keys);
+  return {
+    ...translator,
+    t: (key, lang, vars) => {
+      if (!edited.has(key)) return translator.t(key, lang, vars);
+      let out = text;
+      for (const [name, value] of Object.entries(vars ?? {})) out = out.split(`{{${name}}}`).join(String(value));
+      return out;
+    },
+  };
+}
+
 export interface BuildDepsOptions {
   readonly initialLocale?: string;
   readonly initialUserId?: number;

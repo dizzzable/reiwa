@@ -1,7 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { formatUptime, notifyOperatorBotStopped } from '../../../src/bot/lib/startup-notice.js';
 import { REIWA_VERSION } from '../../../src/core/version.js';
+import {
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildPassthroughTranslator,
+  operatorEmojiConfig,
+  withOperatorText,
+} from '../pages/helpers.js';
 
 /**
  * The bot-stopped operator card.
@@ -139,5 +149,56 @@ describe('notifyOperatorBotStopped', () => {
     ).resolves.toBeUndefined();
 
     expect(warn).toHaveBeenCalledOnce();
+  });
+
+  // The card's words are translator keys «Тексты бота» can override, with the
+  // panel's emoji picker in the field. Sent raw, the operator read `:fire:`.
+  it('carries the operator text, emoji tokens resolved', async () => {
+    const { bot, sendMessage } = fakeBot();
+    await notifyOperatorBotStopped({
+      bot,
+      devId: 42,
+      translator: withOperatorText(buildPassthroughTranslator(), ['bot_event.stopped']),
+      logger: undefined as never,
+      signal: 'SIGTERM',
+      uptimeMs: 1_000,
+      getConfig: async () => operatorEmojiConfig(),
+    });
+
+    const [, text, other] = sendMessage.mock.calls[0] as unknown as [number, string, { entities?: unknown }];
+    const head = '#EventBotStopped\n\n';
+    expect(text.startsWith(`${head}${OPERATOR_TEXT_GLYPHS}\n\n`)).toBe(true);
+    expect(other.entities).toEqual([{ ...FIRE_ENTITY, offset: head.length }]);
+  });
+
+  // `main.ts` cannot be imported by a spec (it boots the bot), so the one call
+  // is pinned by source: without the config the words keep their tokens.
+  it('is handed the bot config by main.ts', () => {
+    const main = readFileSync(resolve(__dirname, '../../../src/bot/main.ts'), 'utf8');
+    const call = main.slice(main.indexOf('notifyOperatorBotStopped({'));
+    expect(call.slice(0, call.indexOf('})'))).toContain('getConfig: pageDeps.getConfig');
+  });
+
+  it('does not wait on a config that does not answer: the farewell has four seconds', async () => {
+    // Read from the panel when the cache has gone stale, and the process is
+    // leaving. The card goes out with its tokens as typed rather than not at all.
+    vi.useFakeTimers();
+    try {
+      const { bot, sendMessage } = fakeBot();
+      const sent = notifyOperatorBotStopped({
+        bot,
+        devId: 42,
+        translator,
+        logger: undefined as never,
+        signal: 'SIGTERM',
+        uptimeMs: 1_000,
+        getConfig: () => new Promise(() => undefined),
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      await sent;
+      expect(sendMessage).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

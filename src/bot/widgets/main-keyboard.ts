@@ -42,6 +42,31 @@ export interface ButtonBinding {
 }
 
 /**
+ * A support button's callback when there is no public support username to open:
+ * the one callback that answers it (`pages/help-callback.ts`).
+ */
+const SUPPORT_FALLBACK_CALLBACK = 'help';
+
+/**
+ * An address on this machine, which Telegram refuses on a button — and with it
+ * the whole message. The HOST decides: `new URL(address).hostname` is exactly
+ * `localhost` or `127.0.0.1`, and an address that does not parse is not local.
+ * A substring test dropped the cabinet's own page whose query named localhost
+ * (`/r?next=http://localhost/x`), which the release sent. The panel map's
+ * copies (`reply-keyboard-utils.ts`, `menu-button-route.ts`) follow the same
+ * rule, pinned by the same table in both repositories.
+ */
+export function isLocalAddress(address: string): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(address).hostname;
+  } catch {
+    return false;
+  }
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+/**
  * Telegram refuses inline-keyboard URLs that point at `localhost` /
  * `127.0.0.1` AND `web_app` URLs that aren't HTTPS. Both checks funnel
  * through this gate so dev (where `REIWA_DOMAIN=localhost:5173`
@@ -52,9 +77,7 @@ export interface ButtonBinding {
 export function isTelegramSafeButtonUrl(url: string | null | undefined): boolean {
   if (url === null || url === undefined) return false;
   if (!url.startsWith('https://')) return false;
-  const lower = url.toLowerCase();
-  if (lower.includes('://localhost') || lower.includes('://127.0.0.1')) return false;
-  return true;
+  return !isLocalAddress(url);
 }
 
 /**
@@ -329,12 +352,26 @@ export function miniAppButtonUrl(
   miniAppUrl: string | null | undefined,
   target: string | null,
 ): string | null {
+  return addressOn(miniAppUrl, target);
+}
+
+/**
+ * A button's `target` as an address on `base`: an `http(s)://` target as the
+ * operator typed it, anything else a path on `base` — given the slash a path
+ * typed without one lacks, and never a doubled one. No target at all is `base`
+ * itself. `null` when there is no base to put a path on.
+ *
+ * Shared by the Mini App button (`miniAppButtonUrl`) and the «Внешняя ссылка»
+ * one, whose relative target was glued onto the cabinet's address as typed:
+ * `plans` opened `https://cabinet.exampleplans`, a host that does not exist.
+ */
+function addressOn(base: string | null | undefined, target: string | null): string | null {
   const trimmed = (target ?? '').trim();
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (!miniAppUrl) return null;
-  const base = miniAppUrl.replace(/\/+$/, '');
-  if (trimmed.length === 0) return base;
-  return `${base}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+  if (!base) return null;
+  const root = base.replace(/\/+$/, '');
+  if (trimmed.length === 0) return root;
+  return `${root}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
 }
 
 /**
@@ -490,14 +527,13 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
       kb.webApp({ text: label, ...buttonExtras }, cabinetBrowserEntryUrl(miniAppUrl) as string);
       placed = true;
     } else if (binding.kind === 'url') {
-      const operatorUrl = binding.target !== null && binding.target.length > 0
-        ? binding.target
-        : null;
-      const fallbackUrl = publicWebUrl ? `${publicWebUrl}${binding.target ?? ''}` : null;
-      const baseUrl = operatorUrl !== null && /^https?:\/\//i.test(operatorUrl)
-        ? operatorUrl
-        : fallbackUrl;
+      // An address the operator typed, or a page of the cabinet (`addressOn`).
+      const baseUrl = addressOn(publicWebUrl, binding.target);
       if (!baseUrl) continue;
+      // A local address drops this button, not the menu: Telegram refuses the
+      // whole message for one, as it does for a `web_app` URL above. `http://`
+      // stays — the panel saves it for a link, and Telegram opens it.
+      if (isLocalAddress(baseUrl)) continue;
       // Magic-link: stamp `?signin=<token>` so the SPA can complete
       // the auth handshake without bouncing the user through /sign-in —
       // and only onto the cabinet's own origin. An operator's `url`
@@ -509,18 +545,19 @@ export function buildMainKeyboard(options: MainKeyboardOptions): InlineKeyboard 
       placed = true;
     } else if (binding.kind === 'support_url') {
       // Direct deep-link to support chat — one tap, no intermediate
-      // sub-screen. Falls back to a callback when the operator hasn't
-      // set a real @username (resolveSupportDeepLink returns null for
-      // numeric / empty handles); the legacy `help` callback handler
-      // then surfaces a "Связаться: <id>" copy with the support
-      // username inline.
+      // sub-screen. Falls back to the `help` callback when the operator
+      // hasn't set a real @username (resolveSupportDeepLink returns null
+      // for numeric / empty handles); the `help` handler then surfaces a
+      // "Связаться: <id>" copy with the support username inline. `help`,
+      // not the button's own ID: that was sent before, and only a button
+      // whose ID happened to be `help` was ever answered.
       if (supportUrl !== null && supportUrl !== undefined) {
         closeRowIfNeeded(btn.onePerRow);
         kb.url({ text: label, ...buttonExtras }, supportUrl);
         placed = true;
       } else {
         closeRowIfNeeded(btn.onePerRow);
-        kb.text({ text: label, ...buttonExtras }, btn.id);
+        kb.text({ text: label, ...buttonExtras }, SUPPORT_FALLBACK_CALLBACK);
         placed = true;
       }
     } else {

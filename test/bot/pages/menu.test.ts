@@ -6,7 +6,7 @@
  * matches. The check itself — fresh, through the gate module — and the quest
  * continuation run against grammY's real client in `channel-gate-telegram.test.ts`.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetChannelGateMemory } from '../../../src/bot/lib/channel-gate.js';
 import { resetChannelJoinPromptMemory } from '../../../src/bot/pages/channel-join-prompt.js';
@@ -14,7 +14,17 @@ import { registerMenuPage } from '../../../src/bot/pages/menu.js';
 import { setPolicyCache } from '../../../src/infrastructure/admin-client/policy-cache.js';
 import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
-import { buildDeps, buildFakeBot, buildFakeCtx, type FakeBot } from './helpers.js';
+import type { BotConfig } from '../../../src/infrastructure/bot-config/types.js';
+import {
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildDeps,
+  buildFakeBot,
+  buildFakeCtx,
+  operatorEmojiConfig,
+  withOperatorText,
+  type FakeBot,
+} from './helpers.js';
 
 /** The handler registered for this callback data, by matching it the way grammY does. */
 function handlerFor(bot: FakeBot, data: string): (ctx: BotContext) => Promise<void> {
@@ -163,7 +173,8 @@ describe('registerMenuPage', () => {
     for (const ctx of [first, second]) {
       expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: 'ru:channel.not_subscribed' });
     }
-    expect(first.reply.mock.calls).toEqual([['ru:channel.not_subscribed']]);
+    // `{}`: no emoji entities in this text, so none are sent.
+    expect(first.reply.mock.calls).toEqual([['ru:channel.not_subscribed', {}]]);
     expect(second.reply).not.toHaveBeenCalled();
   });
 
@@ -215,5 +226,174 @@ describe('registerMenuPage', () => {
   // Suppress unused config import warning.
   it('uses default bot config when none is overridden', () => {
     expect(DEFAULT_BOT_CONFIG.buttons.length).toBeGreaterThan(0);
+  });
+});
+
+// Every text these two buttons answer with is a translator key «Тексты бота»
+// can override, with the panel's emoji picker in the field. A toast carries no
+// entities, so its tokens become glyphs; a message carries the pack emoji's
+// entity too. Sent raw, the user read `:fire:` and `{{GIFT}}`.
+describe('menu callbacks answer with the operator text, emoji tokens resolved', () => {
+  function registerWith(keys: readonly string[], adminClient: unknown = null): FakeBot {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      config: operatorEmojiConfig(),
+      ...(adminClient !== null ? { adminOverrides: adminClient as Record<string, unknown> } : {}),
+    });
+    registerMenuPage(bot as unknown as Parameters<typeof registerMenuPage>[0], {
+      ...deps,
+      translator: withOperatorText(deps.translator, keys),
+    });
+    return bot;
+  }
+
+  it('back_to_menu: the «choose an action» message', async () => {
+    const bot = registerWith(['menu.choose_action']);
+    const ctx = { ...buildFakeCtx(), chat: { id: 42, type: 'private' } };
+    await handlerFor(bot, 'back_to_menu')(ctx as unknown as BotContext);
+    const [text, opts] = ctx.reply.mock.calls[0] as [string, { entities?: unknown }];
+    expect(text).toBe(OPERATOR_TEXT_GLYPHS);
+    expect(opts.entities).toEqual([FIRE_ENTITY]);
+  });
+
+  it('check_channel under RESTRICTED: the refusal alert', async () => {
+    const admin = { system: { getPlatformPolicy: vi.fn().mockResolvedValue({ accessMode: 'RESTRICTED' }) } };
+    const bot = registerWith(['access_mode.restricted'], admin);
+    const ctx = buildApiCtx(vi.fn());
+    await handlerFor(bot, 'check_channel')(ctx as unknown as BotContext);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: OPERATOR_TEXT_GLYPHS, show_alert: true });
+  });
+
+  it('check_channel by somebody still outside: the toast and the message', async () => {
+    const bot = registerWith(['channel.not_subscribed'], channelPolicyAdmin());
+    const ctx = buildApiCtx(vi.fn().mockResolvedValue({ status: 'left' }));
+    await handlerFor(bot, 'check_channel')(ctx as unknown as BotContext);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: OPERATOR_TEXT_GLYPHS });
+    const [text, opts] = ctx.reply.mock.calls[0] as [string, { entities?: unknown }];
+    expect(text).toBe(OPERATOR_TEXT_GLYPHS);
+    expect(opts.entities).toEqual([FIRE_ENTITY]);
+  });
+
+  it('check_channel passed: the «verified» toast', async () => {
+    const bot = registerWith(['channel.verified']);
+    const ctx = buildApiCtx(vi.fn());
+    await handlerFor(bot, 'check_channel')(ctx as unknown as BotContext);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: OPERATOR_TEXT_GLYPHS });
+  });
+
+  it('check_channel carrying a quest the user has no account for: «link your Telegram first»', async () => {
+    const admin = {
+      system: { getPlatformPolicy: vi.fn().mockResolvedValue({ accessMode: 'PUBLIC' }) },
+      quests: {
+        channelTarget: vi.fn().mockRejectedValue(Object.assign(new Error('not linked'), { status: 404 })),
+      },
+      webAuth: { issueBotSigninToken: vi.fn().mockResolvedValue({ token: 'signin-token' }) },
+    };
+    const bot = registerWith(['quests.channel.link_first'], admin);
+    const ctx = { ...buildApiCtx(vi.fn()), match: ['check_channel:q:cabcdefghijklmnopqrst', 'cabcdefghijklmnopqrst'] };
+    await handlerFor(bot, 'check_channel:q:cabcdefghijklmnopqrst')(ctx as unknown as BotContext);
+    const [text, opts] = ctx.reply.mock.calls[0] as [string, { entities?: unknown }];
+    expect(text).toBe(OPERATOR_TEXT_GLYPHS);
+    expect(opts.entities).toEqual([FIRE_ENTITY]);
+  });
+});
+
+// «Я подписался» reads the config for the emoji tokens of its toasts and of
+// the two messages it may send — reads the button did not make before its
+// operator copy was rendered, and they come before the spinner stops. Updates
+// are handled one at a time, and a config read past the cache's TTL waits for
+// the panel: the transport's ten seconds when it hangs.
+describe('check_channel while the config read hangs', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function registerHanging(adminClient: unknown): FakeBot {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps(adminClient !== null ? { adminOverrides: adminClient as Record<string, unknown> } : {});
+    registerMenuPage(bot as unknown as Parameters<typeof registerMenuPage>[0], {
+      ...deps,
+      getConfig: () => new Promise<BotConfig>(() => undefined),
+    });
+    return bot;
+  }
+
+  it('by somebody still outside: the toast within a quarter second, and the message with it', async () => {
+    vi.useFakeTimers();
+    const bot = registerHanging(channelPolicyAdmin());
+    const ctx = buildApiCtx(vi.fn().mockResolvedValue({ status: 'left' }));
+    void handlerFor(bot, 'check_channel')(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: 'ru:channel.not_subscribed' });
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith('ru:channel.not_subscribed', {});
+  });
+
+  it('under RESTRICTED: the refusal alert within a quarter second', async () => {
+    vi.useFakeTimers();
+    const bot = registerHanging({ system: { getPlatformPolicy: vi.fn().mockResolvedValue({ accessMode: 'RESTRICTED' }) } });
+    const ctx = buildApiCtx(vi.fn());
+    void handlerFor(bot, 'check_channel')(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: 'ru:access_mode.restricted', show_alert: true });
+  });
+
+  it('carrying a quest the user has no account for: the toast within a quarter second, «link your Telegram first» within a second more', async () => {
+    vi.useFakeTimers();
+    const bot = registerHanging({
+      system: { getPlatformPolicy: vi.fn().mockResolvedValue({ accessMode: 'PUBLIC' }) },
+      quests: {
+        channelTarget: vi.fn().mockRejectedValue(Object.assign(new Error('not linked'), { status: 404 })),
+      },
+    });
+    const ctx = { ...buildApiCtx(vi.fn()), match: ['check_channel:q:cabcdefghijklmnopqrst', 'cabcdefghijklmnopqrst'] };
+    void handlerFor(bot, 'check_channel:q:cabcdefghijklmnopqrst')(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: 'ru:channel.verified' });
+    // A message of its own, asked for at its answer: a message's budget.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith('ru:quests.channel.link_first', {});
+  });
+
+  // The config the bot already holds — stale, but the operator's — renders the
+  // toast and the message: a read the panel is slow to answer must not strip
+  // their emoji.
+  it('by somebody still outside: the toast and the message from the config the bot holds', async () => {
+    vi.useFakeTimers();
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({ adminOverrides: channelPolicyAdmin() as unknown as Record<string, unknown> });
+    registerMenuPage(bot as unknown as Parameters<typeof registerMenuPage>[0], {
+      ...deps,
+      translator: withOperatorText(deps.translator, ['channel.not_subscribed']),
+      getConfig: () => new Promise<BotConfig>(() => undefined),
+      peekConfig: () => operatorEmojiConfig(),
+    });
+    const ctx = buildApiCtx(vi.fn().mockResolvedValue({ status: 'left' }));
+    void handlerFor(bot, 'check_channel')(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: OPERATOR_TEXT_GLYPHS });
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith(OPERATOR_TEXT_GLYPHS, { entities: [FIRE_ENTITY] });
+  });
+
+  // Telegram is asked about the membership before the toast is due. The config
+  // is asked for AT the toast: one the panel gives meanwhile is the one used.
+  it('asks for the config at the toast, not before asking Telegram', async () => {
+    vi.useFakeTimers();
+    const later = <T,>(ms: number, value: T): Promise<T> =>
+      new Promise<T>((resolve) => {
+        setTimeout(() => resolve(value), ms);
+      });
+    // The panel answers the config read 400 ms after the press, whoever asks.
+    const configRead = later(400, operatorEmojiConfig());
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({ adminOverrides: channelPolicyAdmin() as unknown as Record<string, unknown> });
+    registerMenuPage(bot as unknown as Parameters<typeof registerMenuPage>[0], {
+      ...deps,
+      translator: withOperatorText(deps.translator, ['channel.not_subscribed']),
+      getConfig: () => configRead,
+    });
+    const ctx = buildApiCtx(vi.fn(() => later(300, { status: 'left' })));
+    void handlerFor(bot, 'check_channel')(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: OPERATOR_TEXT_GLYPHS });
   });
 });

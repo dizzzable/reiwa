@@ -13,8 +13,12 @@
 import { InlineKeyboard } from "grammy";
 import { generateResponseWithTools } from "../../core/ai/chat-client.js";
 import type { SupportedLocale } from "../../core/enums/locale.enum.js";
+import { configWithin, MESSAGE_CONFIG_BUDGET_MS, TOAST_CONFIG_BUDGET_MS } from "../lib/config-within.js";
+import { inlineButton } from "../widgets/inline-button.js";
+import { markdownCopy, messageCopy, type CopyEmojis } from "../widgets/operator-copy.js";
 import { AI_SUPPORT_EXIT_CALLBACK, CANCEL_COMMAND } from "./ai-support-mode.js";
 import { coerceLocale } from "./coerce-locale.js";
+import { replyWithEntities } from "./reply.js";
 import type { PageRegistrar } from "./types.js";
 
 // ── Per-chat rate limit ─────────────────────────────────────────────────────
@@ -116,8 +120,27 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
   const langOf = (ctx: { from?: { id?: number } }): SupportedLocale =>
     coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
 
-  const exitKeyboard = (lang: SupportedLocale) =>
-    new InlineKeyboard().text(deps.translator.t("ai_support.exit_button", lang), AI_SUPPORT_EXIT_CALLBACK);
+  // Every one of those strings is operator copy too, and «Тексты бота» puts
+  // emoji tokens into it. Three are sent with `parse_mode: "Markdown"` — their
+  // default copy is Markdown — which cannot also carry entities and has no
+  // custom-emoji syntax of its own, so they get glyphs, escaped where legacy
+  // Markdown reserves a character (`markdownCopy`). The rest are plain messages
+  // and get the pack emoji's entity too (`messageCopy`), and the exit button's
+  // caption is drawn like every other one (`inlineButton`).
+  const markdown = (key: string, lang: SupportedLocale, botCfg: CopyEmojis): string =>
+    markdownCopy(deps.translator.t(key, lang), botCfg);
+
+  // The config those renders read — reads this page made none of before —
+  // asked for at each answer. A refresh against a hung panel must not hold an
+  // answer, and every update queued behind it (they are handled one at a
+  // time): past the budget, the config the bot holds.
+  const copyConfig = (budgetMs: number) => configWithin(deps, budgetMs);
+
+  const exitKeyboard = (lang: SupportedLocale, botCfg: CopyEmojis) =>
+    new InlineKeyboard().text(
+      inlineButton(deps.translator.t("ai_support.exit_button", lang), botCfg),
+      AI_SUPPORT_EXIT_CALLBACK,
+    );
 
   const clearSupportMode = (ctx: { session: unknown }) => {
     try {
@@ -171,14 +194,15 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     // Don't enter a dead support mode when the assistant is off/unconfigured.
     const lang = langOf(ctx);
     const runtime = await resolveAiConfig();
+    const botCfg = await copyConfig(MESSAGE_CONFIG_BUDGET_MS);
     if (!runtime || !runtime.enabled) {
-      await ctx.reply(deps.translator.t("ai_support.unavailable", lang), {
+      await ctx.reply(markdown("ai_support.unavailable", lang, botCfg), {
         parse_mode: "Markdown",
       });
       return;
     }
 
-    await ctx.reply(deps.translator.t("ai_support.intro", lang), {
+    await ctx.reply(markdown("ai_support.intro", lang, botCfg), {
       parse_mode: "Markdown",
     });
 
@@ -202,7 +226,7 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       return next();
     }
     clearSupportMode(ctx);
-    await ctx.reply(deps.translator.t("ai_support.exited", langOf(ctx)), {
+    await ctx.reply(markdown("ai_support.exited", langOf(ctx), await copyConfig(MESSAGE_CONFIG_BUDGET_MS)), {
       parse_mode: "Markdown",
     });
   });
@@ -232,8 +256,9 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     const lang = langOf(ctx);
     const chatId = ctx.chat?.id;
     if (chatId !== undefined && isChatRateLimited(chatId)) {
-      await ctx.reply(deps.translator.t("ai_support.rate_limited", lang), {
-        reply_markup: exitKeyboard(lang),
+      const botCfg = await copyConfig(MESSAGE_CONFIG_BUDGET_MS);
+      await replyWithEntities(ctx, messageCopy(deps.translator.t("ai_support.rate_limited", lang), botCfg), {
+        reply_markup: exitKeyboard(lang, botCfg),
       });
       return;
     }
@@ -245,7 +270,7 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     const runtime = await resolveAiConfig();
     if (!runtime || !runtime.enabled) {
       clearSupportMode(ctx);
-      await ctx.reply(deps.translator.t("ai_support.unavailable", lang), {
+      await ctx.reply(markdown("ai_support.unavailable", lang, await copyConfig(MESSAGE_CONFIG_BUDGET_MS)), {
         parse_mode: "Markdown",
       });
       return;
@@ -282,8 +307,9 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       // Send as PLAIN TEXT (no parse_mode): LLM output routinely contains
       // unbalanced Markdown, which Telegram rejects with a 400 "can't parse
       // entities" — that would throw the whole reply into the catch and lose an
-      // answer we already paid for. Attach the exit keyboard.
-      await ctx.reply(response, { reply_markup: exitKeyboard(lang) });
+      // answer we already paid for. Attach the exit keyboard. The answer is the
+      // model's words, not operator copy: nothing in it is rendered.
+      await ctx.reply(response, { reply_markup: exitKeyboard(lang, await copyConfig(MESSAGE_CONFIG_BUDGET_MS)) });
     } catch (err: unknown) {
       // Redact: log only the message/status, never the full error object (an
       // OpenAI SDK error can carry request headers incl. the Authorization key).
@@ -291,8 +317,9 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
       deps.logger?.error?.({ err: msg }, "AI support response failed");
       // Keep the exit affordance on the error path too, so the user is never
       // stuck in support mode with no way out.
-      await ctx.reply(deps.translator.t("ai_support.failed", lang), {
-        reply_markup: exitKeyboard(lang),
+      const botCfg = await copyConfig(MESSAGE_CONFIG_BUDGET_MS);
+      await replyWithEntities(ctx, messageCopy(deps.translator.t("ai_support.failed", lang), botCfg), {
+        reply_markup: exitKeyboard(lang, botCfg),
       });
     }
   });
@@ -305,7 +332,8 @@ export const registerAiSupportPage: PageRegistrar = (bot, deps) => {
     } catch {
       // Noop
     }
-    await ctx.editMessageText(deps.translator.t("ai_support.exited", langOf(ctx)), {
+    // Made before the button is answered: the spinner waits on this edit.
+    await ctx.editMessageText(markdown("ai_support.exited", langOf(ctx), await copyConfig(TOAST_CONFIG_BUDGET_MS)), {
       parse_mode: "Markdown",
     });
     await ctx.answerCallbackQuery();

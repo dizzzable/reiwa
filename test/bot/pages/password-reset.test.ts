@@ -8,7 +8,7 @@
  * before the channel gate. The other half is where the button points — only
  * ever at this bot's own cabinet address.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetChannelGateMemory } from '../../../src/bot/lib/channel-gate.js';
 import { passwordResetUrl, PASSWORD_RESET_START_PAYLOAD } from '../../../src/bot/pages/password-reset.js';
@@ -16,7 +16,17 @@ import { registerStartPage } from '../../../src/bot/pages/start.js';
 import { setPolicyCache } from '../../../src/infrastructure/admin-client/policy-cache.js';
 import type { WebAuthNamespace } from '../../../src/infrastructure/admin-client/namespaces/web-auth.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
-import { buildDeps, buildFakeBot } from './helpers.js';
+import type { BotConfig } from '../../../src/infrastructure/bot-config/types.js';
+import {
+  FIRE_EMOJI_ID,
+  FIRE_ENTITY,
+  OPERATOR_TEXT,
+  OPERATOR_TEXT_GLYPHS,
+  buildDeps,
+  buildFakeBot,
+  operatorEmojiConfig,
+  withOperatorText,
+} from './helpers.js';
 
 type Issue = WebAuthNamespace['issuePasswordResetForTelegram'];
 type IssueResult = Awaited<ReturnType<Issue>>;
@@ -126,6 +136,89 @@ describe('/start pwreset', () => {
     expect(text).toBe('ru:password_reset.unavailable');
     expect(buttons).toEqual([]);
     expect(admin.issuePasswordResetForTelegram).not.toHaveBeenCalled();
+  });
+});
+
+// Every text here, and the button's caption, is a translator key «Тексты бота»
+// can override, with the panel's emoji picker in the field. Sent raw, the user
+// read `:fire:` — in the one message that carries a credential.
+describe('/start pwreset answers with the operator text, emoji tokens resolved', () => {
+  async function startWith(texts: Readonly<Record<string, string>>, admin: PageDeps['adminClient']) {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({ publicWebUrl: CABINET, adminOverrides: admin ?? undefined, config: operatorEmojiConfig() });
+    const translator = Object.entries(texts).reduce(
+      (edited, [key, text]) => withOperatorText(edited, [key], text),
+      deps.translator,
+    );
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], { ...deps, translator });
+    const ctx = ctxFor('pwreset');
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    return ctx.reply.mock.calls[0] as [
+      string,
+      { entities?: unknown; reply_markup?: { inline_keyboard: Array<Array<Record<string, unknown>>> } },
+    ];
+  }
+
+  it('the link, with the login in it, and its button — a leading pack emoji becomes the icon', async () => {
+    const admin = adminWith(async () => ({ status: 'issued', token: TOKEN, login: 'Alice', expiresAt: '' }));
+    const [text, options] = await startWith(
+      { 'password_reset.link': ':fire: Логин: {{login}} {{GIFT}}', 'password_reset.button': OPERATOR_TEXT },
+      admin.client,
+    );
+    expect(text).toBe('🔥 Логин: Alice 🎁');
+    expect(options.entities).toEqual([FIRE_ENTITY]);
+    expect(options.reply_markup?.inline_keyboard.flat()).toEqual([
+      {
+        text: 'Здравствуйте! 🎁',
+        icon_custom_emoji_id: FIRE_EMOJI_ID,
+        url: `${CABINET}/reset-password#token=${TOKEN}`,
+      },
+    ]);
+  });
+
+  it.each([
+    ['password_reset.no_account', { status: 'no_account' }],
+    ['password_reset.recently_sent', { status: 'recently_sent' }],
+    ['password_reset.hourly_limit', { status: 'hourly_limit' }],
+    ['password_reset.unavailable', { status: 'unavailable' }],
+  ] as const)('%s', async (key, answer) => {
+    const [text, options] = await startWith({ [key]: OPERATOR_TEXT }, adminWith(async () => answer).client);
+    expect(text).toBe(OPERATOR_TEXT_GLYPHS);
+    expect(options.entities).toEqual([FIRE_ENTITY]);
+  });
+});
+
+// The link's words and its button read the config for their emoji tokens only:
+// a read this reply did not make before its operator copy was rendered. Updates
+// are handled one at a time, and a config read past the cache's TTL waits for
+// the panel — the transport's ten seconds when it hangs.
+describe('/start pwreset while the config read hangs', () => {
+  beforeEach(() => {
+    setPolicyCache(null);
+    resetChannelGateMemory();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('sends the link and its button within a second, their words as written', async () => {
+    vi.useFakeTimers();
+    const admin = adminWith(async () => ({ status: 'issued', token: TOKEN, login: 'Alice', expiresAt: '' }));
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({ publicWebUrl: CABINET, adminOverrides: admin.client ?? undefined });
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], {
+      ...deps,
+      getConfig: () => new Promise<BotConfig>(() => undefined),
+    });
+    const ctx = ctxFor('pwreset');
+
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const { text, buttons } = onlyReply(ctx);
+    expect(text).toBe('ru:password_reset.link(login=Alice)');
+    expect(buttons).toEqual([{ text: 'ru:password_reset.button', url: `${CABINET}/reset-password#token=${TOKEN}` }]);
   });
 });
 

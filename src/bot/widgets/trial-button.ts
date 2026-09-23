@@ -12,12 +12,17 @@
  *     `icon_custom_emoji_id` when the operator configured a `TRIAL` custom
  *     emoji, otherwise degrades to a leading unicode glyph in the label.
  *   - Paid trials carry the plan price in the label.
+ *   - The label is operator copy («Тексты бота» overrides `menu.btn_trial_*`)
+ *     and is drawn like every other operator caption, through
+ *     `renderButtonLabel`: a LEADING pack emoji with a premium id is this
+ *     button's icon — the registry's is only the default for a label that
+ *     brings none — and every other `:slug:` / `{{KEY}}` its glyph.
  *
  * Returns `null` when the button must not render (active sub, no trial, or no
  * usable cabinet target). No network / grammy coupling — easy to unit-test.
  */
-import type { BotEmojiMap } from '../../infrastructure/bot-config/types.js';
-import { resolvePremiumId, resolveUnicode } from '../../infrastructure/bot-config/emoji-utils.js';
+import type { BotConfig, BotEmojiMap } from '../../infrastructure/bot-config/types.js';
+import { renderButtonLabel, resolvePremiumId, resolveUnicode } from '../../infrastructure/bot-config/emoji-utils.js';
 import type { TranslatorPort } from '../../application/ports/translator.port.js';
 import type { SupportedLocale } from '../../core/enums/locale.enum.js';
 import type { TrialButtonSpec } from './main-keyboard.js';
@@ -39,6 +44,10 @@ export interface ResolveTrialButtonInputs {
   /** Magic-link cabinet URL (fallback target, already `?signin=` stamped). */
   readonly cabinetUrl: string | null;
   readonly botEmojis: BotEmojiMap | null | undefined;
+  /** The operator's pack emoji, for `:slug:` tokens in the label. */
+  readonly customEmojis?: BotConfig['customEmojis'] | null;
+  /** `botEmojiOwnerHasPremium`: without Premium no token becomes the icon. Default true. */
+  readonly ownerHasPremium?: boolean;
   readonly translator: TranslatorPort;
   readonly lang: SupportedLocale;
 }
@@ -68,18 +77,40 @@ export function resolveTrialButton(inputs: ResolveTrialButtonInputs): TrialButto
   // claim-not-allowed) or a failed probe → no offer.
   if (!free && !paid) return null;
 
-  const baseLabel = paid
-    ? inputs.translator.t('menu.btn_trial_paid', inputs.lang, {
-        price: inputs.paidTrialPriceLabel ?? '',
-      })
-    : inputs.translator.t('menu.btn_trial_free', inputs.lang);
+  const label = renderButtonLabel(
+    paid
+      ? inputs.translator.t('menu.btn_trial_paid', inputs.lang, {
+          price: inputs.paidTrialPriceLabel ?? '',
+        })
+      : inputs.translator.t('menu.btn_trial_free', inputs.lang),
+    inputs.botEmojis,
+    inputs.customEmojis,
+    inputs.ownerHasPremium ?? true,
+  );
+  if (label.iconCustomEmojiId !== undefined) {
+    return {
+      text: label.text,
+      iconCustomEmojiId: label.iconCustomEmojiId,
+      miniAppUrl: inputs.miniAppUrl,
+      url: inputs.cabinetUrl,
+    };
+  }
+  const baseLabel = label.text;
 
   // Premium custom emoji: the operator configures it in the bot-config emoji
   // registry. There is no dedicated `TRIAL` slot in every deployment, so we
   // try the trial-ish keys in priority order and use the first one that has a
   // configured premium id. Falls back to the matching unicode glyph (so a
   // non-premium owner still sees a relevant emoji).
-  const emojiKey = TRIAL_EMOJI_KEYS.find((key) => resolvePremiumId(key, inputs.botEmojis) !== null);
+  //
+  // Premium-gated, as `resolveSystemButtonIcon` is: Telegram draws the icon for
+  // an owner with Premium only. It used to be set regardless — and the glyph
+  // that stands in for it dropped because an icon was set — so the trial button
+  // of an owner without Premium carried no emoji at all.
+  const emojiKey =
+    (inputs.ownerHasPremium ?? true)
+      ? TRIAL_EMOJI_KEYS.find((key) => resolvePremiumId(key, inputs.botEmojis) !== null)
+      : undefined;
   const premiumId = emojiKey !== undefined ? resolvePremiumId(emojiKey, inputs.botEmojis) : null;
   // Premium owners get the custom emoji as the button icon (no unicode prefix
   // to avoid a double glyph); everyone else gets a leading unicode glyph.

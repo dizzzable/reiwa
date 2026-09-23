@@ -23,10 +23,13 @@
 import { InlineKeyboard } from 'grammy';
 
 import { coerceLocale } from './coerce-locale.js';
+import { replyWithEntities } from './reply.js';
 import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 import { channelGateApiFor } from '../lib/bot-channel-gate.js';
 import { isSubscribedMember } from '../lib/chat-membership.js';
+import { configWithin, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 import { inlineButton } from '../widgets/inline-button.js';
+import { messageCopy, plainCopy } from '../widgets/operator-copy.js';
 
 /**
  * CUID-shaped quest id, matching rezeis' user-reference grammar — the one
@@ -64,7 +67,9 @@ export async function replyWithQuestChannelPrompt(
     .url(inlineButton(deps.translator.t('channel.join_button', lang), botCfg), target.joinUrl)
     .row()
     .text(inlineButton(deps.translator.t('channel.check_button', lang), botCfg), `quest_channel:${questId}`);
-  await ctx.reply(deps.translator.t('quests.channel.prompt', lang), { reply_markup: keyboard });
+  await replyWithEntities(ctx, messageCopy(deps.translator.t('quests.channel.prompt', lang), botCfg), {
+    reply_markup: keyboard,
+  });
 }
 
 function readQuestId(match: unknown): string | null {
@@ -77,15 +82,24 @@ export const registerQuestChannelPage: PageRegistrar = (bot, deps: PageDeps) => 
   bot.callbackQuery(QUEST_CHANNEL_RE, async (ctx) => {
     const tgUser = ctx.from;
     const lang = coerceLocale(deps.userLocale.getSync(tgUser?.id ?? 0));
-    const t = (key: string): string => deps.translator.t(key, lang);
 
     if (tgUser === undefined) {
       await ctx.answerCallbackQuery();
       return;
     }
+    // Every answer below is an alert with operator copy in it, and an alert
+    // carries no entities: its emoji tokens go out as glyphs. The config for
+    // them — a read the button made none of before — is asked for AT the
+    // alert, after the quest was checked: a config the panel gives meanwhile is
+    // the one used. A refresh against a hung panel must not hold the spinner,
+    // and every update queued behind it: past the budget, the config the bot holds.
+    const alert = async (key: string): Promise<void> => {
+      const botCfg = await configWithin(deps, TOAST_CONFIG_BUDGET_MS);
+      await ctx.answerCallbackQuery({ text: plainCopy(deps.translator.t(key, lang), botCfg), show_alert: true });
+    };
     const questId = readQuestId(ctx.match);
     if (questId === null || deps.adminClient === null) {
-      await ctx.answerCallbackQuery({ text: t('quests.channel.retry'), show_alert: true });
+      await alert('quests.channel.retry');
       return;
     }
 
@@ -102,9 +116,9 @@ export const registerQuestChannelPage: PageRegistrar = (bot, deps: PageDeps) => 
     } catch (err: unknown) {
       // No linked account / ineligible / bad config → guide, never verify.
       if (isStatus(err, 404)) {
-        await ctx.answerCallbackQuery({ text: t('quests.channel.link_first'), show_alert: true });
+        await alert('quests.channel.link_first');
       } else {
-        await ctx.answerCallbackQuery({ text: t('quests.channel.retry'), show_alert: true });
+        await alert('quests.channel.retry');
       }
       logWarn(deps, err, telegramId, questId, 'channelTarget failed');
       return;
@@ -118,13 +132,13 @@ export const registerQuestChannelPage: PageRegistrar = (bot, deps: PageDeps) => 
       member = await channelGateApiFor(ctx, deps).getChatMember(target.chatId, tgUser.id);
     } catch (err: unknown) {
       // FAIL CLOSED: a Telegram error is never a completion.
-      await ctx.answerCallbackQuery({ text: t('quests.channel.retry'), show_alert: true });
+      await alert('quests.channel.retry');
       logWarn(deps, err, telegramId, questId, 'getChatMember failed');
       return;
     }
 
     if (!isSubscribedMember(member)) {
-      await ctx.answerCallbackQuery({ text: t('quests.channel.not_subscribed'), show_alert: true });
+      await alert('quests.channel.not_subscribed');
       return;
     }
 
@@ -134,15 +148,15 @@ export const registerQuestChannelPage: PageRegistrar = (bot, deps: PageDeps) => 
       await deps.adminClient.quests.verifyChannel({ telegramId, questId });
     } catch (err: unknown) {
       if (isStatus(err, 404)) {
-        await ctx.answerCallbackQuery({ text: t('quests.channel.link_first'), show_alert: true });
+        await alert('quests.channel.link_first');
       } else {
-        await ctx.answerCallbackQuery({ text: t('quests.channel.retry'), show_alert: true });
+        await alert('quests.channel.retry');
       }
       logWarn(deps, err, telegramId, questId, 'verifyChannel failed');
       return;
     }
 
-    await ctx.answerCallbackQuery({ text: t('quests.channel.verified'), show_alert: true });
+    await alert('quests.channel.verified');
   });
 };
 

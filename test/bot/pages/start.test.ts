@@ -11,15 +11,25 @@
  *   - welcome reply renders the welcome message + main keyboard
  *   - banner reply is best-effort (replyWithPhoto errors don't block welcome)
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { resetChannelGateMemory } from '../../../src/bot/lib/channel-gate.js';
 import { resetChannelJoinPromptMemory } from '../../../src/bot/pages/channel-join-prompt.js';
 import { registerStartPage } from '../../../src/bot/pages/start.js';
 import { setPolicyCache } from '../../../src/infrastructure/admin-client/policy-cache.js';
-import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
+import { BotConfigCache, DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
+import type { BotConfig } from '../../../src/infrastructure/bot-config/types.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
-import { buildDeps, buildFakeBot, buildFakeCtx } from './helpers.js';
+import {
+  FIRE_EMOJI_ID,
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildDeps,
+  buildFakeBot,
+  buildFakeCtx,
+  operatorEmojiConfig,
+  withOperatorText,
+} from './helpers.js';
 
 interface FakeStartCtx {
   from?: {
@@ -504,5 +514,423 @@ describe('registerStartPage', () => {
         (adminClient as unknown as { user: { bootstrap: ReturnType<typeof vi.fn> } }).user.bootstrap,
       ).toHaveBeenCalled();
     });
+  });
+});
+
+// Every text `/start` and «В меню» answer with is a translator key «Тексты
+// бота» can override, with the panel's emoji picker in the field. A message
+// carries the pack emoji's entity, an alert only its glyph; sent raw, the user
+// read `:fire:` and `{{GIFT}}`.
+describe('/start and «В меню» answer with the operator text, emoji tokens resolved', () => {
+  beforeEach(() => {
+    setPolicyCache(null);
+    resetChannelGateMemory();
+    resetChannelJoinPromptMemory();
+  });
+
+  function startWith(
+    keys: readonly string[],
+    options: { adminClient?: unknown; config?: BotConfig; miniAppUrl?: string } = {},
+  ): ReturnType<typeof buildFakeBot> {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      config: options.config ?? operatorEmojiConfig(),
+      ...(options.adminClient !== undefined ? { adminOverrides: options.adminClient as Record<string, unknown> } : {}),
+      ...(options.miniAppUrl !== undefined ? { miniAppUrl: options.miniAppUrl, publicWebUrl: options.miniAppUrl } : {}),
+    });
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], {
+      ...deps,
+      translator: withOperatorText(deps.translator, keys),
+    });
+    return bot;
+  }
+
+  function firstMessage(ctx: FakeStartCtx): { text: string; entities: unknown } {
+    const [text, opts] = ctx.reply.mock.calls[0] as [string, { entities?: unknown } | undefined];
+    return { text, entities: opts?.entities };
+  }
+
+  it('the neutral line that stands in for a hidden greeting', async () => {
+    const bot = startWith(['menu.choose_action'], {
+      config: operatorEmojiConfig({
+        ...DEFAULT_BOT_CONFIG,
+        visual: { ...DEFAULT_BOT_CONFIG.visual, welcomeMessage: '' },
+      }),
+    });
+    const ctx = buildStartCtx();
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(firstMessage(ctx)).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
+  });
+
+  it('an access-mode refusal', async () => {
+    const bot = startWith(['access_mode.restricted'], {
+      adminClient: buildAdmin({ policy: { accessMode: 'RESTRICTED' } }),
+    });
+    const ctx = buildStartCtx();
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(firstMessage(ctx)).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
+  });
+
+  it('a Telegram account linked from the cabinet', async () => {
+    const admin = {
+      ...(buildAdmin({}) as object),
+      linking: { telegram: { consume: vi.fn().mockResolvedValue({ success: true }) } },
+    };
+    const bot = startWith(['link.success'], { adminClient: admin });
+    const ctx = buildStartCtx({ match: 'link_123456' });
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(firstMessage(ctx)).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
+  });
+
+  it('a link code that could not be consumed', async () => {
+    const admin = {
+      ...(buildAdmin({}) as object),
+      linking: { telegram: { consume: vi.fn().mockRejectedValue(new Error('502')) } },
+    };
+    const bot = startWith(['link.error'], { adminClient: admin });
+    const ctx = buildStartCtx({ match: 'link_123456' });
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(firstMessage(ctx)).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
+  });
+
+  it('the acknowledgement of a payment the buyer returned from', async () => {
+    const bot = startWith(['payment_return.title']);
+    const ctx = buildStartCtx({ match: 'payment_return' });
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(firstMessage(ctx)).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
+  });
+
+  it('a quest link whose id is malformed', async () => {
+    const bot = startWith(['quests.channel.retry'], { adminClient: buildAdmin({}) });
+    const ctx = buildStartCtx({ match: 'quest_channel_not-a-quest' });
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(firstMessage(ctx)).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
+  });
+
+  it('a quest link whose quest cannot be read', async () => {
+    const admin = {
+      ...(buildAdmin({}) as object),
+      quests: { channelTarget: vi.fn().mockRejectedValue(new Error('502')) },
+    };
+    const bot = startWith(['quests.channel.retry'], { adminClient: admin });
+    const ctx = buildStartCtx({ match: 'quest_channel_cabcdefghijklmnopqrst' });
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    expect(firstMessage(ctx)).toEqual({ text: OPERATOR_TEXT_GLYPHS, entities: [FIRE_ENTITY] });
+  });
+
+  it('the trial button: a leading pack emoji becomes its icon, the rest glyphs', async () => {
+    const admin = {
+      ...(buildAdmin({}) as object),
+      webAuth: { issueBotSigninToken: vi.fn().mockResolvedValue({ token: 'signin-token' }) },
+      trial: { getEligibility: vi.fn().mockResolvedValue({ eligible: true, reason: null }) },
+    };
+    const bot = startWith(['menu.btn_trial_free'], { adminClient: admin, miniAppUrl: 'https://reiwa.example' });
+    const ctx = buildStartCtx();
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    const opts = ctx.reply.mock.calls.at(-1)?.[1] as {
+      reply_markup: { inline_keyboard: Array<Array<{ text: string; icon_custom_emoji_id?: string; style?: string }>> };
+    };
+    const trial = opts.reply_markup.inline_keyboard[0][0];
+    expect(trial.style).toBe('success');
+    expect({ text: trial.text, icon: trial.icon_custom_emoji_id }).toEqual({
+      text: 'Здравствуйте! 🎁',
+      icon: FIRE_EMOJI_ID,
+    });
+  });
+
+  it('the trial button of an owner without Premium: the registry’s glyph, no icon', async () => {
+    const admin = {
+      ...(buildAdmin({}) as object),
+      webAuth: { issueBotSigninToken: vi.fn().mockResolvedValue({ token: 'signin-token' }) },
+      trial: { getEligibility: vi.fn().mockResolvedValue({ eligible: true, reason: null }) },
+    };
+    const bot = startWith([], {
+      adminClient: admin,
+      miniAppUrl: 'https://reiwa.example',
+      config: {
+        ...DEFAULT_BOT_CONFIG,
+        botEmojis: { TRIAL: { unicode: '🆓', tgEmojiId: '5203996991054432397' } },
+        botEmojiOwnerHasPremium: false,
+      },
+    });
+    const ctx = buildStartCtx();
+    await bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    const opts = ctx.reply.mock.calls.at(-1)?.[1] as {
+      reply_markup: { inline_keyboard: Array<Array<{ text: string; icon_custom_emoji_id?: string; style?: string }>> };
+    };
+    const trial = opts.reply_markup.inline_keyboard[0][0];
+    expect(trial.style).toBe('success');
+    expect({ text: trial.text, icon: trial.icon_custom_emoji_id }).toEqual({
+      text: '🆓 ru:menu.btn_trial_free',
+      icon: undefined,
+    });
+  });
+
+  it('«В меню» under RESTRICTED: the refusal alert', async () => {
+    const bot = startWith(['access_mode.restricted'], {
+      adminClient: buildAdmin({ policy: { accessMode: 'RESTRICTED' } }),
+    });
+    const ctx = { ...buildFakeCtx({ from: { id: 1 } }), chat: { id: 1, type: 'private' } };
+    const handler = bot.callbackHandlers.find((h) => h.matcher === 'menu:main')!.handler;
+    await handler(ctx as unknown as BotContext);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: OPERATOR_TEXT_GLYPHS, show_alert: true });
+  });
+});
+
+// The panel's notification editor takes a button's callback data as free text,
+// and «Карта бота» has drawn `menu` as the way back to the menu since June. The
+// bot answered `menu:main` only, so such a button spun and did nothing.
+describe('`menu` — «В меню» as the notification editor writes it', () => {
+  beforeEach(() => {
+    setPolicyCache(null);
+    resetChannelGateMemory();
+    resetChannelJoinPromptMemory();
+  });
+
+  function handlerFor(bot: ReturnType<typeof buildFakeBot>, data: string) {
+    return bot.callbackHandlers.find((h) =>
+      typeof h.matcher === 'string' ? h.matcher === data : h.matcher.test(data),
+    )?.handler;
+  }
+
+  it('is answered by the very handler `menu:main` is', () => {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps();
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+    expect(handlerFor(bot, 'menu')).toBeDefined();
+    expect(handlerFor(bot, 'menu')).toBe(handlerFor(bot, 'menu:main'));
+  });
+
+  it('puts the welcome screen back in place, answering the press once', async () => {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps();
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], deps);
+    const ctx = { ...buildFakeCtx({ from: { id: 1 } }), chat: { id: 1, type: 'private' } };
+    await handlerFor(bot, 'menu')!(ctx as unknown as BotContext);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledTimes(1);
+    expect(ctx.editMessageText).toHaveBeenCalledTimes(1);
+    expect(ctx.editMessageText.mock.calls[0][0]).toContain('Привет');
+  });
+});
+
+// The short answers here read the config for their emoji tokens only: reads
+// these paths did not make before their operator copy was rendered. Updates are
+// handled one at a time, and a config read past the cache's TTL waits for the
+// panel — the transport's ten seconds when it hangs — holding this answer and
+// every update queued behind it. The words go out as written instead.
+describe('/start and «В меню» while the config read hangs', () => {
+  beforeEach(() => {
+    setPolicyCache(null);
+    resetChannelGateMemory();
+    resetChannelJoinPromptMemory();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const hangs = (): Promise<BotConfig> => new Promise<BotConfig>(() => undefined);
+
+  function startHanging(adminClient?: unknown): ReturnType<typeof buildFakeBot> {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps(
+      adminClient !== undefined ? { adminOverrides: adminClient as Record<string, unknown> } : {},
+    );
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], { ...deps, getConfig: hangs });
+    return bot;
+  }
+
+  it('an access-mode refusal: within a second, its words as written', async () => {
+    vi.useFakeTimers();
+    const bot = startHanging(buildAdmin({ policy: { accessMode: 'RESTRICTED' } }));
+    const ctx = buildStartCtx();
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith('ru:access_mode.restricted', {});
+  });
+
+  it('a quest link whose id is malformed: within a second', async () => {
+    vi.useFakeTimers();
+    const bot = startHanging(buildAdmin({}));
+    const ctx = buildStartCtx({ match: 'quest_channel_not-a-quest' });
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith('ru:quests.channel.retry', {});
+  });
+
+  it('the acknowledgement of a payment the buyer returned from: within a second', async () => {
+    vi.useFakeTimers();
+    const bot = startHanging();
+    const ctx = buildStartCtx({ match: 'payment_return' });
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(ctx.reply.mock.calls[0]?.[0]).toBe('ru:payment_return.title');
+  });
+
+  it('a password-reset request the bot cannot serve: within a second', async () => {
+    vi.useFakeTimers();
+    const bot = startHanging();
+    const ctx = buildStartCtx({ match: 'pwreset' });
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith('ru:password_reset.unavailable', {});
+  });
+
+  it('«В меню» under RESTRICTED: the refusal alert within a quarter second', async () => {
+    vi.useFakeTimers();
+    const bot = startHanging(buildAdmin({ policy: { accessMode: 'RESTRICTED' } }));
+    const ctx = { ...buildFakeCtx({ from: { id: 1 } }), chat: { id: 1, type: 'private' } };
+    const handler = bot.callbackHandlers.find((h) => h.matcher === 'menu:main')!.handler;
+    void handler(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({
+      text: 'ru:access_mode.restricted',
+      show_alert: true,
+    });
+  });
+});
+
+// While the panel is slow, the config the bot already holds — stale, but the
+// operator's — renders these answers: a read that does not come in time must
+// not strip their emoji. And the config is asked for AT the answer, so one the
+// panel gives while `/start` does its other work is the one used.
+describe('/start and «В меню» with the config the bot holds', () => {
+  beforeEach(() => {
+    setPolicyCache(null);
+    resetChannelGateMemory();
+    resetChannelJoinPromptMemory();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const hangs = (): Promise<BotConfig> => new Promise<BotConfig>(() => undefined);
+  const later = <T,>(ms: number, value: T): Promise<T> =>
+    new Promise<T>((resolve) => {
+      setTimeout(() => resolve(value), ms);
+    });
+
+  function startWithHeld(
+    keys: readonly string[],
+    options: { adminClient?: unknown; miniAppUrl?: string; getConfig?: () => Promise<BotConfig>; held?: BotConfig | null } = {},
+  ): ReturnType<typeof buildFakeBot> {
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({
+      config: operatorEmojiConfig(),
+      ...(options.adminClient !== undefined ? { adminOverrides: options.adminClient as Record<string, unknown> } : {}),
+      ...(options.miniAppUrl !== undefined ? { miniAppUrl: options.miniAppUrl, publicWebUrl: options.miniAppUrl } : {}),
+    });
+    const held = options.held === undefined ? operatorEmojiConfig() : options.held;
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], {
+      ...deps,
+      translator: withOperatorText(deps.translator, keys),
+      getConfig: options.getConfig ?? hangs,
+      peekConfig: () => held,
+    });
+    return bot;
+  }
+
+  it('an access-mode refusal', async () => {
+    vi.useFakeTimers();
+    const bot = startWithHeld(['access_mode.restricted'], {
+      adminClient: buildAdmin({ policy: { accessMode: 'RESTRICTED' } }),
+    });
+    const ctx = buildStartCtx();
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith(OPERATOR_TEXT_GLYPHS, { entities: [FIRE_ENTITY] });
+  });
+
+  // `/start payment_return` read the config and waited for it in the release:
+  // its «Открыть приложение» caption had the operator's emoji and icon. It has
+  // them whenever the bot holds a config — a read that does not come in time
+  // included.
+  it.each([
+    ['the read answers', async () => operatorEmojiConfig(), null],
+    ['only the config the bot holds is at hand', hangs, operatorEmojiConfig()],
+  ] as const)('payment_return: «Открыть приложение» with its emoji and icon when %s', async (_when, getConfig, held) => {
+    vi.useFakeTimers();
+    const bot = startWithHeld(['payment_return.open_app'], {
+      miniAppUrl: 'https://cabinet.example',
+      getConfig,
+      held,
+    });
+    const ctx = buildStartCtx({ match: 'payment_return' });
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const [, opts] = ctx.reply.mock.calls[0] as [string, { reply_markup: { inline_keyboard: unknown[][] } }];
+    expect(opts.reply_markup.inline_keyboard.flat()).toEqual([
+      { text: 'Здравствуйте! 🎁', icon_custom_emoji_id: FIRE_EMOJI_ID, web_app: { url: 'https://cabinet.example' } },
+    ]);
+  });
+
+  // A boot while the panel hangs: the boot read times out and the bot runs on
+  // the saved copy. The caption is rendered from that copy, through the real
+  // cache, while the panel still does not answer.
+  it('payment_return right after a boot on the saved copy, the panel hanging: the caption’s emoji and icon', async () => {
+    vi.useFakeTimers();
+    const hangingPanel = (): Promise<unknown> =>
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error('headers timeout')), 10_000);
+      });
+    const cache = new BotConfigCache({
+      fetcher: hangingPanel,
+      hydrator: { setOverrides: () => undefined },
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: { load: async () => operatorEmojiConfig(), save: async () => undefined },
+    });
+    const boot = cache.get();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await boot;
+    // Past the hold-off after the failed boot read: `/start` finds the cache
+    // asking the panel again, and the caption falls back on the copy it holds.
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const bot = buildFakeBot();
+    const { deps } = buildDeps({ miniAppUrl: 'https://cabinet.example', publicWebUrl: 'https://cabinet.example' });
+    registerStartPage(bot as unknown as Parameters<typeof registerStartPage>[0], {
+      ...deps,
+      translator: withOperatorText(deps.translator, ['payment_return.open_app']),
+      getConfig: () => cache.get(),
+      peekConfig: () => cache.peek(),
+    });
+    const ctx = buildStartCtx({ match: 'payment_return' });
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const [, opts] = ctx.reply.mock.calls[0] as [string, { reply_markup: { inline_keyboard: unknown[][] } }];
+    expect(opts.reply_markup.inline_keyboard.flat()).toEqual([
+      { text: 'Здравствуйте! 🎁', icon_custom_emoji_id: FIRE_EMOJI_ID, web_app: { url: 'https://cabinet.example' } },
+    ]);
+  });
+
+  it('asks for the config at the answer, not before the link code is consumed', async () => {
+    vi.useFakeTimers();
+    // The link code takes 1.2 s to consume; the panel answers the config read
+    // 1.5 s after `/start`, whoever asks.
+    const configRead = later(1_500, operatorEmojiConfig());
+    const admin = {
+      ...(buildAdmin({}) as object),
+      linking: { telegram: { consume: vi.fn(() => later(1_200, { success: true })) } },
+    };
+    const bot = startWithHeld(['link.success'], { adminClient: admin, getConfig: () => configRead, held: null });
+    const ctx = buildStartCtx({ match: 'link_123456' });
+    void bot.commandHandlers.get('start')!(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(ctx.reply.mock.calls[0]).toEqual([OPERATOR_TEXT_GLYPHS, { entities: [FIRE_ENTITY] }]);
+  });
+
+  it('«В меню» under RESTRICTED: the refusal alert', async () => {
+    vi.useFakeTimers();
+    const bot = startWithHeld(['access_mode.restricted'], {
+      adminClient: buildAdmin({ policy: { accessMode: 'RESTRICTED' } }),
+    });
+    const ctx = { ...buildFakeCtx({ from: { id: 1 } }), chat: { id: 1, type: 'private' } };
+    const handler = bot.callbackHandlers.find((h) => h.matcher === 'menu:main')!.handler;
+    void handler(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: OPERATOR_TEXT_GLYPHS, show_alert: true });
   });
 });

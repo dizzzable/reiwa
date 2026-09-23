@@ -203,4 +203,42 @@ describe('buildProfileSummary', () => {
     });
     expect(out.text).toContain('До: Н/Д');
   });
+
+  // «Тексты бота» overrides every key in these lines, and its emoji picker
+  // writes `{{KEY}}` slots. Only the welcome template's slots were resolved, so
+  // one in a line of the mini-profile reached the greeting as `{{GIFT}}`.
+  it('resolves bot-emoji slots in the mini-profile lines, each with its entity', () => {
+    const operator: TranslatorPort = {
+      t: (key, lang, vars) =>
+        key.startsWith('profile.') || key === 'common.not_available'
+          ? `{{GIFT}} ${translator.t(key, lang, vars)}`
+          : translator.t(key, lang, vars),
+      resolveButtonLabel: (_id, fallback) => fallback,
+    };
+    // The subscription line falls to `profile.subscription`, the expiry to
+    // `common.not_available`; the second block's traffic line is the unlimited one.
+    const bare = { ...ACTIVE_SUB, profileName: null, plan: null, expiresAt: null, expireAt: undefined };
+    const out = buildProfileSummary({
+      firstName: 'A',
+      subscriptions: [bare, { ...bare, id: 2, trafficLimit: null }],
+      // A pack emoji ahead of every line, so the slots' entities have to be re-based past it.
+      welcomeTemplate: ':fire: Hi',
+      botEmojis: { GIFT: { unicode: '🎁', tgEmojiId: '5203996991054432397' } },
+      customEmojis: { fire: { id: '5368324170671202286', fallback: '🔥' } },
+      translator: operator,
+      lang: 'ru',
+    });
+
+    expect(out.text).not.toContain('{{');
+    // Per block: subscription, devices, traffic and the expiry line twice («До»,
+    // «Н/Д») — and the unlimited traffic line once more, for «Безлимит».
+    const gifts = [...out.text.matchAll(/🎁/gu)].map((match) => match.index);
+    expect(gifts).toHaveLength(11);
+    const giftEntities = out.entities.filter((e) => e.custom_emoji_id === '5203996991054432397');
+    expect(giftEntities.map((e) => e.offset).sort((a, b) => a - b)).toEqual(gifts);
+    expect(giftEntities.every((e) => e.length === 2)).toBe(true);
+    expect(out.entities.filter((e) => e.custom_emoji_id === '5368324170671202286')).toEqual([
+      { type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: '5368324170671202286' },
+    ]);
+  });
 });

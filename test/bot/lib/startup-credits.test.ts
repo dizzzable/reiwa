@@ -13,7 +13,15 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { notifyDeveloperCredits } from '../../../src/bot/lib/startup-notice.js';
+import { notifyDeveloperCredits, notifyOperatorBotStarted } from '../../../src/bot/lib/startup-notice.js';
+import {
+  FIRE_EMOJI_ID,
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildPassthroughTranslator,
+  operatorEmojiConfig,
+  withOperatorText,
+} from '../pages/helpers.js';
 
 interface CapturedButton {
   readonly text: string;
@@ -103,5 +111,53 @@ describe('developer credits card', () => {
     const { text } = await renderCredits();
     expect(text).toContain('#EventBotCredits');
     expect(text).toContain('REIWA v');
+  });
+});
+
+// The cards' texts are translator keys «Тексты бота» can override, with the
+// panel's emoji picker in the field. Their buttons already resolved the tokens;
+// the texts did not, so the operator read `:fire:` on their own cards.
+describe('operator cards carry the operator text, emoji tokens resolved', () => {
+  function capture() {
+    const sendMessage = vi.fn(async (_chatId: number, _text: string, _other?: Record<string, unknown>) => undefined);
+    return { bot: { api: { sendMessage } } as never, sendMessage };
+  }
+
+  it('the startup card: the pack emoji’s entity where the edited line sits', async () => {
+    const { bot, sendMessage } = capture();
+    await notifyOperatorBotStarted({
+      bot,
+      devId: 42,
+      adminClient: null,
+      translator: withOperatorText(buildPassthroughTranslator(), ['bot_event.started']),
+      logger: undefined as never,
+      getConfig: async () => operatorEmojiConfig(),
+    });
+
+    const [, text, other] = sendMessage.mock.calls[0]!;
+    const head = '#EventBotStarted\n\n';
+    expect(text.startsWith(`${head}${OPERATOR_TEXT_GLYPHS}\n\n`)).toBe(true);
+    expect(other?.entities).toEqual([{ ...FIRE_ENTITY, offset: head.length }]);
+  });
+
+  it('the credits card, sent as HTML: the pack emoji as a <tg-emoji> tag', async () => {
+    const { bot, sendMessage } = capture();
+    await notifyDeveloperCredits({
+      bot,
+      devId: 42,
+      translator: withOperatorText(buildPassthroughTranslator(), [
+        'bot_event.credits.intro',
+        'bot_event.credits.call_to_action',
+        'bot_event.credits.wallets_title',
+      ]),
+      logger: undefined as never,
+      getConfig: async () => operatorEmojiConfig(),
+    });
+
+    const [, text, other] = sendMessage.mock.calls[0]!;
+    const resolved = `<tg-emoji emoji-id="${FIRE_EMOJI_ID}">🔥</tg-emoji> Здравствуйте! 🎁`;
+    expect(text.split(resolved)).toHaveLength(4);
+    expect(text).not.toContain(':fire:');
+    expect(other).toMatchObject({ parse_mode: 'HTML' });
   });
 });

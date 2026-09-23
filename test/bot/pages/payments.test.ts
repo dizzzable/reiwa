@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { registerPaymentsPage } from '../../../src/bot/pages/payments.js';
 import type { BotContext, PageDeps } from '../../../src/bot/pages/types.js';
-import { buildDeps, buildFakeBot } from './helpers.js';
+import {
+  FIRE_ENTITY,
+  OPERATOR_TEXT_GLYPHS,
+  buildDeps,
+  buildFakeBot,
+  operatorEmojiConfig,
+  withOperatorText,
+} from './helpers.js';
 
 /**
  * Telegram Stars — the return path.
@@ -160,6 +167,53 @@ describe('pre-checkout', () => {
     });
   });
 
+  it('refuses with words rendered from the config the bot holds when the read does not come in time', async () => {
+    vi.useFakeTimers();
+    const { deps } = buildDeps({
+      adminOverrides: {
+        payments: { resolveStarsPreCheckout: async () => ({ approve: false, reason: 'NOT_PAYABLE' }) },
+      },
+    });
+    const ctx = preCheckoutCtx('pay_123');
+
+    void run(
+      {
+        ...deps,
+        logger: fakeLogger(),
+        translator: withOperatorText(deps.translator, ['payments.stars.already_handled']),
+        getConfig: () => new Promise<never>(() => undefined),
+        peekConfig: () => operatorEmojiConfig(),
+      } as PageDeps,
+      'pre_checkout_query',
+    )(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(ctx.answerPreCheckoutQuery).toHaveBeenCalledExactlyOnceWith(false, { error_message: OPERATOR_TEXT_GLYPHS });
+  });
+
+  it('refuses within a second while the config for its words hangs', async () => {
+    // A refusal's words are operator copy, rendered with the config. A config
+    // read past the cache's TTL waits for the panel — the transport's ten
+    // seconds when it hangs, after up to five of verdict: past Telegram's own
+    // ten. The words get a second, then go out as they are.
+    vi.useFakeTimers();
+    const { deps } = depsWith({
+      resolveStarsPreCheckout: async () => ({ approve: false, reason: 'NOT_PAYABLE' }),
+    });
+    const ctx = preCheckoutCtx('pay_123');
+
+    const done = run(
+      { ...deps, getConfig: () => new Promise<never>(() => undefined) },
+      'pre_checkout_query',
+    )(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(ctx.answerPreCheckoutQuery).toHaveBeenCalledExactlyOnceWith(false, {
+      error_message: 'ru:payments.stars.already_handled',
+    });
+    await done;
+  });
+
   it('refuses when rezeis is unreachable, and does not throw', async () => {
     const { deps, logger } = depsWith({
       resolveStarsPreCheckout: async () => {
@@ -214,7 +268,46 @@ describe('successful payment', () => {
     await run(deps, 'message:successful_payment')(ctx as unknown as BotContext);
 
     expect(forwardWebhook).toHaveBeenCalledExactlyOnceWith('TELEGRAM_STARS', ctx.update);
-    expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received');
+    // `{}`: no emoji entities in this text, so none are sent.
+    expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received', {});
+  });
+
+  it('sends the receipt within a second while the config for its words hangs', async () => {
+    // The receipt's words are operator copy, rendered with the config — a read
+    // it did not make before. Updates are handled one at a time, and a config
+    // read past the cache's TTL waits for the panel: ten seconds when it hangs.
+    vi.useFakeTimers();
+    const forwardWebhook = vi.fn(async () => ({ accepted: true }));
+    const { deps } = depsWith({ forwardWebhook });
+    const ctx = successCtx();
+
+    void run(
+      { ...deps, getConfig: () => new Promise<never>(() => undefined) },
+      'message:successful_payment',
+    )(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith('ru:payments.stars.received', {});
+  });
+
+  it('renders the receipt from the config the bot holds when the read does not come in time', async () => {
+    vi.useFakeTimers();
+    const { deps } = buildDeps({ adminOverrides: { payments: { forwardWebhook: vi.fn(async () => ({ accepted: true })) } } });
+    const ctx = successCtx();
+
+    void run(
+      {
+        ...deps,
+        logger: fakeLogger(),
+        translator: withOperatorText(deps.translator, ['payments.stars.received']),
+        getConfig: () => new Promise<never>(() => undefined),
+        peekConfig: () => operatorEmojiConfig(),
+      } as PageDeps,
+      'message:successful_payment',
+    )(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith(OPERATOR_TEXT_GLYPHS, { entities: [FIRE_ENTITY] });
   });
 
   it('retries a dropped forward rather than losing the payment', async () => {
@@ -234,7 +327,7 @@ describe('successful payment', () => {
 
     expect(forwardWebhook).toHaveBeenCalledTimes(3);
     // The buyer is told it worked, because it did.
-    expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received');
+    expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received', {});
   });
 
   it('reports a payment it could not record, loudly and with the charge id', async () => {
@@ -258,7 +351,7 @@ describe('successful payment', () => {
       expect.stringContaining('NOT recorded'),
     );
     // And the buyer is told the truth rather than a cheerful lie.
-    expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received_delayed');
+    expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received_delayed', {});
   });
 
   it('still tells the buyer something when the bot has no admin client', async () => {
@@ -275,7 +368,67 @@ describe('successful payment', () => {
       expect.objectContaining({ chargeId: 'charge_abc' }),
       expect.stringContaining('NOT recorded'),
     );
-    expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received_delayed');
+    expect(ctx.reply).toHaveBeenCalledWith('ru:payments.stars.received_delayed', {});
+  });
+});
+
+// Every text here is a translator key «Тексты бота» can override, with the
+// panel's emoji picker in the field. Telegram shows a refusal's
+// `error_message` as plain text, so its tokens become glyphs; the receipt is a
+// message and carries the pack emoji's entity too. Sent raw, the buyer read
+// `:fire:`.
+describe('the buyer reads the operator text, emoji tokens resolved', () => {
+  function depsFor(payments: Record<string, unknown>, keys: readonly string[]): PageDeps {
+    const { deps } = buildDeps({ adminOverrides: { payments }, config: operatorEmojiConfig() });
+    return { ...deps, logger: fakeLogger(), translator: withOperatorText(deps.translator, keys) } as PageDeps;
+  }
+
+  it.each([
+    ['payments.stars.unknown_invoice', 'UNKNOWN_PAYMENT'],
+    ['payments.stars.already_handled', 'NOT_PAYABLE'],
+  ])('a refused checkout: %s', async (key, reason) => {
+    const deps = depsFor({ resolveStarsPreCheckout: async () => ({ approve: false, reason }) }, [key]);
+    const ctx = preCheckoutCtx('pay_123');
+
+    await run(deps, 'pre_checkout_query')(ctx as unknown as BotContext);
+
+    expect(ctx.answerPreCheckoutQuery).toHaveBeenCalledExactlyOnceWith(false, { error_message: OPERATOR_TEXT_GLYPHS });
+  });
+
+  it('a checkout refused because rezeis could not say', async () => {
+    const deps = depsFor(
+      {
+        resolveStarsPreCheckout: async () => {
+          throw new Error('connect ECONNREFUSED');
+        },
+      },
+      ['payments.stars.unavailable'],
+    );
+    const ctx = preCheckoutCtx('pay_123');
+
+    await run(deps, 'pre_checkout_query')(ctx as unknown as BotContext);
+
+    expect(ctx.answerPreCheckoutQuery).toHaveBeenCalledExactlyOnceWith(false, { error_message: OPERATOR_TEXT_GLYPHS });
+  });
+
+  it.each([
+    ['payments.stars.received', async () => ({ accepted: true })],
+    [
+      'payments.stars.received_delayed',
+      async () => {
+        throw new Error('rezeis down');
+      },
+    ],
+  ] as const)('the receipt: %s', async (key, forwardWebhook) => {
+    vi.useFakeTimers();
+    const deps = depsFor({ forwardWebhook }, [key]);
+    const ctx = successCtx();
+
+    const done = run(deps, 'message:successful_payment')(ctx as unknown as BotContext);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await done;
+
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith(OPERATOR_TEXT_GLYPHS, { entities: [FIRE_ENTITY] });
   });
 });
 
