@@ -132,7 +132,6 @@ describe("checkout draft auto-start under StrictMode", () => {
       selectedPlan: { id: "plan-1", name: "Plan", type: "BOTH" } as never,
       selectedDuration: { days: 30 } as never,
       selectedGateway: { id: "YOOKASSA", label: "YooKassa", icon: "", currency: "RUB" },
-      selectedDevice: null,
       selectedSavedPaymentMethodId: null,
       savePaymentMethodConsent: false,
     });

@@ -156,7 +156,6 @@ async function mountQuote(): Promise<void> {
     selectedPlan: { id: "plan-p", name: "Plan P", type: "BOTH", durations: [], isTrial: false } as never,
     selectedDuration: { id: "d-30", days: 30, prices: [] } as never,
     selectedGateway: GATEWAY,
-    selectedDevice: null,
     selectedSavedPaymentMethodId: null,
     savePaymentMethodConsent: false,
   });

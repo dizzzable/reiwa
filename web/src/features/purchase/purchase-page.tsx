@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
@@ -20,7 +20,6 @@ import { balanceHoldRefusalMessage, standingBalanceHold } from "@/lib/partner-ba
 import { readSessionCheckRefusal } from "@/lib/session-check";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
-import { AppleGlyph, AndroidGlyph, WindowsGlyph, MacosGlyph } from "@/components/ui/device-glyphs";
 import { usePurchaseStore } from "@/stores/purchase.store";
 import { useBranding } from "@/lib/branding-provider";
 import { useAccessMode } from "@/lib/use-access-mode";
@@ -39,7 +38,7 @@ import {
   readUnpricedQuote,
   TRIAL_CLAIM_REFUSAL_KEYS,
 } from "./plan-unavailable";
-import type { GatewayOption, DeviceTypeOption } from "@/stores/purchase.store";
+import type { GatewayOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
@@ -91,7 +90,7 @@ export function SelectDuration({
 
   // Auto-select + advance when the plan offers exactly one duration — but
   // ONLY when arriving forward. Without the guard, pressing "back" from the
-  // device step re-mounts this and immediately re-advances (a trap).
+  // payment-method step re-mounts this and immediately re-advances (a trap).
   useEffect(() => {
     if (plan.durations.length === 1 && lastNav === "forward") {
       onSelect(plan.durations[0]!);
@@ -173,41 +172,6 @@ export function SelectDuration({
             </button>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-const DEVICE_OPTIONS: ReadonlyArray<{
-  id: DeviceTypeOption;
-  Icon: ComponentType<SVGProps<SVGSVGElement>>;
-  labelKey: string;
-}> = [
-  { id: "IPHONE", Icon: AppleGlyph, labelKey: "purchase.device.iphone" },
-  { id: "ANDROID", Icon: AndroidGlyph, labelKey: "purchase.device.android" },
-  { id: "WINDOWS", Icon: WindowsGlyph, labelKey: "purchase.device.windows" },
-  { id: "MAC", Icon: MacosGlyph, labelKey: "purchase.device.mac" },
-];
-
-function SelectDevice({ onSelect }: { onSelect: (d: DeviceTypeOption) => void }) {
-  const { t } = useTranslation();
-  return (
-    <div className="space-y-3">
-      <h2 className="px-5 text-base font-semibold">{t("purchase.device.title")}</h2>
-      <p className="px-5 -mt-2 text-xs text-muted-foreground">{t("purchase.device.subtitle")}</p>
-      <div className="px-5 grid grid-cols-2 gap-3">
-        {DEVICE_OPTIONS.map(({ id, Icon, labelKey }) => (
-          <button
-            key={id}
-            onClick={() => onSelect(id)}
-            className="glass-card flex flex-col items-center gap-3 p-5 ring-1 ring-border hover:ring-(--brand-primary)/30 hover:bg-(--brand-primary)/4 active:scale-[0.97] transition-all"
-          >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary ring-1 ring-border backdrop-blur-sm text-(--brand-primary)">
-              <Icon className="h-6 w-6" />
-            </span>
-            <span className="text-sm font-medium text-foreground">{t(labelKey)}</span>
-          </button>
-        ))}
       </div>
     </div>
   );
@@ -498,7 +462,6 @@ function QuoteView({
     selectedPlan,
     selectedDuration,
     selectedGateway,
-    selectedDevice,
     selectedSavedPaymentMethodId,
     setQuote,
     goBack,
@@ -528,9 +491,6 @@ function QuoteView({
     (method) => method.id === selectedSavedPaymentMethodId,
   );
 
-  const deviceLabel = selectedDevice
-    ? t(`purchase.device.${selectedDevice.toLowerCase()}`)
-    : null;
   const noticeTrialConversion = useNoticeTrialConversion();
 
   const {
@@ -591,7 +551,6 @@ function QuoteView({
         planId: String(selectedPlan!.id),
         durationDays: selectedDuration!.days,
         subscriptionId: convertTrialId ?? undefined,
-        deviceType: selectedDevice ?? undefined,
       });
       if (!result.paymentId) {
         throw new Error("Partner balance payment did not return a paymentId");
@@ -709,7 +668,6 @@ function QuoteView({
           label={t("purchase.quote.duration")}
           value={t("purchase.duration.days", { count: quote.durationDays })}
         />
-        {deviceLabel && <Row label={t("purchase.quote.device")} value={deviceLabel} />}
         <Row
           label={t("purchase.quote.method")}
           value={selectedGateway?.label ?? "—"}
@@ -877,7 +835,6 @@ function CheckoutStep({
     selectedPlan,
     selectedDuration,
     selectedGateway,
-    selectedDevice,
     selectedSavedPaymentMethodId,
     savePaymentMethodConsent,
     setCheckoutResult,
@@ -910,14 +867,12 @@ function CheckoutStep({
           selectedSavedPaymentMethodId,
           interactiveYookassa ? savePaymentMethodConsent : undefined,
           interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
-          selectedDevice ?? undefined,
         );
       }
       return createCheckout(
         selectedPlan!.id,
         selectedDuration!.days,
         selectedGateway!.id,
-        selectedDevice ?? undefined,
         selectedSavedPaymentMethodId,
         interactiveYookassa ? savePaymentMethodConsent : undefined,
         interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
@@ -1032,7 +987,6 @@ export default function PurchasePage() {
     selectedDuration,
     selectedGateway,
     selectDuration,
-    selectDevice,
     selectGateway,
     goBack,
     reset,
@@ -1106,7 +1060,7 @@ export default function PurchasePage() {
     );
   }
 
-  const steps = ["duration", "device", "gateway", "quote", "checkout"] as const;
+  const steps = ["duration", "gateway", "quote", "checkout"] as const;
   const activeIndex = steps.indexOf(step as (typeof steps)[number]);
 
   return (
@@ -1159,9 +1113,6 @@ export default function PurchasePage() {
         >
           {step === "duration" && (
             <SelectDuration plan={selectedPlan} preferredCurrency={defaultCurrency} onSelect={selectDuration} />
-          )}
-          {step === "device" && selectedDuration && (
-            <SelectDevice onSelect={selectDevice} />
           )}
           {step === "gateway" && (
             <SelectGateway onSelect={selectGateway} convertsTrial={convertTrialId !== null} />

@@ -29,11 +29,14 @@ export interface GatewayOption {
 export const getEnabledGateways = () =>
   apiClient.get<GatewayOption[]>("/gateways").then((r) => r.data);
 
+// No `deviceType` in any checkout body. The purchase wizard used to ask for a
+// device and send it; nothing read it, and the question suggested a
+// subscription is tied to one device. The cabinet's route still accepts the
+// field, for SPA bundles cached before its removal.
 export const createCheckout = (
   planId: string | number,
   durationDays: number,
   gatewayType: string,
-  deviceType?: string,
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
@@ -45,7 +48,6 @@ export const createCheckout = (
       durationDays,
       gatewayType,
       purchaseType,
-      deviceType,
       source: getClientSource(),
       ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
         ? { savedPaymentMethodId }
@@ -92,8 +94,6 @@ export const createUpgradeCheckout = (
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
-  /** Sent by the purchase wizard when the upgrade is a trial's conversion. */
-  deviceType?: string,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -102,7 +102,6 @@ export const createUpgradeCheckout = (
       gatewayType,
       purchaseType: "UPGRADE",
       subscriptionId,
-      ...(typeof deviceType === "string" ? { deviceType } : {}),
       source: getClientSource(),
       ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
         ? { savedPaymentMethodId }

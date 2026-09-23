@@ -64,14 +64,14 @@ export const getPartnerInfo = () =>
 
 /**
  * Pay for a subscription (new / additional / renew / upgrade) with the
- * partner balance. Completes synchronously server-side.
+ * partner balance. Completes synchronously server-side. No `deviceType`, as in
+ * the checkout (`payments.ts`).
  */
 export const payWithPartnerBalance = (input: {
   purchaseType: "NEW" | "ADDITIONAL" | "RENEW" | "UPGRADE";
   planId: string;
   durationDays: number;
   subscriptionId?: string;
-  deviceType?: string;
 }) =>
   apiClient.post<PartnerBalancePayResult>("/partner/pay", input).then((r) => r.data);
 

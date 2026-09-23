@@ -244,7 +244,6 @@ function enterPurchase(step: "quote" | "checkout", plan: { readonly isTrial?: bo
     } as never,
     selectedDuration: { days: 30 } as never,
     selectedGateway: GATEWAY,
-    selectedDevice: null,
     selectedSavedPaymentMethodId: null,
     savePaymentMethodConsent: false,
   });

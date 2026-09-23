@@ -180,7 +180,6 @@ async function mountGatewayStep(): Promise<void> {
       prices: [{ currency: "RUB", price: "299", gatewayType: "PLATEGA", discountSource: "NONE" }],
     } as never,
     selectedGateway: null,
-    selectedDevice: null,
     selectedSavedPaymentMethodId: null,
     savePaymentMethodConsent: false,
   });
@@ -208,7 +207,6 @@ async function mountQuote(): Promise<void> {
     selectedPlan: { id: "plan-p", name: "Plan P", type: "BOTH", durations: [], isTrial: false } as never,
     selectedDuration: { id: "d-30", days: 30, prices: [] } as never,
     selectedGateway: GATEWAY,
-    selectedDevice: null,
     selectedSavedPaymentMethodId: null,
     savePaymentMethodConsent: false,
   });
@@ -300,14 +298,14 @@ describe("a purchase beside a trial", () => {
     await tap(PAY_WITH_BALANCE);
     await waitUntil(() => navigate.mock.calls.length > 0);
 
-    expect(api.payWithPartnerBalance).toHaveBeenCalledWith(
-      expect.objectContaining({
-        purchaseType: "UPGRADE",
-        subscriptionId: "trial-1",
-        planId: "plan-p",
-        durationDays: 30,
-      }),
-    );
+    expect(api.payWithPartnerBalance).toHaveBeenCalledTimes(1);
+    // Exactly these: no `deviceType` either (`purchase-no-device-step.test.tsx`).
+    expect(api.payWithPartnerBalance.mock.calls[0]![0]).toEqual({
+      purchaseType: "UPGRADE",
+      subscriptionId: "trial-1",
+      planId: "plan-p",
+      durationDays: 30,
+    });
     expect(window.sessionStorage.getItem(RECEIPTS_KEY)).toBeNull();
   });
 
@@ -341,7 +339,7 @@ describe("a purchase beside a trial", () => {
 
     expect(api.createUpgradeCheckout).not.toHaveBeenCalled();
     expect(api.createCheckout).toHaveBeenCalledTimes(1);
-    expect(api.createCheckout.mock.calls[0]![7]).toBe("ADDITIONAL");
+    expect(api.createCheckout.mock.calls[0]![6]).toBe("ADDITIONAL");
     expect(window.sessionStorage.getItem(RECEIPTS_KEY)).not.toBeNull();
   }, 10_000);
 
@@ -361,6 +359,7 @@ describe("a purchase beside a trial", () => {
 
     expect(api.createCheckout).not.toHaveBeenCalled();
     expect(api.createUpgradeCheckout).toHaveBeenCalledTimes(1);
+    // Exactly these: no device after the consent, as the wizard once sent.
     expect(api.createUpgradeCheckout.mock.calls[0]).toEqual([
       "plan-p",
       30,
@@ -369,7 +368,6 @@ describe("a purchase beside a trial", () => {
       null,
       undefined,
       true,
-      undefined,
     ]);
   }, 10_000);
 

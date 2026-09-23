@@ -169,7 +169,6 @@ async function openPurchaseGateway(): Promise<void> {
     lastNav: "forward",
     selectedPlan: { id: "plan-1", name: "Plan", type: "BOTH", durations: [] } as never,
     selectedDuration: { id: "d-30", days: 30, prices: [] } as never,
-    selectedDevice: "ANDROID",
     selectedGateway: null,
     selectedSavedPaymentMethodId: null,
   });

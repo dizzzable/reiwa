@@ -263,7 +263,6 @@ async function openQuote(): Promise<HTMLDivElement> {
     step: 'quote',
     selectedPlan: { id: 'plan-1', name: 'Базовый', durations: [{ id: 'd-30', days: 30, prices: [] }] },
     selectedDuration: { id: 'd-30', days: 30, prices: [] },
-    selectedDevice: null,
     selectedGateway: GATEWAY,
   });
   return mount(PurchasePage);
