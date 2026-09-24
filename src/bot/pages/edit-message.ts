@@ -44,6 +44,23 @@ function isParseError(err: unknown): boolean {
   );
 }
 
+/**
+ * Telegram refusing to edit THIS message rather than the new content: it is
+ * gone, it can no longer be edited, or it is not the kind of message the edit
+ * is for — which an old message the bot can no longer see the content of
+ * (Telegram sends only its id) may turn out to be. A new message is what the
+ * user needs then (`pages/start.ts` `showMainMenu`). Not "message is not
+ * modified" — the same screen is already there — and not a refusal of the
+ * content, which a new message would meet as well.
+ */
+const UNEDITABLE_MESSAGE =
+  /message to edit not found|message can't be edited|there is no (?:text|caption|media) in the message to edit|MESSAGE_ID_INVALID|MESSAGE_EDIT_TIME_EXPIRED/i;
+
+export function isUneditableMessageError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return UNEDITABLE_MESSAGE.test(msg);
+}
+
 export async function editOrReply(
   ctx: Context,
   options: EditMessageOptions,

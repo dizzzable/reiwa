@@ -29,6 +29,8 @@
  *                   (admin-managed translations follow the choice).
  *  - `dynamic-screen` — universal `screen:<shortId>` callback that
  *                   resolves an admin-defined BotFlow screen.
+ *  - `stale-button` — the last handler: a button nothing above knows gets
+ *                   «Меню обновилось» and the current main menu.
  */
 export { registerDynamicScreenPage } from './dynamic-screen.js';
 export { registerAiSupportPage } from './ai-support.js';
@@ -43,6 +45,7 @@ export { registerPaySupportPage } from './paysupport.js';
 export { registerMenuPage } from './menu.js';
 export { registerQuestChannelPage } from './quest-channel.js';
 export { registerRulesPage } from './rules.js';
+export { registerStaleButtonPage } from './stale-button.js';
 export { registerStartPage } from './start.js';
 export { replyWithEntities } from './reply.js';
 export type {

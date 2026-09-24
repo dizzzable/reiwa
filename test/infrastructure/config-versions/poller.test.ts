@@ -239,3 +239,72 @@ describe('the poll loop', () => {
     expect(poll).toHaveBeenCalledTimes(2);
   });
 });
+
+/**
+ * What an answered poll leaves behind: the panel's versions, with the time the
+ * answer came, for reiwa's key of latest versions (`latest.ts`) — which the bot
+ * compares its copy with on every press.
+ */
+describe('what a poll tells the key of latest versions', () => {
+  it('every version the panel answered, and when — before it re-reads anything', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    const order: string[] = [];
+    const behind = group('publicConfig', V1);
+    behind.reset.mockImplementation(() => order.push('reset'));
+    const onVersions = vi.fn((_versions: Readonly<Record<string, string>>, _at: number) => {
+      order.push('onVersions');
+    });
+    const poller = new ConfigVersionPoller({
+      consumer: 'bot',
+      groups: [behind.versioned],
+      poll: async () => ({ versions: { publicConfig: V2, botConfig: V1, 'legalDocuments.ru': V2, landing: '' } }),
+      onVersions,
+    });
+
+    await poller.tick();
+
+    // Every group the panel versions — not only the ones this process holds —
+    // and nothing the panel did not give a version for.
+    expect(onVersions).toHaveBeenCalledExactlyOnceWith(
+      { publicConfig: V2, botConfig: V1, 'legalDocuments.ru': V2 },
+      1_800_000_000_000,
+    );
+    expect(order).toEqual(['onVersions', 'reset']);
+  });
+
+  it('nothing when the poll fails or answers without versions', async () => {
+    const onVersions = vi.fn();
+    const failing = new ConfigVersionPoller({
+      consumer: 'api',
+      groups: [],
+      poll: async () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+      onVersions,
+    });
+    const empty = new ConfigVersionPoller({ consumer: 'api', groups: [], poll: async () => ({ message: 'nope' }), onVersions });
+
+    await failing.tick();
+    await empty.tick();
+    expect(onVersions).not.toHaveBeenCalled();
+  });
+
+  it('a listener that throws costs a debug line, not the poll', async () => {
+    const log = logger();
+    const behind = group('landing', V1);
+    const poller = new ConfigVersionPoller({
+      consumer: 'api',
+      groups: [behind.versioned],
+      poll: async () => ({ versions: { landing: V2 } }),
+      onVersions: () => {
+        throw new Error('redis gone');
+      },
+      logger: log as never,
+    });
+
+    expect(await poller.tick()).toBe(20_000);
+    expect(behind.reload).toHaveBeenCalledTimes(1);
+    expect(log.debug).toHaveBeenCalledTimes(1);
+  });
+});

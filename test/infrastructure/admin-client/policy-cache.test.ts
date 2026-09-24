@@ -584,3 +584,229 @@ describe('PolicyCache and the last known policy (W8 report D5)', () => {
     expect(cache.heldVersion()).toBe(configVersionOf(INVITED));
   });
 });
+
+/**
+ * `catchUp()` — the bot's per-press refresh (`bot/middleware/config-freshness.ts`):
+ * the relay to the bot's `/invalidate-policy` was lost, but reiwa's Redis heard
+ * of the change (the webhook's hint, a poll's version). Before the gate decides,
+ * the policy is brought up to it within the press's budget — one read per
+ * change, one wait per read, no loop on a key that lags — and without the
+ * invalidation's one-second wait.
+ */
+describe('PolicyCache.catchUp()', () => {
+  const T0 = 1_800_000_000_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A cache whose first read answered BEFORE_CHANGE at T0; every later read waits for the test. */
+  async function held() {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const upstream = handAnswered();
+    const cache = new PolicyCache(upstream.fn);
+    const first = cache.get();
+    upstream.answer(0, BEFORE_CHANGE);
+    expect(await first).toEqual(BEFORE_CHANGE);
+    await vi.advanceTimersByTimeAsync(10_000);
+    return { cache, upstream };
+  }
+
+  /** How long `promise` took to settle, in fake milliseconds, advancing up to `limit`. */
+  async function settlesAfter(promise: Promise<unknown>, limit = 5_000): Promise<number | null> {
+    let settled = false;
+    void promise.then(() => {
+      settled = true;
+    });
+    for (let elapsed = 0; elapsed <= limit; elapsed += 1) {
+      await vi.advanceTimersByTimeAsync(elapsed === 0 ? 0 : 1);
+      if (settled) return elapsed;
+    }
+    return null;
+  }
+
+  it('steady state: nothing new known, no panel read however many presses', async () => {
+    const { cache, upstream } = await held();
+    for (let press = 0; press < 100; press += 1) {
+      await cache.catchUp({ polled: { version: cache.heldVersion()!, at: T0 + 5_000 }, hintedAt: T0 - 60_000 }, 250);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a lost relay: the hint in Redis costs one read, waited for, and the gate’s next read has the change at once', async () => {
+    const { cache, upstream } = await held();
+    const pressed = cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    setTimeout(() => upstream.answer(1, AFTER_CHANGE), 70);
+    expect(await settlesAfter(pressed)).toBe(70);
+    expect(await settlesAfter(cache.get())).toBe(0);
+    expect(await cache.get()).toEqual(AFTER_CHANGE);
+
+    for (let press = 0; press < 10; press += 1) await cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a hung panel: the press waits its budget once — never the invalidation’s second — and the gate answers from what is held', async () => {
+    const { cache, upstream } = await held();
+    expect(await settlesAfter(cache.catchUp({ hintedAt: T0 + 9_000 }, 250))).toBe(250);
+    // Not superseded: the gate's read does not wait a second for the panel.
+    expect(await settlesAfter(cache.get())).toBe(0);
+    expect(await cache.get()).toEqual(BEFORE_CHANGE);
+    expect(await settlesAfter(cache.catchUp({ hintedAt: T0 + 9_000 }, 250))).toBe(0);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a read that failed is not asked again by the next press, and the policy stays', async () => {
+    const { cache, upstream } = await held();
+    const first = cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    upstream.fail(1, new Error('connect ECONNREFUSED'));
+    await first;
+    await cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(await cache.get()).toEqual(BEFORE_CHANGE);
+  });
+
+  it('a lagging key — a mark older than the policy’s read, or the version held — is not a reason to read', async () => {
+    const { cache, upstream } = await held();
+    await cache.catchUp({ hintedAt: T0 - 1, polled: { version: configVersionOf(AFTER_CHANGE), at: T0 - 1 } }, 250);
+    await cache.catchUp({ polled: { version: configVersionOf(BEFORE_CHANGE), at: T0 + 9_000 } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+
+    const pressed = cache.catchUp({ polled: { version: configVersionOf(AFTER_CHANGE), at: T0 + 9_000 } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    upstream.answer(1, AFTER_CHANGE);
+    await pressed;
+    expect(cache.heldVersion()).toBe(configVersionOf(AFTER_CHANGE));
+  });
+
+  it('a version the panel keeps naming that the read did not bring is not read for again for five minutes', async () => {
+    const { cache, upstream } = await held();
+    const named = { version: '9'.repeat(32), at: T0 + 9_000 };
+    const first = cache.catchUp({ polled: named }, 250);
+    upstream.answer(1, AFTER_CHANGE);
+    await first;
+    for (let poll = 1; poll <= 14; poll += 1) {
+      await vi.advanceTimersByTimeAsync(20_000);
+      await cache.catchUp({ polled: { ...named, at: Date.now() } }, 250);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(20_000);
+    void cache.catchUp({ polled: { ...named, at: Date.now() } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+  });
+
+  it('a read begun before the change is not joined, and what it brings is not kept — nor saved', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const upstream = handAnswered();
+    const saves: unknown[] = [];
+    const store: LastKnownGoodStorePort = {
+      load: vi.fn(async () => null) as LastKnownGoodStorePort['load'],
+      save: vi.fn(async (_group: unknown, payload: unknown) => {
+        saves.push(payload);
+      }) as LastKnownGoodStorePort['save'],
+    };
+    const cache = new PolicyCache(upstream.fn, { lastKnownGood: store, ttlMs: 60_000 });
+    const first = cache.get();
+    upstream.answer(0, BEFORE_CHANGE);
+    await first;
+    await vi.advanceTimersByTimeAsync(60_000);
+    void cache.get(); // past the TTL: a refresh begins, before the operator's change
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const pressed = cache.catchUp({ hintedAt: Date.now() - 500 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+    upstream.answer(2, AFTER_CHANGE);
+    await pressed;
+    upstream.answer(1, BEFORE_CHANGE); // the pre-change read lands last
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await cache.get()).toEqual(AFTER_CHANGE);
+    expect(saves).toEqual([BEFORE_CHANGE, AFTER_CHANGE]);
+  });
+
+  it('a change the policy already has does not hold the press for a refresh that happens to be out', async () => {
+    const { cache, upstream } = await held();
+    await vi.advanceTimersByTimeAsync(60_000);
+    void cache.get(); // past the TTL: a refresh is out, and hangs
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(await settlesAfter(cache.catchUp({ hintedAt: T0 - 1 }, 250))).toBe(0);
+    expect(
+      await settlesAfter(cache.catchUp({ polled: { version: configVersionOf(AFTER_CHANGE), at: T0 - 1 } }, 250)),
+    ).toBe(0);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a read that was already out when the hint came does not count as having the change', async () => {
+    // It may have reached the panel before the commit.
+    const { cache, upstream } = await held();
+    await vi.advanceTimersByTimeAsync(60_000);
+    void cache.get(); // past the TTL: a refresh begins
+    await vi.advanceTimersByTimeAsync(300);
+    const hintedAt = Date.now();
+    await vi.advanceTimersByTimeAsync(300);
+    upstream.answer(1, BEFORE_CHANGE); // lands after the hint, with what it read before it
+    await vi.advanceTimersByTimeAsync(0);
+
+    const pressed = cache.catchUp({ hintedAt }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+    upstream.answer(2, AFTER_CHANGE);
+    await pressed;
+    expect(await cache.get()).toEqual(AFTER_CHANGE);
+  });
+
+  it('a change stamped ahead of this clock costs one read, not one per press', async () => {
+    const { cache, upstream } = await held();
+    const ahead = Date.now() + 3_600_000;
+    const first = cache.catchUp({ hintedAt: ahead }, 250);
+    upstream.answer(1, AFTER_CHANGE);
+    await first;
+    for (let press = 0; press < 10; press += 1) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      await cache.catchUp({ hintedAt: ahead }, 250);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('nothing held: nothing to do — the gate’s own read decides, the PUBLIC stand-in only as before', async () => {
+    vi.useFakeTimers();
+    const upstream = handAnswered();
+    const cache = new PolicyCache(upstream.fn);
+    expect(await settlesAfter(cache.catchUp({ hintedAt: Date.now() }, 250))).toBe(0);
+    expect(upstream.fn).not.toHaveBeenCalled();
+  });
+
+  it('a policy saved before this start is behind any change heard of: the read already out is waited for', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const INVITED: PlatformPolicyShape = { ...BEFORE_CHANGE, accessMode: 'INVITED' };
+    const store: LastKnownGoodStorePort = {
+      load: vi.fn(async () => ({ shape: 1, savedAt: 1, hash: configVersionOf(INVITED), payload: { ...INVITED } })) as LastKnownGoodStorePort['load'],
+      save: vi.fn(async () => undefined) as LastKnownGoodStorePort['save'],
+    };
+    const upstream = handAnswered();
+    const cache = new PolicyCache(upstream.fn, { lastKnownGood: store });
+    expect(await cache.get()).toEqual(INVITED);
+
+    const pressed = cache.catchUp({ hintedAt: T0 - 3_600_000 }, 250);
+    setTimeout(() => upstream.answer(0, AFTER_CHANGE), 40);
+    expect(await settlesAfter(pressed)).toBe(40);
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+    expect(await cache.get()).toEqual(AFTER_CHANGE);
+  });
+
+  it('after an invalidation the gate waits up to a second for the change, as before — and the press not on top of it', async () => {
+    const { cache, upstream } = await held();
+    // The relay's `/invalidate-policy`: the webhook marked the hint just before.
+    const hintedAt = Date.now() - 100;
+    cache.invalidate();
+    setTimeout(() => upstream.answer(1, AFTER_CHANGE), 800);
+    // The freshness middleware first: the invalidation's read is the change's,
+    // and the gate below waits for it — the press is not held for it twice.
+    expect(await settlesAfter(cache.catchUp({ hintedAt }, 250))).toBe(0);
+    const gate = cache.get();
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(await settlesAfter(gate)).toBe(800);
+    expect(await gate).toEqual(AFTER_CHANGE);
+  });
+});

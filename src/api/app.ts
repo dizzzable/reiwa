@@ -21,6 +21,10 @@ import {
   NOOP_LAST_KNOWN_GOOD,
   RedisLastKnownGoodStore,
 } from "../infrastructure/config-versions/last-known-good.js";
+import {
+  NOOP_LATEST_CONFIG_VERSIONS,
+  RedisLatestConfigVersions,
+} from "../infrastructure/config-versions/latest.js";
 import type { VersionedGroup } from "../infrastructure/config-versions/poller.js";
 import {
   configurePolicyCache,
@@ -476,6 +480,14 @@ export function createApp(deps: CreateAppDeps) {
     },
   ];
   app.locals["configVersionGroups"] = configVersionGroups;
+  // The newest version of each group reiwa has heard of, in its Redis
+  // (`config-versions/latest.ts`): `api/main.ts` hands it the answers of this
+  // process's poll, the settings webhook marks the hints for groups the bot
+  // reads (`routes/webhooks.ts`), and the bot compares its copy with it on
+  // every press.
+  app.locals["latestConfigVersions"] = deps.webSessionStore
+    ? new RedisLatestConfigVersions({ redis: deps.webSessionStore.getRedis(), logger })
+    : NOOP_LATEST_CONFIG_VERSIONS;
 
   // GET /api/v1/config-versions — which version of each settings group this
   // process serves, for open pages to notice a change without reloading: a

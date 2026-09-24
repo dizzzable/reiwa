@@ -46,7 +46,7 @@ import { Redis } from 'ioredis';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import { REDIS_CLIENT_OPTIONS } from '../../lib/redis-client-options.js';
 import { lastKnownGoodKey } from '../redis/keys.js';
-import { configVersionOf } from './config-version.js';
+import { CONFIG_VERSION_KEYS, configVersionOf, legalDocumentsVersionKey } from './config-version.js';
 
 /** What the store keeps for one group. */
 export interface LastKnownGood<T> {
@@ -252,3 +252,40 @@ export const GUEST_SUPPORT_LKG: LastKnownGoodGroup<Record<string, unknown>> = {
     typeof payload['enabled'] === 'boolean' &&
     typeof payload['turnstileSiteKey'] === 'string',
 };
+
+/**
+ * The operator's active legal documents in one language, as the bot's rules
+ * screen reads them (`admin-client/legal-documents-cache.ts`): whether there
+ * are any decides between the cabinet's `/legal` page and the legacy rules
+ * link. An empty list is a real answer — "none switched on" — and is kept like
+ * any other.
+ */
+function legalDocumentsGroup(language: 'ru' | 'en'): LastKnownGoodGroup<unknown[]> {
+  return {
+    name: `legal-documents.${language}`,
+    shape: 1,
+    accepts: (payload: unknown): payload is unknown[] =>
+      Array.isArray(payload) &&
+      payload.every(
+        (document: unknown) =>
+          isObject(document) &&
+          typeof document['key'] === 'string' &&
+          typeof document['title'] === 'string' &&
+          typeof document['body'] === 'string',
+      ),
+  };
+}
+
+const LEGAL_DOCUMENTS_RU_LKG = legalDocumentsGroup('ru');
+const LEGAL_DOCUMENTS_EN_LKG = legalDocumentsGroup('en');
+
+/**
+ * The legal documents' group for a locale, by the panel's own rule
+ * (`legalDocumentsVersionKey`): an explicit `en` is English, anything else the
+ * primary language — one copy per answer the panel gives.
+ */
+export function legalDocumentsLastKnownGood(locale: string): LastKnownGoodGroup<unknown[]> {
+  return legalDocumentsVersionKey(locale) === CONFIG_VERSION_KEYS.legalDocumentsEn
+    ? LEGAL_DOCUMENTS_EN_LKG
+    : LEGAL_DOCUMENTS_RU_LKG;
+}

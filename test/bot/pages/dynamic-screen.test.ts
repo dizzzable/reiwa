@@ -3,11 +3,12 @@
  *
  * Two things pinned here:
  *
- *   • A button whose screen was deleted, or not yet published, answers with
- *     `screen.not_found`. That text is a translator key «Тексты бота» can
- *     override, with the panel's emoji picker in the field, and it was the one
- *     text on this page sent without a renderer — an operator's `:slug:` reached
- *     the user as `:fire:`.
+ *   • A button whose screen was deleted, or not yet published, gets the current
+ *     main menu in place of its message, with the toast «Меню обновилось»
+ *     (owner's decision, 24.09.2026) — it used to answer with «экран не
+ *     найден». The toast is a translator key «Тексты бота» can override, with
+ *     the panel's emoji picker in the field, and a toast carries no entities:
+ *     an operator's `:slug:` must reach the user as its glyph, not as `:fire:`.
  *   • The three built-in screens (help, rules, invite) are reachable this way
  *     too — a NAVIGATE edge onto one of them in «Карта бота», a menu button set
  *     to «Экран бота», a notification button — and rendered as a plain screen
@@ -23,7 +24,6 @@ import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache
 import type { BotConfig, BotScreen } from '../../../src/infrastructure/bot-config/types.js';
 import type { BotContext } from '../../../src/bot/pages/types.js';
 import {
-  FIRE_ENTITY,
   OPERATOR_TEXT_GLYPHS,
   buildDeps,
   buildFakeBot,
@@ -33,20 +33,70 @@ import {
 } from './helpers.js';
 
 describe('registerDynamicScreenPage — a screen that is not there', () => {
-  it('says so with the operator text, emoji tokens resolved', async () => {
+  beforeEach(() => {
+    setPolicyCache(null);
+  });
+
+  function pressGone(translatorKeys: readonly string[] = ['menu.updated']) {
     const bot = buildFakeBot();
     const { deps } = buildDeps({ config: { ...operatorEmojiConfig(), screens: [] } });
     registerDynamicScreenPage(bot as unknown as Parameters<typeof registerDynamicScreenPage>[0], {
       ...deps,
-      translator: withOperatorText(deps.translator, ['screen.not_found']),
+      translator: withOperatorText(deps.translator, translatorKeys),
     });
-    const ctx = { ...buildFakeCtx(), callbackQuery: { data: 'screen:gone' } };
+    // The user's own chat with the bot: the only one a menu is drawn in — and
+    // the update as Telegram sends it, which is what the channel gate reads.
+    const chat = { id: 7, type: 'private' };
+    const message = { message_id: 50, date: 0, chat, text: 'an old menu' };
+    const ctx = {
+      ...buildFakeCtx({ from: { id: 7 } }),
+      chat,
+      callbackQuery: { data: 'screen:gone', message },
+      update: { update_id: 1, callback_query: { id: 'cq', data: 'screen:gone', message } },
+    };
+    return { bot, ctx };
+  }
 
+  it('answers «Меню обновилось» — the operator’s words, emoji tokens as glyphs — once', async () => {
+    const { bot, ctx } = pressGone();
     await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: OPERATOR_TEXT_GLYPHS });
+  });
 
-    const [text, opts] = ctx.editMessageText.mock.calls[0] as [string, { entities?: unknown }];
-    expect(text).toBe(OPERATOR_TEXT_GLYPHS);
-    expect(opts.entities).toEqual([FIRE_ENTITY]);
+  it('puts the current main menu in place of that message, and no «экран не найден»', async () => {
+    const { bot, ctx } = pressGone();
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    expect(ctx.editMessageText).toHaveBeenCalledTimes(1);
+    expect(ctx.editMessageText.mock.calls[0]?.[0]).toContain('Привет');
+    expect(JSON.stringify(ctx.editMessageText.mock.calls)).not.toContain('screen.not_found');
+    expect(ctx.api.sendMessage).not.toHaveBeenCalled();
+    // In the order the user sees them: the spinner stops, then the menu.
+    expect(ctx.answerCallbackQuery.mock.invocationCallOrder[0]).toBeLessThan(
+      ctx.editMessageText.mock.invocationCallOrder[0] as number,
+    );
+  });
+
+  it('a screen that IS there is still opened, with a silent answer', async () => {
+    const bot = buildFakeBot();
+    const screenHere: BotScreen = {
+      id: 's-here',
+      shortId: 'here1234',
+      name: 'promo',
+      textRu: 'Акция недели',
+      textEn: '',
+      parseMode: 'plain',
+      mediaType: null,
+      mediaFileId: null,
+      mediaUrl: null,
+      isRoot: false,
+      buttons: [],
+    };
+    const { deps } = buildDeps({ config: { ...DEFAULT_BOT_CONFIG, screens: [screenHere] } });
+    registerDynamicScreenPage(bot as unknown as Parameters<typeof registerDynamicScreenPage>[0], deps);
+    const ctx = { ...buildFakeCtx({ from: { id: 7 } }), chat: { id: 7, type: 'private' }, callbackQuery: { data: 'screen:here1234' } };
+    await bot.callbackHandlers[0].handler(ctx as unknown as BotContext);
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith();
+    expect(ctx.editMessageText.mock.calls[0]?.[0]).toBe('Акция недели');
   });
 });
 
@@ -198,7 +248,8 @@ describe('registerDynamicScreenPage — a built-in screen reached by its shortId
       expect(ctx.editMessageText.mock.calls[0][0]).toBe('Правила: https://rules.example/legal');
     });
 
-    it('passes data that names no screen on, answering nothing — as before', async () => {
+    // To the stale-button answer registered after it (`callback-routing.test.ts`).
+    it('passes data that names no screen on to the handler after it, answering nothing itself', async () => {
       const { ctx, next } = await press('nonsense', { ...DEFAULT_BOT_CONFIG, screens: [screen('promo42x', 'promo', 'Акция')] });
       expect(next).toHaveBeenCalledTimes(1);
       expect(ctx.answerCallbackQuery).not.toHaveBeenCalled();

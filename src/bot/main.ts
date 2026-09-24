@@ -14,6 +14,7 @@
  */
 
 import { Bot, Context, session, SessionFlavor } from 'grammy';
+import type { Redis } from 'ioredis';
 import { resolve as resolvePath } from 'node:path';
 import { inspect } from 'node:util';
 
@@ -32,6 +33,12 @@ import {
   createLastKnownGoodRedis,
   type LastKnownGoodStorePort,
 } from '../infrastructure/config-versions/last-known-good.js';
+import {
+  NOOP_LATEST_CONFIG_VERSIONS,
+  RedisLatestConfigVersions,
+  memoiseLatest,
+  type LatestConfigVersionsPort,
+} from '../infrastructure/config-versions/latest.js';
 import { ConfigVersionPoller, type VersionedGroup } from '../infrastructure/config-versions/poller.js';
 import {
   configurePolicyCache,
@@ -39,6 +46,7 @@ import {
   peekPolicyCache,
 } from '../infrastructure/admin-client/policy-cache.js';
 import {
+  configureLegalDocumentsCache,
   invalidateLegalDocumentsCache,
   peekLegalDocumentsCache,
 } from '../infrastructure/admin-client/legal-documents-cache.js';
@@ -59,6 +67,7 @@ import {
   registerMenuPage,
   registerQuestChannelPage,
   registerRulesPage,
+  registerStaleButtonPage,
   registerStartPage,
   registerAiSupportPage,
 } from './pages/index.js';
@@ -87,6 +96,7 @@ import {
 } from '../infrastructure/i18n/index.js';
 import { createLogger, redactBotTokens } from '../infrastructure/logger/index.js';
 import { createChannelGateMiddleware } from './middleware/channel-gate.js';
+import { createConfigFreshnessMiddleware } from './middleware/config-freshness.js';
 import { createLocaleDetectMiddleware } from './middleware/locale-detect.js';
 import { getMissingBotTokenError } from './startup-policy.js';
 
@@ -133,19 +143,47 @@ let botConfigCache: BotConfigCache | null = null;
 let settingsSync: TelegramSettingsSync | null = null;
 
 /**
- * The last copy of each panel settings group the bot reads — its config and
- * the platform policy — in reiwa's Redis
- * (`infrastructure/config-versions/last-known-good.ts`). Built once from
- * `REDIS_URL` on a client of its own; without Redis the copies stay in memory.
+ * The bot's own client on reiwa's Redis, for the settings it keeps there: the
+ * last-known-good copies and the key of latest versions. Built once from
+ * `REDIS_URL`, lazily; `null` without Redis.
+ */
+let settingsRedis: Redis | null | undefined;
+
+function getSettingsRedis(logger?: LoggerPort): Redis | null {
+  if (settingsRedis !== undefined) return settingsRedis;
+  settingsRedis = config.REDIS_URL ? createLastKnownGoodRedis(config.REDIS_URL, logger) : null;
+  return settingsRedis;
+}
+
+/**
+ * The last copy of each panel settings group the bot reads — its config, the
+ * platform policy and the legal documents — in reiwa's Redis
+ * (`infrastructure/config-versions/last-known-good.ts`). Without Redis the
+ * copies stay in memory.
  */
 let lastKnownGood: LastKnownGoodStorePort | null = null;
 
 function getLastKnownGood(logger?: LoggerPort): LastKnownGoodStorePort {
   if (lastKnownGood !== null) return lastKnownGood;
-  lastKnownGood = config.REDIS_URL
-    ? new RedisLastKnownGoodStore({ redis: createLastKnownGoodRedis(config.REDIS_URL, logger), logger })
-    : NOOP_LAST_KNOWN_GOOD;
+  const redis = getSettingsRedis(logger);
+  lastKnownGood = redis !== null ? new RedisLastKnownGoodStore({ redis, logger }) : NOOP_LAST_KNOWN_GOOD;
   return lastKnownGood;
+}
+
+/**
+ * The newest version of each settings group anything in reiwa has heard of
+ * (`infrastructure/config-versions/latest.ts`): the bot's poll writes it, and
+ * every press compares the copy the bot holds with it. Without Redis nothing
+ * is kept, and a press knows only what this process heard.
+ */
+let latestConfigVersions: LatestConfigVersionsPort | null = null;
+
+function getLatestConfigVersions(logger?: LoggerPort): LatestConfigVersionsPort {
+  if (latestConfigVersions !== null) return latestConfigVersions;
+  const redis = getSettingsRedis(logger);
+  latestConfigVersions =
+    redis !== null ? new RedisLatestConfigVersions({ redis, logger }) : NOOP_LATEST_CONFIG_VERSIONS;
+  return latestConfigVersions;
 }
 
 /**
@@ -235,6 +273,9 @@ async function startBot(): Promise<void> {
   // a panel outage then keeps the operator's access mode, channel gate and
   // rules gate, instead of opening them to everybody.
   configurePolicyCache({ lastKnownGood: getLastKnownGood(logger), logger });
+  // Before the first rules screen: a restart during a panel outage still links
+  // «Правила» to the operator's documents, not to the legacy rules link.
+  configureLegalDocumentsCache({ lastKnownGood: getLastKnownGood(logger), logger });
 
   // Before the boot read, so the config it answers with is offered to it: the
   // pushes wait for `start` below, once the bot exists.
@@ -304,6 +345,29 @@ async function startBot(): Promise<void> {
       cache: userLocaleCache,
       detect: detectLocaleFromTelegram,
       adminClient,
+    }),
+  );
+
+  // ── Settings as fresh as reiwa knows them, on every press ──────────────────
+  //
+  // Before any page — the channel gate's prompt included — an update that
+  // renders something is answered from the newest settings reiwa has heard of:
+  // the bot config, the platform policy the gate decides on, and the legal
+  // documents before the rules screen. When the key of latest versions in Redis
+  // (both processes' polls, the API's webhook) or the bot's own `/invalidate`
+  // says a copy is behind, the panel is read once and waited for, within the
+  // update's budget. Never asks the panel whether anything changed, never waits
+  // past the budget, never throws (`middleware/config-freshness.ts`). One Redis
+  // read serves a burst of presses.
+  bot.use(
+    createConfigFreshnessMiddleware({
+      latest: memoiseLatest(() => getLatestConfigVersions(logger).read()),
+      botConfig: () => botConfigCache,
+      policy: peekPolicyCache,
+      legalDocuments: peekLegalDocumentsCache,
+      userLocale: { getSync: (id: number) => userLocaleCache.getSync(id) },
+      peekConfig: () => botConfigCache?.peek() ?? null,
+      logger,
     }),
   );
 
@@ -385,12 +449,17 @@ async function startBot(): Promise<void> {
   registerClosePage(bot, pageDeps);
   // AI support — /support command enters AI chat mode
   registerAiSupportPage(bot, pageDeps);
-  // Dynamic screens last, and no handler after them. Besides `screen:<shortId>`
-  // this page answers a callback whose whole data is a screen's bare shortId,
-  // and that handler must see only data no page above has claimed: a screen
-  // whose shortId is spelled like `help` must not take `help` over. The order is
-  // pinned by `test/bot/callback-routing.test.ts`.
+  // Dynamic screens next to last. Besides `screen:<shortId>` this page answers a
+  // callback whose whole data is a screen's bare shortId, and that handler must
+  // see only data no page above has claimed: a screen whose shortId is spelled
+  // like `help` must not take `help` over.
   registerDynamicScreenPage(bot, pageDeps);
+  // A button nothing above knows — an old message's, onto a button the operator
+  // removed or changed: «Меню обновилось» and the current main menu in place of
+  // that message (`pages/stale-button.ts`). The very last handler, and no
+  // handler after it: it takes whatever data reaches it. The order is pinned by
+  // `test/bot/callback-routing.test.ts`.
+  registerStaleButtonPage(bot, pageDeps);
 
   // ── Error handler ──────────────────────────────────────────────────────────
 
@@ -536,6 +605,9 @@ async function startBot(): Promise<void> {
           consumer: 'bot',
           groups: configGroups,
           poll: (report) => adminClient.system.pollConfigVersions(report),
+          // What the panel said goes into reiwa's key of latest versions too,
+          // which every press compares with (the API's poll writes it as well).
+          onVersions: (versions, answeredAt) => void getLatestConfigVersions(logger).recordPoll(versions, answeredAt),
           logger,
         })
       : null;

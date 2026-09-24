@@ -1,8 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { LegalDocumentsCache } from '../../../src/infrastructure/admin-client/legal-documents-cache.js';
+import {
+  LegalDocumentsCache,
+  configureLegalDocumentsCache,
+  getLegalDocumentsCache,
+  setLegalDocumentsCache,
+} from '../../../src/infrastructure/admin-client/legal-documents-cache.js';
+import type { AdminClient } from '../../../src/infrastructure/admin-client/admin-client.js';
 import type { LegalDocument } from '../../../src/infrastructure/admin-client/namespaces/legal-documents.js';
 import { configVersionOf } from '../../../src/infrastructure/config-versions/config-version.js';
+import {
+  RedisLastKnownGoodStore,
+  legalDocumentsLastKnownGood,
+  type LastKnownGoodStorePort,
+} from '../../../src/infrastructure/config-versions/last-known-good.js';
 
 /**
  * The bot's cache for legal documents.
@@ -365,5 +376,370 @@ describe('LegalDocumentsCache.heldVersion()', () => {
     expect(cache.heldVersion('ru')).toBe(configVersionOf([]));
     // Only what is held: a locale never read is not read by it.
     expect(fetchFn.mock.calls.map(([locale]) => locale)).toEqual(['ru', 'ru']);
+  });
+});
+
+/** An upstream whose every call waits for the test to answer it. */
+function handAnsweredDocuments() {
+  const calls: Array<{ resolve: (value: readonly LegalDocument[]) => void; reject: (reason: unknown) => void }> = [];
+  const fn = vi.fn(
+    (_locale: string) =>
+      new Promise<readonly LegalDocument[]>((resolve, reject) => {
+        calls.push({ resolve, reject });
+      }),
+  );
+  const call = (index: number) => {
+    const pending = calls[index];
+    if (pending === undefined) throw new Error(`upstream call #${index} was never made`);
+    return pending;
+  };
+  return {
+    fn,
+    answer: (index: number, value: readonly LegalDocument[]): void => call(index).resolve(value),
+    fail: (index: number, reason: unknown): void => call(index).reject(reason),
+  };
+}
+
+/** How long `promise` took to settle, in fake milliseconds, advancing up to `limit`. */
+async function settlesAfter(promise: Promise<unknown>, limit = 5_000): Promise<number | null> {
+  let settled = false;
+  void promise.then(() => {
+    settled = true;
+  });
+  for (let elapsed = 0; elapsed <= limit; elapsed += 1) {
+    await vi.advanceTimersByTimeAsync(elapsed === 0 ? 0 : 1);
+    if (settled) return elapsed;
+  }
+  return null;
+}
+
+const PRIVACY: LegalDocument = { key: 'PRIVACY_POLICY', title: 'Политика', body: 'Текст политики' };
+
+/**
+ * `catchUp()` — before the rules screen is rendered, the documents are brought
+ * up to a change reiwa already knows of (`bot/middleware/config-freshness.ts`),
+ * by the rules of `BotConfigCache.catchUp`.
+ */
+describe('LegalDocumentsCache.catchUp()', () => {
+  const T0 = 1_800_000_000_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function held() {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const upstream = handAnsweredDocuments();
+    const cache = new LegalDocumentsCache(upstream.fn);
+    const first = cache.get('ru');
+    upstream.answer(0, [AGREEMENT]);
+    expect(await first).toEqual([AGREEMENT]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    return { cache, upstream };
+  }
+
+  it('steady state: nothing new known, no read', async () => {
+    const { cache, upstream } = await held();
+    for (let press = 0; press < 20; press += 1) {
+      await cache.catchUp('ru', { polled: { version: cache.heldVersion('ru')!, at: T0 + 5_000 }, hintedAt: T0 - 1 }, 250);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a hint newer than the documents’ read: one read, waited for, the screen gets the edit', async () => {
+    const { cache, upstream } = await held();
+    const pressed = cache.catchUp('ru', { hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    setTimeout(() => upstream.answer(1, [AGREEMENT, PRIVACY]), 60);
+    expect(await settlesAfter(pressed)).toBe(60);
+    expect(await cache.get('ru')).toEqual([AGREEMENT, PRIVACY]);
+
+    await cache.catchUp('ru', { hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('after the relay’s invalidate — which reads nothing by itself — the press reads the edit and waits for it', async () => {
+    const { cache, upstream } = await held();
+    cache.invalidate();
+    const pressed = cache.catchUp('ru', {}, 1_000);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    setTimeout(() => upstream.answer(1, []), 30);
+    expect(await settlesAfter(pressed)).toBe(30);
+    expect(await cache.get('ru')).toEqual([]);
+  });
+
+  it('after an edit, a read the screen already began is waited for, not doubled', async () => {
+    const { cache, upstream } = await held();
+    cache.invalidate();
+    void cache.get('ru'); // the superseded documents answer; their refresh begins
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    const pressed = cache.catchUp('ru', {}, 250);
+    setTimeout(() => upstream.answer(1, [AGREEMENT, PRIVACY]), 40);
+    expect(await settlesAfter(pressed)).toBe(40);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(await cache.get('ru')).toEqual([AGREEMENT, PRIVACY]);
+  });
+
+  it('a hung panel: one press waits its budget, the next ones not at all, one read', async () => {
+    const { cache, upstream } = await held();
+    expect(await settlesAfter(cache.catchUp('ru', { hintedAt: T0 + 9_000 }, 250))).toBe(250);
+    expect(await settlesAfter(cache.catchUp('ru', { hintedAt: T0 + 9_000 }, 250))).toBe(0);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(await cache.get('ru')).toEqual([AGREEMENT]);
+  });
+
+  it('a poll’s version is read for once when it is not the held one; a lagging key costs nothing', async () => {
+    const { cache, upstream } = await held();
+    await cache.catchUp('ru', { polled: { version: configVersionOf([]), at: T0 - 1 } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+    const pressed = cache.catchUp('ru', { polled: { version: configVersionOf([]), at: T0 + 9_000 } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    upstream.answer(1, []);
+    await pressed;
+    expect(cache.heldVersion('ru')).toBe(configVersionOf([]));
+  });
+
+  it('a read begun before the change is not joined, and what it brings is not kept', async () => {
+    const { cache, upstream } = await held();
+    await vi.advanceTimersByTimeAsync(60_000);
+    void cache.get('ru'); // past the TTL: a refresh begins, before the operator's edit
+    await vi.advanceTimersByTimeAsync(1_000);
+    const pressed = cache.catchUp('ru', { hintedAt: Date.now() - 500 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+    upstream.answer(2, [AGREEMENT, PRIVACY]);
+    await pressed;
+    upstream.answer(1, [AGREEMENT]); // the pre-edit read lands last
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await cache.get('ru')).toEqual([AGREEMENT, PRIVACY]);
+  });
+
+  it('a change stamped ahead of this clock costs one read, not one per press', async () => {
+    const { cache, upstream } = await held();
+    const ahead = Date.now() + 3_600_000;
+    const first = cache.catchUp('ru', { hintedAt: ahead }, 250);
+    upstream.answer(1, [AGREEMENT, PRIVACY]);
+    await first;
+    for (let press = 0; press < 10; press += 1) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      await cache.catchUp('ru', { hintedAt: ahead }, 250);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a change the documents already have does not hold the press for a refresh that happens to be out', async () => {
+    const { cache, upstream } = await held();
+    await vi.advanceTimersByTimeAsync(60_000);
+    void cache.get('ru'); // past the TTL: a refresh is out, and hangs
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(await settlesAfter(cache.catchUp('ru', { hintedAt: T0 - 1 }, 250))).toBe(0);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a language nothing is held for: nothing to do — the screen’s own read asks the panel', async () => {
+    const { cache, upstream } = await held();
+    await cache.catchUp('en', { hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A Redis double with the three commands the last-known-good store sends. */
+function fakeRedis(initial: Record<string, string> = {}) {
+  const data = new Map<string, string>(Object.entries(initial));
+  const redis = {
+    get: vi.fn(async (key: string) => data.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string, ...options: string[]) => {
+      if (options.includes('NX') && data.has(key)) return null;
+      data.set(key, value);
+      return 'OK';
+    }),
+    del: vi.fn(async (key: string) => (data.delete(key) ? 1 : 0)),
+  };
+  return { data, redis };
+}
+
+/** A store holding `documents` for `locale`, as a previous bot process saved them. */
+async function storeWith(locale: string, documents: readonly LegalDocument[]) {
+  const { data, redis } = fakeRedis();
+  const store = new RedisLastKnownGoodStore({ redis: redis as never });
+  await store.save(legalDocumentsLastKnownGood(locale), documents as unknown as unknown[]);
+  redis.set.mockClear();
+  return { data, redis, store: new RedisLastKnownGoodStore({ redis: redis as never }) };
+}
+
+/**
+ * The saved copy (CD1 report §5.5): the bot restarted while the panel was down
+ * used to answer «no documents», and «Правила» fell back to the legacy rules
+ * link. The last documents the panel answered are kept in reiwa's Redis per
+ * language, like every other group the bot reads.
+ */
+describe('LegalDocumentsCache with a saved copy', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    setLegalDocumentsCache(null);
+    configureLegalDocumentsCache({});
+  });
+
+  it('a restart during an outage: the documents saved before it, not «no documents»', async () => {
+    const { store } = await storeWith('ru', [AGREEMENT, PRIVACY]);
+    // Redis gives the copy only after the panel has refused: the failed read
+    // itself has to go and get it.
+    let openRedis!: () => void;
+    const redisAnswers = new Promise<void>((resolve) => {
+      openRedis = resolve;
+    });
+    const slowStore: LastKnownGoodStorePort = {
+      load: async (group) => {
+        await redisAnswers;
+        return store.load(group);
+      },
+      save: (group, payload, hash) => store.save(group, payload, hash),
+    };
+    let refused!: () => void;
+    const panelRefused = new Promise<void>((resolve) => {
+      refused = resolve;
+    });
+    const cache = new LegalDocumentsCache(
+      async () => {
+        refused();
+        throw new Error('panel down');
+      },
+      60_000,
+      1_000,
+      { lastKnownGood: slowStore },
+    );
+    const first = cache.get('ru');
+    await panelRefused;
+    await new Promise((resolve) => setImmediate(resolve));
+    openRedis();
+    expect(await first).toEqual([AGREEMENT, PRIVACY]);
+    // Held now, like documents gone stale: the next tap is answered at once.
+    expect(await cache.get('ru')).toEqual([AGREEMENT, PRIVACY]);
+    expect(cache.heldVersion('ru')).toBe(configVersionOf([AGREEMENT, PRIVACY]));
+  });
+
+  it('a restart with the panel hanging: the saved copy as soon as Redis gives it, not after the budget', async () => {
+    vi.useFakeTimers();
+    const { store } = await storeWith('ru', [AGREEMENT]);
+    const cache = new LegalDocumentsCache(() => new Promise<readonly LegalDocument[]>(() => undefined), 60_000, 1_000, {
+      lastKnownGood: store,
+    });
+    const first = cache.get('ru');
+    expect(await settlesAfter(first)).toBe(0);
+    expect(await first).toEqual([AGREEMENT]);
+  });
+
+  it('keeps each language apart: the English copy is not the Russian one', async () => {
+    const { store } = await storeWith('ru', [AGREEMENT]);
+    const cache = new LegalDocumentsCache(
+      async () => {
+        throw new Error('panel down');
+      },
+      60_000,
+      1_000,
+      { lastKnownGood: store },
+    );
+    expect(await cache.get('en')).toEqual([]);
+    expect(await cache.get('ru')).toEqual([AGREEMENT]);
+  });
+
+  it('saves what the panel answers, per language — and writes only when it changes', async () => {
+    const { data, redis } = fakeRedis();
+    const store = new RedisLastKnownGoodStore({ redis: redis as never });
+    let answer: readonly LegalDocument[] = [AGREEMENT];
+    const cache = new LegalDocumentsCache(async () => answer, 0, 1_000, { lastKnownGood: store });
+
+    await cache.get('ru');
+    await vi.waitFor(() => expect(data.has('reiwa:lkg:legal-documents.ru:v1')).toBe(true));
+    expect(JSON.parse(data.get('reiwa:lkg:legal-documents.ru:v1') as string).payload).toEqual([AGREEMENT]);
+    const writes = redis.set.mock.calls.length;
+
+    // The same documents again (a TTL of 0: every tap reads): no second write.
+    await cache.get('ru');
+    await new Promise((resolve) => setImmediate(resolve));
+    await cache.get('ru');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(redis.set.mock.calls.length).toBe(writes);
+
+    answer = [AGREEMENT, PRIVACY];
+    await cache.get('ru');
+    await new Promise((resolve) => setImmediate(resolve));
+    await cache.get('ru');
+    await vi.waitFor(() =>
+      expect(JSON.parse(data.get('reiwa:lkg:legal-documents.ru:v1') as string).payload).toEqual([AGREEMENT, PRIVACY]),
+    );
+
+    await cache.get('en');
+    await vi.waitFor(() => expect(data.has('reiwa:lkg:legal-documents.en:v1')).toBe(true));
+  });
+
+  it('a read an operator’s edit overtook is not saved', async () => {
+    const { data, redis } = fakeRedis();
+    const store = new RedisLastKnownGoodStore({ redis: redis as never });
+    const upstream = handAnsweredDocuments();
+    const cache = new LegalDocumentsCache(upstream.fn, 60_000, 1_000, { lastKnownGood: store });
+
+    const beforeEdit = cache.get('ru');
+    cache.invalidate();
+    upstream.answer(0, [AGREEMENT]);
+    await beforeEdit;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(data.has('reiwa:lkg:legal-documents.ru:v1')).toBe(false);
+  });
+
+  it('reads the saved copy once per language per process', async () => {
+    const { redis, store } = await storeWith('ru', [AGREEMENT]);
+    const cache = new LegalDocumentsCache(
+      async () => {
+        throw new Error('panel down');
+      },
+      0,
+      1_000,
+      { lastKnownGood: store },
+    );
+    // Three taps before anything is held, and the failed read looking for it too.
+    expect(await Promise.all([cache.get('ru'), cache.get('ru'), cache.get('ru')])).toEqual([
+      [AGREEMENT],
+      [AGREEMENT],
+      [AGREEMENT],
+    ]);
+    await cache.get('ru');
+    expect(redis.get.mock.calls.filter(([key]) => key === 'reiwa:lkg:legal-documents.ru:v1')).toHaveLength(1);
+  });
+
+  it('a stored copy that is not a list of documents is not served', async () => {
+    const { redis } = fakeRedis({
+      'reiwa:lkg:legal-documents.ru:v1': JSON.stringify({ shape: 1, savedAt: 1, hash: 'x', payload: [{ key: 'OFFER' }] }),
+    });
+    const cache = new LegalDocumentsCache(
+      async () => {
+        throw new Error('panel down');
+      },
+      60_000,
+      1_000,
+      { lastKnownGood: new RedisLastKnownGoodStore({ redis: redis as never }) },
+    );
+    expect(await cache.get('ru')).toEqual([]);
+  });
+
+  it('the bot’s cache is built with the store it was configured with', async () => {
+    const { store } = await storeWith('en', [PRIVACY]);
+    configureLegalDocumentsCache({ lastKnownGood: store as LastKnownGoodStorePort });
+    setLegalDocumentsCache(null);
+    const adminClient = {
+      legalDocuments: {
+        list: async () => {
+          throw new Error('panel down');
+        },
+      },
+    } as unknown as AdminClient;
+    expect(await getLegalDocumentsCache(adminClient).get('en')).toEqual([PRIVACY]);
+  });
+
+  it('names one copy per answer the panel gives: English for `en`, the primary language for anything else', () => {
+    expect(legalDocumentsLastKnownGood('en').name).toBe('legal-documents.en');
+    expect(legalDocumentsLastKnownGood('ru').name).toBe('legal-documents.ru');
+    expect(legalDocumentsLastKnownGood('uk')).toBe(legalDocumentsLastKnownGood('ru'));
+    expect(legalDocumentsLastKnownGood('EN')).toBe(legalDocumentsLastKnownGood('en'));
   });
 });

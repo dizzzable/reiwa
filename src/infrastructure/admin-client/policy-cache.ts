@@ -41,6 +41,16 @@
  *    failure in a row now keeps answering it for {@link FALLBACK_RETRY_MS}. One
  *    failure is retried at once, so a single blip right after boot or an
  *    invalidation does not open the gates for half a minute.
+ *
+ * ── On a press (the bot only) ────────────────────────────────────────────────
+ *
+ * Before an update is answered, the bot's freshness middleware brings the policy
+ * up to a change reiwa has already heard of — the webhook's hint or a poll's
+ * version in reiwa's Redis (`config-versions/latest.ts`), for a relay to the bot
+ * that was lost — within the update's own budget ({@link PolicyCache.catchUp}).
+ * It reads the panel once per change and never marks the policy superseded, so
+ * the one-second wait above stays the invalidation's alone. The API process
+ * never calls it.
  */
 import type { AdminClient } from '../../lib/admin-client.js';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
@@ -51,10 +61,27 @@ import {
   type LastKnownGood,
   type LastKnownGoodStorePort,
 } from '../config-versions/last-known-good.js';
-import { firstAnswer } from '../config-versions/within-budget.js';
+import type { KnownPanelChange } from '../config-versions/latest.js';
+import { firstAnswer, settlesWithin } from '../config-versions/within-budget.js';
 import type { PlatformPolicyShape } from './namespaces/system.js';
 
 const CACHE_TTL_MS = 60_000;
+
+/**
+ * How long a version the key of latest versions keeps naming is not read for
+ * again, once a read made on its account has landed with another one
+ * (`catchUp`; `BotConfigCache` has the same rule).
+ */
+const POLLED_RECHECK_MS = 5 * 60 * 1000;
+
+/** A read of the panel, whoever began it, as `catchUp` waits on it. */
+interface ReadAttempt {
+  readonly startedAt: number;
+  readonly done: Promise<unknown>;
+  settled: boolean;
+  /** A press already waited its whole budget on it: the next ones do not. */
+  waitedOut: boolean;
+}
 
 /**
  * How long a read waits for the panel when it has to wait at all — right after
@@ -124,6 +151,17 @@ export class PolicyCache {
   private budgetSpent: number | null = null;
   /** The saved copy's read — once per process: nothing else writes it while we run. */
   private saved: Promise<LastKnownGood<Record<string, unknown>> | null> | null = null;
+  /**
+   * When the read `value` came from began; `-Infinity` for the saved copy. A
+   * change reiwa heard of after it is one `value` may not have (`catchUp`).
+   */
+  private readStartedAt = Number.NEGATIVE_INFINITY;
+  /** The newest read of the panel begun, whoever began it (`catchUp`). */
+  private lastAttempt: ReadAttempt | null = null;
+  /** The polled version a read was last begun for, and when (`catchUp`). */
+  private polledCheck: { readonly version: string; readonly startedAt: number } | null = null;
+  /** The change `catchUp` last began a read for: one read per change, whatever the clocks say. */
+  private caughtUpFor: number | null = null;
   private readonly ttlMs: number;
   private readonly lastKnownGood: LastKnownGoodStorePort;
   private readonly waitBudgetMs: number;
@@ -205,6 +243,73 @@ export class PolicyCache {
     return this.value === null ? null : this.version;
   }
 
+  /**
+   * Bring the policy up to a change reiwa already knows of, waiting for it at
+   * most `budgetMs` — the bot's per-press refresh
+   * (`bot/middleware/config-freshness.ts`), for the relay to the bot that did
+   * not arrive. `known` is what reiwa's Redis holds for the policy
+   * (`config-versions/latest.ts`): the webhook's hint, a poll's version.
+   *
+   * The rules of `BotConfigCache.catchUp`: behind when a hint, or a poll's
+   * version that is not the one held, is newer than the read the policy came
+   * from began; then the read begun since is waited for, or one is begun — in a
+   * generation of its own, so a read from before the change is neither joined
+   * nor kept; one read per change, one wait per read.
+   *
+   * Unlike {@link invalidate}, the policy is NOT marked superseded: the gate's
+   * next `get()` answers at once from what is held, the new policy if the read
+   * came within the press's budget — this never adds the invalidation's
+   * one-second wait to a press. An invalidation's own evidence is `get()`'s to
+   * wait for, not this. Nothing held: nothing to do — `get()` decides, the
+   * `PUBLIC` stand-in included. Never rejects.
+   */
+  public async catchUp(known: KnownPanelChange, budgetMs: number): Promise<void> {
+    if (this.value === null) return;
+    const since = this.behindSince(known);
+    if (since === null) return;
+    let attempt = this.lastAttempt;
+    if ((attempt === null || attempt.startedAt < since) && since !== this.caughtUpFor) {
+      this.caughtUpFor = since;
+      if (known.polled !== undefined && known.polled.version !== this.version) {
+        this.polledCheck = { version: known.polled.version, startedAt: Date.now() };
+      }
+      // A read begun before the change may carry the policy from before it.
+      this.generation += 1;
+      void this.startRefresh();
+      attempt = this.lastAttempt;
+    }
+    // Superseded: an invalidation's read is out, and the gate's own `get()`
+    // waits for it — the press is not held for the same read twice.
+    if (attempt === null || attempt.settled || attempt.waitedOut || this.superseded || budgetMs <= 0) return;
+    if (!(await settlesWithin(attempt.done, budgetMs))) attempt.waitedOut = true;
+  }
+
+  /** The newest known change the held policy may not have, or `null`. */
+  private behindSince(known: KnownPanelChange): number | null {
+    let since: number | null = null;
+    const newer = (at: number | undefined): void => {
+      if (at === undefined || !(at > this.readStartedAt)) return;
+      if (since === null || at > since) since = at;
+    };
+    newer(known.hintedAt);
+    const polled = known.polled;
+    if (polled !== undefined && polled.version !== this.version && !this.polledChecked(polled.version)) {
+      newer(polled.at);
+    }
+    return since;
+  }
+
+  /** A read begun on account of this polled version has landed, and recently (`polledCheck`). */
+  private polledChecked(version: string): boolean {
+    const check = this.polledCheck;
+    return (
+      check !== null &&
+      check.version === version &&
+      this.readStartedAt >= check.startedAt &&
+      Date.now() - check.startedAt < POLLED_RECHECK_MS
+    );
+  }
+
   /** The saved copy's payload, or `null`; read from the store once per process. */
   private savedPolicy(): Promise<CachedPolicy | null> {
     this.saved ??= this.lastKnownGood.load(PLATFORM_POLICY_LKG);
@@ -218,6 +323,7 @@ export class PolicyCache {
         this.value = policy;
         this.version = copy.hash;
         this.fetchedAt = Date.now();
+        this.readStartedAt = Number.NEGATIVE_INFINITY;
         this.logger?.info({}, 'PolicyCache: serving the last known policy saved before this start');
       }
       return policy;
@@ -226,16 +332,21 @@ export class PolicyCache {
 
   /** Starts one fetch and holds the in-flight slot until it settles. Never rejects. */
   private startRefresh(): Promise<CachedPolicy> {
-    const refresh = this.refresh(this.generation);
+    const readStartedAt = Date.now();
+    const refresh = this.refresh(this.generation, readStartedAt);
     this.inFlight = refresh;
+    const attempt: ReadAttempt = { startedAt: readStartedAt, done: refresh, settled: false, waitedOut: false };
+    this.lastAttempt = attempt;
     void refresh.finally(() => {
+      attempt.settled = true;
       // After an invalidate the slot may already hold a newer fetch.
       if (this.inFlight === refresh) this.inFlight = null;
     });
     return refresh;
   }
 
-  private async refresh(startedAt: number): Promise<CachedPolicy> {
+  /** `readStartedAt`: when this read began — the held policy's, if it lands. */
+  private async refresh(startedAt: number, readStartedAt: number): Promise<CachedPolicy> {
     try {
       const fresh = await this.fetchFn();
       // The transport casts the body, so a panel answering `null` (or anything that
@@ -247,6 +358,7 @@ export class PolicyCache {
       if (startedAt === this.generation) {
         this.value = fresh;
         this.version = configVersionOf(fresh);
+        this.readStartedAt = readStartedAt;
         this.fetchedAt = Date.now();
         this.fallbackUntil = 0;
         this.superseded = false;

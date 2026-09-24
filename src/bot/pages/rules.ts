@@ -59,6 +59,15 @@ import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 const SCREEN_OVERRIDE_NAME = 'rules';
 
 /**
+ * The screen's two doors, exported because the freshness middleware
+ * (`middleware/config-freshness.ts`) brings the legal documents up to date for
+ * exactly these before the screen reads them. Shared rather than retyped so
+ * the two cannot drift apart.
+ */
+export const RULES_CALLBACK = 'rules';
+export const RULES_COMMAND = 'rules';
+
+/**
  * Everything the rules screen consists of, resolved but not yet delivered.
  *
  * `botCfg` rides along because both callers need it for their own delivery
@@ -202,14 +211,14 @@ export const registerRulesPage: PageRegistrar = (bot, deps) => {
   const localeOf = (id: number | undefined): SupportedLocale =>
     coerceLocale(userLocale.getSync(id ?? 0));
 
-  bot.callbackQuery('rules', async (ctx) => {
+  bot.callbackQuery(RULES_CALLBACK, async (ctx) => {
     await ctx.answerCallbackQuery();
     await showRulesScreen(ctx, deps);
   });
 
   // A fresh message, not an edit. There is no previous screen to replace, and
   // `editOrReply` would target the message the user just sent.
-  bot.command('rules', async (ctx) => {
+  bot.command(RULES_COMMAND, async (ctx) => {
     const view = await buildRulesView(deps, localeOf(ctx.from?.id));
     await replyWithOptionalBanner(ctx, deps, view.botCfg, {
       text: view.text,

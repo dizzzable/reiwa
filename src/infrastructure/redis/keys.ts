@@ -277,3 +277,19 @@ export function recoveryQueueKey(challengeId: string): string {
 export function lastKnownGoodKey(group: string, shape: number): string {
   return `reiwa:lkg:${group}:v${shape}`;
 }
+
+/**
+ * Build the Redis key for the newest version of each panel settings group that
+ * anything in reiwa has heard of (`infrastructure/config-versions/latest.ts`):
+ * what the version polls of reiwa-api and reiwa-bot last heard from the panel,
+ * and when the panel's settings webhook last said a group changed. The bot
+ * compares the copy it holds with it on every button press.
+ *
+ * One hash; the shape number is in the key, for the reason `lastKnownGoodKey`
+ * gives. Value: field `poll:<group>` → JSON `{"version":"<32 hex>","at":<epoch ms>}`,
+ * field `hint:<group>` → `<epoch ms>`. No TTL: a few hundred bytes, rewritten
+ * by every poll.
+ */
+export function latestConfigVersionsKey(): string {
+  return 'reiwa:config-versions:latest:v1';
+}

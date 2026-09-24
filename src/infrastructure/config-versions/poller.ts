@@ -71,6 +71,13 @@ export interface ConfigVersionPollerOptions {
   readonly retryRefreshAfterMs?: number;
   /** Up to this much is added to each wait, so two processes do not poll in step. */
   readonly jitterMs?: number;
+  /**
+   * Hears every answered poll: the panel's version of each group, and when the
+   * answer came. `api/main.ts` and `bot/main.ts` keep them in reiwa's Redis
+   * (`latest.ts`), which the bot compares its copy with on every press. Called
+   * before this poll re-reads anything; a throw is logged and forgotten.
+   */
+  readonly onVersions?: (versions: Readonly<Record<string, string>>, answeredAt: number) => void;
 }
 
 export const CONFIG_VERSION_POLL_INTERVAL_MS = 20_000;
@@ -152,6 +159,11 @@ export class ConfigVersionPoller {
     this.recovered();
 
     const now = Date.now();
+    try {
+      this.options.onVersions?.(versions, now);
+    } catch (err: unknown) {
+      this.options.logger?.debug({ err: describe(err) }, 'config versions: recording the answer failed');
+    }
     for (const group of this.options.groups) {
       const current = versions[group.key];
       const mine = held[group.key];

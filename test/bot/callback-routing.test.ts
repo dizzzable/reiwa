@@ -10,8 +10,14 @@
  * and the second through a handler that runs only on data NOTHING else claims.
  * This file is the proof of that last part: every known callback still reaches
  * its own handler even when an operator screen's shortId is spelled exactly
- * like it, and every path answers the callback query exactly once. Data that is
- * neither keeps today's behaviour: nothing answers it.
+ * like it, and every path answers the callback query exactly once.
+ *
+ * Data that is neither — a button on an old message the operator has since
+ * removed or changed, a screen the flow no longer has — used to reach nothing:
+ * the button spun and the user saw silence. It gets «Меню обновилось» and the
+ * current main menu in place of that message now (owner's decision,
+ * 24.09.2026; `pages/stale-button.ts`), from the very last handler — and not
+ * past the channel gate, the RESTRICTED alert or the own-chat rule.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -37,6 +43,7 @@ import {
   registerPaySupportPage,
   registerQuestChannelPage,
   registerRulesPage,
+  registerStaleButtonPage,
   registerStartPage,
   type PageRegistrar,
 } from '../../src/bot/pages/index.js';
@@ -46,6 +53,7 @@ import { setLegalDocumentsCache } from '../../src/infrastructure/admin-client/le
 import { setPolicyCache } from '../../src/infrastructure/admin-client/policy-cache.js';
 import { DEFAULT_BOT_CONFIG } from '../../src/infrastructure/bot-config/cache.js';
 import type { BotConfig, BotScreen } from '../../src/infrastructure/bot-config/types.js';
+import { EN_PACK, RU_PACK } from '../../src/infrastructure/i18n/packs/index.js';
 import { buildPassthroughTranslator } from './pages/helpers.js';
 
 const BOT_INFO: UserFromGetMe = {
@@ -83,6 +91,7 @@ const PAGES: ReadonlyArray<readonly [string, PageRegistrar]> = [
   ['registerClosePage', registerClosePage],
   ['registerAiSupportPage', registerAiSupportPage],
   ['registerDynamicScreenPage', registerDynamicScreenPage],
+  ['registerStaleButtonPage', registerStaleButtonPage],
 ];
 
 function screen(shortId: string, name: string, textRu: string): BotScreen {
@@ -106,25 +115,50 @@ interface ApiCall {
   readonly payload: Record<string, unknown>;
 }
 
+/** A Bot API refusal, as Telegram words it. */
+interface Refusal {
+  readonly error_code: number;
+  readonly description: string;
+}
+
+interface PressOptions {
+  /** The panel, where the press needs one: the platform policy for the gate and «В меню». */
+  readonly adminClient?: Record<string, unknown>;
+  /** The chat the pressed message is in; the user's own private chat by default. */
+  readonly chat?: { readonly id: number; readonly type: string; readonly title?: string };
+  /** Bot API methods Telegram refuses, by name. */
+  readonly refuse?: Readonly<Record<string, Refusal>>;
+  /** Answers per Bot API method other than a refusal (`getChatMember`). */
+  readonly answers?: Readonly<Record<string, unknown>>;
+  /** Where the calls are recorded as they are made, for a test that looks before the press is over. */
+  readonly calls?: ApiCall[];
+  /** More of the pressed message: a photo, a business connection. */
+  readonly messageExtra?: Record<string, unknown>;
+}
+
 async function press(
   data: string,
   config: BotConfig,
   getConfig: () => Promise<BotConfig> = async () => config,
+  options: PressOptions = {},
 ): Promise<ApiCall[]> {
-  const calls: ApiCall[] = [];
+  const calls: ApiCall[] = options.calls ?? [];
   const bot = new Bot<BotContext>('123456789:AAHfakeTokenForCallbackRoutingSpecs0', { botInfo: BOT_INFO });
   // Nothing leaves the process: every Bot API call is recorded and answered here.
   bot.api.config.use(async (_prev, method, payload) => {
     calls.push({ method, payload: payload as Record<string, unknown> });
+    const refusal = options.refuse?.[method];
+    if (refusal !== undefined) return { ok: false, ...refusal } as never;
     const result =
-      method === 'sendMessage'
+      options.answers?.[method] ??
+      (method === 'sendMessage'
         ? { message_id: 90, date: 0, chat: { id: USER.id, type: 'private', first_name: USER.first_name }, text: '' }
-        : true;
+        : true);
     return { ok: true, result } as never;
   });
   const locales = new Map<number, string>();
   const deps: PageDeps = {
-    adminClient: null,
+    adminClient: (options.adminClient ?? null) as PageDeps['adminClient'],
     translator: buildPassthroughTranslator(),
     userLocale: {
       getSync: (id) => locales.get(id) ?? 'ru',
@@ -150,9 +184,10 @@ async function press(
       message: {
         message_id: 50,
         date: 0,
-        chat: { id: USER.id, type: 'private', first_name: USER.first_name },
+        chat: options.chat ?? { id: USER.id, type: 'private', first_name: USER.first_name },
         from: BOT_INFO,
         text: 'an old menu',
+        ...options.messageExtra,
       },
     },
   } as Update;
@@ -163,6 +198,11 @@ async function press(
 const answersOf = (calls: readonly ApiCall[]): ApiCall[] => calls.filter((c) => c.method === 'answerCallbackQuery');
 const sentText = (calls: readonly ApiCall[]): unknown[] =>
   calls.filter((c) => c.method === 'sendMessage' || c.method === 'editMessageText').map((c) => c.payload['text']);
+
+/** «Меню обновилось» through the passthrough translator. */
+const STALE_NOTICE = 'ru:menu.updated';
+/** The first line of the welcome screen `DEFAULT_BOT_CONFIG` greets Ann with. */
+const WELCOME = 'Привет, Ann!';
 
 /** What each known callback's OWN handler does, as seen at the Bot API. */
 const KNOWN: ReadonlyArray<readonly [string, (calls: readonly ApiCall[]) => void]> = [
@@ -201,15 +241,18 @@ beforeEach(() => {
 describe('callback routing — every page, in main.ts order', () => {
   it('registers the pages in the order main.ts does', () => {
     // The routing below holds only for this order: the bare-shortId handler
-    // must come after every handler whose data it could otherwise take.
+    // must come after every handler whose data it could otherwise take, and the
+    // stale-button answer after it — it takes whatever reaches it.
     const main = readFileSync(resolve(__dirname, '../../src/bot/main.ts'), 'utf8');
     const order = [...main.matchAll(/\b(register\w+Page)\(bot, pageDeps\)/g)].map((m) => m[1]);
     expect(order).toEqual(PAGES.map(([name]) => name));
+    expect(order.at(-1)).toBe('registerStaleButtonPage');
     // …and no handler is registered after the last of them: none of grammY's
     // registering methods (`on`, `use`, `callbackQuery`, …) is called on `bot`.
     const registering = new Set(Object.getOwnPropertyNames(Composer.prototype).filter((n) => n !== 'constructor'));
-    const after = main.slice(main.indexOf('registerDynamicScreenPage(bot, pageDeps)'));
-    const calledAfter = [...after.matchAll(/\bbot\.(\w+)\(/g)].map((m) => m[1]);
+    const last = main.indexOf('registerStaleButtonPage(bot, pageDeps)');
+    expect(last).toBeGreaterThan(-1);
+    const calledAfter = [...main.slice(last).matchAll(/\bbot\.(\w+)\(/g)].map((m) => m[1]);
     expect(calledAfter).toContain('catch');
     expect(calledAfter.filter((name) => registering.has(name))).toEqual([]);
   });
@@ -225,6 +268,8 @@ describe('callback routing — every page, in main.ts order', () => {
     const calls = await press(data, shadowed);
     expect(answersOf(calls)).toHaveLength(1);
     expect(JSON.stringify(calls)).not.toContain('SCREEN ');
+    // Not swallowed by the stale-button answer registered after every page.
+    expect(JSON.stringify(calls)).not.toContain(STALE_NOTICE);
     reachedOwn(calls);
   });
 
@@ -295,36 +340,177 @@ describe('callback routing — every page, in main.ts order', () => {
     expect(sentText(calls)).toEqual(['ru:support.not_configured']);
   });
 
-  it('a `screen:` button onto a screen that is not there says so, answered once', async () => {
+  /** What a button the bot no longer knows gets: the toast, then the menu in place of that message. */
+  function expectMenuUpdatedInPlace(calls: readonly ApiCall[]): void {
+    expect(answersOf(calls).map((c) => c.payload)).toEqual([{ callback_query_id: 'cq-1', text: STALE_NOTICE }]);
+    const edits = calls.filter((c) => c.method === 'editMessageText');
+    expect(edits).toHaveLength(1);
+    expect(edits[0]?.payload).toMatchObject({ chat_id: USER.id, message_id: 50 });
+    expect(String(edits[0]?.payload['text'])).toContain(WELCOME);
+    // No new message: the old one became the menu.
+    expect(calls.filter((c) => c.method === 'sendMessage' || c.method === 'sendPhoto')).toEqual([]);
+    // The toast before the menu, so the spinner stops first.
+    expect(calls.findIndex((c) => c.method === 'answerCallbackQuery')).toBeLessThan(
+      calls.findIndex((c) => c.method === 'editMessageText'),
+    );
+  }
+
+  it('a `screen:` button onto a screen that is not there: «Меню обновилось» and the menu in its place', async () => {
     const calls = await press('screen:gone1234', { ...DEFAULT_BOT_CONFIG, screens: [] });
-    expect(answersOf(calls)).toHaveLength(1);
-    expect(sentText(calls)).toEqual(['ru:screen.not_found']);
+    expectMenuUpdatedInPlace(calls);
+    expect(JSON.stringify(calls)).not.toContain('screen.not_found');
   });
 
-  it('data that is neither a known callback nor a shortId stays unanswered, as before', async () => {
-    const config = { ...DEFAULT_BOT_CONFIG, screens: [screen('promo42x', 'promo', 'SCREEN promo42x')] };
-    expect(await press('nonsense', config)).toEqual([]);
-    expect(await press('promo42x', { ...DEFAULT_BOT_CONFIG, screens: [] })).toEqual([]);
+  it.each([
+    ['a button id no page answers', 'nonsense'],
+    ['a shortId of a screen the flow no longer has', 'promo42x'],
     // The WHOLE data is the shortId, or it is not a shortId: no prefix, no more.
-    expect(await press('promo', config)).toEqual([]);
-    expect(await press('promo42x:more', config)).toEqual([]);
+    ['a prefix of a shortId', 'promo'],
+    ['a shortId with more after it', 'promo42x:more'],
+    ['a retired built-in button', 'subscription'],
+  ])('%s: «Меню обновилось» and the menu in place of that message, answered once', async (_what, data) => {
+    const config =
+      data === 'promo42x'
+        ? { ...DEFAULT_BOT_CONFIG, screens: [] }
+        : { ...DEFAULT_BOT_CONFIG, screens: [screen('promo42x', 'promo', 'SCREEN promo42x')] };
+    const calls = await press(data, config);
+    expectMenuUpdatedInPlace(calls);
+    expect(JSON.stringify(calls)).not.toContain('SCREEN ');
+  });
+
+  it('the menu is the one «В меню» draws: the same calls, but for the toast', async () => {
+    const stale = await press('nonsense', DEFAULT_BOT_CONFIG);
+    const back = await press('menu:main', DEFAULT_BOT_CONFIG);
+    expect(stale.map((c) => c.method)).toEqual(back.map((c) => c.method));
+    const withoutAnswers = (calls: readonly ApiCall[]): ApiCall[] => calls.filter((c) => c.method !== 'answerCallbackQuery');
+    expect(withoutAnswers(stale)).toEqual(withoutAnswers(back));
+    expect(answersOf(back).map((c) => c.payload['text'])).toEqual([undefined]);
+  });
+
+  it('a message Telegram will not edit any more: the menu as a new message', async () => {
+    const calls = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, {
+      refuse: { editMessageText: { error_code: 400, description: 'Bad Request: message to edit not found' } },
+    });
+    expect(answersOf(calls).map((c) => c.payload['text'])).toEqual([STALE_NOTICE]);
+    const sent = calls.filter((c) => c.method === 'sendMessage');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.payload['chat_id']).toBe(USER.id);
+    expect(String(sent[0]?.payload['text'])).toContain(WELCOME);
+  });
+
+  it('a double tap — the same menu already there — sends nothing new', async () => {
+    const calls = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, {
+      refuse: {
+        editMessageText: {
+          error_code: 400,
+          description: 'Bad Request: message is not modified: specified new message content and reply markup are exactly the same',
+        },
+      },
+    });
+    expect(answersOf(calls).map((c) => c.payload['text'])).toEqual([STALE_NOTICE]);
+    expect(calls.filter((c) => c.method === 'sendMessage')).toEqual([]);
+  });
+
+  it('an old photo message Telegram will not edit: the menu, with its banner, as a new message', async () => {
+    const withBanner: BotConfig = {
+      ...DEFAULT_BOT_CONFIG,
+      visual: { ...DEFAULT_BOT_CONFIG.visual, bannerUrl: 'https://cdn.example/welcome.jpg' },
+    };
+    const calls = await press('nonsense', withBanner, undefined, {
+      messageExtra: { photo: [{ file_id: 'old-photo', file_unique_id: 'u1', width: 10, height: 10 }] },
+      refuse: { editMessageMedia: { error_code: 400, description: "Bad Request: message can't be edited" } },
+    });
+    expect(answersOf(calls).map((c) => c.payload['text'])).toEqual([STALE_NOTICE]);
+    expect(calls.filter((c) => c.method === 'editMessageMedia')).toHaveLength(1);
+    const photos = calls.filter((c) => c.method === 'sendPhoto');
+    expect(photos).toHaveLength(1);
+    expect(photos[0]?.payload).toMatchObject({ chat_id: USER.id, photo: 'https://cdn.example/welcome.jpg' });
+    expect(String(photos[0]?.payload['caption'])).toContain(WELCOME);
+  });
+
+  it('pressed in a group, it only stops the spinner: no menu there, and no sign-in token', async () => {
+    const calls = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, {
+      chat: { id: -100777, type: 'supergroup', title: 'Operators' },
+    });
+    expect(calls.map((c) => c.method)).toEqual(['answerCallbackQuery']);
+    expect(answersOf(calls)[0]?.payload['text']).toBeUndefined();
+  });
+
+  // A business account's chat with a customer is the customer's private chat,
+  // but the channel gate does not stand in it: the menu, with the customer's
+  // sign-in token, must not be drawn there by a press the gate never saw.
+  it('pressed in a business chat, it only stops the spinner', async () => {
+    const calls = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, {
+      messageExtra: { business_connection_id: 'bc-1' },
+    });
+    expect(calls.map((c) => c.method)).toEqual(['answerCallbackQuery']);
+    expect(answersOf(calls)[0]?.payload['text']).toBeUndefined();
+  });
+
+  it('says «Меню обновилось» / «Menu updated» out of the box', () => {
+    expect(RU_PACK['menu.updated']).toBe('Меню обновилось');
+    expect(EN_PACK['menu.updated']).toBe('Menu updated');
+  });
+
+  it('under RESTRICTED: the refusal alert, no menu and no «Меню обновилось»', async () => {
+    const adminClient = {
+      system: { getPlatformPolicy: vi.fn().mockResolvedValue({ accessMode: 'RESTRICTED', channelRequired: false }) },
+    };
+    const calls = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, { adminClient });
+    expect(answersOf(calls).map((c) => c.payload)).toEqual([
+      { callback_query_id: 'cq-1', text: 'ru:access_mode.restricted', show_alert: true },
+    ]);
+    expect(sentText(calls)).toEqual([]);
+  });
+
+  it('a non-subscriber behind «Канал обязателен»: the channel gate answers, not the menu', async () => {
+    const adminClient = {
+      system: {
+        getPlatformPolicy: vi.fn().mockResolvedValue({
+          accessMode: 'PUBLIC',
+          channelRequired: true,
+          channelLink: 'https://t.me/rezeis_news',
+          channelId: null,
+          channelUsername: null,
+          channelRecheck: true,
+        }),
+      },
+    };
+    const calls = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, {
+      adminClient,
+      answers: { getChatMember: { status: 'left', user: USER } },
+    });
+    expect(calls.some((c) => c.method === 'getChatMember')).toBe(true);
+    expect(answersOf(calls).map((c) => c.payload['text'])).toEqual(['ru:channel.not_subscribed']);
+    expect(JSON.stringify(calls)).not.toContain(STALE_NOTICE);
+    expect(JSON.stringify(calls)).not.toContain(WELCOME);
   });
 
   // Updates are handled one at a time: however long this press takes, every
-  // update queued behind it waits as long. A dead button used to cost nothing.
-  it('a press nothing claims is let go within a quarter second while the config read hangs', async () => {
+  // update queued behind it waits as long. The config read that decides whether
+  // the data is a shortId, and the one the toast's words are rendered with, each
+  // wait a quarter second at most; the menu itself comes from the config the
+  // cache gives — which never waits longer than a first load's budget
+  // (`BotConfigCache.get()`).
+  it('a press nothing claims gets its toast within half a second while the panel is slow, then the menu', async () => {
     vi.useFakeTimers();
     try {
-      let settled = false;
-      const pressed = press('subscription', DEFAULT_BOT_CONFIG, () => new Promise<BotConfig>(() => undefined)).then(
-        (calls) => {
-          settled = true;
-          return calls;
-        },
-      );
-      await vi.advanceTimersByTimeAsync(250);
-      expect(settled).toBe(true);
-      expect(await pressed).toEqual([]);
+      // One read, joined by every ask, as the cache does it; it lands after a second.
+      const slow = new Promise<BotConfig>((resolve) => {
+        setTimeout(() => resolve(DEFAULT_BOT_CONFIG), 1_000);
+      });
+      const live: ApiCall[] = [];
+      const pressed = press('subscription', DEFAULT_BOT_CONFIG, () => slow, { calls: live });
+      await vi.advanceTimersByTimeAsync(499);
+      expect(answersOf(live)).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      // The toast's words as written: no config came within its budget.
+      expect(answersOf(live).map((c) => c.payload['text'])).toEqual([STALE_NOTICE]);
+      expect(sentText(live)).toEqual([]);
+      await vi.advanceTimersByTimeAsync(500);
+      await pressed;
+      expect(sentText(live)).toHaveLength(1);
+      expect(String(sentText(live)[0])).toContain(WELCOME);
     } finally {
       vi.useRealTimers();
     }

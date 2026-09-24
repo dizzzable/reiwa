@@ -36,3 +36,25 @@ export async function firstAnswer<T>(input: {
     if (timer !== undefined) clearTimeout(timer);
   }
 }
+
+/**
+ * Whether `work` settles — either way — within `budgetMs`. Never rejects, and
+ * cancels nothing: the work goes on after a `false`.
+ */
+export async function settlesWithin(work: Promise<unknown>, budgetMs: number): Promise<boolean> {
+  if (budgetMs <= 0) return false;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work.then(
+        () => true,
+        () => true,
+      ),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), budgetMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}

@@ -270,8 +270,10 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'support.not_configured': 'Раздел поддержки пока не настроен.',
   'support.title': '🆘 Поддержка\n\nНажмите кнопку ниже — мы ответим в личных сообщениях:',
 
-  // ── Dynamic screens ─────────────────────────────────────────────────────────
-  'screen.not_found': '⚠️ Этот экран был удалён или ещё не опубликован. Вернитесь в меню и попробуйте снова.',
+  // ── A button the bot no longer knows ────────────────────────────────────────
+  // The toast over the current main menu, drawn in place of the old message
+  // (`bot/pages/stale-button.ts`, `dynamic-screen.ts`). Plain text: a toast.
+  'menu.updated': 'Меню обновилось',
 
   // ── Days pluralization ──────────────────────────────────────────────────────
   'day.one': 'день',

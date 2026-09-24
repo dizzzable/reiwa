@@ -9,6 +9,7 @@ import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import { installProcessErrorGuards } from "../infrastructure/error-reporter/process-guards.js";
 import { REIWA_VERSION } from "../core/version.js";
 import { printReiwaBanner } from "../core/banner.js";
+import type { LatestConfigVersionsPort } from "../infrastructure/config-versions/latest.js";
 import {
   ConfigVersionPoller,
   type VersionedGroup,
@@ -130,12 +131,18 @@ async function start(): Promise<void> {
   // ~20 s it asks the panel which version of each settings group is current,
   // re-reads the groups this process holds an older copy of, and tells the
   // panel what it holds (`infrastructure/config-versions/poller.ts`).
+  // What the panel answers goes into reiwa's key of latest versions as well
+  // (`config-versions/latest.ts`): the bot compares the copy it holds with it
+  // on every press, so a change this process hears of first reaches the bot's
+  // next press rather than the bot's own next poll.
+  const latestConfigVersions = app.locals["latestConfigVersions"] as LatestConfigVersionsPort | undefined;
   const configVersionPoller =
     adminClient !== null
       ? new ConfigVersionPoller({
           consumer: "api",
           groups: app.locals["configVersionGroups"] as readonly VersionedGroup[],
           poll: (report) => adminClient.system.pollConfigVersions(report),
+          onVersions: (versions, answeredAt) => void latestConfigVersions?.recordPoll(versions, answeredAt),
           logger,
         })
       : null;

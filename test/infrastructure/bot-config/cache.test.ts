@@ -1210,6 +1210,320 @@ describe('BotConfigCache.heldVersion()', () => {
   });
 });
 
+/**
+ * `catchUp()` — the per-press refresh (`bot/middleware/config-freshness.ts`):
+ * before a press is answered, the entry is brought up to a change reiwa already
+ * knows of — the key of latest versions in Redis (a poll's version, a webhook's
+ * hint), or this cache's own `forceInvalidate()` — within the press's budget.
+ * The panel is never asked whether something changed; one read per change, one
+ * wait per read, and a key that lags cannot make it read in a loop.
+ */
+describe('BotConfigCache.catchUp()', () => {
+  const T0 = 1_800_000_000_000;
+  const SAVE: BotConfig = { ...DEFAULT_BOT_CONFIG, visual: { ...DEFAULT_BOT_CONFIG.visual, welcomeMessage: 'after the save' } };
+  const LATER: BotConfig = { ...DEFAULT_BOT_CONFIG, visual: { ...DEFAULT_BOT_CONFIG.visual, welcomeMessage: 'later still' } };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A cache whose boot read answered SAMPLE at T0; every later read waits for the test. */
+  async function booted(options: { onAnswered?: (config: BotConfig) => void } = {}) {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const upstream = handAnsweredUpstream();
+    const cache = new BotConfigCache({
+      fetcher: upstream.fn,
+      hydrator: spyHydrator().hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      ...(options.onAnswered !== undefined ? { onAnswered: options.onAnswered } : {}),
+    });
+    const boot = cache.get();
+    upstream.answer(0, SAMPLE);
+    expect(await boot).toBe(SAMPLE);
+    await vi.advanceTimersByTimeAsync(10_000);
+    return { cache, upstream };
+  }
+
+  /** How long `promise` took to settle, in fake milliseconds, advancing up to `limit`. */
+  async function settlesAfter(promise: Promise<unknown>, limit = 5_000): Promise<number | null> {
+    let settled = false;
+    void promise.then(() => {
+      settled = true;
+    });
+    for (let elapsed = 0; elapsed <= limit; elapsed += 1) {
+      await vi.advanceTimersByTimeAsync(elapsed === 0 ? 0 : 1);
+      if (settled) return elapsed;
+    }
+    return null;
+  }
+
+  it('steady state: a key that says nothing new costs no panel read, however many presses', async () => {
+    const { cache, upstream } = await booted();
+    const held = cache.heldVersion()!;
+    for (let press = 0; press < 100; press += 1) {
+      // The poll heard the version the bot holds; the last hint came before its read.
+      await cache.catchUp({ polled: { version: held, at: T0 + 5_000 }, hintedAt: T0 - 60_000 }, 250);
+      await cache.catchUp({}, 1_000);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a hint newer than the entry’s read: one read, waited for — the press after it has the save', async () => {
+    const { cache, upstream } = await booted();
+    const pressed = cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    setTimeout(() => upstream.answer(1, SAVE), 100);
+
+    expect(await settlesAfter(pressed)).toBe(100);
+    expect(await cache.get()).toBe(SAVE);
+  });
+
+  it('the same hint again costs nothing: one read per change', async () => {
+    const { cache, upstream } = await booted();
+    const first = cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    upstream.answer(1, SAVE);
+    await first;
+    for (let press = 0; press < 10; press += 1) await cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a hung panel: the first press waits its budget, the presses after it not at all, and nobody reads twice', async () => {
+    const { cache, upstream } = await booted();
+    expect(await settlesAfter(cache.catchUp({ hintedAt: T0 + 9_000 }, 250))).toBe(250);
+    for (let press = 0; press < 10; press += 1) {
+      expect(await settlesAfter(cache.catchUp({ hintedAt: T0 + 9_000 }, 250))).toBe(0);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    // Answered from the entry meanwhile.
+    expect(cache.peek()).toBe(SAMPLE);
+  });
+
+  it('a read that failed is not asked again by the next press', async () => {
+    const { cache, upstream } = await booted();
+    const first = cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    upstream.fail(1, new Error('panel down'));
+    await first;
+    await cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(cache.peek()).toBe(SAMPLE);
+  });
+
+  it('a newer hint after it is a new change: read again', async () => {
+    const { cache, upstream } = await booted();
+    const first = cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    upstream.answer(1, SAVE);
+    await first;
+    await vi.advanceTimersByTimeAsync(5_000);
+    const second = cache.catchUp({ hintedAt: T0 + 14_000 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+    upstream.answer(2, LATER);
+    await second;
+    expect(await cache.get()).toBe(LATER);
+  });
+
+  it('a poll’s version is a reason only when it is not the entry’s, and newer than its read', async () => {
+    const { cache, upstream } = await booted();
+    // The version the bot holds: nothing to do.
+    await cache.catchUp({ polled: { version: cache.heldVersion()!, at: T0 + 9_000 } }, 250);
+    // Another version, heard before the entry's read began: the key lags — the
+    // copy is at least as new. Not a reason, so no read and no loop.
+    await cache.catchUp({ polled: { version: configVersionOf(SAVE), at: T0 - 1 } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+
+    // Another version, heard after it: read.
+    const pressed = cache.catchUp({ polled: { version: configVersionOf(SAVE), at: T0 + 9_000 } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    upstream.answer(1, SAVE);
+    await pressed;
+    expect(cache.heldVersion()).toBe(configVersionOf(SAVE));
+    // Now it is the entry's.
+    await cache.catchUp({ polled: { version: configVersionOf(SAVE), at: T0 + 12_000 } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a version the panel keeps naming that the read did not bring is not read for again for five minutes', async () => {
+    // reiwa and the panel disagreeing about one payload — or a poll answered
+    // from the panel's 15-second version cache: every poll rewrites the version
+    // with a newer time, and each would otherwise cost a read.
+    const { cache, upstream } = await booted();
+    const named = { version: '9'.repeat(32), at: T0 + 9_000 };
+    const first = cache.catchUp({ polled: named }, 250);
+    upstream.answer(1, SAVE);
+    await first;
+    expect(cache.heldVersion()).toBe(configVersionOf(SAVE));
+
+    for (let poll = 1; poll <= 14; poll += 1) {
+      await vi.advanceTimersByTimeAsync(20_000);
+      await cache.catchUp({ polled: { ...named, at: Date.now() } }, 250);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    void cache.catchUp({ polled: { ...named, at: Date.now() } }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+  });
+
+  it('a read begun before the change is not joined, and what it brings is not kept', async () => {
+    const { cache, upstream } = await booted();
+    // The warm-up's read, begun before the operator saved.
+    const warmUp = cache.refresh();
+    await vi.advanceTimersByTimeAsync(1_000);
+    const pressed = cache.catchUp({ hintedAt: Date.now() - 500 }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+
+    upstream.answer(2, SAVE);
+    await pressed;
+    upstream.answer(1, SAMPLE); // the pre-save read lands last
+    await warmUp;
+    await settle();
+    expect(cache.peek()).toBe(SAVE);
+  });
+
+  it('a change the entry already has does not hold the press for a refresh that happens to be out', async () => {
+    const { cache, upstream } = await booted();
+    // The warm-up's read is out, and hangs; the hint came before the entry's read.
+    void cache.refresh();
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(await settlesAfter(cache.catchUp({ hintedAt: T0 - 1 }, 250))).toBe(0);
+    expect(
+      await settlesAfter(cache.catchUp({ polled: { version: configVersionOf(SAVE), at: T0 - 1 } }, 250)),
+    ).toBe(0);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a Telegram file-id stamp does not make the entry look older than the read it came from', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const upstream = handAnsweredUpstream();
+    const cache = new BotConfigCache({ fetcher: upstream.fn, hydrator: spyHydrator().hydrator, fallback: DEFAULT_BOT_CONFIG });
+    const WITH_BANNERS: BotConfig = {
+      ...DEFAULT_BOT_CONFIG,
+      visual: { ...DEFAULT_BOT_CONFIG.visual, bannerUrl: 'https://panel/b.jpg' },
+      screens: [
+        {
+          id: 's1',
+          shortId: 'promo1',
+          name: 'promo',
+          textRu: 'Акция',
+          textEn: '',
+          parseMode: 'plain',
+          mediaType: 'photo',
+          mediaFileId: null,
+          mediaUrl: 'https://panel/s.jpg',
+          isRoot: false,
+          buttons: [],
+        },
+      ],
+    };
+    const boot = cache.get();
+    upstream.answer(0, WITH_BANNERS);
+    await boot;
+    await vi.advanceTimersByTimeAsync(10_000);
+    cache.stampBannerFileId('https://panel/b.jpg', 'AgACbanner');
+    cache.stampScreenBannerFileId('promo1', 'https://panel/s.jpg', 'AgACscreen');
+    // The warm-up's read is out, and hangs; the hint came before the boot read.
+    void cache.refresh();
+    expect(await settlesAfter(cache.catchUp({ hintedAt: T0 - 1 }, 250))).toBe(0);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a change stamped ahead of this clock costs one read, not one per press', async () => {
+    // reiwa-api and reiwa-bot share the host's clock; were they ever to
+    // disagree, a hint from "the future" stays newer than every read begun.
+    const { cache, upstream } = await booted();
+    const ahead = Date.now() + 3_600_000;
+    const first = cache.catchUp({ hintedAt: ahead }, 250);
+    upstream.answer(1, SAVE);
+    await first;
+    for (let press = 0; press < 10; press += 1) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      await cache.catchUp({ hintedAt: ahead }, 250);
+    }
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    expect(cache.peek()).toBe(SAVE);
+  });
+
+  it('a read that was already out when the hint came does not count as having the save', async () => {
+    // It may have reached the panel before the commit: what it brings is the
+    // entry's, but the hint is still news to that entry.
+    const { cache, upstream } = await booted();
+    const warmUp = cache.refresh();
+    await vi.advanceTimersByTimeAsync(300);
+    const hintedAt = Date.now();
+    await vi.advanceTimersByTimeAsync(300);
+    upstream.answer(1, SAMPLE); // lands after the hint, with what it read before it
+    await warmUp;
+
+    const pressed = cache.catchUp({ hintedAt }, 250);
+    expect(upstream.fn).toHaveBeenCalledTimes(3);
+    upstream.answer(2, SAVE);
+    await pressed;
+    expect(cache.peek()).toBe(SAVE);
+  });
+
+  it('during an operator’s save the press waits for the save’s read — no Redis needed, and no second read', async () => {
+    const { cache, upstream } = await booted();
+    const saved = cache.forceInvalidate('admin-pushed');
+    setTimeout(() => upstream.answer(1, SAVE), 120);
+
+    expect(await settlesAfter(cache.catchUp({}, 1_000))).toBe(120);
+    expect(await saved).toBe(SAVE);
+    expect(await cache.get()).toBe(SAVE);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('what a catch-up read brings is announced like any answered read: the Telegram sync hears it', async () => {
+    const heard: BotConfig[] = [];
+    const { cache, upstream } = await booted({ onAnswered: (config) => heard.push(config) });
+    heard.length = 0;
+    const pressed = cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    upstream.answer(1, SAVE);
+    await pressed;
+    expect(heard).toEqual([SAVE]);
+  });
+
+  it('with no budget left the read is begun but not waited for', async () => {
+    const { cache, upstream } = await booted();
+    expect(await settlesAfter(cache.catchUp({ hintedAt: T0 + 9_000 }, 0))).toBe(0);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+    // And the next press, with a budget, waits for that same read.
+    const next = cache.catchUp({ hintedAt: T0 + 9_000 }, 250);
+    setTimeout(() => upstream.answer(1, SAVE), 50);
+    expect(await settlesAfter(next)).toBe(50);
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('nothing held: nothing to bring up to date — the page’s own read asks the panel', async () => {
+    vi.useFakeTimers();
+    const upstream = handAnsweredUpstream();
+    const cache = new BotConfigCache({ fetcher: upstream.fn, hydrator: spyHydrator().hydrator, fallback: DEFAULT_BOT_CONFIG });
+    expect(await settlesAfter(cache.catchUp({ hintedAt: Date.now() }, 250))).toBe(0);
+    expect(upstream.fn).not.toHaveBeenCalled();
+  });
+
+  it('a boot on the saved copy: any change heard of is newer than it — the boot’s own read is waited for', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const upstream = handAnsweredUpstream();
+    const SAVED_COPY: BotConfig = { ...DEFAULT_BOT_CONFIG, screens: [] };
+    const cache = new BotConfigCache({
+      fetcher: upstream.fn,
+      hydrator: spyHydrator().hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: { load: async () => SAVED_COPY, save: async () => undefined },
+    });
+    expect(await cache.get()).toBe(SAVED_COPY);
+
+    // A hint from before this process started; the boot read is still out.
+    const pressed = cache.catchUp({ hintedAt: T0 - 3_600_000 }, 250);
+    setTimeout(() => upstream.answer(0, SAVE), 80);
+    expect(await settlesAfter(pressed)).toBe(80);
+    expect(upstream.fn).toHaveBeenCalledTimes(1);
+    expect(cache.peek()).toBe(SAVE);
+  });
+});
+
 describe('DEFAULT_BOT_CONFIG', () => {
   it('mirrors the rezeis-admin seed (4 visible buttons in known order)', () => {
     expect(DEFAULT_BOT_CONFIG.buttons.map((b) => b.id)).toEqual([

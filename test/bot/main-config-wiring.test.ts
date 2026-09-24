@@ -122,6 +122,56 @@ describe('src/bot/main.ts — the bot config as the pages get it', () => {
     }
   });
 
+  // Every press is answered from the newest settings reiwa knows of
+  // (`middleware/config-freshness.ts`): in front of every page — the channel
+  // gate's prompt is rendered from the config too — and behind the locale
+  // middleware, whose language the rules screen's documents are read in.
+  it('brings the settings up to date before the channel gate and every page, after the locale', () => {
+    const uses = nodesOf(main)
+      .filter(ts.isCallExpression)
+      .filter((call) => textOf(call.expression) === 'bot.use')
+      .map((call) => textOf(call.arguments[0]!));
+    expect(uses.map((use) => use.slice(0, use.indexOf('(')))).toEqual([
+      'session',
+      'createLocaleDetectMiddleware',
+      'createConfigFreshnessMiddleware',
+      'createChannelGateMiddleware',
+    ]);
+    const freshness = uses[2]!;
+    expect(freshness).toContain('latest: memoiseLatest(() => getLatestConfigVersions(logger).read())');
+    expect(freshness).toContain('botConfig: () => botConfigCache');
+    // The policy the gate decides on — the cache the gate itself reads, never one built for it.
+    expect(freshness).toContain('policy: peekPolicyCache');
+    expect(freshness).toContain('legalDocuments: peekLegalDocumentsCache');
+    // Registered before the first page.
+    const text = main.getFullText();
+    expect(text.indexOf('createConfigFreshnessMiddleware({')).toBeLessThan(text.indexOf('registerLangPage(bot, pageDeps)'));
+  });
+
+  // The bot's poll writes what the panel said into the key every press
+  // compares with, and the legal documents keep their copy in reiwa's Redis.
+  it('hands the poll’s answers to the key of latest versions, and the documents their saved copy', () => {
+    const poller = nodesOf(main)
+      .filter(ts.isNewExpression)
+      .find((call) => textOf(call.expression) === 'ConfigVersionPoller');
+    const [options] = poller?.arguments ?? [];
+    expect(options !== undefined && ts.isObjectLiteralExpression(options)).toBe(true);
+    const onVersions = (options as ts.ObjectLiteralExpression).properties.find(
+      (property) => ts.isPropertyAssignment(property) && textOf(property.name) === 'onVersions',
+    ) as ts.PropertyAssignment | undefined;
+    expect(onVersions && textOf(onVersions.initializer)).toBe(
+      '(versions, answeredAt) => void getLatestConfigVersions(logger).recordPoll(versions, answeredAt)',
+    );
+
+    const configured = nodesOf(main)
+      .filter(ts.isCallExpression)
+      .filter((call) => textOf(call.expression) === 'configureLegalDocumentsCache')
+      .map((call) => textOf(call.arguments[0]!));
+    expect(configured).toEqual(['{ lastKnownGood: getLastKnownGood(logger), logger }']);
+    const text = main.getFullText();
+    expect(text.indexOf('configureLegalDocumentsCache(')).toBeLessThan(text.indexOf('registerRulesPage(bot, pageDeps)'));
+  });
+
   it('keeps the entry fresh with the warm-up on the cache, and no other tick reads the config', () => {
     const timer = declared('configRefreshTimer');
     expect(timer && textOf(timer)).toBe('botConfigCache !== null ? startConfigWarmup(botConfigCache) : null');

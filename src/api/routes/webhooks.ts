@@ -8,6 +8,7 @@ import {
   CONFIG_VERSION_KEYS,
   type ConfigVersionKey,
 } from "../../infrastructure/config-versions/config-version.js";
+import type { LatestConfigVersionsPort } from "../../infrastructure/config-versions/latest.js";
 import type { VersionedGroup } from "../../infrastructure/config-versions/poller.js";
 import { resetBrandingCache } from "./branding.js";
 import { resetLandingCache } from "./landing.js";
@@ -238,8 +239,8 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  * is never exposed publicly; admin only knows reiwa's public domain.
  *
  * Event contract (reads `{ event, metadata }` from the admin webhook body):
- *   - `reiwa.bot.invalidate`    → POST bot `/invalidate`        { reason }
- *   - `reiwa.platform.policy_invalidated` → POST bot `/invalidate-policy` { reason }, after dropping this process's policy and public-config copies; best-effort (see its case)
+ *   - `reiwa.bot.invalidate`    → POST bot `/invalidate`        { reason }, after marking the hint for the bot's next press (`markHinted`)
+ *   - `reiwa.platform.policy_invalidated` → POST bot `/invalidate-policy` { reason }, after dropping this process's policy and public-config copies and marking the hint; best-effort (see its case)
  *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
  *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
  *   - `reiwa.channel.broadcast.document` → POST bot `/notify-broadcast-document` { eventId, chatId, content, filename?, caption?, topicThreadId?, parseMode? }
@@ -358,6 +359,9 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
     try {
       switch (event) {
         case "reiwa.bot.invalidate": {
+          // Marked before the bot is dialled: a press it answers meanwhile, or
+          // after a relay that fails, is answered from the save.
+          markHinted(req, [CONFIG_VERSION_KEYS.botConfig]);
           await relayToBot("/invalidate", {
             reason: str(meta["reason"]) ?? "admin-webhook",
           });
@@ -528,6 +532,14 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             CONFIG_VERSION_KEYS.platformPolicy,
             CONFIG_VERSION_KEYS.publicConfig,
             CONFIG_VERSION_KEYS.customEmojiPacks,
+          ]);
+          // The groups of this event the bot reads, for its next press — the
+          // rules screen asks for the documents it links to — whether or not
+          // the relay below reaches it.
+          markHinted(req, [
+            CONFIG_VERSION_KEYS.platformPolicy,
+            CONFIG_VERSION_KEYS.legalDocumentsRu,
+            CONFIG_VERSION_KEYS.legalDocumentsEn,
           ]);
           // The bot is a SEPARATE process (its own container) with its own
           // policy cache and the only legal-documents cache: nothing dropped
@@ -752,6 +764,24 @@ function reloadConfigGroups(req: Request, keys: readonly ConfigVersionKey[]): vo
       getRequestLogger(req).debug({ err, group: group.key }, "rezeis webhook: re-read after the reset failed");
     }
   }
+}
+
+/**
+ * Tell reiwa's key of latest versions (`config-versions/latest.ts`, hung on
+ * `app.locals` by `api/app.ts`) that the panel changed `keys` now. The bot
+ * compares the copy it holds with that key before it answers a press
+ * (`bot/middleware/config-freshness.ts`), so the save reaches the next press
+ * even when the relay to the bot fails. The hint carries no version — the time
+ * is what the bot compares, with the start of the read its copy came from, so
+ * a mark can cost it one read and never a loop.
+ *
+ * Fire-and-forget: the store logs its own failures and never rejects, and a
+ * Redis problem must not slow down or fail the panel's hint.
+ */
+function markHinted(req: Request, keys: readonly ConfigVersionKey[]): void {
+  const latest = req.app.locals["latestConfigVersions"] as LatestConfigVersionsPort | undefined;
+  if (latest === undefined) return;
+  void latest.recordHint(keys, Date.now());
 }
 
 /** Coerce an unknown value to a non-empty trimmed string, or undefined. */

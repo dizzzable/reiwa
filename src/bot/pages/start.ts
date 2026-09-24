@@ -25,6 +25,8 @@
  *     (via `renderViewWithBanner`) so a sub-screen's custom banner
  *     doesn't linger, and refreshing the caption + keyboard.
  *   • `menu` is answered by the same handler — see where both are registered.
+ *   • The render is `showMainMenu`, which a button the bot no longer knows
+ *     gets too, with the «Меню обновилось» toast (`pages/stale-button.ts`).
  */
 import { InlineKeyboard } from 'grammy';
 
@@ -42,7 +44,8 @@ import { QUEST_ID_RE, replyWithQuestChannelPrompt, type ChannelTarget } from './
 import { buildMainKeyboard, resolveSupportDeepLink, isTelegramSafeButtonUrl, attachSigninTokenToUrl, supportPrefill } from '../widgets/main-keyboard.js';
 import { pickScreenText, buildScreenKeyboard } from './screen-renderer.js';
 import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial-button.js';
-import type { Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
+import type { BotConfig, Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
+import { isUneditableMessageError } from './edit-message.js';
 
 import { parseDeeplink } from '../../core/types/deeplink.type.js';
 import { coerceLocale } from './coerce-locale.js';
@@ -822,89 +825,136 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
   });
 
   // ── menu:main callback — warm path, in-place edit ─────────────────────────
-  // Every sub-menu's "В меню" button funnels here. Render the welcome
-  // view *in place* on the existing message instead of sending a new
-  // one — STEALTHNET-style chrome.
-  const showMainMenu = async (ctx: BotContext): Promise<void> => {
-    // The welcome screen carries the user's fresh sign-in token: rendered only
-    // in their own chat with the bot, never on a message in a group.
-    if (!isOwnPrivateChat(ctx)) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    // Under RESTRICTED, every callback short-circuits to a "service
-    // unavailable" toast — no menu re-render, no Mini App URL.
-    if (deps.adminClient !== null) {
-      try {
-        const policy = await getPolicyCache(deps.adminClient).get();
-        if (policy.accessMode === 'RESTRICTED') {
-          const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
-          // Operator copy in an alert, which carries no entities: glyphs.
-          await ctx.answerCallbackQuery({
-            text: plainCopy(deps.translator.t('access_mode.restricted', lang), await copyConfig(TOAST_CONFIG_BUDGET_MS)),
-            show_alert: true,
-          });
-          return;
-        }
-      } catch {
-        /* fail open */
-      }
-    }
-    await ctx.answerCallbackQuery();
-    const botCfg = await deps.getConfig();
-    const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
-    const view = await buildWelcomeView(ctx, deps);
-    // Resolve the main screen's banner the SAME way /start does — operator's
-    // custom banner OR the bundled default banner — so returning to the menu
-    // restores it instead of dropping it (the reported "standard banner
-    // disappears after В меню" bug).
-    const welcomeBanner = await resolveWelcomeBanner(deps, botCfg, lang);
-    try {
-      // Restore the MAIN screen's banner (custom or bundled default) instead of
-      // a plain caption edit — otherwise a sub-screen's custom banner (e.g. the
-      // invite screen's) lingers, or the default banner is dropped, after "В
-      // меню". `renderViewWithBanner` swaps to the welcome banner, or deletes a
-      // stale photo only when the main screen genuinely has no banner.
-      await renderViewWithBanner(
-        ctx,
-        {
-          rezeisAdminUrl: deps.urls.rezeisAdminUrl,
-          logger: deps.logger
-            ? {
-                warn: (obj, msg): void => {
-                  deps.logger?.warn(obj as Record<string, unknown>, msg);
-                },
-              }
-            : undefined,
-        },
-        {
-          text: view.text,
-          entities: view.entities,
-          replyMarkup: view.keyboard,
-          bannerRef: welcomeBanner.bannerRef,
-          bannerSource: welcomeBanner.bannerSource,
-        },
-      );
-    } catch (err: unknown) {
-      // Telegram refuses edits when the new content is byte-identical
-      // to the old (`message is not modified`) — that's expected when
-      // the user double-taps "В меню". Any other failure deserves a
-      // log line; the user just sees their previous welcome screen
-      // unchanged.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('message is not modified')) {
-        deps.logger?.warn(
-          { err, telegramId: ctx.from?.id },
-          'menu:main edit failed',
-        );
-      }
-    }
-  };
-  bot.callbackQuery('menu:main', showMainMenu);
+  // Every sub-menu's "В меню" button funnels here (`showMainMenu`).
+  const backToMainMenu = (ctx: BotContext): Promise<void> => showMainMenu(ctx, deps);
+  bot.callbackQuery('menu:main', backToMainMenu);
   // `menu` is `menu:main` as an operator types it. The panel's notification
   // editor takes a button's callback data as free text, and «Карта бота» has
   // drawn `menu` as the way to the main menu since June — while nothing here
   // answered it, and such a button only spun. The same handler, not a copy:
   // the own-chat rule, the RESTRICTED alert and the banner restore included.
-  bot.callbackQuery('menu', showMainMenu);
+  bot.callbackQuery('menu', backToMainMenu);
 };
+
+/** How `showMainMenu` answers the press it draws the menu for. */
+export interface MainMenuPress {
+  /**
+   * A toast to answer the press with, by translator key — `menu.updated`,
+   * «Меню обновилось», for a button the bot no longer knows
+   * (`pages/stale-button.ts`). Without one the press is answered silently, as
+   * «В меню» always was.
+   */
+  readonly noticeKey?: string;
+}
+
+/**
+ * The main menu for a pressed button, drawn *in place* on the message the press
+ * came from — STEALTHNET-style chrome: «В меню» (`menu:main`, `menu`), and a
+ * button the bot no longer knows (`pages/stale-button.ts`,
+ * `pages/dynamic-screen.ts`), which is answered with the current menu rather
+ * than with an error.
+ *
+ *  - Only in the user's own chat with the bot: the welcome screen carries the
+ *    user's fresh sign-in token, never to be put on a message in a group. The
+ *    press is answered silently anywhere else.
+ *  - Under RESTRICTED the press gets the "service unavailable" alert and
+ *    nothing else — no menu, no Mini App URL, and no notice either.
+ *  - A message Telegram will not edit — gone, too old, a media message that
+ *    cannot become this screen — gets the menu as a new message instead
+ *    (`sendWelcomeScreen`, the `/start` render). It used to get nothing: the
+ *    press was answered, the failure logged, and the user saw no menu at all.
+ *
+ * The channel gate is not asked here: its middleware stands in front of every
+ * page (`middleware/channel-gate.ts`), and a press it stops never gets here.
+ */
+export async function showMainMenu(ctx: BotContext, deps: PageDeps, press: MainMenuPress = {}): Promise<void> {
+  if (!isOwnPrivateChat(ctx)) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+  // The config the toast and the alert are rendered with — their words only:
+  // a refresh against a hung panel must not hold the spinner, and every update
+  // queued behind it. Past the budget, the config the bot holds.
+  const toastConfig = (): Promise<BotConfig | null> => configWithin(deps, TOAST_CONFIG_BUDGET_MS);
+  // Under RESTRICTED, every callback short-circuits to a "service
+  // unavailable" toast — no menu re-render, no Mini App URL.
+  if (deps.adminClient !== null) {
+    try {
+      const policy = await getPolicyCache(deps.adminClient).get();
+      if (policy.accessMode === 'RESTRICTED') {
+        const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+        // Operator copy in an alert, which carries no entities: glyphs.
+        await ctx.answerCallbackQuery({
+          text: plainCopy(deps.translator.t('access_mode.restricted', lang), await toastConfig()),
+          show_alert: true,
+        });
+        return;
+      }
+    } catch {
+      /* fail open */
+    }
+  }
+  if (press.noticeKey !== undefined) {
+    const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+    // A toast carries no entities either: the operator's emoji as glyphs.
+    await ctx.answerCallbackQuery({ text: plainCopy(deps.translator.t(press.noticeKey, lang), await toastConfig()) });
+  } else {
+    await ctx.answerCallbackQuery();
+  }
+  const botCfg = await deps.getConfig();
+  const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+  const view = await buildWelcomeView(ctx, deps);
+  // Resolve the main screen's banner the SAME way /start does — operator's
+  // custom banner OR the bundled default banner — so returning to the menu
+  // restores it instead of dropping it (the reported "standard banner
+  // disappears after В меню" bug).
+  const welcomeBanner = await resolveWelcomeBanner(deps, botCfg, lang);
+  try {
+    // Restore the MAIN screen's banner (custom or bundled default) instead of
+    // a plain caption edit — otherwise a sub-screen's custom banner (e.g. the
+    // invite screen's) lingers, or the default banner is dropped, after "В
+    // меню". `renderViewWithBanner` swaps to the welcome banner, or deletes a
+    // stale photo only when the main screen genuinely has no banner.
+    await renderViewWithBanner(
+      ctx,
+      {
+        rezeisAdminUrl: deps.urls.rezeisAdminUrl,
+        logger: deps.logger
+          ? {
+              warn: (obj, msg): void => {
+                deps.logger?.warn(obj as Record<string, unknown>, msg);
+              },
+            }
+          : undefined,
+        throwUneditable: true,
+      },
+      {
+        text: view.text,
+        entities: view.entities,
+        replyMarkup: view.keyboard,
+        bannerRef: welcomeBanner.bannerRef,
+        bannerSource: welcomeBanner.bannerSource,
+      },
+    );
+  } catch (err: unknown) {
+    if (isUneditableMessageError(err)) {
+      // Not the menu's fault, and not the user's: that message cannot show it.
+      await sendWelcomeScreen(ctx, deps).catch((sendErr: unknown) => {
+        deps.logger?.warn({ err: sendErr, telegramId: ctx.from?.id }, 'menu:main: the menu could not be sent anew');
+      });
+      return;
+    }
+    // Telegram refuses edits when the new content is byte-identical
+    // to the old (`message is not modified`) — that's expected when
+    // the user double-taps "В меню". Any other failure deserves a
+    // log line; the user just sees their previous welcome screen
+    // unchanged.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes('message is not modified')) {
+      deps.logger?.warn(
+        { err, telegramId: ctx.from?.id },
+        'menu:main edit failed',
+      );
+    }
+  }
+}

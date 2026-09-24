@@ -23,7 +23,8 @@ import type { LocalePackHydrator } from '../../application/ports/translator.port
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import type { ConfigPersistencePort } from '../../application/ports/config-persistence.port.js';
 import { configVersionOf } from '../config-versions/config-version.js';
-import { firstAnswer } from '../config-versions/within-budget.js';
+import type { KnownPanelChange } from '../config-versions/latest.js';
+import { firstAnswer, settlesWithin } from '../config-versions/within-budget.js';
 
 import type { BotConfig } from './types.js';
 
@@ -87,6 +88,13 @@ export const FIRST_LOAD_BUDGET_MS = 1_000;
  */
 const FAILURE_HOLD_OFF_MS = 10_000;
 
+/**
+ * How long a version the key of latest versions keeps naming is not read for
+ * again, once a read made on its account has landed with another one
+ * (`catchUp`). The poll's own rule for the same case (`retryRefreshAfterMs`).
+ */
+const POLLED_RECHECK_MS = 5 * 60 * 1000;
+
 interface CacheEntry {
   readonly data: BotConfig;
   readonly fetchedAt: number;
@@ -96,6 +104,26 @@ interface CacheEntry {
    * what the panel served. The version poll compares it with the panel's.
    */
   readonly version: string;
+  /**
+   * When the read this entry came from began — the panel's config at that
+   * moment or later is what it holds. `-Infinity` for the saved copy: nobody
+   * knows how old it is. A change reiwa heard of after it is one the entry may
+   * not have (`catchUp`).
+   */
+  readonly readStartedAt: number;
+}
+
+/** A read of the panel, whoever began it, as `catchUp` waits on it. */
+interface ReadAttempt {
+  readonly startedAt: number;
+  readonly done: Promise<unknown>;
+  settled: boolean;
+  /**
+   * A press already waited its whole budget on this read. The presses after it,
+   * while the read is still out, do not wait on it again: one wait per hung
+   * read, not one per update queued behind it.
+   */
+  waitedOut: boolean;
 }
 
 /**
@@ -108,9 +136,10 @@ interface Fetched {
   readonly answered: boolean;
 }
 
-/** The fetch in flight, and the generation it was begun in. */
+/** The fetch in flight, the generation it was begun in, and when. */
 interface InFlightFetch {
   readonly generation: number;
+  readonly startedAt: number;
   readonly promise: Promise<Fetched>;
 }
 
@@ -159,6 +188,24 @@ export class BotConfigCache {
    * instead of each waiting a budget of their own on the same hung panel.
    */
   private budgetSpent: number | null = null;
+  /** The newest read of the panel begun, whoever began it (`catchUp`). */
+  private lastAttempt: ReadAttempt | null = null;
+  /**
+   * When `forceInvalidate()` last said the panel has something newer than the
+   * entry — an operator's save, a version the poll found. What `catchUp` knows
+   * without asking anybody.
+   */
+  private supersededAt = Number.NEGATIVE_INFINITY;
+  /**
+   * The polled version a read was last begun for (`catchUp`), and when. Once a
+   * read begun then has landed and the entry is still another version — the
+   * panel moved on, or reiwa and the panel disagree about this payload — that
+   * version is not read for again for POLLED_RECHECK_MS: every poll rewrites
+   * it with a newer time.
+   */
+  private polledCheck: { readonly version: string; readonly startedAt: number } | null = null;
+  /** The change `catchUp` last began a read for: one read per change, whatever the clocks say. */
+  private caughtUpFor: number | null = null;
 
   constructor(options: BotConfigCacheOptions) {
     this.fetcher = options.fetcher;
@@ -227,6 +274,81 @@ export class BotConfigCache {
     return this.entry?.version ?? null;
   }
 
+  /**
+   * Bring the entry up to a change reiwa already knows of, waiting for it at
+   * most `budgetMs` — the per-press refresh (`bot/middleware/config-freshness.ts`).
+   * Never rejects, never asks the panel for a change it has asked about once.
+   *
+   * `known` is what reiwa's Redis holds for the bot config
+   * (`config-versions/latest.ts`): the version the last poll heard the panel
+   * have, and when; when the panel's webhook last said it changed. Besides it,
+   * this cache knows a `forceInvalidate()` of its own.
+   *
+   * The entry is behind when one of them is newer than the read it came from
+   * began (`readStartedAt`) — a poll's version only when it is not the entry's.
+   * Then:
+   *  - a read begun since the change is waited for, if still out: the relay's
+   *    re-read of an operator's save, the refresh behind a stale entry;
+   *  - with none, one is begun — in a generation of its own, so a read begun
+   *    before the change, which may carry the config from before it, is not
+   *    joined and does not land in the entry. Announced like any answered read:
+   *    the Telegram sync hears it (`onAnswered`).
+   * One read per change at most: a change older than the newest read begun is
+   * never asked about again, answered or not — a panel that is down is not asked
+   * once per press. And one wait per read: once a press has waited its whole
+   * budget on it, the presses after it answer from the entry at once.
+   *
+   * Nothing held: nothing to bring up to date — the page's own `get()` reads.
+   */
+  async catchUp(known: KnownPanelChange, budgetMs: number): Promise<void> {
+    const entry = this.entry;
+    if (entry === null) return;
+    const since = this.behindSince(entry, known);
+    if (since === null) return;
+    let attempt = this.lastAttempt;
+    // `caughtUpFor`: a change stamped ahead of this clock — which a
+    // clock that disagrees would give — stays newer than every read begun, so
+    // it would otherwise be read for on every press.
+    if ((attempt === null || attempt.startedAt < since) && since !== this.caughtUpFor) {
+      this.caughtUpFor = since;
+      this.generation += 1;
+      if (known.polled !== undefined && known.polled.version !== entry.version) {
+        this.polledCheck = { version: known.polled.version, startedAt: Date.now() };
+      }
+      void this.fetchOnce();
+      attempt = this.lastAttempt;
+    }
+    if (attempt === null || attempt.settled || attempt.waitedOut || budgetMs <= 0) return;
+    if (!(await settlesWithin(attempt.done, budgetMs))) attempt.waitedOut = true;
+  }
+
+  /** The newest known change the entry may not have, or `null` when it has them all. */
+  private behindSince(entry: CacheEntry, known: KnownPanelChange): number | null {
+    let since: number | null = null;
+    const newer = (at: number | undefined): void => {
+      if (at === undefined || !(at > entry.readStartedAt)) return;
+      if (since === null || at > since) since = at;
+    };
+    newer(this.supersededAt);
+    newer(known.hintedAt);
+    const polled = known.polled;
+    if (polled !== undefined && polled.version !== entry.version && !this.polledChecked(polled.version, entry)) {
+      newer(polled.at);
+    }
+    return since;
+  }
+
+  /** A read begun on account of this polled version has landed, and recently (`polledCheck`). */
+  private polledChecked(version: string, entry: CacheEntry): boolean {
+    const check = this.polledCheck;
+    return (
+      check !== null &&
+      check.version === version &&
+      entry.readStartedAt >= check.startedAt &&
+      Date.now() - check.startedAt < POLLED_RECHECK_MS
+    );
+  }
+
   private holdingOff(): boolean {
     const holdOff = this.holdOff;
     return holdOff !== null && holdOff.generation === this.generation && Date.now() < holdOff.until;
@@ -265,24 +387,41 @@ export class BotConfigCache {
   private fetchOnce(announce = true): Promise<Fetched> {
     const inFlight = this.inFlight;
     if (inFlight !== null && inFlight.generation === this.generation) return inFlight.promise;
+    const readStartedAt = Date.now();
     const slot: InFlightFetch = {
       generation: this.generation,
-      promise: this.fetchFresh(this.generation, announce).finally(() => {
+      startedAt: readStartedAt,
+      promise: this.fetchFresh(this.generation, announce, readStartedAt).finally(() => {
         if (this.inFlight === slot) this.inFlight = null;
       }),
     };
     this.inFlight = slot;
+    const attempt: ReadAttempt = { startedAt: readStartedAt, done: slot.promise, settled: false, waitedOut: false };
+    // `fetchFresh` never rejects; the second callback is for form's sake.
+    void slot.promise.then(
+      () => {
+        attempt.settled = true;
+      },
+      () => {
+        attempt.settled = true;
+      },
+    );
+    this.lastAttempt = attempt;
     return slot.promise;
   }
 
-  /** `announce`: tell `onAnswered` when the panel answers — every read but `forceInvalidate`'s own. */
-  private async fetchFresh(startedAt: number, announce: boolean): Promise<Fetched> {
+  /**
+   * `announce`: tell `onAnswered` when the panel answers — every read but
+   * `forceInvalidate`'s own. `readStartedAt`: when this read began, the entry's
+   * `readStartedAt` if it lands.
+   */
+  private async fetchFresh(startedAt: number, announce: boolean, readStartedAt: number): Promise<Fetched> {
     try {
       const raw = (await this.fetcher()) as RawBotConfig;
       // Superseded while in flight: the caller still gets what it read, but
       // the cache, translator and snapshot belong to the newer fetch.
       if (startedAt !== this.generation) return { config: raw, answered: true };
-      this.entry = { data: raw, fetchedAt: Date.now(), version: configVersionOf(raw) };
+      this.entry = { data: raw, fetchedAt: Date.now(), version: configVersionOf(raw), readStartedAt };
       // Hydrate translator overrides from the operator-managed
       // `translations` map. Best-effort — a malformed payload
       // shouldn't block the cache.
@@ -363,6 +502,7 @@ export class BotConfigCache {
           data: persisted,
           fetchedAt: Number.NEGATIVE_INFINITY,
           version: configVersionOf(persisted),
+          readStartedAt: Number.NEGATIVE_INFINITY,
         };
         try {
           this.hydrator.setOverrides((persisted as RawBotConfig).translations);
@@ -410,7 +550,7 @@ export class BotConfigCache {
       ...current,
       visual: { ...current.visual, bannerFileId: fileId },
     };
-    this.entry = { data: next, fetchedAt: held.fetchedAt, version: held.version };
+    this.entry = { ...held, data: next };
     void this.persistence?.save(next).catch((err: unknown) => {
       this.logger?.warn(
         { err },
@@ -448,7 +588,7 @@ export class BotConfigCache {
     const nextScreens = screens.slice();
     nextScreens[idx] = { ...screen, mediaFileId: fileId };
     const next: BotConfig = { ...current, screens: nextScreens };
-    this.entry = { data: next, fetchedAt: held.fetchedAt, version: held.version };
+    this.entry = { ...held, data: next };
     void this.persistence?.save(next).catch((err: unknown) => {
       this.logger?.warn(
         { err },
@@ -490,6 +630,10 @@ export class BotConfigCache {
     if (this.entry !== null) {
       this.entry = { ...this.entry, fetchedAt: Number.NEGATIVE_INFINITY };
     }
+    // What a press asks before it is answered (`catchUp`): the entry is behind
+    // the panel from now, so a press waits — its budget at most — for the read
+    // below instead of being answered from the entry it replaces.
+    this.supersededAt = Date.now();
     // The bump also ends a hold-off (see `holdOff`): the save is read at once,
     // whatever failed a moment ago.
     this.generation += 1;

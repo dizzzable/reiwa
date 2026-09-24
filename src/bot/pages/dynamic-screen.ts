@@ -12,15 +12,15 @@
  *   2. Look up the screen in `BotConfig.screens` by shortId. A screen named
  *      help / rules / invite goes to its built-in handler (`BUILT_IN_SCREENS`).
  *   3. Render the screen's text + inline keyboard via `editOrReply`.
- *   4. On miss (operator deleted the screen between cache refresh and
- *      callback delivery, or screensVersion changed), reply with a
- *      "screen not found" message + back-to-menu button so the user
- *      doesn't get stuck.
+ *   4. On miss — a `screen:<shortId>` button on an old message, onto a screen
+ *      the operator has since deleted or the published flow no longer has —
+ *      the current main menu in place of that message, with the «Меню
+ *      обновилось» toast (`answerStaleButton`; owner's decision, 24.09.2026). It
+ *      used to say «экран не найден» there, with a way back to the menu. A bare
+ *      shortId that names no screen goes on to the stale-button page, which
+ *      answers the same.
  */
-import { InlineKeyboard } from 'grammy';
-
 import { coerceLocale } from './coerce-locale.js';
-import { editOrReply } from './edit-message.js';
 import { renderBotCopy, renderBotCopyHtml, renderSystemButton } from '../../infrastructure/bot-config/emoji-utils.js';
 import { configWithin } from '../lib/config-within.js';
 import {
@@ -30,11 +30,11 @@ import {
 } from './screen-renderer.js';
 import { renderScreenOrEdit } from './screen-banner.js';
 import { resolveConfiguredSupportUrl, supportPrefill } from '../widgets/main-keyboard.js';
-import { messageCopy } from '../widgets/operator-copy.js';
 import { showHelpScreen } from './help-callback.js';
 import { showInviteScreen } from './invite.js';
 import { showRulesScreen } from './rules.js';
-import type { BotConfig } from '../../infrastructure/bot-config/types.js';
+import { answerStaleButton } from './stale-button.js';
+import type { BotConfig, BotScreen } from '../../infrastructure/bot-config/types.js';
 import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 
 const SCREEN_PREFIX = 'screen:';
@@ -74,35 +74,15 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
   const { translator, userLocale, getConfig, urls, logger } = deps;
 
   /**
-   * The operator's screen `shortId` on the pressed message — or, when `config`
-   * has no such screen, `screen.not_found` and a way back. Both callers below
-   * answer the callback query first, once; nothing in here answers it.
+   * The operator's screen, found in `config`, on the pressed message. Both
+   * callers below answer the callback query first, once; nothing in here
+   * answers it.
    */
-  const openScreen = async (ctx: BotContext, shortId: string, config: BotConfig): Promise<void> => {
+  const openScreen = async (ctx: BotContext, screen: BotScreen, config: BotConfig): Promise<void> => {
     const lang = coerceLocale(userLocale.getSync(ctx.from?.id ?? 0));
     const backLabel = translator.t('back_to_menu', lang);
-
-    const screen = findScreenByShortId(config.screens, shortId);
     const backButton = renderSystemButton(backLabel, 'back', config);
-
-    if (screen === null) {
-      logger?.warn(
-        { shortId, screensCount: config.screens?.length ?? 0 },
-        'dynamic-screen: shortId not found in config',
-      );
-      const kb = new InlineKeyboard();
-      if (backButton.iconCustomEmojiId !== undefined) {
-        kb.text({ text: backButton.text, icon_custom_emoji_id: backButton.iconCustomEmojiId }, 'menu:main');
-      } else {
-        kb.text(backButton.text, 'menu:main');
-      }
-      // Operator copy, like the screens themselves: its emoji tokens resolved.
-      await editOrReply(ctx, {
-        ...messageCopy(translator.t('screen.not_found', lang), config),
-        replyMarkup: kb,
-      });
-      return;
-    }
+    const shortId = screen.shortId;
 
     // A built-in screen reached by its shortId is still that screen: its own
     // handler fills its placeholders in and adds its system buttons, which a
@@ -183,9 +163,22 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
   };
 
   bot.callbackQuery(new RegExp(`^${SCREEN_PREFIX}.+$`), async (ctx) => {
+    const shortId = (ctx.callbackQuery?.data ?? '').slice(SCREEN_PREFIX.length);
+    const config = await getConfig();
+    const screen = findScreenByShortId(config.screens, shortId);
+    if (screen === null) {
+      // The operator deleted the screen, or the published flow no longer has
+      // it: a button on an old message. The current menu in its place, with
+      // «Меню обновилось» — not an error (owner's decision, 24.09.2026).
+      logger?.info(
+        { shortId, screensCount: config.screens?.length ?? 0 },
+        'dynamic-screen: a button onto a screen the flow no longer has; showing the current menu',
+      );
+      await answerStaleButton(ctx, deps);
+      return;
+    }
     await ctx.answerCallbackQuery();
-    const data = ctx.callbackQuery?.data ?? '';
-    await openScreen(ctx, data.slice(SCREEN_PREFIX.length), await getConfig());
+    await openScreen(ctx, screen, config);
   });
 
   // A bare shortId — the whole callback data, no `screen:` — is that screen
@@ -193,21 +186,22 @@ export const registerDynamicScreenPage: PageRegistrar = (bot, deps) => {
   // text, and «Карта бота» has drawn a bare shortId as a way to its screen
   // since June, while nothing here answered one and such a button only spun.
   //
-  // It sees only data NOTHING else claims: this page is registered last
-  // (`main.ts`), and a handler above that matches the data ends the chain. So a
-  // screen whose shortId is spelled like a known callback — `help`, `menu` —
-  // cannot take that callback over. Data that names no screen is passed on
-  // unanswered, exactly as before this handler existed.
+  // It sees only data NOTHING else claims: this page is registered after every
+  // other page but the stale-button one (`main.ts`), and a handler above that
+  // matches the data ends the chain. So a screen whose shortId is spelled like a
+  // known callback — `help`, `menu` — cannot take that callback over. Data that
+  // names no screen is passed on, to the stale-button answer
+  // (`pages/stale-button.ts`).
   //
   // The config at hand decides, within SHORT_ID_LOOKUP_BUDGET_MS — past it, the
   // config the bot holds: a stale one tells a shortId as well as a fresh one,
   // and with none at all the data is passed on. The screen is opened from the
   // config it was found in.
   bot.on('callback_query:data', async (ctx, next) => {
-    const shortId = ctx.callbackQuery.data;
     const config = await configWithin(deps, SHORT_ID_LOOKUP_BUDGET_MS);
-    if (config === null || findScreenByShortId(config.screens, shortId) === null) return next();
+    const screen = config === null ? null : findScreenByShortId(config.screens, ctx.callbackQuery.data);
+    if (config === null || screen === null) return next();
     await ctx.answerCallbackQuery();
-    await openScreen(ctx, shortId, config);
+    await openScreen(ctx, screen, config);
   });
 };

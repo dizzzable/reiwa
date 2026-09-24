@@ -23,13 +23,29 @@
  * locale the cache holds is answered at once, whatever its age — past the TTL
  * or after an operator's edit, a refresh runs behind it (stale-while-
  * revalidate). Only a locale never read yet waits, and only `waitBudgetMs`.
+ * The press itself may wait a moment longer for a change reiwa has already
+ * heard of — `catchUp`, which the bot's freshness middleware calls before the
+ * rules screen, within the press's budget.
  *
- * Failure returns an EMPTY list, which the caller reads as "no documents" and
- * falls back to the legacy rules link. That is the safe direction here: the
- * consequence is an older link, not a missing screen.
+ * With a last-known-good store (the bot's, `configureLegalDocumentsCache`), the
+ * last documents the panel answered per language are kept in reiwa's Redis
+ * too, so a bot restarted while the panel is down still links «Правила» to the
+ * cabinet's `/legal` page instead of the legacy rules link (CD1 report §5.5).
+ *
+ * Failure with nothing held and nothing saved returns an EMPTY list, which the
+ * caller reads as "no documents" and falls back to the legacy rules link. That
+ * is the safe direction here: the consequence is an older link, not a missing
+ * screen.
  */
+import type { LoggerPort } from '../../application/ports/logger.port.js';
 import { configVersionOf } from '../config-versions/config-version.js';
-import { firstAnswer } from '../config-versions/within-budget.js';
+import {
+  NOOP_LAST_KNOWN_GOOD,
+  legalDocumentsLastKnownGood,
+  type LastKnownGoodStorePort,
+} from '../config-versions/last-known-good.js';
+import type { KnownPanelChange } from '../config-versions/latest.js';
+import { firstAnswer, settlesWithin } from '../config-versions/within-budget.js';
 import type { AdminClient } from './admin-client.js';
 import type { LegalDocument } from './namespaces/legal-documents.js';
 
@@ -42,6 +58,13 @@ const CACHE_TTL_MS = 60_000;
  */
 export const LEGAL_DOCUMENTS_WAIT_BUDGET_MS = 1_000;
 
+/**
+ * How long a version the key of latest versions keeps naming is not read for
+ * again, once a read made on its account has landed with another one
+ * (`catchUp`; `BotConfigCache` has the same rule).
+ */
+const POLLED_RECHECK_MS = 5 * 60 * 1000;
+
 interface Entry {
   readonly documents: readonly LegalDocument[];
   readonly fetchedAt: number;
@@ -49,6 +72,35 @@ interface Entry {
   readonly version: string;
   /** Kept across `invalidate()`: served while the edit is read. */
   readonly superseded: boolean;
+  /**
+   * When the read these documents came from began; `-Infinity` for the saved
+   * copy. A change reiwa heard of after it is one they may not have (`catchUp`).
+   */
+  readonly readStartedAt: number;
+}
+
+/** A read of one locale, whoever began it, as `catchUp` waits on it. */
+interface ReadAttempt {
+  readonly startedAt: number;
+  readonly done: Promise<unknown>;
+  settled: boolean;
+  /** A press already waited its whole budget on it: the next ones do not. */
+  waitedOut: boolean;
+}
+
+export interface LegalDocumentsCacheOptions {
+  /**
+   * Where the last documents the panel answered, per language, survive a
+   * restart. The bot's store (`bot/main.ts`); absent, they live in memory only.
+   */
+  readonly lastKnownGood?: LastKnownGoodStorePort;
+  readonly logger?: LoggerPort;
+}
+
+/** The saved copy of one language, as the store gave it. */
+interface SavedDocuments {
+  readonly documents: readonly LegalDocument[];
+  readonly version: string;
 }
 
 export class LegalDocumentsCache {
@@ -63,12 +115,30 @@ export class LegalDocumentsCache {
   private generation = 0;
   /** Per locale: the generation whose cold read already waited out its budget. */
   private readonly budgetSpent = new Map<string, number>();
+  /** Per locale: the newest read begun, whoever began it (`catchUp`). */
+  private readonly lastAttempt = new Map<string, ReadAttempt>();
+  /** When `invalidate()` last said the panel has newer documents — what `catchUp` knows by itself. */
+  private supersededAt = Number.NEGATIVE_INFINITY;
+  /** Per locale: the polled version a read was last begun for, and when (`catchUp`). */
+  private readonly polledCheck = new Map<string, { readonly version: string; readonly startedAt: number }>();
+  /** Per locale: the change `catchUp` last began a read for. */
+  private readonly caughtUpFor = new Map<string, number>();
+  /** Per locale: the saved copy's read — once per process, nothing else writes it while the bot runs. */
+  private readonly saved = new Map<string, Promise<SavedDocuments | null>>();
+  /** Per locale: the version the store holds, as far as this process knows — a copy is written only when it moves. */
+  private readonly storedVersion = new Map<string, string>();
+  private readonly lastKnownGood: LastKnownGoodStorePort;
+  private readonly logger: LoggerPort | undefined;
 
   public constructor(
     private readonly fetchFn: (locale: string) => Promise<readonly LegalDocument[]>,
     private readonly ttlMs: number = CACHE_TTL_MS,
     private readonly waitBudgetMs: number = LEGAL_DOCUMENTS_WAIT_BUDGET_MS,
-  ) {}
+    options: LegalDocumentsCacheOptions = {},
+  ) {
+    this.lastKnownGood = options.lastKnownGood ?? NOOP_LAST_KNOWN_GOOD;
+    this.logger = options.logger;
+  }
 
   public async get(locale: string): Promise<readonly LegalDocument[]> {
     const cached = this.values.get(locale);
@@ -79,11 +149,13 @@ export class LegalDocumentsCache {
     }
     const startedAt = this.generation;
     const pending = this.inFlight.get(locale) ?? this.startRefresh(locale);
-    if (this.budgetSpent.get(locale) === startedAt) return [];
-    const first = await firstAnswer({ fetched: pending, budgetMs: this.waitBudgetMs });
+    if (this.budgetSpent.get(locale) === startedAt) return this.values.get(locale)?.documents ?? [];
+    // The saved copy as soon as Redis gives it; the panel within the budget
+    // when there is none.
+    const first = await firstAnswer({ fetched: pending, saved: this.savedCopy(locale), budgetMs: this.waitBudgetMs });
     if (first !== null) return first;
     if (startedAt === this.generation) this.budgetSpent.set(locale, startedAt);
-    return [];
+    return this.values.get(locale)?.documents ?? [];
   }
 
   /**
@@ -98,6 +170,7 @@ export class LegalDocumentsCache {
     // The fetches in flight too: a tap joining one would get the old documents.
     this.inFlight.clear();
     this.generation += 1;
+    this.supersededAt = Date.now();
   }
 
   /** Re-read every locale held now, in the background — the version poll's reload. */
@@ -112,27 +185,93 @@ export class LegalDocumentsCache {
     return this.values.get(locale)?.version ?? null;
   }
 
+  /**
+   * Bring the documents held for `locale` up to a change reiwa already knows
+   * of, waiting at most `budgetMs` — asked before the rules screen is rendered
+   * (`bot/middleware/config-freshness.ts`). The rules of `BotConfigCache.catchUp`:
+   * behind when a hint, a differing polled version or an `invalidate()` is newer
+   * than the read the documents came from began; then the read begun since is
+   * waited for, or one is begun — not joining a read from before the change,
+   * whose answer is then not kept; one read per change, one wait per read.
+   * Never rejects. Nothing held for the locale: nothing to do — the screen's own
+   * `get()` reads.
+   */
+  public async catchUp(locale: string, known: KnownPanelChange, budgetMs: number): Promise<void> {
+    const entry = this.values.get(locale);
+    if (entry === undefined) return;
+    const since = this.behindSince(locale, entry, known);
+    if (since === null) return;
+    let attempt = this.lastAttempt.get(locale);
+    // One read per change even when the change is stamped ahead of this clock.
+    if ((attempt === undefined || attempt.startedAt < since) && since !== this.caughtUpFor.get(locale)) {
+      this.caughtUpFor.set(locale, since);
+      // A read begun before the change may carry the documents from before it.
+      this.inFlight.delete(locale);
+      this.generation += 1;
+      if (known.polled !== undefined && known.polled.version !== entry.version) {
+        this.polledCheck.set(locale, { version: known.polled.version, startedAt: Date.now() });
+      }
+      void this.startRefresh(locale);
+      attempt = this.lastAttempt.get(locale);
+    }
+    if (attempt === undefined || attempt.settled || attempt.waitedOut || budgetMs <= 0) return;
+    if (!(await settlesWithin(attempt.done, budgetMs))) attempt.waitedOut = true;
+  }
+
+  /** The newest known change the held documents may not have, or `null`. */
+  private behindSince(locale: string, entry: Entry, known: KnownPanelChange): number | null {
+    let since: number | null = null;
+    const newer = (at: number | undefined): void => {
+      if (at === undefined || !(at > entry.readStartedAt)) return;
+      if (since === null || at > since) since = at;
+    };
+    newer(this.supersededAt);
+    newer(known.hintedAt);
+    const polled = known.polled;
+    if (polled !== undefined && polled.version !== entry.version && !this.polledChecked(locale, polled.version, entry)) {
+      newer(polled.at);
+    }
+    return since;
+  }
+
+  private polledChecked(locale: string, version: string, entry: Entry): boolean {
+    const check = this.polledCheck.get(locale);
+    return (
+      check !== undefined &&
+      check.version === version &&
+      entry.readStartedAt >= check.startedAt &&
+      Date.now() - check.startedAt < POLLED_RECHECK_MS
+    );
+  }
+
   /** Starts one fetch for `locale` and holds its slot until it settles. Never rejects. */
   private startRefresh(locale: string): Promise<readonly LegalDocument[]> {
-    const refresh = this.refresh(locale, this.generation);
+    const readStartedAt = Date.now();
+    const refresh = this.refresh(locale, this.generation, readStartedAt);
     this.inFlight.set(locale, refresh);
+    const attempt: ReadAttempt = { startedAt: readStartedAt, done: refresh, settled: false, waitedOut: false };
+    this.lastAttempt.set(locale, attempt);
     void refresh.finally(() => {
+      attempt.settled = true;
       // After an invalidate the slot may already hold a newer fetch.
       if (this.inFlight.get(locale) === refresh) this.inFlight.delete(locale);
     });
     return refresh;
   }
 
-  private async refresh(locale: string, startedAt: number): Promise<readonly LegalDocument[]> {
+  private async refresh(locale: string, startedAt: number, readStartedAt: number): Promise<readonly LegalDocument[]> {
     try {
       const fresh = await this.fetchFn(locale);
       if (startedAt === this.generation) {
+        const version = configVersionOf(fresh);
         this.values.set(locale, {
           documents: fresh,
           fetchedAt: Date.now(),
-          version: configVersionOf(fresh),
+          version,
           superseded: false,
+          readStartedAt,
         });
+        this.keep(locale, fresh, version);
       }
       return fresh;
     } catch {
@@ -146,16 +285,80 @@ export class LegalDocumentsCache {
         }
         return stale.documents;
       }
-      return [];
+      // Nothing held — a restart during an outage: the documents saved before it.
+      return (await this.savedCopy(locale)) ?? [];
     }
+  }
+
+  /**
+   * The documents saved for `locale`, or `null`. Read from the store once per
+   * process, and held — like documents gone stale, refreshed on the next tap —
+   * only while nothing else is, and not by a read an invalidation overtook.
+   */
+  private savedCopy(locale: string): Promise<readonly LegalDocument[] | null> {
+    let copy = this.saved.get(locale);
+    if (copy === undefined) {
+      copy = this.lastKnownGood
+        .load(legalDocumentsLastKnownGood(locale))
+        .then((record) =>
+          record === null
+            ? null
+            : { documents: record.payload as unknown as readonly LegalDocument[], version: record.hash },
+        );
+      this.saved.set(locale, copy);
+    }
+    const startedAt = this.generation;
+    return copy.then((record) => {
+      if (record === null) return null;
+      // What the store holds, unless this process has written since.
+      if (!this.storedVersion.has(locale)) this.storedVersion.set(locale, record.version);
+      if (startedAt === this.generation && !this.values.has(locale)) {
+        this.values.set(locale, {
+          documents: record.documents,
+          fetchedAt: Number.NEGATIVE_INFINITY,
+          version: record.version,
+          superseded: false,
+          readStartedAt: Number.NEGATIVE_INFINITY,
+        });
+        this.logger?.info({ locale }, 'LegalDocumentsCache: serving the documents saved before this start');
+      }
+      return record.documents;
+    });
+  }
+
+  /** Save what the panel answered, when it is not what the store already holds. Fire-and-forget. */
+  private keep(locale: string, documents: readonly LegalDocument[], version: string): void {
+    if (this.storedVersion.get(locale) === version) return;
+    this.storedVersion.set(locale, version);
+    void this.lastKnownGood.save(
+      legalDocumentsLastKnownGood(locale),
+      documents as unknown as unknown[],
+      version,
+    );
   }
 }
 
 let cache: LegalDocumentsCache | null = null;
+let configured: LegalDocumentsCacheOptions = {};
+
+/**
+ * Where the process-wide cache keeps its saved copies, and what it logs
+ * through. `bot/main.ts` calls it before the first read; a cache built before
+ * the call keeps what it was built with. The API process never builds this
+ * cache (its legal-documents route reads the panel live) and does not call it.
+ */
+export function configureLegalDocumentsCache(options: LegalDocumentsCacheOptions): void {
+  configured = options;
+}
 
 /** Process-wide cache bound to the given client on first use. */
 export function getLegalDocumentsCache(adminClient: AdminClient): LegalDocumentsCache {
-  cache ??= new LegalDocumentsCache((locale) => adminClient.legalDocuments.list(locale));
+  cache ??= new LegalDocumentsCache(
+    (locale) => adminClient.legalDocuments.list(locale),
+    CACHE_TTL_MS,
+    LEGAL_DOCUMENTS_WAIT_BUDGET_MS,
+    configured,
+  );
   return cache;
 }
 

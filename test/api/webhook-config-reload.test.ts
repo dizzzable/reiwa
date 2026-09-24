@@ -122,6 +122,96 @@ describe('the settings webhook re-reads what it drops', () => {
   });
 });
 
+/**
+ * The hint the bot's next press is answered by: the webhook marks the groups
+ * the bot reads in reiwa's key of latest versions (`config-versions/latest.ts`)
+ * before it dials the bot, so the save reaches the next press even when the
+ * relay does not reach the bot (`bot/middleware/config-freshness.ts`).
+ */
+describe('the settings webhook tells the bot’s next press', () => {
+  beforeEach(resetAll);
+  afterEach(() => {
+    resetAll();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  function withLatest() {
+    const { app } = buildApp();
+    const order: string[] = [];
+    const hints: Array<{ groups: readonly ConfigVersionKey[]; at: number }> = [];
+    app.locals['latestConfigVersions'] = {
+      recordPoll: vi.fn(async () => undefined),
+      recordHint: vi.fn(async (groups: readonly ConfigVersionKey[], at: number) => {
+        order.push('hint');
+        hints.push({ groups, at });
+      }),
+      read: vi.fn(async () => null),
+    };
+    return { app, order, hints };
+  }
+
+  it('an operator’s bot save: the bot config, marked before the bot is dialled', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const { app, order, hints } = withLatest();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      order.push('relay');
+      return new Response(null, { status: 204 });
+    });
+
+    expect(await hint(app, 'reiwa.bot.invalidate')).toBe(204);
+
+    expect(hints).toEqual([{ groups: ['botConfig'], at: 1_800_000_000_000 }]);
+    expect(order).toEqual(['hint', 'relay']);
+  });
+
+  it('a policy or legal-document save: the groups of it the bot reads', async () => {
+    const { app, hints } = withLatest();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    expect(await hint(app, 'reiwa.platform.policy_invalidated')).toBe(204);
+
+    expect(hints.map((h) => h.groups)).toEqual([['platformPolicy', 'legalDocuments.ru', 'legalDocuments.en']]);
+  });
+
+  it('marked even when the relay to the bot fails — that is when the bot needs it', async () => {
+    const { app, hints } = withLatest();
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
+
+    expect(await hint(app, 'reiwa.bot.invalidate')).toBe(502);
+    expect(await hint(app, 'reiwa.platform.policy_invalidated')).toBe(204);
+
+    expect(hints.map((h) => h.groups)).toEqual([
+      ['botConfig'],
+      ['platformPolicy', 'legalDocuments.ru', 'legalDocuments.en'],
+    ]);
+  });
+
+  it.each(['reiwa.branding.invalidate', 'reiwa.landing.invalidate', 'reiwa.connect-page.invalidate'])(
+    '%s: nothing the bot reads, nothing marked',
+    async (event) => {
+      const { app, hints } = withLatest();
+      expect(await hint(app, event)).toBe(204);
+      expect(hints).toEqual([]);
+    },
+  );
+
+  it('an app built without the key answers the hint as before', async () => {
+    const { app } = buildApp();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    expect(await hint(app, 'reiwa.bot.invalidate')).toBe(204);
+  });
+
+  it('an unsigned call marks nothing', async () => {
+    const { app, hints } = withLatest();
+    const body = { event: 'reiwa.bot.invalidate', metadata: {} };
+    const res = await sendSocketless(app, { method: 'POST', url: '/api/v1/webhooks/rezeis', body });
+    expect(res.status).toBe(401);
+    expect(hints).toEqual([]);
+  });
+});
+
 describe('the on-disk logo mirror across a branding save (W8 report D7)', () => {
   const previous = process.env['BRANDING_CACHE_DIR'];
   const dir = mkdtempSync(join(tmpdir(), 'reiwa-branding-mirror-'));

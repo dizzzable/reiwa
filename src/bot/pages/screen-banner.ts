@@ -34,7 +34,7 @@ import type {
   TgEntity,
 } from '../../infrastructure/bot-config/types.js';
 import { resolveBannerSource, type BannerPhotoSource } from './banner-resolver.js';
-import { editOrReply } from './edit-message.js';
+import { editOrReply, isUneditableMessageError } from './edit-message.js';
 import type { PageDeps } from './types.js';
 
 const TELEGRAM_CAPTION_MAX = 1024;
@@ -49,6 +49,13 @@ export interface ScreenBannerDeps {
    * would fail while the admin host is down). No-op in tests / when omitted.
    */
   readonly rememberScreenBannerFileId?: (shortId: string, mediaUrl: string, fileId: string) => void;
+  /**
+   * Throw, rather than log, when Telegram will not swap THIS photo message
+   * (`isUneditableMessageError`: gone, no longer editable) — for a caller that
+   * sends the screen as a new message instead (`showMainMenu`). Every other
+   * caller keeps the logged, silent failure.
+   */
+  readonly throwUneditable?: boolean;
 }
 
 /**
@@ -236,6 +243,8 @@ export async function renderScreenWithBanner(
         } catch (retryErr: unknown) {
           deps.logger?.warn({ err: retryErr, bannerRef }, 'screen-banner: editMessageMedia retry failed');
         }
+      } else if (deps.throwUneditable === true && isUneditableMessageError(err)) {
+        throw err;
       } else if (!msg.includes('message is not modified')) {
         deps.logger?.warn({ err, bannerRef }, 'screen-banner: editMessageMedia failed');
       }
