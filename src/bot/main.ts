@@ -26,7 +26,6 @@ import { RedisConfigPersistence } from '../infrastructure/bot-config/redis-confi
 import type { ConfigPersistencePort } from '../application/ports/config-persistence.port.js';
 import type { LoggerPort } from '../application/ports/logger.port.js';
 import { BannerStore } from '../infrastructure/banner/index.js';
-import { BOT_COMMANDS } from '../core/enums/command.enum.js';
 import { isTelegramSafeButtonUrl } from './widgets/main-keyboard.js';
 import { startInternalHttpListener } from './listeners/internal-http-listener.js';
 import {
@@ -52,10 +51,12 @@ import {
 } from './lib/startup-notice.js';
 import { createPollingController } from './lib/polling-controller.js';
 import { installBotShutdownHandlers } from './lib/shutdown.js';
-import { applyBotSettings } from './lib/apply-bot-settings.js';
-import { slashCommands } from './lib/slash-commands.js';
+import {
+  createTelegramSettingsSync,
+  telegramSettingsOf,
+  type TelegramSettingsSync,
+} from './lib/telegram-settings-sync.js';
 import { startConfigWarmup } from './lib/config-warmup.js';
-import type { CopyEmojis } from './widgets/operator-copy.js';
 import { runQuestChannelRecheck } from './lib/quest-channel-recheck.js';
 import { printReiwaBanner } from '../core/banner.js';
 import { createErrorReporter } from '../infrastructure/error-reporter/index.js';
@@ -106,6 +107,14 @@ type BotContext = Context & SessionFlavor<BotSession>;
 let botConfigCache: BotConfigCache | null = null;
 
 /**
+ * What Telegram holds of the operator's settings — the `/` commands, the bot's
+ * name and descriptions, the menu button — kept in step with every config the
+ * panel answers with (`lib/telegram-settings-sync.ts`). Built in `startBot()`
+ * before the boot read, so that read's config is the first one offered.
+ */
+let settingsSync: TelegramSettingsSync | null = null;
+
+/**
  * Durable last-known-good store for the bot config (Workstream 4). Built
  * once from `REDIS_URL` so a reboot before the first upstream fetch seeds
  * the cache from the last good config instead of the hardcoded default.
@@ -134,6 +143,10 @@ async function getBotConfig(adminClient: AdminClient | null, logger?: LoggerPort
     fallback: DEFAULT_BOT_CONFIG,
     persistence: getConfigPersistence(),
     logger,
+    // Every config the panel answered with — the warm-up's, any later read's —
+    // so an operator's save whose own read failed still reaches Telegram at
+    // the next answered read. Never a failed read's (see the option).
+    onAnswered: (fresh) => void settingsSync?.offer(fresh),
   });
   return botConfigCache.get();
 }
@@ -180,6 +193,11 @@ async function startBot(): Promise<void> {
   // Last-resort guards for failures that escape grammy's bot.catch (stray
   // promise rejections, uncaught throws in timers/listeners).
   installProcessErrorGuards({ logger, errorReporter });
+
+  // Before the boot read, so the config it answers with is offered to it: the
+  // pushes wait for `start` below, once the bot exists.
+  const sync = createTelegramSettingsSync({ logger });
+  settingsSync = sync;
 
   // Pre-warm the config cache — and build it, with the logger.
   const botConfig = await getBotConfig(adminClient, logger);
@@ -370,29 +388,20 @@ async function startBot(): Promise<void> {
 
   // ── Start ──────────────────────────────────────────────────────────────────
 
-  // Register Telegram slash-commands so the autocompletion bubble in
-  // the chat input shows them immediately on /. We use the per-locale
-  // form so the autocompletion descriptions follow the user's Telegram
-  // language. Failures are non-fatal — the bot still works without
-  // command suggestions.
-  let commandSignature = await registerSlashCommands(bot, logger, botConfig);
-
-  // Push the operator’s Telegram profile (name / description / short
-  // description). Fire-and-forget like the startup notices: it is up to six
-  // Bot API round trips and none of them may hold up polling.
-  void getBotConfig(adminClient)
-    .then((cfg) =>
-      applyBotSettings({
-        bot,
-        config: cfg,
-        logger,
-        translator,
-        miniAppUrl: reiwaWebAppUrl,
-      }),
-    )
-    .catch((err: unknown) => {
-      logger.warn({ err }, 'bot/settings: startup apply failed');
-    });
+  // What Telegram holds of the operator's settings: the `/` commands (the
+  // autocomplete bubble, per language), the bot's name and descriptions, the
+  // menu button. The boot read's config goes out now — only if the panel
+  // answered it: a boot on the saved copy or on the defaults pushes nothing,
+  // and the first answered read (the warm-up's at the latest) does instead. A
+  // save's config follows from `onConfigApplied` below, and any later answered
+  // read pushes what differs (`lib/telegram-settings-sync.ts`). Fire-and-forget
+  // like the startup notices: up to nine Bot API round trips, none of which may
+  // hold up polling. Failures are non-fatal — the bot works without them.
+  //
+  // No panel at all (no AdminClient): the defaults ARE this bot's config, and
+  // without them it would have no command list.
+  if (botConfigCache === null) void sync.offer(botConfig, { force: true });
+  void sync.start(telegramSettingsOf({ bot, translator, logger, miniAppUrl: reiwaWebAppUrl }));
 
   // Operator startup notice (snoups-style): ping BOT_DEV_ID with the current
   // access mode + a Close button. Best-effort, never blocks startup.
@@ -460,19 +469,13 @@ async function startBot(): Promise<void> {
     logger,
     rezeisAdminUrl,
     keyboardUrls: { miniAppUrl: reiwaWebAppUrl, publicWebUrl: reiwaUrlButtonUrl },
-    // A config push changes what the bot READS immediately; these two are the
-    // things Telegram holds a copy of, so they have to be pushed on as well.
-    // Both are no-ops when nothing they care about changed.
-    onConfigApplied: async (fresh) => {
-      commandSignature = await registerSlashCommands(bot, logger, fresh, commandSignature);
-      await applyBotSettings({
-        bot,
-        config: fresh,
-        logger,
-        translator,
-        miniAppUrl: reiwaWebAppUrl,
-      });
-    },
+    // A config push changes what the bot READS immediately; the commands, the
+    // profile and the menu button are what Telegram holds a copy of, so they
+    // have to be pushed on as well. A save re-reads the profile and the menu
+    // button from Telegram (`force`); the commands go when their text changed.
+    // A save whose read failed never gets here — the next answered read
+    // pushes it (the cache's `onAnswered`).
+    onConfigApplied: (fresh) => sync.offer(fresh, { force: true }),
     onUserBlocked: async (telegramId: string) => {
       if (adminClient === null) return;
       try {
@@ -519,93 +522,6 @@ async function startBot(): Promise<void> {
   });
 }
 
-
-/**
- * Register the canonical slash-command list with Telegram (RU + EN
- * scopes) so users see the autocomplete bubble on /. The `command`
- * value is fixed (Telegram routes by the literal string), but the
- * `description` is localised through the translator for whatever
- * locales the project supports today. New locales added to
- * `SUPPORTED_LOCALES` automatically get a new scope set without code
- * changes here.
- *
- * `emojis` resolves the operator's emoji tokens in the descriptions, which
- * Telegram shows as plain text — see `lib/slash-commands.ts`.
- */
-async function registerSlashCommands(
-  bot: Bot<BotContext>,
-  logger: ReturnType<typeof createLogger>,
-  emojis: CopyEmojis,
-  previousSignature?: string,
-): Promise<string> {
-  const { SUPPORTED_LOCALES } = await import('../core/enums/locale.enum.js');
-
-  // Descriptions come from the translator, so an operator edit to a
-  // `commands.*.description` row changes them. This function is called again
-  // on every config invalidation for exactly that reason — but Telegram is
-  // told only when the resolved text actually differs, because a bot-card save
-  // that reordered a button has no business issuing three `setMyCommands`
-  // calls.
-  // The default scope is registered with the RU descriptions, so iterating the
-  // supported locales covers every string this function can send.
-  const signature = SUPPORTED_LOCALES.map((lang) =>
-    slashCommands(translator, lang, emojis)
-      .map(({ command, description }) => `${command}=${description}`)
-      .join('|'),
-  ).join('||');
-  if (previousSignature !== undefined && previousSignature === signature) {
-    logger.info('Bot slash-commands unchanged — not re-registering');
-    return signature;
-  }
-
-  // Default scope (catches users whose Telegram language isn't one of
-  // the per-locale entries below — unlikely with ru/en covering most
-  // CIS/global users, but still belt-and-braces).
-  const defaultDescriptions = slashCommands(translator, 'ru', emojis);
-
-  // Telegram's TLS endpoint is occasionally flaky during cold starts
-  // (`ECONNRESET` mid-handshake). Retry the default scope once after a
-  // small backoff so the catch-all still gets registered when the boot
-  // happens to coincide with a TLS reset; per-locale scopes below
-  // tolerate individual misses without leaving the bot command-less.
-  const setDefaultWithRetry = async (): Promise<void> => {
-    try {
-      await bot.api.setMyCommands(defaultDescriptions);
-      return;
-    } catch (firstErr: unknown) {
-      logger.warn(
-        { err: firstErr },
-        'setMyCommands (default scope) failed — retrying once',
-      );
-      await new Promise((resolve) => setTimeout(resolve, 750));
-      try {
-        await bot.api.setMyCommands(defaultDescriptions);
-      } catch (retryErr: unknown) {
-        logger.warn(
-          { err: retryErr },
-          'setMyCommands (default scope) retry failed — leaving per-locale scopes only',
-        );
-      }
-    }
-  };
-  await setDefaultWithRetry();
-
-  for (const lang of SUPPORTED_LOCALES) {
-    const descriptions = slashCommands(translator, lang, emojis);
-    try {
-      await bot.api.setMyCommands(descriptions, {
-        language_code: lang,
-      });
-    } catch (err: unknown) {
-      logger.warn({ err, lang }, 'setMyCommands (per-locale scope) failed');
-    }
-  }
-  logger.info(
-    { commandCount: BOT_COMMANDS.length, scopes: SUPPORTED_LOCALES.length + 1 },
-    'Bot slash-commands registered',
-  );
-  return signature;
-}
 
 startBot().catch((err: unknown) => {
   // No logger yet (the failure happened during bootstrap before

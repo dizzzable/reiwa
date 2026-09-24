@@ -12,6 +12,7 @@ import { join, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { slashCommands } from '../../../src/bot/lib/slash-commands.js';
+import { telegramSettingsOf } from '../../../src/bot/lib/telegram-settings-sync.js';
 import { BOT_COMMANDS } from '../../../src/core/enums/command.enum.js';
 import {
   OPERATOR_TEXT_GLYPHS,
@@ -50,13 +51,27 @@ describe('slashCommands', () => {
     expect(readers).toEqual(['bot/lib/slash-commands.ts']);
   });
 
-  // `main.ts` cannot be imported by a spec (it boots the bot), so its two calls
-  // are pinned by source: the lists are built with the config it booted with,
-  // then with each one a panel push applies. Handed nothing, every description
-  // would carry its tokens as typed again.
-  it('is registered with the bot config, at boot and on every config push', () => {
-    const main = readFileSync(resolve(__dirname, '../../../src/bot/main.ts'), 'utf8');
-    const handed = [...main.matchAll(/registerSlashCommands\(bot, logger, (\w+)/g)].map((m) => m[1]);
-    expect(handed).toEqual(['botConfig', 'fresh']);
+  // The lists that go out are built with the config being pushed — the boot
+  // read's, a save's, a later answered read's (`telegram-settings-sync.ts`;
+  // `main.ts` wires it, pinned in `main-config-wiring.test.ts`). Handed
+  // nothing, every description would carry its tokens as typed again.
+  it('is sent with the emoji of the config being pushed, in every scope', async () => {
+    const translator = withOperatorText(
+      buildPassthroughTranslator(),
+      BOT_COMMANDS.map((command) => `commands.${command}.description`),
+    );
+    const sent: unknown[] = [];
+    const api = {
+      setMyCommands: async (list: unknown) => {
+        sent.push(list);
+        return true;
+      },
+    };
+    const prepared = telegramSettingsOf({ bot: { api } as never, translator, miniAppUrl: null })(operatorEmojiConfig());
+    expect(await prepared.push('commands')).toEqual({ kind: 'done' });
+    expect(sent).toHaveLength(3);
+    for (const list of sent) {
+      expect(list).toEqual(BOT_COMMANDS.map((command) => ({ command, description: OPERATOR_TEXT_GLYPHS })));
+    }
   });
 });

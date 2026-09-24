@@ -67,6 +67,56 @@ describe('src/bot/main.ts — the bot config as the pages get it', () => {
     expect(logger && textOf(logger)).toMatch(/^logger(: logger)?$/);
   });
 
+  // What Telegram holds — the commands, the profile, the menu button — follows
+  // every config the panel ANSWERS with (`lib/telegram-settings-sync.ts`): the
+  // cache announces each answered read to the sync, a save hands its fresh
+  // config on forced, and the pushes are worked out from the config offered.
+  // Without the first, a save whose own read failed stayed off Telegram until
+  // the next save or a restart.
+  it('offers every answered read to the settings sync, and a save forced', () => {
+    const constructions = nodesOf(main)
+      .filter(ts.isNewExpression)
+      .filter((call) => textOf(call.expression) === 'BotConfigCache');
+    const [options] = constructions[0]!.arguments ?? [];
+    const onAnswered = (options as ts.ObjectLiteralExpression).properties.find(
+      (property) => property.name !== undefined && textOf(property.name) === 'onAnswered',
+    ) as ts.PropertyAssignment | undefined;
+    expect(onAnswered && textOf(onAnswered.initializer)).toBe('(fresh) => void settingsSync?.offer(fresh)');
+
+    const onConfigApplied = nodesOf(main)
+      .filter(ts.isPropertyAssignment)
+      .find((property) => textOf(property.name) === 'onConfigApplied');
+    expect(onConfigApplied && textOf(onConfigApplied.initializer)).toBe('(fresh) => sync.offer(fresh, { force: true })');
+
+    const starts = nodesOf(main)
+      .filter(ts.isCallExpression)
+      .filter((call) => textOf(call.expression) === 'sync.start')
+      .map((call) => textOf(call.arguments[0]!));
+    expect(starts).toEqual(['telegramSettingsOf({ bot, translator, logger, miniAppUrl: reiwaWebAppUrl })']);
+
+    // The sync is built before the boot read, so that read is the first offered.
+    const text = main.getFullText();
+    expect(text.indexOf('settingsSync = sync;')).toBeGreaterThan(-1);
+    expect(text.indexOf('settingsSync = sync;')).toBeLessThan(text.indexOf('await getBotConfig(adminClient, logger)'));
+
+    // A bot with no panel at all has no answered read to wait for: its
+    // defaults are its config, and without them it would have no command list.
+    const offers = nodesOf(main)
+      .filter(ts.isIfStatement)
+      .map((statement) => textOf(statement))
+      .filter((statement) => statement.includes('sync.offer('));
+    expect(offers).toEqual(['if (botConfigCache === null) void sync.offer(botConfig, { force: true });']);
+  });
+
+  it('pushes nothing to Telegram past the sync: no command list, profile or menu button of its own', () => {
+    const calls = nodesOf(main)
+      .filter(ts.isCallExpression)
+      .map((call) => textOf(call.expression));
+    for (const pushed of ['setMyCommands', 'applyBotSettings', 'setChatMenuButton', 'setMyName']) {
+      expect(calls.filter((callee) => callee.endsWith(pushed)), pushed).toEqual([]);
+    }
+  });
+
   it('keeps the entry fresh with the warm-up on the cache, and no other tick reads the config', () => {
     const timer = declared('configRefreshTimer');
     expect(timer && textOf(timer)).toBe('botConfigCache !== null ? startConfigWarmup(botConfigCache) : null');

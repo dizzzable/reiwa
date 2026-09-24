@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { applyBotSettings } from '../../../src/bot/lib/apply-bot-settings.js';
+import { applyBotSettings, botSettingsFingerprints } from '../../../src/bot/lib/apply-bot-settings.js';
 import { DEFAULT_BOT_CONFIG } from '../../../src/infrastructure/bot-config/cache.js';
 import type {
   BotConfig,
@@ -424,5 +424,107 @@ describe('applyBotSettings — the operator emoji tokens', () => {
     expect(fallback.setChatMenuButton).toHaveBeenCalledExactlyOnceWith({
       menu_button: { type: 'web_app', text: OPERATOR_TEXT_GLYPHS, web_app: { url: 'https://app.example.test' } },
     });
+  });
+});
+
+// The sync (`telegram-settings-sync.ts`) pushes a part again only when its
+// fingerprint moved: equal exactly when nothing Telegram shows would change.
+describe('botSettingsFingerprints', () => {
+  const fingerprints = (config: BotConfig, miniAppUrl: string | null = 'https://app.example.test') =>
+    botSettingsFingerprints({ config, translator, miniAppUrl });
+
+  it('is equal for settings Telegram would show the same', () => {
+    const typed = operatorEmojiConfig(configWith({ profile: { name: OPERATOR_TEXT } }));
+    const glyphs = operatorEmojiConfig(configWith({ profile: { name: OPERATOR_TEXT_GLYPHS } }));
+    expect(fingerprints(typed)).toEqual(fingerprints(glyphs));
+    // An unset field and an empty one both leave Telegram alone.
+    expect(fingerprints(configWith({ profile: { name: 'A', description: '' } }))).toEqual(
+      fingerprints(configWith({ profile: { name: 'A' } })),
+    );
+  });
+
+  it('moves with each value a push writes — and only that part’s: each profile field is a part of its own', () => {
+    const base = fingerprints(configWith({ profile: { name: 'A' }, menuButton: { kind: 'web_app', text: 'Go' } }));
+    const renamed = fingerprints(configWith({ profile: { name: 'B' }, menuButton: { kind: 'web_app', text: 'Go' } }));
+    expect(renamed.name).not.toBe(base.name);
+    expect(renamed.description).toBe(base.description);
+    expect(renamed.shortDescription).toBe(base.shortDescription);
+    expect(renamed.menuButton).toBe(base.menuButton);
+
+    const cases = [
+      [{ nameEn: 'A' }, 'name'],
+      [{ description: 'd' }, 'description'],
+      [{ descriptionEn: 'd' }, 'description'],
+      [{ shortDescription: 's' }, 'shortDescription'],
+      [{ shortDescriptionEn: 's' }, 'shortDescription'],
+    ] as const;
+    const plain = fingerprints(configWith({ profile: { name: 'A' } }));
+    for (const [profile, part] of cases) {
+      const moved = fingerprints(configWith({ profile: { name: 'A', ...profile } }));
+      for (const other of ['name', 'description', 'shortDescription'] as const) {
+        if (other === part) expect(moved[other], JSON.stringify(profile)).not.toBe(plain[other]);
+        else expect(moved[other], `${JSON.stringify(profile)} moved ${other}`).toBe(plain[other]);
+      }
+    }
+
+    const relabelled = fingerprints(configWith({ profile: { name: 'A' }, menuButton: { kind: 'web_app', text: 'Open' } }));
+    expect(relabelled.menuButton).not.toBe(base.menuButton);
+    expect(relabelled.name).toBe(base.name);
+    // The Mini App switched off: the commands list stands in for it.
+    expect(
+      fingerprints(configWith({ profile: { name: 'A' }, menuButton: { kind: 'web_app', text: 'Go' }, miniAppEnabled: false }))
+        .menuButton,
+    ).toBe(fingerprints(configWith({ profile: { name: 'A' }, menuButton: { kind: 'commands' } })).menuButton);
+    expect(fingerprints(configWith({ menuButton: { kind: 'web_app', text: 'Go' } }), 'https://other.example.test').menuButton).not.toBe(
+      base.menuButton,
+    );
+  });
+
+  it('tells a panel that says nothing about the menu button from one that asks for the commands', () => {
+    expect(fingerprints(configWith({})).menuButton).not.toBe(
+      fingerprints(configWith({ menuButton: { kind: 'commands' } })).menuButton,
+    );
+  });
+});
+
+describe('applyBotSettings — one part', () => {
+  it('pushes only the part asked for', async () => {
+    const config = configWith({ profile: { name: 'A' }, menuButton: { kind: 'commands' } });
+    const profileOnly = fakeApi({ menuButton: { type: 'web_app', text: 'x', web_app: { url: 'https://x.test' } } });
+    await applyBotSettings({ bot: { api: profileOnly } as never, config, translator, only: 'profile' });
+    expect(profileOnly.setMyName).toHaveBeenCalledOnce();
+    expect(profileOnly.getChatMenuButton).not.toHaveBeenCalled();
+
+    const buttonOnly = fakeApi({ menuButton: { type: 'web_app', text: 'x', web_app: { url: 'https://x.test' } } });
+    await applyBotSettings({ bot: { api: buttonOnly } as never, config, translator, only: 'menuButton' });
+    expect(buttonOnly.getMyName).not.toHaveBeenCalled();
+    expect(buttonOnly.setChatMenuButton).toHaveBeenCalledOnce();
+  });
+
+  it('pushes one profile field alone — its two language slots, and no other field', async () => {
+    const config = configWith({
+      profile: { name: 'A', nameEn: 'A en', description: 'D', shortDescription: 'S', shortDescriptionEn: 'S en' },
+    });
+    const api = fakeApi();
+    await applyBotSettings({ bot: { api } as never, config, translator, only: 'shortDescription' });
+    expect(api.setMyShortDescription).toHaveBeenCalledTimes(2);
+    expect(api.getMyName).not.toHaveBeenCalled();
+    expect(api.getMyDescription).not.toHaveBeenCalled();
+    expect(api.getChatMenuButton).not.toHaveBeenCalled();
+  });
+
+  it('tells the caller of every call that threw, and of none that was only too long', async () => {
+    const heard: unknown[] = [];
+    const api = fakeApi();
+    const refused = new Error('429');
+    api.setMyName.mockRejectedValueOnce(refused);
+    const result = await applyBotSettings({
+      bot: { api } as never,
+      config: configWith({ profile: { name: 'A', shortDescription: 'x'.repeat(121) } }),
+      translator,
+      onCallFailed: (err) => heard.push(err),
+    });
+    expect(result.failed).toStrictEqual(['name', 'shortDescription']);
+    expect(heard).toEqual([refused]);
   });
 });

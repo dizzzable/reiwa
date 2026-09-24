@@ -48,6 +48,15 @@ export interface BotConfigCacheOptions {
    * Omitted (tests / no Redis) → behaves exactly as before.
    */
   readonly persistence?: ConfigPersistencePort;
+  /**
+   * Hears every config the panel ANSWERED with — a read that landed in its own
+   * generation — and nothing else: not a failed read's held entry, saved copy
+   * or fallback, not a read an invalidate overtook. `forceInvalidate`'s own
+   * read is not announced: it hands its config to its caller instead, which
+   * pushes it on (`handleInvalidate` → `onConfigApplied`). The bot keeps what
+   * Telegram holds in step with these (`bot/lib/telegram-settings-sync.ts`).
+   */
+  readonly onAnswered?: (config: BotConfig) => void;
 }
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
@@ -91,6 +100,7 @@ export class BotConfigCache {
   private readonly ttlMs: number;
   private readonly logger: LoggerPort | undefined;
   private readonly persistence: ConfigPersistencePort | undefined;
+  private readonly onAnswered: ((config: BotConfig) => void) | undefined;
   private entry: CacheEntry | null = null;
   /**
    * Bumped by `reset()` and `forceInvalidate()`. A fetch begun before the bump
@@ -123,6 +133,7 @@ export class BotConfigCache {
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
     this.logger = options.logger;
     this.persistence = options.persistence;
+    this.onAnswered = options.onAnswered;
   }
 
   /**
@@ -181,12 +192,12 @@ export class BotConfigCache {
    * later must not free the newer one's, or the next read would go upstream
    * beside it instead of joining it.
    */
-  private fetchOnce(): Promise<Fetched> {
+  private fetchOnce(announce = true): Promise<Fetched> {
     const inFlight = this.inFlight;
     if (inFlight !== null && inFlight.generation === this.generation) return inFlight.promise;
     const slot: InFlightFetch = {
       generation: this.generation,
-      promise: this.fetchFresh(this.generation).finally(() => {
+      promise: this.fetchFresh(this.generation, announce).finally(() => {
         if (this.inFlight === slot) this.inFlight = null;
       }),
     };
@@ -194,7 +205,8 @@ export class BotConfigCache {
     return slot.promise;
   }
 
-  private async fetchFresh(startedAt: number): Promise<Fetched> {
+  /** `announce`: tell `onAnswered` when the panel answers — every read but `forceInvalidate`'s own. */
+  private async fetchFresh(startedAt: number, announce: boolean): Promise<Fetched> {
     try {
       const raw = (await this.fetcher()) as RawBotConfig;
       // Superseded while in flight: the caller still gets what it read, but
@@ -217,6 +229,15 @@ export class BotConfigCache {
       void this.persistence?.save(raw).catch((err: unknown) => {
         this.logger?.warn({ err }, 'BotConfigCache: persistence.save threw');
       });
+      // After the translator took this config's texts: a listener that works
+      // out what to push reads them (`bot/lib/telegram-settings-sync.ts`).
+      if (announce && this.onAnswered !== undefined) {
+        try {
+          this.onAnswered(this.entry.data);
+        } catch (err: unknown) {
+          this.logger?.warn({ err }, 'BotConfigCache: onAnswered threw');
+        }
+      }
       return { config: this.entry.data, answered: true };
     } catch (err: unknown) {
       this.logger?.warn(
@@ -395,8 +416,10 @@ export class BotConfigCache {
     const generation = this.generation;
     try {
       // A fetch of the new generation — what `get()` would start, the entry
-      // being stale and the hold-off over — whose outcome is needed here.
-      const fetched = await this.fetchOnce();
+      // being stale and the hold-off over — whose outcome is needed here. Not
+      // announced to `onAnswered`: the config goes back to the caller, which
+      // pushes it on itself — announced as well, one save would push twice.
+      const fetched = await this.fetchOnce(false);
       return this.generation === generation && fetched.answered ? fetched.config : null;
     } catch {
       return null;
