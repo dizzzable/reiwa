@@ -144,7 +144,6 @@ const CHECKOUT_REFUSAL_REASONS: ReadonlyMap<string, ReadonlySet<string>> = new M
       "DURATION",
       "AMOUNT",
       "ITEMS",
-      "ADD_ONS",
       "ALREADY_ACTIVE",
       "PENDING_SIGN_UP",
       "PLAN",

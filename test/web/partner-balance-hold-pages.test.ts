@@ -183,7 +183,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   for (const fn of [...Object.values(api), route.navigate, ...Object.values(toastSpy)]) fn.mockReset();
-  api.getPlatformPolicy.mockResolvedValue({ accessMode: 'PUBLIC', renewalAddOnsEnabled: false });
+  api.getPlatformPolicy.mockResolvedValue({ accessMode: 'PUBLIC' });
   api.getActionPolicy.mockResolvedValue({ activeSubscriptionCount: 0, maxSubscriptions: 3, limitReached: false, canBuy: true });
   api.getQuote.mockResolvedValue({
     planId: 'plan-1',

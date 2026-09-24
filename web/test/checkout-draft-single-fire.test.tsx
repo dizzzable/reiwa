@@ -196,7 +196,9 @@ describe("checkout draft auto-start under StrictMode", () => {
     await settle();
 
     expect(api.createRenewalCheckout).toHaveBeenCalledTimes(2);
-    const [firstKey, secondKey] = api.createRenewalCheckout.mock.calls.map((call) => call[6]);
+    // The idempotency key is the sixth argument (after ids, gateway, quote,
+    // durations and plans) since the renewal add-ons were deleted.
+    const [firstKey, secondKey] = api.createRenewalCheckout.mock.calls.map((call) => call[5]);
     expect(firstKey).toBeTypeOf("string");
     expect(secondKey).not.toBe(firstKey);
   });

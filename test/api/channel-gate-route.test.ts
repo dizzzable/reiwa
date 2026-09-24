@@ -47,7 +47,6 @@ function panelPolicy(overrides: Record<string, unknown> = {}): PlatformPolicySha
     channelRecheck: true,
     requireTelegramWebCredentials: false,
     defaultCurrency: 'RUB',
-    renewalAddOns: false,
     ...overrides,
   } as PlatformPolicyShape;
 }

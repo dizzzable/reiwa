@@ -106,7 +106,6 @@ function buildApp(apiRoot: string, options: { redis?: FakeRedis; channelRecheck?
         channelRecheck: options.channelRecheck ?? true,
         requireTelegramWebCredentials: false,
         defaultCurrency: 'RUB',
-        renewalAddOns: false,
       })),
       reportError: vi.fn(async () => ({})),
     },

@@ -148,7 +148,6 @@ export const createRenewalCheckout = (
   expectedQuote: { amount: string; currency: string },
   durations?: { subscriptionId: string; days: number }[],
   plans?: { subscriptionId: string; planId: string }[],
-  addOns?: { subscriptionId: string; addOnIds: string[] }[],
   idempotencyKey?: string,
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
@@ -163,9 +162,6 @@ export const createRenewalCheckout = (
       source: getClientSource(),
       ...(durations && durations.length > 0 ? { durations } : {}),
       ...(plans && plans.length > 0 ? { plans } : {}),
-      ...(addOns && addOns.some((a) => a.addOnIds.length > 0)
-        ? { addOns: addOns.filter((a) => a.addOnIds.length > 0) }
-        : {}),
       ...(idempotencyKey ? { idempotencyKey } : {}),
       ...(typeof savedPaymentMethodId === "string" && savedPaymentMethodId.length > 0
         ? { savedPaymentMethodId }

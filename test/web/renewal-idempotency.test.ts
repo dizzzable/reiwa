@@ -10,7 +10,6 @@ describe('renewal idempotency key', () => {
       quote: { amount: '1e-8', currency: 'USD' },
       durations: [{ subscriptionId: 'sub-1', days: 30 }],
       plans: [],
-      addOns: [{ subscriptionId: 'sub-1', addOnIds: ['addon-1'] }],
     } as const;
 
     const first = createRenewalIdempotencyKey(draft, 'attempt-1');
@@ -32,7 +31,6 @@ describe('renewal idempotency key', () => {
       quote: { amount: '1.00', currency: 'USD' },
       durations: [],
       plans: [],
-      addOns: [],
     } as const;
 
     expect(createRenewalIdempotencyKey(base, 'attempt-1')).not.toBe(

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Check, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -8,17 +8,14 @@ import { toast } from "sonner";
 import {
   activatePromocode,
   createRenewalCheckout,
-  getAddOnEntitlements,
   getAllSubscriptions,
   getEnabledGateways,
   getPartnerInfo,
   getPaymentMethods,
   getPlans,
   getRenewalOptions,
-  getSubscriptionAddOns,
   payWithPartnerBalance,
 } from "@/lib/api-client";
-import type { EligibleAddOn } from "@/lib/api-client";
 import { PartnerBalanceHoldNotice } from "@/features/partner/partner-balance-hold-notice";
 import { markPushPromptEligible } from "@/features/push-prompt/push-prompt-storage";
 import { balanceHoldRefusalMessage, standingBalanceHold } from "@/lib/partner-balance-hold";
@@ -46,19 +43,14 @@ import { SubscriptionSelectCard } from "@/components/subscription/subscription-s
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
 import { useSafeBack } from "@/hooks/use-safe-back";
-import { useAccessMode, useRenewalAddOnsEnabled } from "@/lib/use-access-mode";
+import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
-import { selectRenewalReoffer } from "./renewal-reoffer";
 import {
   formatSavedPaymentMethodMeta,
   formatSavedPaymentMethodTitle,
 } from "@/lib/saved-payment-method-display";
 import { CreditCard } from "lucide-react";
-import {
-  addCurrencyAmounts,
-  formatCurrencyAmount,
-  resolveRenewalAddOnReview,
-} from "./renewal-review-policy";
+import { addCurrencyAmounts, formatCurrencyAmount } from "./renewal-review-policy";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import { subscriptionTitle } from "@/lib/subscription-title";
 import { notifyPlanUnavailable } from "@/features/purchase/plan-unavailable";
@@ -426,7 +418,6 @@ export default function RenewalPage() {
             <SelectSubscriptions />
           ))}
         {step === "plan" && <SelectPlan />}
-        {step === "addons" && <SelectRenewalAddOns />}
         {step === "gateway" && <SelectGateway />}
         {step === "review" && <RenewalReview />}
         {(step === "checkout" || step === "polling") && <CheckoutStep />}
@@ -828,205 +819,6 @@ function SelectPlan() {
   );
 }
 
-function SelectRenewalAddOns() {
-  const { t } = useTranslation();
-  const {
-    selectedSubscriptionIds,
-    selectedGateway,
-    selectedAddOns,
-    toggleAddOn,
-    reconcileReoffer,
-    setStep,
-    goBack,
-    navDirection,
-  } = useRenewalStore();
-  const currency = selectedGateway?.currency ?? null;
-  const multi = selectedSubscriptionIds.length > 1;
-
-  const { data: subsData } = useQuery({
-    queryKey: subscriptionQueryKeys.all,
-    queryFn: getAllSubscriptions,
-    staleTime: 60_000,
-  });
-  const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
-
-  // Re-offer source: the add-ons the user had ACTIVE in the current cycle.
-  const {
-    data: historyData,
-    isLoading: historyLoading,
-    isFetching: historyFetching,
-    isError: historyError,
-  } = useQuery({
-    queryKey: ["add-on-entitlements"],
-    queryFn: ({ signal }) => getAddOnEntitlements({ signal }),
-    staleTime: 60_000,
-  });
-
-  // Current eligibility per selected subscription (server authority + price).
-  const eligQueries = useQueries({
-    queries: selectedSubscriptionIds.map((subId) => ({
-      queryKey: ["add-ons-eligibility", subId],
-      queryFn: () => getSubscriptionAddOns(subId),
-      staleTime: 60_000,
-    })),
-  });
-
-  const loading =
-    historyLoading ||
-    historyFetching ||
-    eligQueries.some((query) => query.isLoading || query.isFetching);
-
-  // Per-subscription re-offer = eligible+priced add-ons the user had active in
-  // the current cycle, matched to the catalog by id (or type+value for legacy
-  // rows without an addOnId). Only these are re-offered — the renewal never
-  // shows a generic add-on catalog here.
-  const reofferBySub = new Map<string, readonly EligibleAddOn[]>();
-  selectedSubscriptionIds.forEach((subId, index) => {
-    const eligibility = eligQueries[index];
-    const reoffer = selectRenewalReoffer({
-      subscriptionId: subId,
-      currency,
-      history: historyError ? null : (historyData?.entitlements ?? null),
-      eligibleAddOns:
-        !eligibility?.isError && eligibility?.data?.availability === "AVAILABLE"
-          ? eligibility.data.addOns
-          : null,
-    });
-    if (reoffer.length > 0) reofferBySub.set(subId, reoffer);
-  });
-  const totalReofferable = [...reofferBySub.values()].reduce(
-    (count, list) => count + list.length,
-    0,
-  );
-  const reofferKey = `${selectedSubscriptionIds.join("\u0000")}|${currency ?? ""}`;
-  const allowedBySubscription = Object.fromEntries(
-    [...reofferBySub].map(([subId, list]) => [subId, list.map((addOn) => addOn.id)]),
-  );
-  const reofferFingerprint = selectedSubscriptionIds
-    .map((subId) => `${subId}:${(allowedBySubscription[subId] ?? []).slice().sort().join(",")}`)
-    .join("|");
-
-  // A new composition gets defaults once. Settled refetches for the same
-  // composition only intersect the current selection with the live allowed set,
-  // so removed/expired/error entries cannot leak into checkout and explicit
-  // user deselections are never restored.
-  useEffect(() => {
-    if (loading) return;
-    reconcileReoffer(reofferKey, allowedBySubscription);
-    if (totalReofferable === 0) {
-      if (navDirection === "back") goBack("gateway");
-      else setStep("review");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, totalReofferable, reofferKey, reofferFingerprint]);
-
-  if (loading) {
-    return (
-      <div className="px-5" role="status" aria-live="polite">
-        <div className="theme-skeleton h-16 animate-pulse rounded-2xl" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="px-5">
-        <h2 className="text-base font-semibold">{t("renewal.reofferTitle")}</h2>
-        <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t("renewal.reofferSubtitle")}</p>
-      </div>
-      {selectedSubscriptionIds.map((subId) => {
-        const list = reofferBySub.get(subId);
-        if (!list || list.length === 0) return null;
-        const sub = subById.get(subId);
-        return (
-          <RenewalAddOnSection
-            key={subId}
-            title={multi ? (sub ? subscriptionTitle(sub) : subId) : null}
-            currency={currency}
-            addOns={list}
-            selectedIds={selectedAddOns[subId] ?? []}
-            onToggle={(addOnId) => toggleAddOn(subId, addOnId)}
-          />
-        );
-      })}
-      <div className="px-5 space-y-2 pt-2">
-        <StadiumButton fullWidth size="lg" glow onClick={() => setStep("review")}>
-          {t("renewal.continue")}
-        </StadiumButton>
-        <StadiumButton fullWidth variant="ghost" onClick={() => goBack("gateway")}>
-          {t("renewal.back")}
-        </StadiumButton>
-      </div>
-    </div>
-  );
-}
-
-function RenewalAddOnSection({
-  title,
-  currency,
-  addOns,
-  selectedIds,
-  onToggle,
-}: {
-  title: string | null;
-  currency: string | null;
-  addOns: readonly EligibleAddOn[];
-  selectedIds: readonly string[];
-  onToggle: (addOnId: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="space-y-2 px-5">
-      {title && <p className="text-xs font-medium text-[color:var(--brand-muted-foreground)]">{title}</p>}
-      {addOns.map((addOn) => {
-        const selected = selectedIds.includes(addOn.id);
-        const price = currency ? addOn.prices.find((p) => p.currency === currency) : undefined;
-        return (
-          <button
-            key={addOn.id}
-            type="button"
-            aria-pressed={selected}
-            onClick={() => onToggle(addOn.id)}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-all active:scale-[0.98]",
-              selected
-                ? "border-(--brand-primary)/60 bg-(--brand-primary)/10"
-                : "theme-surface theme-outline hover:brightness-105",
-            )}
-          >
-            <div
-              className={cn(
-                "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border",
-                selected
-                  ? "border-(--brand-primary) bg-(--brand-primary) text-(--brand-primary-fg)"
-                  : "border-[color:var(--color-border-strong)]",
-              )}
-            >
-              {selected && <Check className="h-3.5 w-3.5" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-[color:var(--brand-foreground)]">{addOn.name}</p>
-              <p className="text-xs text-[color:var(--brand-muted-foreground)]">
-                {addOn.type === "EXTRA_TRAFFIC"
-                  ? t("addons.extraTraffic", { value: addOn.value })
-                  : t("addons.extraDevices", { count: addOn.value })}
-              </p>
-              {addOn.description && (
-                <p className="mt-0.5 line-clamp-2 text-xs text-[color:var(--brand-muted-foreground)]">{addOn.description}</p>
-              )}
-            </div>
-            {price && (
-              <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
-                {formatPrice(price.price, price.currency)}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function SelectGateway() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -1071,8 +863,8 @@ function SelectGateway() {
   // On Platega the provider repeats one sum for one subscription on its own
   // period, so its option needs exactly one subscription on such a term, and
   // one it renews on the plan it is on: onto another plan the panel refuses it
-  // (`renewsOntoAnotherPlan`). The price (kopecks, a promo) and add-ons are
-  // only known later; the panel refuses those, and the checkout says so.
+  // (`renewsOntoAnotherPlan`). The price (kopecks, a promo) is only known
+  // later; the panel refuses that, and the checkout says so.
   const autopayOffered = (gw: { type: string; autopay?: boolean }): boolean => {
     if (gw.autopay !== true) return false;
     if (!isProviderSubscriptionGateway(gw.type)) return true;
@@ -1082,12 +874,6 @@ function SelectGateway() {
     const days = renewalDays(subscriptionId);
     return days !== null && isProviderPeriod(gw.type, days);
   };
-  const renewalAddOns = useRenewalAddOnsEnabled();
-  // Policy-settled signal (same shared query): the add-on capability must be
-  // resolved before we auto-advance a single gateway, otherwise a one-gateway
-  // user with renewalAddOns enabled could be auto-advanced gateway→review while
-  // the flag still reads false, silently skipping the add-on step.
-  const { isLoading: policyLoading } = useAccessMode();
   const { data: gateways = [], isLoading } = useQuery({
     queryKey: ["gateways"],
     queryFn: getEnabledGateways,
@@ -1124,9 +910,7 @@ function SelectGateway() {
     } satisfies GatewayOption);
     // selectGateway clears saved method; re-apply after the store update.
     queueMicrotask(() => selectSavedPaymentMethod(savedPaymentMethodId));
-    // Optional add-on selection step sits between gateway and review — only
-    // when the backend rollout enables it (otherwise pricing ignores add-ons).
-    setStep(renewalAddOns ? "addons" : "review");
+    setStep("review");
   };
 
   // Auto-select when a single gateway is available — but only when arriving
@@ -1138,7 +922,6 @@ function SelectGateway() {
   useEffect(() => {
     if (
       !isLoading &&
-      !policyLoading &&
       gateways.length === 1 &&
       !autopayOffered(gateways[0]!) &&
       navDirection === "forward" &&
@@ -1147,7 +930,7 @@ function SelectGateway() {
     ) {
       choose(gateways[0]!);
     }
-  }, [isLoading, policyLoading, gateways, navDirection, savedMethodsUnknown, savedYookassaMethods.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoading, gateways, navDirection, savedMethodsUnknown, savedYookassaMethods.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isTma = !!window.Telegram?.WebApp?.initData;
   const sorted = [...gateways].sort((a, b) => {
@@ -1262,7 +1045,6 @@ function RenewalReview() {
     selectedSubscriptionIds,
     selectedDurations,
     selectedPlans,
-    selectedAddOns,
     selectedGateway,
     selectedSavedPaymentMethodId,
     setReviewQuote,
@@ -1327,27 +1109,7 @@ function RenewalReview() {
   });
   const subById = new Map((subsData?.subscriptions ?? []).map((s) => [s.id, s]));
 
-  // Selected renewal add-ons (T-015): resolve names/prices from the same
-  // per-subscription eligibility used by the selection step (cached), so the
-  // review lists them and the displayed total matches what the backend prices.
   const currency = selectedGateway?.currency ?? null;
-  const hasAddOnSelections = Object.values(selectedAddOns).some((ids) => ids.length > 0);
-  const eligibilityQueries = useQueries({
-    queries: selectedSubscriptionIds.map((id) => ({
-      queryKey: ["add-ons-eligibility", id],
-      queryFn: () => getSubscriptionAddOns(id),
-      staleTime: 60_000,
-      enabled: hasAddOnSelections,
-    })),
-  });
-  const addOnReview = resolveRenewalAddOnReview({
-    selectedSubscriptionIds,
-    selectedAddOns,
-    currency,
-    eligibilityQueries,
-  });
-  const addOnLines = addOnReview.status === "READY" ? addOnReview.lines : [];
-  const addOnTotal = addOnReview.status === "READY" ? addOnReview.addOnTotal : "0";
 
   const { data: partner } = useQuery({
     queryKey: ["partner", "info"],
@@ -1414,7 +1176,6 @@ function RenewalReview() {
     isFetching ||
     isPaused ||
     (!isCurrentStep && !isFetchedAfterMount) ||
-    addOnReview.status === "PENDING" ||
     releasing ||
     choosingPlan
   ) {
@@ -1428,8 +1189,7 @@ function RenewalReview() {
   const items: RenewalOptionItem[] = (data?.items ?? []).filter((i) =>
     selectedSubscriptionIds.includes(i.subscriptionId),
   );
-  const confirmedAmount =
-    typeof data?.total === "string" ? addCurrencyAmounts([data.total, addOnTotal]) : null;
+  const confirmedAmount = typeof data?.total === "string" ? addCurrencyAmounts([data.total]) : null;
   const priceError =
     error ||
     !data ||
@@ -1437,8 +1197,7 @@ function RenewalReview() {
     data.currency === null ||
     data.currency !== currency ||
     confirmedAmount === null ||
-    items.some((item) => !item.renewable) ||
-    addOnReview.status === "ERROR";
+    items.some((item) => !item.renewable);
   // Partner-balance pay is offered only for a single-subscription renewal whose
   // priced currency matches the partner balance currency and is covered by it.
   const balanceItem =
@@ -1446,7 +1205,6 @@ function RenewalReview() {
       ? items[0]!
       : null;
   const balanceEligible =
-    addOnReview.allowsPartnerBalance &&
     balanceItem !== null &&
     !!partner &&
     partner.isActive &&
@@ -1496,24 +1254,6 @@ function RenewalReview() {
             </div>
           );
         })}
-        {addOnLines.map(({ subscriptionId, addOn, price }) => (
-          <div
-            key={`${subscriptionId}:${addOn.id}`}
-            className="flex items-center justify-between px-4 py-3 text-sm"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-[color:var(--brand-foreground)]">{addOn.name}</p>
-              <p className="truncate text-xs text-[color:var(--brand-muted-foreground)]">
-                {addOn.type === "EXTRA_TRAFFIC"
-                  ? t("addons.extraTraffic", { value: addOn.value })
-                  : t("addons.extraDevices", { count: addOn.value })}
-              </p>
-            </div>
-            <span className="shrink-0 font-medium">
-              {price !== null ? formatPrice(price, currency) : "—"}
-            </span>
-          </div>
-        ))}
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("renewal.total")}</span>
           <span className="text-lg font-bold text-(--brand-primary)">
@@ -1608,7 +1348,6 @@ function CheckoutStep() {
     selectedSubscriptionIds,
     selectedDurations,
     selectedPlans,
-    selectedAddOns,
     selectedGateway,
     selectedSavedPaymentMethodId,
     savePaymentMethodConsent,
@@ -1625,9 +1364,6 @@ function CheckoutStep() {
   const plansPayload = selectedSubscriptionIds
     .filter((id) => selectedPlans[id] !== undefined)
     .map((id) => ({ subscriptionId: id, planId: selectedPlans[id]! }));
-  const addOnsPayload = selectedSubscriptionIds
-    .filter((id) => (selectedAddOns[id]?.length ?? 0) > 0)
-    .map((id) => ({ subscriptionId: id, addOnIds: selectedAddOns[id]! }));
   const [attemptId] = useState(() => crypto.randomUUID());
   // Stable per checkout attempt (per mount): a double-invoke / network-ambiguous
   // retry replays the existing draft instead of minting a second PENDING
@@ -1641,7 +1377,6 @@ function CheckoutStep() {
           quote: reviewQuote ?? { amount: "", currency: "" },
           durations: durationsPayload,
           plans: plansPayload,
-          addOns: addOnsPayload,
           savedPaymentMethodId: selectedSavedPaymentMethodId,
         },
         attemptId,
@@ -1652,7 +1387,6 @@ function CheckoutStep() {
       reviewQuote,
       durationsPayload,
       plansPayload,
-      addOnsPayload,
       selectedSavedPaymentMethodId,
       attemptId,
     ],
@@ -1675,7 +1409,6 @@ function CheckoutStep() {
         reviewQuote,
         durationsPayload.length > 0 ? durationsPayload : undefined,
         plansPayload.length > 0 ? plansPayload : undefined,
-        addOnsPayload.length > 0 ? addOnsPayload : undefined,
         idempotencyKey,
         selectedSavedPaymentMethodId,
         interactiveYookassa ? savePaymentMethodConsent : undefined,

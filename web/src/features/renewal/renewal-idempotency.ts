@@ -4,7 +4,6 @@ export type RenewalCheckoutDraft = {
   readonly quote: { readonly amount: string; readonly currency: string };
   readonly durations: readonly { readonly subscriptionId: string; readonly days: number }[];
   readonly plans: readonly { readonly subscriptionId: string; readonly planId: string }[];
-  readonly addOns: readonly { readonly subscriptionId: string; readonly addOnIds: readonly string[] }[];
   /** Local SavedPaymentMethod.id for off-session charge, if any. */
   readonly savedPaymentMethodId?: string | null;
 };

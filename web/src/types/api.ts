@@ -473,9 +473,6 @@ export interface PlatformPolicy {
    * them before entering the cabinet. When false, Telegram alone suffices.
    */
   requireTelegramWebCredentials?: boolean;
-  /** Capability: renewal add-on composition enabled (rezeis env). The renewal
-   *  flow shows the add-on selection step only when true. Absent → false. */
-  renewalAddOns?: boolean;
   /** «Восстановление пароля по ссылке подписки» (operator switch). Absent → OFF:
    *  a panel without the field has no subscription-recovery endpoint either. */
   subscriptionLinkRecovery?: boolean;

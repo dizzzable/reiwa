@@ -243,7 +243,6 @@ export class PaymentsNamespace {
       readonly failUrl?: string | null;
       readonly durations?: ReadonlyArray<{ readonly subscriptionId: string; readonly days: number }>;
       readonly plans?: ReadonlyArray<{ readonly subscriptionId: string; readonly planId: string }>;
-      readonly addOns?: ReadonlyArray<{ readonly subscriptionId: string; readonly addOnIds: readonly string[] }>;
       readonly expectedAmount?: string;
       readonly expectedCurrency?: string;
       readonly idempotencyKey?: string;
@@ -274,9 +273,6 @@ export class PaymentsNamespace {
     }
     if (input.plans && input.plans.length > 0) {
       payload['plans'] = input.plans;
-    }
-    if (input.addOns && input.addOns.length > 0) {
-      payload['addOns'] = input.addOns;
     }
     if (typeof input.idempotencyKey === 'string' && input.idempotencyKey.length > 0) {
       payload['idempotencyKey'] = input.idempotencyKey;

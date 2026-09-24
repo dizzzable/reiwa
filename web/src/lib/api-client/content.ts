@@ -128,8 +128,8 @@ export interface AddOnEligibilityResult {
 
 /**
  * Authoritative per-subscription add-on eligibility (finite-baseline gating +
- * server-resolved prices). Used by the renewal add-on selection step. An
- * upstream outage surfaces as an error (502) rather than a masked empty list.
+ * server-resolved prices), for «Дополнительные опции». An upstream outage
+ * surfaces as an error (502) rather than a masked empty list.
  */
 export const getSubscriptionAddOns = (subscriptionId: string) =>
   apiClient

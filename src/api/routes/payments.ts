@@ -186,7 +186,6 @@ export function createPaymentsRouter(deps: {
           source,
           durations,
           plans,
-          addOns,
           expectedAmount,
           expectedCurrency,
           idempotencyKey,
@@ -242,18 +241,6 @@ export function createPaymentsRouter(deps: {
               typeof (p as { subscriptionId?: unknown }).subscriptionId === "string" &&
               typeof (p as { planId?: unknown }).planId === "string",
           );
-        const addOnsValid =
-          Array.isArray(addOns) &&
-          addOns.every(
-            (a) =>
-              a !== null &&
-              typeof a === "object" &&
-              typeof (a as { subscriptionId?: unknown }).subscriptionId === "string" &&
-              Array.isArray((a as { addOnIds?: unknown }).addOnIds) &&
-              (a as { addOnIds: unknown[] }).addOnIds.every(
-                (id) => typeof id === "string" && id.length > 0,
-              ),
-          );
 
         const successOverride =
           typeof bodySuccessUrl === "string" ? bodySuccessUrl : null;
@@ -301,16 +288,6 @@ export function createPaymentsRouter(deps: {
                   plans: (plans as ReadonlyArray<{ subscriptionId: string; planId: string }>).map(
                     (p) => ({ subscriptionId: String(p.subscriptionId), planId: String(p.planId) }),
                   ),
-                }
-              : {}),
-            ...(addOnsValid
-              ? {
-                  addOns: (
-                    addOns as ReadonlyArray<{ subscriptionId: string; addOnIds: string[] }>
-                  ).map((a) => ({
-                    subscriptionId: String(a.subscriptionId),
-                    addOnIds: a.addOnIds.map((id) => String(id)),
-                  })),
                 }
               : {}),
             ...(typeof idempotencyKey === "string" && idempotencyKey.length > 0
