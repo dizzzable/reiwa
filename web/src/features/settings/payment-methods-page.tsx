@@ -43,6 +43,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
+/**
+ * The panel refused the switch or «Отвязать» because a payment with this
+ * method is being made right now (`SAVED_PAYMENT_METHOD_BUSY`, 409): nothing
+ * changed, and the same action goes through in a minute. The switch goes back
+ * to what the method really is, and the message says why.
+ */
+function isPaymentInProgress(error: unknown): boolean {
+  const data = (error as { response?: { data?: { code?: unknown } } } | null)?.response?.data;
+  return data?.code === 'SAVED_PAYMENT_METHOD_BUSY';
+}
+
 export default function PaymentMethodsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -121,7 +132,8 @@ export default function PaymentMethodsPage() {
       toast.success(t('paymentMethods.unbound'));
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     },
-    onError: () => toast.error(t('paymentMethods.error')),
+    onError: (error) =>
+      toast.error(isPaymentInProgress(error) ? t('paymentMethods.unbindBusy') : t('paymentMethods.error')),
     onSettled: () => setUnbindId(null),
   });
 
@@ -156,11 +168,11 @@ export default function PaymentMethodsPage() {
       }
       return { previous };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.previous) {
         queryClient.setQueryData(['payment-methods'], ctx.previous);
       }
-      toast.error(t('paymentMethods.autopayError'));
+      toast.error(isPaymentInProgress(err) ? t('paymentMethods.autopayBusy') : t('paymentMethods.autopayError'));
     },
     onSuccess: (result) => {
       toast.success(

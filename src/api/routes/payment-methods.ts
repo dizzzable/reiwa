@@ -8,7 +8,7 @@
  *
  * Mounted at: /api/v1/payment-methods
  */
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import type { AdminClient } from '../../lib/admin-client.js';
 import type { SessionStore } from '../../lib/session-store.js';
 import type { ReiwaConfig } from '../../config.js';
@@ -16,7 +16,7 @@ import { resolveReiwaPublicUrl } from '../../config.js';
 import { createFlexibleSessionMiddleware, type AuthRequest } from '../middleware/session.js';
 import { resolveUserIdentity } from '../middleware/user-identity.js';
 import { sendSafeError } from '../lib/error-response.js';
-import { describeUpstreamError } from '../lib/upstream-error.js';
+import { describeUpstreamError, readUpstreamCode } from '../lib/upstream-error.js';
 import { createRedisRateLimiter } from '../middleware/rate-limit.js';
 import type { WebSessionStore } from '../../infrastructure/redis/session.js';
 
@@ -170,6 +170,7 @@ export function createPaymentMethodsRouter(deps: {
       );
       res.json(result);
     } catch (e) {
+      if (sendPaymentInProgress(res, e)) return;
       sendSafeError(req, res, e, 400, 'Failed to unbind payment method', 'payment-methods/unbind');
     }
   });
@@ -198,6 +199,7 @@ export function createPaymentMethodsRouter(deps: {
       );
       res.json(result);
     } catch (e) {
+      if (sendPaymentInProgress(res, e)) return;
       sendSafeError(
         req,
         res,
@@ -210,4 +212,22 @@ export function createPaymentMethodsRouter(deps: {
   });
 
   return router;
+}
+
+/**
+ * The panel's refusal of the switch and of «Отвязать» while a payment with the
+ * method is being submitted (`SAVED_PAYMENT_METHOD_BUSY`, 409): nothing
+ * changed, and the same action goes through a minute later. Forwarded by its
+ * code, so «Способы оплаты» can say that instead of "could not change" — the
+ * only code forwarded here; any other refusal keeps the generic answer.
+ */
+export const PAYMENT_METHOD_BUSY_CODE = 'SAVED_PAYMENT_METHOD_BUSY';
+
+function sendPaymentInProgress(res: Response, e: unknown): boolean {
+  if (readUpstreamCode(e) !== PAYMENT_METHOD_BUSY_CODE) return false;
+  res.status(409).json({
+    code: PAYMENT_METHOD_BUSY_CODE,
+    message: 'A payment with this method is in progress; try again in a minute',
+  });
+  return true;
 }
