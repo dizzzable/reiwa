@@ -286,3 +286,80 @@ describe('a MarkdownV2 message keeps its parse mode, and so its formatting', () 
     );
   });
 });
+
+/**
+ * A subscriber's own words inside a card: the panel writes them with `:` `{`
+ * `}` as numeric references (its `literalCardText`), so the token pass here —
+ * which resolves the operator's `:slug:` and `{{KEY}}` across the whole card —
+ * finds nothing to resolve in them, and Telegram, which reads every numeric
+ * reference, shows them as typed. A ticket subject «ключ {{SUB_ID}} не
+ * работает, пишу :fire: срочно» used to reach the operator as «ключ • не
+ * работает, пишу 🔥 срочно».
+ *
+ * This pins the half on this side: the listener passes those references
+ * through untouched on every route a card or a notification takes, while the
+ * operator's own tokens in the same text are still resolved. Were this pass to
+ * start decoding entities first, the subscriber's words would be read as
+ * tokens again.
+ */
+describe('a subscriber’s own words in what the panel sends, written as the panel writes them', () => {
+  /** The panel's `literalCardText('ключ {{SUB_ID}} не работает, пишу :fire: срочно <b>&')`. */
+  const CARRIED =
+    'ключ &#123;&#123;SUB_ID&#125;&#125; не работает, пишу &#58;fire&#58; срочно &lt;b&gt;&amp;';
+  const CARD = `<b>:fire: Новое обращение</b>\n📨 Тема: ${CARRIED}`;
+  const SENT = `<b><tg-emoji emoji-id="${FIRE_ID}">🔥</tg-emoji> Новое обращение</b>\n📨 Тема: ${CARRIED}`;
+
+  /** Telegram's reading of the text: tags gone, every numeric reference and the named ones decoded. */
+  function asTelegramShows(html: string): string {
+    return html
+      .replace(/<[^>]+>/g, '')
+      .replace(/&#(\d+);/g, (_m, code: string) => String.fromCodePoint(Number(code)))
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+  }
+
+  it('/notify-dev and /notify-broadcast: passed through as written, the card’s own emoji resolved', async () => {
+    const h = start(packConfig(true));
+    expect(await h.call('/notify-dev', { eventId: freshEventId('lit-dev'), text: CARD, parseMode: 'HTML' })).toBe(204);
+    expect(
+      await h.call('/notify-broadcast', {
+        eventId: freshEventId('lit-bcast'),
+        chatId: '-1001234567890',
+        text: CARD,
+        parseMode: 'HTML',
+      }),
+    ).toBe(200);
+
+    for (const index of [0, 1]) {
+      const { text } = sentText(h.sendMessage, index);
+      expect(text).toBe(SENT);
+      expect(asTelegramShows(text)).toContain('Тема: ключ {{SUB_ID}} не работает, пишу :fire: срочно <b>&');
+    }
+  });
+
+  it('/notify-dev-document and /notify-broadcast-document: the caption passed through as written', async () => {
+    const h = start(packConfig(true));
+    await h.call('/notify-dev-document', { eventId: freshEventId('lit-dev-doc'), content: 'x', caption: CARD, parseMode: 'HTML' });
+    await h.call('/notify-broadcast-document', {
+      eventId: freshEventId('lit-bcast-doc'),
+      chatId: '-1001234567890',
+      content: 'x',
+      caption: CARD,
+      parseMode: 'HTML',
+    });
+
+    for (const call of h.sendDocument.mock.calls as unknown[][]) {
+      expect((call[2] as Record<string, unknown>)['caption']).toBe(SENT);
+    }
+    expect(h.sendDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('/notify: the subscriber’s own notification, the same', async () => {
+    const h = start(packConfig(true));
+    expect(await h.call('/notify', { eventId: freshEventId('lit-notify'), telegramId: '42', text: CARD, parseMode: 'HTML' })).toBe(
+      200,
+    );
+    expect(sentText(h.sendMessage).text).toBe(SENT);
+  });
+});
