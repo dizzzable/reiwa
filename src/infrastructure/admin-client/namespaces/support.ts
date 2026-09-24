@@ -16,6 +16,20 @@ export interface CreateTicketInput {
   readonly message: string;
 }
 
+/** A language the panel writes a guest's letters in. */
+export type GuestLocale = 'ru' | 'en';
+
+/**
+ * The guest page's language, as the panel reads it: a header, never a body
+ * field. The panel's validation refuses a body property its DTO does not
+ * declare (`forbidNonWhitelisted`), so a panel older than the field would have
+ * failed the conversation itself; a header it does not read, it ignores, and
+ * the letter stays Russian there. No language, no header.
+ */
+function guestLocaleHeader(locale: GuestLocale | null | undefined): Record<string, string> {
+  return locale === 'ru' || locale === 'en' ? { 'x-support-guest-locale': locale } : {};
+}
+
 function reference(identity: UserIdentity): string {
   if (typeof identity.userId === 'string' && identity.userId.length > 0) {
     return identity.userId;
@@ -124,8 +138,10 @@ export class SupportNamespace {
      */
     readonly installId?: string | null;
     readonly deviceHash?: string | null;
+    /** The guest page's language: the panel writes the guest's letters in it. */
+    readonly locale?: GuestLocale | null;
   }): Promise<GuestTicketResponse> {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...guestLocaleHeader(input.locale) };
     if (input.clientIp) headers['x-support-client-ip'] = input.clientIp;
     return this.transport.request<GuestTicketResponse>(
       'POST',
@@ -147,9 +163,10 @@ export class SupportNamespace {
     });
   }
 
-  replyGuest(token: string, content: string): Promise<unknown> {
+  replyGuest(token: string, content: string, locale?: GuestLocale | null): Promise<unknown> {
     return this.transport.request('POST', '/api/internal/support/guest/reply', { content }, {
       'x-support-guest-token': token,
+      ...guestLocaleHeader(locale),
     });
   }
 

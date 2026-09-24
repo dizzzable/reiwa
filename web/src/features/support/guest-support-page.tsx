@@ -18,7 +18,9 @@ import {
   replyGuestConversation,
   closeGuestConversation,
   getGuestSupportConfig,
+  guestPageLocale,
   supportGuestAttachmentUrl,
+  type GuestPageLocale,
   type GuestTicket,
   type SupportAttachmentMeta,
 } from '@/lib/api-client'
@@ -48,7 +50,11 @@ function statusOf(err: unknown): number | null {
 }
 
 export default function GuestSupportPage(): JSX.Element {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  // The page's language goes with the first message and each reply: the panel
+  // writes the guest's reply letters in it. Read at the moment of sending, so a
+  // guest who switched the page's language gets their next letter in the new one.
+  const pageLocale = (): GuestPageLocale | undefined => guestPageLocale(i18n.language)
   const qc = useQueryClient()
   const [resumeCode, setResumeCode] = useState<string | null>(null)
   const [closedLocally, setClosedLocally] = useState(false)
@@ -133,7 +139,8 @@ export default function GuestSupportPage(): JSX.Element {
   }
 
   const createMutation = useMutation({
-    mutationFn: createGuestTicket,
+    mutationFn: (input: Parameters<typeof createGuestTicket>[0]) =>
+      createGuestTicket({ ...input, locale: pageLocale() }),
     onSuccess: (res) => {
       setResumeCode(res.resumeCode)
       setClosedLocally(false)
@@ -143,7 +150,7 @@ export default function GuestSupportPage(): JSX.Element {
   })
 
   const replyMutation = useMutation({
-    mutationFn: (content: string) => replyGuestConversation(content),
+    mutationFn: (content: string) => replyGuestConversation(content, undefined, pageLocale()),
     onSuccess: (updated) => qc.setQueryData(QUERY_KEY, updated),
     onError: (err) => toast.error(describeError(err)),
   })

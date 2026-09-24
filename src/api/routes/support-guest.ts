@@ -41,6 +41,21 @@ function readSignal(body: unknown, key: "installId" | "deviceHash"): string | nu
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= 128 ? trimmed : null;
 }
+
+/**
+ * The guest page's language out of the request body — `ru` or `en`, anything
+ * else is none. The panel writes the guest's reply letters in it; with none it
+ * writes them in Russian, as it always did. Relayed as a header
+ * (`AdminClient.support.createGuest` / `replyGuest`), never in the panel's
+ * body: a panel that does not know the field would refuse the whole request.
+ */
+function readLocale(body: unknown): "ru" | "en" | null {
+  if (body === null || typeof body !== "object") return null;
+  const value = (body as Record<string, unknown>)["locale"];
+  if (typeof value !== "string") return null;
+  const normalised = value.trim().toLowerCase();
+  return normalised === "ru" || normalised === "en" ? normalised : null;
+}
 /**
  * How long the device keeps its key (`reiwa_support`). The key's lifetime must
  * never be what ends a guest's access — the panel decides that: the support
@@ -171,6 +186,7 @@ export function createSupportGuestRouter(deps: {
         // gets anyway. Nothing here is worth failing a support request over.
         installId: readSignal(req.body, "installId"),
         deviceHash: readSignal(req.body, "deviceHash"),
+        locale: readLocale(req.body),
       });
       if (!result) {
         res.status(503).json({ error: "unavailable" });
@@ -310,7 +326,7 @@ export function createSupportGuestRouter(deps: {
       return;
     }
     try {
-      const ticket = await adminClient?.support.replyGuest(token, content.trim());
+      const ticket = await adminClient?.support.replyGuest(token, content.trim(), readLocale(req.body));
       res.json(ticket ?? null);
     } catch (err: unknown) {
       if (isUpstreamStatus(err, 404)) {

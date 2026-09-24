@@ -134,11 +134,25 @@ export const getGuestSupportConfig = () =>
  * Failing to collect them is not an error. A visitor who blocks them gets an
  * unmarked conversation, which is what any unrecognised visitor gets.
  */
+/**
+ * The guest page's language, sent with the message that opens a conversation
+ * and with each reply: the panel writes the guest's reply letters in it (a
+ * guest has no account to read it from). Anything but `ru`/`en` is not sent.
+ */
+export type GuestPageLocale = "ru" | "en";
+
+/** The page's i18next language as the one a letter can be written in; `undefined` for any other. */
+export function guestPageLocale(language: string | undefined): GuestPageLocale | undefined {
+  const head = (language ?? "").toLowerCase().split(/[-_]/, 1)[0];
+  return head === "ru" || head === "en" ? head : undefined;
+}
+
 export const createGuestTicket = async (input: {
   subject: string;
   message: string;
   email?: string;
   captchaToken?: string;
+  locale?: GuestPageLocale;
 }) => {
   const signals = await collectDeviceSignals().catch(() => ({
     installId: null,
@@ -181,9 +195,13 @@ export const resumeGuestConversation = (resume: string, confirm = false) =>
     .post<GuestResumeResult>("/support/guest/resume", confirm ? { resume, confirm: true } : { resume })
     .then((r) => r.data);
 
-export const replyGuestConversation = (content: string, resume?: string) =>
+export const replyGuestConversation = (content: string, resume?: string, locale?: GuestPageLocale) =>
   apiClient
-    .post<GuestTicket>("/support/guest/reply", { content, ...(resume ? { resume } : {}) })
+    .post<GuestTicket>("/support/guest/reply", {
+      content,
+      ...(resume ? { resume } : {}),
+      ...(locale ? { locale } : {}),
+    })
     .then((r) => r.data);
 
 export const closeGuestConversation = (resume?: string) =>

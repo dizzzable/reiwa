@@ -231,7 +231,9 @@ describe("support-guest router", () => {
       body: { content: "any update?" },
     });
     expect(res.status).toBe(200);
-    expect(replyGuest).toHaveBeenCalledWith("tok-xyz", "any update?");
+    // No page language in the body: none relayed (`null`), and the panel
+    // writes the guest's letter in Russian, as before.
+    expect(replyGuest).toHaveBeenCalledWith("tok-xyz", "any update?", null);
   });
 
   it("rate-limits creation per IP (429 on the 5th within the window)", async () => {
@@ -374,7 +376,7 @@ describe("following a reply letter's link", () => {
       cookie: "reiwa_support=S-2",
       body: { content: "my login is …" },
     });
-    expect(replyGuest).toHaveBeenLastCalledWith("S-2", "my login is …");
+    expect(replyGuest).toHaveBeenLastCalledWith("S-2", "my login is …", null);
 
     const confirmed = await follow(app, "E1", "reiwa_support=S-2", true);
     expect((confirmed.body as { status: string }).status).toBe("opened");
@@ -385,5 +387,43 @@ describe("following a reply letter's link", () => {
     const { app } = guestPanel();
     const res = await request(app, { method: "POST", path: "/api/v1/support/guest/resume", body: {} });
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * The guest page's language, relayed to the panel for the guest's reply
+ * letters: `ru` or `en` out of the body, anything else as none — and none is
+ * the Russian letter every guest got before.
+ */
+describe("support-guest router — the page's language", () => {
+  it("relays it when a conversation opens", async () => {
+    const seen: unknown[] = [];
+    for (const locale of ["en", " RU ", "de", 7, undefined]) {
+      const createGuest = vi.fn(async (input: { locale?: unknown }) => {
+        seen.push(input.locale);
+        return { token: "tok", resumeCode: "tok", ticket: { id: "t-1" } };
+      });
+      const res = await request(makeApp({ createGuest }), {
+        method: "POST",
+        path: "/api/v1/support/guest",
+        body: { subject: "Help", message: "Payment stuck", ...(locale === undefined ? {} : { locale }) },
+      });
+      expect(res.status).toBe(200);
+    }
+    expect(seen).toEqual(["en", "ru", null, null, null]);
+  });
+
+  it("relays it with each reply", async () => {
+    const replyGuest = vi.fn(async () => ({ id: "t-1" }));
+    const app = makeApp({ replyGuest });
+    for (const locale of ["en", "ru", "xx"]) {
+      await request(app, {
+        method: "POST",
+        path: "/api/v1/support/guest/reply",
+        cookie: "reiwa_support=tok-xyz",
+        body: { content: "any update?", locale },
+      });
+    }
+    expect(replyGuest.mock.calls.map((call) => (call as unknown[])[2])).toEqual(["en", "ru", null]);
   });
 });
