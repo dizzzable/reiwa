@@ -45,6 +45,7 @@ import {
   isFreeResetTraffic,
   resolveAddOnPickPath,
 } from "@/features/addons/reset-traffic-policy";
+import { describeAddOnEnd } from "@/features/addons/add-on-end";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -340,6 +341,7 @@ function SelectAddOn() {
           const customId = customIconId(addOn.icon);
           const custom = customId ? customIcons.find((c) => c.id === customId) : undefined;
           const BuiltIn = resolveBuiltInIcon(addOn.icon);
+          const endLabel = describeAddOnEnd(addOn, t);
           const TypeFallback =
             addOn.type === "EXTRA_TRAFFIC"
               ? Gauge
@@ -386,6 +388,9 @@ function SelectAddOn() {
                 )}
                 {addOn.description && (
                   <p className="mt-0.5 line-clamp-2 text-xs text-[color:var(--brand-muted-foreground)]">{addOn.description}</p>
+                )}
+                {endLabel !== null && (
+                  <p className="mt-0.5 text-[11px] text-[color:var(--brand-muted-foreground)]">{endLabel}</p>
                 )}
               </div>
               {/* A reset covered by the allowance says so instead of showing a
@@ -612,6 +617,9 @@ function ReviewStep() {
       : selectedAddOn.type === "RESET_TRAFFIC"
         ? t("addons.resetTraffic")
         : t("addons.extraDevices", { count: selectedAddOn.value });
+  // Said again on the last screen before the payment: what the money buys
+  // includes when it stops.
+  const endLabel = describeAddOnEnd(selectedAddOn, t);
 
   return (
     <div className="space-y-4">
@@ -622,6 +630,9 @@ function ReviewStep() {
           <ReviewRow label={selectedAddOn.name} value={valueLabel} />
           {selectedAddOn.description && (
             <p className="text-xs text-[color:var(--brand-muted-foreground)]">{selectedAddOn.description}</p>
+          )}
+          {endLabel !== null && (
+            <p className="text-xs text-[color:var(--brand-muted-foreground)]">{endLabel}</p>
           )}
           <ReviewRow label={t("addons.selectGateway")} value={selectedGateway.label} />
           <div className="h-px bg-[color:var(--color-border-soft)]" />

@@ -82,6 +82,20 @@ export default function MyAddOnsPage() {
   );
 }
 
+/**
+ * An add-on with no date that still works — or will, once its period begins —
+ * and ends with the subscription: one bought "until the end" of a subscription
+ * that has no end date. Said so rather than left blank beside its dated
+ * neighbours. A cancelled or finished one with no date says nothing: it ended
+ * already, and "until the subscription ends" would be untrue.
+ */
+function endsWithSubscription(entitlement: UserAddOnEntitlement): boolean {
+  return (
+    entitlement.lifetime === "UNTIL_SUBSCRIPTION_END" &&
+    (entitlement.state === "ACTIVE" || entitlement.state === "PENDING_ACTIVATION")
+  );
+}
+
 function EntitlementRow({ entitlement, index }: { entitlement: UserAddOnEntitlement; index: number }) {
   const { t } = useTranslation();
   const Icon = entitlement.type === "EXTRA_TRAFFIC" ? Gauge : Smartphone;
@@ -118,10 +132,14 @@ function EntitlementRow({ entitlement, index }: { entitlement: UserAddOnEntitlem
             {formatPrice(entitlement.totalAmount, entitlement.currency)}
           </p>
         </div>
-        {entitlement.expiresAt && (
+        {entitlement.expiresAt ? (
           <p className="theme-subtle mt-0.5 text-[11px]">
             {t("addonsHistory.expires", { date: formatDateTime(entitlement.expiresAt) })}
           </p>
+        ) : (
+          endsWithSubscription(entitlement) && (
+            <p className="theme-subtle mt-0.5 text-[11px]">{t("addons.untilSubscriptionEnd")}</p>
+          )
         )}
       </div>
     </motion.div>

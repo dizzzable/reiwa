@@ -108,6 +108,25 @@ describe('AddOnsNamespace v2 contract (T-014)', () => {
     expect(result.addOns[0]?.type).toBe('RESET_TRAFFIC');
   });
 
+  it('passes on whether the purchase is dated, and reads a panel that does not say as saying nothing', async () => {
+    // The parse strips keys it does not name: without `dated` in the schema the
+    // SPA would never see it, and would never show a date.
+    const withField = (dated: boolean) => ({
+      ...VALID_ELIGIBILITY,
+      addOns: [{ ...VALID_ELIGIBILITY.addOns[0]!, eligibility: { ...VALID_ELIGIBILITY.addOns[0]!.eligibility, dated } }],
+    });
+    for (const dated of [true, false]) {
+      const { namespace } = namespaceWith(async () => withField(dated));
+      const result = await namespace.listForSubscription('sub-1', {});
+      expect(result.addOns[0]?.eligibility.dated).toBe(dated);
+    }
+    // 0.9.7.68 sends no such field: parsed, and absent — not a blank screen.
+    const { namespace } = namespaceWith(async () => VALID_ELIGIBILITY);
+    const result = await namespace.listForSubscription('sub-1', {});
+    expect(result.addOns[0]?.eligibility.expiresAt).toBe('2027-01-01T00:00:00.000Z');
+    expect(result.addOns[0]?.eligibility.dated).toBeUndefined();
+  });
+
   it('parses a valid v2 eligibility payload and hits the subscription-scoped path', async () => {
     const { namespace, calls } = namespaceWith(async () => VALID_ELIGIBILITY);
     const result = await namespace.listForSubscription('sub-1');

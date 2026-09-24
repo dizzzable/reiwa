@@ -98,6 +98,12 @@ export interface EligibleAddOn {
     activation: "NOW" | "TERM_START";
     /** `null` for `RESET_TRAFFIC`, which grants nothing and so has no lifetime. */
     expiresAt: string | null;
+    /**
+     * `true` only when the panel records this purchase with an end, at
+     * `expiresAt`; `false` when it is a permanent increment. Absent from a
+     * panel older than the field. A date is shown only on `true`.
+     */
+    dated?: boolean;
     explanationCode: string;
   };
   /**

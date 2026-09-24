@@ -49,6 +49,12 @@ const eligibilityInfoSchema = z.object({
   // that exact shape before, parsing a healthy panel's response with a schema
   // from the wrong era.
   expiresAt: z.string().nullable(),
+  // Whether the purchase is recorded with an end — at `expiresAt` — or is the
+  // panel's permanent increment (stage 2 off, and the like): the only licence
+  // the cabinet has to say «Действует до …». Optional: a panel older than the
+  // field (0.9.7.68) sends none, and must then read as "no date to promise",
+  // not blank the screen. Kept here because the parse strips unknown keys.
+  dated: z.boolean().optional(),
   explanationCode: z.string(),
 });
 
