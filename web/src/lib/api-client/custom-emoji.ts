@@ -4,6 +4,7 @@
  * admin host. Assets load same-origin via the `/uploads/emoji/*` proxy.
  */
 import { apiClient } from "./transport.js";
+import { configVersionRequest } from "@/lib/config-versions";
 
 export interface CustomEmojiItem {
   slug: string;
@@ -18,5 +19,12 @@ export interface CustomEmojiPack {
   emojis: CustomEmojiItem[];
 }
 
-export const getCustomEmojiPacks = () =>
-  apiClient.get<CustomEmojiPack[]>("/custom-emoji/packs").then((r) => r.data);
+/** With the version the cabinet holds once it is known (`?v=`, `lib/config-versions.ts`). */
+export const getCustomEmojiPacks = () => {
+  const versioned = configVersionRequest("customEmojiPacks");
+  return (
+    versioned === undefined
+      ? apiClient.get<CustomEmojiPack[]>("/custom-emoji/packs")
+      : apiClient.get<CustomEmojiPack[]>("/custom-emoji/packs", versioned)
+  ).then((r) => r.data);
+};

@@ -1,13 +1,14 @@
 /**
  * A rejected public-config snapshot must name the key it rejected.
  *
- * The all-or-nothing decision is deliberate and stays: half-applied branding
- * looks worse than the previous theme. Doing it in silence was not. The guard
- * was one `&&` chain returning a bare `false`; the route threw, the cabinet
- * went on serving the last stored snapshot from Redis and the browser its copy
- * from localStorage, and the appearance stayed frozen for as long as the bad
- * key survived — while the panel showed the new theme and reported the save as
- * successful. Nothing in the log named the field, so nobody could act on it.
+ * The guard was one `&&` chain returning a bare `false`; the route threw, the
+ * cabinet went on serving the last stored snapshot from Redis and the browser
+ * its copy from localStorage, and the appearance stayed frozen for as long as
+ * the bad key survived — while the panel showed the new theme and reported the
+ * save as successful. Nothing in the log named the field, so nobody could act
+ * on it. (Since 24.09.2026 a fresh panel payload is no longer refused whole
+ * for one key — `public-config-field-fallback.test.ts` pins that; the guard's
+ * yes/no answer, what these specs cover, is unchanged.)
  *
  * These specs fix both halves of the fix: the guard hands back WHICH key failed
  * and WHAT was there (bounded, never the payload), and the notifier turns that
@@ -402,12 +403,12 @@ describe('the rejection reaches the operator, once', () => {
   });
 });
 
-describe('the route that freezes the cabinet names the key while doing it', () => {
+describe('the route names the key it did not take', () => {
   beforeEach(() => {
     resetBrandingCache();
   });
 
-  it('reports the bad upstream key and still serves the previous snapshot', async () => {
+  it('reports the bad upstream key, and takes the rest of the payload without it', async () => {
     const logger = createRecordingLogger();
     const errorReporter = createRecordingReporter();
     const notifier = createPublicConfigRejectionNotifier({
@@ -418,7 +419,9 @@ describe('the route that freezes the cabinet names the key while doing it', () =
 
     const adminClient = {
       branding: {
-        getReiwaPublicConfig: vi.fn(async () => withBranding({ borderRadius: 'rounded-md' })),
+        getReiwaPublicConfig: vi.fn(async () =>
+          withBranding({ brandName: 'Southern Lights VPN', borderRadius: 'rounded-md' }),
+        ),
       },
     } as never;
     const persistence = {
@@ -433,17 +436,51 @@ describe('the route that freezes the cabinet names the key while doing it', () =
       notifier,
     );
 
-    // All-or-nothing held: the previous snapshot is what the cabinet gets.
-    expect(payload.body).toBe(VALID);
-    expect(persistence.save).not.toHaveBeenCalled();
+    // Everything else is taken; the bad key keeps what was served before.
+    const branding = (payload.body as PublicConfigSnapshot).branding;
+    expect(branding['brandName']).toBe('Southern Lights VPN');
+    expect(branding['borderRadius']).toBe(VALID.branding['borderRadius']);
+    expect(persistence.save).toHaveBeenCalledOnce();
 
-    // And the freeze is now attributable, in the log and on the Events page.
+    // And it is attributable, in the log and on the Events page — naming the
+    // field and saying what customers see.
     expect(logger.warnings).toHaveLength(1);
     expect(logger.warnings[0]?.ctx).toMatchObject({
       source: 'upstream',
       key: 'branding.borderRadius',
+      fields: [{ key: 'branding.borderRadius', reason: 'not-an-allowed-value', found: 'string "rounded-md"' }],
     });
+    expect(logger.warnings[0]?.message).toContain('applied without 1 field');
+    expect(logger.warnings[0]?.message).toContain('previous value');
     expect(errorReporter.reports).toHaveLength(1);
+    expect(errorReporter.reports[0]?.level).toBe('warning');
     expect(errorReporter.reports[0]?.message).toContain('branding.borderRadius');
+    expect(errorReporter.reports[0]?.context).toMatchObject({
+      event: 'reiwa.config.degraded_defaults_used',
+    });
+  });
+
+  it('still refuses a payload with nothing usable in it, and serves the previous snapshot', async () => {
+    const logger = createRecordingLogger();
+    const errorReporter = createRecordingReporter();
+    const notifier = createPublicConfigRejectionNotifier({ logger, errorReporter, now: () => 0 });
+
+    const adminClient = {
+      branding: {
+        getReiwaPublicConfig: vi.fn(async () => ({ ...VALID, branding: 'not an object' })),
+      },
+    } as never;
+    const persistence = {
+      load: vi.fn(async () => VALID),
+      save: vi.fn(async () => undefined),
+    };
+
+    const payload = await getPublicConfigPayload(adminClient, undefined, persistence, notifier);
+
+    expect(payload.body).toBe(VALID);
+    expect(persistence.save).not.toHaveBeenCalled();
+    expect(logger.warnings).toHaveLength(1);
+    expect(logger.warnings[0]?.ctx).toMatchObject({ source: 'upstream', key: 'branding' });
+    expect(logger.warnings[0]?.message).toContain('previous snapshot');
   });
 });

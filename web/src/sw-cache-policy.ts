@@ -27,3 +27,31 @@ export function isCacheableApiPath(pathname: string): boolean {
   if (CACHEABLE_API_EXACT.has(pathname)) return true
   return CACHEABLE_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))
 }
+
+/**
+ * The query parameter the page's settings version watcher puts on a read
+ * once it knows which version the cabinet holds — `CONFIG_VERSION_PARAM` in
+ * `lib/config-versions.ts`, which this worker bundle cannot import (it touches
+ * `document`). `test/web/sw-cache-policy.test.ts` holds the two equal.
+ */
+export const CONFIG_VERSION_SEARCH_PARAM = 'v'
+
+/**
+ * A read the version watcher asked for: it wants THAT version, which only the
+ * network has — the cached copy is the one it is replacing.
+ */
+export function isVersionedConfigRead(url: URL): boolean {
+  return url.searchParams.has(CONFIG_VERSION_SEARCH_PARAM)
+}
+
+/**
+ * The key an API response is kept under: its URL without the version. Every
+ * version of `/api/v1/landing` is one entry — the one a plain read is served
+ * from — so a versioned read refreshes it instead of adding one entry per
+ * version the operator ever saved.
+ */
+export function apiCacheKey(url: string): string {
+  const parsed = new URL(url)
+  parsed.searchParams.delete(CONFIG_VERSION_SEARCH_PARAM)
+  return parsed.href
+}

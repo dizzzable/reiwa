@@ -7,14 +7,34 @@
  * once at SPA mount via React Query.
  */
 import { apiClient } from "./transport.js";
+import {
+  configVersionRequest,
+  configVersionWatcher,
+  servedConfigVersion,
+} from "@/lib/config-versions";
 import type { Branding, PublicConfig as ReiwaPublicConfig } from "@/types/branding";
 import type { PublicConfig } from "@/types/api";
 
 export const getBranding = () =>
   apiClient.get<Branding>("/branding").then((r) => r.data);
 
-export const getReiwaPublicConfig = () =>
-  apiClient.get<ReiwaPublicConfig>("/public-config").then((r) => r.data);
+/**
+ * With the version the cabinet holds once it is known (`?v=`, so no cache can
+ * answer with an older copy), and noting the version the body names — a copy
+ * the browser's cache answered with just after a save is then refetched at
+ * once (`lib/config-versions.ts`).
+ */
+export const getReiwaPublicConfig = () => {
+  const versioned = configVersionRequest("publicConfig");
+  const request =
+    versioned === undefined
+      ? apiClient.get<ReiwaPublicConfig>("/public-config")
+      : apiClient.get<ReiwaPublicConfig>("/public-config", versioned);
+  return request.then((r) => {
+    configVersionWatcher.noteServed("publicConfig", servedConfigVersion(r.headers));
+    return r.data;
+  });
+};
 
 /**
  * Legacy `/config` payload (broader public-config, includes feature

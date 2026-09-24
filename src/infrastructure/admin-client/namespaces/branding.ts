@@ -240,4 +240,22 @@ export class BrandingNamespace {
       '/api/internal/branding/public-config',
     );
   }
+
+  /**
+   * Tells the panel which fields of a public-config version the cabinet did
+   * NOT take (`infrastructure/public-config/delivery-report.ts`), so the
+   * branding page can name them. An empty list says it took everything. A
+   * panel older than the route answers 404, which the reporter reads as
+   * "nowhere to report".
+   */
+  reportPublicConfigDelivery(report: {
+    readonly version: string;
+    readonly rejected: ReadonlyArray<{
+      readonly path: string;
+      readonly reason: string;
+      readonly value: string;
+    }>;
+  }): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/branding/delivery', report);
+  }
 }

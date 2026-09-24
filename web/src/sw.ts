@@ -4,7 +4,7 @@ import { registerRoute, Route, setCatchHandler } from 'workbox-routing'
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 import { CacheableResponsePlugin } from 'workbox-cacheable-response'
-import { isCacheableApiPath } from './sw-cache-policy'
+import { apiCacheKey, isCacheableApiPath, isVersionedConfigRead } from './sw-cache-policy'
 // Both modules are dependency-free by design — see the note at the top of
 // `push-key-match.ts`. `lib/push.ts` itself is NOT reachable from here: it
 // imports the SPA API client (axios, i18n, `window`), none of which exists in a
@@ -278,6 +278,45 @@ registerRoute(staticAssetsRoute)
 // NOT cached (account-scoped / sensitive): /auth/*, /profile, /subscription,
 //   /payments/*, /activity, /promo, /referrals, /devices, /partner,
 //   /support, /linking/*, /push/*, /realtime/*.
+// Every response of this cache is kept under its URL WITHOUT the settings
+// version the page's watcher adds (`?v=`, `lib/config-versions.ts`): one entry
+// per path, whatever the version — the one a plain read is answered from.
+// Without it each operator save would add an entry, and the entry a plain read
+// finds would stay the old one.
+const versionFreeCacheKey = {
+  cacheKeyWillBeUsed: async ({ request }: { request: Request }): Promise<string> => apiCacheKey(request.url),
+}
+
+// One set for both routes below: they share one cache, and one expiration
+// bookkeeper keeps its entry count and ages.
+const apiCachePlugins = [
+  versionFreeCacheKey,
+  new CacheableResponsePlugin({ statuses: [0, 200] }),
+  new ExpirationPlugin({
+    maxEntries: 50,
+    maxAgeSeconds: 24 * 60 * 60, // 24h — config/catalog only, never account data
+    purgeOnQuotaError: true, // Evict API cache entries first on quota exceeded
+  }),
+]
+
+// A read that carries a settings version wants THAT version: the page's watcher
+// saw the cabinet move on, and the cached copy is the one being replaced. It
+// goes to the network first — the browser cache has never seen the URL either
+// — and its answer refreshes the shared entry above, so the next plain read
+// (the next visit's first load) is served the new copy too. With no network,
+// the entry that exists is still better than an error. Registered BEFORE the
+// stale-while-revalidate route: Workbox answers with the first match.
+const versionedApiRoute = new Route(
+  ({ url, request }) =>
+    request.method === 'GET' && isCacheableApiPath(url.pathname) && isVersionedConfigRead(url),
+  new NetworkFirst({
+    cacheName: API_CACHE,
+    plugins: apiCachePlugins,
+  }),
+)
+
+registerRoute(versionedApiRoute)
+
 const apiRoute = new Route(
   ({ url, request }) => {
     // Only ever cache idempotent reads; never POST/PUT/PATCH/DELETE.
@@ -286,14 +325,7 @@ const apiRoute = new Route(
   },
   new StaleWhileRevalidate({
     cacheName: API_CACHE,
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({
-        maxEntries: 50,
-        maxAgeSeconds: 24 * 60 * 60, // 24h — config/catalog only, never account data
-        purgeOnQuotaError: true, // Evict API cache entries first on quota exceeded
-      }),
-    ],
+    plugins: apiCachePlugins,
   }),
 )
 

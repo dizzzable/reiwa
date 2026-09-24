@@ -72,6 +72,15 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
   }
 
   async load(): Promise<PublicConfigSnapshot | null> {
+    return (await this.loadServed())?.snapshot ?? null;
+  }
+
+  /**
+   * The copy and the panel version it was served under. The copy is judged
+   * whole: it is what a restart SERVES, and it was whole when it was saved —
+   * the per-field fallback runs before `save`, never on this read.
+   */
+  async loadServed(): Promise<{ readonly snapshot: PublicConfigSnapshot; readonly version: string } | null> {
     const saved = await this.store.load(PUBLIC_CONFIG_LKG);
     if (saved === null) return null;
     const rejection = describePublicConfigSnapshot(saved.payload);
@@ -80,10 +89,10 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
       return null;
     }
     this.notifier.accepted("redis-load");
-    return saved.payload;
+    return { snapshot: saved.payload, version: saved.hash };
   }
 
-  async save(snapshot: PublicConfigSnapshot): Promise<void> {
+  async save(snapshot: PublicConfigSnapshot, version?: string): Promise<void> {
     const rejection = describePublicConfigSnapshot(snapshot);
     if (rejection !== null) {
       this.notifier.rejected("redis-save", rejection);
@@ -91,7 +100,11 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
     }
     this.notifier.accepted("redis-save");
     // No expiry: this is a durable last-known-good snapshot, not a short-lived
-    // response cache. A newer valid upstream response replaces it.
-    await this.store.save(PUBLIC_CONFIG_LKG, snapshot);
+    // response cache. A newer valid upstream response replaces it. Kept under
+    // the PANEL's version of the answer it was served from: when the per-field
+    // fallback kept a previous value the snapshot's own hash is not that
+    // version, and a restart must report what the panel sent, or the panel's
+    // delivery check would read every partial accept as "not applied".
+    await this.store.save(PUBLIC_CONFIG_LKG, snapshot, version);
   }
 }

@@ -2,6 +2,7 @@
  * Support tickets namespace.
  */
 import { collectDeviceSignals } from "@/lib/device-signals";
+import { configVersionRequest } from "@/lib/config-versions";
 import { apiClient } from "./transport.js";
 
 export interface SupportTicket {
@@ -109,10 +110,15 @@ export interface GuestTicket {
   }>;
 }
 
-export const getGuestSupportConfig = () =>
-  apiClient
-    .get<{ enabled: boolean; turnstileSiteKey: string | null }>("/support/guest/config")
-    .then((r) => r.data);
+/** With the version the cabinet holds once it is known (`?v=`, `lib/config-versions.ts`). */
+export const getGuestSupportConfig = () => {
+  const versioned = configVersionRequest("guestSupport");
+  return (
+    versioned === undefined
+      ? apiClient.get<{ enabled: boolean; turnstileSiteKey: string | null }>("/support/guest/config")
+      : apiClient.get<{ enabled: boolean; turnstileSiteKey: string | null }>("/support/guest/config", versioned)
+  ).then((r) => r.data);
+};
 
 /**
  * Opens an anonymous support conversation.

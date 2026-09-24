@@ -11,6 +11,7 @@ import { installIosZoomLock } from '@/lib/ios-zoom-lock'
 import { captureInstallPromptEvents } from '@/lib/install-prompt-capture'
 import { AppErrorBoundary } from '@/components/error-boundary'
 import { BrandingProvider } from '@/lib/branding-provider'
+import { ConfigVersionWatcherMount } from '@/lib/config-version-watcher-mount'
 import { resolveTelegramLaunchParams } from '@/lib/telegram-launch-params'
 import App from './App'
 import '@/index.css'
@@ -82,6 +83,9 @@ const root = document.getElementById('root')!
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      {/* Open pages pick up a settings change within a minute, on every route —
+          cabinet, Mini App, landing, sign-in (`lib/config-versions.ts`). */}
+      <ConfigVersionWatcherMount queryClient={queryClient} />
       <BrowserRouter>
         <BrandingProvider>
           <TooltipProvider delayDuration={300}>

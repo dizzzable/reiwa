@@ -7,9 +7,17 @@
  * button kind this cabinet has never seen without breaking the screen.
  */
 import { apiClient } from "./transport.js";
+import { configVersionRequest } from "@/lib/config-versions";
 
-export const getConnectPage = () =>
-  apiClient.get<unknown>("/connect-page").then((r) => r.data);
+/** With the version the cabinet holds once it is known (`?v=`, `lib/config-versions.ts`). */
+export const getConnectPage = () => {
+  const versioned = configVersionRequest("connectPage");
+  return (
+    versioned === undefined
+      ? apiClient.get<unknown>("/connect-page")
+      : apiClient.get<unknown>("/connect-page", versioned)
+  ).then((r) => r.data);
+};
 
 /**
  * Whether this cabinet signed the subscription inside a `/connect/open`

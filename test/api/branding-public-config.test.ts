@@ -8,6 +8,7 @@ import type {
   PublicConfigSnapshot,
 } from '../../src/application/ports/public-config-persistence.port.js';
 import { isPublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
+import { configVersionOf } from '../../src/infrastructure/config-versions/config-version.js';
 import {
   createBrandingRouter,
   getPublicConfigPayload,
@@ -190,7 +191,12 @@ describe('public branding configuration routes', () => {
 
     const initialResponse = await request(firstApp, '/api/v1/public-config');
     expect(initialResponse.status).toBe(200);
-    expect(persistence.save).toHaveBeenCalledWith(OPERATOR_PUBLIC_CONFIG);
+    // Saved under the panel's version of the answer — the payload's own hash
+    // here, since nothing in it was rejected.
+    expect(persistence.save).toHaveBeenCalledWith(
+      OPERATOR_PUBLIC_CONFIG,
+      configVersionOf(OPERATOR_PUBLIC_CONFIG),
+    );
 
     // This mirrors a Reiwa restart or a branding-invalidate webhook: the
     // in-memory cache is empty, but the durable last-known-good snapshot is

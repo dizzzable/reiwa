@@ -29,7 +29,7 @@ import {
   saveSubscriptionProvisioningReceipt,
   type SubscriptionProvisioningSlotIndexSource,
 } from "@/lib/subscription-provisioning-receipt";
-import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
+import { AccessModeBlockedScreen, AccessModePendingScreen } from "@/components/access-mode-banner";
 import { PromoInput } from "./components/promo-input";
 import {
   isPlanUnavailableRefusal,
@@ -980,7 +980,7 @@ export default function PurchasePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { defaultCurrency } = useBranding();
-  const { purchasesBlocked } = useAccessMode();
+  const { purchasesBlocked, isLoading: accessModePending } = useAccessMode();
   const {
     step,
     selectedPlan,
@@ -1035,7 +1035,11 @@ export default function PurchasePage() {
   }, [policyFetched, limitReached, actionPolicy, t, reset, navigate]);
 
   // Access-mode gate: NEW / UPGRADE / ADDITIONAL purchases are blocked
-  // under PURCHASE_BLOCKED and RESTRICTED.
+  // under PURCHASE_BLOCKED and RESTRICTED. A policy not known yet — or not
+  // readable at all — is neither: the wizard waits for it.
+  if (accessModePending) {
+    return <AccessModePendingScreen />;
+  }
   if (purchasesBlocked) {
     return (
       <AccessModeBlockedScreen

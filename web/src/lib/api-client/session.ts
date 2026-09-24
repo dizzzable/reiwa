@@ -6,6 +6,7 @@
  * mutation behind the rules-acceptance modal.
  */
 import { apiClient } from "./transport.js";
+import { configVersionRequest } from "@/lib/config-versions";
 import type { PlatformPolicy, ReiwaSession } from "@/types/api";
 
 export const getSession = () =>
@@ -32,5 +33,16 @@ export const reportSurface = (input: {
   os: "ios" | "android" | "windows" | "macos" | "linux" | "other";
 }) => apiClient.post("/surface/seen", input).then((r) => r.data);
 
-export const getPlatformPolicy = () =>
-  apiClient.get<PlatformPolicy>("/platform-policy").then((r) => r.data);
+/**
+ * With the version the cabinet holds once it is known (`?v=`,
+ * `lib/config-versions.ts`) — the route is `no-store` already; the version
+ * keeps the rule the same for every watched group.
+ */
+export const getPlatformPolicy = () => {
+  const versioned = configVersionRequest("platformPolicy");
+  return (
+    versioned === undefined
+      ? apiClient.get<PlatformPolicy>("/platform-policy")
+      : apiClient.get<PlatformPolicy>("/platform-policy", versioned)
+  ).then((r) => r.data);
+};

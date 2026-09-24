@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import type { Logger } from "pino";
 
 import {
+  assessPublicConfigFields,
   describePublicConfigSnapshot,
   type PublicConfigPersistencePort,
   type PublicConfigSnapshot,
@@ -29,6 +30,12 @@ import {
   type LastKnownGoodStorePort,
 } from "../../infrastructure/config-versions/last-known-good.js";
 import {
+  buildPublicConfigDeliveryReport,
+  PublicConfigDeliveryReporter,
+  type PublicConfigDeliveryReport,
+} from "../../infrastructure/public-config/delivery-report.js";
+import { applyPublicConfigFieldFallback } from "../../infrastructure/public-config/field-fallback.js";
+import {
   createPublicConfigRejectionNotifier,
   type PublicConfigRejectionNotifier,
 } from "../../infrastructure/public-config/rejection-notifier.js";
@@ -39,7 +46,13 @@ interface CachedPayload {
   readonly body: unknown;
   readonly etag: string;
   readonly fetchedAt: number;
-  /** The body's version (`config-version.ts`), for the version poll. */
+  /**
+   * The PANEL's version of the answer this body was served from
+   * (`config-version.ts`), for the version poll. Not the body's own hash when
+   * the per-field fallback kept a previous value for a rejected field: what
+   * the poll reports must be what the panel sent, or its delivery check reads
+   * every partial accept as "not applied" and the SPA's watcher never settles.
+   */
   readonly version: string;
 }
 
@@ -59,6 +72,9 @@ export interface CachedPacks {
 
 const CACHE_TTL_MS = 60_000;
 const STALE_WHILE_REVALIDATE_MS = 5 * 60_000;
+
+/** The response header naming the panel version of the public config served. */
+export const PUBLIC_CONFIG_VERSION_HEADER = "X-Config-Version";
 
 // Module-scoped so an operator branding save (relayed via the
 // `reiwa.branding.invalidate` webhook) can drop the cache process-wide,
@@ -112,8 +128,27 @@ export function heldCustomEmojiPacksVersion(): string | null {
   return packsCache?.version ?? null;
 }
 
-function toCachedPayload(body: PublicConfigSnapshot): CachedPayload {
-  return { body, etag: computeEtag(body), fetchedAt: Date.now(), version: configVersionOf(body) };
+function toCachedPayload(body: PublicConfigSnapshot, version: string = configVersionOf(body)): CachedPayload {
+  return { body, etag: computeEtag(body), fetchedAt: Date.now(), version };
+}
+
+/**
+ * Tells the panel what the cabinet made of each public-config version — once
+ * per version for the life of this process (`delivery-report.ts`). Module
+ * scope, like the cache: every read path of the public config shares it.
+ */
+let deliveryReporter = new PublicConfigDeliveryReporter();
+
+/** Forget which versions were reported. For tests; a process never needs it. */
+export function resetPublicConfigDeliveryReports(): void {
+  deliveryReporter = new PublicConfigDeliveryReporter();
+}
+
+function offerDeliveryReport(adminClient: AdminClient, report: PublicConfigDeliveryReport): void {
+  const branding = adminClient.branding as Partial<AdminClient["branding"]> | undefined;
+  // A client without the call (an older wiring, a stub) has nowhere to send it.
+  if (typeof branding?.reportPublicConfigDelivery !== "function") return;
+  deliveryReporter.offer(report, (body) => branding.reportPublicConfigDelivery!(body));
 }
 
 /**
@@ -138,36 +173,75 @@ async function fetchFreshPayload(
   isCurrent: () => boolean,
 ): Promise<CachedPayload> {
   const body: unknown = await adminClient.branding.getReiwaPublicConfig();
-  const rejection = describePublicConfigSnapshot(body);
-  if (rejection !== null) {
-    // Name the key before throwing. The throw is caught one frame up and
-    // turns into "serve the previous snapshot", which is the moment the
-    // cabinet appearance freezes — without this the freeze is unattributable.
-    notifier.rejected("upstream", rejection);
-    throw new Error(
-      `rezeis-admin returned an invalid public-config payload: ${rejection.key} (${rejection.reason}, found ${rejection.found})`,
-    );
+  // What the poll reports as held and the panel's delivery check compares
+  // with: the version of what the PANEL sent, whatever was kept of it.
+  const version = configVersionOf(body);
+
+  // Judged field by field (the owner's rule of 24.09.2026): every part that
+  // passes is taken, and a part that fails keeps what the cabinet served last.
+  // Only a payload with nothing usable in it is refused whole, as before.
+  const assessed = assessPublicConfigFields(body);
+  let snapshot: PublicConfigSnapshot;
+  if (assessed.shape === null && assessed.rejected.length === 0) {
+    notifier.accepted("upstream");
+    // An empty verdict is exactly what `isPublicConfigSnapshot` asserts;
+    // re-running the guard purely for the narrowing would walk it twice.
+    snapshot = body as PublicConfigSnapshot;
+    if (isCurrent()) offerDeliveryReport(adminClient, { version, rejected: [] });
+  } else {
+    // "Served last": the snapshot held, else the copy a restart would serve.
+    // Read only on this path — a clean payload never needs it.
+    const previous =
+      assessed.shape === null
+        ? ((cached?.body as PublicConfigSnapshot | undefined) ?? (await loadPersistedSnapshot(persistence)))
+        : null;
+    const fallback = applyPublicConfigFieldFallback(body, previous);
+    if (!fallback.usable) {
+      // Name the key before throwing. The throw is caught one frame up and
+      // turns into "serve the previous snapshot" — without this the freeze
+      // would be unattributable.
+      notifier.rejected("upstream", fallback.rejection);
+      throw new Error(
+        `rezeis-admin returned an unusable public-config payload: ${fallback.rejection.key} (${fallback.rejection.reason}, found ${fallback.rejection.found})`,
+      );
+    }
+    notifier.fieldsRejected("upstream", fallback.rejected);
+    snapshot = fallback.snapshot;
+    // A read a reset has overtaken says nothing about the version the panel
+    // serves now — and its report could land after the current one.
+    if (isCurrent()) {
+      offerDeliveryReport(adminClient, buildPublicConfigDeliveryReport(version, body, fallback.rejected));
+    }
   }
-  notifier.accepted("upstream");
-  // A null rejection is exactly what `isPublicConfigSnapshot` asserts; re-running
-  // the guard purely for the narrowing would walk the whole payload twice.
-  const snapshot = body as PublicConfigSnapshot;
 
   // This is the only save path: the body was received from a successful
-  // upstream call and passed the runtime schema guard. A persistence failure
-  // is intentionally non-fatal; the fresh response is still safe to serve.
-  // Skipped for a read a reset has overtaken (see `generation`): the snapshot
-  // is what a restart during a panel outage serves, so the pre-save theme may
-  // not end up in it either.
+  // upstream call and what is saved passes the runtime schema guard whole. A
+  // persistence failure is intentionally non-fatal; the fresh response is
+  // still safe to serve. Skipped for a read a reset has overtaken (see
+  // `generation`): the snapshot is what a restart during a panel outage
+  // serves, so the pre-save theme may not end up in it either.
   if (isCurrent()) {
     try {
-      await persistence?.save(snapshot);
+      await persistence?.save(snapshot, version);
     } catch {
       // Port implementations are best-effort, but do not let a faulty test or
       // third-party adapter turn a valid upstream response into an outage.
     }
   }
-  return toCachedPayload(snapshot);
+  return toCachedPayload(snapshot, version);
+}
+
+/** The saved copy alone — the per-field fallback's "served last" after a reset. */
+async function loadPersistedSnapshot(
+  persistence: PublicConfigPersistencePort | undefined,
+): Promise<PublicConfigSnapshot | null> {
+  if (persistence === undefined) return null;
+  try {
+    const snapshot = await persistence.load();
+    return snapshot !== null && describePublicConfigSnapshot(snapshot) === null ? snapshot : null;
+  } catch {
+    return null;
+  }
 }
 
 async function loadPersistedPayload(
@@ -176,16 +250,23 @@ async function loadPersistedPayload(
 ): Promise<CachedPayload | null> {
   if (persistence === undefined) return null;
   try {
-    const snapshot = await persistence.load();
-    if (snapshot === null) return null;
+    // With the version it was saved under, where the adapter keeps one: a
+    // restart must report the panel's version, not the copy's own hash.
+    const served =
+      persistence.loadServed !== undefined
+        ? await persistence.loadServed()
+        : await persistence.load().then((snapshot) =>
+            snapshot === null ? null : { snapshot, version: configVersionOf(snapshot) },
+          );
+    if (served === null) return null;
     // Revalidate at the route boundary even though the Redis adapter also
     // validates. This keeps injected adapters from poisoning a public route.
-    const rejection = describePublicConfigSnapshot(snapshot);
+    const rejection = describePublicConfigSnapshot(served.snapshot);
     if (rejection !== null) {
       notifier.rejected("redis-load", rejection);
       return null;
     }
-    return toCachedPayload(snapshot);
+    return toCachedPayload(served.snapshot, served.version);
   } catch {
     return null;
   }
@@ -409,6 +490,14 @@ export function createBrandingRouter(deps: {
   router.get("/public-config", async (req, res) => {
     try {
       const payload = await getPayload();
+      // Which panel version this body belongs to — the same value
+      // `/config-versions` reports as held. The SPA's version watcher reads it
+      // off the body it got, so a copy the browser's own cache answered with
+      // (`max-age=60` below) is recognised as older and re-read at once rather
+      // than a minute later. Set before the 304: a revalidation that keeps the
+      // body updates the stored headers, and the version may have moved while
+      // the body did not (a field the fallback kept).
+      res.setHeader(PUBLIC_CONFIG_VERSION_HEADER, payload.version);
       const ifNoneMatch = req.headers["if-none-match"];
       if (ifNoneMatch === payload.etag) {
         res.status(304).end();

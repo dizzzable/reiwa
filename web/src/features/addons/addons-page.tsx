@@ -38,7 +38,7 @@ import { CustomIconView } from "@/components/ui/custom-icon-view";
 import { EmojiText } from "@/components/ui/emoji-text";
 import { useAddOnStore } from "@/stores/addons.store";
 import { useAccessMode } from "@/lib/use-access-mode";
-import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
+import { AccessModeBlockedScreen, AccessModePendingScreen } from "@/components/access-mode-banner";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import {
   freeResetsLeftAfter,
@@ -101,7 +101,7 @@ export default function AddOnsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { step, reset, selectedSubscriptionId, selectSubscription } = useAddOnStore();
-  const { purchasesBlocked } = useAccessMode();
+  const { purchasesBlocked, isLoading: accessModePending } = useAccessMode();
 
   useEffect(() => () => reset(), [reset]);
 
@@ -118,7 +118,10 @@ export default function AddOnsPage() {
   }, [preselectId, selectedSubscriptionId, selectSubscription]);
 
   // Add-on purchase is a new money-path flow — blocked under
-  // PURCHASE_BLOCKED / RESTRICTED.
+  // PURCHASE_BLOCKED / RESTRICTED, and waiting while the policy is not known.
+  if (accessModePending) {
+    return <AccessModePendingScreen />;
+  }
   if (purchasesBlocked) {
     return (
       <AccessModeBlockedScreen

@@ -29,7 +29,9 @@ export function AccessModeBanner({
   const { t } = useTranslation();
   const { mode } = useAccessMode();
 
-  if (mode === "PUBLIC") return null;
+  // Unknown (`null`): there is no mode to name. The flows this banner sits on
+  // wait for the policy themselves (`AccessModePendingScreen`).
+  if (mode === null || mode === "PUBLIC") return null;
   if (!modes.includes(mode)) return null;
 
   const Icon = ICON[mode];
@@ -45,6 +47,21 @@ export function AccessModeBanner({
           {t(`accessMode.banner.${mode}.body`)}
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * What a gated flow shows while the platform policy is not known yet — the
+ * first read, or reads that keep failing while the panel is down. A spinner,
+ * like any other load: the flow must neither open as if purchases were
+ * allowed nor claim they are blocked. The policy query asks again on its own
+ * (`lib/platform-policy-query.ts`), and the flow appears the moment it answers.
+ */
+export function AccessModePendingScreen() {
+  return (
+    <div className="flex h-48 items-center justify-center" data-testid="access-mode-pending">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
     </div>
   );
 }

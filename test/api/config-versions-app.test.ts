@@ -127,3 +127,81 @@ describe('the API process’s settings versions', () => {
     expect(getEffective).toHaveBeenCalledTimes(2);
   });
 });
+
+/**
+ * The key of latest versions (`config-versions/latest.ts`) as the composition
+ * root wires it: on the web sessions' Redis — reiwa's own, shared with the bot —
+ * where the settings webhook marks a bot save, and the API's poll writes what
+ * the panel said (`api/main.ts`, `onVersions`).
+ */
+describe('the API process’s part of the key of latest versions', () => {
+  beforeEach(resetAll);
+  afterEach(() => {
+    resetAll();
+    vi.restoreAllMocks();
+  });
+
+  function redisDouble() {
+    const hashes = new Map<string, Map<string, string>>();
+    const strings = new Map<string, string>();
+    return {
+      hashes,
+      redis: {
+        hset: vi.fn(async (key: string, fields: Record<string, string>) => {
+          const hash = hashes.get(key) ?? new Map<string, string>();
+          for (const [field, value] of Object.entries(fields)) hash.set(field, value);
+          hashes.set(key, hash);
+          return 1;
+        }),
+        hgetall: vi.fn(async (key: string) => Object.fromEntries(hashes.get(key) ?? new Map<string, string>())),
+        get: vi.fn(async (key: string) => strings.get(key) ?? null),
+        set: vi.fn(async (key: string, value: string) => {
+          strings.set(key, value);
+          return 'OK';
+        }),
+        del: vi.fn(async () => 0),
+      },
+    };
+  }
+
+  it('a bot save the webhook relays is marked in reiwa’s Redis, where the bot reads it', async () => {
+    const { redis, hashes } = redisDouble();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const app = createApp({
+      adminClient: null,
+      sessionStore: null,
+      webSessionStore: { getRedis: () => redis } as never,
+      config: {
+        NODE_ENV: 'test',
+        REIWA_COOKIE_SECURE: false,
+        REIWA_ALLOW_INSECURE_COOKIES: true,
+        REIWA_BOT_INTERNAL_URL: 'http://127.0.0.1:1',
+        REZEIS_WEBHOOK_SECRET: WEBHOOK_SECRET,
+        REZEIS_INTERNAL_SHARED_SECRET: 's'.repeat(32),
+      } as never,
+    });
+
+    const body = { event: 'reiwa.bot.invalidate', metadata: { reason: 'operator-save' } };
+    const res = await sendSocketless(app, {
+      method: 'POST',
+      url: '/api/v1/webhooks/rezeis',
+      headers: { 'x-rezeis-signature': sign(JSON.stringify(body)) },
+      body,
+    });
+    expect(res.status).toBe(204);
+
+    await vi.waitFor(() => expect(hashes.get('reiwa:config-versions:latest:v1')?.has('hint:botConfig')).toBe(true));
+    const at = Number(hashes.get('reiwa:config-versions:latest:v1')?.get('hint:botConfig'));
+    expect(Math.abs(Date.now() - at)).toBeLessThan(5_000);
+  });
+
+  it('the API’s poll hands its answers to that key', async () => {
+    const source = await import('node:fs').then((fs) =>
+      fs.readFileSync(new URL('../../src/api/main.ts', import.meta.url), 'utf8'),
+    );
+    expect(source).toContain(
+      'onVersions: (versions, answeredAt) => void latestConfigVersions?.recordPoll(versions, answeredAt),',
+    );
+    expect(source).toContain('const latestConfigVersions = app.locals["latestConfigVersions"]');
+  });
+});

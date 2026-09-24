@@ -32,7 +32,7 @@ import { useSession } from "@/hooks/use-session";
 import { useUserRealtime } from "@/hooks/use-user-realtime";
 import { reportSurface } from "@/lib/api-client";
 import { HintController } from "@/features/hints/hint-controller";
-import { getPlatformPolicy } from "@/lib/api-client";
+import { platformPolicyQueryOptions } from "@/lib/platform-policy-query";
 import { ensurePushSubscription } from "@/lib/push";
 import { isPushResyncFresh, pushResyncAccountKey, rememberPushResync } from "@/lib/push-resync-marker";
 import { nextDestinationQuery } from "@/lib/next-destination";
@@ -111,6 +111,31 @@ function detectFormFactor(): FormFactor {
 
 const SURFACE_REPORTED_KEY = "reiwa_surface_reported";
 
+/** The shell's own spinner, on the operator's launch background. */
+function ShellLoading() {
+  return (
+    <div
+      className="relative flex h-dvh items-center justify-center overflow-hidden"
+      data-testid="shell-loading"
+      style={{
+        backgroundColor:
+          "var(--bootstrap-app-background-color, var(--brand-bg-primary))",
+        backgroundImage: "var(--bootstrap-app-background-image, none)",
+        backgroundSize: "var(--bootstrap-app-background-size, auto)",
+        backgroundBlendMode:
+          "var(--bootstrap-app-background-blend, normal)",
+        backgroundPosition: "center",
+        backgroundRepeat: "repeat",
+      }}
+    >
+      <div
+        className="relative z-10 size-8 animate-spin rounded-full border-2 border-t-transparent"
+        style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
+      />
+    </div>
+  );
+}
+
 export default function StealthLayout() {
   const { session, isLoading } = useSession();
   // The number on the home-screen icon, kept in step while the app is open.
@@ -158,21 +183,21 @@ export default function StealthLayout() {
   // Whether the operator requires Telegram users to set a web login/password
   // before entering the cabinet.
   //
-  // While this query is loading or unavailable the flag reads as FALSE — see
+  // A policy that was READ without the field keeps reading as FALSE — see
   // `?? false` below — so a Telegram-authenticated user is let straight into
   // the cabinet rather than held at the claim screen. That is deliberate
   // (`c1072d2` flipped it from `?? true`): a signed Mini App launch already is
   // a credential, and the failure it avoids is stranding a Telegram-first user
-  // on a form they cannot complete. Note the consequence, which is the reason
-  // this comment is explicit: `/platform-policy` answers `{}` on any upstream
-  // error (`src/api/routes/profile.ts`), and `{}` is indistinguishable here
-  // from an operator who deliberately turned the gate off.
-  const { data: platformPolicy } = useQuery({
-    queryKey: ["platform-policy"],
-    queryFn: getPlatformPolicy,
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
-  });
+  // on a form they cannot complete.
+  //
+  // A policy that could NOT be read is another matter (the owner's rule of
+  // 24.09.2026). `/platform-policy` used to answer `{}` on any upstream error,
+  // indistinguishable from an operator who turned the gate off; it now answers
+  // 503 when nothing is known, and the query keeps asking on its own
+  // (`lib/platform-policy-query.ts`). Until it answers, the shell waits — but
+  // only for the one user the gate decides about: a Telegram user without a
+  // finished web login. Everyone else's way in does not depend on it.
+  const { data: platformPolicy } = useQuery(platformPolicyQueryOptions);
 
   // Report the usage surface (tma/pwa/browser) + form factor + os once per
   // browser session. Installed-PWA sessions get upgraded to the 30-day window
@@ -292,26 +317,7 @@ export default function StealthLayout() {
   useServiceWorkerNavigate();
 
   if (isLoading) {
-    return (
-      <div
-        className="relative flex h-dvh items-center justify-center overflow-hidden"
-        style={{
-          backgroundColor:
-            "var(--bootstrap-app-background-color, var(--brand-bg-primary))",
-          backgroundImage: "var(--bootstrap-app-background-image, none)",
-          backgroundSize: "var(--bootstrap-app-background-size, auto)",
-          backgroundBlendMode:
-            "var(--bootstrap-app-background-blend, normal)",
-          backgroundPosition: "center",
-          backgroundRepeat: "repeat",
-        }}
-      >
-        <div
-          className="relative z-10 size-8 animate-spin rounded-full border-2 border-t-transparent"
-          style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
-        />
-      </div>
-    );
+    return <ShellLoading />;
   }
 
   // Preserve the intended destination across the bootstrap/auth handshake AND
@@ -359,6 +365,15 @@ export default function StealthLayout() {
   const hasTelegramCredential =
     session.telegramId != null && String(session.telegramId).trim().length > 0;
   const skipCredentialSetup = hasTelegramCredential && !requireTelegramWebCredentials;
+
+  // The two gates below decide from the policy only for a Telegram user whose
+  // web login is not finished. For that user, a policy not known yet is not
+  // "gate off": wait for it (the query asks again on its own, 3 s → 30 s).
+  const webLoginUnfinished =
+    session.webAccount === null || (session.webAccount != null && !session.webAccount.login);
+  if (platformPolicy === undefined && hasTelegramCredential && webLoginUnfinished) {
+    return <ShellLoading />;
+  }
 
   // Mandatory claim gate (Property 1): a Telegram-first user authenticated into
   // a WebSession but with no `WebAccount` (explicit `null` from the session

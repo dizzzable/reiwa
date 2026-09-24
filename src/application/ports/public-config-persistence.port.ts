@@ -22,8 +22,20 @@ export interface PublicConfigSnapshot {
 export interface PublicConfigPersistencePort {
   /** Load a structurally-valid snapshot, or `null` if none is usable. */
   load(): Promise<PublicConfigSnapshot | null>;
-  /** Save a structurally-valid, upstream-successful snapshot. */
-  save(snapshot: PublicConfigSnapshot): Promise<void>;
+  /**
+   * Save a structurally-valid snapshot served from an upstream answer.
+   * `version` is the PANEL's version of that answer (`config-version.ts`),
+   * which is not the snapshot's own hash when the per-field fallback kept a
+   * previous value; omitted, the snapshot's own hash is kept.
+   */
+  save(snapshot: PublicConfigSnapshot, version?: string): Promise<void>;
+  /**
+   * The saved snapshot together with the version it was saved under — what a
+   * restart serves and what the version poll must then report as held.
+   * Optional: without it the route reads `load()` and uses the snapshot's own
+   * hash.
+   */
+  loadServed?(): Promise<{ readonly snapshot: PublicConfigSnapshot; readonly version: string } | null>;
 }
 
 /** No-op persistence for tests and Redis-free deployments. */
@@ -103,6 +115,32 @@ export interface PublicConfigRejection {
 }
 
 /**
+ * A failed check of one part of the payload, and the fields that part is made
+ * of — what falls back together when it is not taken.
+ *
+ * `fields` names top-level keys only: `branding.<key>` or a root key
+ * (`locales`, `customIcons`…). Most checks read one field; two read a pair the
+ * guard can only judge together — `locales` with `defaultLocale` (the default
+ * must be one of the list) and `branding.subscriptionCardText` with
+ * `branding.themeVariants` (a variant may carry only the root's text policy).
+ */
+export interface PublicConfigFieldRejection extends PublicConfigRejection {
+  readonly fields: readonly string[];
+}
+
+/**
+ * The guard's verdict on every part of a payload, each judged alone.
+ *
+ * `shape` is set when the payload cannot be used at all — not an object, or no
+ * `branding` object — and then nothing in it is judged further. Otherwise
+ * `rejected` lists every check that failed, in the guard's order; an empty list
+ * is a payload the guard takes whole.
+ */
+export type PublicConfigAssessment =
+  | { readonly shape: PublicConfigRejection; readonly rejected: readonly [] }
+  | { readonly shape: null; readonly rejected: readonly PublicConfigFieldRejection[] };
+
+/**
  * Runtime structural validation shared by the route and durable adapter.
  *
  * This checks every structured field consumed by the SPA, while retaining
@@ -110,12 +148,20 @@ export interface PublicConfigRejection {
  * snapshot reader reuses this guard so local and Redis persistence cannot
  * disagree about what is safe to render.
  *
- * All-or-nothing is deliberate: half-applied branding looks worse than the
- * previous theme, so one bad key still discards the whole payload. What was
- * NOT deliberate is doing it in silence. The rejection used to be a bare
- * `false`; the caller threw, the cabinet went on serving the last stored
- * snapshot for as long as the bad key survived, and nothing in the log ever
- * named it. `describePublicConfigSnapshot` is the same decision with a reason
+ * As a yes/no answer this is still all-or-nothing, and it has to be: a
+ * snapshot that is SERVED — from Redis after a restart, from localStorage on a
+ * first paint — is either usable whole or not used. What changed is what the
+ * route does with a fresh panel answer that fails it. That used to discard the
+ * whole payload, so one bad key froze the cabinet's entire appearance on the
+ * previous snapshot for as long as the key survived, while the panel reported
+ * the save as successful. Since 24.09.2026 (the owner's decision: «всё новое
+ * применяется, кроме него») the route judges each field alone
+ * (`assessPublicConfigFields`), takes everything that passes, and keeps the
+ * previously served value only for the fields that fail
+ * (`infrastructure/public-config/field-fallback.ts`). The payload it then
+ * serves passes this guard whole.
+ *
+ * `describePublicConfigSnapshot` is the same decision with the first reason
  * attached, and this is its boolean face — it accepts exactly the same set of
  * values, field for field.
  */
@@ -134,11 +180,149 @@ export function isPublicConfigSnapshot(value: unknown): value is PublicConfigSna
 export function describePublicConfigSnapshot(
   value: unknown,
 ): PublicConfigRejection | null {
+  const shape = describePublicConfigShape(value);
+  if (shape !== null) return shape;
+  for (const check of publicConfigChecks(value as Record<string, unknown>)) {
+    const rejection = check.run();
+    if (rejection !== null) return rejection;
+  }
+  return null;
+}
+
+/**
+ * Every check of the guard, each run on its own — the verdict the per-field
+ * fallback is built on. Accepts exactly what `describePublicConfigSnapshot`
+ * accepts: an empty `rejected` list there, `null` here, for the same values.
+ */
+export function assessPublicConfigFields(value: unknown): PublicConfigAssessment {
+  const shape = describePublicConfigShape(value);
+  if (shape !== null) return { shape, rejected: [] };
+  const rejected: PublicConfigFieldRejection[] = [];
+  for (const check of publicConfigChecks(value as Record<string, unknown>)) {
+    const rejection = check.run();
+    if (rejection !== null) rejected.push({ ...rejection, fields: check.fields });
+  }
+  return { shape: null, rejected };
+}
+
+/**
+ * Every top-level field the guard judges — what the per-field fallback can
+ * take back, and what the panel's notice must have a name for
+ * (`test/web/branding-delivery-panel-parity.test.ts`).
+ */
+export const PUBLIC_CONFIG_CHECKED_FIELDS: readonly string[] = [
+  ...new Set(publicConfigChecks({ branding: {} }).flatMap((check) => check.fields)),
+];
+
+/**
+ * What makes a payload unusable as a whole: not an object, or no `branding`
+ * object. Nothing in such a payload can be judged field by field, and nothing
+ * in it is taken.
+ */
+function describePublicConfigShape(value: unknown): PublicConfigRejection | null {
   if (!isRecord(value)) return reject("<root>", "not-an-object", value);
   if (!isRecord(value["branding"])) {
     return reject("branding", "not-an-object", value["branding"]);
   }
+  return null;
+}
 
+/** One check of the guard: the fields it judges, and its verdict when run. */
+interface PublicConfigCheck {
+  readonly fields: readonly string[];
+  readonly run: () => PublicConfigRejection | null;
+}
+
+/**
+ * The guard's checks in its historical order. `value` must already have passed
+ * `describePublicConfigShape`. Each check is lazy, so `describePublicConfigSnapshot`
+ * still stops at the first failure.
+ */
+function publicConfigChecks(value: Record<string, unknown>): readonly PublicConfigCheck[] {
+  const branding = value["branding"] as Record<string, unknown>;
+  const inBranding = (key: string, reason: string, ok: () => boolean): PublicConfigCheck => ({
+    fields: [`branding.${key}`],
+    run: () => (ok() ? null : reject(`branding.${key}`, reason, branding[key])),
+  });
+  const inRoot = (key: string, reason: string, ok: () => boolean): PublicConfigCheck => ({
+    fields: [key],
+    run: () => (ok() ? null : reject(key, reason, value[key])),
+  });
+
+  return [
+    { fields: ["locales", "defaultLocale"], run: () => describeLocales(value) },
+    inBranding("themePresetId", "not-a-preset-id", () => hasOptionalPresetId(branding, "themePresetId")),
+    inBranding("themePresetVersion", "not-a-preset-version", () => hasOptionalPresetVersion(branding, "themePresetVersion")),
+    inBranding("themeModePolicy", "not-an-allowed-value", () => hasOptionalThemeModePolicy(branding, "themeModePolicy")),
+    inBranding("themeDefaultMode", "not-an-allowed-value", () => hasOptionalThemeDefaultMode(branding, "themeDefaultMode")),
+    inBranding("themeVariants", "not-a-valid-theme-variant-pair", () => hasOptionalThemeVariants(branding, "themeVariants")),
+    inBranding("brandName", "not-a-non-empty-string", () => isNonEmptyString(branding["brandName"])),
+    inBranding("tagline", "not-a-string-or-null", () => hasOptionalStringOrNull(branding, "tagline")),
+    inBranding("logoUrl", "not-an-allowed-image-url", () => isNullableImageUrl(branding["logoUrl"])),
+    inBranding("pwaIconUrl", "not-an-allowed-image-url", () => hasOptionalImageUrlOrNull(branding, "pwaIconUrl")),
+    inBranding("primary", "not-a-hex-colour", () => isHex(branding["primary"])),
+    inBranding("primaryFg", "not-a-hex-colour", () => isHex(branding["primaryFg"])),
+    inBranding("bgPrimary", "not-a-hex-colour", () => isHex(branding["bgPrimary"])),
+    inBranding("bgSecondary", "not-a-hex-colour", () => isHex(branding["bgSecondary"])),
+    inBranding("brandPaletteSource", "not-an-allowed-value", () => hasOptionalOwnershipSource(branding, "brandPaletteSource")),
+    inBranding("cardGradient", "not-a-safe-css-gradient", () => isSafeGradient(branding["cardGradient"])),
+    inBranding("cardGradientSource", "not-an-allowed-value", () => hasOptionalOwnershipSource(branding, "cardGradientSource")),
+    inBranding("cardPattern", "not-a-safe-css-gradient-or-null", () => isNullableSafeGradient(branding["cardPattern"])),
+    inBranding("subscriptionCardText", "not-a-valid-card-text-policy", () => hasOptionalSubscriptionCardText(branding, "subscriptionCardText")),
+    {
+      // Judged as a PAIR: a variant may carry only the root's text policy, so
+      // neither half can be kept or dropped without the other.
+      fields: ["branding.themeVariants", "branding.subscriptionCardText"],
+      run: () =>
+        hasConsistentVariantSubscriptionCardText(branding)
+          ? null
+          : reject(
+              "branding.themeVariants.subscriptionCardText",
+              "does-not-match-the-root-card-text-policy",
+              branding["themeVariants"],
+            ),
+    },
+    inBranding("subscriptionCardGlass", "not-a-valid-glass-layer", () => hasOptionalSubscriptionCardGlass(branding, "subscriptionCardGlass")),
+    // `brandLogo` and `cardLogoStyle` are deliberately absent from this list.
+    // A failing check costs the operator the value they saved — the cabinet
+    // goes on showing the previous one, and until 24.09.2026 it cost them the
+    // ENTIRE branding payload, name, palette and navigation included. Both are
+    // decorative numbers that the SPA clamps at the point of use
+    // (`resolveBrandLogo`, `resolveCardLogoStyle` in `web/src/types/branding.ts`),
+    // so a malformed one costs a default-looking logo and a check would only
+    // add a way to lose the operator's choice. Do not "complete" the list.
+    inBranding("cardLogo", "not-a-string", () => isString(branding["cardLogo"])),
+    inBranding("cardLogoUrl", "not-an-allowed-image-url", () => isNullableImageUrl(branding["cardLogoUrl"])),
+    inBranding("cardEffect", "not-an-effect-id", () => isEffectId(branding["cardEffect"])),
+    inBranding("cardEffectProps", "not-an-object", () => isRecord(branding["cardEffectProps"])),
+    inBranding("cardEffectOpacity", "out-of-range[0.05..1]", () => isNumberInRange(branding["cardEffectOpacity"], 0.05, 1)),
+    { fields: ["branding.cardEffectsByIndex"], run: () => describeCardEffectSlots(branding) },
+    inBranding("bgEffect", "not-an-allowed-value", () => isAllowedString(branding["bgEffect"], BG_EFFECTS)),
+    inBranding("appBackground", "not-a-valid-app-background", () => hasOptionalAppBackground(branding, "appBackground")),
+    inBranding("iconColorMode", "not-an-allowed-value", () => isAllowedString(branding["iconColorMode"], ICON_COLOR_MODES)),
+    inBranding("iconColors", "not-a-hex-colour-map", () => isHexRecord(branding["iconColors"])),
+    inBranding("iconDecor", "not-a-valid-icon-decor-map", () => hasOptionalIconDecor(branding, "iconDecor")),
+    inBranding("borderRadius", "not-an-allowed-value", () => isAllowedString(branding["borderRadius"], BORDER_RADII)),
+    inBranding("cornerRadii", "not-a-valid-corner-radius-set", () => hasOptionalCornerRadii(branding, "cornerRadii")),
+    inBranding("fontFamily", "not-a-string", () => isString(branding["fontFamily"])),
+    inBranding("surfaceTheme", "not-a-valid-surface-theme", () => hasOptionalSurfaceTheme(branding, "surfaceTheme")),
+    inRoot("defaultCurrency", "not-a-string", () => isString(value["defaultCurrency"])),
+    { fields: ["customIcons"], run: () => describeCustomIcons(value) },
+    inRoot("botUsername", "not-a-string-or-null", () => hasOptionalNullableString(value, "botUsername")),
+    inRoot("supportUsername", "not-a-string-or-null", () => hasOptionalNullableString(value, "supportUsername")),
+    inRoot("platformBranding", "not-a-valid-platform-branding", () => hasOptionalPlatformBranding(value, "platformBranding")),
+    inRoot("emailEnabled", "not-a-boolean", () => hasOptionalBoolean(value, "emailEnabled")),
+    inBranding("planCardStyles", "not-a-valid-plan-card-style-map", () => hasOptionalPlanCardStyles(branding, "planCardStyles")),
+    { fields: ["branding.navItems"], run: () => describeNavItems(branding) },
+    inBranding("navGap", "out-of-range[0..24]", () => hasOptionalNumberInRange(branding, "navGap", 0, 24)),
+  ];
+}
+
+/**
+ * `locales` and `defaultLocale`, as one part: the default must be one of the
+ * list, so the two stand or fall together.
+ */
+function describeLocales(value: Record<string, unknown>): PublicConfigRejection | null {
   const locales = value["locales"];
   if (!Array.isArray(locales)) return reject("locales", "not-an-array", locales);
   if (locales.length === 0) return reject("locales", "empty", locales);
@@ -153,80 +337,7 @@ export function describePublicConfigSnapshot(
   if (!locales.includes(defaultLocale)) {
     return reject("defaultLocale", "not-listed-in-locales", defaultLocale);
   }
-
-  const branding = value["branding"];
-  const inBranding = (
-    key: string,
-    reason: string,
-    ok: boolean,
-  ): PublicConfigRejection | null =>
-    ok ? null : reject(`branding.${key}`, reason, branding[key]);
-  const inRoot = (
-    key: string,
-    reason: string,
-    ok: boolean,
-  ): PublicConfigRejection | null => (ok ? null : reject(key, reason, value[key]));
-
-  return firstRejection([
-    () => inBranding("themePresetId", "not-a-preset-id", hasOptionalPresetId(branding, "themePresetId")),
-    () => inBranding("themePresetVersion", "not-a-preset-version", hasOptionalPresetVersion(branding, "themePresetVersion")),
-    () => inBranding("themeModePolicy", "not-an-allowed-value", hasOptionalThemeModePolicy(branding, "themeModePolicy")),
-    () => inBranding("themeDefaultMode", "not-an-allowed-value", hasOptionalThemeDefaultMode(branding, "themeDefaultMode")),
-    () => inBranding("themeVariants", "not-a-valid-theme-variant-pair", hasOptionalThemeVariants(branding, "themeVariants")),
-    () => inBranding("brandName", "not-a-non-empty-string", isNonEmptyString(branding["brandName"])),
-    () => inBranding("tagline", "not-a-string-or-null", hasOptionalStringOrNull(branding, "tagline")),
-    () => inBranding("logoUrl", "not-an-allowed-image-url", isNullableImageUrl(branding["logoUrl"])),
-    () => inBranding("pwaIconUrl", "not-an-allowed-image-url", hasOptionalImageUrlOrNull(branding, "pwaIconUrl")),
-    () => inBranding("primary", "not-a-hex-colour", isHex(branding["primary"])),
-    () => inBranding("primaryFg", "not-a-hex-colour", isHex(branding["primaryFg"])),
-    () => inBranding("bgPrimary", "not-a-hex-colour", isHex(branding["bgPrimary"])),
-    () => inBranding("bgSecondary", "not-a-hex-colour", isHex(branding["bgSecondary"])),
-    () => inBranding("brandPaletteSource", "not-an-allowed-value", hasOptionalOwnershipSource(branding, "brandPaletteSource")),
-    () => inBranding("cardGradient", "not-a-safe-css-gradient", isSafeGradient(branding["cardGradient"])),
-    () => inBranding("cardGradientSource", "not-an-allowed-value", hasOptionalOwnershipSource(branding, "cardGradientSource")),
-    () => inBranding("cardPattern", "not-a-safe-css-gradient-or-null", isNullableSafeGradient(branding["cardPattern"])),
-    () => inBranding("subscriptionCardText", "not-a-valid-card-text-policy", hasOptionalSubscriptionCardText(branding, "subscriptionCardText")),
-    () =>
-      hasConsistentVariantSubscriptionCardText(branding)
-        ? null
-        : reject(
-            "branding.themeVariants.subscriptionCardText",
-            "does-not-match-the-root-card-text-policy",
-            branding["themeVariants"],
-          ),
-    () => inBranding("subscriptionCardGlass", "not-a-valid-glass-layer", hasOptionalSubscriptionCardGlass(branding, "subscriptionCardGlass")),
-    // `brandLogo` and `cardLogoStyle` are deliberately absent from this list.
-    // A failing check here discards the ENTIRE branding payload — name,
-    // palette, navigation — and both are decorative numbers that the SPA
-    // clamps at the point of use (`resolveBrandLogo`, `resolveCardLogoStyle`
-    // in `web/src/types/branding.ts`). A malformed one costs a default-looking
-    // logo; rejecting the snapshot over it would cost the operator their whole
-    // identity. Do not "complete" the list.
-    () => inBranding("cardLogo", "not-a-string", isString(branding["cardLogo"])),
-    () => inBranding("cardLogoUrl", "not-an-allowed-image-url", isNullableImageUrl(branding["cardLogoUrl"])),
-    () => inBranding("cardEffect", "not-an-effect-id", isEffectId(branding["cardEffect"])),
-    () => inBranding("cardEffectProps", "not-an-object", isRecord(branding["cardEffectProps"])),
-    () => inBranding("cardEffectOpacity", "out-of-range[0.05..1]", isNumberInRange(branding["cardEffectOpacity"], 0.05, 1)),
-    () => describeCardEffectSlots(branding),
-    () => inBranding("bgEffect", "not-an-allowed-value", isAllowedString(branding["bgEffect"], BG_EFFECTS)),
-    () => inBranding("appBackground", "not-a-valid-app-background", hasOptionalAppBackground(branding, "appBackground")),
-    () => inBranding("iconColorMode", "not-an-allowed-value", isAllowedString(branding["iconColorMode"], ICON_COLOR_MODES)),
-    () => inBranding("iconColors", "not-a-hex-colour-map", isHexRecord(branding["iconColors"])),
-    () => inBranding("iconDecor", "not-a-valid-icon-decor-map", hasOptionalIconDecor(branding, "iconDecor")),
-    () => inBranding("borderRadius", "not-an-allowed-value", isAllowedString(branding["borderRadius"], BORDER_RADII)),
-    () => inBranding("cornerRadii", "not-a-valid-corner-radius-set", hasOptionalCornerRadii(branding, "cornerRadii")),
-    () => inBranding("fontFamily", "not-a-string", isString(branding["fontFamily"])),
-    () => inBranding("surfaceTheme", "not-a-valid-surface-theme", hasOptionalSurfaceTheme(branding, "surfaceTheme")),
-    () => inRoot("defaultCurrency", "not-a-string", isString(value["defaultCurrency"])),
-    () => describeCustomIcons(value),
-    () => inRoot("botUsername", "not-a-string-or-null", hasOptionalNullableString(value, "botUsername")),
-    () => inRoot("supportUsername", "not-a-string-or-null", hasOptionalNullableString(value, "supportUsername")),
-    () => inRoot("platformBranding", "not-a-valid-platform-branding", hasOptionalPlatformBranding(value, "platformBranding")),
-    () => inRoot("emailEnabled", "not-a-boolean", hasOptionalBoolean(value, "emailEnabled")),
-    () => inBranding("planCardStyles", "not-a-valid-plan-card-style-map", hasOptionalPlanCardStyles(branding, "planCardStyles")),
-    () => describeNavItems(branding),
-    () => inBranding("navGap", "out-of-range[0..24]", hasOptionalNumberInRange(branding, "navGap", 0, 24)),
-  ]);
+  return null;
 }
 
 function reject(
@@ -236,16 +347,6 @@ function reject(
   found?: string,
 ): PublicConfigRejection {
   return { key, reason, found: found ?? describeValue(value) };
-}
-
-function firstRejection(
-  checks: readonly (() => PublicConfigRejection | null)[],
-): PublicConfigRejection | null {
-  for (const run of checks) {
-    const rejection = run();
-    if (rejection !== null) return rejection;
-  }
-  return null;
 }
 
 /** Longest string reproduced verbatim in a rejection. */
@@ -540,9 +641,11 @@ function describeNavItems(branding: Record<string, unknown>): PublicConfigReject
   //
   // The deeper mistake was the category. How many items crowd a bottom nav bar
   // is a LAYOUT question, and the answer is "it looks tight". Structural
-  // validity is what this guard decides, and its verdict costs the operator
-  // every colour, gradient and effect they have ever configured. A rule whose
-  // worst case is a crowded bar must never be enforced with that penalty.
+  // validity is what this guard decides, and its verdict then cost the operator
+  // every colour, gradient and effect they had ever configured — today, with
+  // the per-field fallback, it still costs them the navigation they saved. A
+  // rule whose worst case is a crowded bar must never be enforced with that
+  // penalty.
   // What genuinely makes `navItems` unusable is checked above and still is:
   // wrong shape, unknown destination, duplicate id, more entries than
   // destinations exist.
@@ -633,15 +736,17 @@ function isPlanCardStyle(value: unknown): boolean {
  * string, an array, a number, or a mode that is not a string. Those indicate a
  * corrupt writer rather than a newer one.
  *
- * The penalty for refusing decides all of this. This guard is one
- * first-rejection-wins chain over the WHOLE public config: a single unusable
- * entry discards the entire branding snapshot, and the cabinet then serves the
- * previous one indefinitely — every colour, logo and text — while the panel
- * keeps reporting successful saves. That has already happened twice, over
- * `navItems` and over `cardEffect`; see the notes on both. A `planCardStyles`
+ * The penalty for refusing decides all of this. Until 24.09.2026 this guard was
+ * one first-rejection-wins chain over the WHOLE public config: a single
+ * unusable entry discarded the entire branding snapshot, and the cabinet then
+ * served the previous one indefinitely — every colour, logo and text — while
+ * the panel kept reporting successful saves. That happened twice, over
+ * `navItems` and over `cardEffect`; see the notes on both. The route now falls
+ * back per field, and the field here is the whole map: one unusable entry
+ * still costs the operator EVERY plan card style they saved. A `planCardStyles`
  * map holds up to 500 independently written entries, so it is the single most
  * likely place for one stale value to meet a stricter reader — five hundred
- * chances to freeze the cabinet over one card's text colour.
+ * chances to lose all of them over one card's text colour.
  */
 function hasOptionalPlanCardText(record: Record<string, unknown>, key: string): boolean {
   const value = record[key];
@@ -910,12 +1015,14 @@ function isEffectId(value: unknown): value is string {
  *
  * rezeis-admin decides what background modes exist and releases on its own
  * cadence, so a `kind` arriving here may name a mode this build has never
- * heard of. A closed Set would turn every such release into the outage that
- * has already happened twice in this guard: one unrecognised decorative field
- * fails the whole first-rejection-wins chain, `fetchFreshPayload` throws before
- * it can `save`, and `src/api/routes/branding.ts` falls back to the previous
- * snapshot — indefinitely, for every branding field at once, while the panel
- * keeps reporting successful saves.
+ * heard of. A closed Set would turn every such release into the failure that
+ * has already happened twice in this guard. Until 24.09.2026 that was an
+ * outage: one unrecognised decorative field failed the whole
+ * first-rejection-wins chain and `src/api/routes/branding.ts` fell back to the
+ * previous snapshot — indefinitely, for every branding field at once, while
+ * the panel kept reporting successful saves. With the per-field fallback it
+ * would cost the operator the whole app background they saved, still in
+ * silence as far as the cabinet's subscribers can tell.
  *
  * The escape is the same as for effect ids: accept the name, resolve it where
  * it is used. `resolveAppBackgroundKind` in `web/src/types/branding.ts` maps an

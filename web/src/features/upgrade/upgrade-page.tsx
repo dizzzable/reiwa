@@ -28,7 +28,7 @@ import { SubscriptionSelectCard } from "@/components/subscription/subscription-s
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
 import { useAccessMode } from "@/lib/use-access-mode";
-import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
+import { AccessModeBlockedScreen, AccessModePendingScreen } from "@/components/access-mode-banner";
 import { startCheckoutRedirect } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
@@ -69,7 +69,7 @@ export default function UpgradePage() {
   const navigate = useNavigate();
   const { step, reset, selectedSubscriptionId, selectedPlan, selectedDurationDays, selectedGateway } =
     useUpgradeStore();
-  const { purchasesBlocked } = useAccessMode();
+  const { purchasesBlocked, isLoading: accessModePending } = useAccessMode();
   // The review (subscription, target, term, gateway) the panel refused at
   // checkout without a reason. Held here because the checkout step that learns
   // it unmounts on the way back to the review that has to show it.
@@ -80,7 +80,11 @@ export default function UpgradePage() {
 
   useEffect(() => () => reset(), [reset]);
 
-  // Upgrade is a new purchase — blocked under PURCHASE_BLOCKED / RESTRICTED.
+  // Upgrade is a new purchase — blocked under PURCHASE_BLOCKED / RESTRICTED,
+  // and waiting while the policy is not known.
+  if (accessModePending) {
+    return <AccessModePendingScreen />;
+  }
   if (purchasesBlocked) {
     return (
       <AccessModeBlockedScreen

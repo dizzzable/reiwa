@@ -18,6 +18,11 @@
  * so operators can filter or route on a stable identifier instead of matching
  * free text. No new transport is introduced and nothing new is configurable —
  * the thresholds below are constants on purpose.
+ *
+ * Since 24.09.2026 a fresh panel payload is judged field by field
+ * (`field-fallback.ts`): only a payload unusable as a whole is `rejected`;
+ * one with bad fields is taken without them, `fieldsRejected` names every
+ * field, and `delivery-report.ts` tells the branding page the same.
  */
 import type { LoggerPort } from "../../application/ports/logger.port.js";
 import type { PublicConfigRejection } from "../../application/ports/public-config-persistence.port.js";
@@ -50,6 +55,8 @@ const REMINDER_MS = 30 * 60_000;
 interface ActiveRejection {
   /** Key + reason, deliberately excluding the value — see `rejected`. */
   readonly fingerprint: string;
+  /** The (first) key it is about, for the recovery line. */
+  readonly key: string;
   readonly firstSeenAt: number;
   lastNotifiedAt: number;
   suppressed: number;
@@ -57,10 +64,21 @@ interface ActiveRejection {
 
 export interface PublicConfigRejectionNotifier {
   /**
-   * Record a rejected snapshot. Emits on the first occurrence of a cause, on
-   * any change of cause, and then at most once per `REMINDER_MS`.
+   * Record a rejected snapshot — nothing in it was taken. Emits on the first
+   * occurrence of a cause, on any change of cause, and then at most once per
+   * `REMINDER_MS`.
    */
   rejected(source: PublicConfigRejectionSource, rejection: PublicConfigRejection): void;
+  /**
+   * Record a snapshot taken WITHOUT some of its fields: everything else in it
+   * is live, and each of these keeps the previously served value
+   * (`field-fallback.ts`). Same schedule as `rejected`; the cause is the set
+   * of fields and reasons, so a different set is reported at once.
+   */
+  fieldsRejected(
+    source: PublicConfigRejectionSource,
+    rejections: readonly PublicConfigRejection[],
+  ): void;
   /** Record that this source produced a usable snapshot again. */
   accepted(source: PublicConfigRejectionSource): void;
 }
@@ -102,6 +120,77 @@ export function createPublicConfigRejectionNotifier(opts: {
     errorReporter?.report({ level: "warning", message, context });
   };
 
+  /**
+   * The system event for fields that were not taken. It names every one of
+   * them — key, reason, what was there — and says what customers see: the
+   * rest of the new appearance, with the previous value of these fields.
+   */
+  const emitFields = (
+    source: PublicConfigRejectionSource,
+    rejections: readonly PublicConfigRejection[],
+    state: ActiveRejection,
+    repeat: boolean,
+    at: number,
+  ): void => {
+    const heldForMs = at - state.firstSeenAt;
+    const named = rejections
+      .map((rejection) => `"${rejection.key}" (${rejection.reason}, found ${rejection.found})`)
+      .join("; ");
+    const count = rejections.length === 1 ? "1 field" : `${rejections.length} fields`;
+    const message = repeat
+      ? `Public config still applied without ${count}: ${named} — for ${Math.round(heldForMs / 60_000)} min customers have seen the previous value of ${rejections.length === 1 ? "this field" : "these fields"}, and everything else as saved`
+      : `Public config applied without ${count}: ${named} — everything else is live; customers keep seeing the previous value of ${rejections.length === 1 ? "this field" : "these fields"} until ${rejections.length === 1 ? "it is" : "they are"} fixed`;
+
+    const [first] = rejections;
+    const context = {
+      event: ReiwaSystemEventType.CONFIG_DEGRADED_DEFAULTS_USED,
+      source,
+      key: first?.key,
+      reason: first?.reason,
+      found: first?.found,
+      fields: rejections.map(({ key, reason, found }) => ({ key, reason, found })),
+      frozenForMs: heldForMs,
+      suppressedRepeats: state.suppressed,
+    };
+
+    log?.warn(context, message);
+    errorReporter?.report({ level: "warning", message, context });
+  };
+
+  /**
+   * One suppression schedule for both kinds of report: the first occurrence
+   * of a cause and every change of cause are reported at once, a repeat at
+   * most once per `REMINDER_MS`.
+   */
+  const track = (
+    source: PublicConfigRejectionSource,
+    fingerprint: string,
+    key: string,
+    report: (state: ActiveRejection, repeat: boolean, at: number) => void,
+  ): void => {
+    const at = clock();
+    const current = active.get(source);
+
+    if (current !== undefined && current.fingerprint === fingerprint) {
+      current.suppressed += 1;
+      if (at - current.lastNotifiedAt < REMINDER_MS) return;
+      current.lastNotifiedAt = at;
+      report(current, true, at);
+      current.suppressed = 0;
+      return;
+    }
+
+    const state: ActiveRejection = {
+      fingerprint,
+      key,
+      firstSeenAt: at,
+      lastNotifiedAt: at,
+      suppressed: 0,
+    };
+    active.set(source, state);
+    report(state, false, at);
+  };
+
   return {
     rejected(source, rejection): void {
       // Fingerprint on key + reason only. The offending value may wobble
@@ -109,27 +198,22 @@ export function createPublicConfigRejectionNotifier(opts: {
       // is unchanged; including it would re-alert on every poll and defeat
       // the suppression. A genuinely different cause changes the fingerprint
       // and is reported at once.
-      const fingerprint = `${rejection.key}|${rejection.reason}`;
-      const at = clock();
-      const current = active.get(source);
+      track(source, `${rejection.key}|${rejection.reason}`, rejection.key, (state, repeat, at) =>
+        emit(source, rejection, state, repeat, at),
+      );
+    },
 
-      if (current !== undefined && current.fingerprint === fingerprint) {
-        current.suppressed += 1;
-        if (at - current.lastNotifiedAt < REMINDER_MS) return;
-        current.lastNotifiedAt = at;
-        emit(source, rejection, current, true, at);
-        current.suppressed = 0;
-        return;
-      }
-
-      const state: ActiveRejection = {
-        fingerprint,
-        firstSeenAt: at,
-        lastNotifiedAt: at,
-        suppressed: 0,
-      };
-      active.set(source, state);
-      emit(source, rejection, state, false, at);
+    fieldsRejected(source, rejections): void {
+      if (rejections.length === 0) return;
+      // The same rule as above, over the whole set: which keys, for which
+      // reasons — never the values.
+      const fingerprint = `fields:${rejections
+        .map((rejection) => `${rejection.key}|${rejection.reason}`)
+        .sort()
+        .join(",")}`;
+      track(source, fingerprint, rejections[0]?.key ?? "", (state, repeat, at) =>
+        emitFields(source, rejections, state, repeat, at),
+      );
     },
 
     accepted(source): void {
@@ -143,7 +227,7 @@ export function createPublicConfigRejectionNotifier(opts: {
         {
           event: ReiwaSystemEventType.CONFIG_DEGRADED_DEFAULTS_USED,
           source,
-          key: current.fingerprint.split("|")[0],
+          key: current.key,
           frozenForMs: clock() - current.firstSeenAt,
         },
         "Public config snapshot accepted again — the cabinet appearance is live",
