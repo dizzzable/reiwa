@@ -38,6 +38,12 @@ import {
   notifyPlanUnavailable,
   readUnpricedQuote,
 } from "@/features/purchase/plan-unavailable";
+import {
+  isLifetimeRenewalRefusal,
+  isUpgradeClosedForLifetime,
+  SUBSCRIPTION_IS_LIFETIME_CODE,
+  warnsLifetime,
+} from "@/features/renewal/lifetime-renewal";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -129,9 +135,14 @@ function SelectSubscription() {
   // an expired subscription is exactly the case a user wants to upgrade out
   // of. DISABLED stays excluded: that's an admin-toggled freeze, not
   // something the user should route around via upgrade.
-  const active = (data?.subscriptions ?? []).filter(
+  const candidates = (data?.subscriptions ?? []).filter(
     (s) => s.status === "ACTIVE" || s.status === "LIMITED" || s.status === "EXPIRED",
   );
+  // A subscription with no end date is not upgraded by a purchase
+  // (`features/renewal/lifetime-renewal.ts`): left out, and the page says why.
+  // One the list shows with the VPN panel's date is caught by its options.
+  const active = candidates.filter((s) => !isUpgradeClosedForLifetime(s));
+  const lifetimeLeftOut = candidates.length > active.length;
 
   useEffect(() => {
     if (!isLoading && active.length === 1 && selectedSubscriptionId === null) {
@@ -152,7 +163,7 @@ function SelectSubscription() {
   if (active.length === 0) {
     return (
       <div className="px-5">
-        <TipCard tone="info">{t("upgrade.noneUpgradeable")}</TipCard>
+        <TipCard tone="info">{t(lifetimeLeftOut ? "upgrade.lifetime" : "upgrade.noneUpgradeable")}</TipCard>
       </div>
     );
   }
@@ -173,6 +184,11 @@ function SelectSubscription() {
           />
         ))}
       </div>
+      {lifetimeLeftOut && (
+        <div className="px-5">
+          <TipCard tone="info">{t("upgrade.lifetime")}</TipCard>
+        </div>
+      )}
     </div>
   );
 }
@@ -210,7 +226,10 @@ function SelectPlan() {
   if (plans.length === 0) {
     return (
       <div className="px-5 space-y-3">
-        <TipCard tone="info">{t("upgrade.noTargets")}</TipCard>
+        {/* The panel closes an upgrade of a subscription with no end date and
+            says so in its warnings — the one word for a subscription the list
+            showed with the VPN panel's date. */}
+        <TipCard tone="info">{t(warnsLifetime(data?.warnings) ? "upgrade.lifetime" : "upgrade.noTargets")}</TipCard>
         <StadiumButton fullWidth variant="ghost" onClick={() => setStep("subscriptions")}>
           {t("upgrade.back")}
         </StadiumButton>
@@ -427,7 +446,14 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
     !error &&
     quote !== undefined &&
     (quote.warning !== undefined || typeof quote.finalPrice !== "number");
-  const withdrawn = unpriced && readUnpricedQuote(quote, false)?.kind === "withdrawn";
+  // A subscription with no end date is not upgraded by a purchase: the panel
+  // says so first, ahead of the PLAN_NOT_AVAILABLE a closed upgrade also
+  // carries — which must not read as a withdrawn plan.
+  const lifetime =
+    unpriced &&
+    (quote?.warning === SUBSCRIPTION_IS_LIFETIME_CODE ||
+      warnsLifetime((quote as { readonly warnings?: unknown } | undefined)?.warnings));
+  const withdrawn = unpriced && !lifetime && readUnpricedQuote(quote, false)?.kind === "withdrawn";
   const leaveWithdrawnTarget = useLeaveWithdrawnTarget();
   // StrictMode runs a mount effect twice, and a cached answer arrives on mount.
   const leftWithdrawnTarget = useRef(false);
@@ -442,6 +468,17 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
     return (
       <div className="flex h-48 items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (lifetime) {
+    return (
+      <div className="px-5 space-y-3">
+        <TipCard tone="info">{t("upgrade.lifetime")}</TipCard>
+        <StadiumButton fullWidth variant="secondary" onClick={() => setStep("subscriptions")}>
+          {t("upgrade.back")}
+        </StadiumButton>
       </div>
     );
   }
@@ -533,6 +570,7 @@ function CheckoutStep({ onQuoteRefused }: { readonly onQuoteRefused: () => void 
     selectedGateway,
     setCheckoutResult,
     setStep,
+    reset,
   } = useUpgradeStore();
   const queryClient = useQueryClient();
   const leaveWithdrawnTarget = useLeaveWithdrawnTarget();
@@ -555,6 +593,16 @@ function CheckoutStep({ onQuoteRefused }: { readonly onQuoteRefused: () => void 
       navigate(`/payment-return?paymentId=${result.paymentId}`, { replace: true });
     },
     onError: (err) => {
+      if (isLifetimeRenewalRefusal(err)) {
+        // The subscription has no end date (since the list loaded, or the list
+        // showed the VPN panel's date), so no purchase changes its plan;
+        // nothing was charged. Say so and start over from a fresh list.
+        toast.error(t("upgrade.lifetime"));
+        void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
+        void queryClient.resetQueries({ queryKey: ["upgrade-options"] });
+        reset();
+        return;
+      }
       if (isPlanUnavailableRefusal(err)) {
         // The target plan was withdrawn after it was picked; nothing was
         // charged. The review can only fail the same way again, so go back to

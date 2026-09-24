@@ -16,7 +16,11 @@ import {
 import { formatDate, getDaysLeft } from '@/lib/utils'
 import { toast } from 'sonner'
 import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
-import { canRenewSubscription } from '@/features/dashboard/components/subscription-action-policy'
+import {
+  canRenewSubscription,
+  renewalReasonKey,
+} from '@/features/dashboard/components/subscription-action-policy'
+import { isUpgradeClosedForLifetime } from '@/features/renewal/lifetime-renewal'
 import { useTrialToConvert } from '@/lib/trial-conversion'
 
 export default function SubscriptionPage() {
@@ -39,10 +43,21 @@ export default function SubscriptionPage() {
     staleTime: 30_000,
   })
 
-  const daysLeft = sub?.expireAt ? getDaysLeft(sub.expireAt) : null
+  // The panel sends the date as `expiresAt`; `expireAt` is the legacy name an
+  // older answer used. Reading only the legacy one left «Истекает» at «—» and
+  // never counted the days or warned of the end.
+  const expiresAt = sub?.expiresAt ?? sub?.expireAt ?? null
+  const daysLeft = expiresAt ? getDaysLeft(expiresAt) : null
   const isExpiringSoon = daysLeft !== null && daysLeft <= 3 && (sub?.status === 'ACTIVE' || sub?.status === 'LIMITED')
   const canRenew = canRenewSubscription(sub ?? null, false, policy?.canRenew)
-  const trialRenewalReason = sub?.isTrial === true ? t('renewal.reason.trial') : null
+  // Why «Продлить подписку» is not offered: a trial is upgraded, and a
+  // subscription with no end date has nothing to renew.
+  const reasonKey = renewalReasonKey(sub ?? null, policy?.lifetime)
+  const renewalReason = reasonKey === null ? null : t(reasonKey)
+  // Nor is its plan changed by a purchase: «Улучшить план» is closed, and says why.
+  const upgradeClosed = isUpgradeClosedForLifetime(sub ?? null, policy?.lifetime)
+  const canUpgrade = policy?.canUpgrade === true && !upgradeClosed
+  const upgradeReasonId = useId()
   // Beside a trial a purchase converts it (`lib/trial-conversion`): the panel
   // then closes «buy another» (`canBuy`), yet buying is exactly what converts
   // it, and it takes no free slot.
@@ -109,7 +124,7 @@ export default function SubscriptionPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-[color:var(--color-surface-high)] p-3">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('subscription.expires')}</p>
-                <p className="mt-1 font-semibold text-foreground">{formatDate(sub.expireAt)}</p>
+                <p className="mt-1 font-semibold text-foreground">{formatDate(expiresAt)}</p>
                 {daysLeft !== null && (
                   <p className={`text-xs mt-0.5 ${daysLeft <= 3 ? 'text-(--brand-primary)' : 'text-muted-foreground'}`}>
                     {daysLeft === 0 ? t('subscription.today') : t('subscription.daysLeftShort', { count: daysLeft })}
@@ -158,11 +173,11 @@ export default function SubscriptionPage() {
 
           {/* Action buttons */}
           <div className="space-y-3">
-            {(canRenew || trialRenewalReason) && (
+            {(canRenew || renewalReason) && (
               <StadiumButton
                 fullWidth size="lg"
                 disabled={!canRenew}
-                aria-describedby={trialRenewalReason ? renewalReasonId : undefined}
+                aria-describedby={renewalReason ? renewalReasonId : undefined}
                 onClick={() => {
                   if (canRenew) navigate('/renew')
                 }}
@@ -172,13 +187,13 @@ export default function SubscriptionPage() {
                 {t('subscription.renewFull')}
               </StadiumButton>
             )}
-            {trialRenewalReason && (
+            {renewalReason && (
               <p
                 id={renewalReasonId}
                 role="note"
                 className="text-sm leading-relaxed text-muted-foreground"
               >
-                {trialRenewalReason}
+                {renewalReason}
               </p>
             )}
             {(policy?.canBuy === true || trial !== null) && policy?.canRenew !== true && (
@@ -204,14 +219,27 @@ export default function SubscriptionPage() {
                   : t('subscription.limitReached')}
               </TipCard>
             )}
-            {policy?.canUpgrade && (
+            {(canUpgrade || upgradeClosed) && (
               <StadiumButton
                 fullWidth
-                onClick={() => navigate('/upgrade')}
+                disabled={!canUpgrade}
+                aria-describedby={upgradeClosed ? upgradeReasonId : undefined}
+                onClick={() => {
+                  if (canUpgrade) navigate('/upgrade')
+                }}
                 variant="outline"
               >
                 {t('subscription.upgradePlan')}
               </StadiumButton>
+            )}
+            {upgradeClosed && (
+              <p
+                id={upgradeReasonId}
+                role="note"
+                className="text-sm leading-relaxed text-muted-foreground"
+              >
+                {t('upgrade.lifetime')}
+              </p>
             )}
             <StadiumButton
               fullWidth

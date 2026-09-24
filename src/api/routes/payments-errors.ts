@@ -115,6 +115,11 @@ const CHECKOUT_ERROR_CODES = new Set([
   // page re-reads the subscriptions and prices the conversion. Also forwarded
   // by `/partner/pay`, where the same draft guard answers a balance payment.
   "TRIAL_UPGRADE_REQUIRED",
+  // A renewal or an upgrade of a subscription with no end date, which a
+  // purchase never renews and never moves to another plan. Forwarded by
+  // `/partner/pay` too: the renewal page's balance payment is the one
+  // single-subscription renewal the cabinet makes.
+  "SUBSCRIPTION_IS_LIFETIME",
 ]);
 
 /**
@@ -243,6 +248,14 @@ const RENEWAL_ERROR_MESSAGES: Record<string, { status: number; message: string }
   AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE: {
     status: 400,
     message: "Automatic charging is not available for this renewal. Choose the ordinary payment.",
+  },
+  // A subscription in the renewal has no end date, and such a subscription is
+  // never renewed (rezeis `lifetime-renewal.util.ts`); nothing was created. A
+  // 400: reviewing again changes nothing. The page says «Подписка бессрочная —
+  // продлевать не нужно» and goes back to the list, which leaves it out.
+  SUBSCRIPTION_IS_LIFETIME: {
+    status: 400,
+    message: "The subscription has no end date and is never renewed.",
   },
 };
 

@@ -76,6 +76,37 @@ describe('renewal checkout error contract', () => {
     });
   });
 
+  it('answers a renewal of a subscription with no end date as its own 400, not a conflict to re-price', () => {
+    expect(
+      resolveRenewalCheckoutError(
+        new UpstreamError(
+          'POST',
+          '/internal',
+          400,
+          JSON.stringify({ statusCode: 400, code: 'SUBSCRIPTION_IS_LIFETIME', message: 'The subscription has no end date and is never renewed.' }),
+        ),
+      ),
+    ).toEqual({
+      status: 400,
+      body: {
+        code: 'SUBSCRIPTION_IS_LIFETIME',
+        message: 'The subscription has no end date and is never renewed.',
+      },
+    });
+  });
+
+  it('gives a 400 code it does not know no contract — the generic refusal an older cabinet answers the lifetime one with', () => {
+    // Why the panel sends that refusal at 400: a cabinet older than the code
+    // reads it as this, and the route answers its generic "failed to create
+    // renewal checkout". At 409 it would be relabelled QUOTE_CHANGED below, and
+    // the review would re-price straight into the same refusal.
+    expect(
+      resolveRenewalCheckoutError(
+        new UpstreamError('POST', '/internal', 400, JSON.stringify({ statusCode: 400, code: 'SOME_FUTURE_REFUSAL' })),
+      ),
+    ).toBeNull();
+  });
+
   it('maps an unknown renewal conflict to the safe quote-changed contract', () => {
     expect(resolveRenewalCheckoutError(new UpstreamError('POST', '/internal', 409, 'provider secret'))).toEqual({
       status: 409,

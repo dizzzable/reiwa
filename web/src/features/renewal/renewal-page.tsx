@@ -62,6 +62,7 @@ import {
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import { subscriptionTitle } from "@/lib/subscription-title";
 import { notifyPlanUnavailable } from "@/features/purchase/plan-unavailable";
+import { isLifetimeRenewalRefusal, isLifetimeSubscription } from "./lifetime-renewal";
 
 const GATEWAY_ICONS: Record<string, string> = {
   YOOKASSA: "💳",
@@ -93,7 +94,28 @@ const RENEWAL_REASON_KEYS: Record<string, string> = {
   SOURCE_PLAN_MISSING: "renewal.reason.noPlan",
   GATEWAY_NOT_AVAILABLE: "renewal.reason.noGateway",
   ARCHIVED_PLAN_REPLACEMENT: "renewal.reason.archived",
+  SUBSCRIPTION_IS_LIFETIME: "renewal.reason.lifetime",
 };
+
+/**
+ * A renewal the panel refused because a subscription in it has no end date
+ * (`SUBSCRIPTION_IS_LIFETIME`): nothing was created. Says so, drops the
+ * selection and the list read before the subscription lost its date, and
+ * returns to the list — which leaves such a subscription out, and says why
+ * when nothing else is left to renew.
+ */
+function useReturnFromLifetimeRefusal(): () => void {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { setSelectedSubscriptions, goBack } = useRenewalStore();
+  return () => {
+    toast.error(t("renewal.reason.lifetime"));
+    void queryClient.resetQueries({ queryKey: ["renewal-options"] });
+    void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
+    setSelectedSubscriptions([]);
+    goBack("subscriptions");
+  };
+}
 
 function formatPrice(amount: string | null, currency: string | null): string {
   if (amount === null || currency === null) return "—";
@@ -331,8 +353,16 @@ export default function RenewalPage() {
   // subscription list is history, so an expired trial kept beside a paid
   // subscription was enough. A refetch that failed still holds the list it did
   // not replace, and that is not taken for an answer either.
+  //
+  // A subscription with no end date counts as not renewable whatever the
+  // list says: a panel older than the rule still lists it as renewable.
+  const lifetimeIds = new Set(
+    (subsData?.subscriptions ?? []).filter(isLifetimeSubscription).map((s) => s.id),
+  );
   const nothingRenewable =
-    baseOptions !== undefined && !optionsFailed && baseOptions.items.every((o) => !o.renewable);
+    baseOptions !== undefined &&
+    !optionsFailed &&
+    baseOptions.items.every((o) => !o.renewable || lifetimeIds.has(o.subscriptionId));
   const hasTrial = (subsData?.subscriptions ?? []).some((s) => s.isTrial);
   const redirectToUpgrade = decided && nothingRenewable && hasTrial;
   // The subscription step lists what these two reads say. With one of them
@@ -459,11 +489,14 @@ function SelectSubscriptions() {
   // price. We renew the subscriptions the user already owns — the plan/tariff
   // is implicit, so the list shows subscriptions, not plans.
   const optionById = new Map((options?.items ?? []).map((o) => [o.subscriptionId, o]));
+  // Never a subscription with no end date: there is nothing to renew, and the
+  // panel refuses it — even where an older panel's list still calls it
+  // renewable.
   const renewable = (subsData?.subscriptions ?? [])
     .map((sub) => ({ sub, option: optionById.get(sub.id) }))
     .filter(
       (row): row is { sub: Subscription; option: RenewalOptionItem } =>
-        row.option !== undefined && row.option.renewable,
+        row.option !== undefined && row.option.renewable && !isLifetimeSubscription(row.sub),
     );
 
   // Trial subscriptions can't be renewed — the user must UPGRADE to a regular
@@ -520,10 +553,17 @@ function SelectSubscriptions() {
     // Trials are being redirected to upgrade — render nothing to avoid a flash.
     if (toUpgrade) return null;
     // Surface the most relevant reason instead of a bare "none renewable".
+    // A subscription with no end date is named by the panel's warning, or —
+    // from a panel older than the rule — by its own missing date.
     const reasonCode = (options?.items ?? [])
       .flatMap((i) => i.warnings.map((w) => w.code))
       .find((c) => RENEWAL_REASON_KEYS[c] !== undefined);
-    const reason = reasonCode ? t(RENEWAL_REASON_KEYS[reasonCode]!) : null;
+    const reasonKey = reasonCode
+      ? RENEWAL_REASON_KEYS[reasonCode]!
+      : (subsData?.subscriptions ?? []).some(isLifetimeSubscription)
+        ? RENEWAL_REASON_KEYS.SUBSCRIPTION_IS_LIFETIME!
+        : null;
+    const reason = reasonKey ? t(reasonKey) : null;
     return (
       <div className="px-5 space-y-2">
         <TipCard tone="info">{t("renewal.noneRenewable")}</TipCard>
@@ -1229,6 +1269,7 @@ function RenewalReview() {
     setStep,
     goBack,
   } = useRenewalStore();
+  const returnFromLifetimeRefusal = useReturnFromLifetimeRefusal();
   // StepTransition keeps a step it is leaving mounted for the exit animation
   // (about 200 ms), and that copy keeps re-rendering from the store. A review
   // leaving for plan selection saw the choice it had just released dropped
@@ -1348,6 +1389,12 @@ function RenewalReview() {
       if (holdMessage !== null) {
         toast.error(holdMessage);
         void queryClient.invalidateQueries({ queryKey: ["partner", "info"] });
+        return;
+      }
+      // A subscription with no end date is not renewed, from the balance
+      // either; nothing left it.
+      if (isLifetimeRenewalRefusal(err)) {
+        returnFromLifetimeRefusal();
         return;
       }
       toast.error(t("renewal.balanceError"));
@@ -1570,6 +1617,7 @@ function CheckoutStep() {
     goBack,
   } = useRenewalStore();
   const queryClient = useQueryClient();
+  const returnFromLifetimeRefusal = useReturnFromLifetimeRefusal();
 
   const durationsPayload = selectedSubscriptionIds
     .filter((id) => selectedDurations[id] !== undefined)
@@ -1649,6 +1697,11 @@ function CheckoutStep() {
         // back to choosing the payment, where the ordinary one is.
         toast.error(t("purchase.checkout.autopayNotAvailable"));
         goBack("gateway");
+        return;
+      }
+      if (isLifetimeRenewalRefusal(err)) {
+        // Not back to the review: it would re-price into the same refusal.
+        returnFromLifetimeRefusal();
         return;
       }
       // A refused checkout means the reviewed quote may no longer hold — the

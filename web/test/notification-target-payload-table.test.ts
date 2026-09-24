@@ -87,3 +87,33 @@ describe("«Помощь с подключением» reads its subscription fr
     }
   });
 });
+
+// The owner, 24.09.2026: a subscription with no end date is never renewed, so
+// «Трафик исчерпан» about one opens the add-on page on it — where the panel's
+// push and bot button send it. The notice states the expiry, and `null` there
+// is no end date; every payload in the table above states none, and keeps
+// its renewal.
+describe("«Трафик исчерпан» for a subscription with no end date opens the add-on page", () => {
+  it("on the subscription the payload names, under both of the type's names", () => {
+    for (const type of ["limited", "subscription_limited", "LIMITED"]) {
+      expect(resolveNotificationTarget(type, { subscriptionId: "cmsub0001abcdefghijklmno", expiresAt: null })).toEqual(
+        ROUTE("/addons?subscriptionId=cmsub0001abcdefghijklmno"),
+      );
+    }
+  });
+
+  it("without a card named when the payload names none it can use", () => {
+    for (const payload of [{ expiresAt: null }, { expiresAt: null, subscriptionId: 42 }, { expiresAt: null, subscriptionId: "" }]) {
+      expect(resolveNotificationTarget("limited", payload), JSON.stringify(payload)).toEqual(ROUTE("/addons"));
+    }
+  });
+
+  it("control: a subscription with a date keeps renewal, and so does another notice with no date", () => {
+    expect(
+      resolveNotificationTarget("limited", { subscriptionId: "cmsub0001abcdefghijklmno", expiresAt: "2026-10-24T00:00:00.000Z" }),
+    ).toEqual(ROUTE("/renew"));
+    expect(resolveNotificationTarget("expired", { subscriptionId: "cmsub0001abcdefghijklmno", expiresAt: null })).toEqual(
+      ROUTE("/renew"),
+    );
+  });
+});

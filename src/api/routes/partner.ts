@@ -83,6 +83,16 @@ export function createPartnerRouter(deps: {
           });
           return;
         }
+        // A renewal paid from the balance for a subscription with no end date,
+        // which is never renewed: typed, so the renewal page says why instead
+        // of reporting a failed balance payment. Nothing left the balance.
+        if (extractCheckoutRefusalCode(body) === "SUBSCRIPTION_IS_LIFETIME") {
+          res.status(400).json({
+            code: "SUBSCRIPTION_IS_LIFETIME",
+            message: "The subscription has no end date and is never renewed.",
+          });
+          return;
+        }
       }
       sendSafeError(req, res, e, 400, "Partner balance payment failed", "partner/pay");
     }

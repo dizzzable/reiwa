@@ -190,6 +190,7 @@ function flattenActionPolicy(raw: unknown): {
   activeSubscriptionCount: number;
   maxSubscriptions: number;
   limitReached: boolean;
+  lifetime: boolean;
 } {
   const obj =
     raw !== null && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -209,12 +210,11 @@ function flattenActionPolicy(raw: unknown): {
       ? Math.max(1, Math.floor(obj.maxSubscriptions))
       : 1;
   const warnings = Array.isArray(obj.warnings) ? obj.warnings : [];
-  const warnedLimit = warnings.some(
-    (w) =>
-      w !== null &&
-      typeof w === "object" &&
-      (w as { code?: string }).code === "SUBSCRIPTION_LIMIT_REACHED",
-  );
+  const warned = (code: string): boolean =>
+    warnings.some(
+      (w) => w !== null && typeof w === "object" && (w as { code?: string }).code === code,
+    );
+  const warnedLimit = warned("SUBSCRIPTION_LIMIT_REACHED");
   // Capacity exhausted: effective max already folds per-user maxSubscriptions
   // and global multi-sub defaultMaxSubscriptions on the admin side.
   const limitReached =
@@ -228,6 +228,11 @@ function flattenActionPolicy(raw: unknown): {
     activeSubscriptionCount,
     maxSubscriptions,
     limitReached,
+    // The subscription has no end date, so RENEW is closed and the page says
+    // why rather than showing a dead button. Read from the panel's warning:
+    // the subscription list overlays the VPN panel's date, so the row the SPA
+    // holds usually has one. A panel older than the rule sends no such warning.
+    lifetime: warned("SUBSCRIPTION_IS_LIFETIME"),
   };
 }
 

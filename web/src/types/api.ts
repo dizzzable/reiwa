@@ -190,6 +190,12 @@ export interface ActionPolicy {
   maxSubscriptions?: number;
   /** True when activeSubscriptionCount >= maxSubscriptions. */
   limitReached?: boolean;
+  /**
+   * The subscription the policy was asked about has no end date, so there is
+   * nothing to renew (`features/renewal/lifetime-renewal.ts`). Absent from a
+   * panel older than the rule.
+   */
+  lifetime?: boolean;
 }
 
 // ─── Quote ───────────────────────────────────────────────────────────────────

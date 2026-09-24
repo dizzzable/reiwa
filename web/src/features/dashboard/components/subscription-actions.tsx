@@ -19,11 +19,13 @@ import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import type { Subscription } from "@/types/api";
+import { isUpgradeClosedForLifetime } from "@/features/renewal/lifetime-renewal";
 import { getSubscriptionAddOns } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import {
   canRenewSubscription,
   invokeRenewSubscriptionAction,
+  renewalReasonKey,
 } from "./subscription-action-policy";
 
 interface SubscriptionActionsProps {
@@ -37,6 +39,11 @@ interface SubscriptionActionsProps {
   restricted?: boolean;
   /** Authoritative action policy for this exact subscription id. */
   policyCanRenew?: boolean;
+  /**
+   * The same policy saying the subscription has no end date, so there is
+   * nothing to renew. Absent from a panel older than the rule.
+   */
+  policyLifetime?: boolean;
   /** A transient presentation (for example deletion) owns the card. */
   disabled?: boolean;
   /**
@@ -55,6 +62,7 @@ export function SubscriptionActions({
   purchasesBlocked = false,
   restricted = false,
   policyCanRenew,
+  policyLifetime,
   disabled = false,
   connectHighlighted = false,
 }: SubscriptionActionsProps) {
@@ -72,8 +80,14 @@ export function SubscriptionActions({
   const canRenewOrUpgrade =
     sub?.status === "ACTIVE" || sub?.status === "LIMITED" || sub?.status === "EXPIRED";
   const canRenew = canRenewSubscription(sub, restricted, policyCanRenew);
-  const trialRenewalReason =
-    sub?.isTrial === true ? t("renewal.reason.trial") : null;
+  // Why «Продлить» is not offered: a trial is upgraded, and a subscription
+  // with no end date has nothing to renew.
+  const reasonKey = renewalReasonKey(sub, policyLifetime);
+  const renewalReason = reasonKey === null ? null : t(reasonKey);
+  // Nor is its plan changed by a purchase (`features/renewal/lifetime-renewal.ts`):
+  // «Улучшить» is closed, and says why.
+  const upgradeClosed = isUpgradeClosedForLifetime(sub, policyLifetime);
+  const upgradeReasonId = useId();
 
   // Top-up (докупка) is only meaningful when the subscription actually has
   // eligible add-on options. Query the SAME v2 subscription-scoped eligibility
@@ -111,14 +125,19 @@ export function SubscriptionActions({
       <ActionButton
         icon={<ArrowUpCircle className="h-5 w-5" />}
         label={t("card.actions.upgrade")}
-        disabled={disabled || !canRenewOrUpgrade || purchasesBlocked}
-        onClick={onUpgrade}
+        disabled={disabled || !canRenewOrUpgrade || purchasesBlocked || upgradeClosed}
+        ariaDescribedBy={upgradeClosed ? upgradeReasonId : undefined}
+        onClick={() => {
+          // The attribute stops a tap; this stops a stale render or a
+          // programmatic click, as the renewal's own guard does.
+          if (!upgradeClosed) onUpgrade();
+        }}
       />
       <ActionButton
         icon={<RotateCcw className="h-5 w-5" />}
         label={t("card.actions.renew")}
         disabled={disabled || !canRenew}
-        ariaDescribedBy={trialRenewalReason ? renewalReasonId : undefined}
+        ariaDescribedBy={renewalReason ? renewalReasonId : undefined}
         onClick={() => {
           invokeRenewSubscriptionAction({
             subscription: sub,
@@ -138,13 +157,22 @@ export function SubscriptionActions({
           navigate(sub?.id ? `/addons?subscriptionId=${encodeURIComponent(sub.id)}` : "/addons")
         }
       />
-      {trialRenewalReason ? (
+      {renewalReason ? (
         <p
           id={renewalReasonId}
           role="note"
           className="col-span-4 px-1 pt-1 text-xs leading-relaxed text-[color:var(--brand-muted-foreground)]"
         >
-          {trialRenewalReason}
+          {renewalReason}
+        </p>
+      ) : null}
+      {upgradeClosed ? (
+        <p
+          id={upgradeReasonId}
+          role="note"
+          className="col-span-4 px-1 text-xs leading-relaxed text-[color:var(--brand-muted-foreground)]"
+        >
+          {t("upgrade.lifetime")}
         </p>
       ) : null}
     </div>

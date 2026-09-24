@@ -217,6 +217,22 @@ describe('every other refusal keeps the generic answer', () => {
     });
   });
 
+  it('forwards the refusal of a balance renewal for a subscription with no end date, typed', async () => {
+    // The panel never renews a subscription with no end date; the renewal page
+    // says so instead of "could not pay from the balance".
+    const target = await stand({
+      status: 400,
+      body: { statusCode: 400, message: 'x', errorCode: 'SUBSCRIPTION_IS_LIFETIME', code: 'SUBSCRIPTION_IS_LIFETIME' },
+    });
+
+    const answer = await post(target, '/api/v1/partner/pay', PURCHASE);
+
+    expect(answer).toEqual({
+      status: 400,
+      body: { code: 'SUBSCRIPTION_IS_LIFETIME', message: 'The subscription has no end date and is never renewed.' },
+    });
+  });
+
   it('answers an older panel — whose filter strips the code — as before', async () => {
     // A panel from before the allowlist entry: the code and the end of the
     // hold never leave it, and its sentence is not forwarded either.

@@ -484,6 +484,7 @@ export default function DashboardPage() {
               purchasesBlocked={purchasesBlocked}
               restricted={restricted}
               policyCanRenew={activeSubscriptionPolicy?.canRenew}
+              policyLifetime={activeSubscriptionPolicy?.lifetime}
               // What connecting means is decided by the door (`connect-door.ts`):
               // the button raises the intent and has no opinion; the switch
               // lives in the catalog the panel owns, and its off position is the

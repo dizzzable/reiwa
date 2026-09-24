@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { formatDate } from "../src/lib/utils";
 import type { ActionPolicy, Subscription } from "../src/types/api";
 
 const queryState = vi.hoisted(() => ({
@@ -103,6 +104,127 @@ describe("legacy subscription page trial renewal explanation", () => {
     expect(isDisabledButton(button)).toBe(false);
     expect(button).not.toContain("aria-describedby");
     expect(markup).not.toContain("renewal.reason.trial");
+  });
+});
+
+// The owner, 24.09.2026: a subscription with no end date stays without one, so
+// «Продлить подписку» is not offered, and the page says why.
+describe("legacy subscription page for a subscription with no end date", () => {
+  it.each([
+    ["its own missing date, beside an older panel's RENEW", { expiresAt: null, expireAt: undefined }, { ...policy(true) }],
+    ["the panel's word, over the date the page shows", {}, { ...policy(false), lifetime: true }],
+  ] as const)("keeps Renew disabled and explains it, on %s", (_by, dates, answer) => {
+    queryState.subscription = { ...subscription({ id: "lifetime", isTrial: false }), ...dates };
+    queryState.subscriptions = [queryState.subscription];
+    queryState.policy = answer;
+
+    const markup = renderToStaticMarkup(<SubscriptionPage />);
+    const button = renewButton(markup);
+    const descriptionId = button.match(/aria-describedby="([^"]+)"/)?.[1];
+
+    expect(button).not.toBe("");
+    expect(isDisabledButton(button)).toBe(true);
+    expect(markup).toContain(`id="${descriptionId}"`);
+    expect(markup).toContain("renewal.reason.lifetime");
+  });
+});
+
+// The owner, 24.09.2026: nor is its plan changed by a purchase — an upgrade
+// restarts the term at the payment. «Улучшить план» is disabled and says why;
+// a trial is still upgraded.
+describe("legacy subscription page «Улучшить план» for a subscription with no end date", () => {
+  function upgradeButton(markup: string): string {
+    return (
+      [...markup.matchAll(/<button\b[\s\S]*?<\/button>/g)]
+        .map(([button]) => button)
+        .find((button) => button.includes("subscription.upgradePlan")) ?? ""
+    );
+  }
+
+  it.each([
+    ["its own missing date, beside an older panel's UPGRADE", { expiresAt: null, expireAt: undefined }, policy(true)],
+    ["the panel's word, which closes UPGRADE", {}, { ...policy(false), canUpgrade: false, lifetime: true }],
+  ] as const)("is disabled and explained, on %s", (_by, dates, answer) => {
+    queryState.subscription = { ...subscription({ id: "lifetime", isTrial: false }), ...dates };
+    queryState.subscriptions = [queryState.subscription];
+    queryState.policy = answer;
+
+    const markup = renderToStaticMarkup(<SubscriptionPage />);
+    const button = upgradeButton(markup);
+    const descriptionId = button.match(/aria-describedby="([^"]+)"/)?.[1];
+
+    expect(button).not.toBe("");
+    expect(isDisabledButton(button)).toBe(true);
+    expect(descriptionId).toBeTruthy();
+    expect(markup).toContain(`id="${descriptionId}"`);
+    expect(markup).toContain("upgrade.lifetime");
+  });
+
+  it("keeps it for a trial with no end date: an upgrade is how a trial is left", () => {
+    queryState.subscription = { ...subscription({ id: "trial", isTrial: true, trialFree: true }), expiresAt: null, expireAt: undefined };
+    queryState.subscriptions = [queryState.subscription];
+    queryState.policy = policy(false);
+
+    const markup = renderToStaticMarkup(<SubscriptionPage />);
+
+    expect(isDisabledButton(upgradeButton(markup))).toBe(false);
+    expect(markup).not.toContain("upgrade.lifetime");
+  });
+
+  it("control: a subscription with a date keeps «Улучшить план» enabled, with no note", () => {
+    queryState.subscription = subscription({ id: "dated", isTrial: false });
+    queryState.subscriptions = [queryState.subscription];
+    queryState.policy = policy(true);
+
+    const markup = renderToStaticMarkup(<SubscriptionPage />);
+    const button = upgradeButton(markup);
+
+    expect(button).not.toBe("");
+    expect(isDisabledButton(button)).toBe(false);
+    expect(markup).not.toContain("upgrade.lifetime");
+  });
+});
+
+// The owner, 24.09.2026: «Истекает» showed «—». The page read the legacy
+// `expireAt`, and the panel sends the date as `expiresAt`.
+describe("legacy subscription page «Истекает»", () => {
+  function expiresTile(markup: string): string | undefined {
+    return markup.match(/subscription\.expires<\/p><p[^>]*>([^<]*)<\/p>/)?.[1];
+  }
+
+  it("shows the date the panel sends, and the days left", () => {
+    const expiresAt = new Date(Date.now() + 10 * 86_400_000 + 3_600_000).toISOString();
+    queryState.subscription = { ...subscription({ id: "dated", isTrial: false }), expiresAt, expireAt: undefined };
+    queryState.subscriptions = [queryState.subscription];
+    queryState.policy = policy(true);
+
+    const markup = renderToStaticMarkup(<SubscriptionPage />);
+
+    expect(expiresTile(markup)).toBe(formatDate(expiresAt));
+    expect(expiresTile(markup)).not.toBe("—");
+    expect(markup).toContain("subscription.daysLeftShort");
+    expect(markup).not.toContain("subscription.expiresInWarning");
+  });
+
+  it("warns of an end within three days from that date alone", () => {
+    queryState.subscription = {
+      ...subscription({ id: "ending", isTrial: false }),
+      expiresAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+      expireAt: undefined,
+    };
+    queryState.subscriptions = [queryState.subscription];
+    queryState.policy = policy(true);
+
+    expect(renderToStaticMarkup(<SubscriptionPage />)).toContain("subscription.expiresInWarning");
+  });
+
+  it("still reads the legacy name from an answer that sends only it", () => {
+    const expireAt = "2099-01-01T00:00:00.000Z";
+    queryState.subscription = { ...subscription({ id: "legacy", isTrial: false }), expiresAt: undefined as never, expireAt };
+    queryState.subscriptions = [queryState.subscription];
+    queryState.policy = policy(true);
+
+    expect(expiresTile(renderToStaticMarkup(<SubscriptionPage />))).toBe(formatDate(expireAt));
   });
 });
 

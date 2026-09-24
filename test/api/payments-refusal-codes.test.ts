@@ -35,6 +35,8 @@ describe("checkout refusal codes", () => {
     // The buyer holds a trial; the purchase converts it instead. The page re-reads
     // the subscriptions and prices the conversion.
     "TRIAL_UPGRADE_REQUIRED",
+    // A renewal of a subscription with no end date, which is never renewed.
+    "SUBSCRIPTION_IS_LIFETIME",
   ])("forwards %s", (code) => {
     expect(extractCheckoutRefusalCode(JSON.stringify({ code, message: "x" }))).toBe(code);
   });

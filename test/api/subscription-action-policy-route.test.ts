@@ -106,6 +106,24 @@ describe("subscription action-policy route", () => {
     });
   });
 
+  it("says the selected subscription has no end date when the panel does, and not otherwise", async () => {
+    // The panel closes RENEW for a subscription with no end date and says why
+    // in a warning; the SPA needs the why, because the subscription list shows
+    // the VPN panel's date for it. A panel older than the rule says nothing,
+    // and the flag stays false — the page behaves as it did.
+    const lifetime = vi.fn(async () => ({
+      actions: { RENEW: false, UPGRADE: true },
+      warnings: [{ code: "SUBSCRIPTION_IS_LIFETIME", message: "no end date" }],
+    }));
+    const older = vi.fn(async () => ({ actions: { RENEW: true }, warnings: [] }));
+
+    const answered = await post(makeApp(lifetime), { subscriptionId: "subscription-1" });
+    const fromOlderPanel = await post(makeApp(older), { subscriptionId: "subscription-1" });
+
+    expect(answered.body).toMatchObject({ canRenew: false, lifetime: true });
+    expect(fromOlderPanel.body).toMatchObject({ canRenew: true, lifetime: false });
+  });
+
   it("keeps the portfolio policy unscoped when no subscription is selected", async () => {
     const getActionPolicy = vi.fn(async () => ({ actions: {} }));
 

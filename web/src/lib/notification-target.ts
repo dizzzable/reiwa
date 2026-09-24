@@ -4,7 +4,8 @@
  * Pure mapping from a notification `type` to where tapping it should take the
  * user. Broadcasts / admin messages / anything unknown open the full-content
  * modal in place; actionable types route to the page where the user can act
- * (subscription expiry/limit → renewal, referral events → referral cabinet).
+ * (subscription expiry/limit → renewal, the traffic limit of a subscription
+ * with no end date → add-ons, referral events → referral cabinet).
  */
 import { connectHelpDeepLink } from '@/features/dashboard/connect-help';
 
@@ -18,6 +19,9 @@ export type NotificationTarget =
  * families, and a help message must never fall into one of them by accident.
  */
 const CONNECT_HELP_TYPES: ReadonlySet<string> = new Set(['connect_help', 'connect_help_trial']);
+
+/** «Трафик исчерпан», under both of its names (the panel's `notification-toggle.util.ts`). */
+const LIMITED_TYPES: ReadonlySet<string> = new Set(['limited', 'subscription_limited']);
 
 export function resolveNotificationTarget(
   type: string,
@@ -64,6 +68,28 @@ export function resolveNotificationTarget(
   // Referral events → the referral cabinet (who joined, rewards, etc.).
   if (t.includes('referral')) {
     return { kind: 'route', path: '/referrals' };
+  }
+
+  // «Трафик исчерпан» about a subscription with no end date → the add-on page
+  // on that subscription: such a subscription is never renewed, and more
+  // traffic is the way on — the address the panel gives its push and its
+  // bot button (`offerTrafficTopUpForLifetime`). The notice states the expiry,
+  // and `null` there is no end date; a payload without the key keeps renewal.
+  // Both of the type's names, as the panel's switch knows them.
+  if (
+    LIMITED_TYPES.has(t) &&
+    payload != null &&
+    'expiresAt' in payload &&
+    payload['expiresAt'] === null
+  ) {
+    const subscriptionId = payload['subscriptionId'];
+    return {
+      kind: 'route',
+      path:
+        typeof subscriptionId === 'string' && subscriptionId.length > 0
+          ? `/addons?subscriptionId=${encodeURIComponent(subscriptionId)}`
+          : '/addons',
+    };
   }
 
   // Subscription expiry reminders / expired / traffic-limited → renewal page.
