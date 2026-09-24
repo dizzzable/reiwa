@@ -17,6 +17,7 @@ import type { UpgradePlanOption } from "@/lib/api-client/subscription";
 import { TariffCard } from "@/features/plans/tariff-card";
 import { upgradeCardPlan } from "./upgrade-card-plan";
 import { describeCarriedAbovePlan } from "./carried-above-plan";
+import { describeActiveAddOns } from "./active-add-ons";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { useUpgradeStore } from "@/stores/upgrade.store";
@@ -458,6 +459,14 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
 
   const symbol = CURRENCY_SYMBOLS[quote.currency] ?? "";
   const carriedLine = describeCarriedAbovePlan(quote.carriedAbovePlan, selectedPlan, t);
+  // The live add-ons, each until its own date (never past the new end). Kept
+  // apart from «Сверх тарифа», which the panel sends without them.
+  const addOnsLine = describeActiveAddOns(quote.activeAddOns, selectedPlan, t);
+  // Days the old plan's paid remainder adds to the new term, as the panel
+  // estimated them; it counts again at payment. With none — 0, or a panel older
+  // than the field — the review says exactly what it always said.
+  const paidRemainderDays =
+    typeof quote.paidRemainderDays === "number" && quote.paidRemainderDays > 0 ? quote.paidRemainderDays : 0;
   return (
     <div className="px-5 space-y-4">
       <h2 className="text-base font-semibold">{t("upgrade.reviewTitle")}</h2>
@@ -476,8 +485,14 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
           </span>
         </div>
       </div>
-      <TipCard tone="info">{t("upgrade.resetsExpiry")}</TipCard>
+      <TipCard tone="info">
+        {paidRemainderDays > 0 ? t("upgrade.resetsExpiryWithRemainder") : t("upgrade.resetsExpiry")}
+      </TipCard>
+      {paidRemainderDays > 0 && (
+        <TipCard tone="info">{t("upgrade.paidRemainder", { days: paidRemainderDays })}</TipCard>
+      )}
       {carriedLine !== null && <TipCard tone="info">{carriedLine}</TipCard>}
+      {addOnsLine !== null && <TipCard tone="info">{addOnsLine}</TipCard>}
       {/* Refused at checkout without a reason, yet priced again: not a
           withdrawn target, and not something another press of Pay changes. */}
       {refused && <TipCard tone="danger">{t("purchase.checkout.notAccepted")}</TipCard>}

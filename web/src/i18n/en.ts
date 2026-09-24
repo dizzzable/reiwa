@@ -35,7 +35,7 @@ export const en: RuDict = {
       opening: 'Opening the conversation…',
       staleContinue: 'This link no longer opens the conversation. Below is the conversation open on this device.',
       staleNone:
-        'This link no longer opens the conversation: either support has since sent a newer email, or access to the request has ended. Try “Открыть переписку” in the newest email (the letter is in Russian) or your resume code; if that does not work, write to us again.',
+        'This link no longer opens the conversation: either support has since sent a newer email, or access to the request has ended. Try “Open conversation” in the newest email (“Открыть переписку” if the email is in Russian) or your resume code; if that does not work, write to us again.',
       failed: 'The conversation could not be opened from the link.',
       failedCode: 'The conversation could not be opened with the code.',
       retry: 'Try again',
@@ -46,7 +46,7 @@ export const en: RuDict = {
       // and letters reach only guests who left an email, when the operator has
       // email turned on.
       confirmWayBack:
-        'You can return to “{{current}}” with its resume code, if you saved it: the “Have a resume code?” field will be under the conversation. Or with “Открыть переписку” in a support email about it, if such emails reach you.',
+        'You can return to “{{current}}” with its resume code, if you saved it: the “Have a resume code?” field will be under the conversation. Or with “Open conversation” (“Открыть переписку” in a Russian email) in a support email about it, if such emails reach you.',
       confirmOpen: 'Open the other request',
       confirmStay: 'Stay in the current one',
     },
@@ -848,12 +848,14 @@ export const en: RuDict = {
     unbindConfirm: 'After unbinding, this method will no longer be used for autopayments. You can save a card again on the next checkout.',
     unbound: 'Payment method unbound',
     error: 'Failed to unbind payment method',
+    unbindBusy: 'A payment with this method is in progress — you can unbind it in a minute',
     autopay: 'Autopay',
     autopayOnHint: 'This card can be charged for autopayments without re-entering details',
     autopayOffHint: 'Autopay is off for this card — it stays linked',
     autopayEnabled: 'Autopay enabled',
     autopayDisabled: 'Autopay disabled',
     autopayError: 'Failed to update autopay',
+    autopayBusy: 'A payment with this method is in progress — you can change autopay in a minute',
     fallbackTitle: 'Payment method',
     providerSubscriptions: {
       fallbackPlan: 'Subscription',
@@ -1371,6 +1373,8 @@ export const en: RuDict = {
     purchaseError: 'Failed to create payment. Please try again later.',
     free: 'Free',
     freeApplied: 'Add-on activated',
+    validUntil: 'Valid until {{date}}',
+    untilSubscriptionEnd: 'Until the subscription ends',
   },
   addonsHistory: {
     title: 'My add-ons',
@@ -1434,6 +1438,10 @@ export const en: RuDict = {
     newPlan: 'New plan',
     total: 'Total',
     resetsExpiry: 'The upgrade starts immediately and resets the subscription expiry.',
+    resetsExpiryWithRemainder:
+      'The upgrade starts immediately: the term starts over, and the paid remainder of your current plan is added to it as days.',
+    paidRemainder:
+      'Paid remainder of your current plan: +{{days}} d on top of the new term — the exact number is counted at payment.',
     keepsAbovePlan: 'Above your plan: {{items}} — you keep this on the new plan too.',
     aboveDevices_one: '+{{count}} device',
     // `en` is typed as the Russian dictionary, so the Russian plural keys
@@ -1444,6 +1452,9 @@ export const en: RuDict = {
     aboveTraffic: '+{{value}} GB',
     aboveUnlimitedDevices: 'unlimited devices',
     aboveUnlimitedTraffic: 'unlimited traffic',
+    keepsAddOns: 'Your add-ons stay: {{items}}.',
+    addOnUntil: '{{item}} until {{date}}',
+    addOnUntilEnd: '{{item}} until the subscription ends',
     pay: 'Proceed to payment',
     change: 'Change',
     priceError: 'Could not calculate the price. Try a different payment method.',
@@ -1607,6 +1618,10 @@ export const en: RuDict = {
     after1: '1 day after',
     after2: '2 days after',
     after3: '3 days after',
+    // A paid add-on — extra traffic or devices — before and at its end.
+    addonsGroup: 'Add-ons',
+    addonEndsSoon: '3 days before an add-on ends',
+    addonEnded: 'When an add-on has ended',
     hint: 'Anything switched off here stops arriving in the bot, the browser and by email, but stays in Notifications — nothing is lost.',
     pushSection: 'Browser notifications',
     pushDescription: 'Get notifications in your browser or on your device, even when the site is closed.',

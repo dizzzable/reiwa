@@ -48,6 +48,8 @@ function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
     } | null;
     warnings?: ReadonlyArray<{ code?: string; message?: string }>;
     carriedAbovePlan?: unknown;
+    paidRemainderDays?: unknown;
+    activeAddOns?: unknown;
   };
   if (!q.price || !q.selectedPlan) {
     // No priceable selection — surface the first warning code for the SPA.
@@ -59,6 +61,8 @@ function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
     q.price.originalPrice ?? q.price.price ?? "0",
   );
   const carriedAbovePlan = readCarriedAbovePlan(q.carriedAbovePlan);
+  const paidRemainderDays = readPaidRemainderDays(q.paidRemainderDays);
+  const activeAddOns = readActiveAddOns(q.activeAddOns);
   return {
     planId: q.selectedPlan.id ?? null,
     planName: q.selectedPlan.name ?? "",
@@ -69,7 +73,66 @@ function flattenQuote(raw: unknown, requestedDurationDays: number): unknown {
     discountPercent: q.price.discountPercent ?? 0,
     gatewayType: q.price.gatewayType ?? "",
     ...(carriedAbovePlan === null ? {} : { carriedAbovePlan }),
+    ...(paidRemainderDays === null ? {} : { paidRemainderDays }),
+    ...(activeAddOns === null ? {} : { activeAddOns }),
   };
+}
+
+/** A live add-on an UPGRADE keeps, as the SPA receives it. */
+interface ActiveAddOnKept {
+  type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES";
+  value: number;
+  expiresAt: string | null;
+}
+
+/** Far more than any subscription holds; a longer list is not a real answer. */
+const MAX_ACTIVE_ADD_ONS = 50;
+
+/** What `Date.prototype.toISOString` writes, which is how the panel sends an instant. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+
+/**
+ * UPGRADE only: the live add-ons the subscription keeps across the upgrade,
+ * each with the end the panel says it will have — its own date, never later
+ * than the new end; `null` is "until the subscription ends", for a new term
+ * with no end. Never part of `carriedAbovePlan`, so the review names each
+ * one once.
+ *
+ * Re-stated entry by entry: a known type, a whole positive value, and an ISO
+ * instant or `null`. ALL OR NOTHING: one malformed entry drops the whole list,
+ * because a list with a line missing would tell the customer that add-on ends
+ * with the upgrade — something untrue, where no list says nothing. `null`, and
+ * no line, also when the panel sends none (one older than the field: the
+ * cabinet ships first) or an empty list.
+ */
+function readActiveAddOns(raw: unknown): ActiveAddOnKept[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_ACTIVE_ADD_ONS) return null;
+  const kept: ActiveAddOnKept[] = [];
+  for (const entry of raw as unknown[]) {
+    if (entry === null || typeof entry !== "object") return null;
+    const { type, value, expiresAt } = entry as Record<string, unknown>;
+    if (type !== "EXTRA_TRAFFIC" && type !== "EXTRA_DEVICES") return null;
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return null;
+    if (
+      expiresAt !== null &&
+      (typeof expiresAt !== "string" || !ISO_INSTANT.test(expiresAt) || Number.isNaN(Date.parse(expiresAt)))
+    ) {
+      return null;
+    }
+    kept.push({ type, value, expiresAt });
+  }
+  return kept;
+}
+
+/**
+ * UPGRADE only: the whole days the old plan's paid remainder would add to the
+ * new term, as the panel estimated it for this quote (it counts again at
+ * payment). Passed on only as a whole, non-negative, safe integer — dropped,
+ * and the review says what it always said, when the panel sends none (one
+ * older than the field: the cabinet ships first) or anything else.
+ */
+function readPaidRemainderDays(raw: unknown): number | null {
+  return typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0 ? raw : null;
 }
 
 /**

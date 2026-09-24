@@ -210,6 +210,28 @@ export interface SubscriptionQuote {
    * from a panel older than the field.
    */
   carriedAbovePlan?: CarriedAbovePlan;
+  /**
+   * UPGRADE only: whole days the old plan's paid remainder adds to the new
+   * term — an estimate, counted again at payment. Absent from a panel older
+   * than the field; 0 when nothing converts.
+   */
+  paidRemainderDays?: number;
+  /**
+   * UPGRADE only: the live add-ons the subscription keeps across the upgrade,
+   * each with the end it will have — its own date, never later than the new
+   * end. Never counted in `carriedAbovePlan`. Absent when there are none, and
+   * from a panel older than the field.
+   */
+  activeAddOns?: ActiveAddOnKept[];
+}
+
+/** A live add-on an upgrade keeps, as the BFF re-states it. */
+export interface ActiveAddOnKept {
+  type: "EXTRA_TRAFFIC" | "EXTRA_DEVICES";
+  /** Gigabytes for traffic, a count for devices. */
+  value: number;
+  /** ISO instant; `null` — until the subscription ends (a new term with no end). */
+  expiresAt: string | null;
 }
 
 /** What an upgrade keeps above the new plan, as the BFF re-states it. */
