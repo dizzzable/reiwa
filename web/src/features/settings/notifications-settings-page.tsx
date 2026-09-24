@@ -223,11 +223,15 @@ function BrowserPushSection() {
  * `connect_help` — «Помощь с подключением» — is ONE switch for two types: the
  * panel files the trial-and-gift notice (`connect_help_trial`) under the same
  * key, so there is nothing a second row could switch that this one does not.
+ *
+ * The add-on pair — a paid add-on three days before it ends, and when it has —
+ * is one switch per moment too: the panel files the device add-on's notices
+ * (their own words for what happens to the devices) under these two keys.
  */
 const NOTIFICATION_SWITCHES: ReadonlyArray<{
   type: string;
   labelKey: string;
-  group: "before" | "after" | "connect";
+  group: "before" | "after" | "connect" | "addons";
   /** A line under the switch, for a type whose name alone does not say when it comes. */
   hintKey?: string;
 }> = [
@@ -242,6 +246,8 @@ const NOTIFICATION_SWITCHES: ReadonlyArray<{
     group: "connect",
     hintKey: "connectHelp.settingsHint",
   },
+  { type: "addon_ends_in_3_days", labelKey: "notifications.addonEndsSoon", group: "addons" },
+  { type: "addon_ended", labelKey: "notifications.addonEnded", group: "addons" },
 ];
 
 /** One key, so the optimistic write and the read cannot drift apart. */
@@ -323,6 +329,7 @@ function NotificationSwitches() {
       {renderGroup(t("notifications.beforeExpiry"), rows.filter((r) => r.group === "before"))}
       {renderGroup(t("notifications.afterExpiry"), rows.filter((r) => r.group === "after"))}
       {renderGroup(t("connectHelp.settingsGroup"), rows.filter((r) => r.group === "connect"))}
+      {renderGroup(t("notifications.addonsGroup"), rows.filter((r) => r.group === "addons"))}
     </>
   );
 }

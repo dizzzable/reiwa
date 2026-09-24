@@ -41,6 +41,20 @@ export function resolveNotificationTarget(
     };
   }
 
+  // A paid add-on three days before it ends, or when it has (`addon_*`, all
+  // six) → the add-on page on that subscription, where it is bought again —
+  // the address the notice's «Купить снова» and its push open.
+  if (t.startsWith('addon_')) {
+    const subscriptionId = payload?.['subscriptionId'];
+    return {
+      kind: 'route',
+      path:
+        typeof subscriptionId === 'string' && subscriptionId.length > 0
+          ? `/addons?subscriptionId=${encodeURIComponent(subscriptionId)}`
+          : '/addons',
+    };
+  }
+
   // Support replies → the Support section so the user can open the ticket
   // and read / continue the conversation.
   if (t.includes('support')) {
