@@ -15,10 +15,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BotConfigCache,
   DEFAULT_BOT_CONFIG,
+  FIRST_LOAD_BUDGET_MS,
 } from '../../../src/infrastructure/bot-config/cache.js';
+import { configVersionOf } from '../../../src/infrastructure/config-versions/config-version.js';
+import { MESSAGE_CONFIG_BUDGET_MS } from '../../../src/bot/lib/config-within.js';
 import type { LocalePackHydrator } from '../../../src/application/ports/translator.port.js';
 import type { ConfigPersistencePort } from '../../../src/application/ports/config-persistence.port.js';
 import type { BotConfig } from '../../../src/infrastructure/bot-config/types.js';
+
+/** Lets reads nobody awaits — a refresh behind a stale entry — run to their end (no timers involved). */
+async function settle(): Promise<void> {
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+}
 
 const SAMPLE: BotConfig & { translations: Record<string, string> } = {
   ...DEFAULT_BOT_CONFIG,
@@ -671,7 +679,8 @@ describe('BotConfigCache.peek()', () => {
 
   // A boot while the panel hangs: the read times out and the bot runs on the
   // saved copy (Redis). `peek()` has to hold that copy — the budgeted replies
-  // fall back on it — and keep it stale, so the next `get()` asks the panel.
+  // fall back on it — and keep it stale, so the next `get()` asks the panel,
+  // answering from the copy meanwhile.
   it('a cold start on the saved copy: peek() holds it, stale — once the hold-off is over, get() asks the panel', async () => {
     vi.useFakeTimers();
     const SAVED_COPY: BotConfig = {
@@ -696,9 +705,12 @@ describe('BotConfigCache.peek()', () => {
     vi.advanceTimersByTime(10_000);
     const next = cache.get();
     expect(upstream.fn).toHaveBeenCalledTimes(2);
+    // Answered from the copy, not held up by the read it started (D1).
+    expect(await next).toBe(SAVED_COPY);
     upstream.answer(1, SAMPLE);
-    expect(await next).toBe(SAMPLE);
+    await settle();
     expect(cache.peek()).toBe(SAMPLE);
+    expect(await cache.get()).toBe(SAMPLE);
   });
 
   it('a saved copy loaded by a fetch an invalidate overtook is not kept', async () => {
@@ -736,7 +748,10 @@ describe('BotConfigCache.peek()', () => {
     expect(cache.peek()).toBe(SAVED_BY_OPERATOR);
   });
 
-  it('after forceInvalidate(), a get() never serves the entry it kept: the save is read first', async () => {
+  // It used to wait for the save's read here, and a panel that hung on that
+  // read held every update behind it (W8 report D1). The save is one read away
+  // either way: it lands in the entry the moment the panel answers.
+  it('after forceInvalidate(), a get() is answered from the entry it kept while the save is read — the next one has the save', async () => {
     const upstream = handAnsweredUpstream();
     const cache = new BotConfigCache({ fetcher: upstream.fn, hydrator: spyHydrator().hydrator, fallback: DEFAULT_BOT_CONFIG });
     const first = cache.get();
@@ -744,9 +759,12 @@ describe('BotConfigCache.peek()', () => {
     await first;
 
     void cache.forceInvalidate('admin-pushed');
-    const next = cache.get();
+    expect(await cache.get()).toBe(SAMPLE);
+    // It joined the save's read rather than starting its own.
+    expect(upstream.fn).toHaveBeenCalledTimes(2);
     upstream.answer(1, SAVED_BY_OPERATOR);
-    expect(await next).toBe(SAVED_BY_OPERATOR);
+    await settle();
+    expect(await cache.get()).toBe(SAVED_BY_OPERATOR);
   });
 });
 
@@ -978,7 +996,8 @@ describe('BotConfigCache — a hold-off after a failed fetch', () => {
   it('after the window ends, the next read fetches', async () => {
     vi.useFakeTimers();
     const { cache, fetcher, recover } = await staleCacheOnRefusingPanel();
-    await cache.get(); // fails: the hold-off begins
+    await cache.get(); // answered from the entry; the refresh behind it fails:
+    await settle(); // the hold-off begins
     vi.advanceTimersByTime(9_999);
     await cache.get();
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -1002,6 +1021,192 @@ describe('BotConfigCache — a hold-off after a failed fetch', () => {
 
     void cache.get(); // within the save's hold-off
     expect(upstream.fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * W8 report D1: a panel that HANGS — its VPS down, packets dropped rather than
+ * refused — costs the transport ten seconds a read. The bot handles updates one
+ * at a time, and `get()` used to wait for the panel whenever the entry was past
+ * its TTL: with the ten-second hold-off between failures, the whole bot froze
+ * about half the time (the W8 probe: `get()` waited 515 ms on a 500 ms hang).
+ *
+ * Every read here goes to a panel that never answers. "Answered without
+ * waiting" means the read settled with no timer advanced at all: a read that
+ * waits on the panel cannot.
+ */
+describe('BotConfigCache with a panel that hangs (W8 report D1)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const hung = (): Promise<never> => new Promise<never>(() => undefined);
+
+  /** What `promise` settles to — or a failure, if it needs any time to pass to settle. */
+  async function answeredWithoutWaiting<T>(promise: Promise<T>): Promise<T> {
+    const outcome: { settled: boolean; value?: T } = { settled: false };
+    void promise.then((value) => {
+      outcome.settled = true;
+      outcome.value = value;
+    });
+    for (let turn = 0; turn < 50 && !outcome.settled; turn += 1) await Promise.resolve();
+    if (!outcome.settled) throw new Error('the read waited on the panel');
+    return outcome.value as T;
+  }
+
+  it('past the TTL, every update is answered from the entry at once while one read hangs', async () => {
+    vi.useFakeTimers();
+    let hanging = false;
+    const fetcher = vi.fn(() => (hanging ? hung() : Promise.resolve(SAMPLE)));
+    const cache = new BotConfigCache({ fetcher, hydrator: spyHydrator().hydrator, fallback: DEFAULT_BOT_CONFIG, ttlMs: 300_000 });
+    await cache.get();
+    hanging = true;
+    vi.advanceTimersByTime(300_001);
+
+    for (let update = 0; update < 50; update += 1) {
+      expect(await answeredWithoutWaiting(cache.get())).toBe(SAMPLE);
+      vi.advanceTimersByTime(1_000);
+    }
+    // The boot read, and the one read every later update joined.
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('after an operator’s save, updates are answered from the kept entry while the save’s read hangs', async () => {
+    vi.useFakeTimers();
+    let hanging = false;
+    const fetcher = vi.fn(() => (hanging ? hung() : Promise.resolve(SAMPLE)));
+    const cache = new BotConfigCache({ fetcher, hydrator: spyHydrator().hydrator, fallback: DEFAULT_BOT_CONFIG });
+    await cache.get();
+    hanging = true;
+
+    void cache.forceInvalidate('admin-pushed');
+    for (let update = 0; update < 10; update += 1) {
+      expect(await answeredWithoutWaiting(cache.get())).toBe(SAMPLE);
+    }
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('a cold start with a saved copy answers the copy at once, the panel hanging', async () => {
+    vi.useFakeTimers();
+    const SAVED_COPY: BotConfig = { ...DEFAULT_BOT_CONFIG, visual: { ...DEFAULT_BOT_CONFIG.visual, welcomeMessage: 'saved' } };
+    const cache = new BotConfigCache({
+      fetcher: vi.fn(hung),
+      hydrator: spyHydrator().hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: { load: async () => SAVED_COPY, save: async () => undefined },
+    });
+
+    expect(await answeredWithoutWaiting(cache.get())).toBe(SAVED_COPY);
+    expect(cache.peek()).toBe(SAVED_COPY);
+    expect(await answeredWithoutWaiting(cache.get())).toBe(SAVED_COPY);
+  });
+
+  it('a cold start with nothing saved waits the budget once, then the fallback — the reads after it do not wait', async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn(hung);
+    const cache = new BotConfigCache({
+      fetcher,
+      hydrator: spyHydrator().hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: { load: async () => null, save: async () => undefined },
+      firstLoadBudgetMs: 1_000,
+    });
+
+    const first = cache.get();
+    let settled = false;
+    void first.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await first).toBe(DEFAULT_BOT_CONFIG);
+
+    // The same read still hangs: nobody waits for it a second time.
+    expect(await answeredWithoutWaiting(cache.get())).toBe(DEFAULT_BOT_CONFIG);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits a message’s budget by default, and not a millisecond more', () => {
+    // Literal on purpose: a fixture read from the constant would move with it.
+    expect(FIRST_LOAD_BUDGET_MS).toBe(1_000);
+    expect(MESSAGE_CONFIG_BUDGET_MS).toBe(1_000);
+  });
+
+  it('a saved copy that lands after the panel answered replaces nothing and hydrates nothing', async () => {
+    // The two reads of a cold start race; the older copy losing is the whole
+    // point of reading the panel at all.
+    const upstream = handAnsweredUpstream();
+    const spy = spyHydrator();
+    const SAVED_COPY: BotConfig & { translations: Record<string, string> } = {
+      ...DEFAULT_BOT_CONFIG,
+      translations: { 'en.menu.choose_action': 'Wording from before the restart' },
+    };
+    let answerLoad!: (config: BotConfig | null) => void;
+    const cache = new BotConfigCache({
+      fetcher: upstream.fn,
+      hydrator: spy.hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: {
+        load: () =>
+          new Promise<BotConfig | null>((resolve) => {
+            answerLoad = resolve;
+          }),
+        save: async () => undefined,
+      },
+    });
+
+    const first = cache.get();
+    upstream.answer(0, SAMPLE);
+    expect(await first).toBe(SAMPLE);
+    answerLoad(SAVED_COPY); // the older copy lands last
+    await settle();
+
+    expect(cache.peek()).toBe(SAMPLE);
+    expect(spy.calls.at(-1)).toEqual(SAMPLE.translations);
+  });
+});
+
+/** The version the poll compares with the panel's (`infrastructure/config-versions/poller.ts`). */
+describe('BotConfigCache.heldVersion()', () => {
+  it('is null while nothing is held, then the answer’s version — kept across the Telegram file-id stamps', async () => {
+    const ANSWER: BotConfig = { ...DEFAULT_BOT_CONFIG, visual: { ...DEFAULT_BOT_CONFIG.visual, bannerUrl: 'https://panel/b.jpg' } };
+    const cache = new BotConfigCache({ fetcher: async () => ANSWER, hydrator: spyHydrator().hydrator, fallback: DEFAULT_BOT_CONFIG });
+    expect(cache.heldVersion()).toBeNull();
+
+    await cache.get();
+    expect(cache.heldVersion()).toBe(configVersionOf(ANSWER));
+
+    // The stamp changes the entry, not what the panel served.
+    cache.stampBannerFileId('https://panel/b.jpg', 'AgACAgIAAx0');
+    expect(cache.peek()?.visual.bannerFileId).toBe('AgACAgIAAx0');
+    expect(cache.heldVersion()).toBe(configVersionOf(ANSWER));
+  });
+
+  it('is the saved copy’s version on a cold start the panel did not answer', async () => {
+    const SAVED_COPY: BotConfig = { ...DEFAULT_BOT_CONFIG, screens: [] };
+    const cache = new BotConfigCache({
+      fetcher: async () => {
+        throw new Error('panel down');
+      },
+      hydrator: spyHydrator().hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+      persistence: { load: async () => SAVED_COPY, save: async () => undefined },
+    });
+    await cache.get();
+    expect(cache.heldVersion()).toBe(configVersionOf(SAVED_COPY));
+  });
+
+  it('is null on the fallback: the defaults are nothing the panel said', async () => {
+    const cache = new BotConfigCache({
+      fetcher: async () => {
+        throw new Error('panel down');
+      },
+      hydrator: spyHydrator().hydrator,
+      fallback: DEFAULT_BOT_CONFIG,
+    });
+    expect(await cache.get()).toBe(DEFAULT_BOT_CONFIG);
+    expect(cache.heldVersion()).toBeNull();
   });
 });
 

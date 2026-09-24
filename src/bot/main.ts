@@ -25,6 +25,24 @@ import { BotConfigCache, DEFAULT_BOT_CONFIG } from '../infrastructure/bot-config
 import { RedisConfigPersistence } from '../infrastructure/bot-config/redis-config-persistence.js';
 import type { ConfigPersistencePort } from '../application/ports/config-persistence.port.js';
 import type { LoggerPort } from '../application/ports/logger.port.js';
+import { CONFIG_VERSION_KEYS } from '../infrastructure/config-versions/config-version.js';
+import {
+  NOOP_LAST_KNOWN_GOOD,
+  RedisLastKnownGoodStore,
+  createLastKnownGoodRedis,
+  type LastKnownGoodStorePort,
+} from '../infrastructure/config-versions/last-known-good.js';
+import { ConfigVersionPoller, type VersionedGroup } from '../infrastructure/config-versions/poller.js';
+import {
+  configurePolicyCache,
+  invalidatePolicyCache,
+  peekPolicyCache,
+} from '../infrastructure/admin-client/policy-cache.js';
+import {
+  invalidateLegalDocumentsCache,
+  peekLegalDocumentsCache,
+} from '../infrastructure/admin-client/legal-documents-cache.js';
+import { MESSAGE_CONFIG_BUDGET_MS } from './lib/config-within.js';
 import { BannerStore } from '../infrastructure/banner/index.js';
 import { isTelegramSafeButtonUrl } from './widgets/main-keyboard.js';
 import { startInternalHttpListener } from './listeners/internal-http-listener.js';
@@ -115,17 +133,33 @@ let botConfigCache: BotConfigCache | null = null;
 let settingsSync: TelegramSettingsSync | null = null;
 
 /**
- * Durable last-known-good store for the bot config (Workstream 4). Built
- * once from `REDIS_URL` so a reboot before the first upstream fetch seeds
- * the cache from the last good config instead of the hardcoded default.
- * `undefined` when Redis isn't configured → cache stays in-memory only.
+ * The last copy of each panel settings group the bot reads — its config and
+ * the platform policy — in reiwa's Redis
+ * (`infrastructure/config-versions/last-known-good.ts`). Built once from
+ * `REDIS_URL` on a client of its own; without Redis the copies stay in memory.
+ */
+let lastKnownGood: LastKnownGoodStorePort | null = null;
+
+function getLastKnownGood(logger?: LoggerPort): LastKnownGoodStorePort {
+  if (lastKnownGood !== null) return lastKnownGood;
+  lastKnownGood = config.REDIS_URL
+    ? new RedisLastKnownGoodStore({ redis: createLastKnownGoodRedis(config.REDIS_URL, logger), logger })
+    : NOOP_LAST_KNOWN_GOOD;
+  return lastKnownGood;
+}
+
+/**
+ * Durable last-known-good store for the bot config (Workstream 4), so a reboot
+ * before the first upstream fetch seeds the cache from the last good config
+ * instead of the hardcoded default. `undefined` when Redis isn't configured →
+ * cache stays in-memory only.
  */
 let configPersistence: ConfigPersistencePort | undefined;
 
-function getConfigPersistence(): ConfigPersistencePort | undefined {
+function getConfigPersistence(logger?: LoggerPort): ConfigPersistencePort | undefined {
   if (configPersistence !== undefined) return configPersistence;
   if (!config.REDIS_URL) return undefined;
-  configPersistence = new RedisConfigPersistence(config.REDIS_URL);
+  configPersistence = new RedisConfigPersistence(getLastKnownGood(logger));
   return configPersistence;
 }
 
@@ -141,8 +175,11 @@ async function getBotConfig(adminClient: AdminClient | null, logger?: LoggerPort
     fetcher: () => adminClient.branding.getBotConfig(),
     hydrator: translator,
     fallback: DEFAULT_BOT_CONFIG,
-    persistence: getConfigPersistence(),
+    persistence: getConfigPersistence(logger),
     logger,
+    // The one read that may wait on the panel — nothing held, nothing saved —
+    // waits no longer than a message's words do (`lib/config-within.ts`).
+    firstLoadBudgetMs: MESSAGE_CONFIG_BUDGET_MS,
     // Every config the panel answered with — the warm-up's, any later read's —
     // so an operator's save whose own read failed still reaches Telegram at
     // the next answered read. Never a failed read's (see the option).
@@ -194,6 +231,11 @@ async function startBot(): Promise<void> {
   // promise rejections, uncaught throws in timers/listeners).
   installProcessErrorGuards({ logger, errorReporter });
 
+  // Before the first policy read (the channel gate, `/start`): a restart during
+  // a panel outage then keeps the operator's access mode, channel gate and
+  // rules gate, instead of opening them to everybody.
+  configurePolicyCache({ lastKnownGood: getLastKnownGood(logger), logger });
+
   // Before the boot read, so the config it answers with is offered to it: the
   // pushes wait for `start` below, once the bot exists.
   const sync = createTelegramSettingsSync({ logger });
@@ -221,7 +263,11 @@ async function startBot(): Promise<void> {
   const bannerStore = new BannerStore({
     assetsRoot: resolvePath(process.cwd(), 'assets/banners'),
     getOverride: (key: string): string | undefined => {
-      const translations = botConfig.translations ?? {};
+      // The config the bot holds NOW, not the boot read's: the boot read may
+      // have been the saved copy or the defaults (a panel away at boot), and
+      // an operator's banner saved since would never have reached this store
+      // (W8 report D12).
+      const translations = botConfigCache?.peek()?.translations ?? botConfig.translations ?? {};
       const value = translations[key];
       if (typeof value !== 'string') return undefined;
       const trimmed = value.trim();
@@ -446,6 +492,55 @@ async function startBot(): Promise<void> {
   const polling = createPollingController(bot, logger, () => printReiwaBanner('bot'));
   void polling.run();
 
+  // ── Config version poll ────────────────────────────────────────────────────
+  //
+  // The safety net under `/invalidate` and `/invalidate-policy`: every ~20 s the
+  // bot asks the panel which version of each settings group is current and
+  // re-reads the groups it holds an older copy of — a lost hint, a panel boot
+  // with new defaults, a backup restore (`infrastructure/config-versions/poller.ts`).
+  // The re-read of the bot config goes the way a save does: its answer is
+  // pushed on to what Telegram holds (`sync.offer(…, { force: true })`).
+  const configGroups: readonly VersionedGroup[] = [
+    {
+      key: CONFIG_VERSION_KEYS.botConfig,
+      held: () => botConfigCache?.heldVersion() ?? null,
+      // `forceInvalidate` below is the reset and the read in one.
+      reset: () => undefined,
+      reload: async () => {
+        const fresh = (await botConfigCache?.forceInvalidate('config-version-poll')) ?? null;
+        if (fresh !== null) await sync.offer(fresh, { force: true });
+      },
+    },
+    {
+      key: CONFIG_VERSION_KEYS.platformPolicy,
+      held: () => peekPolicyCache()?.heldVersion() ?? null,
+      reset: invalidatePolicyCache,
+      reload: () => peekPolicyCache()?.get(),
+    },
+    {
+      key: CONFIG_VERSION_KEYS.legalDocumentsRu,
+      held: () => peekLegalDocumentsCache()?.heldVersion('ru') ?? null,
+      reset: invalidateLegalDocumentsCache,
+      reload: () => peekLegalDocumentsCache()?.refreshHeld(),
+    },
+    {
+      key: CONFIG_VERSION_KEYS.legalDocumentsEn,
+      held: () => peekLegalDocumentsCache()?.heldVersion('en') ?? null,
+      reset: invalidateLegalDocumentsCache,
+      reload: () => peekLegalDocumentsCache()?.refreshHeld(),
+    },
+  ];
+  const configVersionPoller =
+    adminClient !== null
+      ? new ConfigVersionPoller({
+          consumer: 'bot',
+          groups: configGroups,
+          poll: (report) => adminClient.system.pollConfigVersions(report),
+          logger,
+        })
+      : null;
+  configVersionPoller?.start();
+
   // ── Cache invalidate + notify HTTP listener ───────────────────────────
   //
   // Single Node-native server on the compose network, never published. Its
@@ -499,6 +594,7 @@ async function startBot(): Promise<void> {
     clearTimers: () => {
       if (configRefreshTimer !== null) clearInterval(configRefreshTimer);
       if (questRecheckTimer !== null) clearInterval(questRecheckTimer);
+      configVersionPoller?.stop();
     },
     // Releases the slot AND waits for the handler still running behind it.
     // `bot.stop()` alone acknowledges the in-flight update to Telegram and

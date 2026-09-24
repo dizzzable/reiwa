@@ -1041,9 +1041,14 @@ describe('Policy invalidation reaches the bot process', () => {
 
   it('acks when there is no bot to reach, having dropped the API copy before dialling', async () => {
     const { cache, upstream } = await warmApiPolicyCache();
-    let apiCopyWhenDialled: unknown = 'never dialled';
+    let panelReadsWhenDialled: unknown = 'never dialled';
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-      apiCopyWhenDialled = cache.peek();
+      // A read at the moment the bot is dialled goes to the panel. The copy is
+      // KEPT (served if the panel does not answer within the budget, instead of
+      // the open stand-in — W8 report D5), but it is no longer answered as is.
+      const before = upstream.mock.calls.length;
+      void cache.get();
+      panelReadsWhenDialled = upstream.mock.calls.length - before;
       // What undici throws when `reiwa-bot` does not resolve or refuses.
       throw new TypeError('fetch failed');
     });
@@ -1053,7 +1058,7 @@ describe('Policy invalidation reaches the bot process', () => {
 
     // Dropped BEFORE the bot was dialled: a slow bot never holds up this
     // process's own fresh read, and a failed one cannot skip it.
-    expect(apiCopyWhenDialled).toBeNull();
+    expect(panelReadsWhenDialled).toBe(1);
     expect(status).toBe(204);
     expect(text).toBe('');
     await cache.get();

@@ -101,11 +101,16 @@ describe('src/bot/main.ts — the bot config as the pages get it', () => {
 
     // A bot with no panel at all has no answered read to wait for: its
     // defaults are its config, and without them it would have no command list.
+    // The version poll's re-read of a moved bot config goes the way a save
+    // does: its answer is handed on forced, like `onConfigApplied`'s.
     const offers = nodesOf(main)
       .filter(ts.isIfStatement)
       .map((statement) => textOf(statement))
       .filter((statement) => statement.includes('sync.offer('));
-    expect(offers).toEqual(['if (botConfigCache === null) void sync.offer(botConfig, { force: true });']);
+    expect(offers).toEqual([
+      'if (botConfigCache === null) void sync.offer(botConfig, { force: true });',
+      'if (fresh !== null) await sync.offer(fresh, { force: true });',
+    ]);
   });
 
   it('pushes nothing to Telegram past the sync: no command list, profile or menu button of its own', () => {

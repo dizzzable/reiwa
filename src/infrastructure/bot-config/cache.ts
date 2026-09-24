@@ -22,6 +22,8 @@
 import type { LocalePackHydrator } from '../../application/ports/translator.port.js';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import type { ConfigPersistencePort } from '../../application/ports/config-persistence.port.js';
+import { configVersionOf } from '../config-versions/config-version.js';
+import { firstAnswer } from '../config-versions/within-budget.js';
 
 import type { BotConfig } from './types.js';
 
@@ -43,9 +45,10 @@ export interface BotConfigCacheOptions {
   /**
    * Optional durable last-known-good store (Workstream 4). When present:
    *   - every successful fetch is persisted (fire-and-forget)
-   *   - a cold-start fetch failure seeds the returned config from the
-   *     store instead of the hardcoded `fallback`
-   * Omitted (tests / no Redis) → behaves exactly as before.
+   *   - a read with nothing held serves the store's copy as soon as the store
+   *     answers, and a cold-start fetch failure does too, instead of the
+   *     hardcoded `fallback`
+   * Omitted (tests / no Redis) → no copy: the fallback after the budget.
    */
   readonly persistence?: ConfigPersistencePort;
   /**
@@ -57,9 +60,21 @@ export interface BotConfigCacheOptions {
    * Telegram holds in step with these (`bot/lib/telegram-settings-sync.ts`).
    */
   readonly onAnswered?: (config: BotConfig) => void;
+  /**
+   * How long a read with nothing held — no entry, no saved copy — waits for the
+   * panel before it serves the fallback. `bot/main.ts` passes the budget of a
+   * message's words (`MESSAGE_CONFIG_BUDGET_MS`, `bot/lib/config-within.ts`).
+   */
+  readonly firstLoadBudgetMs?: number;
 }
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * The default `firstLoadBudgetMs`: a second, the same as a message's words wait
+ * in `bot/lib/config-within.ts`. The only read that waits at all.
+ */
+export const FIRST_LOAD_BUDGET_MS = 1_000;
 
 /**
  * How long after a failed fetch reads serve what a failed read serves — the
@@ -75,6 +90,12 @@ const FAILURE_HOLD_OFF_MS = 10_000;
 interface CacheEntry {
   readonly data: BotConfig;
   readonly fetchedAt: number;
+  /**
+   * The version of the panel's answer this entry came from (`config-version.ts`),
+   * kept across the Telegram file-id stamps, which change the entry but not
+   * what the panel served. The version poll compares it with the panel's.
+   */
+  readonly version: string;
 }
 
 /**
@@ -125,6 +146,19 @@ export class BotConfigCache {
    * not replace the hold-off of the save's read.
    */
   private holdOff: { readonly generation: number; readonly until: number } | null = null;
+  private readonly firstLoadBudgetMs: number;
+  /**
+   * The saved copy's read, one per generation: a cold start asks Redis once,
+   * whether the first read found the copy or the failed fetch went looking for
+   * it. Keyed by the generation for the reason `generation` gives.
+   */
+  private saved: { readonly generation: number; readonly copy: Promise<BotConfig | null> } | null = null;
+  /**
+   * The generation whose cold read already waited out its budget. The reads
+   * after it, while the same fetch is still out, answer the fallback at once
+   * instead of each waiting a budget of their own on the same hung panel.
+   */
+  private budgetSpent: number | null = null;
 
   constructor(options: BotConfigCacheOptions) {
     this.fetcher = options.fetcher;
@@ -134,27 +168,63 @@ export class BotConfigCache {
     this.logger = options.logger;
     this.persistence = options.persistence;
     this.onAnswered = options.onAnswered;
+    this.firstLoadBudgetMs = options.firstLoadBudgetMs ?? FIRST_LOAD_BUDGET_MS;
   }
 
   /**
-   * Returns a fresh-or-cached config. Refreshes when the cache is
-   * empty or older than `ttlMs`. Refresh failures fall back to:
-   *   - the previously cached entry (degraded mode), or
-   *   - the constructor `fallback` if nothing has ever been cached.
+   * The config for an update, and never a wait on the panel once the bot holds
+   * one (W8 report D1).
+   *
+   * Updates are handled one at a time, so a read that waits on the panel holds
+   * every chat queued behind it. This used to wait whenever the entry was past
+   * its TTL, and a panel that HANGS — its VPS down, packets dropped rather than
+   * refused — costs the transport's ten seconds a read: with the hold-off
+   * between failures the whole bot froze about half the time.
+   *
+   *  - An entry of any age is answered at once. Past the TTL, or kept stale by
+   *    `forceInvalidate()`, a refresh starts behind it (stale-while-revalidate);
+   *    reads meanwhile join that one refresh (`fetchOnce`), and within
+   *    FAILURE_HOLD_OFF_MS of a failed one none starts at all.
+   *  - Nothing held: the saved copy in Redis, as soon as Redis answers.
+   *  - Nothing held and nothing saved — a first boot with the panel away — is
+   *    the one read that waits, and only `firstLoadBudgetMs`: then the
+   *    fallback, while the read goes on and lands in the entry when it does.
    *
    * Translator overrides are pushed via `hydrator.setOverrides()` on
    * every successful refresh, so admin edits propagate within `ttlMs`
    * without an explicit cache-bust.
-   *
-   * A read that comes while a refresh is in flight joins it (`fetchOnce`). A
-   * read that comes within FAILURE_HOLD_OFF_MS of a failed one does not fetch.
    */
   async get(): Promise<BotConfig> {
-    if (this.entry !== null && Date.now() - this.entry.fetchedAt < this.ttlMs) {
-      return this.entry.data;
+    const entry = this.entry;
+    if (entry !== null) {
+      if (Date.now() - entry.fetchedAt >= this.ttlMs && !this.holdingOff()) void this.fetchOnce();
+      return entry.data;
     }
     if (this.holdingOff()) return this.servedOnFailure(this.generation);
-    return (await this.fetchOnce()).config;
+    return this.firstLoad();
+  }
+
+  /** Nothing held: the saved copy, else the panel within the budget, else the fallback. */
+  private async firstLoad(): Promise<BotConfig> {
+    const startedAt = this.generation;
+    const fetched = this.fetchOnce().then((outcome) => outcome.config);
+    if (this.budgetSpent === startedAt) return this.fallback;
+    const first = await firstAnswer({
+      fetched,
+      saved: this.savedCopy(startedAt),
+      budgetMs: this.firstLoadBudgetMs,
+    });
+    if (first !== null) return first;
+    if (startedAt === this.generation) this.budgetSpent = startedAt;
+    return this.entry?.data ?? this.fallback;
+  }
+
+  /**
+   * The version of the config this cache holds — `null` while it holds none —
+   * for the version poll (`infrastructure/config-versions/poller.ts`).
+   */
+  heldVersion(): string | null {
+    return this.entry?.version ?? null;
   }
 
   private holdingOff(): boolean {
@@ -212,7 +282,7 @@ export class BotConfigCache {
       // Superseded while in flight: the caller still gets what it read, but
       // the cache, translator and snapshot belong to the newer fetch.
       if (startedAt !== this.generation) return { config: raw, answered: true };
-      this.entry = { data: raw, fetchedAt: Date.now() };
+      this.entry = { data: raw, fetchedAt: Date.now(), version: configVersionOf(raw) };
       // Hydrate translator overrides from the operator-managed
       // `translations` map. Best-effort — a malformed payload
       // shouldn't block the cache.
@@ -258,45 +328,52 @@ export class BotConfigCache {
     if (this.entry !== null) return this.entry.data;
     // Cold start with a failed upstream fetch: prefer the persisted
     // last-known-good config (correct branding + banner) over the
-    // hardcoded default. Kept as a STALE entry: the cache keeps retrying
-    // the fetcher until upstream recovers, and `peek()` holds the copy the
-    // bot runs on — the replies that cannot wait for the panel render from
-    // it. Not by a fetch an invalidate overtook (see `generation`).
-    const persisted = await this.loadPersisted(startedAt);
-    if (persisted !== null) {
-      if (startedAt === this.generation && this.entry === null) {
-        this.entry = { data: persisted, fetchedAt: Number.NEGATIVE_INFINITY };
-      }
-      return persisted;
-    }
-    return this.fallback;
+    // hardcoded default (`loadPersisted` seeds it as the entry).
+    return (await this.savedCopy(startedAt)) ?? this.fallback;
+  }
+
+  /** The saved copy for a read begun in `startedAt`, read from the store once per generation. */
+  private savedCopy(startedAt: number): Promise<BotConfig | null> {
+    const saved = this.saved;
+    if (saved !== null && saved.generation === startedAt) return saved.copy;
+    const copy = this.loadPersisted(startedAt);
+    this.saved = { generation: startedAt, copy };
+    return copy;
   }
 
   /**
-   * Best-effort read of the durable last-known-good snapshot, hydrating
-   * the translator from it so localized copy survives a cold start too.
-   * Returns `null` when no store is configured, the store is empty, or
-   * the load fails.
+   * Best-effort read of the durable last-known-good snapshot. Kept as a STALE
+   * entry, with the translator hydrated from it so localized copy survives a
+   * cold start too: the cache keeps retrying the fetcher until upstream
+   * recovers, and `peek()` holds the copy the bot runs on — the replies that
+   * cannot wait for the panel render from it. Only while nothing else is held,
+   * and not by a read an invalidate overtook (see `generation`): that caller
+   * still gets the copy, the cache does not.
+   *
+   * Returns `null` when no store is configured, the store is empty, or the
+   * load fails.
    */
   private async loadPersisted(startedAt: number): Promise<BotConfig | null> {
     if (this.persistence === undefined) return null;
     try {
       const persisted = await this.persistence.load();
       if (persisted === null) return null;
-      try {
-        // Not over the overrides of a fetch begun after an invalidate.
-        if (startedAt === this.generation) {
-          this.hydrator.setOverrides(
-            (persisted as RawBotConfig).translations,
-          );
+      if (startedAt === this.generation && this.entry === null) {
+        this.entry = {
+          data: persisted,
+          fetchedAt: Number.NEGATIVE_INFINITY,
+          version: configVersionOf(persisted),
+        };
+        try {
+          this.hydrator.setOverrides((persisted as RawBotConfig).translations);
+        } catch {
+          // ignore hydrator failure — the config itself is still usable
         }
-      } catch {
-        // ignore hydrator failure — the config itself is still usable
+        this.logger?.info(
+          {},
+          'BotConfigCache: seeded from persisted last-known-good config',
+        );
       }
-      this.logger?.info(
-        {},
-        'BotConfigCache: seeded from persisted last-known-good config',
-      );
       return persisted;
     } catch (err: unknown) {
       this.logger?.warn({ err }, 'BotConfigCache: persistence.load threw');
@@ -324,15 +401,16 @@ export class BotConfigCache {
    * copy so the cached reference identity changes for downstream readers.
    */
   stampBannerFileId(bannerUrl: string, fileId: string): void {
-    const current = this.entry?.data;
-    if (current === undefined) return;
+    const held = this.entry;
+    if (held === null) return;
+    const current = held.data;
     if (current.visual.bannerUrl !== bannerUrl) return;
     if (current.visual.bannerFileId === fileId) return;
     const next: BotConfig = {
       ...current,
       visual: { ...current.visual, bannerFileId: fileId },
     };
-    this.entry = { data: next, fetchedAt: this.entry?.fetchedAt ?? Date.now() };
+    this.entry = { data: next, fetchedAt: held.fetchedAt, version: held.version };
     void this.persistence?.save(next).catch((err: unknown) => {
       this.logger?.warn(
         { err },
@@ -353,8 +431,9 @@ export class BotConfigCache {
    * changes.
    */
   stampScreenBannerFileId(shortId: string, mediaUrl: string, fileId: string): void {
-    const current = this.entry?.data;
-    if (current === undefined) return;
+    const held = this.entry;
+    if (held === null) return;
+    const current = held.data;
     const screens = current.screens;
     if (!Array.isArray(screens)) return;
     const idx = screens.findIndex((s) => s.shortId === shortId);
@@ -369,7 +448,7 @@ export class BotConfigCache {
     const nextScreens = screens.slice();
     nextScreens[idx] = { ...screen, mediaFileId: fileId };
     const next: BotConfig = { ...current, screens: nextScreens };
-    this.entry = { data: next, fetchedAt: this.entry?.fetchedAt ?? Date.now() };
+    this.entry = { data: next, fetchedAt: held.fetchedAt, version: held.version };
     void this.persistence?.save(next).catch((err: unknown) => {
       this.logger?.warn(
         { err },
@@ -403,12 +482,13 @@ export class BotConfigCache {
       { reason, hadCachedEntry: this.entry !== null },
       'BotConfigCache: forced invalidate',
     );
-    // Stale, not dropped. The next `get()` reads the save all the same, while
-    // `peek()` keeps answering with the config the bot holds: dropped, it held
-    // nothing for as long as the save took to read, and every reply that could
-    // not wait for the panel went out with the operator's emoji tokens raw.
+    // Stale, not dropped: `get()` and `peek()` keep answering with the config
+    // the bot holds while the save is read. Dropped, it held nothing for as
+    // long as the save took to read — every reply that could not wait for the
+    // panel went out with the operator's emoji tokens raw, and every one that
+    // could waited on the panel.
     if (this.entry !== null) {
-      this.entry = { data: this.entry.data, fetchedAt: Number.NEGATIVE_INFINITY };
+      this.entry = { ...this.entry, fetchedAt: Number.NEGATIVE_INFINITY };
     }
     // The bump also ends a hold-off (see `holdOff`): the save is read at once,
     // whatever failed a moment ago.

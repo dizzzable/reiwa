@@ -9,6 +9,11 @@ import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import { installProcessErrorGuards } from "../infrastructure/error-reporter/process-guards.js";
 import { REIWA_VERSION } from "../core/version.js";
 import { printReiwaBanner } from "../core/banner.js";
+import {
+  ConfigVersionPoller,
+  type VersionedGroup,
+} from "../infrastructure/config-versions/poller.js";
+import { pruneBrandingAssetCache } from "./branding-pwa.js";
 import { createApp } from "./app.js";
 
 const config = loadConfig();
@@ -121,8 +126,39 @@ async function start(): Promise<void> {
     heartbeat.unref();
   }
 
+  // The version poll: the safety net under the panel's settings webhook. Every
+  // ~20 s it asks the panel which version of each settings group is current,
+  // re-reads the groups this process holds an older copy of, and tells the
+  // panel what it holds (`infrastructure/config-versions/poller.ts`).
+  const configVersionPoller =
+    adminClient !== null
+      ? new ConfigVersionPoller({
+          consumer: "api",
+          groups: app.locals["configVersionGroups"] as readonly VersionedGroup[],
+          poll: (report) => adminClient.system.pollConfigVersions(report),
+          logger,
+        })
+      : null;
+  configVersionPoller?.start();
+
+  // The logo / PWA-icon mirror is no longer wiped on every branding save, so
+  // what nobody asks for is removed here instead: a minute after start, then
+  // daily. Nothing depends on it running.
+  const pruneMirror = (): void => {
+    pruneBrandingAssetCache()
+      .then((removed) => {
+        if (removed > 0) logger.info({ removed }, "branding mirror: removed files unused for 30 days");
+      })
+      .catch((err: unknown) => logger.debug({ err }, "branding mirror prune failed"));
+  };
+  const firstPrune = setTimeout(pruneMirror, 60 * 1_000);
+  firstPrune.unref();
+  const dailyPrune = setInterval(pruneMirror, 24 * 60 * 60 * 1_000);
+  dailyPrune.unref();
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "reiwa-api shutting down");
+    configVersionPoller?.stop();
     if (sessionStore) await sessionStore.disconnect();
     if (webSessionStore) await webSessionStore.disconnect();
     if (adminClient) await adminClient.close().catch(() => undefined);

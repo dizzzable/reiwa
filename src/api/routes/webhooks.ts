@@ -4,10 +4,14 @@ import { z } from "zod";
 import type { ReiwaConfig } from "../../config.js";
 import { invalidateLegalDocumentsCache } from '../../infrastructure/admin-client/legal-documents-cache.js';
 import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
+import {
+  CONFIG_VERSION_KEYS,
+  type ConfigVersionKey,
+} from "../../infrastructure/config-versions/config-version.js";
+import type { VersionedGroup } from "../../infrastructure/config-versions/poller.js";
 import { resetBrandingCache } from "./branding.js";
 import { resetLandingCache } from "./landing.js";
 import { resetConnectPageCache } from "./connect-page.js";
-import { evictBrandingAssetCache } from "../branding-pwa.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { verifyWebhookSignature } from "../../lib/webhook-signature.js";
@@ -520,6 +524,11 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // stale serve after it. Dropped here rather than by a second event,
           // so every panel already deployed gets it.
           resetBrandingCache();
+          reloadConfigGroups(req, [
+            CONFIG_VERSION_KEYS.platformPolicy,
+            CONFIG_VERSION_KEYS.publicConfig,
+            CONFIG_VERSION_KEYS.customEmojiPacks,
+          ]);
           // The bot is a SEPARATE process (its own container) with its own
           // policy cache and the only legal-documents cache: nothing dropped
           // above reaches it, and without this relay it kept the old access
@@ -553,9 +562,16 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // Drop the cached public-config so the cabinet picks up the new
           // theme on its next load instead of waiting for the HTTP TTL.
           resetBrandingCache();
-          // Also evict the on-disk branding-asset mirror so a re-uploaded logo
-          // / PWA icon is re-fetched fresh on the next request.
-          void evictBrandingAssetCache();
+          reloadConfigGroups(req, [CONFIG_VERSION_KEYS.publicConfig, CONFIG_VERSION_KEYS.customEmojiPacks]);
+          // The on-disk logo / PWA-icon mirror is deliberately LEFT ALONE (W8
+          // report D7). It used to be wiped here, and nothing needs it wiped:
+          // the panel names every upload afresh (`/uploads/branding/<random>`),
+          // so a new logo is a new file and the old one is simply not asked
+          // for any more. Wiping it meant that any branding save — an SMTP
+          // change or an emoji-pack edit included — followed by a panel outage
+          // turned the operator's logo into the stock Reiwa icon until the
+          // panel came back. Files nobody asks for are pruned after 30 days
+          // (`BrandingAssetCache.prune`).
           break;
         }
         case "reiwa.connect-page.invalidate": {
@@ -563,6 +579,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // edited appear on the next tap of "Подключить" rather than after the
           // HTTP TTL. Cabinet-only — the bot has no part in this screen.
           resetConnectPageCache();
+          reloadConfigGroups(req, [CONFIG_VERSION_KEYS.connectPage]);
           break;
         }
         case "reiwa.landing.invalidate": {
@@ -570,6 +587,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // (or a rollback) appears on the next visitor load instead of waiting
           // for the HTTP TTL. Web-only — no relay to the bot.
           resetLandingCache();
+          reloadConfigGroups(req, [CONFIG_VERSION_KEYS.landing]);
           break;
         }
         default:
@@ -707,6 +725,33 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
   }
 
   return router;
+}
+
+/**
+ * After a hint's reset, read the groups again at once through the version
+ * poll's own adapters (`api/app.ts` hangs them on `app.locals`), so the copy —
+ * and the version this process reports to the panel and to open pages — moves
+ * to the save without waiting for a visitor to ask. The reset itself stays
+ * where it was, unconditional: an app built without the adapters (tests, a
+ * reiwa without a panel client) still drops its caches as before.
+ *
+ * Fire-and-forget: the panel's hint is answered when the reset is done, not
+ * when the panel has answered this process's own read of the save.
+ */
+function reloadConfigGroups(req: Request, keys: readonly ConfigVersionKey[]): void {
+  const groups: unknown = req.app.locals["configVersionGroups"];
+  if (!Array.isArray(groups)) return;
+  for (const group of groups as readonly VersionedGroup[]) {
+    if (!keys.includes(group.key)) continue;
+    try {
+      group.reset();
+      void Promise.resolve(group.reload()).catch((err: unknown) => {
+        getRequestLogger(req).debug({ err, group: group.key }, "rezeis webhook: re-read after the reset failed");
+      });
+    } catch (err: unknown) {
+      getRequestLogger(req).debug({ err, group: group.key }, "rezeis webhook: re-read after the reset failed");
+    }
+  }
 }
 
 /** Coerce an unknown value to a non-empty trimmed string, or undefined. */

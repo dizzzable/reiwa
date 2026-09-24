@@ -10,8 +10,28 @@ import type { AdminClient } from "../lib/admin-client.js";
 import type { SessionStore } from "../lib/session-store.js";
 import { WebSessionStore, createWebSessionMiddleware } from "../infrastructure/redis/session.js";
 import { RedisPublicConfigPersistence } from "../infrastructure/public-config/redis-public-config-persistence.js";
-import { RedisConnectPageSnapshot } from "../infrastructure/public-config/redis-connect-page-snapshot.js";
+import {
+  ConnectPageVersionTracker,
+  NOOP_CONNECT_PAGE_SNAPSHOT,
+  RedisConnectPageSnapshot,
+} from "../infrastructure/public-config/redis-connect-page-snapshot.js";
 import { createPublicConfigRejectionNotifier } from "../infrastructure/public-config/rejection-notifier.js";
+import { CONFIG_VERSION_KEYS } from "../infrastructure/config-versions/config-version.js";
+import {
+  NOOP_LAST_KNOWN_GOOD,
+  RedisLastKnownGoodStore,
+} from "../infrastructure/config-versions/last-known-good.js";
+import type { VersionedGroup } from "../infrastructure/config-versions/poller.js";
+import {
+  configurePolicyCache,
+  getPolicyCache,
+  peekPolicyCache,
+} from "../infrastructure/admin-client/policy-cache.js";
+import {
+  configureGuestSupportConfigCache,
+  getGuestSupportConfigCache,
+  peekGuestSupportConfigCache,
+} from "../infrastructure/admin-client/guest-support-config-cache.js";
 import { createErrorReporter } from "../infrastructure/error-reporter/index.js";
 import type { SessionConfig } from "../infrastructure/redis/session.js";
 import type { ReiwaConfig } from "../config.js";
@@ -26,13 +46,23 @@ import { createAdCaptureMiddleware } from "./middleware/ad-capture.js";
 import { createAuthRouter } from "./routes/auth.js";
 import { createBrowserKeyRouter } from "./routes/browser-key.js";
 import { createHealthRouter } from "./routes/health.js";
-import { createBrandingRouter, getPublicConfigPayload } from "./routes/branding.js";
+import {
+  createBrandingRouter,
+  getCustomEmojiPacks,
+  getPublicConfigPayload,
+  heldCustomEmojiPacksVersion,
+  heldPublicConfigVersion,
+  resetCustomEmojiPacksCache,
+  resetPublicConfigCache,
+} from "./routes/branding.js";
 import {
   createLandingRouter,
   getEffectiveLandingCached,
   buildLandingMetaHead,
+  heldLandingVersion,
+  resetLandingCache,
 } from "./routes/landing.js";
-import { createConnectPageRouter } from "./routes/connect-page.js";
+import { createConnectPageRouter, resetConnectPageCache } from "./routes/connect-page.js";
 import { createConnectHandoffRouter } from "./routes/connect-handoff.js";
 import {
   applyBrandingHead,
@@ -101,20 +131,33 @@ export function createApp(deps: CreateAppDeps) {
     logger,
     errorReporter,
   });
-  // Share the composition root's Redis connection. The snapshot adapter does
-  // not own connection lifecycle, so web-session shutdown remains unchanged.
+  // The last copy of every panel settings group the panel served, on the
+  // composition root's Redis connection (`config-versions/last-known-good.ts`).
+  // The store does not own the connection, so web-session shutdown remains
+  // unchanged.
+  const lastKnownGood = deps.webSessionStore
+    ? new RedisLastKnownGoodStore({ redis: deps.webSessionStore.getRedis(), logger })
+    : NOOP_LAST_KNOWN_GOOD;
+  // Before the first read: a restart during a panel outage comes back with the
+  // operator's access rules and guest-chat captcha, not "open" and "none".
+  configurePolicyCache({ lastKnownGood, logger });
+  configureGuestSupportConfigCache({ lastKnownGood });
   const publicConfigPersistence = deps.webSessionStore
     ? new RedisPublicConfigPersistence({
         redis: deps.webSessionStore.getRedis(),
         logger,
         rejectionNotifier: publicConfigRejectionNotifier,
+        store: lastKnownGood,
       })
     : undefined;
-  // Same connection, same best-effort contract: a restart during a panel
-  // outage must not switch the connect screen off for everybody.
-  const connectPageSnapshot = deps.webSessionStore
-    ? new RedisConnectPageSnapshot({ redis: deps.webSessionStore.getRedis(), logger })
-    : undefined;
+  // Same store, same best-effort contract: a restart during a panel outage
+  // must not switch the connect screen off for everybody. Wrapped so the
+  // version poll can tell which catalog the screen holds.
+  const connectPageSnapshot = new ConnectPageVersionTracker(
+    deps.webSessionStore
+      ? new RedisConnectPageSnapshot({ redis: deps.webSessionStore.getRedis(), logger, store: lastKnownGood })
+      : NOOP_CONNECT_PAGE_SNAPSHOT,
+  );
   const reiwaPublicUrl = resolveReiwaPublicUrl(config);
   const app = express();
 
@@ -367,12 +410,85 @@ export function createApp(deps: CreateAppDeps) {
       webBaseUrl: reiwaPublicUrl,
       publicConfigPersistence,
       publicConfigRejectionNotifier,
+      lastKnownGood,
     }),
   );
-  app.use("/api/v1", createLandingRouter({ adminClient: deps.adminClient, logger }));
+  app.use("/api/v1", createLandingRouter({ adminClient: deps.adminClient, logger, lastKnownGood }));
   // The connect screen catalog. Public within the cabinet: it is identical for
   // every customer and carries nobody's subscription link.
   app.use("/api/v1", createConnectPageRouter(deps.adminClient, connectPageSnapshot));
+
+  // ── Which settings this process holds ─────────────────────────────────────
+  // One adapter per panel settings group the API serves: the version of the
+  // copy held, the webhook's own reset, and a read that brings the copy up to
+  // date. `api/main.ts` hands them to the version poll
+  // (`infrastructure/config-versions/poller.ts`); the webhook reloads through
+  // them after its resets (`routes/webhooks.ts`).
+  const logConfigReloadFailure = (err: unknown): void => {
+    logger?.debug({ err }, "config reload failed; serving what is held");
+  };
+  const configVersionGroups: readonly VersionedGroup[] = [
+    {
+      key: CONFIG_VERSION_KEYS.publicConfig,
+      held: heldPublicConfigVersion,
+      reset: resetPublicConfigCache,
+      reload: () =>
+        getPublicConfigPayload(
+          deps.adminClient,
+          logConfigReloadFailure,
+          publicConfigPersistence,
+          publicConfigRejectionNotifier,
+        ),
+    },
+    {
+      key: CONFIG_VERSION_KEYS.customEmojiPacks,
+      held: heldCustomEmojiPacksVersion,
+      reset: resetCustomEmojiPacksCache,
+      reload: () => getCustomEmojiPacks(deps.adminClient),
+    },
+    {
+      key: CONFIG_VERSION_KEYS.landing,
+      held: heldLandingVersion,
+      reset: resetLandingCache,
+      reload: () => getEffectiveLandingCached(deps.adminClient),
+    },
+    {
+      key: CONFIG_VERSION_KEYS.connectPage,
+      held: () => connectPageSnapshot.heldVersion(),
+      reset: () => {
+        resetConnectPageCache();
+        connectPageSnapshot.forget();
+      },
+      // The screen's cache has no reader outside its route: the next tap reads.
+      reload: () => undefined,
+    },
+    {
+      key: CONFIG_VERSION_KEYS.platformPolicy,
+      held: () => peekPolicyCache()?.heldVersion() ?? null,
+      reset: () => getPolicyCache(deps.adminClient).invalidate(),
+      reload: () => getPolicyCache(deps.adminClient).get(),
+    },
+    {
+      key: CONFIG_VERSION_KEYS.guestSupport,
+      held: () => peekGuestSupportConfigCache()?.heldVersion() ?? null,
+      reset: () => peekGuestSupportConfigCache()?.invalidate(),
+      reload: () => (deps.adminClient === null ? null : getGuestSupportConfigCache(deps.adminClient).get()),
+    },
+  ];
+  app.locals["configVersionGroups"] = configVersionGroups;
+
+  // GET /api/v1/config-versions — which version of each settings group this
+  // process serves, for open pages to notice a change without reloading: a
+  // version that moves is a group to refetch (with the version in the URL, so
+  // the browser's own cache cannot answer with the old copy). `null` means
+  // nothing is held right now — the next read of that group asks the panel.
+  // From memory, never the panel, and never cached.
+  app.get("/api/v1/config-versions", (_req: Request, res: Response) => {
+    const versions: Record<string, string | null> = {};
+    for (const group of configVersionGroups) versions[group.key] = group.held();
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ versions });
+  });
   // Whether the cabinet signed the subscription inside a `/connect/open`
   // address. Public like the catalog: the page asking has no session.
   app.use("/api/v1", createConnectHandoffRouter({ config }));

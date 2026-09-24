@@ -85,6 +85,19 @@ export class SystemNamespace {
   }
 
   /**
+   * The version poll (`infrastructure/config-versions/poller.ts`): sends which
+   * version of each settings group this process holds, and gets back the
+   * panel's `{ versions: { <group>: <version> } }`. A panel that predates the
+   * route answers 404, which the poller reads as "not supported".
+   */
+  pollConfigVersions(report: {
+    readonly consumer: 'api' | 'bot';
+    readonly held: Readonly<Record<string, string | null>>;
+  }): Promise<unknown> {
+    return this.transport.request('POST', '/api/internal/config-versions', report);
+  }
+
+  /**
    * Report a reiwa runtime error/warning to rezeis so it's captured centrally
    * as a system event (audit log → Events page → .txt export). Fire-and-forget
    * — callers must never block on or throw from this.

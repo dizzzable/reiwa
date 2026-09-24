@@ -251,8 +251,27 @@ export function isSafeBrandingFile(file: string): boolean {
 }
 
 /**
+ * How long a mirrored file nobody asks for is kept. The panel names every
+ * upload afresh, so a replaced logo is never asked for again; a month is far
+ * past any browser's `max-age` on it.
+ */
+export const BRANDING_ASSET_UNUSED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * A served file's timestamp is renewed at most this often: once a day is
+ * enough for a 30-day horizon, and it keeps a busy logo from costing a disk
+ * write per request.
+ */
+const TOUCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
  * Disk-backed mirror of admin-hosted `/uploads/branding/*` assets. Survives an
  * admin outage once an asset has been fetched at least once.
+ *
+ * Nothing wipes it on a branding save any more (W8 report D7): upload names are
+ * unique, so a new logo is a new file. Instead a file's timestamp says when it
+ * was last served, and `prune()` removes the ones nobody asked for in
+ * `BRANDING_ASSET_UNUSED_TTL_MS`.
  */
 export class BrandingAssetCache {
   private readonly dir: string;
@@ -271,10 +290,45 @@ export class BrandingAssetCache {
     this.ensured = true;
   }
 
-  /** Remove every cached asset (called on the branding-invalidate webhook). */
-  public async evict(): Promise<void> {
-    await fs.rm(this.dir, { recursive: true, force: true }).catch((): void => undefined);
-    this.ensured = false;
+  /**
+   * Remove the mirrored files not served for `maxAgeMs`. Best-effort: a file
+   * that cannot be read or removed is left for the next pass. Answers how many
+   * were removed.
+   */
+  public async prune(maxAgeMs: number = BRANDING_ASSET_UNUSED_TTL_MS, now: number = Date.now()): Promise<number> {
+    let names: string[];
+    try {
+      names = await fs.readdir(this.dir);
+    } catch {
+      return 0;
+    }
+    let removed = 0;
+    for (const name of names) {
+      if (!isSafeBrandingFile(name)) continue;
+      const file = path.join(this.dir, name);
+      try {
+        const stat = await fs.stat(file);
+        if (!stat.isFile() || now - stat.mtimeMs < maxAgeMs) continue;
+        await fs.rm(file, { force: true });
+        removed += 1;
+      } catch {
+        // Gone already, or not ours to remove: the next pass looks again.
+      }
+    }
+    return removed;
+  }
+
+  /** Mark a file served, at most once a day (see `TOUCH_INTERVAL_MS`). */
+  private async touch(file: string): Promise<void> {
+    try {
+      const stat = await fs.stat(file);
+      const now = Date.now();
+      if (now - stat.mtimeMs < TOUCH_INTERVAL_MS) return;
+      const at = new Date(now);
+      await fs.utimes(file, at, at);
+    } catch {
+      // A read-only mount keeps the file; it just ages out a month after its fetch.
+    }
   }
 
   /**
@@ -297,6 +351,7 @@ export class BrandingAssetCache {
     // 1. Serve from disk cache when present.
     try {
       const buffer = await fs.readFile(cachePath);
+      void this.touch(cachePath);
       return { buffer, contentType };
     } catch {
       /* not cached yet — fall through to fetch */
@@ -319,7 +374,7 @@ export class BrandingAssetCache {
   }
 }
 
-// ── Process-wide singleton (shared by the proxy route + webhook eviction) ────
+// ── Process-wide singleton (shared by the proxy route + the daily prune) ─────
 let singleton: BrandingAssetCache | null = null;
 
 export function getBrandingAssetCache(): BrandingAssetCache {
@@ -327,7 +382,7 @@ export function getBrandingAssetCache(): BrandingAssetCache {
   return singleton;
 }
 
-/** Drop the on-disk branding mirror (called on the branding-invalidate webhook). */
-export async function evictBrandingAssetCache(): Promise<void> {
-  await getBrandingAssetCache().evict();
+/** Remove the mirrored files nobody asked for in 30 days (`api/main.ts`, daily). */
+export async function pruneBrandingAssetCache(): Promise<number> {
+  return getBrandingAssetCache().prune();
 }

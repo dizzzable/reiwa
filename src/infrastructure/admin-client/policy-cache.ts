@@ -8,35 +8,60 @@
  * webhook (`POST /api/v1/webhooks/rezeis` with
  * `event: 'reiwa.platform.policy_invalidated'`) calls
  * {@link PolicyCache.invalidate} so an operator change propagates instantly;
- * the TTL is a backstop for environments where the webhook leg is unavailable.
+ * the TTL and the version poll (`infrastructure/config-versions/poller.ts`)
+ * are the backstops for a webhook that did not arrive.
  *
  * The singleton is per PROCESS: reiwa-api and reiwa-bot each hold their own,
  * and the webhook lands in the API alone, so the bot's copy is reached only
  * through the relay to its `/invalidate-policy` listener route.
  *
- * Failure mode (Requirement 1.3): when admin is unreachable AND the cache
- * has no last-known-good value, callers receive a `PUBLIC`-mode fallback
- * with `_isFallback: true`. This is "fail open" by design — a transient
- * outage must not lock every user out.
+ * ── With the panel unreachable ───────────────────────────────────────────────
  *
- * Two things keep a slow or absent panel from stalling callers. The channel
- * gate reads the policy in front of every bot update, and the bot handles
- * updates one at a time, so a read that waits out the transport timeout stalls
- * every user queued behind it:
+ * The LAST KNOWN policy, never "open to everybody" in its place — the owner's
+ * rule (24.09.2026). A policy the panel answered is kept in memory and, when a
+ * `lastKnownGood` store is configured, in reiwa's Redis too, so a restart
+ * during an outage comes back with the operator's access mode, channel gate
+ * and rules gate. Only a process that has never seen a policy — none in memory,
+ * none in Redis — answers the `PUBLIC` stand-in (`_isFallback: true`).
+ *
+ * ── Never a long wait ────────────────────────────────────────────────────────
+ *
+ * The channel gate reads the policy in front of every bot update, and the bot
+ * handles updates one at a time, so a read that waits out the transport
+ * timeout stalls every user queued behind it:
  *  - a STALE policy is answered at once while one refresh runs in the
- *    background (stale-while-revalidate). Only a missing policy — first read,
- *    or right after {@link PolicyCache.invalidate} — waits for the panel, so an
- *    operator's change still applies on the very next read;
- *  - with nothing cached, the fallback used to be handed out and forgotten, so
- *    every read of an outage went upstream again. A second failure in a row now
- *    keeps answering the fallback for {@link FALLBACK_RETRY_MS}. One failure is
- *    retried at once, so a single blip right after boot or an invalidation does
- *    not open the gates for half a minute.
+ *    background (stale-while-revalidate);
+ *  - right after {@link PolicyCache.invalidate} a read waits for the panel so
+ *    the operator's change applies on the very next read — but only
+ *    `waitBudgetMs`, then it answers the policy it kept;
+ *  - with nothing held, the saved copy is answered as soon as Redis gives it,
+ *    and the panel is waited for `waitBudgetMs` only when there is none;
+ *  - with nothing cached and nothing saved, the stand-in used to be handed out
+ *    and forgotten, so every read of an outage went upstream again. A second
+ *    failure in a row now keeps answering it for {@link FALLBACK_RETRY_MS}. One
+ *    failure is retried at once, so a single blip right after boot or an
+ *    invalidation does not open the gates for half a minute.
  */
 import type { AdminClient } from '../../lib/admin-client.js';
+import type { LoggerPort } from '../../application/ports/logger.port.js';
+import { configVersionOf } from '../config-versions/config-version.js';
+import {
+  NOOP_LAST_KNOWN_GOOD,
+  PLATFORM_POLICY_LKG,
+  type LastKnownGood,
+  type LastKnownGoodStorePort,
+} from '../config-versions/last-known-good.js';
+import { firstAnswer } from '../config-versions/within-budget.js';
 import type { PlatformPolicyShape } from './namespaces/system.js';
 
 const CACHE_TTL_MS = 60_000;
+
+/**
+ * How long a read waits for the panel when it has to wait at all — right after
+ * an invalidation, or with nothing held and nothing saved. The budget of a
+ * message's words in the bot (`bot/lib/config-within.ts`).
+ */
+export const POLICY_WAIT_BUDGET_MS = 1_000;
 
 /**
  * How long the fallback is answered without asking the panel again, once two
@@ -59,9 +84,25 @@ const FALLBACK_POLICY: CachedPolicy = {
   _isFallback: true,
 };
 
+export interface PolicyCacheOptions {
+  readonly ttlMs?: number;
+  /** Where the last policy the panel answered survives a restart. */
+  readonly lastKnownGood?: LastKnownGoodStorePort;
+  readonly waitBudgetMs?: number;
+  readonly logger?: LoggerPort;
+}
+
 export class PolicyCache {
   private value: CachedPolicy | null = null;
+  /** The version of `value` (`config-version.ts`), for the version poll. */
+  private version: string | null = null;
   private fetchedAt = 0;
+  /**
+   * `value` is the policy from before an operator's change: {@link invalidate}
+   * keeps it rather than dropping it, and a read waits `waitBudgetMs` for the
+   * change before it answers with it.
+   */
+  private superseded = false;
   /** Until when a read with nothing cached answers the fallback without going upstream. */
   private fallbackUntil = 0;
   /** Failed reads in a row with nothing cached; the second one starts the fallback window. */
@@ -75,37 +116,73 @@ export class PolicyCache {
    * `api/routes/connect-page.ts` spells out the race.
    */
   private generation = 0;
+  /**
+   * The generation whose read already waited out its budget. The reads after
+   * it, while the same fetch is still out, answer at once instead of each
+   * waiting a budget of their own on the same hung panel.
+   */
+  private budgetSpent: number | null = null;
+  /** The saved copy's read — once per process: nothing else writes it while we run. */
+  private saved: Promise<LastKnownGood<Record<string, unknown>> | null> | null = null;
+  private readonly ttlMs: number;
+  private readonly lastKnownGood: LastKnownGoodStorePort;
+  private readonly waitBudgetMs: number;
+  private readonly logger: LoggerPort | undefined;
 
   public constructor(
     private readonly fetchFn: () => Promise<PlatformPolicyShape>,
-    private readonly ttlMs: number = CACHE_TTL_MS,
-  ) {}
+    options: number | PolicyCacheOptions = {},
+  ) {
+    const resolved: PolicyCacheOptions = typeof options === 'number' ? { ttlMs: options } : options;
+    this.ttlMs = resolved.ttlMs ?? CACHE_TTL_MS;
+    this.lastKnownGood = resolved.lastKnownGood ?? NOOP_LAST_KNOWN_GOOD;
+    this.waitBudgetMs = resolved.waitBudgetMs ?? POLICY_WAIT_BUDGET_MS;
+    this.logger = resolved.logger;
+  }
 
   /**
    * Returns the cached policy. A stale one is returned at once and refreshed in
-   * the background; a missing one is fetched and waited for. Concurrent callers
-   * share a single in-flight fetch.
+   * the background; one kept across an invalidation after at most the wait
+   * budget; a missing one is the saved copy, else the panel's answer within the
+   * budget, else the fallback. Concurrent callers share a single in-flight fetch.
    */
   public async get(): Promise<CachedPolicy> {
     const now = Date.now();
-    if (this.value !== null) {
+    const held = this.value;
+    if (held !== null) {
+      if (this.superseded) {
+        const startedAt = this.generation;
+        const pending = this.inFlight ?? this.startRefresh();
+        if (this.budgetSpent === startedAt) return held;
+        const fresh = await firstAnswer({ fetched: pending, budgetMs: this.waitBudgetMs });
+        if (fresh !== null) return fresh;
+        if (startedAt === this.generation) this.budgetSpent = startedAt;
+        return held;
+      }
       if (now - this.fetchedAt >= this.ttlMs && this.inFlight === null) {
         void this.startRefresh();
       }
-      return this.value;
+      return held;
     }
     if (now < this.fallbackUntil) {
       return FALLBACK_POLICY;
     }
-    if (this.inFlight !== null) {
-      return this.inFlight;
-    }
-    return this.startRefresh();
+    const startedAt = this.generation;
+    const pending = this.inFlight ?? this.startRefresh();
+    if (this.budgetSpent === startedAt) return FALLBACK_POLICY;
+    const first = await firstAnswer({ fetched: pending, saved: this.savedPolicy(), budgetMs: this.waitBudgetMs });
+    if (first !== null) return first;
+    if (startedAt === this.generation) this.budgetSpent = startedAt;
+    return this.value ?? FALLBACK_POLICY;
   }
 
-  /** Drops the cached value so the next `get()` refetches immediately. */
+  /**
+   * An operator changed the policy: the next read goes to the panel. The policy
+   * held so far is KEPT, marked as superseded — it is what a read answers when
+   * the panel does not answer within the budget, instead of the open stand-in.
+   */
   public invalidate(): void {
-    this.value = null;
+    this.superseded = this.value !== null;
     this.fetchedAt = 0;
     // An operator change is exactly when the panel is reachable again.
     this.fallbackUntil = 0;
@@ -118,6 +195,33 @@ export class PolicyCache {
   /** Sync read of the last cached value, mostly for diagnostics. */
   public peek(): CachedPolicy | null {
     return this.value;
+  }
+
+  /**
+   * The version of the policy this process holds — `null` while it holds none —
+   * for the version poll (`infrastructure/config-versions/poller.ts`).
+   */
+  public heldVersion(): string | null {
+    return this.value === null ? null : this.version;
+  }
+
+  /** The saved copy's payload, or `null`; read from the store once per process. */
+  private savedPolicy(): Promise<CachedPolicy | null> {
+    this.saved ??= this.lastKnownGood.load(PLATFORM_POLICY_LKG);
+    const startedAt = this.generation;
+    return this.saved.then((copy) => {
+      if (copy === null) return null;
+      const policy = copy.payload as unknown as CachedPolicy;
+      // Held like an answer that has gone stale: served, and refreshed from
+      // the panel on the next read past the TTL.
+      if (startedAt === this.generation && this.value === null) {
+        this.value = policy;
+        this.version = copy.hash;
+        this.fetchedAt = Date.now();
+        this.logger?.info({}, 'PolicyCache: serving the last known policy saved before this start');
+      }
+      return policy;
+    });
   }
 
   /** Starts one fetch and holds the in-flight slot until it settles. Never rejects. */
@@ -142,18 +246,30 @@ export class PolicyCache {
       }
       if (startedAt === this.generation) {
         this.value = fresh;
+        this.version = configVersionOf(fresh);
         this.fetchedAt = Date.now();
         this.fallbackUntil = 0;
+        this.superseded = false;
+        // What a restart during a panel outage serves. Only an answer no
+        // invalidation overtook: the pre-change policy may not end up in it.
+        void this.lastKnownGood.save(PLATFORM_POLICY_LKG, fresh as unknown as Record<string, unknown>);
       }
       return fresh;
     } catch {
-      // Fail open: return last-known-good if we have one (TTL extended
-      // to reduce upstream pressure during the outage), otherwise the
-      // documented PUBLIC fallback.
+      // Last-known-good if we have one (TTL extended to reduce upstream
+      // pressure during the outage); the saved copy on a cold start; the
+      // documented PUBLIC fallback only when neither exists.
       if (this.value !== null) {
-        if (startedAt === this.generation) this.fetchedAt = Date.now();
+        if (startedAt === this.generation) {
+          this.fetchedAt = Date.now();
+          // No more waiting for a change the panel cannot deliver: the kept
+          // policy is served at once until the next refresh is due.
+          this.superseded = false;
+        }
         return this.value;
       }
+      const saved = await this.savedPolicy();
+      if (saved !== null) return saved;
       if (startedAt === this.generation) {
         this.failuresWithNothingCached += 1;
         if (this.failuresWithNothingCached >= 2) this.fallbackUntil = Date.now() + FALLBACK_RETRY_MS;
@@ -164,6 +280,17 @@ export class PolicyCache {
 }
 
 let instance: PolicyCache | null = null;
+let configured: PolicyCacheOptions = {};
+
+/**
+ * Where the singleton keeps its saved copy, and what it logs through. Called by
+ * each process's composition root before the first read (`api/app.ts`,
+ * `bot/main.ts`); an instance built before the call keeps what it was built
+ * with.
+ */
+export function configurePolicyCache(options: PolicyCacheOptions): void {
+  configured = options;
+}
 
 /**
  * Lazily-initialised singleton bound to the AdminClient. Tests can pass
@@ -176,7 +303,12 @@ export function getPolicyCache(adminClient: AdminClient | null): PolicyCache {
       throw new Error('AdminClient not configured');
     }
     return adminClient.system.getPlatformPolicy();
-  });
+  }, configured);
+  return instance;
+}
+
+/** The singleton when one exists, without building it — for the version poll. */
+export function peekPolicyCache(): PolicyCache | null {
   return instance;
 }
 

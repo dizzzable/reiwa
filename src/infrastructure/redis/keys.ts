@@ -263,3 +263,17 @@ export function bannedIpKey(ip: string): string {
 export function recoveryQueueKey(challengeId: string): string {
   return `recovery_queue:${challengeId}`;
 }
+
+/**
+ * Build a Redis key for the last copy of one panel settings group the panel
+ * actually served (`infrastructure/config-versions/last-known-good.ts`).
+ *
+ * The shape number is IN the key, so a release that changes what it stores
+ * reads only what it wrote itself, and a rollback reads only what the older
+ * release wrote: the two never meet (memory note `cached-objects-are-a-wire-format`).
+ * Change what a group stores — bump its `shape`.
+ * Value: JSON `{shape, savedAt, hash, payload}`, no TTL.
+ */
+export function lastKnownGoodKey(group: string, shape: number): string {
+  return `reiwa:lkg:${group}:v${shape}`;
+}

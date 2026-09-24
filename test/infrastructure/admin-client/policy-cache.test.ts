@@ -8,6 +8,11 @@ import {
   invalidatePolicyCache,
   setPolicyCache,
 } from '../../../src/infrastructure/admin-client/policy-cache.js';
+import { configVersionOf } from '../../../src/infrastructure/config-versions/config-version.js';
+import type {
+  LastKnownGood,
+  LastKnownGoodStorePort,
+} from '../../../src/infrastructure/config-versions/last-known-good.js';
 
 /**
  * The platform policy cache across an operator's change.
@@ -422,5 +427,160 @@ describe('PolicyCache with a stale policy', () => {
     const next = cache.get();
     upstream.answer(1, AFTER_CHANGE);
     expect(await next).toEqual(AFTER_CHANGE);
+  });
+});
+
+/**
+ * With the panel unreachable: the LAST KNOWN policy, never "open to everybody"
+ * in its place — the owner's rule of 24.09.2026 (W8 report D5). A restart
+ * during an outage used to come back on the PUBLIC stand-in: the invite mode,
+ * the channel gate and the rules gate all off, in the bot and in the cabinet,
+ * until the panel returned.
+ */
+describe('PolicyCache and the last known policy (W8 report D5)', () => {
+  const INVITED: PlatformPolicyShape = {
+    accessMode: 'INVITED',
+    rulesRequired: true,
+    rulesLink: 'https://example.com/rules',
+    channelRequired: true,
+    channelLink: 'https://t.me/operator_news',
+    defaultCurrency: 'RUB',
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A store holding `saved` (or nothing), recording every save. */
+  function savedCopy(saved: PlatformPolicyShape | null) {
+    const saves: unknown[] = [];
+    let record: LastKnownGood<Record<string, unknown>> | null =
+      saved === null
+        ? null
+        : { shape: 1, savedAt: 1_700_000_000_000, hash: configVersionOf(saved), payload: { ...saved } };
+    const store: LastKnownGoodStorePort = {
+      load: vi.fn(async () => record) as LastKnownGoodStorePort['load'],
+      save: vi.fn(async (_group: unknown, payload: unknown) => {
+        saves.push(payload);
+        record = { shape: 1, savedAt: 2, hash: configVersionOf(payload), payload: payload as Record<string, unknown> };
+      }) as LastKnownGoodStorePort['save'],
+    };
+    return { store, saves };
+  }
+
+  /** What `promise` settles to — or a failure, if it needs any time to pass to settle. */
+  async function answeredWithoutWaiting<T>(promise: Promise<T>): Promise<T> {
+    const outcome: { settled: boolean; value?: T } = { settled: false };
+    void promise.then((value) => {
+      outcome.settled = true;
+      outcome.value = value;
+    });
+    for (let turn = 0; turn < 50 && !outcome.settled; turn += 1) await Promise.resolve();
+    if (!outcome.settled) throw new Error('the read waited on the panel');
+    return outcome.value as T;
+  }
+
+  it('a restart with the panel down serves the saved policy, not the PUBLIC stand-in', async () => {
+    const { store } = savedCopy(INVITED);
+    const cache = new PolicyCache(
+      async () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+      { lastKnownGood: store },
+    );
+
+    const policy = await cache.get();
+
+    expect(policy).toEqual(INVITED);
+    expect(policy._isFallback).toBeUndefined();
+    expect(cache.heldVersion()).toBe(configVersionOf(INVITED));
+    // Held from here on, as a policy gone stale: the next read does not ask Redis again.
+    expect(await cache.get()).toEqual(INVITED);
+    expect(store.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('a restart with the panel hanging serves the saved policy at once', async () => {
+    vi.useFakeTimers();
+    const { store } = savedCopy(INVITED);
+    const cache = new PolicyCache(() => new Promise<never>(() => undefined), { lastKnownGood: store });
+
+    expect(await answeredWithoutWaiting(cache.get())).toEqual(INVITED);
+  });
+
+  it('answers the PUBLIC stand-in only when no copy has ever existed', async () => {
+    const { store } = savedCopy(null);
+    const cache = new PolicyCache(
+      async () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+      { lastKnownGood: store },
+    );
+
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(cache.heldVersion()).toBeNull();
+  });
+
+  it('saves every policy the panel answers — but not one an invalidation overtook', async () => {
+    const upstream = handAnswered();
+    const { store, saves } = savedCopy(null);
+    const cache = new PolicyCache(upstream.fn, { lastKnownGood: store });
+
+    const beforeChange = cache.get();
+    cache.invalidate();
+    const afterChange = cache.get();
+    upstream.answer(1, AFTER_CHANGE);
+    await afterChange;
+    upstream.answer(0, BEFORE_CHANGE); // the pre-change read lands last
+    await beforeChange;
+
+    // What a restart during an outage serves must be the policy after the change.
+    expect(saves).toEqual([AFTER_CHANGE]);
+  });
+
+  it('after an invalidation, a panel that fails leaves the policy the cabinet had — not PUBLIC', async () => {
+    const fetchFn = vi
+      .fn<() => Promise<PlatformPolicyShape>>()
+      .mockResolvedValueOnce(INVITED)
+      .mockRejectedValue(new Error('connect ECONNREFUSED'));
+    const cache = new PolicyCache(fetchFn);
+    expect(await cache.get()).toEqual(INVITED);
+
+    cache.invalidate();
+
+    const policy = await cache.get();
+    expect(policy).toEqual(INVITED);
+    expect(policy._isFallback).toBeUndefined();
+  });
+
+  it('after an invalidation, a hung panel holds one read the budget — then the kept policy, and no read after it waits', async () => {
+    vi.useFakeTimers();
+    let hanging = false;
+    const fetchFn = vi.fn(() =>
+      hanging ? new Promise<PlatformPolicyShape>(() => undefined) : Promise.resolve(INVITED),
+    );
+    const cache = new PolicyCache(fetchFn, { waitBudgetMs: 1_000 });
+    expect(await cache.get()).toEqual(INVITED);
+    hanging = true;
+    cache.invalidate();
+
+    const first = cache.get();
+    let settled = false;
+    void first.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await first).toEqual(INVITED);
+
+    expect(await answeredWithoutWaiting(cache.get())).toEqual(INVITED);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('holds the version of the policy it holds, for the version poll', async () => {
+    const cache = new PolicyCache(async () => INVITED);
+    expect(cache.heldVersion()).toBeNull();
+    await cache.get();
+    expect(cache.heldVersion()).toBe(configVersionOf(INVITED));
   });
 });

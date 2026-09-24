@@ -8,13 +8,23 @@
  * explicit invalidate driven by the `reiwa.landing.invalidate` webhook.
  *
  * Fail-closed / never-hard-5xx: when rezeis-admin is unreachable we serve the
- * last-known-good payload; with no cache we serve the disabled sentinel so the
- * SPA simply routes `/` → `/sign-in` instead of erroring.
+ * last-known-good payload — from memory, else the copy saved in reiwa's Redis,
+ * so a restart during the outage still shows the operator's landing (W8 report
+ * D2). "Disabled" comes from the panel, or from a cabinet that has never once
+ * reached it: only then the sentinel, and the SPA routes `/` → `/sign-in`.
+ * Every answer that is not the panel's own is served `no-store`, so no browser
+ * keeps a fallback past the outage.
  */
 import { Router } from "express";
 import { createHash } from "node:crypto";
 import type { Logger } from "pino";
 
+import { configVersionOf } from "../../infrastructure/config-versions/config-version.js";
+import {
+  LANDING_LKG,
+  NOOP_LAST_KNOWN_GOOD,
+  type LastKnownGoodStorePort,
+} from "../../infrastructure/config-versions/last-known-good.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 
@@ -22,6 +32,13 @@ interface CachedLanding {
   readonly body: unknown;
   readonly etag: string;
   readonly fetchedAt: number;
+  /** The panel answer's version; `null` for the sentinel no panel said. */
+  readonly version: string | null;
+  /**
+   * Not a fresh panel answer: the copy kept through a failed read, the saved
+   * copy, or the sentinel with nothing known. Served `no-store`.
+   */
+  readonly fallback: boolean;
 }
 
 const CACHE_TTL_MS = 60_000;
@@ -32,6 +49,8 @@ const DISABLED_SENTINEL = { enabled: false } as const;
 // instead of waiting for the TTL.
 let cached: CachedLanding | null = null;
 let inflight: Promise<CachedLanding> | null = null;
+/** Where the landing's last good copy survives a restart; set by `createLandingRouter`. */
+let lastKnownGood: LastKnownGoodStorePort = NOOP_LAST_KNOWN_GOOD;
 /**
  * Bumped by every reset. A read begun before the bump may not store anything —
  * its answer, the extended last-known-good, or the disabled sentinel — and may
@@ -50,18 +69,38 @@ export function resetLandingCache(): void {
   generation += 1;
 }
 
+/** The version of the landing held — `null` while none is — for the version poll. */
+export function heldLandingVersion(): string | null {
+  return cached?.version ?? null;
+}
+
 function computeEtag(value: unknown): string {
   const hash = createHash("sha1").update(JSON.stringify(value)).digest("hex").slice(0, 16);
   return `W/"${hash}"`;
 }
 
-async function fetchFresh(adminClient: AdminClient | null): Promise<CachedLanding> {
-  if (adminClient === null) {
-    return { body: DISABLED_SENTINEL, etag: computeEtag(DISABLED_SENTINEL), fetchedAt: Date.now() };
-  }
+function sentinel(): CachedLanding {
+  return {
+    body: DISABLED_SENTINEL,
+    etag: computeEtag(DISABLED_SENTINEL),
+    fetchedAt: Date.now(),
+    version: null,
+    fallback: true,
+  };
+}
+
+async function fetchFresh(adminClient: AdminClient | null, isCurrent: () => boolean): Promise<CachedLanding> {
+  // No panel configured at all: nobody said "disabled", but there is nobody to ask.
+  if (adminClient === null) return sentinel();
   const body = await adminClient.landing.getEffective();
   const normalized = body ?? DISABLED_SENTINEL;
-  return { body: normalized, etag: computeEtag(normalized), fetchedAt: Date.now() };
+  const version = configVersionOf(body);
+  // What a restart during a panel outage serves. Only an answer no invalidation
+  // overtook (see `generation`): a pre-publish read may not end up in it.
+  if (isCurrent() && LANDING_LKG.accepts(normalized)) {
+    void lastKnownGood.save(LANDING_LKG, normalized, version);
+  }
+  return { body: normalized, etag: computeEtag(normalized), fetchedAt: Date.now(), version, fallback: false };
 }
 
 /**
@@ -81,34 +120,43 @@ async function getLandingPayload(
   }
   if (inflight === null) {
     const startedAt = generation;
-    const pending: Promise<CachedLanding> = fetchFresh(adminClient)
+    const pending: Promise<CachedLanding> = fetchFresh(adminClient, () => startedAt === generation)
       .then((fresh) => {
         if (startedAt === generation) cached = fresh;
         if (inflight === pending) inflight = null;
         return fresh;
       })
-      .catch((err) => {
+      .catch(async (err) => {
         if (inflight === pending) inflight = null;
         onFailure?.(err);
         if (cached !== null) {
           // Extend last-known-good during the outage to reduce upstream pressure.
-          const extended = { ...cached, fetchedAt: Date.now() };
+          const extended: CachedLanding = { ...cached, fetchedAt: Date.now(), fallback: true };
           if (startedAt === generation) cached = extended;
           return extended;
         }
-        // Remember the miss for the TTL. Leaving `cached` null meant the
+        // Nothing in memory: a cold start during an outage, the case the saved
+        // copy exists for. Without it this was the sentinel, and every web
+        // visitor was sent to sign-in for as long as the outage lasted.
+        const saved = await lastKnownGood.load(LANDING_LKG);
+        // Remember the answer for the TTL. Leaving `cached` null meant the
         // failure was never recorded, so EVERY following request paid another
         // upstream timeout — with the panel on its own VPS that is ~10s per
         // visitor, indefinitely. `fetchedAt` is now, so the TTL still expires
         // and the request after it goes upstream again: the sentinel cannot
         // outlive the outage. `resetLandingCache()` still drops it at once.
-        const sentinel: CachedLanding = {
-          body: DISABLED_SENTINEL,
-          etag: computeEtag(DISABLED_SENTINEL),
-          fetchedAt: Date.now(),
-        };
-        if (startedAt === generation) cached = sentinel;
-        return sentinel;
+        const answer: CachedLanding =
+          saved === null
+            ? sentinel()
+            : {
+                body: saved.payload,
+                etag: computeEtag(saved.payload),
+                fetchedAt: Date.now(),
+                version: saved.hash,
+                fallback: true,
+              };
+        if (startedAt === generation && cached === null) cached = answer;
+        return answer;
       });
     inflight = pending;
   }
@@ -195,8 +243,11 @@ export function buildLandingMetaHead(body: unknown): string | null {
 export function createLandingRouter(deps: {
   adminClient: AdminClient | null;
   logger?: Logger;
+  /** Where the landing's last good copy survives a restart. */
+  lastKnownGood?: LastKnownGoodStorePort;
 }) {
   const { adminClient, logger } = deps;
+  lastKnownGood = deps.lastKnownGood ?? NOOP_LAST_KNOWN_GOOD;
   const bgLog = logger?.child({ component: "landing-cache" });
   const router = Router();
 
@@ -212,12 +263,20 @@ export function createLandingRouter(deps: {
         return;
       }
       res.setHeader("ETag", payload.etag);
-      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+      // A fallback must NOT be cached by the browser: the sentinel parked a
+      // visitor who loaded during a blip on sign-in for their next visit too.
+      // The in-process cache still remembers the failure, so the panel is
+      // asked only once per TTL.
+      res.setHeader(
+        "Cache-Control",
+        payload.fallback ? "no-store" : "public, max-age=60, stale-while-revalidate=300",
+      );
       res.json(payload.body);
     } catch (e: unknown) {
       // Defensive: getLandingPayload already fails closed, but never 5xx the
       // public route — serve the disabled sentinel so `/` → `/sign-in`.
       getRequestLogger(req).error({ err: e }, "GET /landing failed");
+      res.setHeader("Cache-Control", "no-store");
       res.json(DISABLED_SENTINEL);
     }
   });

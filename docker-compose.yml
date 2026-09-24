@@ -7,13 +7,17 @@
 #  HTTP inside the shared `remnawave-network`.
 #
 #  The only stateful dependency reiwa has is reiwa-redis, used for
-#  ephemeral edge concerns:
-#    • web/TMA session cookies
+#  edge concerns:
+#    • web/TMA session cookies (30 days)
 #    • per-IP rate-limit counters
 #    • brute-force / banned-IP tracking
 #    • short-lived linking & verification challenges (TTL 10–30 min)
-#    • Telegram bot FSM (grammy)
 #    • install-banner UX preferences
+#    • the last copy of each panel settings group the panel served
+#      (`reiwa:lkg:*`): theme, bot config, landing, connect screen, access
+#      rules, emoji packs, guest-chat captcha. A restart while the panel is
+#      down comes back with these instead of the defaults.
+#  The grammY chat session lives in the bot's memory, not here.
 # ════════════════════════════════════════════════════════════════════════════
 
 services:
@@ -22,7 +26,21 @@ services:
     container_name: reiwa-redis
     hostname: reiwa-redis
     restart: unless-stopped
-    command: ["--requirepass", "${REDIS_PASSWORD}", "--bind", "0.0.0.0"]
+    # Append-only log, flushed every second — the panel's Redis runs the same.
+    # Without it only valkey's default snapshots protected the sessions and the
+    # settings copies above, and a crash (OOM kill, power loss) on a quiet
+    # install could return a copy up to an hour old.
+    #
+    # AN INSTALL CREATED FROM AN OLDER COMPOSE FILE: switch the running Redis
+    # over FIRST, then replace this file. Valkey that starts with the log on and
+    # finds no log starts EMPTY — it does not read the old snapshot (checked on
+    # valkey 9.1.2): every web session signed out, the settings copies gone
+    # until the panel answers again.
+    #   docker exec reiwa-redis valkey-cli -a "$REDIS_PASSWORD" CONFIG SET appendonly yes
+    #   (a few seconds; `... INFO persistence` shows aof_rewrite_in_progress:0)
+    #   then: replace docker-compose.yml, `docker compose up -d`
+    command:
+      ["--requirepass", "${REDIS_PASSWORD}", "--bind", "0.0.0.0", "--appendonly", "yes", "--appendfsync", "everysec"]
     volumes:
       - reiwa-redis-data:/data
     healthcheck:

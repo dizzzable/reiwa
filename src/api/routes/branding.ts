@@ -22,6 +22,12 @@ import {
   type PublicConfigPersistencePort,
   type PublicConfigSnapshot,
 } from "../../application/ports/public-config-persistence.port.js";
+import { configVersionOf } from "../../infrastructure/config-versions/config-version.js";
+import {
+  CUSTOM_EMOJI_PACKS_LKG,
+  NOOP_LAST_KNOWN_GOOD,
+  type LastKnownGoodStorePort,
+} from "../../infrastructure/config-versions/last-known-good.js";
 import {
   createPublicConfigRejectionNotifier,
   type PublicConfigRejectionNotifier,
@@ -33,6 +39,22 @@ interface CachedPayload {
   readonly body: unknown;
   readonly etag: string;
   readonly fetchedAt: number;
+  /** The body's version (`config-version.ts`), for the version poll. */
+  readonly version: string;
+}
+
+/** The custom emoji packs the feed renders, and what they are. */
+export interface CachedPacks {
+  readonly body: unknown;
+  readonly fetchedAt: number;
+  /** The panel answer's version; `null` for the empty stand-in (nothing known). */
+  readonly version: string | null;
+  /**
+   * Not a fresh panel answer: the copy kept through a failed read, the saved
+   * copy, or the empty stand-in. Served `no-store`, so no browser keeps it
+   * past the outage.
+   */
+  readonly fallback: boolean;
 }
 
 const CACHE_TTL_MS = 60_000;
@@ -44,7 +66,10 @@ const STALE_WHILE_REVALIDATE_MS = 5 * 60_000;
 // for the TTL. A single router instance is created per process.
 let cached: CachedPayload | null = null;
 let inflight: Promise<CachedPayload> | null = null;
-let packsCache: { body: unknown; fetchedAt: number } | null = null;
+let packsCache: CachedPacks | null = null;
+let packsInflight: Promise<CachedPacks> | null = null;
+/** Where the packs' last good copy survives a restart; set by `createBrandingRouter`. */
+let packsLastKnownGood: LastKnownGoodStorePort = NOOP_LAST_KNOWN_GOOD;
 /**
  * Bumped by every reset. A read begun before the bump may not store its answer,
  * and may clear `inflight` only while the slot still holds that read. Otherwise
@@ -53,18 +78,42 @@ let packsCache: { body: unknown; fetchedAt: number } | null = null;
  * `connect-page.ts` spells out the race.
  */
 let generation = 0;
+/** The same, for the packs: the version poll resets them on their own. */
+let packsGeneration = 0;
+
+/** Drop the cached public-config (the version poll's reset for that group alone). */
+export function resetPublicConfigCache(): void {
+  cached = null;
+  inflight = null;
+  generation += 1;
+}
+
+/** Drop the cached custom-emoji packs (the version poll's reset for that group alone). */
+export function resetCustomEmojiPacksCache(): void {
+  packsCache = null;
+  packsInflight = null;
+  packsGeneration += 1;
+}
 
 /** Drop the cached public-config + custom-emoji packs. Called on the admin
  *  branding-invalidate webhook so theme edits propagate promptly. */
 export function resetBrandingCache(): void {
-  cached = null;
-  inflight = null;
-  packsCache = null;
-  generation += 1;
+  resetPublicConfigCache();
+  resetCustomEmojiPacksCache();
+}
+
+/** The version of the public config held — `null` while none is — for the version poll. */
+export function heldPublicConfigVersion(): string | null {
+  return cached?.version ?? null;
+}
+
+/** The version of the packs held — `null` while none are — for the version poll. */
+export function heldCustomEmojiPacksVersion(): string | null {
+  return packsCache?.version ?? null;
 }
 
 function toCachedPayload(body: PublicConfigSnapshot): CachedPayload {
-  return { body, etag: computeEtag(body), fetchedAt: Date.now() };
+  return { body, etag: computeEtag(body), fetchedAt: Date.now(), version: configVersionOf(body) };
 }
 
 /**
@@ -221,6 +270,71 @@ export async function getPublicConfigPayload(
   return inflight;
 }
 
+/**
+ * The cabinet feed's custom emoji packs (W8 report D8): 60 s TTL, served stale
+ * while one refresh runs, one read at a time, and a failed read REMEMBERED for
+ * the TTL — it used to be neither, so every request of a stale window fetched
+ * on its own and, with the panel hanging, each one waited out the transport's
+ * ten seconds. With nothing held, a failed read serves the copy saved in Redis,
+ * and only with none of that the empty list, which the feed reads as "draw the
+ * tokens as text".
+ */
+export async function getCustomEmojiPacks(adminClient: AdminClient | null): Promise<CachedPacks> {
+  const held = packsCache;
+  if (held !== null) {
+    if (Date.now() - held.fetchedAt >= CACHE_TTL_MS && packsInflight === null) {
+      void startPacksRead(adminClient);
+    }
+    return held;
+  }
+  return packsInflight ?? startPacksRead(adminClient);
+}
+
+function startPacksRead(adminClient: AdminClient | null): Promise<CachedPacks> {
+  const pending: Promise<CachedPacks> = readPacks(adminClient, packsGeneration).finally(() => {
+    // After a reset the slot may already hold a newer read.
+    if (packsInflight === pending) packsInflight = null;
+  });
+  packsInflight = pending;
+  return pending;
+}
+
+async function readPacks(adminClient: AdminClient | null, startedAt: number): Promise<CachedPacks> {
+  try {
+    if (adminClient === null) throw new Error("no panel configured");
+    const packs: unknown = await adminClient.branding.getCustomEmojiPacks();
+    const fresh: CachedPacks = {
+      body: packs ?? [],
+      fetchedAt: Date.now(),
+      version: configVersionOf(packs),
+      fallback: false,
+    };
+    // Stored — and saved as the copy a restart serves — only if no reset
+    // landed meanwhile (see `generation`). The request still answers with what
+    // it read.
+    if (startedAt === packsGeneration) {
+      packsCache = fresh;
+      if (CUSTOM_EMOJI_PACKS_LKG.accepts(packs)) void packsLastKnownGood.save(CUSTOM_EMOJI_PACKS_LKG, packs);
+    }
+    return fresh;
+  } catch {
+    const held = packsCache;
+    if (held !== null) {
+      // Remembered: a dead panel is asked once per TTL, not once per request.
+      const kept: CachedPacks = { ...held, fetchedAt: Date.now(), fallback: true };
+      if (startedAt === packsGeneration) packsCache = kept;
+      return kept;
+    }
+    const saved = await packsLastKnownGood.load(CUSTOM_EMOJI_PACKS_LKG);
+    const answer: CachedPacks =
+      saved !== null
+        ? { body: saved.payload, fetchedAt: Date.now(), version: saved.hash, fallback: true }
+        : { body: [], fetchedAt: Date.now(), version: null, fallback: true };
+    if (startedAt === packsGeneration && packsCache === null) packsCache = answer;
+    return answer;
+  }
+}
+
 export function createBrandingRouter(deps: {
   adminClient: AdminClient | null;
   logger?: Logger;
@@ -247,8 +361,11 @@ export function createBrandingRouter(deps: {
    */
   botUsername?: string | null;
   webBaseUrl?: string | null;
+  /** Where the custom emoji packs' last good copy survives a restart. */
+  lastKnownGood?: LastKnownGoodStorePort;
 }) {
   const { adminClient, logger, publicConfigPersistence } = deps;
+  packsLastKnownGood = deps.lastKnownGood ?? NOOP_LAST_KNOWN_GOOD;
   const supportUsername =
     typeof deps.supportUsername === 'string' && deps.supportUsername.trim().length > 0
       ? deps.supportUsername.replace(/^@+/, '').trim()
@@ -342,20 +459,17 @@ export function createBrandingRouter(deps: {
   // Lets the cabinet feed render `:slug:` tokens as inline images / Lottie.
   router.get("/custom-emoji/packs", async (req, res) => {
     try {
-      const now = Date.now();
-      let body = packsCache?.body;
-      if (packsCache === null || now - packsCache.fetchedAt > CACHE_TTL_MS) {
-        const startedAt = generation;
-        const packs = (await adminClient?.branding.getCustomEmojiPacks()) ?? [];
-        // Stored only if no reset landed meanwhile — see `generation`. The
-        // request still answers with what it read.
-        if (startedAt === generation) packsCache = { body: packs, fetchedAt: now };
-        body = packs;
-      }
-      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
-      res.json(body);
+      const packs = await getCustomEmojiPacks(adminClient);
+      // A fallback must not be cached by the browser past the outage — the
+      // connect screen's rule.
+      res.setHeader(
+        "Cache-Control",
+        packs.fallback ? "no-store" : "public, max-age=60, stale-while-revalidate=300",
+      );
+      res.json(packs.body);
     } catch (e: unknown) {
       getRequestLogger(req).error({ err: e }, "GET /custom-emoji/packs failed");
+      res.setHeader("Cache-Control", "no-store");
       res.json([]);
     }
   });

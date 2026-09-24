@@ -11,6 +11,7 @@ import { getRequestLogger } from "../middleware/logger-accessor.js";
 import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError } from "../lib/upstream-error.js";
 import { invalidateStaleUserSession } from "../lib/stale-user-session.js";
+import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
 
 export function createProfileRouter(deps: {
   adminClient: AdminClient | null;
@@ -167,13 +168,23 @@ export function createProfileRouter(deps: {
   });
 
   // GET /api/v1/platform-policy
+  //
+  // From the process's `PolicyCache`, the one the access-mode middleware and
+  // the channel gate read (W8 report D4). It used to ask the panel on every
+  // cabinet load — ten seconds on a hanging panel, and another ten on the SPA's
+  // retry — and to answer `{}` on any failure, which the cabinet reads as
+  // PUBLIC with recovery off: an outage silently dropped the operator's access
+  // mode. Now a failure answers the last known policy, from memory or from the
+  // copy in Redis; with none ever known, 503 — never an invented policy. Not
+  // cached by the browser: React Query already keeps it a minute.
   router.get("/platform-policy", async (_req, res) => {
-    try {
-      const policy = await adminClient?.system.getPlatformPolicy();
-      res.json(policy ?? {});
-    } catch {
-      res.json({});
+    res.setHeader("Cache-Control", "no-store");
+    const policy = await getPolicyCache(adminClient).get();
+    if (policy._isFallback === true) {
+      res.status(503).json({ message: "Platform policy unavailable" });
+      return;
     }
+    res.json(policy);
   });
 
   // GET /api/v1/me — full profile (same data as /session)

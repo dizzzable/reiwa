@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LegalDocumentsCache } from '../../../src/infrastructure/admin-client/legal-documents-cache.js';
 import type { LegalDocument } from '../../../src/infrastructure/admin-client/namespaces/legal-documents.js';
+import { configVersionOf } from '../../../src/infrastructure/config-versions/config-version.js';
 
 /**
  * The bot's cache for legal documents.
@@ -248,5 +249,121 @@ describe('LegalDocumentsCache across invalidate()', () => {
     expect(upstream.fn).toHaveBeenCalledTimes(3);
     upstream.answer(2, SWITCHED_ON);
     expect(await next).toEqual(SWITCHED_ON);
+  });
+});
+
+/**
+ * No tap waits on a panel that hangs (W8 report D1): the rules screen reads
+ * these in the bot, which handles updates one at a time. A locale held is
+ * answered at once, whatever its age, while one refresh runs behind it; only a
+ * locale never read waits, and only the budget.
+ */
+describe('LegalDocumentsCache with a panel that hangs (W8 report D1)', () => {
+  const SWITCHED_ON: readonly LegalDocument[] = [AGREEMENT];
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** What `promise` settles to — or a failure, if it needs any time to pass to settle. */
+  async function answeredWithoutWaiting<T>(promise: Promise<T>): Promise<T> {
+    const outcome: { settled: boolean; value?: T } = { settled: false };
+    void promise.then((value) => {
+      outcome.settled = true;
+      outcome.value = value;
+    });
+    for (let turn = 0; turn < 50 && !outcome.settled; turn += 1) await Promise.resolve();
+    if (!outcome.settled) throw new Error('the tap waited on the panel');
+    return outcome.value as T;
+  }
+
+  it('past the TTL, every tap is answered from what is held while one read hangs', async () => {
+    vi.useFakeTimers();
+    let hanging = false;
+    const fetchFn = vi.fn(() =>
+      hanging ? new Promise<readonly LegalDocument[]>(() => undefined) : Promise.resolve(SWITCHED_ON),
+    );
+    const cache = new LegalDocumentsCache(fetchFn, 60_000);
+    await cache.get('ru');
+    hanging = true;
+    vi.advanceTimersByTime(60_000);
+
+    for (let tap = 0; tap < 20; tap += 1) {
+      expect(await answeredWithoutWaiting(cache.get('ru'))).toEqual(SWITCHED_ON);
+    }
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('after an operator’s edit, taps are answered from what was held while the edit’s read hangs', async () => {
+    vi.useFakeTimers();
+    let hanging = false;
+    const fetchFn = vi.fn(() =>
+      hanging ? new Promise<readonly LegalDocument[]>(() => undefined) : Promise.resolve(SWITCHED_ON),
+    );
+    const cache = new LegalDocumentsCache(fetchFn);
+    await cache.get('ru');
+    hanging = true;
+
+    cache.invalidate();
+    expect(await answeredWithoutWaiting(cache.get('ru'))).toEqual(SWITCHED_ON);
+    expect(await answeredWithoutWaiting(cache.get('ru'))).toEqual(SWITCHED_ON);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('a locale never read waits the budget once, then "no documents" — the taps after it do not wait', async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn(() => new Promise<readonly LegalDocument[]>(() => undefined));
+    const cache = new LegalDocumentsCache(fetchFn, 60_000, 1_000);
+
+    const first = cache.get('en');
+    let settled = false;
+    void first.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await first).toEqual([]);
+
+    expect(await answeredWithoutWaiting(cache.get('en'))).toEqual([]);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('an edit lands behind the tap that started its read', async () => {
+    const upstream = deferred<readonly LegalDocument[]>();
+    let calls = 0;
+    const cache = new LegalDocumentsCache(async () => {
+      calls += 1;
+      return calls === 1 ? [] : upstream.promise;
+    });
+    expect(await cache.get('ru')).toEqual([]);
+
+    cache.invalidate();
+    expect(await cache.get('ru')).toEqual([]);
+    upstream.resolve(SWITCHED_ON);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await cache.get('ru')).toEqual(SWITCHED_ON);
+  });
+});
+
+/** The version the poll compares with the panel's, per language the panel versions. */
+describe('LegalDocumentsCache.heldVersion()', () => {
+  it('is the version of what is held for a locale, null for one never read, and refreshHeld() re-reads what is held', async () => {
+    const answers: Record<string, readonly LegalDocument[]> = { ru: [AGREEMENT], en: [] };
+    const fetchFn = vi.fn(async (locale: string) => answers[locale] ?? []);
+    const cache = new LegalDocumentsCache(fetchFn);
+    expect(cache.heldVersion('ru')).toBeNull();
+
+    await cache.get('ru');
+    expect(cache.heldVersion('ru')).toBe(configVersionOf([AGREEMENT]));
+    expect(cache.heldVersion('en')).toBeNull();
+
+    answers['ru'] = [];
+    cache.refreshHeld();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(cache.heldVersion('ru')).toBe(configVersionOf([]));
+    // Only what is held: a locale never read is not read by it.
+    expect(fetchFn.mock.calls.map(([locale]) => locale)).toEqual(['ru', 'ru']);
   });
 });

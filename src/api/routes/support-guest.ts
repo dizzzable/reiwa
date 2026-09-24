@@ -10,6 +10,7 @@ import { createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { resolveClientIp } from "../lib/client-ip.js";
 import { verifyTurnstile } from "../lib/turnstile.js";
 import type { GuestRuntimeConfig } from "../../infrastructure/admin-client/namespaces/support.js";
+import { getGuestSupportConfigCache } from "../../infrastructure/admin-client/guest-support-config-cache.js";
 
 /**
  * Anonymous (guest) support chat — public, session-less surface.
@@ -84,24 +85,16 @@ export function createSupportGuestRouter(deps: {
   const replyLimiter = createRedisRateLimiter(redis, "guestReply");
   const uploadLimiter = createRedisRateLimiter(redis, "guestUpload");
 
-  // Runtime config (enabled flag + Turnstile keys) is panel-managed in rezeis
-  // and fetched here with a short cache, so operators tune it from the admin
-  // UI without touching reiwa env / restarting. Env values stay as the seed
-  // default on the rezeis side. On a fetch failure we serve the last good
-  // value (or treat the feature as available, captcha-less, when never seen).
-  const CONFIG_TTL_MS = 30_000;
-  let cachedConfig: { value: GuestRuntimeConfig; at: number } | null = null;
+  // Runtime config (enabled flag + Turnstile keys) is panel-managed in rezeis,
+  // so operators tune it from the admin UI without touching reiwa env /
+  // restarting. Cached by `GuestSupportConfigCache`: 30 s, served stale while
+  // it refreshes, a failure remembered, and the last config the panel answered
+  // kept in reiwa's Redis — a restart during a panel outage keeps the captcha
+  // instead of answering "enabled, no captcha" (W8 report D13). `null` only
+  // when no config was ever known.
   const runtimeConfig = async (): Promise<GuestRuntimeConfig | null> => {
     if (!adminClient) return null;
-    const now = Date.now();
-    if (cachedConfig && now - cachedConfig.at < CONFIG_TTL_MS) return cachedConfig.value;
-    try {
-      const value = await adminClient.support.getRuntimeConfig();
-      cachedConfig = { value, at: now };
-      return value;
-    } catch {
-      return cachedConfig?.value ?? null;
-    }
+    return getGuestSupportConfigCache(adminClient).get();
   };
 
   const secure =

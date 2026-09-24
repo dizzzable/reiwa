@@ -3,9 +3,10 @@
  *
  * Updates are handled one at a time (`bot.start()`; see `lib/bot-channel-gate.ts`),
  * so whatever one of them waits on, every update queued behind it waits on too.
- * `BotConfigCache.get()` answers from memory while its entry is fresh, but past
- * the TTL it asks the panel and waits for the answer: the transport's ten
- * seconds when the panel hangs.
+ * `BotConfigCache.get()` answers from memory whenever it holds a config, of any
+ * age, refreshing behind it; the one read it makes wait is a cold one with
+ * nothing saved either, and that one for `MESSAGE_CONFIG_BUDGET_MS` at most.
+ * This budget is the tighter bound on top: a toast cannot wait even that.
  *
  * `configWithin(source, budgetMs)` waits `budgetMs` at most, and gives:
  *
