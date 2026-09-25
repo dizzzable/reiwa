@@ -458,6 +458,22 @@ describe('callback routing — every page, in main.ts order', () => {
         vi.restoreAllMocks();
       }
     });
+
+    it('a menu Telegram refused to send anew is not remembered: the retry within the window gets it (review R3b-04)', async () => {
+      // The old message cannot be edited, and the new one is refused too — a
+      // flood wait, a network error: the user saw nothing, and taps again.
+      const first = await press('menu:main', DEFAULT_BOT_CONFIG, undefined, {
+        refuse: { ...UNEDITABLE, sendMessage: { error_code: 429, description: 'Too Many Requests: retry after 1' } },
+      });
+      expect(first.map((c) => c.method)).toEqual(['answerCallbackQuery', 'editMessageText', 'sendMessage']);
+
+      const retry = await press('menu:main', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
+      expect(sends(retry)).toHaveLength(1);
+      expect(String(sends(retry)[0]?.payload['text'])).toContain(WELCOME);
+      // The menu that did go out is remembered as before: a double tap on it sends nothing.
+      const doubleTap = await press('menu:main', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
+      expect(doubleTap.map((c) => c.method)).toEqual(['answerCallbackQuery']);
+    });
   });
 
   describe('an operator’s «Меню обновилось» Telegram would refuse (review R2a-08)', () => {

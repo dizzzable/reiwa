@@ -25,7 +25,8 @@
  * none in Redis — answers the `PUBLIC` stand-in (`_isFallback: true`). A Redis
  * that could not be read is not "none in Redis": the stand-in is answered
  * while it cannot say, and the copy is asked for again a moment later instead
- * of never (review R2a-01).
+ * of never (review R2a-01) — also while a read of the panel is still out, as
+ * it is for ten seconds when the panel hangs (review R3b-02).
  *
  * ── Never a long wait ────────────────────────────────────────────────────────
  *
@@ -38,7 +39,10 @@
  *    the operator's change applies on the very next read — but only
  *    `waitBudgetMs`, then it answers the policy it kept;
  *  - with nothing held, the saved copy is answered as soon as Redis gives it,
- *    and the panel is waited for `waitBudgetMs` only when there is none;
+ *    and the panel is waited for `waitBudgetMs` only when there is none. Once
+ *    a read has waited that budget on a panel read, the reads after it do not
+ *    wait on the same read again; they still ask Redis for the copy, a budget
+ *    at most, once per read of Redis;
  *  - with nothing cached and nothing saved, the stand-in used to be handed out
  *    and forgotten, so every read of an outage went upstream again. A second
  *    failure in a row now keeps answering it for {@link FALLBACK_RETRY_MS}. One
@@ -86,6 +90,19 @@ interface ReadAttempt {
   readonly done: Promise<unknown>;
   settled: boolean;
   /** A press already waited its whole budget on it: the next ones do not. */
+  waitedOut: boolean;
+}
+
+/** A read of the saved copy (`savedRead`), as the cold reads waiting on it see it. */
+interface SavedRead {
+  /** What the store answered. Never rejects. */
+  readonly copy: Promise<LastKnownGood<Record<string, unknown>> | null | LastKnownGoodUnreadable>;
+  /**
+   * A cold read came away from it with no copy — its budget ran out first, or
+   * the store had none: the reads after it do not wait on it again. One wait
+   * per read of Redis, not one per update queued behind a Redis that hangs. A
+   * copy it brings later is held all the same (`savedPolicy`).
+   */
   waitedOut: boolean;
 }
 
@@ -151,16 +168,17 @@ export class PolicyCache {
   private generation = 0;
   /**
    * The generation whose read already waited out its budget. The reads after
-   * it, while the same fetch is still out, answer at once instead of each
-   * waiting a budget of their own on the same hung panel.
+   * it, while the same fetch is still out, do not each wait a budget of their
+   * own on the same hung panel: the policy held, or with none the saved copy if
+   * Redis gives it, else the stand-in (`savedOrStandIn`).
    */
   private budgetSpent: number | null = null;
   /**
    * The saved copy's read — once per process once Redis has answered it:
    * nothing else writes it while we run. A read Redis failed is forgotten, so
-   * the next cold read asks again (`savedPolicy`).
+   * the next cold read asks again (`savedRead`).
    */
-  private saved: Promise<LastKnownGood<Record<string, unknown>> | null | LastKnownGoodUnreadable> | null = null;
+  private saved: SavedRead | null = null;
   /**
    * When the read `value` came from began; `-Infinity` for the saved copy. A
    * change reiwa heard of after it is one `value` may not have (`catchUp`).
@@ -212,17 +230,43 @@ export class PolicyCache {
       }
       return held;
     }
-    if (now < this.fallbackUntil) {
-      return FALLBACK_POLICY;
-    }
+    // The panel failed a moment ago and is not asked again yet; the copy is.
+    if (now < this.fallbackUntil) return this.savedOrStandIn();
     const startedAt = this.generation;
     const pending = this.inFlight ?? this.startRefresh();
-    if (this.budgetSpent === startedAt) return FALLBACK_POLICY;
-    const saved = this.savedPolicy().then((copy) => (copy === LAST_KNOWN_GOOD_UNREADABLE ? null : copy));
+    if (this.budgetSpent === startedAt) return this.savedOrStandIn();
+    const read = this.savedRead();
+    const saved = this.savedPolicy(read).then((copy) => (copy === LAST_KNOWN_GOOD_UNREADABLE ? null : copy));
     const first = await firstAnswer({ fetched: pending, saved, budgetMs: this.waitBudgetMs });
     if (first !== null) return first;
     if (startedAt === this.generation) this.budgetSpent = startedAt;
+    read.waitedOut = true;
     return this.value ?? FALLBACK_POLICY;
+  }
+
+  /**
+   * A cold read the panel has had its wait for: a read before this one waited
+   * its budget on the panel read still out, or the panel failed a moment ago.
+   * It used to answer the stand-in at once, the copy asked for only when the
+   * panel read failed — ten seconds with a panel that hangs, the channel gate
+   * open and `/start` past its refusals meanwhile, with Redis back after two
+   * (review R3b-02). The copy is asked for again: Redis may answer now where it
+   * could not a moment ago, and the store paces the asks (one GET per pause).
+   * The stand-in only when Redis says there is no copy, or cannot say within the
+   * budget — and a read of Redis a read already came away from empty is not
+   * waited on again (`SavedRead.waitedOut`).
+   */
+  private async savedOrStandIn(): Promise<CachedPolicy> {
+    const read = this.savedRead();
+    const copy = read.waitedOut
+      ? null
+      : await firstAnswer({
+          fetched: this.savedPolicy(read).then((saved) => (saved === LAST_KNOWN_GOOD_UNREADABLE ? null : saved)),
+          budgetMs: this.waitBudgetMs,
+        });
+    if (copy === null) read.waitedOut = true;
+    // An answer the panel gave meanwhile is newer than the copy.
+    return this.value ?? copy ?? FALLBACK_POLICY;
   }
 
   /**
@@ -322,26 +366,32 @@ export class PolicyCache {
   }
 
   /**
-   * The saved copy's payload; `null` when Redis says there is none;
-   * LAST_KNOWN_GOOD_UNREADABLE when Redis could not say. Read from the store
-   * once per process — but a read Redis failed is not kept: the next call asks
-   * again, paced by the store (`LAST_KNOWN_GOOD_RETRY_MS`).
+   * The read of the saved copy: the one out or answered, else a new one. Read
+   * from the store once per process — but a read Redis failed is not kept: the
+   * next call asks again, paced by the store (`LAST_KNOWN_GOOD_RETRY_MS`).
    */
-  private savedPolicy(): Promise<CachedPolicy | null | LastKnownGoodUnreadable> {
-    let read = this.saved;
-    if (read === null) {
-      // A store that throws despite its contract could not read either.
-      const loading = this.lastKnownGood
-        .load(PLATFORM_POLICY_LKG)
-        .catch((): LastKnownGoodUnreadable => LAST_KNOWN_GOOD_UNREADABLE);
-      read = loading;
-      this.saved = loading;
-      void loading.then((copy) => {
-        if (copy === LAST_KNOWN_GOOD_UNREADABLE && this.saved === loading) this.saved = null;
-      });
-    }
+  private savedRead(): SavedRead {
+    const held = this.saved;
+    if (held !== null) return held;
+    // A store that throws despite its contract could not read either.
+    const copy = this.lastKnownGood
+      .load(PLATFORM_POLICY_LKG)
+      .catch((): LastKnownGoodUnreadable => LAST_KNOWN_GOOD_UNREADABLE);
+    const read: SavedRead = { copy, waitedOut: false };
+    this.saved = read;
+    void copy.then((answer) => {
+      if (answer === LAST_KNOWN_GOOD_UNREADABLE && this.saved === read) this.saved = null;
+    });
+    return read;
+  }
+
+  /**
+   * The saved copy's payload, from `read`; `null` when Redis says there is none;
+   * LAST_KNOWN_GOOD_UNREADABLE when Redis could not say.
+   */
+  private savedPolicy(read: SavedRead): Promise<CachedPolicy | null | LastKnownGoodUnreadable> {
     const startedAt = this.generation;
-    return read.then((copy) => {
+    return read.copy.then((copy) => {
       if (copy === null || copy === LAST_KNOWN_GOOD_UNREADABLE) return copy;
       const policy = copy.payload as unknown as CachedPolicy;
       // Held like an answer that has gone stale: served, and refreshed from
@@ -407,7 +457,7 @@ export class PolicyCache {
         }
         return this.value;
       }
-      const saved = await this.savedPolicy();
+      const saved = await this.savedPolicy(this.savedRead());
       if (saved !== null && saved !== LAST_KNOWN_GOOD_UNREADABLE) return saved;
       if (startedAt === this.generation) {
         if (saved === LAST_KNOWN_GOOD_UNREADABLE) {

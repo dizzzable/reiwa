@@ -147,6 +147,21 @@ interface InFlightFetch {
   readonly promise: Promise<Fetched>;
 }
 
+/** A read of the saved copy (`savedRead`), as the cold reads waiting on it see it. */
+interface SavedRead {
+  /** The generation it was read for (see `generation`). */
+  readonly generation: number;
+  /** The copy; `null` when the store holds none or could not be read. Never rejects. */
+  readonly copy: Promise<BotConfig | null>;
+  /**
+   * A cold read came away from it with no copy — its budget ran out first, or
+   * the store had none: the reads after it do not wait on it again. One wait
+   * per read of Redis, not one per update queued behind a Redis that hangs. A
+   * copy it brings later is seeded all the same (`loadPersisted`).
+   */
+  waitedOut: boolean;
+}
+
 export class BotConfigCache {
   private readonly fetcher: () => Promise<unknown>;
   private readonly hydrator: LocalePackHydrator;
@@ -185,11 +200,12 @@ export class BotConfigCache {
    * whether the first read found the copy or the failed fetch went looking for
    * it. Keyed by the generation for the reason `generation` gives.
    */
-  private saved: { readonly generation: number; readonly copy: Promise<BotConfig | null> } | null = null;
+  private saved: SavedRead | null = null;
   /**
    * The generation whose cold read already waited out its budget. The reads
-   * after it, while the same fetch is still out, answer the fallback at once
-   * instead of each waiting a budget of their own on the same hung panel.
+   * after it, while the same fetch is still out, do not each wait a budget of
+   * their own on the same hung panel: the saved copy if Redis gives it, else
+   * the fallback (`savedOrFallback`).
    */
   private budgetSpent: number | null = null;
   /** The newest read of the panel begun, whoever began it (`catchUp`). */
@@ -240,6 +256,10 @@ export class BotConfigCache {
    *  - Nothing held and nothing saved — a first boot with the panel away — is
    *    the one read that waits, and only `firstLoadBudgetMs`: then the
    *    fallback, while the read goes on and lands in the entry when it does.
+   *  - The reads after it, while that read is out or in the hold-off after it
+   *    failed, do not wait for the panel; they still ask Redis for the copy,
+   *    which may answer now where it could not a moment ago — a budget at most,
+   *    once per read of Redis (`savedOrFallback`).
    *
    * Translator overrides are pushed via `hydrator.setOverrides()` on
    * every successful refresh, so admin edits propagate within `ttlMs`
@@ -251,7 +271,7 @@ export class BotConfigCache {
       if (Date.now() - entry.fetchedAt >= this.ttlMs && !this.holdingOff()) void this.fetchOnce();
       return entry.data;
     }
-    if (this.holdingOff()) return this.servedOnFailure(this.generation);
+    if (this.holdingOff()) return this.savedOrFallback(this.generation);
     return this.firstLoad();
   }
 
@@ -259,15 +279,36 @@ export class BotConfigCache {
   private async firstLoad(): Promise<BotConfig> {
     const startedAt = this.generation;
     const fetched = this.fetchOnce().then((outcome) => outcome.config);
-    if (this.budgetSpent === startedAt) return this.fallback;
+    if (this.budgetSpent === startedAt) return this.savedOrFallback(startedAt);
+    const saved = this.savedRead(startedAt);
     const first = await firstAnswer({
       fetched,
-      saved: this.savedCopy(startedAt),
+      saved: saved.copy,
       budgetMs: this.firstLoadBudgetMs,
     });
     if (first !== null) return first;
     if (startedAt === this.generation) this.budgetSpent = startedAt;
+    saved.waitedOut = true;
     return this.entry?.data ?? this.fallback;
+  }
+
+  /**
+   * Nothing held, and the panel has had its wait: a read before this one waited
+   * its budget on the fetch still out, or a fetch failed within the hold-off.
+   * The budget-spent read used to answer the fallback at once, the copy asked
+   * for only when the fetch failed — ten seconds of stock buttons with a panel
+   * that hangs, with Redis back after two (review R3b-02) — and the hold-off
+   * read waited on a read of Redis with no bound, the two seconds ioredis gives
+   * a command when Redis is away. The copy is asked for again (the store paces
+   * the asks, one GET per pause), a budget at most, and a read of Redis a read
+   * already came away from empty is not waited on again (`SavedRead.waitedOut`).
+   */
+  private async savedOrFallback(startedAt: number): Promise<BotConfig> {
+    const saved = this.savedRead(startedAt);
+    const copy = saved.waitedOut ? null : await firstAnswer({ fetched: saved.copy, budgetMs: this.firstLoadBudgetMs });
+    if (copy === null) saved.waitedOut = true;
+    // An answer the panel gave meanwhile is newer than the copy.
+    return this.entry?.data ?? copy ?? this.fallback;
   }
 
   /**
@@ -466,36 +507,38 @@ export class BotConfigCache {
     }
   }
 
-  /** What a read gets when the panel did not answer. */
+  /** What a fetch the panel did not answer serves. */
   private async servedOnFailure(startedAt: number): Promise<BotConfig> {
     if (this.entry !== null) return this.entry.data;
     // Cold start with a failed upstream fetch: prefer the persisted
     // last-known-good config (correct branding + banner) over the
     // hardcoded default (`loadPersisted` seeds it as the entry).
-    return (await this.savedCopy(startedAt)) ?? this.fallback;
+    return (await this.savedRead(startedAt).copy) ?? this.fallback;
   }
 
   /**
-   * The saved copy for a read begun in `startedAt`, read from the store once per
-   * generation — once the store has ANSWERED. A read Redis failed is not "no
-   * copy": it is forgotten, and the next read that looks for the copy asks
-   * again (the store paces those asks, `LAST_KNOWN_GOOD_RETRY_MS`). Nothing
-   * bumps the generation while the panel is down, so a failed first read kept
-   * used to hold the stock buttons for the whole outage (review R2a-01).
+   * The read of the saved copy for a read begun in `startedAt`, from the store
+   * once per generation — once the store has ANSWERED. A read Redis failed is
+   * not "no copy": it is forgotten, and the next read that looks for the copy
+   * asks again (the store paces those asks, `LAST_KNOWN_GOOD_RETRY_MS`).
+   * Nothing bumps the generation while the panel is down, so a failed first
+   * read kept used to hold the stock buttons for the whole outage (review
+   * R2a-01).
    */
-  private savedCopy(startedAt: number): Promise<BotConfig | null> {
-    const saved = this.saved;
-    if (saved !== null && saved.generation === startedAt) return saved.copy;
-    const read = this.loadPersisted(startedAt);
-    const slot = {
+  private savedRead(startedAt: number): SavedRead {
+    const held = this.saved;
+    if (held !== null && held.generation === startedAt) return held;
+    const outcome = this.loadPersisted(startedAt);
+    const read: SavedRead = {
       generation: startedAt,
-      copy: read.then((outcome) => (outcome === LAST_KNOWN_GOOD_UNREADABLE ? null : outcome)),
+      copy: outcome.then((persisted) => (persisted === LAST_KNOWN_GOOD_UNREADABLE ? null : persisted)),
+      waitedOut: false,
     };
-    this.saved = slot;
-    void read.then((outcome) => {
-      if (outcome === LAST_KNOWN_GOOD_UNREADABLE && this.saved === slot) this.saved = null;
+    this.saved = read;
+    void outcome.then((persisted) => {
+      if (persisted === LAST_KNOWN_GOOD_UNREADABLE && this.saved === read) this.saved = null;
     });
-    return slot.copy;
+    return read;
   }
 
   /**

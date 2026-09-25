@@ -896,6 +896,7 @@ async function answerPress(
  * second press on it within this window sends nothing (review R2a-09). A
  * double tap is under a second apart; updates are handled one at a time, so the
  * second waits for the first to have sent its menu — seconds, with a banner.
+ * A menu Telegram refused to send is not kept (review R3b-04).
  */
 export const MENU_SENT_ANEW_WINDOW_MS = 10_000;
 
@@ -1030,6 +1031,10 @@ export async function showMainMenu(ctx: BotContext, deps: PageDeps, press: MainM
       }
       // Not the menu's fault, and not the user's: that message cannot show it.
       await sendWelcomeScreen(ctx, deps).catch((sendErr: unknown) => {
+        // Nothing reached the user, so nothing is remembered: the tap they try
+        // again within the window gets the menu, not only an answer (review
+        // R3b-04).
+        if (pressed !== null) menuSentAnewFor.delete(pressed);
         deps.logger?.warn({ err: sendErr, telegramId: ctx.from?.id }, 'menu:main: the menu could not be sent anew');
       });
       return;

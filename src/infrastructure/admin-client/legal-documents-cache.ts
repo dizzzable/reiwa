@@ -22,7 +22,9 @@
  * at a time, so a tap that waits on the panel holds every chat behind it. A
  * locale the cache holds is answered at once, whatever its age — past the TTL
  * or after an operator's edit, a refresh runs behind it (stale-while-
- * revalidate). Only a locale never read yet waits, and only `waitBudgetMs`.
+ * revalidate). Only a locale never read yet waits, and only `waitBudgetMs`;
+ * the taps after it do not wait on the same panel read, but still ask Redis for
+ * the saved copy — a budget at most, once per read of Redis (`savedOrNone`).
  * The press itself may wait a moment longer for a change reiwa has already
  * heard of — `catchUp`, which the bot's freshness middleware calls before the
  * rules screen, within the press's budget.
@@ -105,6 +107,19 @@ interface SavedDocuments {
   readonly version: string;
 }
 
+/** A read of one language's saved copy (`savedRead`), as the taps waiting on it see it. */
+interface SavedRead {
+  /** What the store answered. Never rejects. */
+  readonly copy: Promise<SavedDocuments | null | LastKnownGoodUnreadable>;
+  /**
+   * A tap came away from it with no copy — its budget ran out first, or the
+   * store had none: the taps after it do not wait on it again. One wait per read
+   * of Redis, not one per update queued behind a Redis that hangs. A copy it
+   * brings later is held all the same (`savedCopy`).
+   */
+  waitedOut: boolean;
+}
+
 export class LegalDocumentsCache {
   private readonly values = new Map<string, Entry>();
   private readonly inFlight = new Map<string, Promise<readonly LegalDocument[]>>();
@@ -128,9 +143,9 @@ export class LegalDocumentsCache {
   /**
    * Per locale: the saved copy's read — once per process once Redis has
    * answered it, nothing else writes it while the bot runs. A read Redis failed
-   * is forgotten, and the next tap asks again (`savedCopy`).
+   * is forgotten, and the next tap asks again (`savedRead`).
    */
-  private readonly saved = new Map<string, Promise<SavedDocuments | null | LastKnownGoodUnreadable>>();
+  private readonly saved = new Map<string, SavedRead>();
   /**
    * Per locale: the version the store holds, as far as this process knows — a
    * copy is written only when it moves. Set only by a save Redis took (or by the
@@ -161,13 +176,34 @@ export class LegalDocumentsCache {
     }
     const startedAt = this.generation;
     const pending = this.inFlight.get(locale) ?? this.startRefresh(locale);
-    if (this.budgetSpent.get(locale) === startedAt) return this.values.get(locale)?.documents ?? [];
+    if (this.budgetSpent.get(locale) === startedAt) return this.savedOrNone(locale);
     // The saved copy as soon as Redis gives it; the panel within the budget
     // when there is none.
-    const first = await firstAnswer({ fetched: pending, saved: this.savedCopy(locale), budgetMs: this.waitBudgetMs });
+    const read = this.savedRead(locale);
+    const first = await firstAnswer({ fetched: pending, saved: this.savedCopy(locale, read), budgetMs: this.waitBudgetMs });
     if (first !== null) return first;
     if (startedAt === this.generation) this.budgetSpent.set(locale, startedAt);
+    read.waitedOut = true;
     return this.values.get(locale)?.documents ?? [];
+  }
+
+  /**
+   * A tap on a locale never read, after one tap waited its budget on the panel
+   * read still out. It used to answer "no documents" at once — the legacy rules
+   * link — the copy asked for only when the panel read failed: ten seconds with
+   * a panel that hangs, with Redis back after two (review R3b-02). The copy is
+   * asked for again (the store paces the asks, one GET per pause), a budget at
+   * most, and a read of Redis a tap already came away from empty is not waited
+   * on again (`SavedRead.waitedOut`).
+   */
+  private async savedOrNone(locale: string): Promise<readonly LegalDocument[]> {
+    const read = this.savedRead(locale);
+    const copy = read.waitedOut
+      ? null
+      : await firstAnswer({ fetched: this.savedCopy(locale, read), budgetMs: this.waitBudgetMs });
+    if (copy === null) read.waitedOut = true;
+    // Documents the panel answered meanwhile are newer than the copy.
+    return this.values.get(locale)?.documents ?? copy ?? [];
   }
 
   /**
@@ -298,39 +334,45 @@ export class LegalDocumentsCache {
         return stale.documents;
       }
       // Nothing held — a restart during an outage: the documents saved before it.
-      return (await this.savedCopy(locale)) ?? [];
+      return (await this.savedCopy(locale, this.savedRead(locale))) ?? [];
     }
   }
 
   /**
-   * The documents saved for `locale`, or `null` — also while Redis cannot be
-   * read, which is NOT remembered as "no copy" (review R2a-01): the next tap
-   * asks again, paced by the store. Read from the store once per process once
-   * Redis answered, and held — like documents gone stale, refreshed on the
-   * next tap — only while nothing else is, and not by a read an invalidation
-   * overtook.
+   * The read of the documents saved for `locale`: the one out or answered, else
+   * a new one. From the store once per process once Redis answered; a read
+   * Redis failed is NOT remembered as "no copy" (review R2a-01): the next tap
+   * asks again, paced by the store.
    */
-  private savedCopy(locale: string): Promise<readonly LegalDocument[] | null> {
-    let copy = this.saved.get(locale);
-    if (copy === undefined) {
-      const loading: Promise<SavedDocuments | null | LastKnownGoodUnreadable> = this.lastKnownGood
-        .load(legalDocumentsLastKnownGood(locale))
-        .then(
-          (record) =>
-            record === null || record === LAST_KNOWN_GOOD_UNREADABLE
-              ? record
-              : { documents: record.payload as unknown as readonly LegalDocument[], version: record.hash },
-          // A store that throws despite its contract could not read either.
-          (): LastKnownGoodUnreadable => LAST_KNOWN_GOOD_UNREADABLE,
-        );
-      copy = loading;
-      this.saved.set(locale, loading);
-      void loading.then((record) => {
-        if (record === LAST_KNOWN_GOOD_UNREADABLE && this.saved.get(locale) === loading) this.saved.delete(locale);
-      });
-    }
+  private savedRead(locale: string): SavedRead {
+    const held = this.saved.get(locale);
+    if (held !== undefined) return held;
+    const copy: Promise<SavedDocuments | null | LastKnownGoodUnreadable> = this.lastKnownGood
+      .load(legalDocumentsLastKnownGood(locale))
+      .then(
+        (record) =>
+          record === null || record === LAST_KNOWN_GOOD_UNREADABLE
+            ? record
+            : { documents: record.payload as unknown as readonly LegalDocument[], version: record.hash },
+        // A store that throws despite its contract could not read either.
+        (): LastKnownGoodUnreadable => LAST_KNOWN_GOOD_UNREADABLE,
+      );
+    const read: SavedRead = { copy, waitedOut: false };
+    this.saved.set(locale, read);
+    void copy.then((record) => {
+      if (record === LAST_KNOWN_GOOD_UNREADABLE && this.saved.get(locale) === read) this.saved.delete(locale);
+    });
+    return read;
+  }
+
+  /**
+   * The documents saved for `locale`, from `read`, or `null` — also while Redis
+   * cannot be read. Held — like documents gone stale, refreshed on the next tap
+   * — only while nothing else is, and not by a read an invalidation overtook.
+   */
+  private savedCopy(locale: string, read: SavedRead): Promise<readonly LegalDocument[] | null> {
     const startedAt = this.generation;
-    return copy.then((record) => {
+    return read.copy.then((record) => {
       if (record === null || record === LAST_KNOWN_GOOD_UNREADABLE) return null;
       // What the store holds, unless this process has written since.
       if (!this.storedVersion.has(locale)) this.storedVersion.set(locale, record.version);
