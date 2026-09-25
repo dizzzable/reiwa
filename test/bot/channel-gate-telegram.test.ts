@@ -129,7 +129,6 @@ function panelPolicy(overrides: Record<string, unknown> = {}): Record<string, un
     accessMode: 'PUBLIC',
     inviteModeStartedAt: null,
     defaultCurrency: 'RUB',
-    renewalAddOns: false,
     ...overrides,
   };
 }
