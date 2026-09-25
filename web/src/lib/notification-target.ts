@@ -45,6 +45,13 @@ export function resolveNotificationTarget(
     };
   }
 
+  // «Докупка не применена» (panel 0.9.7.70): paid, but the subscription was no
+  // longer active → support, like its «💬 Поддержка» button and its push. It
+  // only shares the prefix below; that subscription's add-on page has nothing.
+  if (t === 'addon_not_applied') {
+    return { kind: 'route', path: '/support' };
+  }
+
   // A paid add-on three days before it ends, or when it has (`addon_*`, all
   // six) → the add-on page on that subscription, where it is bought again —
   // the address the notice's «Купить снова» and its push open.

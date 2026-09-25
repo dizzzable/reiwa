@@ -31,6 +31,13 @@ describe("a tap on an add-on’s notice", () => {
     }
   });
 
+  it("«Докупка не применена» (panel 0.9.7.70) opens support, not the add-on page its prefix would pick", () => {
+    expect(resolveNotificationTarget("addon_not_applied", { subscriptionId: "cmsub0001abcdefghijklmno" })).toEqual({
+      kind: "route",
+      path: "/support",
+    });
+  });
+
   it("opens the add-on page itself when it names none", () => {
     for (const payload of [undefined, null, {}, { subscriptionId: 42 }, { subscriptionId: "" }]) {
       expect(resolveNotificationTarget("addon_ended", payload)).toEqual({ kind: "route", path: "/addons" });
