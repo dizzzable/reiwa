@@ -29,10 +29,26 @@
  * widens to the other half, which is reported too. Every round widens by at
  * least one field, so it ends.
  *
+ * The fields made of independent entries — plan card styles, icon
+ * decorations, custom icons, card effect slots, navigation
+ * (`PUBLIC_CONFIG_KEYED_FIELDS`) — are taken ENTRY by entry (owner-approved,
+ * CD2a §9.1): a refused entry takes back only its own previous value, or is
+ * left out, and every other entry is the operator's new one
+ * (`splitPublicConfigKeyedField`). Taken whole, one stale plan card style kept
+ * all 500 previous ones. Each refused entry is reported by its own key. A field
+ * that cannot be taken apart (the wrong kind of collection, too many entries)
+ * falls back whole, as before.
+ *
+ * Whatever is merged is judged by the WHOLE guard again before it is served:
+ * the body, the saved copy, the ETag behind a 304 and the browser's copy all
+ * come from a payload that passed it whole, so no refused value — a whole
+ * field or one entry — can reach any of them.
+ *
  * Pure and synchronous: the route loads `previous` and does the reporting.
  */
 import {
   assessPublicConfigFields,
+  splitPublicConfigKeyedField,
   type PublicConfigFieldRejection,
   type PublicConfigRejection,
   type PublicConfigSnapshot,
@@ -114,11 +130,31 @@ export function applyPublicConfigFieldFallback(
     return { usable: true, snapshot: incoming as PublicConfigSnapshot, rejected: [] };
   }
 
-  const rejected: PublicConfigFieldRejection[] = [...assessed.rejected];
-  const takenBack = new Set<string>(rejected.flatMap((rejection) => rejection.fields));
   const source = incoming as Record<string, unknown>;
+  const rejected: PublicConfigFieldRejection[] = [];
+  const takenBack = new Set<string>();
+  /** Keyed fields taken entry by entry: field → what is served in it. */
+  const split = new Map<string, unknown>();
+  for (const rejection of assessed.rejected) {
+    const [field] = rejection.fields;
+    const entrywise =
+      rejection.fields.length === 1 && field !== undefined
+        ? splitPublicConfigKeyedField(
+            field,
+            fieldValue(source, field),
+            previous === null ? undefined : fieldValue(previous, field),
+          )
+        : null;
+    if (field !== undefined && entrywise !== null) {
+      split.set(field, entrywise.value);
+      rejected.push(...entrywise.refused);
+      continue;
+    }
+    rejected.push(rejection);
+    for (const taken of rejection.fields) takenBack.add(taken);
+  }
   for (;;) {
-    const merged = withFieldsTakenBack(source, takenBack, previous);
+    const merged = withFieldsTakenBack(source, takenBack, split, previous);
     const again = assessPublicConfigFields(merged);
     if (again.shape !== null) return { usable: false, rejection: again.shape };
     if (again.rejected.length === 0) {
@@ -126,7 +162,8 @@ export function applyPublicConfigFieldFallback(
     }
     // A value taken back that disagrees with a new one it must match: take
     // the other half back as well. Nothing new to take back means the values
-    // taken back fail themselves — there is nothing left to serve from.
+    // taken back fail themselves — there is nothing left to serve from. A
+    // split field failing here is taken back whole like any other.
     const widening = again.rejected.filter((rejection) =>
       rejection.fields.some((field) => !takenBack.has(field)),
     );
@@ -140,15 +177,33 @@ export function applyPublicConfigFieldFallback(
   }
 }
 
+/** A top-level field of a payload (`branding.x` or a root key); own properties only. */
+function fieldValue(payload: Readonly<Record<string, unknown>>, field: string): unknown {
+  if (field.startsWith(BRANDING_PREFIX)) {
+    const branding = payload["branding"];
+    const key = field.slice(BRANDING_PREFIX.length);
+    return typeof branding === "object" && branding !== null && Object.hasOwn(branding, key)
+      ? (branding as Record<string, unknown>)[key]
+      : undefined;
+  }
+  return Object.hasOwn(payload, field) ? payload[field] : undefined;
+}
+
 function withFieldsTakenBack(
   incoming: Record<string, unknown>,
   fields: ReadonlySet<string>,
+  split: ReadonlyMap<string, unknown>,
   previous: PublicConfigSnapshot | null,
 ): Record<string, unknown> {
   const root: Record<string, unknown> = { ...incoming };
   const branding: Record<string, unknown> = {
     ...(incoming["branding"] as Record<string, unknown>),
   };
+  // Entry by entry first; a field taken back whole below overrides it.
+  for (const [field, value] of split) {
+    if (field.startsWith(BRANDING_PREFIX)) branding[field.slice(BRANDING_PREFIX.length)] = value;
+    else root[field] = value;
+  }
   for (const field of fields) {
     if (field.startsWith(BRANDING_PREFIX)) {
       takeBack(

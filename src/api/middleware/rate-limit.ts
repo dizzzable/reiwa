@@ -31,6 +31,9 @@ import {
 // reached via navigation), or the classic `Accept: text/html`.
 const OAUTH_NAVIGATION_PATH = /^\/api\/v1\/auth\/ext\/[^/]+\/(start|callback)\b/;
 
+/** `GET /api/v1/config-versions` exactly (a query string allowed) — see `apiLimiter`. */
+const CONFIG_VERSIONS_PATH = /^\/api\/v1\/config-versions(?:[?#]|$)/;
+
 export function isBrowserNavigation(req: Request): boolean {
   if (req.method !== "GET") {
     return false;
@@ -118,10 +121,16 @@ export const apiLimiter = rateLimit({
   //   by the per-route Redis `loginRateLimiter`, which renders the localized
   //   waiting screen. Letting the generic limiter fire first would race it and
   //   could still surface raw JSON, so defer entirely to the per-route gate.
+  // - The settings version check (GET): every visible tab asks it once a
+  //   minute (`web/src/lib/config-versions.ts`), and it is answered from the
+  //   process's memory — nothing upstream to protect. Counted, many open
+  //   cabinets behind one carrier NAT address spent the shared budget on it and
+  //   real calls got 429 (review R2a-10).
   skip: (req) =>
     req.originalUrl.startsWith("/api/v1/realtime/stream") ||
     req.originalUrl.startsWith("/api/v1/webhooks/rezeis") ||
-    (req.method === "GET" && OAUTH_NAVIGATION_PATH.test(req.originalUrl)),
+    (req.method === "GET" && OAUTH_NAVIGATION_PATH.test(req.originalUrl)) ||
+    (req.method === "GET" && CONFIG_VERSIONS_PATH.test(req.originalUrl)),
 });
 
 /**

@@ -30,5 +30,7 @@ export const ReiwaSystemEventType = {
 
   // ── Configuration / seeding ───────────────────────────────────────────
   CONFIG_DEGRADED_DEFAULTS_USED: 'reiwa.config.degraded_defaults_used',
+  /** A settings copy over the saved-copy cap was not written; Redis keeps an older one. */
+  CONFIG_COPY_NOT_SAVED: 'reiwa.config.copy_not_saved',
 } as const;
 export type ReiwaSystemEventType = (typeof ReiwaSystemEventType)[keyof typeof ReiwaSystemEventType];

@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { PolicyWaitNote } from "@/components/policy-wait-note";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { BOTTOM_NAV_CONTENT_INSET } from "@/components/layout/bottom-nav-metrics";
 import { SideNav } from "@/components/layout/side-nav";
@@ -111,11 +112,15 @@ function detectFormFactor(): FormFactor {
 
 const SURFACE_REPORTED_KEY = "reiwa_surface_reported";
 
-/** The shell's own spinner, on the operator's launch background. */
-function ShellLoading() {
+/**
+ * The shell's own spinner, on the operator's launch background. `policyWait`:
+ * the wait is for the access mode (the claim gate below), and one that goes on
+ * says why (`PolicyWaitNote`).
+ */
+function ShellLoading({ policyWait = false }: { readonly policyWait?: boolean } = {}) {
   return (
     <div
-      className="relative flex h-dvh items-center justify-center overflow-hidden"
+      className="relative flex h-dvh flex-col items-center justify-center gap-4 overflow-hidden"
       data-testid="shell-loading"
       style={{
         backgroundColor:
@@ -132,6 +137,11 @@ function ShellLoading() {
         className="relative z-10 size-8 animate-spin rounded-full border-2 border-t-transparent"
         style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
       />
+      {policyWait && (
+        <div className="relative z-10">
+          <PolicyWaitNote />
+        </div>
+      )}
     </div>
   );
 }
@@ -372,7 +382,7 @@ export default function StealthLayout() {
   const webLoginUnfinished =
     session.webAccount === null || (session.webAccount != null && !session.webAccount.login);
   if (platformPolicy === undefined && hasTelegramCredential && webLoginUnfinished) {
-    return <ShellLoading />;
+    return <ShellLoading policyWait />;
   }
 
   // Mandatory claim gate (Property 1): a Telegram-first user authenticated into

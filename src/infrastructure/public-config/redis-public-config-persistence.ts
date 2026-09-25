@@ -19,7 +19,10 @@ import {
   type PublicConfigSnapshot,
 } from "../../application/ports/public-config-persistence.port.js";
 import type { LoggerPort } from "../../application/ports/logger.port.js";
+import { configVersionOf } from "../config-versions/config-version.js";
 import {
+  LAST_KNOWN_GOOD_DEFAULT_MAX_BYTES,
+  LAST_KNOWN_GOOD_UNREADABLE,
   RedisLastKnownGoodStore,
   type LastKnownGoodGroup,
   type LastKnownGoodStorePort,
@@ -82,7 +85,9 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
    */
   async loadServed(): Promise<{ readonly snapshot: PublicConfigSnapshot; readonly version: string } | null> {
     const saved = await this.store.load(PUBLIC_CONFIG_LKG);
-    if (saved === null) return null;
+    // Unreadable: nothing to serve now. The route remembers no failure, so its
+    // next read asks again.
+    if (saved === null || saved === LAST_KNOWN_GOOD_UNREADABLE) return null;
     const rejection = describePublicConfigSnapshot(saved.payload);
     if (rejection !== null) {
       this.notifier.rejected("redis-load", rejection);
@@ -105,6 +110,15 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
     // fallback kept a previous value the snapshot's own hash is not that
     // version, and a restart must report what the panel sent, or the panel's
     // delivery check would read every partial accept as "not applied".
-    await this.store.save(PUBLIC_CONFIG_LKG, snapshot, version);
+    const outcome = await this.store.save(PUBLIC_CONFIG_LKG, snapshot, version);
+    // Over the cap: the copy a restart serves stays an older one. Loud, with
+    // the size — the operator is the one who can make the appearance smaller.
+    if (outcome === "too-large") {
+      this.notifier.copyNotSaved({
+        version: version ?? configVersionOf(snapshot),
+        bytes: Buffer.byteLength(JSON.stringify(snapshot), "utf8"),
+        maxBytes: PUBLIC_CONFIG_LKG.maxBytes ?? LAST_KNOWN_GOOD_DEFAULT_MAX_BYTES,
+      });
+    }
   }
 }

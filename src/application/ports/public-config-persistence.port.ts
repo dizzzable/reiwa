@@ -206,6 +206,208 @@ export function assessPublicConfigFields(value: unknown): PublicConfigAssessment
 }
 
 /**
+ * One entry of a keyed field the guard refused, judged on its own — the
+ * per-entry fallback (`infrastructure/public-config/field-fallback.ts`).
+ * `entry` is the entry's key in a map or its index in a list; `key` spells it
+ * out for the operator (`branding.planCardStyles.<planId>`, `customIcons[3]`).
+ */
+export interface PublicConfigEntryRejection extends PublicConfigFieldRejection {
+  readonly entry: string | number;
+}
+
+/** A keyed field taken entry by entry: what to serve, and the entries not taken. */
+export interface PublicConfigKeyedFieldSplit {
+  /** The field as served: every new entry that passes, and each refused one's own previous value, if any. */
+  readonly value: unknown;
+  readonly refused: readonly PublicConfigEntryRejection[];
+}
+
+/**
+ * The fields made of independent entries — a map of plan styles, a list of
+ * icons — which the per-field fallback takes entry by entry (owner-approved,
+ * 25.09.2026, CD2a §9.1). Taken whole, one unusable entry cost the operator
+ * every other entry of the field: one stale plan card style kept all 500
+ * previous ones.
+ */
+export const PUBLIC_CONFIG_KEYED_FIELDS: readonly string[] = [
+  "branding.planCardStyles",
+  "branding.iconDecor",
+  "customIcons",
+  "branding.cardEffectsByIndex",
+  "branding.navItems",
+];
+
+/**
+ * `field` of `incoming`, entry by entry, with the guard's own entry checks:
+ *
+ *  - every entry that passes is taken as the panel sent it, in its order;
+ *  - a refused entry takes back ITS OWN previous value — the entry of
+ *    `previous` (the field as the cabinet served it last) under the same key,
+ *    the same `id`, or at the same position for the card slots — or is left
+ *    out when it had none. A card slot left out would move every slot after it
+ *    to another card, so it becomes `{ mode: "inherit" }` instead: the card
+ *    wears the global effect, as a card with no slot of its own does;
+ *  - a navigation entry whose destination is already listed is refused, the
+ *    first one kept.
+ *
+ * `null` when the field cannot be taken apart: it is not the right kind of
+ * collection at all, or it has more entries than allowed (which ones to drop is
+ * not the cabinet's to guess). It then falls back whole, as every other field.
+ *
+ * Keys are compared as own properties only, and the map is rebuilt with
+ * `Object.fromEntries`, so a key such as `__proto__` or `constructor` stays an
+ * ordinary entry — never a prototype, never a value found on one. The caller
+ * judges the merged payload with the whole guard again before serving it.
+ */
+export function splitPublicConfigKeyedField(
+  field: string,
+  incoming: unknown,
+  previous: unknown,
+): PublicConfigKeyedFieldSplit | null {
+  const rule = keyedFieldRule(field);
+  if (rule === null) return null;
+  const refused: PublicConfigEntryRejection[] = [];
+  const refuse = (key: string, entry: string | number, value: unknown, reason: string = rule.reason): void => {
+    refused.push({ key, reason, found: describeValue(value), fields: [field], entry });
+  };
+
+  if (rule.kind === "map") {
+    if (!isRecord(incoming)) return null;
+    const entries = Object.entries(incoming);
+    if (entries.length > rule.maxEntries) return null;
+    const served = isRecord(previous) ? previous : null;
+    const taken: [string, unknown][] = [];
+    for (const [key, value] of entries) {
+      if (rule.isKey(key) && rule.isEntry(value)) {
+        taken.push([key, value]);
+        continue;
+      }
+      refuse(`${field}.${key}`, key, value);
+      if (served !== null && Object.hasOwn(served, key) && rule.isKey(key) && rule.isEntry(served[key])) {
+        taken.push([key, served[key]]);
+      }
+    }
+    return { value: Object.fromEntries(taken), refused };
+  }
+
+  if (!Array.isArray(incoming) || incoming.length > rule.maxEntries) return null;
+  const served: readonly unknown[] = Array.isArray(previous) ? previous : [];
+
+  if (rule.kind === "slots") {
+    const value = incoming.map((slot: unknown, index: number) => {
+      if (rule.isEntry(slot)) return slot;
+      refuse(`${field}[${index}]`, index, slot);
+      const own = index < served.length ? served[index] : undefined;
+      return own !== undefined && rule.isEntry(own) ? own : { mode: "inherit" };
+    });
+    return { value, refused };
+  }
+
+  const taken: unknown[] = [];
+  const listed = new Set<string>();
+  incoming.forEach((item: unknown, index: number) => {
+    const id = entryIdOf(item);
+    const duplicate = rule.uniqueIds && id !== null && listed.has(id);
+    if (rule.isEntry(item) && !duplicate) {
+      taken.push(item);
+      if (id !== null) listed.add(id);
+      return;
+    }
+    refuse(`${field}[${index}]`, index, item, duplicate ? "duplicate-destination-id" : rule.reason);
+    // Its own previous value: the served entry with the same id — unless that
+    // id is taken already, or the entry names none.
+    if (id === null || (rule.uniqueIds && listed.has(id))) return;
+    const own = served.find((candidate) => entryIdOf(candidate) === id && rule.isEntry(candidate));
+    if (own !== undefined) {
+      taken.push(own);
+      listed.add(id);
+    }
+  });
+  return { value: taken, refused };
+}
+
+/** How one keyed field is taken apart: its container, its limit, its entry check. */
+type KeyedFieldRule =
+  | {
+      readonly kind: "map";
+      readonly maxEntries: number;
+      readonly isKey: (key: string) => boolean;
+      readonly isEntry: (value: unknown) => boolean;
+      readonly reason: string;
+    }
+  | {
+      readonly kind: "list";
+      readonly maxEntries: number;
+      readonly isEntry: (value: unknown) => boolean;
+      readonly reason: string;
+      /** Entries are told apart by `id`, and an id may be listed once. */
+      readonly uniqueIds: boolean;
+    }
+  | {
+      /** Positional: entry `i` belongs to subscription card `i`. */
+      readonly kind: "slots";
+      readonly maxEntries: number;
+      readonly isEntry: (value: unknown) => boolean;
+      readonly reason: string;
+    };
+
+/**
+ * The same limits and entry checks the whole-field checks above apply — a
+ * split cannot take what the guard would refuse. The reason codes are the
+ * whole-field ones, which the panel already has words for.
+ */
+function keyedFieldRule(field: string): KeyedFieldRule | null {
+  switch (field) {
+    case "branding.planCardStyles":
+      return {
+        kind: "map",
+        maxEntries: MAX_PLAN_CARD_STYLES,
+        isKey: isPlanCardStyleKey,
+        isEntry: isPlanCardStyle,
+        reason: "not-a-valid-plan-card-style-map",
+      };
+    case "branding.iconDecor":
+      return {
+        kind: "map",
+        maxEntries: MAX_ICON_DECOR_ENTRIES,
+        isKey: isIconDecorKey,
+        isEntry: isIconDecorEntry,
+        reason: "not-a-valid-icon-decor-map",
+      };
+    case "customIcons":
+      return {
+        kind: "list",
+        maxEntries: Number.POSITIVE_INFINITY,
+        isEntry: isCustomIcon,
+        reason: "not-a-valid-custom-icon",
+        uniqueIds: false,
+      };
+    case "branding.navItems":
+      return {
+        kind: "list",
+        maxEntries: NAV_DESTINATIONS.size,
+        isEntry: isNavItem,
+        reason: "not-a-valid-nav-item",
+        uniqueIds: true,
+      };
+    case "branding.cardEffectsByIndex":
+      return {
+        kind: "slots",
+        maxEntries: MAX_CARD_EFFECT_SLOTS,
+        isEntry: isCardEffectSlot,
+        reason: "not-a-valid-card-effect-slot",
+      };
+    default:
+      return null;
+  }
+}
+
+/** An entry's `id`, when it has a string one. */
+function entryIdOf(value: unknown): string | null {
+  return isRecord(value) && typeof value["id"] === "string" ? value["id"] : null;
+}
+
+/**
  * Every top-level field the guard judges — what the per-field fallback can
  * take back, and what the panel's notice must have a name for
  * (`test/web/branding-delivery-panel-parity.test.ts`).
@@ -587,17 +789,22 @@ function isAppBackgroundTexture(value: unknown): boolean {
   );
 }
 
+/** Most entries a `planCardStyles` map may hold. */
+const MAX_PLAN_CARD_STYLES = 500;
+
+/** A plan id as a `planCardStyles` key. */
+function isPlanCardStyleKey(planId: string): boolean {
+  return planId.length > 0 && planId.length <= 64;
+}
+
 function hasOptionalPlanCardStyles(record: Record<string, unknown>, key: string): boolean {
   const value = record[key];
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
   const entries = Object.entries(value);
   return (
-    entries.length <= 500 &&
-    entries.every(
-      ([planId, style]) =>
-        planId.length > 0 && planId.length <= 64 && isPlanCardStyle(style),
-    )
+    entries.length <= MAX_PLAN_CARD_STYLES &&
+    entries.every(([planId, style]) => isPlanCardStyleKey(planId) && isPlanCardStyle(style))
   );
 }
 
@@ -643,14 +850,16 @@ function describeNavItems(branding: Record<string, unknown>): PublicConfigReject
   // is a LAYOUT question, and the answer is "it looks tight". Structural
   // validity is what this guard decides, and its verdict then cost the operator
   // every colour, gradient and effect they had ever configured — today, with
-  // the per-field fallback, it still costs them the navigation they saved. A
-  // rule whose worst case is a crowded bar must never be enforced with that
-  // penalty.
+  // the per-entry fallback, it still costs them the entries it refuses. A rule
+  // whose worst case is a crowded bar must never be enforced with that penalty.
   // What genuinely makes `navItems` unusable is checked above and still is:
   // wrong shape, unknown destination, duplicate id, more entries than
   // destinations exist.
   return null;
 }
+
+/** Most slots `cardEffectsByIndex` may hold — one per subscription card. */
+const MAX_CARD_EFFECT_SLOTS = 20;
 
 function describeCardEffectSlots(
   branding: Record<string, unknown>,
@@ -659,8 +868,12 @@ function describeCardEffectSlots(
   if (!Array.isArray(slots)) {
     return reject("branding.cardEffectsByIndex", "not-an-array", slots);
   }
-  if (slots.length > 20) {
-    return reject("branding.cardEffectsByIndex", "too-many-entries[max=20]", slots);
+  if (slots.length > MAX_CARD_EFFECT_SLOTS) {
+    return reject(
+      "branding.cardEffectsByIndex",
+      `too-many-entries[max=${MAX_CARD_EFFECT_SLOTS}]`,
+      slots,
+    );
   }
   const index = slots.findIndex((slot) => !isCardEffectSlot(slot));
   return index === -1
@@ -742,11 +955,11 @@ function isPlanCardStyle(value: unknown): boolean {
  * served the previous one indefinitely — every colour, logo and text — while
  * the panel kept reporting successful saves. That happened twice, over
  * `navItems` and over `cardEffect`; see the notes on both. The route now falls
- * back per field, and the field here is the whole map: one unusable entry
- * still costs the operator EVERY plan card style they saved. A `planCardStyles`
- * map holds up to 500 independently written entries, so it is the single most
- * likely place for one stale value to meet a stricter reader — five hundred
- * chances to lose all of them over one card's text colour.
+ * back per field, and a `planCardStyles` map — up to 500 independently written
+ * entries, the single most likely place for one stale value to meet a stricter
+ * reader — per ENTRY (`splitPublicConfigKeyedField`, 25.09.2026): an unusable
+ * entry costs the operator that one card's style, which keeps its previous
+ * value. Still a card the operator did not get as saved.
  */
 function hasOptionalPlanCardText(record: Record<string, unknown>, key: string): boolean {
   const value = record[key];
@@ -881,16 +1094,25 @@ function hasOptionalIconDecor(record: Record<string, unknown>, key: string): boo
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
   const entries = Object.entries(value);
-  if (entries.length > 64) return false;
-  return entries.every(([iconKey, entry]) => {
-    if (iconKey.length === 0 || iconKey.length > 64) return false;
-    if (!isRecord(entry)) return false;
-    const decor = entry as Record<string, unknown>;
-    if (decor["glyph"] !== undefined && !isSlug(decor["glyph"])) return false;
-    if (decor["effect"] !== undefined && !isSlug(decor["effect"])) return false;
-    if (decor["color"] !== undefined && !isHex(decor["color"])) return false;
-    return true;
-  });
+  if (entries.length > MAX_ICON_DECOR_ENTRIES) return false;
+  return entries.every(([iconKey, entry]) => isIconDecorKey(iconKey) && isIconDecorEntry(entry));
+}
+
+/** Most entries an `iconDecor` map may hold. */
+const MAX_ICON_DECOR_ENTRIES = 64;
+
+/** An icon key as an `iconDecor` key. */
+function isIconDecorKey(iconKey: string): boolean {
+  return iconKey.length > 0 && iconKey.length <= 64;
+}
+
+/** One icon's decoration: shape only, see above. */
+function isIconDecorEntry(entry: unknown): boolean {
+  if (!isRecord(entry)) return false;
+  if (entry["glyph"] !== undefined && !isSlug(entry["glyph"])) return false;
+  if (entry["effect"] !== undefined && !isSlug(entry["effect"])) return false;
+  if (entry["color"] !== undefined && !isHex(entry["color"])) return false;
+  return true;
 }
 
 /** A vocabulary key: lowercase, short, and safe inside a CSS class name. */

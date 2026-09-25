@@ -17,14 +17,20 @@
  * too — an empty list is how the panel learns the cabinet took all of it.
  * The bot does not read the public config and reports nothing.
  */
-import type { PublicConfigFieldRejection } from "../../application/ports/public-config-persistence.port.js";
+import type {
+  PublicConfigEntryRejection,
+  PublicConfigFieldRejection,
+} from "../../application/ports/public-config-persistence.port.js";
 
 /** The longest rejected value the report carries; the rest is cut. */
 export const MAX_REPORTED_VALUE_LENGTH = 120;
 
 /** One field the cabinet did not take. */
 export interface PublicConfigDeliveryField {
-  /** The guard's key: `branding.borderRadius`, `branding.navItems[1]`, `customIcons[0]`… */
+  /**
+   * The guard's key: `branding.borderRadius`, `branding.navItems[1]`,
+   * `customIcons[0]`, `branding.planCardStyles.<planId>` for one refused entry…
+   */
   readonly path: string;
   /** The guard's reason code, e.g. `not-an-allowed-value`. */
   readonly reason: string;
@@ -59,13 +65,28 @@ export function buildPublicConfigDeliveryReport(
 /**
  * The value the rejection is about. The guard's key points at it — down to an
  * array entry (`branding.navItems[1]`) — except for the pair check, whose key
- * names no single value; that falls back to the first field of the part.
+ * names no single value; that falls back to the first field of the part. An
+ * entry the per-entry fallback refused is looked up by its own key, which may
+ * itself hold a `.` or a `[` (a plan id is the panel's to choose).
  */
 function rejectedValueOf(incoming: unknown, rejection: PublicConfigFieldRejection): unknown {
+  if (isEntryRejection(rejection)) {
+    const [field] = rejection.fields;
+    const container = field === undefined ? undefined : valueAtPath(incoming, field);
+    const key = String(rejection.entry);
+    if (typeof container === "object" && container !== null && Object.hasOwn(container, key)) {
+      return (container as Record<string, unknown>)[key];
+    }
+  }
   const exact = valueAtPath(incoming, rejection.key);
   if (exact !== undefined) return exact;
   const [field] = rejection.fields;
   return field === undefined ? undefined : valueAtPath(incoming, field);
+}
+
+function isEntryRejection(rejection: PublicConfigFieldRejection): rejection is PublicConfigEntryRejection {
+  const entry = (rejection as Partial<PublicConfigEntryRejection>).entry;
+  return typeof entry === "string" || typeof entry === "number";
 }
 
 /** `a.b[2].c` → the value there, or `undefined`; own properties only. */

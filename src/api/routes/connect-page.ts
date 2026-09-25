@@ -32,6 +32,14 @@ import { createHash } from "node:crypto";
 
 import type { AdminClient } from "../../infrastructure/admin-client/index.js";
 import {
+  CONFIG_VERSION_HEADER,
+  configVersionOf,
+} from "../../infrastructure/config-versions/config-version.js";
+import {
+  LAST_KNOWN_GOOD_RETRY_MS,
+  LAST_KNOWN_GOOD_UNREADABLE,
+} from "../../infrastructure/config-versions/last-known-good.js";
+import {
   NOOP_CONNECT_PAGE_SNAPSHOT,
   type ConnectPageSnapshotStore,
 } from "../../infrastructure/public-config/redis-connect-page-snapshot.js";
@@ -41,6 +49,16 @@ interface CachedCatalog {
   readonly body: unknown;
   readonly etag: string;
   readonly fetchedAt: number;
+  /**
+   * The version of the catalog served (`config-version.ts`) — what the version
+   * poll reports as held (`ConnectPageVersionTracker`); `null` for no catalog.
+   */
+  readonly version: string | null;
+  /**
+   * `null` stands in for a saved copy Redis could not be read for: the next
+   * failed read asks Redis again instead of extending it.
+   */
+  readonly savedCopyUnread?: true;
 }
 
 const CACHE_TTL_MS = 60_000;
@@ -77,7 +95,12 @@ function computeEtag(value: unknown): string {
 }
 
 function unavailable(): CachedCatalog {
-  return { body: null, etag: computeEtag(null), fetchedAt: Date.now() };
+  return { body: null, etag: computeEtag(null), fetchedAt: Date.now(), version: null };
+}
+
+/** A catalog and the version the version poll knows it by; `null` names none. */
+function catalogOf(body: unknown, fetchedAt: number = Date.now()): CachedCatalog {
+  return { body, etag: computeEtag(body), fetchedAt, version: body === null ? null : configVersionOf(body) };
 }
 
 async function fetchFresh(
@@ -92,7 +115,7 @@ async function fetchFresh(
   // read no invalidate has overtaken (see `generation`): the snapshot is what a
   // restart during a panel outage serves, so a pre-save read may not write it.
   if (body !== null && isCurrent()) void snapshots.save(body);
-  return { body, etag: computeEtag(body), fetchedAt: Date.now() };
+  return catalogOf(body);
 }
 
 /**
@@ -126,16 +149,23 @@ async function getCatalog(
         // this branch exists to guarantee — that a dead panel is asked once per
         // TTL and not once per customer.
         let answer: CachedCatalog;
-        if (cached !== null) {
+        if (cached !== null && cached.savedCopyUnread !== true) {
           answer = { ...cached, fetchedAt: Date.now() };
         } else {
           // Nothing in memory: this is a cold start during an outage, the one
-          // case the durable snapshot exists for.
+          // case the durable snapshot exists for. A Redis that could not be
+          // read is not "no copy": `null` then lives only the store's pause.
           const stored = await snapshots.load();
           answer =
             stored === null
               ? unavailable()
-              : { body: stored, etag: computeEtag(stored), fetchedAt: Date.now() };
+              : stored === LAST_KNOWN_GOOD_UNREADABLE
+                ? {
+                    ...unavailable(),
+                    fetchedAt: Date.now() - CACHE_TTL_MS + LAST_KNOWN_GOOD_RETRY_MS,
+                    savedCopyUnread: true,
+                  }
+                : catalogOf(stored);
         }
         if (startedAt === generation) cached = answer;
         onFailure?.(err);
@@ -157,6 +187,11 @@ export function createConnectPageRouter(
       const payload = await getCatalog(adminClient, snapshots, (err) => {
         getRequestLogger(req).warn({ err }, "connect-page upstream fetch failed; serving fallback");
       });
+      // Which version this catalog is — what `/config-versions` reports as held
+      // — so the SPA's watcher recognises a copy the browser's cache answered
+      // with on a fresh load, before its own first ask (review R2a-05). Set
+      // before the 304: a revalidation updates the stored headers.
+      if (payload.version !== null) res.setHeader(CONFIG_VERSION_HEADER, payload.version);
       if (req.headers["if-none-match"] === payload.etag) {
         res.status(304).end();
         return;

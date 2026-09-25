@@ -10,9 +10,11 @@ import {
   resetCustomEmojiPacksCache,
 } from '../../src/api/routes/branding.js';
 import { configVersionOf } from '../../src/infrastructure/config-versions/config-version.js';
-import type {
-  LastKnownGood,
-  LastKnownGoodStorePort,
+import {
+  LAST_KNOWN_GOOD_RETRY_MS,
+  LAST_KNOWN_GOOD_UNREADABLE,
+  type LastKnownGood,
+  type LastKnownGoodStorePort,
 } from '../../src/infrastructure/config-versions/last-known-good.js';
 
 /**
@@ -35,6 +37,7 @@ function savedCopy(saved: unknown[] | null) {
     load: vi.fn(async () => record) as LastKnownGoodStorePort['load'],
     save: vi.fn(async (_group: unknown, payload: unknown) => {
       saves.push(payload);
+      return 'saved' as const;
     }) as LastKnownGoodStorePort['save'],
   };
   return { store, saves };
@@ -195,5 +198,30 @@ describe('custom emoji packs (W8 report D8)', () => {
 
     expect((await getCustomEmojiPacks(adminClient)).body).toEqual(SAVED_PACKS);
     expect(saved.saves).toEqual([SAVED_PACKS]);
+  });
+
+  it('a Redis that could not be read is not "no packs": the empty list for the store’s pause, then the saved packs (review R2a-01)', async () => {
+    let redisUp = false;
+    const record = { shape: 1, savedAt: 1, hash: configVersionOf(PACKS), payload: PACKS };
+    const store: LastKnownGoodStorePort = {
+      load: vi.fn(async () => (redisUp ? record : LAST_KNOWN_GOOD_UNREADABLE)) as LastKnownGoodStorePort['load'],
+      save: vi.fn(async () => 'saved' as const) as LastKnownGoodStorePort['save'],
+    };
+    createBrandingRouter({ adminClient: null, lastKnownGood: store });
+    const adminClient = client(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
+
+    expect((await getCustomEmojiPacks(adminClient)).body).toEqual([]);
+    expect(heldCustomEmojiPacksVersion()).toBeNull();
+
+    redisUp = true;
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + LAST_KNOWN_GOOD_RETRY_MS);
+    // The stand-in has lived its pause: this read starts a refresh behind it…
+    await getCustomEmojiPacks(adminClient);
+    // …which fails, asks Redis again rather than extending the stand-in, and holds the copy.
+    await vi.waitFor(() => expect(heldCustomEmojiPacksVersion()).toBe(configVersionOf(PACKS)));
+    expect((await getCustomEmojiPacks(adminClient)).body).toEqual(PACKS);
   });
 });

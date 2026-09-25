@@ -12,10 +12,15 @@
  *   - no-op adapter (tests / when Redis is absent)
  */
 import type { BotConfig } from '../../infrastructure/bot-config/types.js';
+import type { LastKnownGoodUnreadable } from '../../infrastructure/config-versions/last-known-good.js';
 
 export interface ConfigPersistencePort {
-  /** Load the persisted last-known-good config, or `null` when none/invalid. */
-  load(): Promise<BotConfig | null>;
+  /**
+   * Load the persisted last-known-good config; `null` when the store says there
+   * is none (or none valid); `LAST_KNOWN_GOOD_UNREADABLE` when the store could
+   * not be read — not "none": the caller asks again later.
+   */
+  load(): Promise<BotConfig | null | LastKnownGoodUnreadable>;
   /** Persist the latest successfully-fetched config. Best-effort. */
   save(config: BotConfig): Promise<void>;
 }

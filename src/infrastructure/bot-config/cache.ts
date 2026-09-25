@@ -23,6 +23,10 @@ import type { LocalePackHydrator } from '../../application/ports/translator.port
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import type { ConfigPersistencePort } from '../../application/ports/config-persistence.port.js';
 import { configVersionOf } from '../config-versions/config-version.js';
+import {
+  LAST_KNOWN_GOOD_UNREADABLE,
+  type LastKnownGoodUnreadable,
+} from '../config-versions/last-known-good.js';
 import type { KnownPanelChange } from '../config-versions/latest.js';
 import { firstAnswer, settlesWithin } from '../config-versions/within-budget.js';
 
@@ -471,13 +475,27 @@ export class BotConfigCache {
     return (await this.savedCopy(startedAt)) ?? this.fallback;
   }
 
-  /** The saved copy for a read begun in `startedAt`, read from the store once per generation. */
+  /**
+   * The saved copy for a read begun in `startedAt`, read from the store once per
+   * generation — once the store has ANSWERED. A read Redis failed is not "no
+   * copy": it is forgotten, and the next read that looks for the copy asks
+   * again (the store paces those asks, `LAST_KNOWN_GOOD_RETRY_MS`). Nothing
+   * bumps the generation while the panel is down, so a failed first read kept
+   * used to hold the stock buttons for the whole outage (review R2a-01).
+   */
   private savedCopy(startedAt: number): Promise<BotConfig | null> {
     const saved = this.saved;
     if (saved !== null && saved.generation === startedAt) return saved.copy;
-    const copy = this.loadPersisted(startedAt);
-    this.saved = { generation: startedAt, copy };
-    return copy;
+    const read = this.loadPersisted(startedAt);
+    const slot = {
+      generation: startedAt,
+      copy: read.then((outcome) => (outcome === LAST_KNOWN_GOOD_UNREADABLE ? null : outcome)),
+    };
+    this.saved = slot;
+    void read.then((outcome) => {
+      if (outcome === LAST_KNOWN_GOOD_UNREADABLE && this.saved === slot) this.saved = null;
+    });
+    return slot.copy;
   }
 
   /**
@@ -489,14 +507,15 @@ export class BotConfigCache {
    * and not by a read an invalidate overtook (see `generation`): that caller
    * still gets the copy, the cache does not.
    *
-   * Returns `null` when no store is configured, the store is empty, or the
-   * load fails.
+   * Returns `null` when no store is configured or the store says it holds no
+   * copy; LAST_KNOWN_GOOD_UNREADABLE when the store could not be read (or
+   * threw, which it must not).
    */
-  private async loadPersisted(startedAt: number): Promise<BotConfig | null> {
+  private async loadPersisted(startedAt: number): Promise<BotConfig | null | LastKnownGoodUnreadable> {
     if (this.persistence === undefined) return null;
     try {
       const persisted = await this.persistence.load();
-      if (persisted === null) return null;
+      if (persisted === null || persisted === LAST_KNOWN_GOOD_UNREADABLE) return persisted;
       if (startedAt === this.generation && this.entry === null) {
         this.entry = {
           data: persisted,
@@ -517,7 +536,7 @@ export class BotConfigCache {
       return persisted;
     } catch (err: unknown) {
       this.logger?.warn({ err }, 'BotConfigCache: persistence.load threw');
-      return null;
+      return LAST_KNOWN_GOOD_UNREADABLE;
     }
   }
 

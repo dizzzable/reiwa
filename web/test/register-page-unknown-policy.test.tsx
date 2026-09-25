@@ -113,6 +113,26 @@ describe("the register page with the platform policy unreadable", () => {
     expect(container?.querySelector(".animate-spin")).not.toBeNull();
   });
 
+  it("says after about ten seconds that the panel is unavailable and it keeps trying — still no form (CD2a §9.2)", async () => {
+    api.getPlatformPolicy.mockRejectedValue(UNAVAILABLE);
+    mount();
+    await elapse(0);
+    await elapse(9_000);
+    const note = () => container?.querySelector('[data-testid="access-mode-pending-note"]') ?? null;
+    // A first read is well under a second: no word for an ordinary load.
+    expect(note()).toBeNull();
+
+    await elapse(1_000);
+    expect(note()?.textContent).toBe("accessMode.pendingNote");
+    // Only the words change: still waiting, and still asking.
+    expect(container?.querySelector(".animate-spin")).not.toBeNull();
+    expect(form()).toBeNull();
+    expect(inviteGate()).toBeNull();
+    const asked = api.getPlatformPolicy.mock.calls.length;
+    await elapse(30_000);
+    expect(api.getPlatformPolicy.mock.calls.length).toBeGreaterThan(asked);
+  });
+
   it("shows the invite gate once the policy is read", async () => {
     api.getPlatformPolicy.mockRejectedValueOnce(UNAVAILABLE).mockResolvedValue({ accessMode: "INVITED" });
     mount();

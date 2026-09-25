@@ -44,7 +44,7 @@ import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
 import { useSafeBack } from "@/hooks/use-safe-back";
 import { useAccessMode } from "@/lib/use-access-mode";
-import { AccessModeBlockedScreen } from "@/components/access-mode-banner";
+import { AccessModeBlockedScreen, AccessModePendingScreen } from "@/components/access-mode-banner";
 import {
   formatSavedPaymentMethodMeta,
   formatSavedPaymentMethodTitle,
@@ -304,7 +304,7 @@ export default function RenewalPage() {
   const navigate = useNavigate();
   const leave = useSafeBack("/dashboard");
   const { step, reset } = useRenewalStore();
-  const { restricted } = useAccessMode();
+  const { restricted, isLoading: policyLoading } = useAccessMode();
 
   // Always start the wizard fresh on mount.
   useEffect(() => {
@@ -372,6 +372,13 @@ export default function RenewalPage() {
   useEffect(() => {
     if (redirectToUpgrade) navigate("/upgrade", { replace: true });
   }, [redirectToUpgrade, navigate]);
+
+  // The access mode not known yet — the first read, or reads failing while the
+  // panel is down and the cabinet never knew a policy: wait, like purchase,
+  // upgrade and add-ons. "No flag" is not "allowed": the wizard used to open
+  // here as if the mode were PUBLIC, an operator's RESTRICTED included (review
+  // R2a-02). After every hook above, so the hook order never changes.
+  if (policyLoading) return <AccessModePendingScreen />;
 
   // Renewal stays OPEN under PURCHASE_BLOCKED (so users keep their VPN); only
   // the emergency RESTRICTED freeze blocks it.

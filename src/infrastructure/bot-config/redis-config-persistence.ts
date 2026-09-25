@@ -8,8 +8,9 @@
  *
  * Design notes:
  *   - Both methods are best-effort and never throw — the store's contract:
- *     `save` swallows write errors, `load` answers `null` on any miss, parse
- *     or shape failure.
+ *     `save` swallows write errors, `load` answers `null` on a miss, parse or
+ *     shape failure, and "unreadable" when Redis could not be read at all —
+ *     which the cache must not remember as "no copy".
  *   - A lightweight shape check guards against a corrupt or schema-drifted
  *     copy poisoning the bot on boot.
  *   - The copy used to live under `reiwa:botconfig:last-known-good` with a
@@ -22,9 +23,11 @@
  *     bot token; a copy from another token only costs a re-upload by URL.
  */
 import type { ConfigPersistencePort } from '../../application/ports/config-persistence.port.js';
-import type {
-  LastKnownGoodGroup,
-  LastKnownGoodStorePort,
+import {
+  LAST_KNOWN_GOOD_UNREADABLE,
+  type LastKnownGoodGroup,
+  type LastKnownGoodStorePort,
+  type LastKnownGoodUnreadable,
 } from '../config-versions/last-known-good.js';
 
 import type { BotConfig } from './types.js';
@@ -53,8 +56,9 @@ export const BOT_CONFIG_LKG: LastKnownGoodGroup<BotConfig> = {
 export class RedisConfigPersistence implements ConfigPersistencePort {
   constructor(private readonly store: LastKnownGoodStorePort) {}
 
-  async load(): Promise<BotConfig | null> {
-    return (await this.store.load(BOT_CONFIG_LKG))?.payload ?? null;
+  async load(): Promise<BotConfig | null | LastKnownGoodUnreadable> {
+    const copy = await this.store.load(BOT_CONFIG_LKG);
+    return copy === null || copy === LAST_KNOWN_GOOD_UNREADABLE ? copy : copy.payload;
   }
 
   async save(config: BotConfig): Promise<void> {

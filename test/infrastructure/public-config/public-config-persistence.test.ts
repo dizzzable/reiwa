@@ -9,6 +9,7 @@ import {
 import { configVersionOf } from '../../../src/infrastructure/config-versions/config-version.js';
 import { RedisLastKnownGoodStore } from '../../../src/infrastructure/config-versions/last-known-good.js';
 import { RedisPublicConfigPersistence } from '../../../src/infrastructure/public-config/redis-public-config-persistence.js';
+import { createPublicConfigRejectionNotifier } from '../../../src/infrastructure/public-config/rejection-notifier.js';
 
 /**
  * The public config's saved copy, moved into the shared last-known-good store
@@ -100,6 +101,53 @@ describe('RedisPublicConfigPersistence on the shared store', () => {
     await persistence(redis, note).save({ ...SNAPSHOT, locales: 'en' } as never);
     expect(data.size).toBe(0);
     expect(note.rejected).toHaveBeenCalledWith('redis-save', expect.anything());
+  });
+});
+
+describe('a snapshot over the saved-copy cap (review R2a-07)', () => {
+  /** A store that refuses every save for its size, as the real one does over 4 MB. */
+  function tooLargeStore(outcome: 'too-large' | 'saved' = 'too-large') {
+    return {
+      load: vi.fn(async () => null),
+      save: vi.fn(async () => outcome),
+    };
+  }
+
+  it('tells the operator once per version, with the size — a warning for «Системные события», not a line per save', async () => {
+    const reports: Array<{ level?: string; message: string; context?: Record<string, unknown> }> = [];
+    const persistence = new RedisPublicConfigPersistence({
+      redis: {} as never,
+      rejectionNotifier: createPublicConfigRejectionNotifier({ errorReporter: { report: (r) => reports.push(r) } }),
+      store: tooLargeStore(),
+    });
+
+    // The TTL refresh saves the same version every minute.
+    await persistence.save(SNAPSHOT, 'a'.repeat(32));
+    await persistence.save(SNAPSHOT, 'a'.repeat(32));
+    await persistence.save({ ...SNAPSHOT, defaultCurrency: 'RUB' }, 'b'.repeat(32));
+
+    expect(reports.map((report) => report.context?.['version'])).toEqual(['a'.repeat(32), 'b'.repeat(32)]);
+    expect(reports[0]).toMatchObject({
+      level: 'warning',
+      context: {
+        event: 'reiwa.config.copy_not_saved',
+        group: 'public-config',
+        bytes: Buffer.byteLength(JSON.stringify(SNAPSHOT), 'utf8'),
+        maxBytes: 4 * 1024 * 1024,
+      },
+    });
+    expect(String(reports[0]?.context?.['why'])).toMatch(/больше предела 4,0 МБ/);
+  });
+
+  it('says nothing when the copy was saved', async () => {
+    const reports: unknown[] = [];
+    const persistence = new RedisPublicConfigPersistence({
+      redis: {} as never,
+      rejectionNotifier: createPublicConfigRejectionNotifier({ errorReporter: { report: (r) => reports.push(r) } }),
+      store: tooLargeStore('saved'),
+    });
+    await persistence.save(SNAPSHOT, 'a'.repeat(32));
+    expect(reports).toEqual([]);
   });
 });
 

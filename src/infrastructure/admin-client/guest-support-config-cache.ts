@@ -27,9 +27,12 @@
 import { configVersionOf } from '../config-versions/config-version.js';
 import {
   GUEST_SUPPORT_LKG,
+  LAST_KNOWN_GOOD_RETRY_MS,
+  LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
   type LastKnownGood,
   type LastKnownGoodStorePort,
+  type LastKnownGoodUnreadable,
 } from '../config-versions/last-known-good.js';
 import type { AdminClient } from './admin-client.js';
 import type { GuestRuntimeConfig } from './namespaces/support.js';
@@ -60,7 +63,13 @@ export class GuestSupportConfigCache {
   private inFlight: Promise<GuestRuntimeConfig | null> | null = null;
   /** Bumped by `invalidate()`; see the header. */
   private generation = 0;
-  private saved: Promise<LastKnownGood<Record<string, unknown>> | null> | null = null;
+  /**
+   * The saved copy's read — kept once Redis answered it. A read Redis failed
+   * is forgotten, so the next read asks again: kept, it made a restart that met
+   * Redis a second too early drop the captcha for the whole outage (review
+   * R2a-01).
+   */
+  private saved: Promise<LastKnownGood<Record<string, unknown>> | null | LastKnownGoodUnreadable> | null = null;
   private readonly ttlMs: number;
   private readonly lastKnownGood: LastKnownGoodStorePort;
 
@@ -99,6 +108,23 @@ export class GuestSupportConfigCache {
     return this.value === null ? null : this.version;
   }
 
+  /** The saved copy; read once Redis answers it, asked again after a read it failed. */
+  private savedCopy(): Promise<LastKnownGood<Record<string, unknown>> | null | LastKnownGoodUnreadable> {
+    let read = this.saved;
+    if (read === null) {
+      // A store that throws despite its contract could not read either.
+      const loading = this.lastKnownGood
+        .load(GUEST_SUPPORT_LKG)
+        .catch((): LastKnownGoodUnreadable => LAST_KNOWN_GOOD_UNREADABLE);
+      read = loading;
+      this.saved = loading;
+      void loading.then((copy) => {
+        if (copy === LAST_KNOWN_GOOD_UNREADABLE && this.saved === loading) this.saved = null;
+      });
+    }
+    return read;
+  }
+
   private startRefresh(): Promise<GuestRuntimeConfig | null> {
     const refresh = this.refresh(this.generation);
     this.inFlight = refresh;
@@ -125,9 +151,8 @@ export class GuestSupportConfigCache {
         if (startedAt === this.generation) this.fetchedAt = Date.now();
         return this.value;
       }
-      this.saved ??= this.lastKnownGood.load(GUEST_SUPPORT_LKG);
-      const copy = await this.saved;
-      if (copy !== null && isGuestRuntimeConfig(copy.payload)) {
+      const copy = await this.savedCopy();
+      if (copy !== null && copy !== LAST_KNOWN_GOOD_UNREADABLE && isGuestRuntimeConfig(copy.payload)) {
         if (startedAt === this.generation && this.value === null) {
           this.value = copy.payload;
           this.version = copy.hash;
@@ -135,7 +160,12 @@ export class GuestSupportConfigCache {
         }
         return copy.payload;
       }
-      if (startedAt === this.generation) this.missUntil = Date.now() + this.ttlMs;
+      // No config, remembered for the TTL — or, when Redis could not say
+      // whether a copy exists, only for the store's pause: the copy is asked
+      // for again then, not a TTL later.
+      if (startedAt === this.generation) {
+        this.missUntil = Date.now() + (copy === LAST_KNOWN_GOOD_UNREADABLE ? LAST_KNOWN_GOOD_RETRY_MS : this.ttlMs);
+      }
       return null;
     }
   }

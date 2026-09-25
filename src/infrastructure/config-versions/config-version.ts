@@ -81,6 +81,14 @@ export function canonicalJson(value: unknown): string {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`;
 }
 
+/**
+ * The response header a public settings route names the version of the body it
+ * served in — the value `/api/v1/config-versions` reports as held — so the
+ * SPA's version watcher can tell a copy the browser's or the service worker's
+ * cache answered with from the current one (`web/src/lib/config-versions.ts`).
+ */
+export const CONFIG_VERSION_HEADER = 'X-Config-Version';
+
 /** The version of a payload as the wire carries it. */
 export function configVersionOf(payload: unknown): string {
   const wire: unknown = JSON.parse(JSON.stringify(payload) ?? 'null');

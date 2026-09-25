@@ -106,7 +106,7 @@ describe('GET /api/v1/platform-policy', () => {
         hash: configVersionOf(RESTRICTED),
         payload: { ...RESTRICTED },
       })) as LastKnownGoodStorePort['load'],
-      save: vi.fn(async () => undefined) as LastKnownGoodStorePort['save'],
+      save: vi.fn(async () => 'saved' as const) as LastKnownGoodStorePort['save'],
     };
     setPolicyCache(
       new PolicyCache(

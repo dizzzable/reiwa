@@ -19,9 +19,14 @@ import { Router } from "express";
 import { createHash } from "node:crypto";
 import type { Logger } from "pino";
 
-import { configVersionOf } from "../../infrastructure/config-versions/config-version.js";
+import {
+  CONFIG_VERSION_HEADER,
+  configVersionOf,
+} from "../../infrastructure/config-versions/config-version.js";
 import {
   LANDING_LKG,
+  LAST_KNOWN_GOOD_RETRY_MS,
+  LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
   type LastKnownGoodStorePort,
 } from "../../infrastructure/config-versions/last-known-good.js";
@@ -39,6 +44,11 @@ interface CachedLanding {
    * copy, or the sentinel with nothing known. Served `no-store`.
    */
   readonly fallback: boolean;
+  /**
+   * The sentinel stands in for a saved copy Redis could not be read for: the
+   * next failed read asks Redis again instead of extending it.
+   */
+  readonly savedCopyUnread?: true;
 }
 
 const CACHE_TTL_MS = 60_000;
@@ -129,7 +139,7 @@ async function getLandingPayload(
       .catch(async (err) => {
         if (inflight === pending) inflight = null;
         onFailure?.(err);
-        if (cached !== null) {
+        if (cached !== null && cached.savedCopyUnread !== true) {
           // Extend last-known-good during the outage to reduce upstream pressure.
           const extended: CachedLanding = { ...cached, fetchedAt: Date.now(), fallback: true };
           if (startedAt === generation) cached = extended;
@@ -145,17 +155,25 @@ async function getLandingPayload(
         // visitor, indefinitely. `fetchedAt` is now, so the TTL still expires
         // and the request after it goes upstream again: the sentinel cannot
         // outlive the outage. `resetLandingCache()` still drops it at once.
+        // A Redis that could not be read is not "no copy": the sentinel then
+        // lives only the store's pause, and the copy is asked for again.
         const answer: CachedLanding =
           saved === null
             ? sentinel()
-            : {
-                body: saved.payload,
-                etag: computeEtag(saved.payload),
-                fetchedAt: Date.now(),
-                version: saved.hash,
-                fallback: true,
-              };
-        if (startedAt === generation && cached === null) cached = answer;
+            : saved === LAST_KNOWN_GOOD_UNREADABLE
+              ? {
+                  ...sentinel(),
+                  fetchedAt: Date.now() - CACHE_TTL_MS + LAST_KNOWN_GOOD_RETRY_MS,
+                  savedCopyUnread: true,
+                }
+              : {
+                  body: saved.payload,
+                  etag: computeEtag(saved.payload),
+                  fetchedAt: Date.now(),
+                  version: saved.hash,
+                  fallback: true,
+                };
+        if (startedAt === generation && (cached === null || cached.savedCopyUnread === true)) cached = answer;
         return answer;
       });
     inflight = pending;
@@ -257,6 +275,13 @@ export function createLandingRouter(deps: {
       const payload = await getLandingPayload(adminClient, (err) => {
         bgLog?.warn({ err }, "landing upstream fetch failed; serving fallback");
       });
+      // Which version this landing is — what `/config-versions` reports as
+      // held. The service worker answers `/landing` from its cache first
+      // (stale-while-revalidate), and the page's first read goes out before the
+      // version watcher's first answer; the header on that cached body lets the
+      // watcher see it is older and re-read it at once (review R2a-05). Set
+      // before the 304: a revalidation updates the stored headers.
+      if (payload.version !== null) res.setHeader(CONFIG_VERSION_HEADER, payload.version);
       const ifNoneMatch = req.headers["if-none-match"];
       if (ifNoneMatch === payload.etag) {
         res.status(304).end();

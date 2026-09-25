@@ -243,6 +243,20 @@ describe("the shell’s claim gate with no policy known", () => {
     expect(redirects).toEqual([]);
   });
 
+  it("says after about ten seconds why it still waits — and still lets nobody through (CD2a §9.2)", async () => {
+    api.getPlatformPolicy.mockRejectedValue(UNAVAILABLE);
+    mount(<StealthLayout />);
+    await elapse(0);
+    const note = () => container?.querySelector('[data-testid="access-mode-pending-note"]') ?? null;
+    expect(note()).toBeNull();
+
+    await elapse(10_000);
+    expect(note()?.textContent).toBe("accessMode.pendingNote");
+    expect(container?.querySelector('[data-testid="shell-loading"]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="cabinet"]')).toBeNull();
+    expect(redirects).toEqual([]);
+  });
+
   it("sends that user to /claim once the policy says the operator requires it", async () => {
     api.getPlatformPolicy
       .mockRejectedValueOnce(UNAVAILABLE)

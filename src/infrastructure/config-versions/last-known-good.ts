@@ -38,8 +38,22 @@
  * under the new key deletes the old one.
  *
  * Best-effort in both directions: a Redis problem is never the reason a
- * settings read fails. Every path answers `null` or does nothing, with a log
- * line.
+ * settings read fails. Nothing here throws; a failure is a log line and an
+ * answer that says what happened.
+ *
+ * ── "No copy" is not "could not read" ────────────────────────────────────────
+ *
+ * `load` answers `null` only when Redis said there is no copy to trust. When
+ * Redis could not be read at all — a command timeout, a refused connection, a
+ * client that is not ready yet after a host reboot (Docker's restart policy does
+ * not wait for `depends_on`) — it answers {@link LAST_KNOWN_GOOD_UNREADABLE}.
+ * The two used to be one `null`, and every cache that reads its copy once per
+ * process remembered it: a restart that met Redis a second too early served the
+ * defaults — the access rules open to everybody, the stock buttons, no guest
+ * captcha — for the whole panel outage, with the operator's copy sitting in
+ * Redis (review R2a-01). A caller serves what it would serve without a copy for
+ * now, keeps nothing of it, and asks again at its next use; the store paces
+ * those asks ({@link LAST_KNOWN_GOOD_RETRY_MS}).
  */
 import { Redis } from 'ioredis';
 
@@ -75,24 +89,65 @@ export interface LastKnownGoodGroup<T> {
   readonly maxBytes?: number;
 }
 
+/**
+ * What `load` answers when Redis could not be read. NOT "no copy": the caller
+ * serves what it would serve without one, remembers nothing of it, and asks
+ * again at its next use (see the header).
+ */
+export const LAST_KNOWN_GOOD_UNREADABLE: unique symbol = Symbol('last-known-good: unreadable');
+export type LastKnownGoodUnreadable = typeof LAST_KNOWN_GOOD_UNREADABLE;
+
+/**
+ * How long after a failed read of a group `load` answers
+ * {@link LAST_KNOWN_GOOD_UNREADABLE} at once, without asking Redis again: a
+ * Redis outage costs one GET per group per pause, not one per read. Short — the
+ * copy is wanted as soon as Redis is back — and about one command timeout
+ * (`REDIS_COMMAND_TIMEOUT_MS`), which each failed GET may already have spent.
+ */
+export const LAST_KNOWN_GOOD_RETRY_MS = 2_000;
+
+/**
+ * What `save` did:
+ *  - `saved` — the copy is in Redis now;
+ *  - `too-large` — the payload is over the group's `maxBytes` and was not
+ *    written: the copy in Redis, if any, is an OLDER one;
+ *  - `not-saved` — Redis refused it, or there is no store: nothing written.
+ */
+export type LastKnownGoodSaveOutcome = 'saved' | 'too-large' | 'not-saved';
+
+/** A payload `save` did not write because it is over the group's cap. */
+export interface LastKnownGoodTooLarge {
+  readonly group: string;
+  /** The version of the payload that was not written. */
+  readonly hash: string;
+  readonly bytes: number;
+  readonly maxBytes: number;
+}
+
 export interface LastKnownGoodStorePort {
-  /** The copy to serve, or `null` when there is none to trust. Never throws. */
-  load<T>(group: LastKnownGoodGroup<T>): Promise<LastKnownGood<T> | null>;
+  /**
+   * The copy to serve; `null` when Redis says there is none to trust (none
+   * saved, or one that fails its check); {@link LAST_KNOWN_GOOD_UNREADABLE}
+   * when Redis could not be read — not "none", ask again later. Never throws.
+   */
+  load<T>(group: LastKnownGoodGroup<T>): Promise<LastKnownGood<T> | null | LastKnownGoodUnreadable>;
   /**
    * Record a payload the panel actually served. `hash` defaults to the
    * payload's own version; pass it when the payload was stamped after the
-   * panel answered (the bot's Telegram file ids). Never throws.
+   * panel answered (the bot's Telegram file ids). Answers what it did; never
+   * throws.
    */
-  save<T>(group: LastKnownGoodGroup<T>, payload: T, hash?: string): Promise<void>;
+  save<T>(group: LastKnownGoodGroup<T>, payload: T, hash?: string): Promise<LastKnownGoodSaveOutcome>;
 }
 
 /** For tests and Redis-free deployments. */
 export const NOOP_LAST_KNOWN_GOOD: LastKnownGoodStorePort = {
   load: async () => null,
-  save: async () => undefined,
+  save: async () => 'not-saved',
 };
 
-const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
+/** The cap of a group that names none (`LastKnownGoodGroup.maxBytes`). */
+export const LAST_KNOWN_GOOD_DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 
 type LastKnownGoodRedis = Pick<Redis, 'get' | 'set' | 'del'>;
 
@@ -100,58 +155,138 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** `bytes` for a log line an operator reads: `5.3 MB`, `812 KB`. */
+export function formatCopySize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.ceil(bytes / 1024)} KB`;
+}
+
 export class RedisLastKnownGoodStore implements LastKnownGoodStorePort {
   private readonly redis: LastKnownGoodRedis;
   private readonly logger: LoggerPort | undefined;
   private readonly now: () => number;
-  /** Groups whose pre-record key this process has already looked at. */
+  private readonly onTooLarge: ((skipped: LastKnownGoodTooLarge) => void) | undefined;
+  /** Groups whose pre-record key this process has read — successfully — or moved. */
   private readonly legacyRead = new Set<string>();
   /** Groups whose pre-record key this process has already deleted. */
   private readonly legacyDeleted = new Set<string>();
+  /**
+   * Per group, after a read Redis failed: until when `load` answers
+   * "unreadable" without asking again. The entry stays past that moment until
+   * a read succeeds — it marks the streak, so only its first failure warns.
+   */
+  private readonly unreadableUntil = new Map<string, number>();
+  /** Per group, the version whose too-large save was last reported: once per version, not once per save. */
+  private readonly tooLargeReported = new Map<string, string>();
 
-  public constructor(options: { redis: LastKnownGoodRedis; logger?: LoggerPort; now?: () => number }) {
+  public constructor(options: {
+    redis: LastKnownGoodRedis;
+    logger?: LoggerPort;
+    now?: () => number;
+    /**
+     * Told once per group and version when a payload is over the cap and was
+     * not written — the copy a restart serves is then an older one. For the
+     * operator-facing report (`redis-public-config-persistence.ts`).
+     */
+    onTooLarge?: (skipped: LastKnownGoodTooLarge) => void;
+  }) {
     this.redis = options.redis;
     this.logger = options.logger;
-    this.now = options.now ?? Date.now;
+    // Late-bound: the same clock as the caches that read through the store.
+    this.now = options.now ?? (() => Date.now());
+    this.onTooLarge = options.onTooLarge;
   }
 
-  public async load<T>(group: LastKnownGoodGroup<T>): Promise<LastKnownGood<T> | null> {
+  public async load<T>(group: LastKnownGoodGroup<T>): Promise<LastKnownGood<T> | null | LastKnownGoodUnreadable> {
+    const pausedUntil = this.unreadableUntil.get(group.name);
+    if (pausedUntil !== undefined && this.now() < pausedUntil) return LAST_KNOWN_GOOD_UNREADABLE;
+    let raw: string | null;
     try {
-      const raw = await this.redis.get(lastKnownGoodKey(group.name, group.shape));
-      if (raw !== null && raw.length > 0) return this.readRecord(group, raw);
-      return await this.migrateLegacy(group);
+      raw = await this.redis.get(lastKnownGoodKey(group.name, group.shape));
     } catch (err: unknown) {
-      this.logger?.warn({ err, group: group.name }, 'last-known-good: load failed');
-      return null;
+      return this.unreadable(group, err);
     }
+    this.unreadableUntil.delete(group.name);
+    if (raw !== null && raw.length > 0) return this.readRecord(group, raw);
+    return this.migrateLegacy(group);
   }
 
-  public async save<T>(group: LastKnownGoodGroup<T>, payload: T, hash?: string): Promise<void> {
+  public async save<T>(group: LastKnownGoodGroup<T>, payload: T, hash?: string): Promise<LastKnownGoodSaveOutcome> {
+    let raw: string;
+    let version: string;
     try {
-      const record: LastKnownGood<T> = {
-        shape: group.shape,
-        savedAt: this.now(),
-        hash: hash ?? configVersionOf(payload),
-        payload,
-      };
-      const raw = JSON.stringify(record);
-      if (Buffer.byteLength(raw, 'utf8') > (group.maxBytes ?? DEFAULT_MAX_BYTES)) {
-        this.logger?.warn({ group: group.name }, 'last-known-good: payload too large to keep a copy of');
-        return;
-      }
+      version = hash ?? configVersionOf(payload);
+      const record: LastKnownGood<T> = { shape: group.shape, savedAt: this.now(), hash: version, payload };
+      raw = JSON.stringify(record);
+    } catch (err: unknown) {
+      this.logger?.warn({ err, group: group.name }, 'last-known-good: payload could not be written down');
+      return 'not-saved';
+    }
+    const bytes = Buffer.byteLength(raw, 'utf8');
+    const maxBytes = group.maxBytes ?? LAST_KNOWN_GOOD_DEFAULT_MAX_BYTES;
+    if (bytes > maxBytes) {
+      this.reportTooLarge({ group: group.name, hash: version, bytes, maxBytes });
+      return 'too-large';
+    }
+    try {
       await this.redis.set(lastKnownGoodKey(group.name, group.shape), raw);
-      // The new record now holds a copy at least as good as the old key's.
-      if (group.legacyKey !== undefined && !this.legacyDeleted.has(group.name)) {
-        this.legacyDeleted.add(group.name);
-        await this.redis.del(group.legacyKey);
-      }
     } catch (err: unknown) {
       this.logger?.warn({ err, group: group.name }, 'last-known-good: save failed');
+      return 'not-saved';
+    }
+    // The new record now holds a copy at least as good as the old key's. Its
+    // delete failing does not undo the save; the next save tries it again.
+    if (group.legacyKey !== undefined && !this.legacyDeleted.has(group.name)) {
+      try {
+        await this.redis.del(group.legacyKey);
+        this.legacyDeleted.add(group.name);
+      } catch (err: unknown) {
+        this.logger?.warn({ err, group: group.name }, 'last-known-good: the pre-record copy could not be deleted');
+      }
+    }
+    return 'saved';
+  }
+
+  /** A failed read: "unreadable", and no second GET of this group for a pause. */
+  private unreadable(group: LastKnownGoodGroup<unknown>, err: unknown): LastKnownGoodUnreadable {
+    const streak = this.unreadableUntil.has(group.name);
+    this.unreadableUntil.set(group.name, this.now() + LAST_KNOWN_GOOD_RETRY_MS);
+    const context = { err, group: group.name, retryInMs: LAST_KNOWN_GOOD_RETRY_MS };
+    const message = 'last-known-good: Redis could not be read — not taken for "no copy"; asked again shortly';
+    if (streak) this.logger?.debug(context, message);
+    else this.logger?.warn(context, message);
+    return LAST_KNOWN_GOOD_UNREADABLE;
+  }
+
+  /**
+   * Loud, and once per version: this used to be a warning on every save — one
+   * a minute for the public config, which reads the panel every TTL — and
+   * nothing an operator sees, while a restart during an outage served an older
+   * copy (review R2a-07).
+   */
+  private reportTooLarge(skipped: LastKnownGoodTooLarge): void {
+    if (this.tooLargeReported.get(skipped.group) === skipped.hash) return;
+    this.tooLargeReported.set(skipped.group, skipped.hash);
+    this.logger?.warn(
+      { ...skipped },
+      `last-known-good: "${skipped.group}" is ${formatCopySize(skipped.bytes)}, over the ${formatCopySize(skipped.maxBytes)} cap — its copy was NOT saved; a restart during a panel outage serves the older copy, if any`,
+    );
+    try {
+      this.onTooLarge?.(skipped);
+    } catch (err: unknown) {
+      this.logger?.warn({ err, group: skipped.group }, 'last-known-good: onTooLarge threw');
     }
   }
 
   private readRecord<T>(group: LastKnownGoodGroup<T>, raw: string): LastKnownGood<T> | null {
-    const parsed: unknown = JSON.parse(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // Redis answered: there is no copy to trust. The next save overwrites it.
+      this.logger?.warn({ group: group.name }, 'last-known-good: stored copy is not JSON — ignoring it');
+      return null;
+    }
     if (
       !isObject(parsed) ||
       parsed['shape'] !== group.shape ||
@@ -170,14 +305,32 @@ export class RedisLastKnownGoodStore implements LastKnownGoodStorePort {
     };
   }
 
-  private async migrateLegacy<T>(group: LastKnownGoodGroup<T>): Promise<LastKnownGood<T> | null> {
+  /**
+   * The copy under the key from before the record. Marked as read only once
+   * Redis answered for it — a failed GET marked first would read as "no copy"
+   * for the rest of the process — and, when there was one, once it is moved.
+   */
+  private async migrateLegacy<T>(
+    group: LastKnownGoodGroup<T>,
+  ): Promise<LastKnownGood<T> | null | LastKnownGoodUnreadable> {
     if (group.legacyKey === undefined || this.legacyRead.has(group.name)) return null;
-    this.legacyRead.add(group.name);
-    const raw = await this.redis.get(group.legacyKey);
-    if (raw === null || raw.length === 0) return null;
-    const payload: unknown = JSON.parse(raw);
-    if (!group.accepts(payload)) {
-      this.logger?.warn({ group: group.name }, 'last-known-good: pre-record copy failed its check — ignoring it');
+    let raw: string | null;
+    try {
+      raw = await this.redis.get(group.legacyKey);
+    } catch (err: unknown) {
+      return this.unreadable(group, err);
+    }
+    let payload: unknown;
+    try {
+      payload = raw === null || raw.length === 0 ? undefined : JSON.parse(raw);
+    } catch {
+      payload = undefined;
+    }
+    if (payload === undefined || !group.accepts(payload)) {
+      this.legacyRead.add(group.name);
+      if (raw !== null && raw.length > 0) {
+        this.logger?.warn({ group: group.name }, 'last-known-good: pre-record copy failed its check — ignoring it');
+      }
       return null;
     }
     const record: LastKnownGood<T> = {
@@ -186,9 +339,15 @@ export class RedisLastKnownGoodStore implements LastKnownGoodStorePort {
       hash: configVersionOf(payload),
       payload,
     };
-    // NX: another process may have saved a fresher copy since the GET above.
-    await this.redis.set(lastKnownGoodKey(group.name, group.shape), JSON.stringify(record), 'NX');
-    this.logger?.info({ group: group.name }, 'last-known-good: moved the copy kept under the old key');
+    try {
+      // NX: another process may have saved a fresher copy since the GET above.
+      await this.redis.set(lastKnownGoodKey(group.name, group.shape), JSON.stringify(record), 'NX');
+      this.legacyRead.add(group.name);
+      this.logger?.info({ group: group.name }, 'last-known-good: moved the copy kept under the old key');
+    } catch (err: unknown) {
+      // Served all the same; the next load finds the old key again and retries.
+      this.logger?.warn({ err, group: group.name }, 'last-known-good: the copy under the old key could not be moved');
+    }
     return record;
   }
 }

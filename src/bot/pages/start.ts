@@ -46,6 +46,7 @@ import { pickScreenText, buildScreenKeyboard } from './screen-renderer.js';
 import { resolveTrialButton, type TrialEligibilityShape } from '../widgets/trial-button.js';
 import type { BotConfig, Subscription, TgCustomEmojiEntity } from '../../infrastructure/bot-config/types.js';
 import { isUneditableMessageError } from './edit-message.js';
+import { TtlMap } from '../../infrastructure/channel-gate/ttl-map.js';
 
 import { parseDeeplink } from '../../core/types/deeplink.type.js';
 import { coerceLocale } from './coerce-locale.js';
@@ -836,6 +837,82 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
   bot.callbackQuery('menu', backToMainMenu);
 };
 
+/**
+ * Telegram's limit for the text of a callback answer — a toast or an alert
+ * (`answerCallbackQuery`: 0-200 characters), counted the way Telegram counts
+ * them: code points (memory `telegram-length-limits-count-code-points`).
+ */
+export const CALLBACK_ANSWER_MAX_CHARS = 200;
+
+function codePointLength(text: string): number {
+  let length = 0;
+  for (const _codePoint of text) length += 1;
+  return length;
+}
+
+/**
+ * `text` cut to fit a callback answer, at whole characters as a reader sees
+ * them — a flag or a keycap is several code points — and closed with «…». The
+ * operator writes «Меню обновилось» in the panel, which takes 8000 characters
+ * for a text: 201 of them made Telegram refuse the answer, and the refusal threw
+ * before the menu was drawn (review R2a-08).
+ */
+export function fitCallbackAnswer(text: string): string {
+  if (codePointLength(text) <= CALLBACK_ANSWER_MAX_CHARS) return text;
+  const room = CALLBACK_ANSWER_MAX_CHARS - 1;
+  let kept = '';
+  let used = 0;
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)) {
+    const size = codePointLength(segment);
+    if (used + size > room) break;
+    kept += segment;
+    used += size;
+  }
+  return `${kept.trimEnd()}…`;
+}
+
+/**
+ * Answer the press — its toast or alert cut to Telegram's limit — so that
+ * nothing after it depends on the answer: a text Telegram refuses anyway is
+ * answered again without one, so the spinner stops, and the caller goes on to
+ * draw the menu.
+ */
+async function answerPress(
+  ctx: BotContext,
+  deps: PageDeps,
+  answer?: { readonly text: string; readonly show_alert?: boolean },
+): Promise<void> {
+  try {
+    await ctx.answerCallbackQuery(answer === undefined ? undefined : { ...answer, text: fitCallbackAnswer(answer.text) });
+    return;
+  } catch (err: unknown) {
+    deps.logger?.warn({ err, telegramId: ctx.from?.id }, 'menu: the press was not answered');
+  }
+  if (answer !== undefined) await ctx.answerCallbackQuery().catch(() => undefined);
+}
+
+/**
+ * How long a message Telegram would not edit keeps the menu it got anew: a
+ * second press on it within this window sends nothing (review R2a-09). A
+ * double tap is under a second apart; updates are handled one at a time, so the
+ * second waits for the first to have sent its menu — seconds, with a banner.
+ */
+export const MENU_SENT_ANEW_WINDOW_MS = 10_000;
+
+/** `chat:message` of the messages a menu was sent anew for, within the window. */
+const menuSentAnewFor = new TtlMap<string>({ maxEntries: 10_000 });
+
+/** Test seam: forget which messages got a menu anew. */
+export function resetMenuSentAnewMemory(): void {
+  menuSentAnewFor.clear();
+}
+
+/** The pressed message as `chat:message`, or `null` for a press on no message of a chat. */
+function pressedMessageKey(ctx: BotContext): string | null {
+  const message = ctx.callbackQuery?.message;
+  return message === undefined ? null : `${message.chat.id}:${message.message_id}`;
+}
+
 /** How `showMainMenu` answers the press it draws the menu for. */
 export interface MainMenuPress {
   /**
@@ -879,28 +956,35 @@ export async function showMainMenu(ctx: BotContext, deps: PageDeps, press: MainM
   // Under RESTRICTED, every callback short-circuits to a "service
   // unavailable" toast — no menu re-render, no Mini App URL.
   if (deps.adminClient !== null) {
+    let restricted = false;
     try {
-      const policy = await getPolicyCache(deps.adminClient).get();
-      if (policy.accessMode === 'RESTRICTED') {
-        const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
-        // Operator copy in an alert, which carries no entities: glyphs.
-        await ctx.answerCallbackQuery({
-          text: plainCopy(deps.translator.t('access_mode.restricted', lang), await toastConfig()),
-          show_alert: true,
-        });
-        return;
-      }
+      restricted = (await getPolicyCache(deps.adminClient).get()).accessMode === 'RESTRICTED';
     } catch {
       /* fail open */
+    }
+    if (restricted) {
+      const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
+      // Operator copy in an alert, which carries no entities: glyphs. Whatever
+      // becomes of the alert, no menu under RESTRICTED.
+      await answerPress(ctx, deps, {
+        text: plainCopy(deps.translator.t('access_mode.restricted', lang), await toastConfig()),
+        show_alert: true,
+      });
+      return;
     }
   }
   if (press.noticeKey !== undefined) {
     const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
     // A toast carries no entities either: the operator's emoji as glyphs.
-    await ctx.answerCallbackQuery({ text: plainCopy(deps.translator.t(press.noticeKey, lang), await toastConfig()) });
+    await answerPress(ctx, deps, { text: plainCopy(deps.translator.t(press.noticeKey, lang), await toastConfig()) });
   } else {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx, deps);
   }
+  // This message could not be edited a moment ago, and got the menu anew then:
+  // a double tap sends nothing more — not a second menu, not a second sign-in
+  // token (review R2a-09).
+  const pressed = pressedMessageKey(ctx);
+  if (pressed !== null && menuSentAnewFor.has(pressed)) return;
   const botCfg = await deps.getConfig();
   const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
   const view = await buildWelcomeView(ctx, deps);
@@ -938,6 +1022,12 @@ export async function showMainMenu(ctx: BotContext, deps: PageDeps, press: MainM
     );
   } catch (err: unknown) {
     if (isUneditableMessageError(err)) {
+      // Checked and marked with no wait in between: a press handled beside this
+      // one (a webhook runner) cannot send a second menu either.
+      if (pressed !== null) {
+        if (menuSentAnewFor.has(pressed)) return;
+        menuSentAnewFor.set(pressed, true, MENU_SENT_ANEW_WINDOW_MS);
+      }
       // Not the menu's fault, and not the user's: that message cannot show it.
       await sendWelcomeScreen(ctx, deps).catch((sendErr: unknown) => {
         deps.logger?.warn({ err: sendErr, telegramId: ctx.from?.id }, 'menu:main: the menu could not be sent anew');

@@ -15,6 +15,7 @@ import { ExternalAuthButtons } from './external-auth-buttons'
 import { SaveCredentialsScreen, type SavedCredentials } from './save-credentials'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { AccessModeBanner } from '@/components/access-mode-banner'
+import { PolicyWaitNote } from '@/components/policy-wait-note'
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -336,8 +337,10 @@ export default function RegisterPage() {
   // Loading state
   if (accessModeLoading) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
+      <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-(--brand-bg-primary)">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        {/* A wait that goes on says why; the form still waits for the policy. */}
+        <PolicyWaitNote />
       </div>
     )
   }

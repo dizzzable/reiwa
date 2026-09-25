@@ -31,6 +31,11 @@ const api = vi.hoisted(() => ({
   getPlans: vi.fn(),
   getAddOnCatalog: vi.fn(),
   getPlatformPolicy: vi.fn(),
+  // The renewal wizard's own calls.
+  activatePromocode: vi.fn(),
+  createRenewalCheckout: vi.fn(),
+  getRenewalOptions: vi.fn(),
+  payWithPartnerBalance: vi.fn(),
 }));
 const access = vi.hoisted(() => ({
   state: { mode: null, known: false, isLoading: true, purchasesBlocked: false, restricted: false, registrationBlocked: false, inviteOnly: false } as Record<string, unknown>,
@@ -40,6 +45,7 @@ vi.mock("@/lib/api-client", () => api);
 vi.mock("react-router", () => ({
   useNavigate: () => vi.fn(),
   useSearchParams: () => [new URLSearchParams()],
+  useLocation: () => ({ pathname: "/renew", search: "", hash: "", state: null }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: "ru" } }),
@@ -54,6 +60,7 @@ vi.mock("@/lib/use-access-mode", () => ({ useAccessMode: () => access.state }));
 import { AccessModeBanner } from "../src/components/access-mode-banner";
 import AddOnsPage from "../src/features/addons/addons-page";
 import PurchasePage from "../src/features/purchase/purchase-page";
+import RenewalPage from "../src/features/renewal/renewal-page";
 import UpgradePage from "../src/features/upgrade/upgrade-page";
 
 let root: Root | null = null;
@@ -114,6 +121,69 @@ describe.each([
     access.state = OPEN;
     mount(page());
     expect(pendingScreen()).toBeNull();
+  });
+});
+
+// Renewal is gated by RESTRICTED alone — it stays open under PURCHASE_BLOCKED,
+// so customers keep their VPN — hence its own "known to block" mode.
+describe("the renewal wizard (review R2a-02)", () => {
+  const RESTRICTED = { mode: "RESTRICTED", known: true, isLoading: false, purchasesBlocked: true, restricted: true, registrationBlocked: false, inviteOnly: false };
+
+  it("waits while the access mode is not known — neither open nor blocked", () => {
+    access.state = UNKNOWN;
+    mount(<RenewalPage />);
+    expect(pendingScreen()).not.toBeNull();
+    expect(container?.textContent).toBe("");
+  });
+
+  it("shows the blocked screen once the mode is known to be RESTRICTED", () => {
+    access.state = RESTRICTED;
+    mount(<RenewalPage />);
+    expect(pendingScreen()).toBeNull();
+    expect(container?.textContent).toContain("common.back");
+  });
+
+  it("does not wait once the mode is known — not even under PURCHASE_BLOCKED", () => {
+    for (const known of [OPEN, BLOCKED]) {
+      access.state = known;
+      mount(<RenewalPage />);
+      expect(pendingScreen()).toBeNull();
+      expect(container?.textContent).not.toContain("common.back");
+      act(() => root?.unmount());
+      container?.remove();
+      root = null;
+    }
+  });
+});
+
+// The panel down and no policy ever known: the wait goes on, and after about
+// ten seconds it says why — nothing to press, the cabinet keeps asking
+// (CD2a §9.2). Only the words change: the flow still does not open.
+describe.each([
+  ["the purchase wizard", () => <PurchasePage />],
+  ["the upgrade wizard", () => <UpgradePage />],
+  ["the add-on wizard", () => <AddOnsPage />],
+  ["the renewal wizard", () => <RenewalPage />],
+])("%s, waiting long", (_label, page) => {
+  it("says after about ten seconds that the panel is unavailable, and keeps waiting", () => {
+    vi.useFakeTimers();
+    try {
+      access.state = UNKNOWN;
+      mount(page());
+      const note = () => container?.querySelector('[data-testid="access-mode-pending-note"]') ?? null;
+      act(() => {
+        vi.advanceTimersByTime(9_999);
+      });
+      expect(note()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(note()?.textContent).toBe("accessMode.pendingNote");
+      expect(pendingScreen()).not.toBeNull();
+      expect(container?.textContent).toBe("accessMode.pendingNote");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

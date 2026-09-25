@@ -606,7 +606,7 @@ describe('the saved copy', () => {
     const { data, redis } = fakeRedis();
     const persistence = new RedisPublicConfigPersistence({
       redis: redis as never,
-      rejectionNotifier: { rejected: vi.fn(), fieldsRejected: vi.fn(), accepted: vi.fn() },
+      rejectionNotifier: { rejected: vi.fn(), fieldsRejected: vi.fn(), accepted: vi.fn(), copyNotSaved: vi.fn() },
       store: new RedisLastKnownGoodStore({ redis: redis as never }),
     });
 

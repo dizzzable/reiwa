@@ -23,9 +23,14 @@ import {
   type PublicConfigPersistencePort,
   type PublicConfigSnapshot,
 } from "../../application/ports/public-config-persistence.port.js";
-import { configVersionOf } from "../../infrastructure/config-versions/config-version.js";
+import {
+  CONFIG_VERSION_HEADER,
+  configVersionOf,
+} from "../../infrastructure/config-versions/config-version.js";
 import {
   CUSTOM_EMOJI_PACKS_LKG,
+  LAST_KNOWN_GOOD_RETRY_MS,
+  LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
   type LastKnownGoodStorePort,
 } from "../../infrastructure/config-versions/last-known-good.js";
@@ -68,13 +73,19 @@ export interface CachedPacks {
    * past the outage.
    */
   readonly fallback: boolean;
+  /**
+   * The empty stand-in is there because Redis could not be read for the saved
+   * copy, not because there is none: it lives only the store's pause, and the
+   * next failed read asks Redis again instead of extending it.
+   */
+  readonly savedCopyUnread?: true;
 }
 
 const CACHE_TTL_MS = 60_000;
 const STALE_WHILE_REVALIDATE_MS = 5 * 60_000;
 
 /** The response header naming the panel version of the public config served. */
-export const PUBLIC_CONFIG_VERSION_HEADER = "X-Config-Version";
+export const PUBLIC_CONFIG_VERSION_HEADER = CONFIG_VERSION_HEADER;
 
 // Module-scoped so an operator branding save (relayed via the
 // `reiwa.branding.invalidate` webhook) can drop the cache process-wide,
@@ -400,7 +411,7 @@ async function readPacks(adminClient: AdminClient | null, startedAt: number): Pr
     return fresh;
   } catch {
     const held = packsCache;
-    if (held !== null) {
+    if (held !== null && held.savedCopyUnread !== true) {
       // Remembered: a dead panel is asked once per TTL, not once per request.
       const kept: CachedPacks = { ...held, fetchedAt: Date.now(), fallback: true };
       if (startedAt === packsGeneration) packsCache = kept;
@@ -408,10 +419,20 @@ async function readPacks(adminClient: AdminClient | null, startedAt: number): Pr
     }
     const saved = await packsLastKnownGood.load(CUSTOM_EMOJI_PACKS_LKG);
     const answer: CachedPacks =
-      saved !== null
-        ? { body: saved.payload, fetchedAt: Date.now(), version: saved.hash, fallback: true }
-        : { body: [], fetchedAt: Date.now(), version: null, fallback: true };
-    if (startedAt === packsGeneration && packsCache === null) packsCache = answer;
+      saved === LAST_KNOWN_GOOD_UNREADABLE
+        ? {
+            body: [],
+            fetchedAt: Date.now() - CACHE_TTL_MS + LAST_KNOWN_GOOD_RETRY_MS,
+            version: null,
+            fallback: true,
+            savedCopyUnread: true,
+          }
+        : saved !== null
+          ? { body: saved.payload, fetchedAt: Date.now(), version: saved.hash, fallback: true }
+          : { body: [], fetchedAt: Date.now(), version: null, fallback: true };
+    if (startedAt === packsGeneration && (packsCache === null || packsCache.savedCopyUnread === true)) {
+      packsCache = answer;
+    }
     return answer;
   }
 }

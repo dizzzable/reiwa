@@ -130,9 +130,82 @@ describe('what a poll re-reads', () => {
       logger: log as never,
     });
 
-    await expect(poller.tick()).resolves.toBe(20_000);
+    // Re-reads were made (and failed): the next poll follows at once to report.
+    await expect(poller.tick()).resolves.toBe(0);
     await new Promise((resolve) => setImmediate(resolve));
     expect(log.warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The report the panel keeps is what the process holds AFTER the re-reads a
+ * poll started (review R2a-04). A poll's own report is taken before them: the
+ * first poll after a blip, 105 s after a save, reported the old version, the
+ * re-read landed at 106 s, and the panel's check at 120 s read a 15-second-old
+ * report of the old version — a «не принял» card about a change that had
+ * arrived. The next report came only 20 s later.
+ */
+describe('the report after a re-read (review R2a-04)', () => {
+  it('follows at once, when the re-read has landed, and reports the new version', async () => {
+    const behind = group('publicConfig', V1);
+    // The re-read lands a moment later; the copy is then the panel's version.
+    behind.reload.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => {
+          setTimeout(() => {
+            behind.state.held = V2;
+            resolve(undefined);
+          }, 30);
+        }),
+    );
+    const reports: ConfigVersionsReport[] = [];
+    const poller = new ConfigVersionPoller({
+      consumer: 'api',
+      groups: [behind.versioned],
+      poll: async (report) => {
+        reports.push(report);
+        return { versions: { publicConfig: V2 } };
+      },
+      intervalMs: 20_000,
+    });
+
+    expect(await poller.tick()).toBe(0);
+    // Not before the re-read has landed: the follow-up's report would be the old one.
+    expect(behind.state.held).toBe(V2);
+
+    // The follow-up: the new version reported, nothing re-read, the usual wait.
+    expect(await poller.tick()).toBe(20_000);
+    expect(reports.map((report) => report.held['publicConfig'])).toEqual([V1, V2]);
+    expect(behind.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a re-read that hangs no longer than a poll’s timeout, then reports what is held', async () => {
+    vi.useFakeTimers();
+    const behind = group('publicConfig', V1);
+    behind.reload.mockImplementation(() => new Promise<undefined>(() => undefined));
+    behind.reset.mockImplementation(() => {
+      behind.state.held = null;
+    });
+    const poller = new ConfigVersionPoller({
+      consumer: 'api',
+      groups: [behind.versioned],
+      poll: async () => ({ versions: { publicConfig: V2 } }),
+      timeoutMs: 8_000,
+    });
+
+    const first = poller.tick();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await first).toBe(0);
+  });
+
+  it('a poll that re-read nothing keeps the usual wait', async () => {
+    const poller = new ConfigVersionPoller({
+      consumer: 'api',
+      groups: [group('publicConfig', V2).versioned],
+      poll: async () => ({ versions: { publicConfig: V2 } }),
+      intervalMs: 20_000,
+    });
+    expect(await poller.tick()).toBe(20_000);
   });
 });
 
@@ -303,7 +376,8 @@ describe('what a poll tells the key of latest versions', () => {
       logger: log as never,
     });
 
-    expect(await poller.tick()).toBe(20_000);
+    // It re-read the group: the report after it follows at once.
+    expect(await poller.tick()).toBe(0);
     expect(behind.reload).toHaveBeenCalledTimes(1);
     expect(log.debug).toHaveBeenCalledTimes(1);
   });

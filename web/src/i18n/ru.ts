@@ -106,6 +106,8 @@ export const ru = {
       codeRequired: 'Введите код приглашения',
       codeInvalid: 'Код приглашения недействителен или истёк',
     },
+    // Под загрузкой, когда правила доступа ~10 с неизвестны (панель не отвечает).
+    pendingNote: 'Панель сейчас недоступна — пробуем снова…',
   },
   common: {
     close: 'Закрыть',
@@ -1407,6 +1409,28 @@ export const ru = {
     // окончания (бессрочная).
     validUntil: 'Действует до {{date}}',
     untilSubscriptionEnd: 'До конца подписки',
+    // Панель говорит, какая граница кончает опцию (eligibility.endsBound, в
+    // «Мои опции» — endsBound): сброс трафика — показываем момент сброса по
+    // часовому поясу оператора, с названием пояса; конец подписки — её дату.
+    // Старая панель границы не присылает, и тогда остаются строки выше.
+    untilReset: 'Действует до сброса трафика {{date}} в {{time}} ({{zone}})',
+    untilSubscriptionEndOn: 'Действует до конца подписки {{date}}',
+    endCountdown: '{{end}} — {{countdown}}',
+    inDays_one: 'через {{count}} дн.',
+    inDays_few: 'через {{count}} дн.',
+    inDays_many: 'через {{count}} дн.',
+    inDays_other: 'через {{count}} дн.',
+    inHours_one: 'через {{count}} ч',
+    inHours_few: 'через {{count}} ч',
+    inHours_many: 'через {{count}} ч',
+    inHours_other: 'через {{count}} ч',
+    inMinutes_one: 'через {{count}} мин',
+    inMinutes_few: 'через {{count}} мин',
+    inMinutes_many: 'через {{count}} мин',
+    inMinutes_other: 'через {{count}} мин',
+    // Перед оплатой, когда сброс, которым кончится опция, ближе суток
+    // (eligibility.resetSoon). Цена полная, поэтому говорим прямо.
+    resetSoonWarning: 'Сброс трафика {{countdown}} — после него опция закончится',
   },
   addonsHistory: {
     title: 'Мои опции',

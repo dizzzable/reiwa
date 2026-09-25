@@ -17,13 +17,16 @@
  * exists to prevent.
  *
  * Best-effort in both directions: a Redis problem must never be the reason a
- * customer cannot reach the screen. Every path answers `null` or does nothing.
+ * customer cannot reach the screen. Nothing throws; a Redis that could not be
+ * read answers the store's "unreadable", which the route must not remember as
+ * "no copy".
  */
 import type { Redis } from "ioredis";
 
 import type { LoggerPort } from "../../application/ports/logger.port.js";
 import { configVersionOf } from "../config-versions/config-version.js";
 import {
+  LAST_KNOWN_GOOD_UNREADABLE,
   RedisLastKnownGoodStore,
   type LastKnownGoodGroup,
   type LastKnownGoodStorePort,
@@ -48,7 +51,10 @@ export const CONNECT_PAGE_LKG: LastKnownGoodGroup<Record<string, unknown>> = {
 };
 
 export interface ConnectPageSnapshotStore {
-  /** The last catalog known to be good, or `null` when there is none to trust. */
+  /**
+   * The last catalog known to be good; `null` when there is none to trust;
+   * `LAST_KNOWN_GOOD_UNREADABLE` when Redis could not be read — not "none".
+   */
   load(): Promise<unknown | null>;
   /** Record a catalog the panel actually served. */
   save(payload: unknown): Promise<void>;
@@ -68,7 +74,8 @@ export class RedisConnectPageSnapshot implements ConnectPageSnapshotStore {
   }
 
   public async load(): Promise<unknown | null> {
-    return (await this.store.load(CONNECT_PAGE_LKG))?.payload ?? null;
+    const copy = await this.store.load(CONNECT_PAGE_LKG);
+    return copy === null || copy === LAST_KNOWN_GOOD_UNREADABLE ? copy : copy.payload;
   }
 
   public async save(payload: unknown): Promise<void> {
@@ -95,7 +102,7 @@ export class ConnectPageVersionTracker implements ConnectPageSnapshotStore {
 
   public async load(): Promise<unknown | null> {
     const copy = await this.inner.load();
-    if (copy !== null) this.held = configVersionOf(copy);
+    if (copy !== null && copy !== LAST_KNOWN_GOOD_UNREADABLE) this.held = configVersionOf(copy);
     return copy;
   }
 

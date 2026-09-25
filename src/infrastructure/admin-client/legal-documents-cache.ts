@@ -40,9 +40,11 @@
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import { configVersionOf } from '../config-versions/config-version.js';
 import {
+  LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
   legalDocumentsLastKnownGood,
   type LastKnownGoodStorePort,
+  type LastKnownGoodUnreadable,
 } from '../config-versions/last-known-good.js';
 import type { KnownPanelChange } from '../config-versions/latest.js';
 import { firstAnswer, settlesWithin } from '../config-versions/within-budget.js';
@@ -123,10 +125,20 @@ export class LegalDocumentsCache {
   private readonly polledCheck = new Map<string, { readonly version: string; readonly startedAt: number }>();
   /** Per locale: the change `catchUp` last began a read for. */
   private readonly caughtUpFor = new Map<string, number>();
-  /** Per locale: the saved copy's read — once per process, nothing else writes it while the bot runs. */
-  private readonly saved = new Map<string, Promise<SavedDocuments | null>>();
-  /** Per locale: the version the store holds, as far as this process knows — a copy is written only when it moves. */
+  /**
+   * Per locale: the saved copy's read — once per process once Redis has
+   * answered it, nothing else writes it while the bot runs. A read Redis failed
+   * is forgotten, and the next tap asks again (`savedCopy`).
+   */
+  private readonly saved = new Map<string, Promise<SavedDocuments | null | LastKnownGoodUnreadable>>();
+  /**
+   * Per locale: the version the store holds, as far as this process knows — a
+   * copy is written only when it moves. Set only by a save Redis took (or by the
+   * copy read back): a failed save must not make the next answer skip it.
+   */
   private readonly storedVersion = new Map<string, string>();
+  /** Per locale: the version a save is out for — one write per version, however many answers carry it. */
+  private readonly savingVersion = new Map<string, string>();
   private readonly lastKnownGood: LastKnownGoodStorePort;
   private readonly logger: LoggerPort | undefined;
 
@@ -291,25 +303,35 @@ export class LegalDocumentsCache {
   }
 
   /**
-   * The documents saved for `locale`, or `null`. Read from the store once per
-   * process, and held — like documents gone stale, refreshed on the next tap —
-   * only while nothing else is, and not by a read an invalidation overtook.
+   * The documents saved for `locale`, or `null` — also while Redis cannot be
+   * read, which is NOT remembered as "no copy" (review R2a-01): the next tap
+   * asks again, paced by the store. Read from the store once per process once
+   * Redis answered, and held — like documents gone stale, refreshed on the
+   * next tap — only while nothing else is, and not by a read an invalidation
+   * overtook.
    */
   private savedCopy(locale: string): Promise<readonly LegalDocument[] | null> {
     let copy = this.saved.get(locale);
     if (copy === undefined) {
-      copy = this.lastKnownGood
+      const loading: Promise<SavedDocuments | null | LastKnownGoodUnreadable> = this.lastKnownGood
         .load(legalDocumentsLastKnownGood(locale))
-        .then((record) =>
-          record === null
-            ? null
-            : { documents: record.payload as unknown as readonly LegalDocument[], version: record.hash },
+        .then(
+          (record) =>
+            record === null || record === LAST_KNOWN_GOOD_UNREADABLE
+              ? record
+              : { documents: record.payload as unknown as readonly LegalDocument[], version: record.hash },
+          // A store that throws despite its contract could not read either.
+          (): LastKnownGoodUnreadable => LAST_KNOWN_GOOD_UNREADABLE,
         );
-      this.saved.set(locale, copy);
+      copy = loading;
+      this.saved.set(locale, loading);
+      void loading.then((record) => {
+        if (record === LAST_KNOWN_GOOD_UNREADABLE && this.saved.get(locale) === loading) this.saved.delete(locale);
+      });
     }
     const startedAt = this.generation;
     return copy.then((record) => {
-      if (record === null) return null;
+      if (record === null || record === LAST_KNOWN_GOOD_UNREADABLE) return null;
       // What the store holds, unless this process has written since.
       if (!this.storedVersion.has(locale)) this.storedVersion.set(locale, record.version);
       if (startedAt === this.generation && !this.values.has(locale)) {
@@ -326,15 +348,22 @@ export class LegalDocumentsCache {
     });
   }
 
-  /** Save what the panel answered, when it is not what the store already holds. Fire-and-forget. */
+  /**
+   * Save what the panel answered, when it is not what the store already holds.
+   * Fire-and-forget; the version counts as stored only once Redis took it — a
+   * save that failed used to be remembered as done, and the documents were not
+   * written again until they changed.
+   */
   private keep(locale: string, documents: readonly LegalDocument[], version: string): void {
-    if (this.storedVersion.get(locale) === version) return;
-    this.storedVersion.set(locale, version);
-    void this.lastKnownGood.save(
-      legalDocumentsLastKnownGood(locale),
-      documents as unknown as unknown[],
-      version,
-    );
+    if (this.storedVersion.get(locale) === version || this.savingVersion.get(locale) === version) return;
+    this.savingVersion.set(locale, version);
+    const settle = (outcome: unknown): void => {
+      if (this.savingVersion.get(locale) === version) this.savingVersion.delete(locale);
+      if (outcome === 'saved') this.storedVersion.set(locale, version);
+    };
+    void this.lastKnownGood
+      .save(legalDocumentsLastKnownGood(locale), documents as unknown as unknown[], version)
+      .then(settle, () => settle('not-saved'));
   }
 }
 

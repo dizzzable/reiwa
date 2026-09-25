@@ -26,9 +26,11 @@
  *     neither the browser's cache nor the service worker has seen, so the old
  *     copy cannot answer — and a plain read cannot put it back afterwards;
  *   - where the route names the version of the body it served
- *     (`X-Config-Version` on `/public-config`), a body older than what the
- *     cabinet holds — a copy the browser cache answered with just after a
- *     save — is refetched as soon as it is noticed (`noteServed`).
+ *     (`X-Config-Version` on `/public-config`, `/landing`, `/connect-page`), a
+ *     body older than what the cabinet holds — a copy the browser cache or the
+ *     service worker answered with just after a save, or on a fresh load
+ *     before the first answer — is refetched as soon as it is noticed
+ *     (`noteServed`).
  *
  * A group nobody on the page reads costs nothing: refetching queries that do
  * not exist does nothing, and the next read of the group carries the version.
@@ -68,7 +70,7 @@ const GROUPS = Object.keys(WATCHED_CONFIG_GROUPS) as WatchedConfigGroup[];
 /** The query parameter a versioned read carries. The server routes ignore it. */
 export const CONFIG_VERSION_PARAM = "v";
 
-/** The response header naming the version of the body served (`/public-config`). */
+/** The response header naming the version of the body served (`/public-config`, `/landing`, `/connect-page`). */
 export const CONFIG_VERSION_HEADER = "x-config-version";
 
 export const CONFIG_VERSION_POLL_INTERVAL_MS = 60_000;

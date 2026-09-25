@@ -108,6 +108,7 @@ export const en: RuDict = {
       codeRequired: 'Enter an invite code',
       codeInvalid: 'Invite code is invalid or expired',
     },
+    pendingNote: 'The panel is unavailable right now — trying again…',
   },
   common: {
     close: 'Close',
@@ -1375,6 +1376,31 @@ export const en: RuDict = {
     freeApplied: 'Add-on activated',
     validUntil: 'Valid until {{date}}',
     untilSubscriptionEnd: 'Until the subscription ends',
+    // Which bound ends the add-on, as the panel says (`eligibility.endsBound`;
+    // `endsBound` in «My add-ons»): the traffic reset, shown at the reset's own
+    // moment on the operator's clock with the zone named, or the subscription's
+    // end. An older panel sends no bound and keeps the two lines above.
+    untilReset: 'Valid until the traffic reset on {{date}} at {{time}} ({{zone}})',
+    untilSubscriptionEndOn: 'Valid until the subscription ends on {{date}}',
+    endCountdown: '{{end}} — {{countdown}}',
+    inDays_one: 'in {{count}} day',
+    // `_few` / `_many` exist only because `RuDict` is the contract and Russian
+    // needs them; English resolves `_other` for both.
+    inDays_few: 'in {{count}} days',
+    inDays_many: 'in {{count}} days',
+    inDays_other: 'in {{count}} days',
+    inHours_one: 'in {{count}} hour',
+    inHours_few: 'in {{count}} hours',
+    inHours_many: 'in {{count}} hours',
+    inHours_other: 'in {{count}} hours',
+    inMinutes_one: 'in {{count}} minute',
+    inMinutes_few: 'in {{count}} minutes',
+    inMinutes_many: 'in {{count}} minutes',
+    inMinutes_other: 'in {{count}} minutes',
+    // Before the payment, when the reset that ends the add-on is less than a
+    // day away (`eligibility.resetSoon`). The price is the full price, so it is
+    // said plainly.
+    resetSoonWarning: 'The traffic resets {{countdown}} — the add-on ends with it',
   },
   addonsHistory: {
     title: 'My add-ons',

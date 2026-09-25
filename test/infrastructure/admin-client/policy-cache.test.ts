@@ -463,6 +463,7 @@ describe('PolicyCache and the last known policy (W8 report D5)', () => {
       save: vi.fn(async (_group: unknown, payload: unknown) => {
         saves.push(payload);
         record = { shape: 1, savedAt: 2, hash: configVersionOf(payload), payload: payload as Record<string, unknown> };
+        return 'saved' as const;
       }) as LastKnownGoodStorePort['save'],
     };
     return { store, saves };
@@ -705,6 +706,7 @@ describe('PolicyCache.catchUp()', () => {
       load: vi.fn(async () => null) as LastKnownGoodStorePort['load'],
       save: vi.fn(async (_group: unknown, payload: unknown) => {
         saves.push(payload);
+        return 'saved' as const;
       }) as LastKnownGoodStorePort['save'],
     };
     const cache = new PolicyCache(upstream.fn, { lastKnownGood: store, ttlMs: 60_000 });
@@ -782,7 +784,7 @@ describe('PolicyCache.catchUp()', () => {
     const INVITED: PlatformPolicyShape = { ...BEFORE_CHANGE, accessMode: 'INVITED' };
     const store: LastKnownGoodStorePort = {
       load: vi.fn(async () => ({ shape: 1, savedAt: 1, hash: configVersionOf(INVITED), payload: { ...INVITED } })) as LastKnownGoodStorePort['load'],
-      save: vi.fn(async () => undefined) as LastKnownGoodStorePort['save'],
+      save: vi.fn(async () => 'saved' as const) as LastKnownGoodStorePort['save'],
     };
     const upstream = handAnswered();
     const cache = new PolicyCache(upstream.fn, { lastKnownGood: store });

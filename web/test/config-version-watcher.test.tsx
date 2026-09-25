@@ -421,4 +421,79 @@ describe("end to end through React Query", () => {
     expect(container?.textContent).toBe("After");
     expect(get).toHaveBeenCalledWith("/public-config", { params: { [CONFIG_VERSION_PARAM]: B } });
   });
+
+  /** A page that reads one watched group through its real fetcher. */
+  async function freshGroupPage(
+    queryKey: readonly string[],
+    fetcherOf: (modules: {
+      getLanding: () => Promise<unknown>;
+      getConnectPage: () => Promise<unknown>;
+    }) => () => Promise<unknown>,
+    bodyOf: (url: string, version: string | undefined) => unknown,
+  ) {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.resetModules();
+    const { apiClient } = await import("@/lib/api-client/transport");
+    const { getLanding } = await import("@/lib/api-client/landing");
+    const { getConnectPage } = await import("@/lib/api-client/connect-page");
+    const { ConfigVersionWatcherMount } = await import("@/lib/config-version-watcher-mount");
+    const get = vi
+      .spyOn(apiClient, "get")
+      .mockImplementation(async (url: string, config?: { params?: Record<string, string> }) =>
+        bodyOf(url, config?.params?.["v"]),
+      );
+    const queryFn = fetcherOf({ getLanding, getConnectPage });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Page() {
+      const { data } = useQuery({ queryKey, queryFn, staleTime: 5 * 60_000 });
+      return <p>{(data as { title?: string } | undefined)?.title ?? "…"}</p>;
+    }
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <QueryClientProvider client={client}>
+          <ConfigVersionWatcherMount queryClient={client} />
+          <Page />
+        </QueryClientProvider>,
+      );
+    });
+    return { get };
+  }
+
+  const published: Record<string, { title: string }> = { [A]: { title: "Before" }, [B]: { title: "After" } };
+
+  it("a fresh load the service worker answered with the pre-publish landing is refetched at once (review R2a-05)", async () => {
+    // A new visit after a publish: the plain first read of `/landing` goes out
+    // before the watcher's first answer, and the service worker answers it from
+    // its cache — the old landing, naming its old version.
+    const { get } = await freshGroupPage(["landing"], (m) => m.getLanding, (url, version) => {
+      if (url === "/config-versions") return { data: { versions: { landing: B } } };
+      if (url === "/landing") {
+        const served = version ?? A;
+        return { data: published[served], headers: { "x-config-version": served } };
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    await elapse(0);
+
+    expect(container?.textContent).toBe("After");
+    expect(get).toHaveBeenCalledWith("/landing", { params: { [CONFIG_VERSION_PARAM]: B } });
+  });
+
+  it("a fresh load the browser cache answered with the pre-save connect catalog is refetched at once (review R2a-05)", async () => {
+    const { get } = await freshGroupPage(["connect-page"], (m) => m.getConnectPage, (url, version) => {
+      if (url === "/config-versions") return { data: { versions: { connectPage: B } } };
+      if (url === "/connect-page") {
+        const served = version ?? A;
+        return { data: published[served], headers: { "x-config-version": served } };
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    await elapse(0);
+
+    expect(container?.textContent).toBe("After");
+    expect(get).toHaveBeenCalledWith("/connect-page", { params: { [CONFIG_VERSION_PARAM]: B } });
+  });
 });

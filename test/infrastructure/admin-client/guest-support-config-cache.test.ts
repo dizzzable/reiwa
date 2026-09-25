@@ -32,6 +32,7 @@ function savedCopy(saved: GuestRuntimeConfig | null) {
     load: vi.fn(async () => record) as LastKnownGoodStorePort['load'],
     save: vi.fn(async (_group: unknown, payload: unknown) => {
       saves.push(payload);
+      return 'saved' as const;
     }) as LastKnownGoodStorePort['save'],
   };
   return { store, saves };

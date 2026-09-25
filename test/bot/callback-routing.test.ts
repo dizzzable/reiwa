@@ -47,6 +47,12 @@ import {
   registerStartPage,
   type PageRegistrar,
 } from '../../src/bot/pages/index.js';
+import {
+  CALLBACK_ANSWER_MAX_CHARS,
+  fitCallbackAnswer,
+  MENU_SENT_ANEW_WINDOW_MS,
+  resetMenuSentAnewMemory,
+} from '../../src/bot/pages/start.js';
 import type { BotContext, BotSession, PageDeps } from '../../src/bot/pages/types.js';
 import { buildMainKeyboard } from '../../src/bot/widgets/main-keyboard.js';
 import { setLegalDocumentsCache } from '../../src/infrastructure/admin-client/legal-documents-cache.js';
@@ -134,6 +140,8 @@ interface PressOptions {
   readonly calls?: ApiCall[];
   /** More of the pressed message: a photo, a business connection. */
   readonly messageExtra?: Record<string, unknown>;
+  /** The texts, when a case needs an operator's own (the passthrough by default). */
+  readonly translator?: PageDeps['translator'];
 }
 
 async function press(
@@ -159,7 +167,7 @@ async function press(
   const locales = new Map<number, string>();
   const deps: PageDeps = {
     adminClient: (options.adminClient ?? null) as PageDeps['adminClient'],
-    translator: buildPassthroughTranslator(),
+    translator: options.translator ?? buildPassthroughTranslator(),
     userLocale: {
       getSync: (id) => locales.get(id) ?? 'ru',
       setSync: (id, lang) => {
@@ -236,6 +244,8 @@ beforeEach(() => {
   setLegalDocumentsCache(null);
   resetChannelGateMemory();
   resetChannelJoinPromptMemory();
+  // Every press here is on the same message (chat 4242, message 50).
+  resetMenuSentAnewMemory();
 });
 
 describe('callback routing — every page, in main.ts order', () => {
@@ -409,6 +419,87 @@ describe('callback routing — every page, in main.ts order', () => {
     });
     expect(answersOf(calls).map((c) => c.payload['text'])).toEqual([STALE_NOTICE]);
     expect(calls.filter((c) => c.method === 'sendMessage')).toEqual([]);
+  });
+
+  describe('a double tap on a message Telegram will not edit (review R2a-09)', () => {
+    const UNEDITABLE = { editMessageText: { error_code: 400, description: 'Bad Request: message to edit not found' } };
+    const sends = (calls: readonly ApiCall[]): ApiCall[] => calls.filter((c) => c.method === 'sendMessage');
+
+    it('sends ONE new menu: the second press is answered and sends nothing — no second sign-in token', async () => {
+      const first = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
+      const second = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
+
+      expect(sends(first)).toHaveLength(1);
+      expect(String(sends(first)[0]?.payload['text'])).toContain(WELCOME);
+      // The spinner stops, and that is all.
+      expect(second.map((c) => c.method)).toEqual(['answerCallbackQuery']);
+    });
+
+    it('«В меню» too — the same memory, the same message', async () => {
+      await press('menu:main', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
+      const second = await press('menu:main', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
+      expect(second.map((c) => c.method)).toEqual(['answerCallbackQuery']);
+    });
+
+    it('another message still gets its own menu, and this one again once the window is over', async () => {
+      await press('nonsense', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
+      const other = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, {
+        refuse: UNEDITABLE,
+        messageExtra: { message_id: 51 },
+      });
+      expect(sends(other)).toHaveLength(1);
+
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now + MENU_SENT_ANEW_WINDOW_MS);
+      try {
+        const later = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
+        expect(sends(later)).toHaveLength(1);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+  });
+
+  describe('an operator’s «Меню обновилось» Telegram would refuse (review R2a-08)', () => {
+    // 3 flags (2 code points each) + 40 × «Меню обновилось, » (17) = 686 code points.
+    const LONG = '🇷🇺🇷🇺🇷🇺' + 'Меню обновилось, '.repeat(40);
+    const operatorTexts = (): PageDeps['translator'] => {
+      const passthrough = buildPassthroughTranslator();
+      return {
+        t: (key, lang, vars) => (key === 'menu.updated' ? LONG : passthrough.t(key, lang, vars)),
+        resolveButtonLabel: passthrough.resolveButtonLabel,
+      };
+    };
+
+    it('is cut to Telegram’s 200 characters, counted as code points, and the menu is drawn', async () => {
+      const calls = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, { translator: operatorTexts() });
+      const toast = String(answersOf(calls)[0]?.payload['text']);
+      expect([...toast]).toHaveLength(CALLBACK_ANSWER_MAX_CHARS);
+      expect(toast.startsWith('🇷🇺🇷🇺🇷🇺Меню обновилось')).toBe(true);
+      expect(toast.endsWith('…')).toBe(true);
+      expect(String(calls.find((c) => c.method === 'editMessageText')?.payload['text'])).toContain(WELCOME);
+    });
+
+    it('a toast Telegram refuses all the same: the spinner stops without it, and the menu is still drawn', async () => {
+      const calls: ApiCall[] = [];
+      const bot = await press('nonsense', DEFAULT_BOT_CONFIG, undefined, {
+        calls,
+        refuse: { answerCallbackQuery: { error_code: 400, description: 'Bad Request: MESSAGE_TOO_LONG' } },
+      });
+      // Tried with the toast, then without it; then the menu, whatever the answers did.
+      expect(answersOf(bot).map((c) => c.payload['text'])).toEqual([STALE_NOTICE, undefined]);
+      expect(String(bot.find((c) => c.method === 'editMessageText')?.payload['text'])).toContain(WELCOME);
+    });
+
+    it('cuts at a whole character: a flag is never split in half', () => {
+      const flags = '🇷🇺'.repeat(150); // 300 code points
+      const cut = fitCallbackAnswer(flags);
+      expect([...cut].length).toBeLessThanOrEqual(CALLBACK_ANSWER_MAX_CHARS);
+      expect(cut).toBe(`${'🇷🇺'.repeat(99)}…`);
+      // A text that fits is left alone, emoji included.
+      expect(fitCallbackAnswer('🔥 Меню обновилось')).toBe('🔥 Меню обновилось');
+      expect(fitCallbackAnswer('x'.repeat(CALLBACK_ANSWER_MAX_CHARS))).toBe('x'.repeat(CALLBACK_ANSWER_MAX_CHARS));
+    });
   });
 
   it('an old photo message Telegram will not edit: the menu, with its banner, as a new message', async () => {

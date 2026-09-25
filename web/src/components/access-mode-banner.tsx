@@ -8,6 +8,7 @@
 import { TriangleAlert, Wrench, Ban, Mail } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { PolicyWaitNote } from "@/components/policy-wait-note";
 import { useAccessMode } from "@/lib/use-access-mode";
 import type { AccessMode } from "@/types/api";
 
@@ -56,12 +57,14 @@ export function AccessModeBanner({
  * first read, or reads that keep failing while the panel is down. A spinner,
  * like any other load: the flow must neither open as if purchases were
  * allowed nor claim they are blocked. The policy query asks again on its own
- * (`lib/platform-policy-query.ts`), and the flow appears the moment it answers.
+ * (`lib/platform-policy-query.ts`), and the flow appears the moment it answers;
+ * a wait that goes on says why (`PolicyWaitNote`).
  */
 export function AccessModePendingScreen() {
   return (
-    <div className="flex h-48 items-center justify-center" data-testid="access-mode-pending">
+    <div className="flex h-48 flex-col items-center justify-center gap-4" data-testid="access-mode-pending">
       <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <PolicyWaitNote />
     </div>
   );
 }

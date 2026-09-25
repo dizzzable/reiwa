@@ -7,16 +7,28 @@
  * button kind this cabinet has never seen without breaking the screen.
  */
 import { apiClient } from "./transport.js";
-import { configVersionRequest } from "@/lib/config-versions";
+import {
+  configVersionRequest,
+  configVersionWatcher,
+  servedConfigVersion,
+} from "@/lib/config-versions";
 
-/** With the version the cabinet holds once it is known (`?v=`, `lib/config-versions.ts`). */
+/**
+ * With the version the cabinet holds once it is known (`?v=`,
+ * `lib/config-versions.ts`), noting the version the body names — a copy the
+ * browser's cache answered with before the watcher's first answer is re-read
+ * as soon as the watcher knows the current one.
+ */
 export const getConnectPage = () => {
   const versioned = configVersionRequest("connectPage");
   return (
     versioned === undefined
       ? apiClient.get<unknown>("/connect-page")
       : apiClient.get<unknown>("/connect-page", versioned)
-  ).then((r) => r.data);
+  ).then((r) => {
+    configVersionWatcher.noteServed("connectPage", servedConfigVersion(r.headers));
+    return r.data;
+  });
 };
 
 /**

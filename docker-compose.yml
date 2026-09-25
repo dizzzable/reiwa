@@ -36,8 +36,12 @@ services:
     # finds no log starts EMPTY — it does not read the old snapshot (checked on
     # valkey 9.1.2): every web session signed out, the settings copies gone
     # until the panel answers again.
-    #   docker exec reiwa-redis valkey-cli -a "$REDIS_PASSWORD" CONFIG SET appendonly yes
-    #   (a few seconds; `... INFO persistence` shows aof_rewrite_in_progress:0)
+    # The password is REDIS_PASSWORD from .env, typed in: only Compose reads
+    # .env, so "$REDIS_PASSWORD" is empty in a host shell (NOAUTH, and the log
+    # stays off).
+    #   docker exec reiwa-redis valkey-cli -a "<REDIS_PASSWORD from .env>" CONFIG SET appendonly yes
+    #   (answer OK; then wait until `... INFO persistence` shows
+    #   aof_rewrite_in_progress:0, aof_rewrite_scheduled:0, aof_last_bgrewrite_status:ok)
     #   then: replace docker-compose.yml, `docker compose up -d`
     command:
       ["--requirepass", "${REDIS_PASSWORD}", "--bind", "0.0.0.0", "--appendonly", "yes", "--appendfsync", "everysec"]

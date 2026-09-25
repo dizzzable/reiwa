@@ -17,7 +17,14 @@
  * The request carries what the process holds, too. The panel keeps the latest
  * report per process and, two minutes after an operator's save, raises a card
  * only if the process still holds the old version (the owner's rule: warn only
- * when a change has not arrived within two minutes).
+ * when a change has not arrived within two minutes). A poll's report is taken
+ * BEFORE the re-reads it starts, so a poll that re-read something is followed
+ * at once — as soon as the re-reads have landed — by another, whose report is
+ * the one the panel keeps. Without it, a first poll after a blip, 105 s after a
+ * save, left the panel a report of the old version for the check at 120 s, and
+ * the operator a false «не принял» card about a change that had arrived (review
+ * R2a-04). The follow-up re-reads nothing it has just re-read (the retry window
+ * below), so it cannot loop.
  *
  * A poll that fails must never hold anything up or fill the log: it runs off
  * the request path on an unref'd timer, one at a time, and backs off — twice
@@ -87,6 +94,8 @@ const DEFAULT_RETRY_REFRESH_AFTER_MS = 5 * 60_000;
 const DEFAULT_JITTER_MS = 2_000;
 /** The first poll waits for the process to settle; its caches warm on their own reads. */
 const FIRST_POLL_DELAY_MS = 5_000;
+/** The wait before the poll that follows a re-read: none — its re-reads have landed (see the header). */
+export const CONFIG_VERSION_FOLLOW_UP_DELAY_MS = 0;
 
 /** The versions out of the panel's answer, or `null` when it has none. */
 function versionsOf(answer: unknown): Readonly<Record<string, string>> | null {
@@ -164,6 +173,7 @@ export class ConfigVersionPoller {
     } catch (err: unknown) {
       this.options.logger?.debug({ err: describe(err) }, 'config versions: recording the answer failed');
     }
+    const rereads: Promise<void>[] = [];
     for (const group of this.options.groups) {
       const current = versions[group.key];
       const mine = held[group.key];
@@ -177,9 +187,32 @@ export class ConfigVersionPoller {
         { group: group.key, consumer: this.options.consumer },
         'config versions: the panel has a newer copy than this process holds; re-reading it',
       );
-      this.refresh(group);
+      rereads.push(this.refresh(group));
     }
-    return this.intervalMs;
+    if (rereads.length === 0) return this.intervalMs;
+    // This poll's report was taken before these re-reads: the next one goes
+    // out as soon as they have landed — at most a poll's timeout from now — so
+    // the report the panel keeps is what this process holds after them.
+    await this.settledWithin(Promise.all(rereads), this.timeoutMs);
+    return CONFIG_VERSION_FOLLOW_UP_DELAY_MS;
+  }
+
+  /** Whether `work` settled within `ms`; cancels nothing. */
+  private async settledWithin(work: Promise<unknown>, ms: number): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        work.then(
+          () => undefined,
+          () => undefined,
+        ),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, ms);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   private heldOf(group: VersionedGroup): string | null {
@@ -190,14 +223,19 @@ export class ConfigVersionPoller {
     }
   }
 
-  private refresh(group: VersionedGroup): void {
+  /** Reset and re-read one group. Resolves when the re-read has landed, either way; never rejects. */
+  private refresh(group: VersionedGroup): Promise<void> {
     try {
       group.reset();
-      void Promise.resolve(group.reload()).catch((err: unknown) => {
-        this.options.logger?.warn({ err: describe(err), group: group.key }, 'config versions: re-read failed');
-      });
+      return Promise.resolve(group.reload()).then(
+        () => undefined,
+        (err: unknown) => {
+          this.options.logger?.warn({ err: describe(err), group: group.key }, 'config versions: re-read failed');
+        },
+      );
     } catch (err: unknown) {
       this.options.logger?.warn({ err: describe(err), group: group.key }, 'config versions: re-read failed');
+      return Promise.resolve();
     }
   }
 

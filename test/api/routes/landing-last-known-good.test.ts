@@ -40,6 +40,7 @@ function savedCopy(saved: Record<string, unknown> | null) {
     load: vi.fn(async () => record) as LastKnownGoodStorePort['load'],
     save: vi.fn(async (_group: unknown, payload: unknown, hash?: string) => {
       saves.push({ payload, hash });
+      return 'saved' as const;
     }) as LastKnownGoodStorePort['save'],
   };
   return { store, saves };

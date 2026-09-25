@@ -22,7 +22,10 @@
  * `lastKnownGood` store is configured, in reiwa's Redis too, so a restart
  * during an outage comes back with the operator's access mode, channel gate
  * and rules gate. Only a process that has never seen a policy — none in memory,
- * none in Redis — answers the `PUBLIC` stand-in (`_isFallback: true`).
+ * none in Redis — answers the `PUBLIC` stand-in (`_isFallback: true`). A Redis
+ * that could not be read is not "none in Redis": the stand-in is answered
+ * while it cannot say, and the copy is asked for again a moment later instead
+ * of never (review R2a-01).
  *
  * ── Never a long wait ────────────────────────────────────────────────────────
  *
@@ -56,10 +59,13 @@ import type { AdminClient } from '../../lib/admin-client.js';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import { configVersionOf } from '../config-versions/config-version.js';
 import {
+  LAST_KNOWN_GOOD_RETRY_MS,
+  LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
   PLATFORM_POLICY_LKG,
   type LastKnownGood,
   type LastKnownGoodStorePort,
+  type LastKnownGoodUnreadable,
 } from '../config-versions/last-known-good.js';
 import type { KnownPanelChange } from '../config-versions/latest.js';
 import { firstAnswer, settlesWithin } from '../config-versions/within-budget.js';
@@ -149,8 +155,12 @@ export class PolicyCache {
    * waiting a budget of their own on the same hung panel.
    */
   private budgetSpent: number | null = null;
-  /** The saved copy's read — once per process: nothing else writes it while we run. */
-  private saved: Promise<LastKnownGood<Record<string, unknown>> | null> | null = null;
+  /**
+   * The saved copy's read — once per process once Redis has answered it:
+   * nothing else writes it while we run. A read Redis failed is forgotten, so
+   * the next cold read asks again (`savedPolicy`).
+   */
+  private saved: Promise<LastKnownGood<Record<string, unknown>> | null | LastKnownGoodUnreadable> | null = null;
   /**
    * When the read `value` came from began; `-Infinity` for the saved copy. A
    * change reiwa heard of after it is one `value` may not have (`catchUp`).
@@ -208,7 +218,8 @@ export class PolicyCache {
     const startedAt = this.generation;
     const pending = this.inFlight ?? this.startRefresh();
     if (this.budgetSpent === startedAt) return FALLBACK_POLICY;
-    const first = await firstAnswer({ fetched: pending, saved: this.savedPolicy(), budgetMs: this.waitBudgetMs });
+    const saved = this.savedPolicy().then((copy) => (copy === LAST_KNOWN_GOOD_UNREADABLE ? null : copy));
+    const first = await firstAnswer({ fetched: pending, saved, budgetMs: this.waitBudgetMs });
     if (first !== null) return first;
     if (startedAt === this.generation) this.budgetSpent = startedAt;
     return this.value ?? FALLBACK_POLICY;
@@ -310,12 +321,28 @@ export class PolicyCache {
     );
   }
 
-  /** The saved copy's payload, or `null`; read from the store once per process. */
-  private savedPolicy(): Promise<CachedPolicy | null> {
-    this.saved ??= this.lastKnownGood.load(PLATFORM_POLICY_LKG);
+  /**
+   * The saved copy's payload; `null` when Redis says there is none;
+   * LAST_KNOWN_GOOD_UNREADABLE when Redis could not say. Read from the store
+   * once per process — but a read Redis failed is not kept: the next call asks
+   * again, paced by the store (`LAST_KNOWN_GOOD_RETRY_MS`).
+   */
+  private savedPolicy(): Promise<CachedPolicy | null | LastKnownGoodUnreadable> {
+    let read = this.saved;
+    if (read === null) {
+      // A store that throws despite its contract could not read either.
+      const loading = this.lastKnownGood
+        .load(PLATFORM_POLICY_LKG)
+        .catch((): LastKnownGoodUnreadable => LAST_KNOWN_GOOD_UNREADABLE);
+      read = loading;
+      this.saved = loading;
+      void loading.then((copy) => {
+        if (copy === LAST_KNOWN_GOOD_UNREADABLE && this.saved === loading) this.saved = null;
+      });
+    }
     const startedAt = this.generation;
-    return this.saved.then((copy) => {
-      if (copy === null) return null;
+    return read.then((copy) => {
+      if (copy === null || copy === LAST_KNOWN_GOOD_UNREADABLE) return copy;
       const policy = copy.payload as unknown as CachedPolicy;
       // Held like an answer that has gone stale: served, and refreshed from
       // the panel on the next read past the TTL.
@@ -381,10 +408,17 @@ export class PolicyCache {
         return this.value;
       }
       const saved = await this.savedPolicy();
-      if (saved !== null) return saved;
+      if (saved !== null && saved !== LAST_KNOWN_GOOD_UNREADABLE) return saved;
       if (startedAt === this.generation) {
-        this.failuresWithNothingCached += 1;
-        if (this.failuresWithNothingCached >= 2) this.fallbackUntil = Date.now() + FALLBACK_RETRY_MS;
+        if (saved === LAST_KNOWN_GOOD_UNREADABLE) {
+          // Nobody knows yet whether a copy exists: the stand-in until Redis can
+          // say — the store's pause, not the fallback window, and not counted
+          // towards it. A copy that exists must not wait half a minute.
+          this.fallbackUntil = Date.now() + LAST_KNOWN_GOOD_RETRY_MS;
+        } else {
+          this.failuresWithNothingCached += 1;
+          if (this.failuresWithNothingCached >= 2) this.fallbackUntil = Date.now() + FALLBACK_RETRY_MS;
+        }
       }
       return FALLBACK_POLICY;
     }
