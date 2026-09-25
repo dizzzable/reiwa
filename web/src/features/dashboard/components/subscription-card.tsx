@@ -21,10 +21,12 @@ import { Wifi, WifiOff } from "lucide-react";
 import { CustomIconView } from "@/components/ui/custom-icon-view";
 import { EmojiText } from "@/components/ui/emoji-text";
 import { useBranding } from "@/lib/branding-provider";
-import { cn, formatDate, getDaysLeft } from "@/lib/utils";
+import { useOperatorTimeZone } from "@/lib/operator-time-zone";
+import { cn, formatDate } from "@/lib/utils";
 import type { Subscription } from "@/types/api";
 
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
+import { subscriptionCardEnd } from "./subscription-card-end";
 import { SubscriptionCardFrame } from "./subscription-card-frame";
 import {
   resolveSubscriptionCardVisual,
@@ -129,21 +131,30 @@ export function SubscriptionCardContent({
     return `hsl(${hue} 85% 55%)`;
   }, [trafficProgress]);
 
-  // Days remaining until expiry — the card's hero time metric. `null` when the
-  // subscription has no expiry date (falls back to the plain "expires" line).
-  // Reuses the shared `getDaysLeft` so the count matches everywhere in the app.
+  // Time left until expiry — the card's hero time metric — and the date, both
+  // on the operator's calendar once the panel has named it (the phone's until
+  // then), counted against the date printed beside them
+  // (`subscription-card-end.ts`). `null` when the subscription has no expiry
+  // date (falls back to the plain "expires" line).
+  const dateZone = useOperatorTimeZone();
   const rawExpiry = sub.expiresAt ?? sub.expireAt;
-  const daysLeft = rawExpiry ? Math.max(0, getDaysLeft(rawExpiry)) : null;
+  const end = subscriptionCardEnd(rawExpiry, dateZone);
   // Urgency accent — mirrors the traffic bar's calm→hot cue. Only tints when
   // the subscription runs low, so the default look stays on-brand (white).
   const daysColor =
-    daysLeft === null
-      ? undefined
-      : daysLeft <= 3
-        ? "var(--card-danger)"
-        : daysLeft <= 7
-          ? "var(--card-warning)"
-          : undefined;
+    end?.urgency === "danger"
+      ? "var(--card-danger)"
+      : end?.urgency === "warning"
+        ? "var(--card-warning)"
+        : undefined;
+  const timeLeft =
+    end === null
+      ? null
+      : end.left.unit === "day"
+        ? t("card.daysLeft", { count: end.left.count })
+        : end.left.unit === "hour"
+          ? t("card.hoursLeft", { count: end.left.count })
+          : t("card.minutesLeft", { count: end.left.count });
 
   // Plan's own icon (frozen in the subscription snapshot) beside the name, so a
   // customer recognises their plan at a glance. Mirrors the tariff-card renderer:
@@ -238,7 +249,7 @@ export function SubscriptionCardContent({
 
         <div className="flex items-end justify-between gap-2">
           <div className="min-w-0">
-            {daysLeft !== null ? (
+            {end !== null ? (
               <>
                 <p className="text-[10px] font-medium tracking-wider uppercase">
                   {t("card.remaining")}
@@ -247,10 +258,10 @@ export function SubscriptionCardContent({
                   className="text-base font-bold leading-none @sm:text-lg"
                   style={daysColor ? { color: daysColor } : undefined}
                 >
-                  {t("card.daysLeft", { count: daysLeft })}
+                  {timeLeft}
                 </p>
                 <p className="mt-0.5 truncate text-[10px]">
-                  {t("card.untilDate", { date: formatDate(rawExpiry) })}
+                  {t("card.untilDate", { date: end.date })}
                 </p>
               </>
             ) : (
@@ -259,7 +270,7 @@ export function SubscriptionCardContent({
                   {t("card.expiresOn")}
                 </p>
                 <p className="truncate text-[13px] font-semibold @sm:text-sm">
-                  {formatDate(rawExpiry)}
+                  {formatDate(rawExpiry, dateZone)}
                 </p>
               </>
             )}

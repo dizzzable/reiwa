@@ -38,14 +38,16 @@ import {
 import {
   LAST_KNOWN_GOOD_RETRY_MS,
   LAST_KNOWN_GOOD_UNREADABLE,
+  type LastKnownGoodUnreadable,
 } from "../../infrastructure/config-versions/last-known-good.js";
+import { panelOrSavedCopy } from "../../infrastructure/config-versions/panel-or-saved-copy.js";
 import {
   NOOP_CONNECT_PAGE_SNAPSHOT,
   type ConnectPageSnapshotStore,
 } from "../../infrastructure/public-config/redis-connect-page-snapshot.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 
-interface CachedCatalog {
+export interface CachedCatalog {
   readonly body: unknown;
   readonly etag: string;
   readonly fetchedAt: number;
@@ -67,6 +69,12 @@ const CACHE_TTL_MS = 60_000;
 let cached: CachedCatalog | null = null;
 let inflight: Promise<CachedCatalog> | null = null;
 /**
+ * The read that stands in for the panel while nothing is held
+ * (`panelOrSavedCopy`), joined by every tap that finds the cache so: one read
+ * of Redis for all of them.
+ */
+let coldRead: Promise<CachedCatalog> | null = null;
+/**
  * Bumped by every invalidate. A fetch that started before the bump may not
  * write its answer.
  *
@@ -86,6 +94,7 @@ let generation = 0;
 export function resetConnectPageCache(): void {
   cached = null;
   inflight = null;
+  coldRead = null;
   generation += 1;
 }
 
@@ -125,14 +134,21 @@ async function fetchFresh(
  * uncached is what made a panel outage cost every single visitor another
  * upstream timeout — with the panel on its own host that is seconds per tap,
  * for as long as the outage lasts.
+ *
+ * And no tap waits out a panel that HANGS (review R3b-02, on the API side): a
+ * catalog held past its TTL is served at once while one read refreshes it;
+ * with nothing held, the panel gets its head start and then the copy saved in
+ * Redis is served while the read goes on (`panelOrSavedCopy`). Both used to
+ * wait for the read — the transport's ten seconds.
  */
-async function getCatalog(
+export async function getConnectPageCatalog(
   adminClient: AdminClient | null,
   snapshots: ConnectPageSnapshotStore,
   onFailure?: (err: unknown) => void,
 ): Promise<CachedCatalog> {
   const now = Date.now();
-  if (cached !== null && now - cached.fetchedAt < CACHE_TTL_MS) return cached;
+  const held = cached;
+  if (held !== null && now - held.fetchedAt < CACHE_TTL_MS) return held;
 
   if (inflight === null) {
     const startedAt = generation;
@@ -173,7 +189,47 @@ async function getCatalog(
       });
     inflight = pending;
   }
-  return inflight;
+  const pending = inflight;
+  // Past its TTL, and not the `null` that only stood in while Redis could not
+  // be read: served while the read above refreshes it. Any other `null` is held
+  // too — the panel's own «the screen is switched off» has no version either,
+  // and the saved copy, the last catalog it had on, must never replace it.
+  if (held !== null && held.savedCopyUnread !== true) return held;
+  if (coldRead === null) {
+    const startedAt = generation;
+    const read: Promise<CachedCatalog> = panelOrSavedCopy({
+      panel: pending,
+      instead: () => savedCatalog(snapshots, startedAt),
+    }).finally(() => {
+      if (coldRead === read) coldRead = null;
+    });
+    coldRead = read;
+  }
+  return coldRead;
+}
+
+/**
+ * The catalog saved before this start, for `panelOrSavedCopy`: held — and
+ * replaced by the panel's answer when it lands — while nothing else is held
+ * (or only the `null` that stood in while Redis could not be read) and no reset
+ * came since. `null` for none; "unreadable" when Redis could not say, which is
+ * never held: the next tap asks again.
+ */
+async function savedCatalog(
+  snapshots: ConnectPageSnapshotStore,
+  startedAt: number,
+): Promise<CachedCatalog | null | LastKnownGoodUnreadable> {
+  let stored: unknown;
+  try {
+    stored = await snapshots.load();
+  } catch {
+    // A store that throws despite its contract could not read either.
+    return LAST_KNOWN_GOOD_UNREADABLE;
+  }
+  if (stored === null || stored === LAST_KNOWN_GOOD_UNREADABLE) return stored;
+  const copy = catalogOf(stored);
+  if (startedAt === generation && (cached === null || cached.savedCopyUnread === true)) cached = copy;
+  return copy;
 }
 
 export function createConnectPageRouter(
@@ -184,7 +240,7 @@ export function createConnectPageRouter(
 
   router.get("/connect-page", async (req, res) => {
     try {
-      const payload = await getCatalog(adminClient, snapshots, (err) => {
+      const payload = await getConnectPageCatalog(adminClient, snapshots, (err) => {
         getRequestLogger(req).warn({ err }, "connect-page upstream fetch failed; serving fallback");
       });
       // Which version this catalog is — what `/config-versions` reports as held
@@ -209,7 +265,7 @@ export function createConnectPageRouter(
       );
       res.json(payload.body);
     } catch (e: unknown) {
-      // Defensive: `getCatalog` already fails closed. Never 5xx this route —
+      // Defensive: `getConnectPageCatalog` already fails closed. Never 5xx this route —
       // the screen behind it degrades gracefully and a 5xx would not let it.
       getRequestLogger(req).error({ err: e }, "GET /connect-page failed");
       res.json(null);

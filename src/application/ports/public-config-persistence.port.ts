@@ -8,6 +8,15 @@
  */
 
 /**
+ * What `loadServed` answers when Redis could not be read — not "none": a read
+ * standing in for a hanging panel asks again after the store's pause
+ * (`config-versions/panel-or-saved-copy.ts`). Declared here rather than taken
+ * from the store: the SPA image copies this file alone (`Dockerfile`), so it
+ * imports nothing (`web/test/build-isolation.test.ts`).
+ */
+export const PUBLIC_CONFIG_COPY_UNREADABLE: unique symbol = Symbol('public-config copy: unreadable');
+
+/**
  * The stable minimum of the public-config contract. Additional fields are
  * preserved verbatim so adding an admin-side field does not make older Reiwa
  * snapshots unusable.
@@ -33,9 +42,11 @@ export interface PublicConfigPersistencePort {
    * The saved snapshot together with the version it was saved under — what a
    * restart serves and what the version poll must then report as held.
    * Optional: without it the route reads `load()` and uses the snapshot's own
-   * hash.
+   * hash. {@link PUBLIC_CONFIG_COPY_UNREADABLE} when Redis could not be read.
    */
-  loadServed?(): Promise<{ readonly snapshot: PublicConfigSnapshot; readonly version: string } | null>;
+  loadServed?(): Promise<
+    { readonly snapshot: PublicConfigSnapshot; readonly version: string } | null | typeof PUBLIC_CONFIG_COPY_UNREADABLE
+  >;
 }
 
 /** No-op persistence for tests and Redis-free deployments. */

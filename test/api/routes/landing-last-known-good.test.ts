@@ -139,6 +139,14 @@ describe('the landing and its last good copy (W8 report D2)', () => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now + 61_000);
 
+    // Past its TTL the landing it had is served at once while one read
+    // refreshes it (review R3b-02: a hanging panel held this read for ten
+    // seconds)...
+    expect((await get(app)).body).toEqual(PUBLISHED);
+    await vi.waitFor(() => expect(calls).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // ...and once that read has failed, the same landing, kept — no-store.
     const res = await get(app);
 
     expect(res.body).toEqual(PUBLISHED);

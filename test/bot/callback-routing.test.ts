@@ -47,12 +47,8 @@ import {
   registerStartPage,
   type PageRegistrar,
 } from '../../src/bot/pages/index.js';
-import {
-  CALLBACK_ANSWER_MAX_CHARS,
-  fitCallbackAnswer,
-  MENU_SENT_ANEW_WINDOW_MS,
-  resetMenuSentAnewMemory,
-} from '../../src/bot/pages/start.js';
+import { CALLBACK_ANSWER_MAX_CHARS, fitCallbackAnswer } from '../../src/bot/lib/callback-answer.js';
+import { MENU_SENT_ANEW_WINDOW_MS, resetMenuSentAnewMemory } from '../../src/bot/pages/start.js';
 import type { BotContext, BotSession, PageDeps } from '../../src/bot/pages/types.js';
 import { buildMainKeyboard } from '../../src/bot/widgets/main-keyboard.js';
 import { setLegalDocumentsCache } from '../../src/infrastructure/admin-client/legal-documents-cache.js';
@@ -515,6 +511,100 @@ describe('callback routing — every page, in main.ts order', () => {
       // A text that fits is left alone, emoji included.
       expect(fitCallbackAnswer('🔥 Меню обновилось')).toBe('🔥 Меню обновилось');
       expect(fitCallbackAnswer('x'.repeat(CALLBACK_ANSWER_MAX_CHARS))).toBe('x'.repeat(CALLBACK_ANSWER_MAX_CHARS));
+    });
+  });
+
+  /**
+   * Every other answer the operator writes the words of has the same limit:
+   * «Подписка подтверждена», «Вы ещё не подписаны», the refusals of the access
+   * mode and the quest's alerts. The panel takes up to 8000 characters for each;
+   * past 200, Telegram refused the answer, and the refusal threw — before the
+   * welcome screen or the notice after it, or left the spinner turning.
+   */
+  describe('every other answer with the operator’s words (FX5)', () => {
+    // 3 flags (2 code points each) + 40 × «Оператор пишет, » (16) = 646 code points;
+    // the 199th is inside a word, so the cut is exactly 199 + «…».
+    const LONG = '🇷🇺🇷🇺🇷🇺' + 'Оператор пишет, '.repeat(40);
+    const operatorText = (longKey: string): PageDeps['translator'] => {
+      const passthrough = buildPassthroughTranslator();
+      return {
+        t: (key, lang, vars) => (key === longKey ? LONG : passthrough.t(key, lang, vars)),
+        resolveButtonLabel: passthrough.resolveButtonLabel,
+      };
+    };
+    const policy = (value: Record<string, unknown>) => ({ system: { getPlatformPolicy: vi.fn().mockResolvedValue(value) } });
+    const GATE = {
+      accessMode: 'PUBLIC',
+      channelRequired: true,
+      channelLink: 'https://t.me/rezeis_news',
+      channelId: null,
+      channelUsername: null,
+      channelRecheck: true,
+    };
+    const LEFT = { getChatMember: { status: 'left', user: USER } };
+
+    /** [what, the data pressed, the text key of its answer, an alert?, the press, what is drawn after it]. */
+    const SITES: ReadonlyArray<
+      readonly [string, string, string, boolean, PressOptions, ((sent: unknown[]) => void) | null]
+    > = [
+      [
+        '«Я подписался», subscribed: the toast, then the welcome screen',
+        'check_channel',
+        'channel.verified',
+        false,
+        {},
+        (sent) => expect(String(sent.at(-1))).toContain(WELCOME),
+      ],
+      [
+        '«Я подписался», not yet: the toast, then the notice',
+        'check_channel',
+        'channel.not_subscribed',
+        false,
+        { adminClient: policy(GATE), answers: LEFT },
+        (sent) => expect(sent).toEqual([LONG]),
+      ],
+      [
+        '«Я подписался» while the service is closed: the refusal',
+        'check_channel',
+        'access_mode.restricted',
+        true,
+        { adminClient: policy({ accessMode: 'RESTRICTED', channelRequired: false }) },
+        null,
+      ],
+      [
+        'a button behind «Канал обязателен»: the gate’s toast, then its prompt',
+        'nonsense',
+        'channel.not_subscribed',
+        false,
+        { adminClient: policy(GATE), answers: LEFT },
+        (sent) => expect(sent).toEqual(['ru:channel.required']),
+      ],
+      ['the quest’s check: its alert', `quest_channel:${QUEST}`, 'quests.channel.retry', true, {}, null],
+    ];
+
+    it.each(SITES)('%s — cut to 200 characters, counted as code points', async (_what, data, key, alert, options, after) => {
+      const calls = await press(data, DEFAULT_BOT_CONFIG, undefined, { ...options, translator: operatorText(key) });
+      const answers = answersOf(calls);
+      expect(answers).toHaveLength(1);
+      const text = String(answers[0]?.payload['text']);
+      expect([...text]).toHaveLength(CALLBACK_ANSWER_MAX_CHARS);
+      expect(text.startsWith('🇷🇺🇷🇺🇷🇺Оператор пишет')).toBe(true);
+      expect(text.endsWith('…')).toBe(true);
+      expect(answers[0]?.payload['show_alert']).toBe(alert ? true : undefined);
+      if (after === null) expect(sentText(calls)).toEqual([]);
+      else after(sentText(calls));
+    });
+
+    it.each(SITES)('%s — refused all the same: the spinner stops without it, and what follows is drawn', async (_what, data, key, _alert, options, after) => {
+      const calls = await press(data, DEFAULT_BOT_CONFIG, undefined, {
+        ...options,
+        translator: operatorText(key),
+        refuse: { answerCallbackQuery: { error_code: 400, description: 'Bad Request: MESSAGE_TOO_LONG' } },
+      });
+      // Tried with the words, then without them.
+      expect(answersOf(calls).map((c) => c.payload['text'])).toEqual([fitCallbackAnswer(LONG), undefined]);
+      if (after === null) expect(sentText(calls)).toEqual([]);
+      else after(sentText(calls));
     });
   });
 

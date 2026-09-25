@@ -37,6 +37,7 @@ import { buildMainKeyboard, resolveSupportDeepLink, supportPrefill } from '../wi
 import { messageCopy, plainCopy, type CopyEmojis } from '../widgets/operator-copy.js';
 import { configWithin, MESSAGE_CONFIG_BUDGET_MS, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/bot-channel-gate.js';
+import { answerCallback } from '../lib/callback-answer.js';
 import { resolveChannelGateVerdict } from '../lib/channel-gate.js';
 
 import { CHECK_CHANNEL_CALLBACK_RE, sendNotSubscribedNoticeUnlessRecent } from './channel-join-prompt.js';
@@ -152,11 +153,11 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       policy === null || deps.adminClient === null
         ? null
         : await accessModeRefusal(deps.adminClient, policy, tgUser.id, '');
+    // Every answer below is cut to Telegram's 200 characters, and answered again
+    // without its words if Telegram refuses it all the same (`answerCallback`):
+    // what the press draws after it never depends on the answer.
     if (refusal !== null) {
-      await ctx.answerCallbackQuery({
-        text: toast(refusal, await toastConfig()),
-        show_alert: true,
-      });
+      await answerCallback(ctx, { text: toast(refusal, await toastConfig()), show_alert: true }, deps.logger);
       return;
     }
     // Never throws. A user it cannot verify is let in — locking somebody out on
@@ -180,7 +181,7 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       // The toast on every press; the message at most once per prompt interval,
       // with the toast's config — it follows the toast at once.
       const emojis = await toastConfig();
-      await ctx.answerCallbackQuery({ text: toast('channel.not_subscribed', emojis) });
+      await answerCallback(ctx, { text: toast('channel.not_subscribed', emojis) }, deps.logger);
       await sendNotSubscribedNoticeUnlessRecent(ctx, deps, emojis).catch((err: unknown) => {
         // The toast already said it; a notice that failed is forgotten, and the next press sends it.
         deps.logger?.warn({ err, telegramId: tgUser.id }, 'bot/menu: the not-subscribed notice could not be sent');
@@ -188,7 +189,7 @@ export const registerMenuPage: PageRegistrar = (bot, deps) => {
       return;
     }
 
-    await ctx.answerCallbackQuery({ text: toast('channel.verified', await toastConfig()) });
+    await answerCallback(ctx, { text: toast('channel.verified', await toastConfig()) }, deps.logger);
     if (
       questId !== undefined &&
       deps.adminClient !== null &&

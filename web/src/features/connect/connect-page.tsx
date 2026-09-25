@@ -90,6 +90,7 @@ import { useBranding } from '@/lib/branding-provider'
 import { BackButton } from '@/components/ui/back-button'
 import { BrandLogo } from '@/components/ui/brand-logo'
 import { LoadErrorCard } from '@/components/ui/load-error-card'
+import { useOperatorTimeZone } from '@/lib/operator-time-zone'
 import { formatDate, openExternalUrl } from '@/lib/utils'
 import { subscriptionTitle } from '@/lib/subscription-title'
 import { isTelegramMiniAppSurface } from '@/lib/telegram-launch-params'
@@ -597,6 +598,8 @@ function FactsGrid({
   className?: string
 }) {
   const { t } = useTranslation()
+  // The end on the operator's calendar, as «Главная» and the notices print it.
+  const dateZone = useOperatorTimeZone()
 
   const status =
     subscription === null
@@ -644,7 +647,7 @@ function FactsGrid({
         {status}
       </Fact>
       <Fact icon={<CalendarDays aria-hidden="true" className="size-3" />} label={t('connect.factExpires')}>
-        {expiry === null ? '—' : formatDate(expiry)}
+        {expiry === null ? '—' : formatDate(expiry, dateZone)}
       </Fact>
       <Fact icon={<ArrowUpDown aria-hidden="true" className="size-3" />} label={t('connect.factTraffic')}>
         {traffic}

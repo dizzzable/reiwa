@@ -126,7 +126,9 @@ describe('a snapshot over the saved-copy cap (review R2a-07)', () => {
     await persistence.save(SNAPSHOT, 'a'.repeat(32));
     await persistence.save({ ...SNAPSHOT, defaultCurrency: 'RUB' }, 'b'.repeat(32));
 
-    expect(reports.map((report) => report.context?.['version'])).toEqual(['a'.repeat(32), 'b'.repeat(32)]);
+    // `configVersion`, not `version`: the reporter adds the build's `version`
+    // after the context, so the config's never reached the panel under it.
+    expect(reports.map((report) => report.context?.['configVersion'])).toEqual(['a'.repeat(32), 'b'.repeat(32)]);
     expect(reports[0]).toMatchObject({
       level: 'warning',
       context: {

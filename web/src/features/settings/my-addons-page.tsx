@@ -15,8 +15,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAddOnEntitlements } from "@/lib/api-client";
 import type { UserAddOnEntitlement } from "@/types/api";
-import { formatDateTime } from "@/lib/utils";
-import { describeEntitlementEnd, type AddOnEndContext } from "@/features/addons/add-on-end";
+import {
+  describeEntitlementEnd,
+  describePurchaseMoment,
+  type AddOnEndContext,
+} from "@/features/addons/add-on-end";
 
 const STATE_STYLES: Record<string, string> = {
   ACTIVE: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
@@ -128,7 +131,7 @@ function EntitlementRow({
         </div>
         <p className="theme-muted mt-0.5 text-xs">{valueLabel}</p>
         <div className="mt-0.5 flex items-center justify-between">
-          <p className="theme-subtle text-xs">{formatDateTime(entitlement.purchasedAt)}</p>
+          <p className="theme-subtle text-xs">{describePurchaseMoment(entitlement.purchasedAt, endContext)}</p>
           <p className="theme-title text-xs font-medium">
             {formatPrice(entitlement.totalAmount, entitlement.currency)}
           </p>

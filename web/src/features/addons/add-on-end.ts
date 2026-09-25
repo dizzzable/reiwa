@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import type { EligibleAddOn } from "@/lib/api-client";
 import {
   countdown,
+  customerDateZone,
   formatZoneDate,
   formatZoneTime,
   operatorZone,
@@ -163,6 +164,20 @@ export function describeResetSoon(addOn: OfferedAddOn, t: TFunction, context: Ad
   if (reset === null) return null;
   const left = countdown(reset, context.now ?? new Date(), operatorZone(context.displayTimeZone));
   return left === null ? null : t("addons.resetSoonWarning", { countdown: countdownText(left, t) });
+}
+
+/**
+ * When a bought add-on was bought, for «Мои опции»: «24 сент., 23:50 (по
+ * Москве)» — on the operator's clock with the zone named, as every time a
+ * customer reads is printed (the owner's rule), and as its end beside it is.
+ * It was the phone's clock, unnamed. That is what it still is while the panel
+ * has not said its zone (`customerDateZone`), and for a date that cannot be read.
+ */
+export function describePurchaseMoment(purchasedAt: string, context: AddOnEndContext): string {
+  const zone = customerDateZone(context.displayTimeZone);
+  const at = instant(purchasedAt);
+  if (zone === undefined || at === null) return formatDateTime(purchasedAt);
+  return `${formatDateTime(at, zone)} (${zonePhrase(zone, at, context.language)})`;
 }
 
 /** States in which an add-on works, or is about to: only these count down to their end. */

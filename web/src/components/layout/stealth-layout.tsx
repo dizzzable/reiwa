@@ -26,6 +26,8 @@ import { AppBackground } from "@/components/layout/app-background";
 import { NetworkBg } from "@/components/ui/network-bg";
 import { OnboardingTourProvider } from "@/features/onboarding/onboarding-tour-controller";
 import { useBranding } from "@/lib/branding-provider";
+// The operator's «Часовой пояс» for every subscription date the pages print.
+import { OperatorTimeZoneProvider } from "@/lib/operator-time-zone-provider";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { isStandalonePwa } from "@/hooks/use-install-prompt";
 import { useAppBadge } from "@/hooks/use-app-badge";
@@ -412,6 +414,7 @@ export default function StealthLayout() {
     // Desktop shell: persistent left sidebar + a wider, centred content
     // column. Same routes/pages as mobile — only the chrome differs.
     return (
+      <OperatorTimeZoneProvider>
       <OnboardingTourProvider>
         <div className="relative flex h-dvh w-full overflow-hidden bg-(--brand-bg-primary) text-foreground">
           {hasAppBackground ? <AppBackground /> : <NetworkBg />}
@@ -451,10 +454,12 @@ export default function StealthLayout() {
         </div>
         <HintController audience={hintAudience} />
       </OnboardingTourProvider>
+      </OperatorTimeZoneProvider>
     );
   }
 
   return (
+    <OperatorTimeZoneProvider>
     <OnboardingTourProvider>
       {/* Full-viewport branded backdrop; the cabinet itself lives in a
           phone-width column centered on desktop (see .app-shell). */}
@@ -573,6 +578,7 @@ export default function StealthLayout() {
       </div>
       <HintController audience={hintAudience} />
     </OnboardingTourProvider>
+    </OperatorTimeZoneProvider>
   );
 }
 

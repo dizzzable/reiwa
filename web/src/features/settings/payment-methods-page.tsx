@@ -29,6 +29,7 @@ import {
   type ProviderSubscription,
   type SavedPaymentMethod,
 } from '@/lib/api-client';
+import { useOperatorTimeZone } from '@/lib/operator-time-zone';
 import { formatDate } from '@/lib/utils';
 import { AutopayGatewayMark } from '@/components/ui/gateway-icon';
 import { BackButton } from '@/components/ui/back-button';
@@ -435,6 +436,8 @@ function ProviderSubscriptionCard({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
+  // The next charge on the operator's calendar, as the subscription's end is.
+  const dateZone = useOperatorTimeZone();
   const pastDue = subscription.status === 'PAST_DUE';
   return (
     <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3.5">
@@ -459,7 +462,9 @@ function ProviderSubscriptionCard({
         {pastDue
           ? t('paymentMethods.providerSubscriptions.pastDue')
           : subscription.nextChargeAt
-            ? t('paymentMethods.providerSubscriptions.nextCharge', { date: formatDate(subscription.nextChargeAt) })
+            ? t('paymentMethods.providerSubscriptions.nextCharge', {
+                date: formatDate(subscription.nextChargeAt, dateZone),
+              })
             : t('paymentMethods.providerSubscriptions.via')}
       </p>
       <StadiumButton

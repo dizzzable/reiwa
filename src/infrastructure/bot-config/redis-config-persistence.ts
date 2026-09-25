@@ -20,10 +20,18 @@
  *     buttons matter most.
  *   - What is saved may carry Telegram `file_id`s the bot stamped in after the
  *     panel answered (`BotConfigCache.stampBannerFileId`). They belong to this
- *     bot token; a copy from another token only costs a re-upload by URL.
+ *     bot token; a copy from another token only costs a re-upload by URL. It
+ *     is kept under the panel's version of the answer, not the stamped one.
+ *   - A config over the copy's cap is not written: the operator is told, once
+ *     per version, with its size (`config-versions/copy-not-saved.ts`). It used
+ *     to be a log line only, and a bot restarted during a panel outage came
+ *     back with older buttons and nothing on the panel to say why.
  */
 import type { ConfigPersistencePort } from '../../application/ports/config-persistence.port.js';
+import { configVersionOf } from '../config-versions/config-version.js';
+import type { CopyNotSavedReporter } from '../config-versions/copy-not-saved.js';
 import {
+  LAST_KNOWN_GOOD_DEFAULT_MAX_BYTES,
   LAST_KNOWN_GOOD_UNREADABLE,
   type LastKnownGoodGroup,
   type LastKnownGoodStorePort,
@@ -54,14 +62,25 @@ export const BOT_CONFIG_LKG: LastKnownGoodGroup<BotConfig> = {
 };
 
 export class RedisConfigPersistence implements ConfigPersistencePort {
-  constructor(private readonly store: LastKnownGoodStorePort) {}
+  constructor(
+    private readonly store: LastKnownGoodStorePort,
+    /** Where a copy over the cap is told; nowhere when omitted (tests). */
+    private readonly copyNotSaved?: CopyNotSavedReporter,
+  ) {}
 
   async load(): Promise<BotConfig | null | LastKnownGoodUnreadable> {
     const copy = await this.store.load(BOT_CONFIG_LKG);
     return copy === null || copy === LAST_KNOWN_GOOD_UNREADABLE ? copy : copy.payload;
   }
 
-  async save(config: BotConfig): Promise<void> {
-    await this.store.save(BOT_CONFIG_LKG, config);
+  async save(config: BotConfig, version?: string): Promise<void> {
+    const outcome = await this.store.save(BOT_CONFIG_LKG, config, version);
+    if (outcome === 'too-large') {
+      this.copyNotSaved?.report('bot-config', {
+        configVersion: version ?? configVersionOf(config),
+        bytes: Buffer.byteLength(JSON.stringify(config), 'utf8'),
+        maxBytes: BOT_CONFIG_LKG.maxBytes ?? LAST_KNOWN_GOOD_DEFAULT_MAX_BYTES,
+      });
+    }
   }
 }

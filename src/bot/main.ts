@@ -28,6 +28,10 @@ import type { ConfigPersistencePort } from '../application/ports/config-persiste
 import type { LoggerPort } from '../application/ports/logger.port.js';
 import { CONFIG_VERSION_KEYS } from '../infrastructure/config-versions/config-version.js';
 import {
+  createCopyNotSavedReporter,
+  type CopyNotSavedReporter,
+} from '../infrastructure/config-versions/copy-not-saved.js';
+import {
   NOOP_LAST_KNOWN_GOOD,
   RedisLastKnownGoodStore,
   createLastKnownGoodRedis,
@@ -194,10 +198,17 @@ function getLatestConfigVersions(logger?: LoggerPort): LatestConfigVersionsPort 
  */
 let configPersistence: ConfigPersistencePort | undefined;
 
+/**
+ * Where a bot config over its copy's cap is told — the panel's «Системные
+ * события» (`config-versions/copy-not-saved.ts`). Set by `startBot()` once its
+ * error reporter exists, before the first read builds the persistence.
+ */
+let copyNotSaved: CopyNotSavedReporter | undefined;
+
 function getConfigPersistence(logger?: LoggerPort): ConfigPersistencePort | undefined {
   if (configPersistence !== undefined) return configPersistence;
   if (!config.REDIS_URL) return undefined;
-  configPersistence = new RedisConfigPersistence(getLastKnownGood(logger));
+  configPersistence = new RedisConfigPersistence(getLastKnownGood(logger), copyNotSaved);
   return configPersistence;
 }
 
@@ -264,6 +275,7 @@ async function startBot(): Promise<void> {
       : null;
 
   const errorReporter = createErrorReporter({ adminClient, source: 'bot' });
+  copyNotSaved = createCopyNotSavedReporter({ logger, errorReporter });
 
   // Last-resort guards for failures that escape grammy's bot.catch (stray
   // promise rejections, uncaught throws in timers/listeners).

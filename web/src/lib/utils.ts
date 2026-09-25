@@ -30,8 +30,12 @@ export function cn(...inputs: ClassValue[]): string {
  * that matters.
  *
  * `2-digit` on all three parts keeps the width the layout was built around.
+ *
+ * `timeZone`: the calendar the date is read on — the operator's «Часовой
+ * пояс» for a subscription date (`lib/operator-time-zone.ts`), so the card
+ * says the day the bot's notices say; the phone's own when omitted.
  */
-export function formatDate(value: string | number | Date | null | undefined): string {
+export function formatDate(value: string | number | Date | null | undefined, timeZone?: string): string {
   if (value === null || value === undefined || value === "") return "—";
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
@@ -39,15 +43,19 @@ export function formatDate(value: string | number | Date | null | undefined): st
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
+    ...(timeZone === undefined ? {} : { timeZone }),
   });
 }
 
 /**
  * Formats an ISO date-time string as a localised short date + time
- * (e.g. "23 окт, 14:30").
+ * (e.g. "23 окт, 14:30"), on `timeZone`'s clock — the phone's own when
+ * omitted. A time on the operator's clock is printed with its zone named
+ * («(по Москве)», `zonePhrase`), which is the caller's to add.
  */
 export function formatDateTime(
   value: string | number | Date | null | undefined,
+  timeZone?: string,
 ): string {
   if (value === null || value === undefined || value === "") return "—";
   const date = value instanceof Date ? value : new Date(value);
@@ -57,6 +65,7 @@ export function formatDateTime(
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    ...(timeZone === undefined ? {} : { timeZone }),
   });
 }
 

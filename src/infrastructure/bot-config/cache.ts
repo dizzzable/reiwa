@@ -613,7 +613,8 @@ export class BotConfigCache {
       visual: { ...current.visual, bannerFileId: fileId },
     };
     this.entry = { ...held, data: next };
-    void this.persistence?.save(next).catch((err: unknown) => {
+    // Under the panel's version: the stamp is not a new answer of it.
+    void this.persistence?.save(next, held.version).catch((err: unknown) => {
       this.logger?.warn(
         { err },
         'BotConfigCache: persistence.save (banner stamp) threw',
@@ -651,7 +652,7 @@ export class BotConfigCache {
     nextScreens[idx] = { ...screen, mediaFileId: fileId };
     const next: BotConfig = { ...current, screens: nextScreens };
     this.entry = { ...held, data: next };
-    void this.persistence?.save(next).catch((err: unknown) => {
+    void this.persistence?.save(next, held.version).catch((err: unknown) => {
       this.logger?.warn(
         { err },
         'BotConfigCache: persistence.save (screen banner stamp) threw',

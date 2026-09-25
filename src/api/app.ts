@@ -17,6 +17,7 @@ import {
 } from "../infrastructure/public-config/redis-connect-page-snapshot.js";
 import { createPublicConfigRejectionNotifier } from "../infrastructure/public-config/rejection-notifier.js";
 import { CONFIG_VERSION_KEYS } from "../infrastructure/config-versions/config-version.js";
+import { createCopyNotSavedReporter } from "../infrastructure/config-versions/copy-not-saved.js";
 import {
   NOOP_LAST_KNOWN_GOOD,
   RedisLastKnownGoodStore,
@@ -156,10 +157,16 @@ export function createApp(deps: CreateAppDeps) {
     : undefined;
   // Same store, same best-effort contract: a restart during a panel outage
   // must not switch the connect screen off for everybody. Wrapped so the
-  // version poll can tell which catalog the screen holds.
+  // version poll can tell which catalog the screen holds. A catalog over the
+  // copy's cap is told on the panel, like the appearance's.
   const connectPageSnapshot = new ConnectPageVersionTracker(
     deps.webSessionStore
-      ? new RedisConnectPageSnapshot({ redis: deps.webSessionStore.getRedis(), logger, store: lastKnownGood })
+      ? new RedisConnectPageSnapshot({
+          redis: deps.webSessionStore.getRedis(),
+          logger,
+          store: lastKnownGood,
+          copyNotSaved: createCopyNotSavedReporter({ logger, errorReporter }),
+        })
       : NOOP_CONNECT_PAGE_SNAPSHOT,
   );
   const reiwaPublicUrl = resolveReiwaPublicUrl(config);

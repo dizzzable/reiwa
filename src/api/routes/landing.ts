@@ -28,8 +28,11 @@ import {
   LAST_KNOWN_GOOD_RETRY_MS,
   LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
+  type LastKnownGood,
   type LastKnownGoodStorePort,
+  type LastKnownGoodUnreadable,
 } from "../../infrastructure/config-versions/last-known-good.js";
+import { panelOrSavedCopy } from "../../infrastructure/config-versions/panel-or-saved-copy.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
 
@@ -59,6 +62,12 @@ const DISABLED_SENTINEL = { enabled: false } as const;
 // instead of waiting for the TTL.
 let cached: CachedLanding | null = null;
 let inflight: Promise<CachedLanding> | null = null;
+/**
+ * The read that stands in for the panel while nothing is held
+ * (`panelOrSavedCopy`), joined by every request that finds the cache so: one
+ * read of Redis for all of them.
+ */
+let coldRead: Promise<CachedLanding> | null = null;
 /** Where the landing's last good copy survives a restart; set by `createLandingRouter`. */
 let lastKnownGood: LastKnownGoodStorePort = NOOP_LAST_KNOWN_GOOD;
 /**
@@ -76,6 +85,7 @@ let generation = 0;
 export function resetLandingCache(): void {
   cached = null;
   inflight = null;
+  coldRead = null;
   generation += 1;
 }
 
@@ -119,14 +129,26 @@ async function fetchFresh(adminClient: AdminClient | null, isCurrent: () => bool
  * the route never throws to the visitor. Both outcomes land in `cached`, so a
  * panel outage costs one upstream wait per TTL window instead of one per
  * request.
+ *
+ * And no visitor waits out a panel that HANGS (review R3b-02, on the API side):
+ *  - a landing held past its TTL — the panel's, or its copy — is served at once
+ *    while one read refreshes it. The read used to be waited for: all through
+ *    an outage, every visitor of one window per TTL waited the transport's ten
+ *    seconds;
+ *  - with nothing held — a restart, an operator's publish — or only the
+ *    sentinel, the panel gets its head start, and then the copy saved in Redis
+ *    is served while the read goes on (`panelOrSavedCopy`). The first visitors
+ *    after a restart used to wait for the read to fail before the copy was even
+ *    asked for.
  */
 async function getLandingPayload(
   adminClient: AdminClient | null,
   onFailure?: (err: unknown) => void,
 ): Promise<CachedLanding> {
   const now = Date.now();
-  if (cached !== null && now - cached.fetchedAt < CACHE_TTL_MS) {
-    return cached;
+  const held = cached;
+  if (held !== null && now - held.fetchedAt < CACHE_TTL_MS) {
+    return held;
   }
   if (inflight === null) {
     const startedAt = generation;
@@ -178,7 +200,48 @@ async function getLandingPayload(
       });
     inflight = pending;
   }
-  return inflight;
+  const pending = inflight;
+  // Past its TTL, and the panel's answer or its copy — not the sentinel, which
+  // only stood in for them: served while the read above refreshes it.
+  if (held !== null && held.version !== null) return held;
+  if (coldRead === null) {
+    const startedAt = generation;
+    const read: Promise<CachedLanding> = panelOrSavedCopy({
+      panel: pending,
+      instead: () => savedLanding(startedAt),
+    }).finally(() => {
+      if (coldRead === read) coldRead = null;
+    });
+    coldRead = read;
+  }
+  return coldRead;
+}
+
+/**
+ * The landing saved before this start, for `panelOrSavedCopy`: held — served
+ * no-store, and replaced by the panel's answer when it lands — while nothing
+ * else is held (or only the sentinel that stood in for it) and no reset came
+ * since. `null` for none; "unreadable" when Redis could not say, which is never
+ * held: the next read asks again.
+ */
+async function savedLanding(startedAt: number): Promise<CachedLanding | null | LastKnownGoodUnreadable> {
+  let saved: LastKnownGood<Record<string, unknown>> | null | LastKnownGoodUnreadable;
+  try {
+    saved = await lastKnownGood.load(LANDING_LKG);
+  } catch {
+    // A store that throws despite its contract could not read either.
+    return LAST_KNOWN_GOOD_UNREADABLE;
+  }
+  if (saved === null || saved === LAST_KNOWN_GOOD_UNREADABLE) return saved;
+  const copy: CachedLanding = {
+    body: saved.payload,
+    etag: computeEtag(saved.payload),
+    fetchedAt: Date.now(),
+    version: saved.hash,
+    fallback: true,
+  };
+  if (startedAt === generation && (cached === null || cached.version === null)) cached = copy;
+  return copy;
 }
 
 /**

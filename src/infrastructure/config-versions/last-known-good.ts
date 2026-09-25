@@ -107,6 +107,17 @@ export type LastKnownGoodUnreadable = typeof LAST_KNOWN_GOOD_UNREADABLE;
 export const LAST_KNOWN_GOOD_RETRY_MS = 2_000;
 
 /**
+ * How long a cache trusts a "none" from `load` before a read that has nothing
+ * else to serve asks again. "None" is true when it is said, not for the life of
+ * a process: the API and the bot keep their copies in the same Redis, and a
+ * container is replaced while the old one still runs — the process that read
+ * "none" at boot answered from it until the panel answered it itself, with a
+ * copy saved beside it a moment later. Half a minute: one GET per group per
+ * interval while there is none, never one per read.
+ */
+export const LAST_KNOWN_GOOD_NONE_RECHECK_MS = 30_000;
+
+/**
  * What `save` did:
  *  - `saved` — the copy is in Redis now;
  *  - `too-large` — the payload is over the group's `maxBytes` and was not

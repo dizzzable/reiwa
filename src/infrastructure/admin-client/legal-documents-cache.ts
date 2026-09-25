@@ -42,6 +42,7 @@
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import { configVersionOf } from '../config-versions/config-version.js';
 import {
+  LAST_KNOWN_GOOD_NONE_RECHECK_MS,
   LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
   legalDocumentsLastKnownGood,
@@ -118,6 +119,8 @@ interface SavedRead {
    * brings later is held all the same (`savedCopy`).
    */
   waitedOut: boolean;
+  /** When the store answered "none" — trusted `LAST_KNOWN_GOOD_NONE_RECHECK_MS`, then asked again. */
+  noneAt?: number;
 }
 
 export class LegalDocumentsCache {
@@ -141,9 +144,9 @@ export class LegalDocumentsCache {
   /** Per locale: the change `catchUp` last began a read for. */
   private readonly caughtUpFor = new Map<string, number>();
   /**
-   * Per locale: the saved copy's read — once per process once Redis has
-   * answered it, nothing else writes it while the bot runs. A read Redis failed
-   * is forgotten, and the next tap asks again (`savedRead`).
+   * Per locale: the saved copy's read — kept once Redis has answered it, a
+   * "none" only for `LAST_KNOWN_GOOD_NONE_RECHECK_MS`. A read Redis failed is
+   * forgotten, and the next tap asks again (`savedRead`).
    */
   private readonly saved = new Map<string, SavedRead>();
   /**
@@ -342,11 +345,15 @@ export class LegalDocumentsCache {
    * The read of the documents saved for `locale`: the one out or answered, else
    * a new one. From the store once per process once Redis answered; a read
    * Redis failed is NOT remembered as "no copy" (review R2a-01): the next tap
-   * asks again, paced by the store.
+   * asks again, paced by the store; and a "none" is asked again once
+   * `LAST_KNOWN_GOOD_NONE_RECHECK_MS` has passed — a container replaced while
+   * the old one still ran may have saved a copy since.
    */
   private savedRead(locale: string): SavedRead {
     const held = this.saved.get(locale);
-    if (held !== undefined) return held;
+    if (held !== undefined && (held.noneAt === undefined || Date.now() - held.noneAt < LAST_KNOWN_GOOD_NONE_RECHECK_MS)) {
+      return held;
+    }
     const copy: Promise<SavedDocuments | null | LastKnownGoodUnreadable> = this.lastKnownGood
       .load(legalDocumentsLastKnownGood(locale))
       .then(
@@ -360,7 +367,8 @@ export class LegalDocumentsCache {
     const read: SavedRead = { copy, waitedOut: false };
     this.saved.set(locale, read);
     void copy.then((record) => {
-      if (record === LAST_KNOWN_GOOD_UNREADABLE && this.saved.get(locale) === read) this.saved.delete(locale);
+      if (record === null) read.noneAt = Date.now();
+      else if (record === LAST_KNOWN_GOOD_UNREADABLE && this.saved.get(locale) === read) this.saved.delete(locale);
     });
     return read;
   }

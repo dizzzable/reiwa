@@ -31,6 +31,7 @@ import { EmojiText } from "@/components/ui/emoji-text";
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { useBranding } from "@/lib/branding-provider";
 import { useCardEffectSlot } from "@/lib/card-effect-budget";
+import { useOperatorTimeZone } from "@/lib/operator-time-zone";
 import { brandAuroraStops, cn, formatDate } from "@/lib/utils";
 import { subscriptionTitle } from "@/lib/subscription-title";
 
@@ -59,6 +60,8 @@ export function SubscriptionSelectCard({
 }) {
   const { t } = useTranslation();
   const { branding, customIcons } = useBranding();
+  // The end on the operator's calendar, as «Главная» and the notices print it.
+  const dateZone = useOperatorTimeZone();
   const sub = subscription;
 
   const isActive = sub.status === "ACTIVE" || sub.status === "LIMITED";
@@ -237,7 +240,7 @@ export function SubscriptionSelectCard({
       {/* Footer: expiry + device limit */}
       <div className="relative mt-1.5 flex items-center justify-between text-[10px] text-white/55">
         <span>
-          {t("subscriptionPicker.expires")}: {formatDate(sub.expiresAt ?? sub.expireAt)}
+          {t("subscriptionPicker.expires")}: {formatDate(sub.expiresAt ?? sub.expireAt, dateZone)}
         </span>
         {sub.deviceLimit !== null && (
           <span>{t("subscriptionPicker.devices", { count: sub.deviceLimit })}</span>

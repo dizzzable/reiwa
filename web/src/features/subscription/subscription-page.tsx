@@ -13,7 +13,9 @@ import {
   isSubscriptionLimitReached,
   notifySubscriptionLimitReached,
 } from '@/lib/subscription-limit'
-import { formatDate, getDaysLeft } from '@/lib/utils'
+import { useOperatorTimeZone } from '@/lib/operator-time-zone'
+import { calendarDaysUntil, phoneZone } from '@/lib/operator-zone'
+import { formatDate } from '@/lib/utils'
 import { toast } from 'sonner'
 import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
 import {
@@ -47,7 +49,15 @@ export default function SubscriptionPage() {
   // older answer used. Reading only the legacy one left «Истекает» at «—» and
   // never counted the days or warned of the end.
   const expiresAt = sub?.expiresAt ?? sub?.expireAt ?? null
-  const daysLeft = expiresAt ? getDaysLeft(expiresAt) : null
+  // The date and its days on ONE calendar — the operator's once the panel has
+  // named it, the phone's until then: «сегодня» the day it ends there, never a
+  // day more than the date beside it says (it was elapsed time rounded up).
+  const dateZone = useOperatorTimeZone()
+  const expiresOn = expiresAt === null ? null : new Date(expiresAt)
+  const daysLeft =
+    expiresOn === null || Number.isNaN(expiresOn.getTime())
+      ? null
+      : calendarDaysUntil(expiresOn, new Date(), dateZone ?? phoneZone())
   const isExpiringSoon = daysLeft !== null && daysLeft <= 3 && (sub?.status === 'ACTIVE' || sub?.status === 'LIMITED')
   const canRenew = canRenewSubscription(sub ?? null, false, policy?.canRenew)
   // Why «Продлить подписку» is not offered: a trial is upgraded, and a
@@ -124,7 +134,7 @@ export default function SubscriptionPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-[color:var(--color-surface-high)] p-3">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('subscription.expires')}</p>
-                <p className="mt-1 font-semibold text-foreground">{formatDate(expiresAt)}</p>
+                <p className="mt-1 font-semibold text-foreground">{formatDate(expiresAt, dateZone)}</p>
                 {daysLeft !== null && (
                   <p className={`text-xs mt-0.5 ${daysLeft <= 3 ? 'text-(--brand-primary)' : 'text-muted-foreground'}`}>
                     {daysLeft === 0 ? t('subscription.today') : t('subscription.daysLeftShort', { count: daysLeft })}

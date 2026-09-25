@@ -28,6 +28,7 @@ import { SubscriptionSelectCard } from "@/components/subscription/subscription-s
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
 import { useAccessMode } from "@/lib/use-access-mode";
+import { useOperatorTimeZone } from "@/lib/operator-time-zone";
 import { AccessModeBlockedScreen, AccessModePendingScreen } from "@/components/access-mode-banner";
 import { startCheckoutRedirect } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
@@ -417,6 +418,7 @@ function useLeaveWithdrawnTarget(): () => void {
 
 function UpgradeReview({ refused }: { readonly refused: boolean }) {
   const { t } = useTranslation();
+  const dateZone = useOperatorTimeZone();
   const { selectedSubscriptionId, selectedPlan, selectedDurationDays, selectedGateway, setStep } =
     useUpgradeStore();
 
@@ -500,9 +502,10 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
 
   const symbol = CURRENCY_SYMBOLS[quote.currency] ?? "";
   const carriedLine = describeCarriedAbovePlan(quote.carriedAbovePlan, selectedPlan, t);
-  // The live add-ons, each until its own date (never past the new end). Kept
-  // apart from «Сверх тарифа», which the panel sends without them.
-  const addOnsLine = describeActiveAddOns(quote.activeAddOns, selectedPlan, t);
+  // The live add-ons, each until its own date (never past the new end), on the
+  // operator's calendar. Kept apart from «Сверх тарифа», which the panel sends
+  // without them.
+  const addOnsLine = describeActiveAddOns(quote.activeAddOns, selectedPlan, t, dateZone);
   // Days the old plan's paid remainder adds to the new term, as the panel
   // estimated them; it counts again at payment. With none — 0, or a panel older
   // than the field — the review says exactly what it always said.

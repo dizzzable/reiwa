@@ -26,6 +26,7 @@ import { coerceLocale } from './coerce-locale.js';
 import { replyWithEntities } from './reply.js';
 import type { BotContext, PageDeps, PageRegistrar } from './types.js';
 import { channelGateApiFor } from '../lib/bot-channel-gate.js';
+import { answerCallback } from '../lib/callback-answer.js';
 import { isSubscribedMember } from '../lib/chat-membership.js';
 import { configWithin, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 import { inlineButton } from '../widgets/inline-button.js';
@@ -93,9 +94,11 @@ export const registerQuestChannelPage: PageRegistrar = (bot, deps: PageDeps) => 
     // alert, after the quest was checked: a config the panel gives meanwhile is
     // the one used. A refresh against a hung panel must not hold the spinner,
     // and every update queued behind it: past the budget, the config the bot holds.
+    // Cut to Telegram's 200 characters, and answered again without its words if
+    // Telegram refuses it all the same — the spinner stops either way.
     const alert = async (key: string): Promise<void> => {
       const botCfg = await configWithin(deps, TOAST_CONFIG_BUDGET_MS);
-      await ctx.answerCallbackQuery({ text: plainCopy(deps.translator.t(key, lang), botCfg), show_alert: true });
+      await answerCallback(ctx, { text: plainCopy(deps.translator.t(key, lang), botCfg), show_alert: true }, deps.logger);
     };
     const questId = readQuestId(ctx.match);
     if (questId === null || deps.adminClient === null) {

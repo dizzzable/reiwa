@@ -25,6 +25,8 @@ export function describeActiveAddOns(
   addOns: readonly ActiveAddOnKept[] | undefined,
   target: Pick<UpgradePlanOption, "trafficLimit" | "deviceLimit"> | null,
   t: TFunction,
+  /** The calendar the dates are read on — the operator's (`useOperatorTimeZone`); the phone's when omitted. */
+  timeZone?: string,
 ): string | null {
   if (addOns === undefined) return null;
   const items = addOns.flatMap((addOn): string[] => {
@@ -36,7 +38,7 @@ export function describeActiveAddOns(
     return [
       addOn.expiresAt === null
         ? t("upgrade.addOnUntilEnd", { item })
-        : t("upgrade.addOnUntil", { item, date: formatDate(addOn.expiresAt) }),
+        : t("upgrade.addOnUntil", { item, date: formatDate(addOn.expiresAt, timeZone) }),
     ];
   });
   return items.length === 0 ? null : t("upgrade.keepsAddOns", { items: items.join("; ") });

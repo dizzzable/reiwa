@@ -33,6 +33,7 @@ import { InlineKeyboard } from 'grammy';
 import { buildProfileSummary } from '../../infrastructure/bot-message/message-builder.js';
 import { getPolicyCache, type CachedPolicy } from '../../infrastructure/admin-client/policy-cache.js';
 import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/bot-channel-gate.js';
+import { answerCallback } from '../lib/callback-answer.js';
 import { isSameChannelChat, resolveChannelChatId, resolveChannelGateVerdict } from '../lib/channel-gate.js';
 import { configWithin, MESSAGE_CONFIG_BUDGET_MS, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 import { inlineButton } from '../widgets/inline-button.js';
@@ -838,60 +839,6 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
 };
 
 /**
- * Telegram's limit for the text of a callback answer — a toast or an alert
- * (`answerCallbackQuery`: 0-200 characters), counted the way Telegram counts
- * them: code points (memory `telegram-length-limits-count-code-points`).
- */
-export const CALLBACK_ANSWER_MAX_CHARS = 200;
-
-function codePointLength(text: string): number {
-  let length = 0;
-  for (const _codePoint of text) length += 1;
-  return length;
-}
-
-/**
- * `text` cut to fit a callback answer, at whole characters as a reader sees
- * them — a flag or a keycap is several code points — and closed with «…». The
- * operator writes «Меню обновилось» in the panel, which takes 8000 characters
- * for a text: 201 of them made Telegram refuse the answer, and the refusal threw
- * before the menu was drawn (review R2a-08).
- */
-export function fitCallbackAnswer(text: string): string {
-  if (codePointLength(text) <= CALLBACK_ANSWER_MAX_CHARS) return text;
-  const room = CALLBACK_ANSWER_MAX_CHARS - 1;
-  let kept = '';
-  let used = 0;
-  for (const { segment } of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)) {
-    const size = codePointLength(segment);
-    if (used + size > room) break;
-    kept += segment;
-    used += size;
-  }
-  return `${kept.trimEnd()}…`;
-}
-
-/**
- * Answer the press — its toast or alert cut to Telegram's limit — so that
- * nothing after it depends on the answer: a text Telegram refuses anyway is
- * answered again without one, so the spinner stops, and the caller goes on to
- * draw the menu.
- */
-async function answerPress(
-  ctx: BotContext,
-  deps: PageDeps,
-  answer?: { readonly text: string; readonly show_alert?: boolean },
-): Promise<void> {
-  try {
-    await ctx.answerCallbackQuery(answer === undefined ? undefined : { ...answer, text: fitCallbackAnswer(answer.text) });
-    return;
-  } catch (err: unknown) {
-    deps.logger?.warn({ err, telegramId: ctx.from?.id }, 'menu: the press was not answered');
-  }
-  if (answer !== undefined) await ctx.answerCallbackQuery().catch(() => undefined);
-}
-
-/**
  * How long a message Telegram would not edit keeps the menu it got anew: a
  * second press on it within this window sends nothing (review R2a-09). A
  * double tap is under a second apart; updates are handled one at a time, so the
@@ -967,19 +914,24 @@ export async function showMainMenu(ctx: BotContext, deps: PageDeps, press: MainM
       const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
       // Operator copy in an alert, which carries no entities: glyphs. Whatever
       // becomes of the alert, no menu under RESTRICTED.
-      await answerPress(ctx, deps, {
-        text: plainCopy(deps.translator.t('access_mode.restricted', lang), await toastConfig()),
-        show_alert: true,
-      });
+      await answerCallback(
+        ctx,
+        { text: plainCopy(deps.translator.t('access_mode.restricted', lang), await toastConfig()), show_alert: true },
+        deps.logger,
+      );
       return;
     }
   }
   if (press.noticeKey !== undefined) {
     const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
     // A toast carries no entities either: the operator's emoji as glyphs.
-    await answerPress(ctx, deps, { text: plainCopy(deps.translator.t(press.noticeKey, lang), await toastConfig()) });
+    await answerCallback(
+      ctx,
+      { text: plainCopy(deps.translator.t(press.noticeKey, lang), await toastConfig()) },
+      deps.logger,
+    );
   } else {
-    await answerPress(ctx, deps);
+    await answerCallback(ctx, undefined, deps.logger);
   }
   // This message could not be edited a moment ago, and got the menu anew then:
   // a double tap sends nothing more — not a second menu, not a second sign-in

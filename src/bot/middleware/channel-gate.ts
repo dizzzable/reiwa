@@ -82,6 +82,7 @@ import type { Message } from 'grammy/types';
 import { getPolicyCache, type CachedPolicy } from '../../infrastructure/admin-client/policy-cache.js';
 import { TtlMap } from '../../infrastructure/channel-gate/ttl-map.js';
 import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/bot-channel-gate.js';
+import { answerCallback } from '../lib/callback-answer.js';
 import { resolveChannelGateVerdict } from '../lib/channel-gate.js';
 import { configWithin, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
 import { AI_SUPPORT_EXIT_CALLBACK, CANCEL_COMMAND, isInAiSupportMode } from '../pages/ai-support-mode.js';
@@ -246,11 +247,13 @@ export function createChannelGateMiddleware(deps: ChannelGateMiddlewareDeps): Mi
       // A refresh against a hung panel must not hold the spinner, and every
       // update queued behind it: past the budget, the config the bot holds.
       const emojis = await configWithin(deps, TOAST_CONFIG_BUDGET_MS);
-      await ctx
-        .answerCallbackQuery({ text: plainCopy(deps.translator.t('channel.not_subscribed', lang), emojis) })
-        .catch((err: unknown) => {
-          deps.logger?.warn({ err, telegramId: from.id }, 'Channel gate: answering a refused callback failed');
-        });
+      // Cut to Telegram's 200 characters, and answered again without them if it
+      // refuses the toast all the same: the spinner stops, the prompt follows.
+      await answerCallback(
+        ctx,
+        { text: plainCopy(deps.translator.t('channel.not_subscribed', lang), emojis) },
+        deps.logger,
+      );
     }
     const questId = scope === 'gate-fresh' ? QUEST_CHANNEL_RE.exec(ctx.callbackQuery?.data ?? '')?.[1] : undefined;
     try {

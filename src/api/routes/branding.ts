@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import type { Logger } from "pino";
 
 import {
+  PUBLIC_CONFIG_COPY_UNREADABLE,
   assessPublicConfigFields,
   describePublicConfigSnapshot,
   type PublicConfigPersistencePort,
@@ -32,8 +33,11 @@ import {
   LAST_KNOWN_GOOD_RETRY_MS,
   LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
+  type LastKnownGood,
   type LastKnownGoodStorePort,
+  type LastKnownGoodUnreadable,
 } from "../../infrastructure/config-versions/last-known-good.js";
+import { panelOrSavedCopy } from "../../infrastructure/config-versions/panel-or-saved-copy.js";
 import {
   buildPublicConfigDeliveryReport,
   PublicConfigDeliveryReporter,
@@ -93,8 +97,15 @@ export const PUBLIC_CONFIG_VERSION_HEADER = CONFIG_VERSION_HEADER;
 // for the TTL. A single router instance is created per process.
 let cached: CachedPayload | null = null;
 let inflight: Promise<CachedPayload> | null = null;
+/**
+ * The read that stands in for the panel past the cache's windows
+ * (`panelOrSavedCopy`), joined by every request that finds the cache so.
+ */
+let coldRead: Promise<CachedPayload> | null = null;
 let packsCache: CachedPacks | null = null;
 let packsInflight: Promise<CachedPacks> | null = null;
+/** The same, for the packs. */
+let packsColdRead: Promise<CachedPacks> | null = null;
 /** Where the packs' last good copy survives a restart; set by `createBrandingRouter`. */
 let packsLastKnownGood: LastKnownGoodStorePort = NOOP_LAST_KNOWN_GOOD;
 /**
@@ -112,6 +123,7 @@ let packsGeneration = 0;
 export function resetPublicConfigCache(): void {
   cached = null;
   inflight = null;
+  coldRead = null;
   generation += 1;
 }
 
@@ -119,6 +131,7 @@ export function resetPublicConfigCache(): void {
 export function resetCustomEmojiPacksCache(): void {
   packsCache = null;
   packsInflight = null;
+  packsColdRead = null;
   packsGeneration += 1;
 }
 
@@ -259,6 +272,18 @@ async function loadPersistedPayload(
   persistence: PublicConfigPersistencePort | undefined,
   notifier: PublicConfigRejectionNotifier,
 ): Promise<CachedPayload | null> {
+  const copy = await readPersistedPayload(persistence, notifier);
+  return copy === LAST_KNOWN_GOOD_UNREADABLE ? null : copy;
+}
+
+/**
+ * The saved copy, as a payload; `null` for none to serve;
+ * LAST_KNOWN_GOOD_UNREADABLE when Redis could not say.
+ */
+async function readPersistedPayload(
+  persistence: PublicConfigPersistencePort | undefined,
+  notifier: PublicConfigRejectionNotifier,
+): Promise<CachedPayload | null | LastKnownGoodUnreadable> {
   if (persistence === undefined) return null;
   try {
     // With the version it was saved under, where the adapter keeps one: a
@@ -269,6 +294,7 @@ async function loadPersistedPayload(
         : await persistence.load().then((snapshot) =>
             snapshot === null ? null : { snapshot, version: configVersionOf(snapshot) },
           );
+    if (served === PUBLIC_CONFIG_COPY_UNREADABLE) return LAST_KNOWN_GOOD_UNREADABLE;
     if (served === null) return null;
     // Revalidate at the route boundary even though the Redis adapter also
     // validates. This keeps injected adapters from poisoning a public route.
@@ -279,7 +305,8 @@ async function loadPersistedPayload(
     }
     return toCachedPayload(served.snapshot, served.version);
   } catch {
-    return null;
+    // An adapter that throws despite its contract could not read either.
+    return LAST_KNOWN_GOOD_UNREADABLE;
   }
 }
 
@@ -345,7 +372,11 @@ export async function getPublicConfigPayload(
     }
     return cached;
   }
-  // Cache fully expired — wait for fresh fetch (deduplicated across requests).
+  // Cache fully expired, or nothing held — a fresh fetch (deduplicated across
+  // requests), and within its head start its answer; past it, what is held, or
+  // the copy saved in Redis, while the fetch goes on (`panelOrSavedCopy`). A
+  // panel that HANGS used to hold these requests for the transport's ten
+  // seconds — the first visitors after a restart all of them.
   if (inflight === null) {
     const startedAt = generation;
     const isCurrent = (): boolean => startedAt === generation;
@@ -359,7 +390,36 @@ export async function getPublicConfigPayload(
       });
     inflight = pending;
   }
-  return inflight;
+  const pending = inflight;
+  if (coldRead === null) {
+    const startedAt = generation;
+    const held = cached;
+    const read: Promise<CachedPayload> = panelOrSavedCopy({
+      panel: pending,
+      instead: held !== null ? async () => held : () => savedPayload(persistence, notifier, startedAt),
+    }).finally(() => {
+      if (coldRead === read) coldRead = null;
+    });
+    coldRead = read;
+  }
+  return coldRead;
+}
+
+/**
+ * The public config saved before this start, for `panelOrSavedCopy`: held —
+ * and replaced by the panel's answer when it lands — while nothing is held and
+ * no reset came since. `null` for none; "unreadable" when Redis could not say,
+ * which is never held: the next request asks again.
+ */
+async function savedPayload(
+  persistence: PublicConfigPersistencePort | undefined,
+  notifier: PublicConfigRejectionNotifier,
+  startedAt: number,
+): Promise<CachedPayload | null | LastKnownGoodUnreadable> {
+  const copy = await readPersistedPayload(persistence, notifier);
+  if (copy === null || copy === LAST_KNOWN_GOOD_UNREADABLE) return copy;
+  if (startedAt === generation && cached === null) cached = copy;
+  return copy;
 }
 
 /**
@@ -370,16 +430,60 @@ export async function getPublicConfigPayload(
  * ten seconds. With nothing held, a failed read serves the copy saved in Redis,
  * and only with none of that the empty list, which the feed reads as "draw the
  * tokens as text".
+ *
+ * With nothing held — or, past its window, only the empty list that stood in
+ * for the panel's answer — the panel gets its head start, and then the saved
+ * copy is served while the read goes on (`panelOrSavedCopy`). The read used to
+ * be waited for, or the empty list served beside it: a panel that hangs cost
+ * the transport's ten seconds of either (review R3b-02).
  */
 export async function getCustomEmojiPacks(adminClient: AdminClient | null): Promise<CachedPacks> {
   const held = packsCache;
   if (held !== null) {
-    if (Date.now() - held.fetchedAt >= CACHE_TTL_MS && packsInflight === null) {
-      void startPacksRead(adminClient);
+    const due = Date.now() - held.fetchedAt >= CACHE_TTL_MS;
+    // Within its window; or the panel's answer or its copy past it, served while
+    // one read refreshes it. The empty stand-in (no version) is not served past
+    // its window: it stood in only while nothing better could be known.
+    if (!due || held.version !== null) {
+      if (due && packsInflight === null) void startPacksRead(adminClient);
+      return held;
     }
-    return held;
   }
-  return packsInflight ?? startPacksRead(adminClient);
+  const pending = packsInflight ?? startPacksRead(adminClient);
+  if (packsColdRead === null) {
+    const startedAt = packsGeneration;
+    const read: Promise<CachedPacks> = panelOrSavedCopy({
+      panel: pending,
+      instead: () => savedPacks(startedAt),
+    }).finally(() => {
+      if (packsColdRead === read) packsColdRead = null;
+    });
+    packsColdRead = read;
+  }
+  return packsColdRead;
+}
+
+/**
+ * The packs saved before this start, for `panelOrSavedCopy`: held — and
+ * replaced by the panel's answer when it lands — while nothing else is held (or
+ * only the empty list that stood in for it) and no reset came since. `null` for
+ * none; "unreadable" when Redis could not say, which is never held: the next
+ * request asks again.
+ */
+async function savedPacks(startedAt: number): Promise<CachedPacks | null | LastKnownGoodUnreadable> {
+  let saved: LastKnownGood<unknown[]> | null | LastKnownGoodUnreadable;
+  try {
+    saved = await packsLastKnownGood.load(CUSTOM_EMOJI_PACKS_LKG);
+  } catch {
+    // A store that throws despite its contract could not read either.
+    return LAST_KNOWN_GOOD_UNREADABLE;
+  }
+  if (saved === null || saved === LAST_KNOWN_GOOD_UNREADABLE) return saved;
+  const copy: CachedPacks = { body: saved.payload, fetchedAt: Date.now(), version: saved.hash, fallback: true };
+  if (startedAt === packsGeneration && (packsCache === null || packsCache.version === null)) {
+    packsCache = copy;
+  }
+  return copy;
 }
 
 function startPacksRead(adminClient: AdminClient | null): Promise<CachedPacks> {

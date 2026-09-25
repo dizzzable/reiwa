@@ -201,3 +201,30 @@ export function countdown(target: Date, now: Date, zone: string): Countdown | nu
   if (left < DAY_MS) return { unit: "hour", count: Math.floor(left / HOUR_MS) };
   return { unit: "day", count: Math.max(1, zoneDay(target, zone) - zoneDay(now, zone)) };
 }
+
+/** How many days `target` is from `now` on the zone's calendar: 0 the same day there, negative once it is past. */
+export function calendarDaysUntil(target: Date, now: Date, zone: string): number {
+  return zoneDay(target, zone) - zoneDay(now, zone);
+}
+
+/**
+ * The zone a customer's subscription dates are printed on — «Главная», the
+ * subscription picker, the connect screen, the devices — from `displayTimeZone`
+ * as the panel's add-on answers carry it: the operator's «Часовой пояс» once
+ * the panel has said it (`null`: none set, which is UTC); `undefined` while it
+ * has not — an answer still out, one that failed, a panel older than the field.
+ * The phone's own calendar prints them then, as it always did: a date is never
+ * read on a clock the cabinet only guessed.
+ */
+export function customerDateZone(displayTimeZone: string | null | undefined): string | undefined {
+  return displayTimeZone === undefined ? undefined : operatorZone(displayTimeZone);
+}
+
+/** The phone's own zone: what a `Date` prints in, and the calendar days are counted on while no zone is known. */
+export function phoneZone(): string {
+  try {
+    return new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}

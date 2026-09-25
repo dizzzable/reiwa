@@ -20,11 +20,16 @@
  * customer cannot reach the screen. Nothing throws; a Redis that could not be
  * read answers the store's "unreadable", which the route must not remember as
  * "no copy".
+ *
+ * A catalog over the copy's cap is not written: the operator is told, once per
+ * version, with its size (`config-versions/copy-not-saved.ts`) — it used to be
+ * a log line only.
  */
 import type { Redis } from "ioredis";
 
 import type { LoggerPort } from "../../application/ports/logger.port.js";
 import { configVersionOf } from "../config-versions/config-version.js";
+import type { CopyNotSavedReporter } from "../config-versions/copy-not-saved.js";
 import {
   LAST_KNOWN_GOOD_UNREADABLE,
   RedisLastKnownGoodStore,
@@ -68,9 +73,17 @@ export const NOOP_CONNECT_PAGE_SNAPSHOT: ConnectPageSnapshotStore = {
 
 export class RedisConnectPageSnapshot implements ConnectPageSnapshotStore {
   private readonly store: LastKnownGoodStorePort;
+  private readonly copyNotSaved: CopyNotSavedReporter | undefined;
 
-  public constructor(options: { redis: Redis; logger?: LoggerPort; store?: LastKnownGoodStorePort }) {
+  public constructor(options: {
+    redis: Redis;
+    logger?: LoggerPort;
+    store?: LastKnownGoodStorePort;
+    /** Where a catalog over the cap is told; nowhere when omitted (tests). */
+    copyNotSaved?: CopyNotSavedReporter;
+  }) {
     this.store = options.store ?? new RedisLastKnownGoodStore({ redis: options.redis, logger: options.logger });
+    this.copyNotSaved = options.copyNotSaved;
   }
 
   public async load(): Promise<unknown | null> {
@@ -80,7 +93,14 @@ export class RedisConnectPageSnapshot implements ConnectPageSnapshotStore {
 
   public async save(payload: unknown): Promise<void> {
     if (!CONNECT_PAGE_LKG.accepts(payload)) return;
-    await this.store.save(CONNECT_PAGE_LKG, payload);
+    const outcome = await this.store.save(CONNECT_PAGE_LKG, payload);
+    if (outcome === "too-large") {
+      this.copyNotSaved?.report("connect-page", {
+        configVersion: configVersionOf(payload),
+        bytes: Buffer.byteLength(JSON.stringify(payload), "utf8"),
+        maxBytes: MAX_BYTES,
+      });
+    }
   }
 }
 

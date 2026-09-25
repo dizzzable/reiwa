@@ -14,6 +14,7 @@ import { RedisConfigPersistence } from '../../../src/infrastructure/bot-config/r
 import type { BotConfig } from '../../../src/infrastructure/bot-config/types.js';
 import {
   GUEST_SUPPORT_LKG,
+  LAST_KNOWN_GOOD_NONE_RECHECK_MS,
   LAST_KNOWN_GOOD_RETRY_MS,
   PLATFORM_POLICY_LKG,
   RedisLastKnownGoodStore,
@@ -501,5 +502,94 @@ describe('…and the panel hangs: the copy right after the store’s pause, not 
     state.up = true;
     await vi.advanceTimersByTimeAsync(3_000);
     expect(await answeredWithoutWaiting(cache.get('ru'))).toEqual([OFFER]);
+  });
+});
+
+/**
+ * A "none" from Redis is true when it is given — but not for the life of the
+ * process. The API and the bot keep their copies in the same Redis, and a
+ * container is replaced while the old one still runs: a process that read
+ * "none" at boot answered from it until the panel answered it itself, with a
+ * copy saved beside it a moment later — the PUBLIC stand-in, the legacy rules
+ * link, the guest chat without its captcha. A "none" is asked again once half
+ * a minute has passed; within it, Redis is not asked.
+ */
+describe('a "none" from Redis is asked again after half a minute, never sooner', () => {
+  const INVITED: PlatformPolicyShape = {
+    accessMode: 'INVITED',
+    rulesRequired: false,
+    rulesLink: null,
+    channelRequired: true,
+    channelLink: 'https://t.me/operator_news',
+    defaultCurrency: 'RUB',
+  };
+  const OFFER = { key: 'OFFER', title: 'Оферта', body: 'Текст' } as LegalDocument;
+  const WITH_CAPTCHA: GuestRuntimeConfig = {
+    enabled: true,
+    turnstileSiteKey: '0x4AAAAAAAsite',
+    turnstileSecret: '0x4AAAAAAAsecret',
+  };
+  // Literal on purpose: a fixture read from the constant would move with it.
+  const HALF_A_MINUTE = 30_000;
+
+  it('trusts a "none" for half a minute', () => {
+    expect(LAST_KNOWN_GOOD_NONE_RECHECK_MS).toBe(HALF_A_MINUTE);
+  });
+
+  /** One Redis, and another process that saves into it. */
+  function sharedRedis() {
+    const { redis } = flakyRedis({}, 0);
+    return { redis, otherProcess: new RedisLastKnownGoodStore({ redis: redis as never }) };
+  }
+
+  it('PolicyCache: PUBLIC while there is none — the operator’s INVITED once the API has saved it and the half minute is over', async () => {
+    const { redis, otherProcess } = sharedRedis();
+    const cache = new PolicyCache(panelDown, { lastKnownGood: new RedisLastKnownGoodStore({ redis: redis as never }) });
+    expect((await cache.get())._isFallback).toBe(true);
+    expect((await cache.get())._isFallback).toBe(true);
+    const reads = redis.get.mock.calls.length;
+
+    await otherProcess.save(PLATFORM_POLICY_LKG, { ...INVITED });
+    await vi.advanceTimersByTimeAsync(HALF_A_MINUTE - 1);
+    expect((await cache.get())._isFallback).toBe(true);
+    expect(redis.get.mock.calls.length).toBe(reads);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await cache.get()).toEqual(INVITED);
+  });
+
+  it('LegalDocumentsCache: «Правила» on the legacy link while there is none — the documents once saved beside it and the half minute is over', async () => {
+    const { redis, otherProcess } = sharedRedis();
+    const cache = new LegalDocumentsCache(panelDown, 60_000, 50, {
+      lastKnownGood: new RedisLastKnownGoodStore({ redis: redis as never }),
+    });
+    expect(await cache.get('ru')).toEqual([]);
+    const reads = redis.get.mock.calls.length;
+
+    await otherProcess.save(legalDocumentsLastKnownGood('ru'), [OFFER]);
+    await vi.advanceTimersByTimeAsync(HALF_A_MINUTE - 1);
+    expect(await cache.get('ru')).toEqual([]);
+    expect(redis.get.mock.calls.length).toBe(reads);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await cache.get('ru')).toEqual([OFFER]);
+  });
+
+  it('GuestSupportConfigCache: no captcha while there is none — the captcha once the API has saved it and the half minute is over', async () => {
+    const { redis, otherProcess } = sharedRedis();
+    const cache = new GuestSupportConfigCache(panelDown, {
+      lastKnownGood: new RedisLastKnownGoodStore({ redis: redis as never }),
+      ttlMs: 30_000,
+    });
+    expect(await cache.get()).toBeNull();
+    const reads = redis.get.mock.calls.length;
+
+    await otherProcess.save(GUEST_SUPPORT_LKG, { ...WITH_CAPTCHA });
+    await vi.advanceTimersByTimeAsync(HALF_A_MINUTE - 1);
+    expect(await cache.get()).toBeNull();
+    expect(redis.get.mock.calls.length).toBe(reads);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await cache.get()).toEqual(WITH_CAPTCHA);
   });
 });

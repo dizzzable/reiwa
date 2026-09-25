@@ -21,8 +21,12 @@ export interface ConfigPersistencePort {
    * not be read — not "none": the caller asks again later.
    */
   load(): Promise<BotConfig | null | LastKnownGoodUnreadable>;
-  /** Persist the latest successfully-fetched config. Best-effort. */
-  save(config: BotConfig): Promise<void>;
+  /**
+   * Persist the latest successfully-fetched config. Best-effort. `version` is
+   * the panel's version of it, for a config the bot stamped after the panel
+   * answered (its Telegram file ids); the config's own version otherwise.
+   */
+  save(config: BotConfig, version?: string): Promise<void>;
 }
 
 /** No-op persistence — used in tests and when no durable store is configured. */

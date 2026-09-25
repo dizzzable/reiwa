@@ -14,6 +14,7 @@
 import type { Redis } from "ioredis";
 
 import {
+  PUBLIC_CONFIG_COPY_UNREADABLE,
   describePublicConfigSnapshot,
   type PublicConfigPersistencePort,
   type PublicConfigSnapshot,
@@ -75,7 +76,8 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
   }
 
   async load(): Promise<PublicConfigSnapshot | null> {
-    return (await this.loadServed())?.snapshot ?? null;
+    const served = await this.loadServed();
+    return served === null || served === PUBLIC_CONFIG_COPY_UNREADABLE ? null : served.snapshot;
   }
 
   /**
@@ -83,11 +85,15 @@ export class RedisPublicConfigPersistence implements PublicConfigPersistencePort
    * whole: it is what a restart SERVES, and it was whole when it was saved —
    * the per-field fallback runs before `save`, never on this read.
    */
-  async loadServed(): Promise<{ readonly snapshot: PublicConfigSnapshot; readonly version: string } | null> {
+  async loadServed(): Promise<
+    { readonly snapshot: PublicConfigSnapshot; readonly version: string } | null | typeof PUBLIC_CONFIG_COPY_UNREADABLE
+  > {
     const saved = await this.store.load(PUBLIC_CONFIG_LKG);
-    // Unreadable: nothing to serve now. The route remembers no failure, so its
-    // next read asks again.
-    if (saved === null || saved === LAST_KNOWN_GOOD_UNREADABLE) return null;
+    // Unreadable: nothing to serve now, and not "none" — the route remembers
+    // no failure, and a read standing in for a hanging panel asks again after
+    // the store's pause.
+    if (saved === LAST_KNOWN_GOOD_UNREADABLE) return PUBLIC_CONFIG_COPY_UNREADABLE;
+    if (saved === null) return null;
     const rejection = describePublicConfigSnapshot(saved.payload);
     if (rejection !== null) {
       this.notifier.rejected("redis-load", rejection);

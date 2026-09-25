@@ -32,10 +32,12 @@ describe("a tap on an add-on’s notice", () => {
   });
 
   it("«Докупка не применена» (panel 0.9.7.70) opens support, not the add-on page its prefix would pick", () => {
-    expect(resolveNotificationTarget("addon_not_applied", { subscriptionId: "cmsub0001abcdefghijklmno" })).toEqual({
-      kind: "route",
-      path: "/support",
-    });
+    // `addon_not_applied`: the subscription was not active. `addon_not_applied_other`:
+    // any other reason the paid add-on could not be applied.
+    for (const type of ["addon_not_applied", "addon_not_applied_other"]) {
+      const payload = { addon: "Трафик +50 ГБ", subscriptionId: "cmsub0001abcdefghijklmno", paymentId: "pay-1", reason: "PAID_AFTER_END" };
+      expect(resolveNotificationTarget(type, payload), type).toEqual({ kind: "route", path: "/support" });
+    }
   });
 
   it("opens the add-on page itself when it names none", () => {

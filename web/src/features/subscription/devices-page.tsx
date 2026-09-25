@@ -15,6 +15,8 @@ import { BackButton } from '@/components/ui/back-button'
 import { TipCard } from '@/components/ui/tip-card'
 import { LoadErrorCard } from '@/components/ui/load-error-card'
 import { resolveDevicesViewState } from '@/lib/devices-view-state'
+import { useOperatorTimeZone } from '@/lib/operator-time-zone'
+import { formatDate } from '@/lib/utils'
 import { useSession } from '@/hooks/use-session'
 
 function platformIcon(platform: string | null) {
@@ -32,6 +34,9 @@ export default function DevicesPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { session } = useSession()
+  // «Был в сети» on the operator's calendar, as the subscription's dates are —
+  // in the interface's language, not always Russian.
+  const dateZone = useOperatorTimeZone()
 
   // `retry: false` is deliberate and stays: the panel behind this read is the
   // thing that just failed, and the customer gets an explicit retry button.
@@ -122,7 +127,7 @@ export default function DevicesPage() {
                   </p>
                   {device.lastSeenAt && (
                     <p className="mt-0.5 text-xs text-muted-foreground opacity-70">
-                      {t('devices.lastSeenLabel', { date: new Date(device.lastSeenAt).toLocaleDateString('ru-RU') })}
+                      {t('devices.lastSeenLabel', { date: formatDate(device.lastSeenAt, dateZone) })}
                     </p>
                   )}
                 </div>

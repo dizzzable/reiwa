@@ -27,6 +27,7 @@
 import { configVersionOf } from '../config-versions/config-version.js';
 import {
   GUEST_SUPPORT_LKG,
+  LAST_KNOWN_GOOD_NONE_RECHECK_MS,
   LAST_KNOWN_GOOD_RETRY_MS,
   LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
@@ -34,6 +35,7 @@ import {
   type LastKnownGoodStorePort,
   type LastKnownGoodUnreadable,
 } from '../config-versions/last-known-good.js';
+import { panelOrSavedCopy } from '../config-versions/panel-or-saved-copy.js';
 import type { AdminClient } from './admin-client.js';
 import type { GuestRuntimeConfig } from './namespaces/support.js';
 
@@ -61,6 +63,11 @@ export class GuestSupportConfigCache {
   /** With nothing known: until when a read answers `null` without asking the panel. */
   private missUntil = 0;
   private inFlight: Promise<GuestRuntimeConfig | null> | null = null;
+  /**
+   * The read that stands in for the panel while nothing is held
+   * (`panelOrSavedCopy`), joined by every request that finds none.
+   */
+  private coldRead: Promise<GuestRuntimeConfig | null> | null = null;
   /** Bumped by `invalidate()`; see the header. */
   private generation = 0;
   /**
@@ -70,6 +77,11 @@ export class GuestSupportConfigCache {
    * R2a-01).
    */
   private saved: Promise<LastKnownGood<Record<string, unknown>> | null | LastKnownGoodUnreadable> | null = null;
+  /**
+   * When `saved` answered "none": trusted `LAST_KNOWN_GOOD_NONE_RECHECK_MS`,
+   * then asked again — a process beside this one may have saved a copy since.
+   */
+  private savedNoneAt: number | null = null;
   private readonly ttlMs: number;
   private readonly lastKnownGood: LastKnownGoodStorePort;
 
@@ -81,7 +93,16 @@ export class GuestSupportConfigCache {
     this.lastKnownGood = options.lastKnownGood ?? NOOP_LAST_KNOWN_GOOD;
   }
 
-  /** The config; `null` only when no config was ever known, here or in Redis. */
+  /**
+   * The config; `null` only when no config was ever known, here or in Redis.
+   *
+   * With nothing held, the panel gets its head start and then the copy saved in
+   * Redis is served while the panel read goes on (`panelOrSavedCopy`). The copy
+   * used to be asked for only once that read failed: with a panel that hangs,
+   * the guest page waited the transport's ten seconds for its captcha. «No
+   * captcha» is never the answer while a copy can be read: with none saved, the
+   * panel is waited for, as before.
+   */
   public async get(): Promise<GuestRuntimeConfig | null> {
     const held = this.value;
     if (held !== null) {
@@ -89,7 +110,18 @@ export class GuestSupportConfigCache {
       return held;
     }
     if (Date.now() < this.missUntil) return null;
-    return this.inFlight ?? this.startRefresh();
+    const pending = this.inFlight ?? this.startRefresh();
+    let read = this.coldRead;
+    if (read === null) {
+      const startedAt = this.generation;
+      const begun = panelOrSavedCopy({ panel: pending, instead: () => this.savedConfig(startedAt) });
+      read = begun;
+      this.coldRead = begun;
+      void begun.finally(() => {
+        if (this.coldRead === begun) this.coldRead = null;
+      });
+    }
+    return read;
   }
 
   /**
@@ -100,6 +132,7 @@ export class GuestSupportConfigCache {
     this.fetchedAt = 0;
     this.missUntil = 0;
     this.inFlight = null;
+    this.coldRead = null;
     this.generation += 1;
   }
 
@@ -108,9 +141,32 @@ export class GuestSupportConfigCache {
     return this.value === null ? null : this.version;
   }
 
-  /** The saved copy; read once Redis answers it, asked again after a read it failed. */
+  /**
+   * The config saved before this start, for `panelOrSavedCopy`: held — and
+   * replaced by the panel's answer when it lands — while nothing else is held
+   * and no invalidate came since. `null` for none (or none usable);
+   * "unreadable" when Redis could not say, which is never held.
+   */
+  private async savedConfig(startedAt: number): Promise<GuestRuntimeConfig | null | LastKnownGoodUnreadable> {
+    const copy = await this.savedCopy();
+    if (copy === null || copy === LAST_KNOWN_GOOD_UNREADABLE) return copy;
+    if (!isGuestRuntimeConfig(copy.payload)) return null;
+    if (startedAt === this.generation && this.value === null) {
+      this.value = copy.payload;
+      this.version = copy.hash;
+      this.fetchedAt = Date.now();
+    }
+    return copy.payload;
+  }
+
+  /**
+   * The saved copy; read once Redis answers it, asked again after a read it
+   * failed, and after a "none" once `LAST_KNOWN_GOOD_NONE_RECHECK_MS` has passed.
+   */
   private savedCopy(): Promise<LastKnownGood<Record<string, unknown>> | null | LastKnownGoodUnreadable> {
     let read = this.saved;
+    const noneAt = this.savedNoneAt;
+    if (read !== null && noneAt !== null && Date.now() - noneAt >= LAST_KNOWN_GOOD_NONE_RECHECK_MS) read = null;
     if (read === null) {
       // A store that throws despite its contract could not read either.
       const loading = this.lastKnownGood
@@ -118,8 +174,11 @@ export class GuestSupportConfigCache {
         .catch((): LastKnownGoodUnreadable => LAST_KNOWN_GOOD_UNREADABLE);
       read = loading;
       this.saved = loading;
+      this.savedNoneAt = null;
       void loading.then((copy) => {
-        if (copy === LAST_KNOWN_GOOD_UNREADABLE && this.saved === loading) this.saved = null;
+        if (this.saved !== loading) return;
+        if (copy === null) this.savedNoneAt = Date.now();
+        else if (copy === LAST_KNOWN_GOOD_UNREADABLE) this.saved = null;
       });
     }
     return read;

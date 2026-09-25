@@ -27,7 +27,7 @@
 import type { LoggerPort } from "../../application/ports/logger.port.js";
 import type { PublicConfigRejection } from "../../application/ports/public-config-persistence.port.js";
 import { ReiwaSystemEventType } from "../../core/enums/system-event-type.enum.js";
-import { formatCopySize } from "../config-versions/last-known-good.js";
+import { createCopyNotSavedReporter } from "../config-versions/copy-not-saved.js";
 import type { ErrorReporter } from "../error-reporter/index.js";
 
 /** Which read path rejected the snapshot. */
@@ -88,7 +88,8 @@ export interface PublicConfigRejectionNotifier {
    * keeps an older copy, or none. Customers see the new appearance now; a
    * restart during a panel outage would serve the older one. Once per version,
    * with the size — it used to be a log line on every save, one a minute
-   * (review R2a-07).
+   * (review R2a-07). Told the way every group's is
+   * (`config-versions/copy-not-saved.ts`).
    */
   copyNotSaved(skipped: PublicConfigCopyNotSaved): void;
 }
@@ -101,11 +102,6 @@ export interface PublicConfigCopyNotSaved {
   readonly maxBytes: number;
 }
 
-/** `bytes` as an operator reads it on a Russian card: `5,3 МБ`. */
-function megabytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} МБ`;
-}
-
 export function createPublicConfigRejectionNotifier(opts: {
   readonly logger?: LoggerPort | undefined;
   readonly errorReporter?: ErrorReporter | undefined;
@@ -116,8 +112,8 @@ export function createPublicConfigRejectionNotifier(opts: {
   const errorReporter = opts.errorReporter;
   const clock = opts.now ?? Date.now;
   const active = new Map<PublicConfigRejectionSource, ActiveRejection>();
-  /** The version whose unsaved copy was last reported: once per version. */
-  let copyNotSavedReported: string | null = null;
+  /** Once per version, with the context the panel's card reads. */
+  const copies = createCopyNotSavedReporter({ logger: opts.logger, errorReporter });
 
   const emit = (
     source: PublicConfigRejectionSource,
@@ -260,28 +256,11 @@ export function createPublicConfigRejectionNotifier(opts: {
     },
 
     copyNotSaved(skipped): void {
-      if (copyNotSavedReported === skipped.version) return;
-      copyNotSavedReported = skipped.version;
-      const message =
-        `Public config copy not saved: ${formatCopySize(skipped.bytes)} is over the ` +
-        `${formatCopySize(skipped.maxBytes)} cap — customers see the new appearance, but a restart ` +
-        "during a panel outage serves the older saved copy (or none)";
-      const context = {
-        event: ReiwaSystemEventType.CONFIG_COPY_NOT_SAVED,
-        group: "public-config",
-        version: skipped.version,
+      copies.report("public-config", {
+        configVersion: skipped.version,
         bytes: skipped.bytes,
         maxBytes: skipped.maxBytes,
-        // Russian, for the panel's card («💡 Почему»).
-        why:
-          `Оформление кабинета весит ${megabytes(skipped.bytes)} — больше предела ` +
-          `${megabytes(skipped.maxBytes)} для его копии в Redis кабинета, поэтому копия не обновлена. ` +
-          "Клиенты видят новое оформление, но если кабинет перезапустится, пока панель недоступна, " +
-          "он покажет прежнюю сохранённую копию (или стандартное оформление, если копии нет). " +
-          "Уменьшите оформление: картинки, загруженные прямо в поля, и количество своих иконок.",
-      };
-      log?.warn(context, message);
-      errorReporter?.report({ level: "warning", message, context });
+      });
     },
   };
 }

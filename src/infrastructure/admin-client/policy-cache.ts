@@ -63,6 +63,7 @@ import type { AdminClient } from '../../lib/admin-client.js';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import { configVersionOf } from '../config-versions/config-version.js';
 import {
+  LAST_KNOWN_GOOD_NONE_RECHECK_MS,
   LAST_KNOWN_GOOD_RETRY_MS,
   LAST_KNOWN_GOOD_UNREADABLE,
   NOOP_LAST_KNOWN_GOOD,
@@ -104,6 +105,8 @@ interface SavedRead {
    * copy it brings later is held all the same (`savedPolicy`).
    */
   waitedOut: boolean;
+  /** When the store answered "none" — trusted `LAST_KNOWN_GOOD_NONE_RECHECK_MS`, then asked again. */
+  noneAt?: number;
 }
 
 /**
@@ -174,9 +177,9 @@ export class PolicyCache {
    */
   private budgetSpent: number | null = null;
   /**
-   * The saved copy's read — once per process once Redis has answered it:
-   * nothing else writes it while we run. A read Redis failed is forgotten, so
-   * the next cold read asks again (`savedRead`).
+   * The saved copy's read — kept once Redis has answered it, a "none" only for
+   * `LAST_KNOWN_GOOD_NONE_RECHECK_MS` (the API saves the same copy). A read
+   * Redis failed is forgotten, so the next cold read asks again (`savedRead`).
    */
   private saved: SavedRead | null = null;
   /**
@@ -368,11 +371,15 @@ export class PolicyCache {
   /**
    * The read of the saved copy: the one out or answered, else a new one. Read
    * from the store once per process — but a read Redis failed is not kept: the
-   * next call asks again, paced by the store (`LAST_KNOWN_GOOD_RETRY_MS`).
+   * next call asks again, paced by the store (`LAST_KNOWN_GOOD_RETRY_MS`); and
+   * a "none" is asked again once `LAST_KNOWN_GOOD_NONE_RECHECK_MS` has passed:
+   * the API saves the same copy, and may have since.
    */
   private savedRead(): SavedRead {
     const held = this.saved;
-    if (held !== null) return held;
+    if (held !== null && (held.noneAt === undefined || Date.now() - held.noneAt < LAST_KNOWN_GOOD_NONE_RECHECK_MS)) {
+      return held;
+    }
     // A store that throws despite its contract could not read either.
     const copy = this.lastKnownGood
       .load(PLATFORM_POLICY_LKG)
@@ -380,7 +387,8 @@ export class PolicyCache {
     const read: SavedRead = { copy, waitedOut: false };
     this.saved = read;
     void copy.then((answer) => {
-      if (answer === LAST_KNOWN_GOOD_UNREADABLE && this.saved === read) this.saved = null;
+      if (answer === null) read.noneAt = Date.now();
+      else if (answer === LAST_KNOWN_GOOD_UNREADABLE && this.saved === read) this.saved = null;
     });
     return read;
   }

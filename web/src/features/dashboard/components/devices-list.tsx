@@ -42,7 +42,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useOperatorTimeZone } from "@/lib/operator-time-zone";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
+import { formatDate } from "@/lib/utils";
 
 interface DevicesListProps {
   devices: HwidDevice[];
@@ -80,6 +82,8 @@ export function DevicesList({
   disabled = false,
 }: DevicesListProps) {
   const { t } = useTranslation();
+  // «Был в сети» on the operator's calendar, as the subscription's dates are.
+  const dateZone = useOperatorTimeZone();
   const queryClient = useQueryClient();
   // In-app confirmation dialogs (replace native window.confirm so the
   // warnings match the cabinet's glass UI instead of the browser chrome).
@@ -233,7 +237,7 @@ export function DevicesList({
                 {device.lastSeenAt && (
                   <p className="text-[11px] text-[color:var(--brand-muted-foreground)]">
                     {t("devices.lastSeen", {
-                      when: new Date(device.lastSeenAt).toLocaleDateString(),
+                      when: formatDate(device.lastSeenAt, dateZone),
                     })}
                   </p>
                 )}
