@@ -116,4 +116,32 @@ describe("«Трафик исчерпан» for a subscription with no end date 
       ROUTE("/renew"),
     );
   });
+
+  // N1 gap 4 (25.09.2026): when the panel found nothing that brings traffic
+  // back for that subscription — no traffic add-on, no traffic reset — it
+  // writes `trafficTopUp: false` into the notice and leaves the bot button out.
+  it("shows the notice in place when there is nothing there to buy — never an empty add-on page, nor renewal", () => {
+    for (const type of ["limited", "subscription_limited"]) {
+      expect(
+        resolveNotificationTarget(type, { subscriptionId: "cmsub0001abcdefghijklmno", expiresAt: null, trafficTopUp: false }),
+      ).toEqual(MODAL);
+    }
+  });
+
+  it("control: something to buy, or a notice written before the panel said, still opens the add-on page", () => {
+    for (const trafficTopUp of [true, undefined, "false", 0]) {
+      expect(
+        resolveNotificationTarget("limited", { subscriptionId: "cmsub0001abcdefghijklmno", expiresAt: null, trafficTopUp }),
+        String(trafficTopUp),
+      ).toEqual(ROUTE("/addons?subscriptionId=cmsub0001abcdefghijklmno"));
+    }
+    // A dated subscription's notice never reads the key.
+    expect(
+      resolveNotificationTarget("limited", {
+        subscriptionId: "cmsub0001abcdefghijklmno",
+        expiresAt: "2026-10-24T00:00:00.000Z",
+        trafficTopUp: false,
+      }),
+    ).toEqual(ROUTE("/renew"));
+  });
 });

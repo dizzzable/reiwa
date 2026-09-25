@@ -82,6 +82,12 @@ export function resolveNotificationTarget(
     'expiresAt' in payload &&
     payload['expiresAt'] === null
   ) {
+    // …unless there is nothing there to buy: no traffic add-on and no traffic
+    // reset for that subscription (a lifetime one on a plan without resets,
+    // say). The panel decides it when it writes the notice (`trafficTopUp:
+    // false`) and leaves the bot button out; the bell shows the notice in
+    // place — never an empty add-on page, nor a renewal it cannot take.
+    if (payload['trafficTopUp'] === false) return { kind: 'modal' };
     const subscriptionId = payload['subscriptionId'];
     return {
       kind: 'route',
