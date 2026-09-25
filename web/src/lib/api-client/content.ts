@@ -105,6 +105,21 @@ export interface EligibleAddOn {
      */
     dated?: boolean;
     explanationCode: string;
+    /**
+     * Which bound `expiresAt` is: Remnawave's traffic reset, or the end of the
+     * subscription, which can come first. `null` for a traffic reset. Absent
+     * from a panel that predates it — the line then keeps its old wording.
+     */
+    endsBound?: "reset" | "subscription_end" | null;
+    /**
+     * Remnawave's next traffic reset (ISO) for an add-on sold until the reset —
+     * the moment shown for the `reset` bound; `expiresAt` is half an hour later,
+     * when the panel takes it off. Set even when the subscription's end cuts
+     * the add-on short, so the bound, not this, decides what is shown.
+     */
+    nextResetAt?: string | null;
+    /** The reset that ends this add-on is less than 24 h away: said before the payment. */
+    resetSoon?: boolean;
   };
   /**
    * `RESET_TRAFFIC` only. Optional as well as nullable: the cabinet and the API
@@ -124,6 +139,11 @@ export interface AddOnEligibilityResult {
   availability: "AVAILABLE" | "EMPTY";
   target: { subscriptionId: string; termId: string; planId: string } | null;
   addOns: EligibleAddOn[];
+  /**
+   * The operator's «Часовой пояс» (IANA) every date here is shown in, zone
+   * named; `null` when none is set — UTC. Absent from an older panel.
+   */
+  displayTimeZone?: string | null;
 }
 
 /**

@@ -10,6 +10,11 @@
  * the panel does not say is dated (`eligibility.dated`): with stage 2 off it is
  * a permanent increment whatever date the offer carries, and a panel older
  * than the field says nothing.
+ *
+ * Every add-on here comes from a panel that names no bound (`endsBound`), so
+ * this file is also the old-panel half of stage 4: the wording it pins is the
+ * one such a panel keeps. The bound's own forms — «до сброса трафика …», «до
+ * конца подписки …», the warning — are in `addon-end-reset-wording.test.tsx`.
  */
 import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import i18next, { type TFunction } from "i18next";
@@ -35,7 +40,10 @@ vi.mock("react-router", () => ({
   useSearchParams: () => [new URLSearchParams(), vi.fn()],
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string, options?: Record<string, unknown>) => translate.t(key, options) }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => translate.t(key, options),
+    i18n: { language: "ru" },
+  }),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock("motion/react", () => ({
@@ -357,23 +365,30 @@ describe("«Мои опции»: an add-on with no date", () => {
 });
 
 describe("the wording", () => {
+  // These add-ons come from a panel that names no bound, so the operator's
+  // zone changes nothing about them — it is passed to prove exactly that.
+  const EN = { displayTimeZone: "Europe/Moscow", language: "en" };
+  const RU = { displayTimeZone: "Europe/Moscow", language: "ru" };
+
   it("reads in English", () => {
-    expect(describeAddOnEnd(DATED, enT)).toBe(`Valid until ${formatDate(PERIOD_END)}`);
-    expect(describeAddOnEnd(LIFETIME, enT)).toBe("Until the subscription ends");
-    expect(describeAddOnEnd(RESET, enT)).toBeNull();
+    expect(describeAddOnEnd(DATED, enT, EN)).toBe(`Valid until ${formatDate(PERIOD_END)}`);
+    expect(describeAddOnEnd(LIFETIME, enT, EN)).toBe("Until the subscription ends");
+    expect(describeAddOnEnd(RESET, enT, EN)).toBeNull();
   });
 
   it("says nothing for a panel that sends no eligibility at all", () => {
-    expect(describeAddOnEnd({ type: "EXTRA_TRAFFIC", lifetime: "UNTIL_SUBSCRIPTION_END" }, ruT)).toBeNull();
+    expect(describeAddOnEnd({ type: "EXTRA_TRAFFIC", lifetime: "UNTIL_SUBSCRIPTION_END" }, ruT, RU)).toBeNull();
     expect(
-      describeAddOnEnd({ type: "EXTRA_TRAFFIC", lifetime: "UNTIL_SUBSCRIPTION_END", eligibility: null }, ruT),
+      describeAddOnEnd({ type: "EXTRA_TRAFFIC", lifetime: "UNTIL_SUBSCRIPTION_END", eligibility: null }, ruT, RU),
     ).toBeNull();
   });
 
   it("says nothing unless the panel says the purchase is dated", () => {
-    expect(describeAddOnEnd(PERMANENT, ruT)).toBeNull();
-    expect(describeAddOnEnd(OLD_PANEL, ruT)).toBeNull();
-    expect(describeAddOnEnd({ ...LIFETIME, eligibility: { ...LIFETIME.eligibility, dated: false } }, ruT)).toBeNull();
-    expect(describeAddOnEnd(DATED, ruT)).toBe(`Действует до ${formatDate(PERIOD_END)}`);
+    expect(describeAddOnEnd(PERMANENT, ruT, RU)).toBeNull();
+    expect(describeAddOnEnd(OLD_PANEL, ruT, RU)).toBeNull();
+    expect(
+      describeAddOnEnd({ ...LIFETIME, eligibility: { ...LIFETIME.eligibility, dated: false } }, ruT, RU),
+    ).toBeNull();
+    expect(describeAddOnEnd(DATED, ruT, RU)).toBe(`Действует до ${formatDate(PERIOD_END)}`);
   });
 });

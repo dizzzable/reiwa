@@ -56,6 +56,20 @@ const eligibilityInfoSchema = z.object({
   // not blank the screen. Kept here because the parse strips unknown keys.
   dated: z.boolean().optional(),
   explanationCode: z.string(),
+  // Which bound `expiresAt` is — Remnawave's traffic reset, or the end of the
+  // subscription when that comes first — and the reset instant itself, the
+  // moment the customer is shown («до сброса трафика 01.10 в 03:20»); plus
+  // whether that reset is less than a day away, for the warning before the
+  // payment. Kept here because the parse strips unknown keys: without them the
+  // SPA would never see a bound and would keep the old wording forever.
+  //
+  // Optional, for a panel that predates them. And `.catch`, unlike the fields
+  // above: these only change WORDS, so a value this build cannot read — a later
+  // panel's third bound, say — must read as "not said", never refuse the whole
+  // answer and blank the options screen for every customer.
+  endsBound: z.enum(['reset', 'subscription_end']).nullable().optional().catch(undefined),
+  nextResetAt: z.string().nullable().optional().catch(undefined),
+  resetSoon: z.boolean().optional().catch(undefined),
 });
 
 const eligibleAddOnSchema = z.object({
@@ -94,6 +108,9 @@ const addOnEligibilityResultSchema = z.object({
     .object({ subscriptionId: z.string(), termId: z.string(), planId: z.string() })
     .nullable(),
   addOns: z.array(eligibleAddOnSchema),
+  // The operator's «Часовой пояс» (IANA) every date above is shown in; `null`
+  // when none is set, which means UTC. Words only, so read softly, as above.
+  displayTimeZone: z.string().nullable().optional().catch(undefined),
 });
 
 export type AddOnEligibilityResult = z.infer<typeof addOnEligibilityResultSchema>;

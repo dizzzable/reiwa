@@ -48,6 +48,40 @@ describe('ActivityNamespace add-on entitlement contract', () => {
     expect(result.entitlements[0]?.addOnId).toBeNull();
   });
 
+  it('passes the bound, the reset instant and the zone through untouched (stage 4)', async () => {
+    // «Мои опции» shows a reset add-on at the reset, on the operator's clock.
+    // The route parses nothing, so these reach the SPA exactly as the panel
+    // sends them — the typed shape is what says they are there to read.
+    const stageFour = {
+      displayTimeZone: 'Europe/Moscow',
+      entitlements: [
+        {
+          ...RESPONSE.entitlements[0],
+          id: 'ent-reset',
+          lifetime: 'UNTIL_NEXT_RESET',
+          expiresAt: '2026-10-01T00:50:00.000Z',
+          endsBound: 'reset',
+          resetAt: '2026-10-01T00:20:00.000Z',
+        },
+        {
+          ...RESPONSE.entitlements[0],
+          id: 'ent-legacy',
+          endsBound: null,
+          resetAt: null,
+        },
+      ],
+    } satisfies AddOnEntitlementsResponse;
+    const namespace = new ActivityNamespace({ request: async () => stageFour } as never);
+
+    const result: AddOnEntitlementsResponse = await namespace.getAddOnEntitlements({ userId: 'user-1' });
+
+    expect(result).toEqual(stageFour);
+    expect(result.displayTimeZone).toBe('Europe/Moscow');
+    expect(result.entitlements[0]?.endsBound).toBe('reset');
+    expect(result.entitlements[0]?.resetAt).toBe('2026-10-01T00:20:00.000Z');
+    expect(result.entitlements[1]?.endsBound).toBeNull();
+  });
+
   it('uses the canonical web identity for notification writes', async () => {
     const calls: Array<{
       method: string;

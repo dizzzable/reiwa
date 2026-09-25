@@ -45,7 +45,7 @@ import {
   isFreeResetTraffic,
   resolveAddOnPickPath,
 } from "@/features/addons/reset-traffic-policy";
-import { describeAddOnEnd } from "@/features/addons/add-on-end";
+import { describeAddOnEnd, describeResetSoon } from "@/features/addons/add-on-end";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -211,7 +211,7 @@ function SelectSubscription() {
 }
 
 function SelectAddOn() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { customIcons } = useBranding();
   const queryClient = useQueryClient();
   const { selectedSubscriptionId, selectAddOn, selectGateway, setStep } = useAddOnStore();
@@ -237,6 +237,8 @@ function SelectAddOn() {
 
   // Server already withholds ineligible add-ons — no client-side limit filter.
   const visible = eligibility?.addOns ?? [];
+  // Each end is read on the operator's clock, which comes with the same answer.
+  const endContext = { displayTimeZone: eligibility?.displayTimeZone, language: i18n.language };
 
   const isTma = !!window.Telegram?.WebApp?.initData;
 
@@ -344,7 +346,7 @@ function SelectAddOn() {
           const customId = customIconId(addOn.icon);
           const custom = customId ? customIcons.find((c) => c.id === customId) : undefined;
           const BuiltIn = resolveBuiltInIcon(addOn.icon);
-          const endLabel = describeAddOnEnd(addOn, t);
+          const endLabel = describeAddOnEnd(addOn, t, endContext);
           const TypeFallback =
             addOn.type === "EXTRA_TRAFFIC"
               ? Gauge
@@ -587,7 +589,7 @@ function SelectGateway() {
 }
 
 function ReviewStep() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { selectedSubscriptionId, selectedAddOn, selectedGateway, confirm, setStep } = useAddOnStore();
 
   const { data: subsData } = useQuery({
@@ -596,6 +598,14 @@ function ReviewStep() {
     staleTime: 60_000,
   });
   const sub = (subsData?.subscriptions ?? []).find((s) => s.id === selectedSubscriptionId) ?? null;
+  // The offer the add-on was picked from, for the operator's «Часовой пояс»
+  // its end is read in — normally still cached from the list a step ago.
+  const { data: offer } = useQuery({
+    queryKey: ["add-ons-eligibility", selectedSubscriptionId],
+    queryFn: () => getSubscriptionAddOns(selectedSubscriptionId ?? ""),
+    enabled: selectedSubscriptionId !== null,
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     if (!selectedAddOn || !selectedGateway) setStep("addon");
@@ -621,8 +631,13 @@ function ReviewStep() {
         ? t("addons.resetTraffic")
         : t("addons.extraDevices", { count: selectedAddOn.value });
   // Said again on the last screen before the payment: what the money buys
-  // includes when it stops.
-  const endLabel = describeAddOnEnd(selectedAddOn, t);
+  // includes when it stops — and, when a traffic reset less than a day away
+  // ends it, a warning above the button. Both wait for the offer's zone rather
+  // than print a time in a zone it is not.
+  const endContext =
+    offer === undefined ? null : { displayTimeZone: offer.displayTimeZone, language: i18n.language };
+  const endLabel = endContext === null ? null : describeAddOnEnd(selectedAddOn, t, endContext);
+  const resetSoonLabel = endContext === null ? null : describeResetSoon(selectedAddOn, t, endContext);
 
   return (
     <div className="space-y-4">
@@ -645,6 +660,13 @@ function ReviewStep() {
           </div>
         </div>
       </div>
+      {resetSoonLabel !== null && (
+        <div className="px-5">
+          <TipCard tone="warning" data-testid="addon-reset-soon-warning">
+            {resetSoonLabel}
+          </TipCard>
+        </div>
+      )}
       <div className="px-5 space-y-2">
         <StadiumButton fullWidth onClick={() => confirm()}>
           {free ? t("addons.confirmFree") : t("addons.confirm")}

@@ -25,10 +25,21 @@ export interface AddOnEntitlementActivityItem {
   readonly purchasedAt: string;
   readonly activatedAt: string | null;
   readonly expiresAt: string | null;
+  /**
+   * Which bound ends it: Remnawave's traffic reset, or the end of the
+   * subscription; `null` for a row with no end. Absent from a panel that
+   * predates it. Passed through as the panel sends it — this route parses
+   * nothing, so the SPA reads the panel's own values.
+   */
+  readonly endsBound?: 'reset' | 'subscription_end' | null;
+  /** The reset instant a reset-bound add-on ends at (ISO) — the moment shown; `null` otherwise. */
+  readonly resetAt?: string | null;
 }
 
 export interface AddOnEntitlementsResponse {
   readonly entitlements: readonly AddOnEntitlementActivityItem[];
+  /** The operator's «Часовой пояс» (IANA) these dates are shown in; `null` = UTC. Absent from an older panel. */
+  readonly displayTimeZone?: string | null;
 }
 
 function identityQuery(identity: UserIdentity): string {

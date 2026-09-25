@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getAddOnEntitlements } from "@/lib/api-client";
 import type { UserAddOnEntitlement } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
+import { describeEntitlementEnd, type AddOnEndContext } from "@/features/addons/add-on-end";
 
 const STATE_STYLES: Record<string, string> = {
   ACTIVE: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
@@ -42,7 +43,7 @@ function formatPrice(amount: string, currency: string): string {
 }
 
 export default function MyAddOnsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const { data, isLoading } = useQuery({
     queryKey: ["add-on-entitlements"],
@@ -50,6 +51,8 @@ export default function MyAddOnsPage() {
     staleTime: 30_000,
   });
   const entitlements = data?.entitlements ?? [];
+  // Ends are read on the operator's clock, which comes with the same answer.
+  const endContext: AddOnEndContext = { displayTimeZone: data?.displayTimeZone, language: i18n.language };
 
   return (
     <div className="min-h-full pb-6">
@@ -73,7 +76,7 @@ export default function MyAddOnsPage() {
         ) : (
           <div className="space-y-2">
             {entitlements.map((ent, i) => (
-              <EntitlementRow key={ent.id} entitlement={ent} index={i} />
+              <EntitlementRow key={ent.id} entitlement={ent} index={i} endContext={endContext} />
             ))}
           </div>
         )}
@@ -82,21 +85,15 @@ export default function MyAddOnsPage() {
   );
 }
 
-/**
- * An add-on with no date that still works — or will, once its period begins —
- * and ends with the subscription: one bought "until the end" of a subscription
- * that has no end date. Said so rather than left blank beside its dated
- * neighbours. A cancelled or finished one with no date says nothing: it ended
- * already, and "until the subscription ends" would be untrue.
- */
-function endsWithSubscription(entitlement: UserAddOnEntitlement): boolean {
-  return (
-    entitlement.lifetime === "UNTIL_SUBSCRIPTION_END" &&
-    (entitlement.state === "ACTIVE" || entitlement.state === "PENDING_ACTIVATION")
-  );
-}
-
-function EntitlementRow({ entitlement, index }: { entitlement: UserAddOnEntitlement; index: number }) {
+function EntitlementRow({
+  entitlement,
+  index,
+  endContext,
+}: {
+  entitlement: UserAddOnEntitlement;
+  index: number;
+  endContext: AddOnEndContext;
+}) {
   const { t } = useTranslation();
   const Icon = entitlement.type === "EXTRA_TRAFFIC" ? Gauge : Smartphone;
   const valueLabel =
@@ -107,6 +104,10 @@ function EntitlementRow({ entitlement, index }: { entitlement: UserAddOnEntitlem
   // All six current lifecycle states are mapped; a future backend state falls
   // back to the raw value rather than rendering a raw i18n key.
   const stateLabel = t(`addonsHistory.state.${entitlement.state}`, entitlement.state);
+  // The offer's forms: «Действует до сброса трафика 01.10 в 03:20 (по Москве)
+  // — через 7 дн.», «Действует до конца подписки 20.09» — or the old wording
+  // from a panel that does not say which bound ends it.
+  const endLabel = describeEntitlementEnd(entitlement, t, endContext);
 
   return (
     <motion.div
@@ -132,15 +133,7 @@ function EntitlementRow({ entitlement, index }: { entitlement: UserAddOnEntitlem
             {formatPrice(entitlement.totalAmount, entitlement.currency)}
           </p>
         </div>
-        {entitlement.expiresAt ? (
-          <p className="theme-subtle mt-0.5 text-[11px]">
-            {t("addonsHistory.expires", { date: formatDateTime(entitlement.expiresAt) })}
-          </p>
-        ) : (
-          endsWithSubscription(entitlement) && (
-            <p className="theme-subtle mt-0.5 text-[11px]">{t("addons.untilSubscriptionEnd")}</p>
-          )
-        )}
+        {endLabel !== null && <p className="theme-subtle mt-0.5 text-[11px]">{endLabel}</p>}
       </div>
     </motion.div>
   );

@@ -127,6 +127,100 @@ describe('AddOnsNamespace v2 contract (T-014)', () => {
     expect(result.addOns[0]?.eligibility.dated).toBeUndefined();
   });
 
+  it('passes on which bound ends the add-on, the reset instant, the warning flag and the zone', async () => {
+    // Stage 4 (panel S4): the parse strips keys it does not name, so without
+    // these in the schema the SPA would never see a bound and would keep the old
+    // wording on a panel that sends one.
+    const stageFour = {
+      ...VALID_ELIGIBILITY,
+      displayTimeZone: 'Europe/Moscow',
+      addOns: [
+        {
+          ...VALID_ELIGIBILITY.addOns[0]!,
+          lifetime: 'UNTIL_NEXT_RESET',
+          eligibility: {
+            ...VALID_ELIGIBILITY.addOns[0]!.eligibility,
+            expiresAt: '2026-10-01T00:50:00.000Z',
+            dated: true,
+            explanationCode: 'ELIGIBLE_UNTIL_NEXT_RESET',
+            endsBound: 'reset',
+            nextResetAt: '2026-10-01T00:20:00.000Z',
+            resetSoon: true,
+          },
+        },
+        {
+          ...VALID_ELIGIBILITY.addOns[0]!,
+          id: 'addon-capped',
+          eligibility: {
+            ...VALID_ELIGIBILITY.addOns[0]!.eligibility,
+            dated: true,
+            explanationCode: 'ELIGIBLE_UNTIL_SUBSCRIPTION_END_BEFORE_RESET',
+            endsBound: 'subscription_end',
+            nextResetAt: '2026-10-01T00:20:00.000Z',
+            resetSoon: false,
+          },
+        },
+      ],
+    };
+    const { namespace } = namespaceWith(async () => stageFour);
+
+    const result = await namespace.listForSubscription('sub-1', {});
+
+    expect(result.displayTimeZone).toBe('Europe/Moscow');
+    expect(result.addOns[0]?.eligibility).toMatchObject({
+      endsBound: 'reset',
+      nextResetAt: '2026-10-01T00:20:00.000Z',
+      resetSoon: true,
+    });
+    expect(result.addOns[1]?.eligibility).toMatchObject({
+      endsBound: 'subscription_end',
+      nextResetAt: '2026-10-01T00:20:00.000Z',
+      resetSoon: false,
+    });
+    // «Не задан» travels as null — UTC — not as a missing field.
+    const unset = namespaceWith(async () => ({ ...stageFour, displayTimeZone: null }));
+    expect((await unset.namespace.listForSubscription('sub-1', {})).displayTimeZone).toBeNull();
+  });
+
+  it('reads a panel without the stage-4 fields as saying nothing, and an unreadable one without refusing the answer', async () => {
+    // An older panel: parsed, every new field absent — the SPA keeps today's wording.
+    const older = await namespaceWith(async () => VALID_ELIGIBILITY).namespace.listForSubscription('sub-1', {});
+    expect(older.displayTimeZone).toBeUndefined();
+    expect('endsBound' in older.addOns[0]!.eligibility).toBe(false);
+    expect('nextResetAt' in older.addOns[0]!.eligibility).toBe(false);
+    expect('resetSoon' in older.addOns[0]!.eligibility).toBe(false);
+
+    // A value this build cannot read — a later panel's third bound, say — only
+    // changes words: it reads as "not said", and the options screen stays up.
+    const strange = {
+      ...VALID_ELIGIBILITY,
+      displayTimeZone: 42,
+      addOns: [
+        {
+          ...VALID_ELIGIBILITY.addOns[0]!,
+          eligibility: {
+            ...VALID_ELIGIBILITY.addOns[0]!.eligibility,
+            endsBound: 'term_end',
+            nextResetAt: 1_759_278_000_000,
+            resetSoon: 'yes',
+          },
+        },
+      ],
+    };
+    const result = await namespaceWith(async () => strange).namespace.listForSubscription('sub-1', {});
+    expect(result.addOns).toHaveLength(1);
+    expect(result.displayTimeZone).toBeUndefined();
+    expect(result.addOns[0]?.eligibility.endsBound).toBeUndefined();
+    expect(result.addOns[0]?.eligibility.nextResetAt).toBeUndefined();
+    expect(result.addOns[0]?.eligibility.resetSoon).toBeUndefined();
+    // The fields that decide money stay strict: a broken price still refuses.
+    const brokenPrice = {
+      ...strange,
+      addOns: [{ ...strange.addOns[0]!, prices: [{ currency: 'USD', price: 2.5 }] }],
+    };
+    await expect(namespaceWith(async () => brokenPrice).namespace.listForSubscription('sub-1', {})).rejects.toThrow();
+  });
+
   it('parses a valid v2 eligibility payload and hits the subscription-scoped path', async () => {
     const { namespace, calls } = namespaceWith(async () => VALID_ELIGIBILITY);
     const result = await namespace.listForSubscription('sub-1');

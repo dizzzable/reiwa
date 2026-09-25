@@ -358,10 +358,20 @@ export interface UserAddOnEntitlement {
   purchasedAt: string;
   activatedAt: string | null;
   expiresAt: string | null;
+  /**
+   * Which bound ends it: Remnawave's traffic reset, or the end of the
+   * subscription. `null` for a row with no end. Absent from a panel that
+   * predates it — the row then keeps its old wording.
+   */
+  endsBound?: "reset" | "subscription_end" | null;
+  /** The reset instant a reset-bound add-on ends at (ISO) — the moment shown; `null` otherwise. */
+  resetAt?: string | null;
 }
 
 export interface AddOnEntitlementsResponse {
   entitlements: UserAddOnEntitlement[];
+  /** The operator's «Часовой пояс» (IANA) these dates are shown in; `null` = UTC. Absent from an older panel. */
+  displayTimeZone?: string | null;
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
