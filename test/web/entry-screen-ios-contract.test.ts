@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "../support/source-scan.js";
+
 /**
  * Entry-screen contract for iOS/WebKit.
  *
@@ -32,13 +34,13 @@ const AUTH = new URL("../../web/src/features/auth/", import.meta.url);
  * Source with block/JSX comments removed. Every rule below is about markup
  * that ships; the comments explaining these very rules name the same tokens
  * ("a y-slide re-blurs their backdrop-filter…") and would otherwise trip them.
+ * Through the shared parser-based helper. The regex this used to be would run
+ * a `/*` inside an attribute value (`accept="image/*"`, say) on to the next
+ * comment's end and hide every prop in between: a bare `autoFocus` planted
+ * after one on the register form passed the keyboard rule below (2026-09-26).
  */
 function authSource(name: string): string {
-  return readFileSync(new URL(`${name}.tsx`, AUTH), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
+  return stripComments(readFileSync(new URL(`${name}.tsx`, AUTH), "utf8"), `${name}.tsx`);
 }
 
 /** The six screens that carry input fields and therefore raise the keyboard. */
@@ -60,14 +62,10 @@ const ENTRY_SCREENS = [...FORM_SCREENS, ...SPLASH_SCREENS];
  * discuss both at length; reading it raw would let a comment satisfy a
  * `toContain` or trip a `not.toMatch`, in either direction.
  */
-const ENTRY_TILE_SOURCE = readFileSync(
-  new URL("../../web/src/components/ui/entry-brand-tile.tsx", import.meta.url),
-  "utf8",
-)
-  .replace(/\/\*[\s\S]*?\*\//g, "")
-  .split("\n")
-  .filter((line) => !line.trim().startsWith("//"))
-  .join("\n");
+const ENTRY_TILE_SOURCE = stripComments(
+  readFileSync(new URL("../../web/src/components/ui/entry-brand-tile.tsx", import.meta.url), "utf8"),
+  "entry-brand-tile.tsx",
+);
 
 /** Motion props that move or resize an element, as opposed to fading it. */
 const GEOMETRY_PROPERTIES = /\b(scale|rotate|x|y)\s*:/;
