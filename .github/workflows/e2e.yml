@@ -1,0 +1,201 @@
+name: E2E
+
+# The pair's end-to-end suite against the cabinet image Docker Publish has
+# just pushed, in two pairings:
+#
+#   next pair   this cabinet + the panel's `:main`                  every scenario
+#   mixed pair  this cabinet + the panel release operators run now  `core` only
+#
+# The mixed pair is what an operator runs between updating the cabinet and
+# updating the panel. It is pinned to a release, not to `:latest`, which moves
+# when the panel is tagged and can make this job test new + new in the release
+# window: rezeis e2e/released-image.mts takes the newest `v*` panel image, or
+# the one before it while that release is the same build as the panel's
+# `:main`. The panel's `:main` in the next pair is PROBED (E2E_PROBE), since it
+# may predate a pair change this cabinet carries — then the job says so and
+# tests what that panel has.
+#
+# The suite lives in the panel's repository (dizzzable/rezeis, e2e/) and is
+# checked out from its `main`; that repository is public, so no token beyond
+# this run's is needed. Its rezeis/.github/workflows/e2e.yml is the mirror of
+# this file, and e2e/e2e-runner.ts decides which scenario is `core` and what
+# each pairing must show.
+#
+# Every image is pulled ANONYMOUSLY from ghcr.io, the way an operator pulls
+# it. Nothing here logs in and no secret is used.
+#
+# FINDING THE RUN OF A COMMIT. A run started by `workflow_run` is filed under
+# the head of the DEFAULT branch at the moment it starts, not under the commit
+# it tests: its headBranch is `main` even for a tag build, and its headSha is
+# whatever main points at by then. `gh run list --commit <sha>` therefore
+# finds it only while main has not moved on. The title below names the built
+# ref and the full sha, so the release step waits on it by title:
+#
+#   gh run list --workflow e2e.yml --limit 20 \
+#     --json databaseId,displayTitle,status,conclusion \
+#     --jq '.[] | select(.displayTitle | contains("<full sha>"))'
+#
+# Both jobs of a run must be green, just like the jobs of CI.
+
+run-name: >-
+  ${{ github.event_name == 'workflow_run'
+  && format('E2E · {0} · {1}', github.event.workflow_run.head_branch, github.event.workflow_run.head_sha)
+  || format('E2E · manual · {0} · {1}', github.ref_name, github.sha) }}
+
+on:
+  workflow_run:
+    workflows: [Docker Publish]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      cabinet_image:
+        description: Cabinet image, for both jobs
+        type: string
+        default: ghcr.io/dizzzable/reiwa:main
+      panel_image:
+        description: Panel image of the next-pair job (every scenario)
+        type: string
+        default: ghcr.io/dizzzable/rezeis:main
+      released_panel_image:
+        description: Panel image of the mixed-pair job (core); empty = the release operators run now
+        type: string
+        default: ''
+      suite_ref:
+        description: Branch, tag or sha of dizzzable/rezeis to take the suite from
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+env:
+  PANEL_REPOSITORY: ghcr.io/dizzzable/rezeis
+  CABINET_REPOSITORY: ghcr.io/dizzzable/reiwa
+  SUITE_REPOSITORY: dizzzable/rezeis
+
+jobs:
+  e2e:
+    name: ${{ matrix.title }}
+    # Only a successful build has an image to test. Docker Publish never runs
+    # for a pull request; the last two conditions keep it that way should that
+    # change, since a run started by workflow_run executes with THIS
+    # repository's token.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event != 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    # A run takes about five minutes: two image pulls, a fresh database the
+    # panel migrates, then the scenarios.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - title: E2E · next pair · this cabinet + panel main · all scenarios
+            pairing: next
+            scenarios: all
+          - title: E2E · mixed pair · this cabinet + released panel · core
+            pairing: mixed
+            scenarios: core
+    steps:
+      # The suite first: it also resolves the released panel. A workflow_run
+      # has no inputs, so it takes the suite from main.
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ env.SUITE_REPOSITORY }}
+          ref: ${{ inputs.suite_ref || 'main' }}
+          path: rezeis
+          sparse-checkout: e2e
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: rezeis/e2e/package-lock.json
+
+      - name: Resolve the pair
+        id: pair
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BUILT_SHA: ${{ github.event.workflow_run.head_sha }}
+          PAIRING: ${{ matrix.pairing }}
+          INPUT_CABINET: ${{ inputs.cabinet_image }}
+          INPUT_PANEL: ${{ inputs.panel_image }}
+          INPUT_RELEASED_PANEL: ${{ inputs.released_panel_image }}
+          SUITE_REF: ${{ inputs.suite_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_run ]; then
+            # Docker Publish tags every build `sha-<first 7 of the commit>`
+            # (metadata-action `type=sha,format=short`), main and tag builds
+            # alike, so this is the image that was just built and nothing newer.
+            cabinet="$CABINET_REPOSITORY:sha-${BUILT_SHA:0:7}"
+          else
+            cabinet="${INPUT_CABINET:-$CABINET_REPOSITORY:main}"
+          fi
+          note=""
+          case "$PAIRING" in
+            next) panel="${INPUT_PANEL:-$PANEL_REPOSITORY:main}" ;;
+            mixed)
+              if [ -n "${INPUT_RELEASED_PANEL:-}" ]; then
+                panel="$INPUT_RELEASED_PANEL"
+                note="mixed pair: the panel named at dispatch, $panel"
+              else
+                why="${RUNNER_TEMP:-/tmp}/released-image.why"
+                if ! panel="$(node rezeis/e2e/released-image.mts "${PANEL_REPOSITORY#ghcr.io/}" 2> "$why")"; then
+                  cat "$why"
+                  echo "::error title=E2E mixed::could not resolve the panel release operators run now"
+                  exit 1
+                fi
+                # Its reason, one line, for the job summary.
+                note="$(tail -n 1 "$why")"
+              fi
+              ;;
+            *) echo "::error::unknown pairing $PAIRING"; exit 1 ;;
+          esac
+          {
+            echo "panel=$panel"
+            echo "cabinet=$cabinet"
+            echo "note=$note"
+          } >> "$GITHUB_OUTPUT"
+          echo "panel    $panel"
+          echo "cabinet  $cabinet"
+          echo "suite    $SUITE_REPOSITORY@$SUITE_REF"
+          [ -z "$note" ] || echo "$note"
+
+      - name: Install the scenario runner
+        working-directory: rezeis/e2e
+        run: npm ci --no-audit --no-fund
+
+      # tsx runs the suite without reading its types (R1-10c).
+      - name: Typecheck the suite
+        working-directory: rezeis/e2e
+        run: npm run typecheck
+
+      # Pulls both images, starts the stack, runs the scenarios, prints every
+      # container's log tail and the failing scenarios on a failure, and tears
+      # the stack down in every case (rezeis e2e/run-e2e.mts).
+      - name: Run the pair
+        working-directory: rezeis/e2e
+        env:
+          PANEL_IMAGE: ${{ steps.pair.outputs.panel }}
+          CABINET_IMAGE: ${{ steps.pair.outputs.cabinet }}
+          E2E_SCENARIOS: ${{ matrix.scenarios }}
+          E2E_LABEL: ${{ matrix.title }}
+          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+          E2E_SUMMARY_NOTE: ${{ steps.pair.outputs.note }}
+          # The other half: its unreleased `:main` is probed, never this cabinet.
+          E2E_PROBE: panel
+        run: node run-e2e.mts
+
+      - name: Keep the container logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs-${{ matrix.pairing }}
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
+          retention-days: 14
