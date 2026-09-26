@@ -19,7 +19,7 @@
     "check:tests": "tsc -p tsconfig.test.json && tsc -p web/tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:pbt": "node --import tsx --test test/**/*.property.test.ts"
+    "test:pbt": "node --import tsx --test \"test/**/*.property.test.ts\""
   },
   "dependencies": {
     "@grammyjs/conversations": "2.1.1",
