@@ -8,12 +8,10 @@ import {
   resetBrandingCache,
 } from '../../src/api/routes/branding.js';
 import { getConnectPageCatalog, resetConnectPageCache } from '../../src/api/routes/connect-page.js';
-import { createLandingRouter, getEffectiveLandingCached, resetLandingCache } from '../../src/api/routes/landing.js';
 import { GuestSupportConfigCache } from '../../src/infrastructure/admin-client/guest-support-config-cache.js';
 import {
   CUSTOM_EMOJI_PACKS_LKG,
   GUEST_SUPPORT_LKG,
-  LANDING_LKG,
   LAST_KNOWN_GOOD_RETRY_MS,
   LAST_KNOWN_GOOD_UNREADABLE,
   RedisLastKnownGoodStore,
@@ -34,11 +32,11 @@ import {
  * dropped, so a read waits out the transport's ten seconds instead of failing
  * at once (review R3b-02, on the API side).
  *
- * The landing, the appearance and its emoji packs, the connect screen and the
- * guest chat's config asked for their copy in Redis only once the panel read
- * had failed: the first visitors after a restart waited the ten seconds, and
- * the landing and the connect screen made the visitors of one window per TTL
- * wait them again all through an outage. Now:
+ * The appearance and its emoji packs, the connect screen and the guest chat's
+ * config (and the web landing, until 0.9.7.54) asked for their copy in Redis
+ * only once the panel read had failed: the first visitors after a restart
+ * waited the ten seconds, and the connect screen made the visitors of one
+ * window per TTL wait them again all through an outage. Now:
  *  - nothing held: the panel gets its head start, then the saved copy is served
  *    while the read goes on — and the panel's answer replaces it when it comes;
  *  - the panel answering within its head start (the read after an operator's
@@ -178,17 +176,6 @@ interface Reader {
 
 const READERS: readonly Reader[] = [
   {
-    name: 'the landing',
-    group: LANDING_LKG as LastKnownGoodGroup<never>,
-    saved: { schemaVersion: 1, enabled: true, defaultLocale: 'ru', sections: [], meta: { title: { ru: 'Сохранённый' } } },
-    answered: { schemaVersion: 1, enabled: true, defaultLocale: 'ru', sections: [], meta: { title: { ru: 'Из панели' } } },
-    build: (redis, read) => {
-      const adminClient = { landing: { getEffective: read } } as never;
-      createLandingRouter({ adminClient, lastKnownGood: new RedisLastKnownGoodStore({ redis: redis as never }) });
-      return { get: () => getEffectiveLandingCached(adminClient), reset: resetLandingCache };
-    },
-  },
-  {
     name: 'the appearance (public config)',
     group: PUBLIC_CONFIG_LKG as LastKnownGoodGroup<never>,
     saved: SNAPSHOT,
@@ -247,13 +234,11 @@ const READERS: readonly Reader[] = [
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(1_700_000_000_000);
-  resetLandingCache();
   resetBrandingCache();
   resetConnectPageCache();
 });
 
 afterEach(() => {
-  resetLandingCache();
   resetBrandingCache();
   resetConnectPageCache();
   vi.useRealTimers();
@@ -352,19 +337,6 @@ describe('a copy held past its TTL, with the panel hanging', () => {
         }),
     );
   }
-
-  it('the landing: served at once while one read refreshes it', async () => {
-    const landing = { schemaVersion: 1, enabled: true, defaultLocale: 'ru', sections: [] };
-    const read = answersOnce<unknown>(landing);
-    const adminClient = { landing: { getEffective: read } } as never;
-    createLandingRouter({ adminClient, lastKnownGood: new RedisLastKnownGoodStore({ redis: memoryRedis() as never }) });
-    expect(await getEffectiveLandingCached(adminClient)).toEqual(landing);
-
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(await answeredWithoutWaiting(getEffectiveLandingCached(adminClient))).toEqual(landing);
-    expect(await answeredWithoutWaiting(getEffectiveLandingCached(adminClient))).toEqual(landing);
-    expect(read).toHaveBeenCalledTimes(2);
-  });
 
   it('the connect screen: served at once while one read refreshes it', async () => {
     const catalog = { version: 2, platforms: [], icons: {}, showConnectionKeys: false };

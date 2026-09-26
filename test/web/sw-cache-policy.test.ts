@@ -15,7 +15,12 @@ describe('service-worker public API cache policy', () => {
   it('continues caching bounded public catalogs', () => {
     expect(isCacheableApiPath('/api/v1/branding')).toBe(true);
     expect(isCacheableApiPath('/api/v1/gateways')).toBe(true);
-    expect(isCacheableApiPath('/api/v1/landing')).toBe(true);
+  });
+
+  it('no longer keeps the landing, which the cabinet stopped serving in 0.9.7.54', () => {
+    // An entry an older worker stored under this path stays in the cache until
+    // it expires; the path is not cacheable, so no route ever serves it again.
+    expect(isCacheableApiPath('/api/v1/landing')).toBe(false);
   });
 
   it('never caches the plan catalogue, which the panel resolves for the signed-in subscriber', () => {
@@ -32,14 +37,14 @@ describe('service-worker public API cache policy', () => {
   });
 
   it('tells a read the version watcher asked for from a plain one', () => {
-    expect(isVersionedConfigRead(new URL('https://reiwa.example/api/v1/landing?v=abc'))).toBe(true);
-    expect(isVersionedConfigRead(new URL('https://reiwa.example/api/v1/landing'))).toBe(false);
-    expect(isVersionedConfigRead(new URL('https://reiwa.example/api/v1/landing?view=abc'))).toBe(false);
+    expect(isVersionedConfigRead(new URL('https://reiwa.example/api/v1/branding?v=abc'))).toBe(true);
+    expect(isVersionedConfigRead(new URL('https://reiwa.example/api/v1/branding'))).toBe(false);
+    expect(isVersionedConfigRead(new URL('https://reiwa.example/api/v1/branding?view=abc'))).toBe(false);
   });
 
   it('keys a cached response by its URL without the version, and without nothing else', () => {
-    expect(apiCacheKey('https://reiwa.example/api/v1/landing?v=abc')).toBe('https://reiwa.example/api/v1/landing');
-    expect(apiCacheKey('https://reiwa.example/api/v1/landing?v=def')).toBe('https://reiwa.example/api/v1/landing');
+    expect(apiCacheKey('https://reiwa.example/api/v1/branding?v=abc')).toBe('https://reiwa.example/api/v1/branding');
+    expect(apiCacheKey('https://reiwa.example/api/v1/branding?v=def')).toBe('https://reiwa.example/api/v1/branding');
     expect(apiCacheKey('https://reiwa.example/api/v1/gateways?v=1&c=RUB')).toBe('https://reiwa.example/api/v1/gateways?c=RUB');
     expect(apiCacheKey('https://reiwa.example/api/v1/gateways')).toBe('https://reiwa.example/api/v1/gateways');
   });

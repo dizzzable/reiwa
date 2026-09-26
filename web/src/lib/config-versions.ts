@@ -3,11 +3,10 @@
  * 24.09.2026: «Открытые страницы обновляются в течение минуты».
  *
  * Nothing used to tell an open page that the operator saved something. The
- * cabinet, the Mini App, the landing and the sign-in page kept what they had
- * loaded until they were reloaded or hidden and shown again — and even then
- * the browser's own cache (`max-age=60`, `stale-while-revalidate=300` on these
- * routes) and the service worker (the landing, 24 h) could answer with the copy
- * from before the save (W8 report D3).
+ * cabinet, the Mini App and the sign-in page kept what they had loaded until
+ * they were reloaded or hidden and shown again — and even then the browser's
+ * own cache (`max-age=60`, `stale-while-revalidate=300` on these routes) could
+ * answer with the copy from before the save (W8 report D3).
  *
  * `/api/v1/config-versions` answers, from the API process's memory and never
  * cached, which version of each settings group the cabinet holds. This watcher:
@@ -26,21 +25,23 @@
  *     neither the browser's cache nor the service worker has seen, so the old
  *     copy cannot answer — and a plain read cannot put it back afterwards;
  *   - where the route names the version of the body it served
- *     (`X-Config-Version` on `/public-config`, `/landing`, `/connect-page`), a
- *     body older than what the cabinet holds — a copy the browser cache or the
- *     service worker answered with just after a save, or on a fresh load
- *     before the first answer — is refetched as soon as it is noticed
- *     (`noteServed`).
+ *     (`X-Config-Version` on `/public-config` and `/connect-page`), a body
+ *     older than what the cabinet holds — a copy the browser cache answered
+ *     with just after a save, or on a fresh load before the first answer — is
+ *     refetched as soon as it is noticed (`noteServed`).
  *
  * A group nobody on the page reads costs nothing: refetching queries that do
  * not exist does nothing, and the next read of the group carries the version.
  */
 import type { QueryClient } from "@tanstack/react-query";
 
-/** The settings groups the SPA reads, by the name `/config-versions` gives them. */
+/**
+ * The settings groups the SPA reads, by the name `/config-versions` gives them.
+ * An answer naming any other group — `landing` from an API before 0.9.7.54 —
+ * is not acted on.
+ */
 export type WatchedConfigGroup =
   | "publicConfig"
-  | "landing"
   | "connectPage"
   | "customEmojiPacks"
   | "platformPolicy"
@@ -53,8 +54,6 @@ export type WatchedConfigGroup =
 export const WATCHED_CONFIG_GROUPS: Readonly<Record<WatchedConfigGroup, readonly (readonly string[])[]>> = {
   /** `/public-config` — `BrandingProvider` (and through it the localStorage first-paint copy). */
   publicConfig: [["public-config"]],
-  /** `/landing` — the landing page and the `/` entry router. */
-  landing: [["landing"]],
   /** `/connect-page` — the connect screen, its door on the dashboard, the trampoline. */
   connectPage: [["connect-page"]],
   /** `/custom-emoji/packs` — the notification feed. */
@@ -70,7 +69,7 @@ const GROUPS = Object.keys(WATCHED_CONFIG_GROUPS) as WatchedConfigGroup[];
 /** The query parameter a versioned read carries. The server routes ignore it. */
 export const CONFIG_VERSION_PARAM = "v";
 
-/** The response header naming the version of the body served (`/public-config`, `/landing`, `/connect-page`). */
+/** The response header naming the version of the body served (`/public-config`, `/connect-page`). */
 export const CONFIG_VERSION_HEADER = "x-config-version";
 
 export const CONFIG_VERSION_POLL_INTERVAL_MS = 60_000;
@@ -311,8 +310,8 @@ export const configVersionWatcher = new ConfigVersionWatcher();
  * load — and that first load may be the very read that brought the old copy
  * (the browser cache answered it, and its body named the old version on the
  * way out). Joining it would settle on the old copy. Cancelling it instead
- * would reject whoever awaits it — the `/` entry router awaits the landing's
- * first read and sends a visitor to sign-in on any failure.
+ * would reject whoever awaits it, and a page awaiting a first read takes a
+ * rejection for a failed read.
  */
 export async function refetchConfigGroup(
   queryClient: QueryClient,

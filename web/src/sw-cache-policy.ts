@@ -14,11 +14,14 @@
  * the signed-in subscriber (plans offered only to them, their personal prices),
  * and a slow network served one account's catalogue to the next. It is fetched
  * from the network every time; the cabinet cannot buy offline anyway.
+ *
+ * `/api/v1/landing` left with the landing in 0.9.7.54. A copy a 0.9.7.53
+ * worker stored may sit in `api-responses-v5` until it expires; no route here
+ * matches the path and no page asks for it, so it is never served.
  */
 export const CACHEABLE_API_EXACT = new Set<string>([
   '/api/v1/branding',
   '/api/v1/gateways',
-  '/api/v1/landing',
 ])
 
 const CACHEABLE_API_PREFIXES: readonly string[] = []
@@ -46,9 +49,9 @@ export function isVersionedConfigRead(url: URL): boolean {
 
 /**
  * The key an API response is kept under: its URL without the version. Every
- * version of `/api/v1/landing` is one entry — the one a plain read is served
- * from — so a versioned read refreshes it instead of adding one entry per
- * version the operator ever saved.
+ * version of a path is one entry — the one a plain read is served from — so a
+ * versioned read refreshes it instead of adding one entry per version the
+ * operator ever saved.
  */
 export function apiCacheKey(url: string): string {
   const parsed = new URL(url)

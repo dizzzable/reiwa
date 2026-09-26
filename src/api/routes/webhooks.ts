@@ -11,7 +11,6 @@ import {
 import type { LatestConfigVersionsPort } from "../../infrastructure/config-versions/latest.js";
 import type { VersionedGroup } from "../../infrastructure/config-versions/poller.js";
 import { resetBrandingCache } from "./branding.js";
-import { resetLandingCache } from "./landing.js";
 import { resetConnectPageCache } from "./connect-page.js";
 import type { AdminClient } from "../../lib/admin-client.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
@@ -594,17 +593,16 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           reloadConfigGroups(req, [CONFIG_VERSION_KEYS.connectPage]);
           break;
         }
-        case "reiwa.landing.invalidate": {
-          // Drop the cached web-landing payload so a freshly-published landing
-          // (or a rollback) appears on the next visitor load instead of waiting
-          // for the HTTP TTL. Web-only — no relay to the bot.
-          resetLandingCache();
-          reloadConfigGroups(req, [CONFIG_VERSION_KEYS.landing]);
-          break;
-        }
         default:
           // Unknown/irrelevant event — ack. Nothing retries this path (see the
           // RETRIES note in the file header); the ack only avoids a bogus 5xx.
+          //
+          // `reiwa.landing.invalidate` lands here too since 0.9.7.54, which
+          // serves no landing: a panel up to 0.9.7.70 still sends it on every
+          // publish or rollback in «Веб-лендинг». It must stay a 2xx. The
+          // panel counts the event delivered only then; anything else is
+          // retried and then reported to the operator as undelivered, about a
+          // page this cabinet does not show.
           res.status(204).end();
           return;
       }

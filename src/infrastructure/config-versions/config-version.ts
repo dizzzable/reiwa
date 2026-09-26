@@ -27,14 +27,17 @@ import { createHash } from 'node:crypto';
  * The groups the panel versions, named by the internal route each copies. The
  * two legal-document keys are one route in two languages: the panel resolves
  * the locale upstream, so each language is its own answer.
+ *
+ * No `landing`: the cabinet stopped serving the web landing in 0.9.7.54. A
+ * panel that still versions it (0.9.7.70, and the retired shim after it) names
+ * it in the poll's answer; the poll walks only these groups, so the extra key
+ * is recorded with the rest (`latest.ts`) and never re-read.
  */
 export const CONFIG_VERSION_KEYS = {
   /** `GET /api/internal/branding/public-config` — theme, locales, currency. */
   publicConfig: 'publicConfig',
   /** `GET /api/internal/bot-config` — buttons, texts, screens, emoji. */
   botConfig: 'botConfig',
-  /** `GET /api/internal/landing-config/effective`. */
-  landing: 'landing',
   /** `GET /api/internal/connect-page/effective`. */
   connectPage: 'connectPage',
   /** `GET /api/internal/settings/platform-policy` — access mode, channel, rules. */

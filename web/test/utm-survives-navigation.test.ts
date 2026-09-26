@@ -4,12 +4,12 @@
  * The tags an advertisement puts in the URL have to reach the register form.
  *
  * They did not. React-router replaces the whole URL when a `Link` is given a
- * bare path, and every call-to-action between the landing page and the form
- * passed one — so `?utm_source=vk` survived the ad click, survived the server,
- * survived the landing render, and was thrown away by the button the visitor
- * pressed. `register-page.tsx` then read an empty query and posted `utm: null`,
- * `sanitizeUtm` returned null, and `registrationUtm` was never written for
- * anybody.
+ * bare path, and every call-to-action between the page the ad opened (then the
+ * operator's web landing) and the form passed one — so `?utm_source=vk`
+ * survived the ad click, survived the server, survived the page render, and
+ * was thrown away by the button the visitor pressed. `register-page.tsx` then
+ * read an empty query and posted `utm: null`, `sanitizeUtm` returned null, and
+ * `registrationUtm` was never written for anybody.
  *
  * What the operator saw was «UTM-метки для этого пользователя не сохранены» on
  * every profile they opened — a message that reads like a storage problem and
@@ -29,7 +29,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { keepQuery, mergeCarriedQuery } from "../src/lib/keep-query";
 
 function at(search: string): void {
-  window.history.replaceState({}, "", `/welcome${search}`);
+  window.history.replaceState({}, "", `/sign-in${search}`);
 }
 
 afterEach(() => {
@@ -87,25 +87,16 @@ describe("keepQuery", () => {
 /**
  * The pages an advertisement actually leads through.
  *
- * A source scan rather than a render: the landing sections are driven by an
- * operator's own JSON and there is no single rendered tree that contains all
- * of them. What matters is that no file here hands react-router a bare
- * `/register` or `/sign-in`, and that is a property of the text.
+ * A source scan rather than a render: what matters is that no file here hands
+ * react-router a bare `/register` or `/sign-in`, and that is a property of the
+ * text. The operator's web landing and its sections were on this list until
+ * 0.9.7.54, which shows no landing; `/welcome`, where ads still point, is now
+ * an alias in the route table, so the route table is on it instead.
  */
-const LANDING_PAGE = "../src/features/landing/landing-page.tsx";
-const KIT_CONTEXT = "../src/features/landing/landing-kit-context.tsx";
-
 const ACQUISITION_PAGES = [
-  "../src/features/landing/sections/hero.tsx",
-  "../src/features/landing/sections/pricing.tsx",
-  "../src/features/landing/sections/misc.tsx",
   "../src/features/auth/sign-in-page.tsx",
   "../src/features/auth/web-home-page.tsx",
-  // The landing page itself. It was missing from this list while holding three
-  // bare `<Navigate to="/sign-in">` on its fail-closed path — so the guard
-  // written to stop exactly this was blind to the live instance of it, on the
-  // file the whole list is named after.
-  LANDING_PAGE,
+  "../src/App.tsx",
 ];
 
 /**
@@ -164,24 +155,6 @@ describe("no acquisition page navigates with a bare path", () => {
       ).toEqual([]);
     });
   }
-
-  it("binds the rewrite on the real landing page", () => {
-    // The landing sections cannot import `keepQuery`: the panel vendors a
-    // byte-identical copy of that folder for its builder preview and has no
-    // such module. They ask the kit instead — which means the REAL page is now
-    // the single place the rewrite is switched on, and a landing page that
-    // forgot to bind it would render bare paths again with nothing failing.
-    const source = readSource(LANDING_PAGE);
-    expect(source).toContain("resolveInternalHref: keepQuery");
-  });
-
-  it("leaves the preview host on the identity default", () => {
-    // A builder preview has no visitor query to carry and must show the
-    // operator the path they configured. The default in the kit is what makes
-    // that true without the panel knowing anything about this.
-    const source = readSource(KIT_CONTEXT);
-    expect(source).toContain("resolveInternalHref: (target) => target");
-  });
 
   it("unwraps a deep link without dropping the marks beside it", () => {
     // `/bootstrap` is the hop a deep link lands on, and it rebuilds where to

@@ -8,7 +8,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { resetBrandingCache } from '../../src/api/routes/branding.js';
 import { resetConnectPageCache } from '../../src/api/routes/connect-page.js';
-import { resetLandingCache } from '../../src/api/routes/landing.js';
 import { createRezeisWebhookRouter } from '../../src/api/routes/webhooks.js';
 import { setPolicyCache } from '../../src/infrastructure/admin-client/policy-cache.js';
 import type { ConfigVersionKey } from '../../src/infrastructure/config-versions/config-version.js';
@@ -34,7 +33,6 @@ function sign(body: string): string {
 const ALL_KEYS: readonly ConfigVersionKey[] = [
   'publicConfig',
   'customEmojiPacks',
-  'landing',
   'connectPage',
   'platformPolicy',
   'guestSupport',
@@ -85,7 +83,6 @@ async function hint(app: express.Express, event: string): Promise<number> {
 
 function resetAll(): void {
   resetBrandingCache();
-  resetLandingCache();
   resetConnectPageCache();
   setPolicyCache(null);
 }
@@ -99,7 +96,9 @@ describe('the settings webhook re-reads what it drops', () => {
 
   it.each([
     { event: 'reiwa.branding.invalidate', keys: ['publicConfig', 'customEmojiPacks'] },
-    { event: 'reiwa.landing.invalidate', keys: ['landing'] },
+    // A panel up to 0.9.7.70 still sends it on every landing publish; the
+    // cabinet serves no landing since 0.9.7.54 and acks it, dropping nothing.
+    { event: 'reiwa.landing.invalidate', keys: [] },
     { event: 'reiwa.connect-page.invalidate', keys: ['connectPage'] },
     { event: 'reiwa.platform.policy_invalidated', keys: ['platformPolicy', 'publicConfig', 'customEmojiPacks'] },
   ] as const)('$event: the groups it names, and no other', async ({ event, keys }) => {

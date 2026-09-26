@@ -11,11 +11,11 @@ import { describe, expect, it } from 'vitest';
  * as a 0×0 box until it loads and then snaps to its real size, shoving
  * everything below it down the page. Chrome reported thirteen of them on one
  * screen; the ones that mattered were a support thread jumping under the
- * reader and the landing page growing a step at a time.
+ * reader and the web landing (gone since 0.9.7.54) growing a step at a time.
  *
  * The rule is per image, and the shapes differ because the causes do:
  *
- *   • a size we KNOW (an emoji, an avatar) sets both dimensions outright;
+ *   • a size we KNOW (an emoji) sets both dimensions outright;
  *   • an operator's upload, whose size arrives with the bytes, reserves an
  *     `aspect-video` slot and is contained inside it;
  *   • a chat attachment reserves a fixed-height strip on its container, so
@@ -46,28 +46,21 @@ function everyComponentFile(directory: string): string[] {
 }
 
 describe('lazy images reserve their layout box', () => {
-  it('sizes an emoji and an avatar outright, because their size is known', () => {
-    // Both dimensions in the class list: the glyph is 1.15em square and the
-    // testimonial avatar is a 40px circle, whatever file is behind them.
+  it('sizes an emoji outright, because its size is known', () => {
+    // Both dimensions in the class list: the glyph is 1.15em square, whatever
+    // file is behind it.
     expect(read('components/ui/emoji-text.tsx')).toContain(
       'inline-block h-[1.15em] w-[1.15em]',
-    );
-    expect(read('features/landing/sections/misc.tsx')).toContain(
-      'h-10 w-10 rounded-full',
     );
   });
 
   it('reserves an aspect-video slot for an upload whose size arrives with it', () => {
-    // The FAQ answer and the landing step both render a file the operator
-    // chose, so the page cannot know its shape in advance. `object-contain`
-    // is what keeps the reservation from cropping a picture that is not 16/9.
+    // The FAQ answer renders a file the operator chose, so the page cannot
+    // know its shape in advance. `object-contain` is what keeps the
+    // reservation from cropping a picture that is not 16/9.
     const faq = read('features/settings/faq-media-element.tsx');
     expect(faq).toContain('aspect-video max-h-80 w-full object-contain');
     expect(faq).toContain('aspect-video max-h-80 w-full bg-black object-contain');
-
-    expect(read('features/landing/sections/how-it-works.tsx')).toContain(
-      'aspect-video w-full rounded-xl border border-[color:var(--ls-border)] object-contain',
-    );
   });
 
   it('reserves a fixed-height strip for a support attachment, on the container', () => {
@@ -80,14 +73,6 @@ describe('lazy images reserve their layout box', () => {
       expect(source, page).toContain('h-full w-auto max-w-full cursor-zoom-in rounded-xl object-contain');
       expect(source, page).not.toContain('max-h-64 w-auto max-w-full');
     }
-  });
-
-  it('gives a partner logo a minimum width, so a row of them does not reflow', () => {
-    // Height alone was reserved here, which left each logo zero wide until it
-    // loaded and shifted its neighbours sideways along the strip.
-    expect(read('features/landing/sections/misc.tsx')).toContain(
-      'h-8 w-auto min-w-16 object-contain sm:h-10 sm:min-w-20',
-    );
   });
 
   it('reserves a country flag by its ratio, which is the same for all of them', () => {
@@ -109,9 +94,6 @@ describe('lazy images reserve their layout box', () => {
     expect(sites.slice().sort()).toEqual([
       'components/ui/country-flag.tsx',
       'components/ui/emoji-text.tsx',
-      'features/landing/sections/how-it-works.tsx',
-      'features/landing/sections/misc.tsx',
-      'features/landing/sections/misc.tsx',
       'features/settings/faq-media-element.tsx',
       'features/support/guest-support-page.tsx',
       'features/support/support-page.tsx',

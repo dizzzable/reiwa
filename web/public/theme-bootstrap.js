@@ -27,6 +27,27 @@
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
+  // The build's own <title> (index.html), and the longest name the panel
+  // accepts — the same two numbers as `src/lib/document-title.ts`.
+  var STOCK_TITLE = "Reiwa";
+  var MAX_TITLE_LENGTH = 128;
+
+  function cleanTitle(value) {
+    if (typeof value !== "string") return "";
+    var folded = value.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim();
+    return Array.from(folded).slice(0, MAX_TITLE_LENGTH).join("").trim();
+  }
+
+  /**
+   * «Заголовок веб-страницы», then «Название проекта», then «Название бренда»,
+   * from the stored public config; "" for none.
+   */
+  function storedDocumentTitle(snapshot) {
+    var platform = isRecord(snapshot.platformBranding) ? snapshot.platformBranding : {};
+    var brand = isRecord(snapshot.branding) ? snapshot.branding.brandName : undefined;
+    return cleanTitle(platform.webTitle) || cleanTitle(platform.projectName) || cleanTitle(brand);
+  }
+
   function isHex(value) {
     return typeof value === "string" && HEX.test(value.trim());
   }
@@ -1025,8 +1046,13 @@
 
     var themeColor = document.querySelector('meta[name="theme-color"]');
     if (themeColor) themeColor.content = branding.bgPrimary;
-    if (typeof branding.brandName === "string" && branding.brandName.trim()) {
-      document.title = branding.brandName.trim();
+    // The tab title, by the rule the API writes into the served document and
+    // the app applies after boot (`src/lib/document-title.ts`). Only over the
+    // build's own "Reiwa": a document the API already named carries the
+    // current name, and this stored copy may be older than it.
+    if (document.title === STOCK_TITLE) {
+      var title = storedDocumentTitle(snapshot);
+      if (title) document.title = title;
     }
   } catch (_error) {
     // Storage access and corrupt snapshots are non-fatal; the built-in theme

@@ -33,7 +33,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   getSession: vi.fn(),
   botSignin: vi.fn(),
-  getLanding: vi.fn(),
   getPlatformPolicy: vi.fn(),
   reportSurface: vi.fn(),
   getChannelGate: vi.fn(),
@@ -80,7 +79,6 @@ vi.mock("@/features/onboarding/onboarding-tour-controller", () => ({
 function page(name: string) {
   return { default: () => <p data-probe="page">{name}</p> };
 }
-vi.mock("@/features/landing/landing-page", () => ({ ...page("landing"), LANDING_QUERY_KEY: ["landing"] }));
 vi.mock("@/features/dashboard/dashboard-page", () => page("dashboard"));
 vi.mock("@/features/plans/plans-page", () => page("plans"));
 vi.mock("@/features/renewal/renewal-page", () => page("renew"));
@@ -205,7 +203,6 @@ function cookielessWithAGoodToken(): void {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   notifyManager.setScheduler(queueMicrotask);
-  api.getLanding.mockRejectedValue(new Error("no landing"));
   api.getPlatformPolicy.mockResolvedValue({ requireTelegramWebCredentials: false });
   api.reportSurface.mockResolvedValue({ ok: true });
   api.getChannelGate.mockResolvedValue({ status: "not-required" });

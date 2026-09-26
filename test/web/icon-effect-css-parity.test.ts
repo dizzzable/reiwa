@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
  * is exact — an operator tuning a glow against a preview that drifted is being
  * lied to, quietly, and the drift only ever surfaces as "it looked different in
  * the panel". Same argument, and the same arrangement, as the vendored Originkit
- * components and the vendored landing kit.
+ * components and the vendored `media-viewer` and `qr` kits.
  *
  * WHY THE NEIGHBOUR IS ALLOWED TO DIFFER. `card-effect-preview-runtime.css` in
  * the panel is deliberately NOT a copy of anything: it stands in for a WebGL

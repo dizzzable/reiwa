@@ -51,8 +51,8 @@ describe("the size of the budget", () => {
 
   it("keeps real headroom rather than sitting exactly on the limit", () => {
     // A route transition can have the outgoing screen's cards still mounted
-    // while the incoming screen's mount, and the landing background and the
-    // entry brand tile each hold one. Exactly-16 is not a budget, it is a bet.
+    // while the incoming screen's mount, and the entry brand tile holds one.
+    // Exactly-16 is not a budget, it is a bet.
     const peak = CARD_EFFECT_CONTEXT_BUDGET * 2 + APP_BACKGROUND_CONTEXTS;
 
     expect(

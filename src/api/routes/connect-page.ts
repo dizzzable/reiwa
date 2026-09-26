@@ -5,7 +5,7 @@
  * and what each button does. Owned and validated by the panel; the cabinet only
  * renders it.
  *
- * Cached the same way branding and the landing are: 60-second in-process TTL, a
+ * Cached the same way branding is: 60-second in-process TTL, a
  * weak ETag so a repeat load costs a 304, and a process-wide drop on the
  * `reiwa.connect-page.invalidate` webhook so an operator's edit shows up on the
  * next tap instead of waiting out the TTL.

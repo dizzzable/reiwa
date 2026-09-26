@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/api/app.js';
 import { resetBrandingCache } from '../../src/api/routes/branding.js';
 import { resetConnectPageCache } from '../../src/api/routes/connect-page.js';
-import { resetLandingCache } from '../../src/api/routes/landing.js';
+import type { PublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
 import { setPolicyCache } from '../../src/infrastructure/admin-client/policy-cache.js';
 import { configVersionOf } from '../../src/infrastructure/config-versions/config-version.js';
 import type { VersionedGroup } from '../../src/infrastructure/config-versions/poller.js';
@@ -15,12 +15,42 @@ import { sendSocketless } from './socketless-request.js';
  * The API's settings groups as the composition root wires them: the adapters
  * the version poll and the webhook share, and `GET /api/v1/config-versions`,
  * the route open pages read to notice a change without a reload.
+ *
+ * The example group is the appearance (public config): its adapter re-reads
+ * after a hint. It was the web landing until 0.9.7.54, which serves none.
  */
 
 const WEBHOOK_SECRET = 'webhook-secret-for-config-versions';
 
-const LANDING_BEFORE = { enabled: true, schemaVersion: 1, sections: [], revision: 'before-publish' };
-const LANDING_AFTER = { enabled: true, schemaVersion: 1, sections: [], revision: 'published' };
+/** A snapshot the public-config guard accepts whole, as the panel serves it. */
+const APPEARANCE_BEFORE: PublicConfigSnapshot = {
+  branding: {
+    brandName: 'Northern Lights VPN',
+    logoUrl: null,
+    primary: '#6750a4',
+    primaryFg: '#ffffff',
+    bgPrimary: '#121212',
+    bgSecondary: '#242424',
+    cardGradient: 'linear-gradient(135deg, #312e81 0%, #a78bfa 100%)',
+    cardPattern: null,
+    cardLogo: 'DEFAULT',
+    cardLogoUrl: null,
+    cardEffect: 'aurora',
+    cardEffectProps: {},
+    cardEffectOpacity: 0.7,
+    cardEffectsByIndex: [],
+    bgEffect: 'AURORA',
+    iconColorMode: 'default',
+    iconColors: {},
+    borderRadius: 'rounded-xl',
+    fontFamily: 'Manrope, sans-serif',
+  },
+  locales: ['en', 'ru'],
+  defaultLocale: 'en',
+  defaultCurrency: 'EUR',
+  customIcons: [],
+};
+const APPEARANCE_AFTER: PublicConfigSnapshot = { ...APPEARANCE_BEFORE, defaultCurrency: 'RUB' };
 
 function sign(body: string): string {
   const timestamp = Math.floor(Date.now() / 1000);
@@ -29,10 +59,10 @@ function sign(body: string): string {
 }
 
 function buildApp() {
-  let landing: unknown = LANDING_BEFORE;
-  const getEffective = vi.fn(async () => landing);
+  let appearance: PublicConfigSnapshot = APPEARANCE_BEFORE;
+  const getReiwaPublicConfig = vi.fn(async () => appearance);
   const app = createApp({
-    adminClient: { landing: { getEffective } } as never,
+    adminClient: { branding: { getReiwaPublicConfig } } as never,
     sessionStore: null,
     webSessionStore: null,
     config: {
@@ -45,9 +75,9 @@ function buildApp() {
   });
   return {
     app,
-    getEffective,
-    publish: (next: unknown) => {
-      landing = next;
+    getReiwaPublicConfig,
+    save: (next: PublicConfigSnapshot) => {
+      appearance = next;
     },
   };
 }
@@ -63,7 +93,6 @@ async function versions(app: unknown): Promise<{ headers: Record<string, unknown
 
 function resetAll(): void {
   resetBrandingCache();
-  resetLandingCache();
   resetConnectPageCache();
   setPolicyCache(null);
 }
@@ -82,7 +111,6 @@ describe('the API process’s settings versions', () => {
       'connectPage',
       'customEmojiPacks',
       'guestSupport',
-      'landing',
       'platformPolicy',
       'publicConfig',
     ]);
@@ -96,23 +124,22 @@ describe('the API process’s settings versions', () => {
     expect(cold.versions).toEqual({
       publicConfig: null,
       customEmojiPacks: null,
-      landing: null,
       connectPage: null,
       platformPolicy: null,
       guestSupport: null,
     });
 
-    await sendSocketless(app, { method: 'GET', url: '/api/v1/landing' });
-    expect((await versions(app)).versions['landing']).toBe(configVersionOf(LANDING_BEFORE));
+    await sendSocketless(app, { method: 'GET', url: '/api/v1/public-config' });
+    expect((await versions(app)).versions['publicConfig']).toBe(configVersionOf(APPEARANCE_BEFORE));
   });
 
-  it('after a publish hint the version moves with no visitor asking — what an open page watches for', async () => {
-    const { app, getEffective, publish } = buildApp();
-    await sendSocketless(app, { method: 'GET', url: '/api/v1/landing' });
-    expect(getEffective).toHaveBeenCalledTimes(1);
+  it('after a save hint the version moves with no visitor asking — what an open page watches for', async () => {
+    const { app, getReiwaPublicConfig, save } = buildApp();
+    await sendSocketless(app, { method: 'GET', url: '/api/v1/public-config' });
+    expect(getReiwaPublicConfig).toHaveBeenCalledTimes(1);
 
-    publish(LANDING_AFTER);
-    const body = { event: 'reiwa.landing.invalidate', metadata: { reason: 'publish' } };
+    save(APPEARANCE_AFTER);
+    const body = { event: 'reiwa.branding.invalidate', metadata: { reason: 'operator-save' } };
     const hint = await sendSocketless(app, {
       method: 'POST',
       url: '/api/v1/webhooks/rezeis',
@@ -122,9 +149,9 @@ describe('the API process’s settings versions', () => {
     expect(hint.status).toBe(204);
 
     await vi.waitFor(async () => {
-      expect((await versions(app)).versions['landing']).toBe(configVersionOf(LANDING_AFTER));
+      expect((await versions(app)).versions['publicConfig']).toBe(configVersionOf(APPEARANCE_AFTER));
     });
-    expect(getEffective).toHaveBeenCalledTimes(2);
+    expect(getReiwaPublicConfig).toHaveBeenCalledTimes(2);
   });
 });
 

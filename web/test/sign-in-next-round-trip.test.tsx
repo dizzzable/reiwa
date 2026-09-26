@@ -37,7 +37,6 @@ const api = vi.hoisted(() => ({
   changePasswordAuth: vi.fn(),
   botSignin: vi.fn(),
   bootstrapTelegram: vi.fn(),
-  getLanding: vi.fn(),
   getPlatformPolicy: vi.fn(),
   reportSurface: vi.fn(),
   getChannelGate: vi.fn(),
@@ -89,7 +88,6 @@ vi.mock("@/features/onboarding/onboarding-tour-controller", () => ({
 function page(name: string) {
   return { default: () => <p data-probe="page">{name}</p> };
 }
-vi.mock("@/features/landing/landing-page", () => ({ ...page("landing"), LANDING_QUERY_KEY: ["landing"] }));
 vi.mock("@/features/dashboard/dashboard-page", () => page("dashboard"));
 vi.mock("@/features/renewal/renewal-page", () => page("renew"));
 vi.mock("@/features/auth/finish-setup-page", () => page("finish-setup"));
@@ -272,7 +270,6 @@ beforeEach(() => {
   __resetTelegramLaunchCaptureForTests();
   // No cabinet cookie until the form signs in.
   api.getSession.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
-  api.getLanding.mockRejectedValue(new Error("no landing"));
   api.getPlatformPolicy.mockResolvedValue({ requireTelegramWebCredentials: false });
   api.reportSurface.mockResolvedValue({ ok: true });
   api.getChannelGate.mockResolvedValue({ status: "off", joinUrl: null });

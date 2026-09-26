@@ -4,10 +4,10 @@
  *
  * Every settings cache in reiwa lives in process memory, so a restart during a
  * panel outage used to come back with nothing — and "nothing" is not neutral:
- * the landing read as switched off (`/` → sign-in), the access rules as open to
- * everybody, the guest chat as captcha-less. One store for all of them, so each
- * group gets the same guarantees instead of each being hand-wired its own way
- * (three already were, three different ways — W8 report D11).
+ * the access rules read as open to everybody, the guest chat as captcha-less.
+ * One store for all of them, so each group gets the same guarantees instead of
+ * each being hand-wired its own way (three already were, three different ways
+ * — W8 report D11).
  *
  * ── The record ───────────────────────────────────────────────────────────────
  *
@@ -381,17 +381,10 @@ export function createLastKnownGoodRedis(redisUrl: string, logger?: LoggerPort):
 // `bot-config/redis-config-persistence.ts`,
 // `public-config/redis-public-config-persistence.ts`,
 // `public-config/redis-connect-page-snapshot.ts`.
-
-/**
- * The effective landing. `{ enabled: false }` is a real answer the panel gives
- * — "nothing is published" — and is kept like any other.
- */
-export const LANDING_LKG: LastKnownGoodGroup<Record<string, unknown>> = {
-  name: 'landing',
-  shape: 1,
-  accepts: (payload: unknown): payload is Record<string, unknown> =>
-    isObject(payload) && typeof payload['enabled'] === 'boolean',
-};
+//
+// No `landing` group any more (0.9.7.54). The copy a 0.9.7.53 cabinet saved,
+// `reiwa:lkg:landing:v1`, stays where it is: nothing reads it, so nothing can
+// serve it, and a rollback to 0.9.7.53 finds its own copy again.
 
 /** The platform policy: access mode, channel gate, rules gate. */
 export const PLATFORM_POLICY_LKG: LastKnownGoodGroup<Record<string, unknown>> = {

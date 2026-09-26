@@ -47,6 +47,7 @@ import {
   shouldReportDefaultsPaint,
 } from "@/lib/branding-provider-policy";
 import { reportClientError } from "@/lib/client-error-reporter";
+import { documentTitleOf } from "@/lib/document-title";
 import {
   DEFAULT_BRANDING,
   DEFAULT_PUBLIC_CONFIG,
@@ -322,16 +323,18 @@ export function BrandingProvider({ children }: PropsWithChildren) {
   }, [paintingDefaults]);
 
   // Set the document (browser tab) title from the operator's webTitle,
-  // falling back to projectName, then the brand name.
+  // falling back to projectName, then the brand name — the rule the API uses
+  // for the `<title>` it serves (`lib/document-title.ts`), so the tab keeps the
+  // name it loaded with.
+  const webTitle = config.platformBranding?.webTitle;
+  const projectName = config.platformBranding?.projectName;
+  const brandName = config.branding.brandName;
   useEffect(() => {
-    const title =
-      config.platformBranding?.webTitle?.trim() ||
-      config.platformBranding?.projectName?.trim() ||
-      config.branding.brandName?.trim();
-    if (title) {
+    const title = documentTitleOf({ platformBranding: { webTitle, projectName }, branding: { brandName } });
+    if (title !== null) {
       document.title = title;
     }
-  }, [config.platformBranding?.webTitle, config.platformBranding?.projectName, config.branding.brandName]);
+  }, [webTitle, projectName, brandName]);
 
   // Point the iOS "Add to Home Screen" icon at the operator's PWA icon / logo.
   // iOS reads `<link rel="apple-touch-icon">` from the DOM at install time, so

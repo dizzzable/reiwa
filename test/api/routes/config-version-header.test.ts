@@ -4,13 +4,10 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { createConnectPageRouter, resetConnectPageCache } from '../../../src/api/routes/connect-page.js';
-import { createLandingRouter, heldLandingVersion, resetLandingCache } from '../../../src/api/routes/landing.js';
 import { configVersionOf } from '../../../src/infrastructure/config-versions/config-version.js';
 import {
-  LANDING_LKG,
   LAST_KNOWN_GOOD_RETRY_MS,
   RedisLastKnownGoodStore,
-  type LastKnownGoodStorePort,
 } from '../../../src/infrastructure/config-versions/last-known-good.js';
 import {
   CONNECT_PAGE_LKG,
@@ -19,19 +16,20 @@ import {
 } from '../../../src/infrastructure/public-config/redis-connect-page-snapshot.js';
 
 /**
- * `/landing` and `/connect-page` name the version of the body they served in
+ * `/connect-page` names the version of the body it served in
  * `X-Config-Version`, as `/public-config` does (review R2a-05).
  *
- * A fresh load reads `/landing` before the SPA's version watcher has its first
- * answer, so the read is a plain one — and the service worker answers it from
- * its cache (stale-while-revalidate, 24 h): the landing from before a publish.
- * Without a version on that body the watcher took the old copy for the page's
- * own and never re-read it; the `/` router sent visitors on by the old
- * `enabled`. The header rides on the cached response, so the watcher sees it is
- * older. Set before the 304, so a revalidation updates the stored headers.
+ * A fresh load reads it before the SPA's version watcher has its first answer,
+ * so the read is a plain one — and the browser's cache can answer it with the
+ * copy from before a save. Without a version on that body the watcher took the
+ * old copy for the page's own and never re-read it. The header rides on the
+ * cached response, so the watcher sees it is older. Set before the 304, so a
+ * revalidation updates the stored headers.
+ *
+ * `/landing` named its version the same way until 0.9.7.54, which serves no
+ * landing (`landing-retired.test.ts`).
  */
 
-const PUBLISHED = { schemaVersion: 1, enabled: true, defaultLocale: 'ru', sections: [] };
 const CATALOG = { version: 2, platforms: [], icons: {}, showConnectionKeys: false };
 
 async function listen(app: express.Express): Promise<{ base: string; close: () => Promise<void> }> {
@@ -41,13 +39,6 @@ async function listen(app: express.Express): Promise<{ base: string; close: () =
   return {
     base: `http://127.0.0.1:${port}/api/v1`,
     close: () => new Promise<void>((done) => server.close(() => done())),
-  };
-}
-
-function noCopy(): LastKnownGoodStorePort {
-  return {
-    load: vi.fn(async () => null) as LastKnownGoodStorePort['load'],
-    save: vi.fn(async () => 'saved' as const) as LastKnownGoodStorePort['save'],
   };
 }
 
@@ -87,86 +78,6 @@ async function recordFor(group: Parameters<RedisLastKnownGoodStore['save']>[0], 
   }).save(group as never, payload as never);
   return Object.fromEntries(data);
 }
-
-describe('/landing names its version (review R2a-05)', () => {
-  beforeEach(() => resetLandingCache());
-  afterEach(() => {
-    resetLandingCache();
-    vi.restoreAllMocks();
-  });
-
-  it('on the 200 and on the 304 — the value /config-versions reports as held', async () => {
-    const app = express();
-    app.use('/api/v1', createLandingRouter({ adminClient: { landing: { getEffective: async () => PUBLISHED } } as never, lastKnownGood: noCopy() }));
-    const { base, close } = await listen(app);
-    try {
-      const first = await fetch(`${base}/landing`);
-      expect(first.headers.get('x-config-version')).toBe(configVersionOf(PUBLISHED));
-      expect(heldLandingVersion()).toBe(configVersionOf(PUBLISHED));
-
-      const revalidated = await fetch(`${base}/landing`, { headers: { 'if-none-match': first.headers.get('etag') ?? '' } });
-      expect(revalidated.status).toBe(304);
-      expect(revalidated.headers.get('x-config-version')).toBe(configVersionOf(PUBLISHED));
-    } finally {
-      await close();
-    }
-  });
-
-  it('names nothing for the sentinel no panel said', async () => {
-    const app = express();
-    app.use(
-      '/api/v1',
-      createLandingRouter({
-        adminClient: {
-          landing: {
-            getEffective: async () => {
-              throw new Error('connect ECONNREFUSED');
-            },
-          },
-        } as never,
-        lastKnownGood: noCopy(),
-      }),
-    );
-    const { base, close } = await listen(app);
-    try {
-      const res = await fetch(`${base}/landing`);
-      expect(await res.json()).toEqual({ enabled: false });
-      expect(res.headers.get('x-config-version')).toBeNull();
-    } finally {
-      await close();
-    }
-  });
-
-  it('a Redis blip at a cold start: the sentinel for the store’s pause only — then the saved landing (review R2a-01)', async () => {
-    const { redis, open } = closedRedis(await recordFor(LANDING_LKG, PUBLISHED));
-    const app = express();
-    app.use(
-      '/api/v1',
-      createLandingRouter({
-        adminClient: {
-          landing: {
-            getEffective: async () => {
-              throw new Error('connect ECONNREFUSED');
-            },
-          },
-        } as never,
-        lastKnownGood: new RedisLastKnownGoodStore({ redis: redis as never }),
-      }),
-    );
-    const { base, close } = await listen(app);
-    try {
-      expect(await (await fetch(`${base}/landing`)).json()).toEqual({ enabled: false });
-      open();
-      const now = Date.now();
-      vi.spyOn(Date, 'now').mockReturnValue(now + LAST_KNOWN_GOOD_RETRY_MS + 1);
-      const res = await fetch(`${base}/landing`);
-      expect(await res.json()).toEqual(PUBLISHED);
-      expect(res.headers.get('x-config-version')).toBe(configVersionOf(PUBLISHED));
-    } finally {
-      await close();
-    }
-  });
-});
 
 describe('/connect-page names its version (review R2a-05)', () => {
   beforeEach(() => resetConnectPageCache());

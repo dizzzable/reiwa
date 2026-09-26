@@ -84,7 +84,7 @@ createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       {/* Open pages pick up a settings change within a minute, on every route —
-          cabinet, Mini App, landing, sign-in (`lib/config-versions.ts`). */}
+          cabinet, Mini App, sign-in (`lib/config-versions.ts`). */}
       <ConfigVersionWatcherMount queryClient={queryClient} />
       <BrowserRouter>
         <BrandingProvider>

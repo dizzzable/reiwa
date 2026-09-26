@@ -60,17 +60,11 @@ import {
   resetCustomEmojiPacksCache,
   resetPublicConfigCache,
 } from "./routes/branding.js";
-import {
-  createLandingRouter,
-  getEffectiveLandingCached,
-  buildLandingMetaHead,
-  heldLandingVersion,
-  resetLandingCache,
-} from "./routes/landing.js";
 import { createConnectPageRouter, resetConnectPageCache } from "./routes/connect-page.js";
 import { createConnectHandoffRouter } from "./routes/connect-handoff.js";
 import {
   applyBrandingHead,
+  applyDocumentTitle,
   buildWebManifest,
   getBrandingAssetCache,
   isSafeBrandingFile,
@@ -424,7 +418,10 @@ export function createApp(deps: CreateAppDeps) {
       lastKnownGood,
     }),
   );
-  app.use("/api/v1", createLandingRouter({ adminClient: deps.adminClient, logger, lastKnownGood }));
+  // No `/landing` since 0.9.7.54: the cabinet shows no web landing, so the route
+  // and the panel read behind it are gone. A page of 0.9.7.53 left open that
+  // still asks gets a 404, which it reads as "no landing" and goes to sign-in.
+  //
   // The connect screen catalog. Public within the cabinet: it is identical for
   // every customer and carries nobody's subscription link.
   app.use("/api/v1", createConnectPageRouter(deps.adminClient, connectPageSnapshot));
@@ -456,12 +453,6 @@ export function createApp(deps: CreateAppDeps) {
       held: heldCustomEmojiPacksVersion,
       reset: resetCustomEmojiPacksCache,
       reload: () => getCustomEmojiPacks(deps.adminClient),
-    },
-    {
-      key: CONFIG_VERSION_KEYS.landing,
-      held: heldLandingVersion,
-      reset: resetLandingCache,
-      reload: () => getEffectiveLandingCached(deps.adminClient),
     },
     {
       key: CONFIG_VERSION_KEYS.connectPage,
@@ -726,9 +717,6 @@ export function createApp(deps: CreateAppDeps) {
         },
       }),
     );
-    // Landing routes get server-injected SEO / social-preview meta when the
-    // landing is enabled+published (crawlers/social see a real preview, not a
-    // bare SPA shell). Best-effort: any failure falls back to plain index.html.
     // The raw template is cached in-process (index.html changes only on deploy,
     // which restarts the process).
     let indexHtmlTemplate: string | null = null;
@@ -746,16 +734,18 @@ export function createApp(deps: CreateAppDeps) {
     // unfurlers) sees the stock Reiwa icon unless the server writes it in.
     // Shares the 60s public-config cache with `/manifest.webmanifest`, so an
     // SPA document costs no extra upstream call.
-    // The landing lookup and this public-config lookup are independent upstream
-    // calls, so an SPA document starts BOTH before awaiting either. With the
-    // panel on its own VPS an outage now costs one headers timeout (~10s)
-    // instead of two in series (~20s).
     //
-    // `beginPublicConfig` resolves to a settled result rather than rejecting.
-    // The caller consumes it only after the landing lookup finishes, and a
-    // rejection left unattended in that window would reach Node's
-    // unhandled-rejection handler (fatal by default). Awaiting inside the async
-    // body attaches the handler synchronously, so no such window exists.
+    // It is the ONLY lookup a document makes, `/` and `/welcome` included.
+    // Those two also looked up the web landing, to write its `<title>`,
+    // description and preview (`og:*`) tags into the head. The cabinet shows no
+    // landing since 0.9.7.54, so their head is every other page's: the brand's
+    // icons and home-screen name, and the operator's name as the `<title>` and
+    // in `og:title`, `og:site_name` and `twitter:title` (`document-title.ts`) —
+    // no description and no preview image.
+    //
+    // `beginPublicConfig` resolves to a settled result rather than rejecting,
+    // so a failed lookup and a missed deadline reach the one fallback path in
+    // `sendSpaDocument` the same way.
     type SettledPublicConfig =
       | {
           readonly ok: true;
@@ -783,53 +773,42 @@ export function createApp(deps: CreateAppDeps) {
       ok: false,
       error: new Error(`spa head lookup exceeded ${SPA_HEAD_DEADLINE_MS}ms`),
     };
-    const onHeadDeadline = (what: string) => (): void => {
+    const onHeadDeadline = (): void => {
       // WARN, not silence. The 2026-08-24 outage stayed invisible for two
       // days precisely because a hang produces no error to report: the
       // request simply never finished. A document served without the
       // operator head is a working cabinet AND a signal.
       logger?.warn?.(
-        { what, deadlineMs: SPA_HEAD_DEADLINE_MS },
+        { what: "public-config", deadlineMs: SPA_HEAD_DEADLINE_MS },
         "spa head lookup missed its deadline; serving the unbranded shell",
       );
     };
     const renderSpaDocument = async (
-      extraHead: string | null,
       publicConfig: Promise<SettledPublicConfig>,
     ): Promise<string> => {
       const template = readIndexTemplate();
-      const withHead =
-        extraHead === null
-          ? template
-          : template.replace("</head>", `${extraHead}</head>`);
       const settled = await publicConfig;
       // Re-thrown so `sendSpaDocument` keeps ONE fallback path: a branding
       // failure still serves the unbranded shell, exactly as before.
       if (!settled.ok) throw settled.error;
-      const branding = (settled.payload.body as { branding?: unknown }).branding;
-      return applyBrandingHead(
-        withHead,
-        branding as Parameters<typeof applyBrandingHead>[1],
+      const body = settled.payload.body;
+      const branding = (body as { branding?: unknown }).branding;
+      // The operator's name as the title and in the link-preview tags, from
+      // the same copy (`document-title.ts`): a save in the panel reaches the
+      // next document with the copy, no restart.
+      return applyDocumentTitle(
+        applyBrandingHead(template, branding as Parameters<typeof applyBrandingHead>[1]),
+        body,
       );
     };
-    const sendSpaDocument = (
-      res: Response,
-      next: NextFunction,
-      extraHead: string | null,
-      // Defaulted so the plain SPA-fallback route below starts its own lookup
-      // at exactly the moment it always did.
-      publicConfig: Promise<SettledPublicConfig> = withHeadDeadline(
-        beginPublicConfig(),
-        DEADLINE_MISSED,
-        onHeadDeadline("public-config"),
-      ),
-    ): void => {
+    const sendSpaDocument = (res: Response, next: NextFunction): void => {
+      const publicConfig = withHeadDeadline(beginPublicConfig(), DEADLINE_MISSED, onHeadDeadline);
       void (async () => {
         // Set before any send: `res.sendFile` only supplies its own
         // `public, max-age=0` when the header is still absent.
         res.setHeader("Cache-Control", "no-cache");
         try {
-          res.type("html").send(await renderSpaDocument(extraHead, publicConfig));
+          res.type("html").send(await renderSpaDocument(publicConfig));
         } catch {
           // Operator config unavailable (admin down, cold cache, no upstream
           // configured) or the template is unreadable. The unbranded shell is
@@ -841,36 +820,6 @@ export function createApp(deps: CreateAppDeps) {
         }
       })();
     };
-    app.get(["/", "/welcome"], (_req: Request, res: Response, next: NextFunction) => {
-      void (async () => {
-        // Started first, awaited last: the landing lookup below runs
-        // alongside the public-config lookup instead of in front of it.
-        // BOTH deadline clocks therefore start on the same tick, so the
-        // document's worst case is one deadline, not two in series.
-        const publicConfig = withHeadDeadline(
-          beginPublicConfig(),
-          DEADLINE_MISSED,
-          onHeadDeadline("public-config"),
-        );
-        const head = await withHeadDeadline(
-          (async (): Promise<string | null> => {
-            try {
-              return buildLandingMetaHead(
-                await getEffectiveLandingCached(deps.adminClient),
-              );
-            } catch {
-              // Landing lookup FAILED — the shell (still branded) is the
-              // fallback. A landing lookup that never answers is the case
-              // this catch could not see; the deadline around it can.
-              return null;
-            }
-          })(),
-          null,
-          onHeadDeadline("landing-meta"),
-        );
-        sendSpaDocument(res, next, head, publicConfig);
-      })();
-    });
     // A stale entry document can request a hashed chunk that a new release has
     // removed. Never hand that request the SPA document: Workbox and browsers
     // can otherwise cache the 200 HTML response as JavaScript, which prevents
@@ -879,13 +828,20 @@ export function createApp(deps: CreateAppDeps) {
       res.status(404).end();
     });
     // SPA fallback for non-API GETs — hand any unmatched route to the
-    // client router. API 404s are left to the routers above.
+    // client router, `/` and `/welcome` among them. API 404s are left to the
+    // routers above.
+    //
+    // And HEADs, answered exactly as their GET: the same status and headers,
+    // title included, with no body (`res.send` and `res.sendFile` drop it).
+    // Uptime monitors and `curl -I` check the cabinet's root with HEAD; from
+    // 0.9.6.20 to 0.9.7.53 the dedicated `/` route answered it 200, and a
+    // GET-only check here turned it into a 404 (review R1-24).
     app.get(/^(?!\/api\/).*/, (req: Request, res: Response, next: NextFunction) => {
-      if (req.method !== "GET") {
+      if (req.method !== "GET" && req.method !== "HEAD") {
         next();
         return;
       }
-      sendSpaDocument(res, next, null);
+      sendSpaDocument(res, next);
     });
     if (logger) {
       logger.info({ webDist }, "serving SPA from API (single-image mode)");

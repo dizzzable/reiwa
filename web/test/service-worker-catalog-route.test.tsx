@@ -120,9 +120,16 @@ describe("service worker and the plan catalogue", () => {
   });
 
   it("leaves the other public catalogues on stale-while-revalidate", () => {
-    for (const path of ["/api/v1/branding", "/api/v1/gateways", "/api/v1/landing"]) {
+    for (const path of ["/api/v1/branding", "/api/v1/gateways"]) {
       expect(answeringRoute(path)?.strategyName, path).toBe("StaleWhileRevalidate");
     }
+  });
+
+  it("does not route the retired landing, so a copy an older worker stored is never served", () => {
+    // `/api/v1/landing` left with the landing in 0.9.7.54. The cache name did
+    // not change, so an entry a 0.9.7.53 worker kept may still be on the disk;
+    // with no route claiming the path, nothing reads it back.
+    expect(answeringRoute("/api/v1/landing")).toBeUndefined();
   });
 
   it("never takes a write to the catalogue path", () => {

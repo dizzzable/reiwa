@@ -42,8 +42,7 @@
  *   add nothing here; see `useCardEffectWarmSlot`.
  *
  *   2 × 6 + 1 + 1 = 14, leaving 2 of 16 free for whatever else holds one: the
- *   outgoing screen's cards during a route transition, the landing background,
- *   the entry brand tile.
+ *   outgoing screen's cards during a route transition, the entry brand tile.
  *
  * Six is also chosen from the other end, and here the two call sites differ —
  * do not read the number as "everything visible still animates":

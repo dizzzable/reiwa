@@ -266,7 +266,7 @@ describe("animation paint contract", () => {
       for (const property of PAINT_BOUND_PROPERTIES) {
         expect(
           body,
-          `@keyframes ${name} animates \`${property}\` (or a vendor-prefixed spelling of it) — a paint-bound property, so every frame repaints the element. Express the motion with transform/opacity instead (see landing.css \`ls-gradient\`).`,
+          `@keyframes ${name} animates \`${property}\` (or a vendor-prefixed spelling of it) — a paint-bound property, so every frame repaints the element. Express the motion with transform/opacity instead (see \`.card-effect-layer__css-fallback-blob\`).`,
         ).not.toMatch(declarationPattern(property));
       }
     }

@@ -70,7 +70,9 @@ export default function LegalPage() {
     <div ref={scroller} className="scroll-area h-dvh bg-(--brand-bg-primary)">
       <header className="sticky top-0 z-10 border-b border-white/5 bg-(--brand-bg-primary)/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-5 py-4">
-          <BackButton fallback="/welcome" label={t("common.back")} />
+          {/* With no history to go back to (a link from the bot, a new tab):
+              the cabinet's entry, which picks «Главная» or the sign-in form. */}
+          <BackButton fallback="/" label={t("common.back")} />
           <h1 className="text-base font-semibold tracking-tight text-foreground">
             {t("privacy.legalDocuments")}
           </h1>

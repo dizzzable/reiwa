@@ -36,7 +36,6 @@ import {
   ExtAuthNamespace,
   FaqNamespace,
   LegalDocumentsNamespace,
-  LandingNamespace,
   ConnectPageNamespace,
   LinkingNamespace,
   PartnerNamespace,
@@ -84,7 +83,6 @@ export class AdminClient {
   readonly referrals: ReferralsNamespace;
   readonly partner: PartnerNamespace;
   readonly branding: BrandingNamespace;
-  readonly landing: LandingNamespace;
   readonly connectPage: ConnectPageNamespace;
   readonly webAuth: WebAuthNamespace;
   readonly extAuth: ExtAuthNamespace;
@@ -122,7 +120,6 @@ export class AdminClient {
     this.referrals = new ReferralsNamespace(this.transport);
     this.partner = new PartnerNamespace(this.transport);
     this.branding = new BrandingNamespace(this.transport);
-    this.landing = new LandingNamespace(this.transport);
     this.connectPage = new ConnectPageNamespace(this.transport);
     this.webAuth = new WebAuthNamespace(this.transport);
     this.extAuth = new ExtAuthNamespace(this.transport);

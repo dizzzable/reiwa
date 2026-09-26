@@ -15,6 +15,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Logger } from "pino";
 
+import { documentNamesOf } from "./document-title.js";
+
 // ── Default (Reiwa) PWA icons, served as static files from web/dist ──────────
 const DEFAULT_ICONS = [
   { src: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
@@ -231,6 +233,42 @@ export function applyBrandingHead(
       `<meta name="apple-mobile-web-app-title" content="${escapeHtmlAttribute(name)}" />`,
     );
   }
+  return out;
+}
+
+const TITLE_ELEMENT = /<title\b[^>]*>[\s\S]*?<\/title\s*>/i;
+const OG_TITLE_TAG = /<meta\b[^>]*\bproperty=(["'])og:title\1[^>]*>/i;
+const OG_SITE_NAME_TAG = /<meta\b[^>]*\bproperty=(["'])og:site_name\1[^>]*>/i;
+const TWITTER_CARD_TAG = /<meta\b[^>]*\bname=(["'])twitter:card\1[^>]*>/i;
+const TWITTER_TITLE_TAG = /<meta\b[^>]*\bname=(["'])twitter:title\1[^>]*>/i;
+
+/**
+ * Write the operator's name into the document's title and link-preview tags:
+ * `<title>`, `og:title`, `og:site_name`, and `twitter:title` with the
+ * `twitter:card` it needs (a plain `summary`). Which name goes where, and why
+ * the server has to do it at all, is in `document-title.ts`.
+ *
+ * `publicConfig` is the whole public-config body — the tab title reads
+ * `platformBranding` as well as `branding`. With no name of the operator's own
+ * the input comes back untouched: the build's `<title>Reiwa</title>` and no
+ * preview tags, exactly as before. Values are HTML-escaped, and every write
+ * goes through `replaceOrAppendInHead`, whose replacer function keeps a `$` in
+ * a name from expanding. No description and no image are written.
+ */
+export function applyDocumentTitle(html: string, publicConfig: unknown): string {
+  const names = documentNamesOf(publicConfig);
+  if (names === null) return html;
+  const title = escapeHtmlAttribute(names.title);
+  const siteName = escapeHtmlAttribute(names.siteName);
+  let out = replaceOrAppendInHead(html, TITLE_ELEMENT, `<title>${title}</title>`);
+  out = replaceOrAppendInHead(out, OG_TITLE_TAG, `<meta property="og:title" content="${title}" />`);
+  out = replaceOrAppendInHead(out, OG_SITE_NAME_TAG, `<meta property="og:site_name" content="${siteName}" />`);
+  // A card the template already declares is its own business; none is added
+  // over it.
+  if (!TWITTER_CARD_TAG.test(out)) {
+    out = replaceOrAppendInHead(out, TWITTER_CARD_TAG, `<meta name="twitter:card" content="summary" />`);
+  }
+  out = replaceOrAppendInHead(out, TWITTER_TITLE_TAG, `<meta name="twitter:title" content="${title}" />`);
   return out;
 }
 

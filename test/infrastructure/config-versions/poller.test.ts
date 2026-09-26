@@ -43,11 +43,11 @@ afterEach(() => {
 describe('what a poll re-reads', () => {
   it('re-reads only the groups whose held copy is not the panel’s version — through the reset, then the read', async () => {
     const behind = group('publicConfig', V1);
-    const current = group('landing', V2);
+    const current = group('customEmojiPacks', V2);
     const nothingHeld = group('connectPage', null);
     const unknownToPanel = group('guestSupport', V1);
     const poll = vi.fn(async () => ({
-      versions: { publicConfig: V2, landing: V2, connectPage: V2 },
+      versions: { publicConfig: V2, customEmojiPacks: V2, connectPage: V2 },
     }));
     const poller = new ConfigVersionPoller({
       consumer: 'api',
@@ -113,7 +113,7 @@ describe('what a poll re-reads', () => {
   it('keeps polling when a re-read throws or rejects', async () => {
     const log = logger();
     const throwing: VersionedGroup = {
-      key: 'landing',
+      key: 'connectPage',
       held: () => V1,
       reset: () => {
         throw new Error('reset blew up');
@@ -131,7 +131,7 @@ describe('what a poll re-reads', () => {
     const poller = new ConfigVersionPoller({
       consumer: 'api',
       groups: [throwing, rejecting],
-      poll: async () => ({ versions: { landing: V2, publicConfig: V2 } }),
+      poll: async () => ({ versions: { connectPage: V2, publicConfig: V2 } }),
       logger: log as never,
     });
 
@@ -336,7 +336,7 @@ describe('what a poll tells the key of latest versions', () => {
     const poller = new ConfigVersionPoller({
       consumer: 'bot',
       groups: [behind.versioned],
-      poll: async () => ({ versions: { publicConfig: V2, botConfig: V1, 'legalDocuments.ru': V2, landing: '' } }),
+      poll: async () => ({ versions: { publicConfig: V2, botConfig: V1, 'legalDocuments.ru': V2, connectPage: '' } }),
       onVersions,
     });
 
@@ -370,11 +370,11 @@ describe('what a poll tells the key of latest versions', () => {
 
   it('a listener that throws costs a debug line, not the poll', async () => {
     const log = logger();
-    const behind = group('landing', V1);
+    const behind = group('connectPage', V1);
     const poller = new ConfigVersionPoller({
       consumer: 'api',
       groups: [behind.versioned],
-      poll: async () => ({ versions: { landing: V2 } }),
+      poll: async () => ({ versions: { connectPage: V2 } }),
       onVersions: () => {
         throw new Error('redis gone');
       },
@@ -474,11 +474,11 @@ describe('what a poll tells onPanel', () => {
 
   it('a listener that throws costs a debug line, not the poll', async () => {
     const log = logger();
-    const behind = group('landing', V1);
+    const behind = group('connectPage', V1);
     const poller = new ConfigVersionPoller({
       consumer: 'api',
       groups: [behind.versioned],
-      poll: async () => ({ versions: { landing: V2 } }),
+      poll: async () => ({ versions: { connectPage: V2 } }),
       onPanel: () => {
         throw new Error('redis gone');
       },

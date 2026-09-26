@@ -106,8 +106,7 @@ export type { ExternalAuthProvider, PublicExternalProvider } from "./ext-auth.js
 // Plans
 export { getPlans } from "./plans.js";
 
-// Landing
-export { getLanding } from "./landing.js";
+// Connect page
 export { getConnectPage, verifyConnectHandoff } from "./connect-page.js";
 
 // Subscription

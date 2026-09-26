@@ -6,7 +6,7 @@
  *
  * The page's version watcher (`lib/config-versions.ts`) puts `?v=<version>` on
  * a read once the cabinet has moved to a new version of a settings group. The
- * worker keeps `/api/v1/landing` (and `/branding`, `/gateways`) stale-while-
+ * worker keeps `/api/v1/branding` and `/api/v1/gateways` stale-while-
  * revalidate for a day, which answers from the cache FIRST — the very copy the
  * watcher is replacing. So a versioned read goes to the network first, and its
  * answer is stored under the path without the version: the entry a plain read
@@ -114,22 +114,22 @@ async function cacheKeyOf(route: CapturedRoute | undefined, path: string): Promi
 
 describe("service worker and versioned settings reads", () => {
   it("sends a versioned read to the network first", () => {
-    const versioned = answeringRoute("/api/v1/landing?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    const versioned = answeringRoute("/api/v1/branding?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     expect(versioned?.strategyName).toBe("NetworkFirst");
     // Non-vacuity: the plain read of the same path is still served from the
     // cache first, so the difference is the version and nothing else.
-    expect(answeringRoute("/api/v1/landing")?.strategyName).toBe("StaleWhileRevalidate");
+    expect(answeringRoute("/api/v1/branding")?.strategyName).toBe("StaleWhileRevalidate");
   });
 
   it("keeps every version of a path under ONE key — the one a plain read uses", async () => {
-    const versioned = answeringRoute("/api/v1/landing?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-    const plain = answeringRoute("/api/v1/landing");
+    const versioned = answeringRoute("/api/v1/branding?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    const plain = answeringRoute("/api/v1/branding");
     expect(versioned?.options.cacheName).toBe(plain?.options.cacheName);
 
-    const canonical = url("/api/v1/landing").href;
-    expect(await cacheKeyOf(versioned, "/api/v1/landing?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBe(canonical);
-    expect(await cacheKeyOf(versioned, "/api/v1/landing?v=cccccccccccccccccccccccccccccccc")).toBe(canonical);
-    expect(await cacheKeyOf(plain, "/api/v1/landing")).toBe(canonical);
+    const canonical = url("/api/v1/branding").href;
+    expect(await cacheKeyOf(versioned, "/api/v1/branding?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBe(canonical);
+    expect(await cacheKeyOf(versioned, "/api/v1/branding?v=cccccccccccccccccccccccccccccccc")).toBe(canonical);
+    expect(await cacheKeyOf(plain, "/api/v1/branding")).toBe(canonical);
   });
 
   it("strips only the version from the key", async () => {
@@ -140,6 +140,10 @@ describe("service worker and versioned settings reads", () => {
   it("does not start caching a path just because it carries a version", () => {
     expect(answeringRoute("/api/v1/public-config?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBeUndefined();
     expect(answeringRoute("/api/v1/platform-policy?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBeUndefined();
-    expect(answeringRoute("/api/v1/landing?v=b", "POST")).toBeUndefined();
+    expect(answeringRoute("/api/v1/branding?v=b", "POST")).toBeUndefined();
+    // Gone with the landing (0.9.7.54): neither read is taken, so a copy an
+    // older worker stored is never the answer.
+    expect(answeringRoute("/api/v1/landing?v=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBeUndefined();
+    expect(answeringRoute("/api/v1/landing")).toBeUndefined();
   });
 });

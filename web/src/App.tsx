@@ -60,11 +60,25 @@ function SubscribeAlias() {
   return <Navigate to={`/plans${search}`} replace />;
 }
 
+/**
+ * `/welcome` is the sign-in form.
+ *
+ * It was the operator's web landing until 0.9.7.54, which shows none, and ads
+ * and old links still point at it. It goes to `/sign-in` with the WHOLE query,
+ * like `/subscribe` above: `utm_*`, `ref` and whatever an ad network appends
+ * reach the form, whose link to registration carries the marks on
+ * (`keepQuery`). The `campaign=ad_…` marker never reaches this far — the
+ * server captures and strips it from the document request first
+ * (`api/middleware/ad-capture.ts`).
+ */
+function WelcomeAlias() {
+  const { search } = useLocation();
+  return <Navigate to={`/sign-in${search}`} replace />;
+}
+
 const ContextRouter = lazy(() => import("@/features/auth/context-router"));
 const WebHomePage = lazy(() => import("@/features/auth/web-home-page"));
 const TmaBootstrapPage = lazy(() => import("@/features/auth/tma-bootstrap-page"));
-
-const LandingPage = lazy(() => import("@/features/landing/landing-page"));
 
 const RegisterPage = lazy(() => import("@/features/auth/register-page"));
 const LegalPage = lazy(() => import("@/features/legal/legal-page"));
@@ -161,7 +175,7 @@ export default function App() {
           <Route path="/bootstrap" element={<ContextRouter />} />
 
           {/* Public auth pages */}
-          <Route path="/welcome" element={<LandingPage />} />
+          <Route path="/welcome" element={<WelcomeAlias />} />
           <Route path="/sign-in" element={<SignInPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/ref/:token" element={<ReferralLinkRedirect />} />

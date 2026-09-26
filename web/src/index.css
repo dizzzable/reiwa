@@ -501,12 +501,12 @@ body {
 
    The drift used to animate `background-position` — a paint property, which
    repainted the whole card every frame for 18s × infinite on exactly the
-   devices that land here (iOS without WebGL). Same cure as landing.css's
-   `ls-gradient`: each colour field is an oversized child layer moved by
-   `transform`, so the gradients rasterise once and the motion stays on the
-   compositor. The blob sizes/rest offsets and the translate endpoints below
-   reproduce the old `background-size` / `background-position` keyframes in
-   container units (translate % is relative to the blob's own oversized box). */
+   devices that land here (iOS without WebGL). The cure: each colour field is
+   an oversized child layer moved by `transform`, so the gradients rasterise
+   once and the motion stays on the compositor. The blob sizes/rest offsets
+   and the translate endpoints below reproduce the old `background-size` /
+   `background-position` keyframes in container units (translate % is
+   relative to the blob's own oversized box). */
 .card-effect-layer__css-fallback {
   overflow: hidden;
   /*

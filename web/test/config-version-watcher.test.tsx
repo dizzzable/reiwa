@@ -79,8 +79,8 @@ async function settle(ms = 0): Promise<void> {
 describe("what an answer does", () => {
   it("the first answer only records; a move to another version refetches that group", async () => {
     const fetchVersions = answers(
-      versions({ publicConfig: A, landing: C }),
-      versions({ publicConfig: B, landing: C }),
+      versions({ publicConfig: A, connectPage: C }),
+      versions({ publicConfig: B, connectPage: C }),
     );
     const { watcher, refetched } = watcherWith(fetchVersions);
 
@@ -158,8 +158,24 @@ describe("what an answer does", () => {
     watcher.stop();
   });
 
+  it("a group this page does not watch is not acted on — the landing an API before 0.9.7.54 still names", async () => {
+    // A tab of 0.9.7.54 whose API is still the older one, mid-update: its
+    // answer names `landing`, which no page here reads any more.
+    const fetchVersions = answers(
+      { versions: { publicConfig: A, landing: A } },
+      { versions: { publicConfig: A, landing: B } },
+    );
+    const { watcher, refetched, refetchGroup } = watcherWith(fetchVersions);
+    await settle();
+    await settle(60_000);
+    expect(fetchVersions).toHaveBeenCalledTimes(2);
+    expect(refetched).toEqual([]);
+    expect(refetchGroup).not.toHaveBeenCalled();
+    watcher.stop();
+  });
+
   it("a refetch that fails is tried again at the next ask", async () => {
-    const fetchVersions = answers(versions({ landing: A }), versions({ landing: B }));
+    const fetchVersions = answers(versions({ connectPage: A }), versions({ connectPage: B }));
     const refetchGroup = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
     const watcher = new ConfigVersionWatcher();
     watcher.start({ fetchVersions, refetchGroup });
@@ -303,7 +319,6 @@ describe("the pieces the reads use", () => {
   it("knows every query key that reads a watched group", () => {
     expect(WATCHED_CONFIG_GROUPS).toEqual({
       publicConfig: [["public-config"]],
-      landing: [["landing"]],
       connectPage: [["connect-page"]],
       customEmojiPacks: [["custom-emoji-packs"]],
       platformPolicy: [["platform-policy"]],
@@ -329,7 +344,7 @@ describe("end to end through React Query", () => {
     vi.resetModules();
     const { apiClient } = await import("@/lib/api-client/transport");
     const { getReiwaPublicConfig } = await import("@/lib/api-client/branding");
-    const { getLanding } = await import("@/lib/api-client/landing");
+    const { getConnectPage } = await import("@/lib/api-client/connect-page");
     const { ConfigVersionWatcherMount } = await import("@/lib/config-version-watcher-mount");
     const get = vi
       .spyOn(apiClient, "get")
@@ -353,7 +368,7 @@ describe("end to end through React Query", () => {
         </QueryClientProvider>,
       );
     });
-    return { get, getLanding };
+    return { get, getConnectPage };
   }
 
   /**
@@ -377,14 +392,14 @@ describe("end to end through React Query", () => {
 
   it("a moved version refetches with `?v=`, and the page redraws with the new data", async () => {
     let cabinetHolds = A;
-    const { get, getLanding } = await freshPage((url, version) => {
-      if (url === "/config-versions") return { data: { versions: { publicConfig: cabinetHolds, landing: C } } };
+    const { get, getConnectPage } = await freshPage((url, version) => {
+      if (url === "/config-versions") return { data: { versions: { publicConfig: cabinetHolds, connectPage: C } } };
       if (url === "/public-config") {
         // Without a version the browser cache answers; with one, the server.
         const served = version ?? A;
         return { data: bodies[served], headers: { "x-config-version": served } };
       }
-      if (url === "/landing") return { data: { enabled: false } };
+      if (url === "/connect-page") return { data: null };
       throw new Error(`unexpected ${url}`);
     });
     await elapse(0);
@@ -396,11 +411,11 @@ describe("end to end through React Query", () => {
     expect(container?.textContent).toBe("After");
     expect(get).toHaveBeenCalledWith("/public-config", { params: { [CONFIG_VERSION_PARAM]: B } });
     // A group no page read was not fetched just because it is watched.
-    expect(get.mock.calls.some(([url]) => url === "/landing")).toBe(false);
+    expect(get.mock.calls.some(([url]) => url === "/connect-page")).toBe(false);
     // Reads after that carry the version too — a plain read can no longer
     // bring the pre-save copy back out of the browser cache.
-    await getLanding();
-    expect(get).toHaveBeenLastCalledWith("/landing", { params: { [CONFIG_VERSION_PARAM]: C } });
+    await getConnectPage();
+    expect(get).toHaveBeenLastCalledWith("/connect-page", { params: { [CONFIG_VERSION_PARAM]: C } });
   });
 
   it("a first load the browser cache answered with the pre-save copy is refetched at once", async () => {
@@ -425,16 +440,12 @@ describe("end to end through React Query", () => {
   /** A page that reads one watched group through its real fetcher. */
   async function freshGroupPage(
     queryKey: readonly string[],
-    fetcherOf: (modules: {
-      getLanding: () => Promise<unknown>;
-      getConnectPage: () => Promise<unknown>;
-    }) => () => Promise<unknown>,
+    fetcherOf: (modules: { getConnectPage: () => Promise<unknown> }) => () => Promise<unknown>,
     bodyOf: (url: string, version: string | undefined) => unknown,
   ) {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.resetModules();
     const { apiClient } = await import("@/lib/api-client/transport");
-    const { getLanding } = await import("@/lib/api-client/landing");
     const { getConnectPage } = await import("@/lib/api-client/connect-page");
     const { ConfigVersionWatcherMount } = await import("@/lib/config-version-watcher-mount");
     const get = vi
@@ -442,7 +453,7 @@ describe("end to end through React Query", () => {
       .mockImplementation(async (url: string, config?: { params?: Record<string, string> }) =>
         bodyOf(url, config?.params?.["v"]),
       );
-    const queryFn = fetcherOf({ getLanding, getConnectPage });
+    const queryFn = fetcherOf({ getConnectPage });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     function Page() {
       const { data } = useQuery({ queryKey, queryFn, staleTime: 5 * 60_000 });
@@ -463,24 +474,6 @@ describe("end to end through React Query", () => {
   }
 
   const published: Record<string, { title: string }> = { [A]: { title: "Before" }, [B]: { title: "After" } };
-
-  it("a fresh load the service worker answered with the pre-publish landing is refetched at once (review R2a-05)", async () => {
-    // A new visit after a publish: the plain first read of `/landing` goes out
-    // before the watcher's first answer, and the service worker answers it from
-    // its cache — the old landing, naming its old version.
-    const { get } = await freshGroupPage(["landing"], (m) => m.getLanding, (url, version) => {
-      if (url === "/config-versions") return { data: { versions: { landing: B } } };
-      if (url === "/landing") {
-        const served = version ?? A;
-        return { data: published[served], headers: { "x-config-version": served } };
-      }
-      throw new Error(`unexpected ${url}`);
-    });
-    await elapse(0);
-
-    expect(container?.textContent).toBe("After");
-    expect(get).toHaveBeenCalledWith("/landing", { params: { [CONFIG_VERSION_PARAM]: B } });
-  });
 
   it("a fresh load the browser cache answered with the pre-save connect catalog is refetched at once (review R2a-05)", async () => {
     const { get } = await freshGroupPage(["connect-page"], (m) => m.getConnectPage, (url, version) => {

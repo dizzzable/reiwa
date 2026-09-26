@@ -42,7 +42,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   botSignin: vi.fn(),
-  getLanding: vi.fn(),
   getSession: vi.fn(),
 }));
 const navigate = vi.hoisted(() => vi.fn());
@@ -69,7 +68,6 @@ vi.mock("@/lib/branding-provider", () => ({
   useBranding: () => ({ branding: { brandName: "Reiwa", tagline: "" } }),
 }));
 vi.mock("@/lib/client-error-reporter", () => ({ reportClientError: vi.fn() }));
-vi.mock("@/features/landing/landing-page", () => ({ LANDING_QUERY_KEY: ["landing"] }));
 
 import ContextRouter from "@/features/auth/context-router";
 import { __resetTelegramWebAppBridgeForTests } from "@/hooks/use-telegram-webapp";
@@ -164,7 +162,8 @@ beforeEach(() => {
   Reflect.deleteProperty(window as unknown as Record<string, unknown>, "Telegram");
   Reflect.deleteProperty(window as unknown as Record<string, unknown>, "__reiwaTelegramSdkState");
   api.getSession.mockResolvedValue(null);
-  queryClient.fetchQuery.mockRejectedValue(new Error("landing unavailable"));
+  // No cookie: the shared session probe resolves to `null`.
+  queryClient.fetchQuery.mockResolvedValue(null);
 });
 
 afterEach(() => {

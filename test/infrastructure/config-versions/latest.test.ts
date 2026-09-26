@@ -67,15 +67,29 @@ describe('RedisLatestConfigVersions', () => {
   it('a later poll replaces a group’s version and time, and leaves the other groups and the hints alone', async () => {
     const { redis } = fakeRedis();
     const store = new RedisLatestConfigVersions({ redis: redis as never });
-    await store.recordPoll({ botConfig: V1, landing: V1 }, 1_000);
+    await store.recordPoll({ botConfig: V1, connectPage: V1 }, 1_000);
     await store.recordHint(['botConfig'], 1_500);
 
     await store.recordPoll({ botConfig: V2 }, 3_000);
 
     expect(await store.read()).toEqual({
-      polled: { botConfig: { version: V2, at: 3_000 }, landing: { version: V1, at: 1_000 } },
+      polled: { botConfig: { version: V2, at: 3_000 }, connectPage: { version: V1, at: 1_000 } },
       hinted: { botConfig: 1_500 },
     });
+  });
+
+  it('keeps a group this cabinet no longer has, as a panel still names it — nothing reads it back', async () => {
+    // The panel still versions `landing` (live up to 0.9.7.70, as the retired
+    // shim's constant from 0.9.7.71); the cabinet serves no landing since
+    // 0.9.7.54. The poll hands the whole answer over, and the key is stored
+    // like any other: harmless, since only the cabinet's own groups are ever
+    // looked up in it (`knownChangeOf`).
+    const { redis } = fakeRedis();
+    const store = new RedisLatestConfigVersions({ redis: redis as never });
+    await expect(store.recordPoll({ botConfig: V1, landing: V2 }, 1_000)).resolves.toBeUndefined();
+    const latest = await store.read();
+    expect(latest?.polled['landing']).toEqual({ version: V2, at: 1_000 });
+    expect(knownChangeOf(latest, 'botConfig')).toEqual({ polled: { version: V1, at: 1_000 } });
   });
 
   it('knows nothing of a field it did not write: another writer’s, a broken one', async () => {
@@ -84,10 +98,10 @@ describe('RedisLatestConfigVersions', () => {
       latestConfigVersionsKey(),
       new Map([
         ['poll:botConfig', '{"version":"","at":5}'],
-        ['poll:landing', 'not json'],
+        ['poll:guestSupport', 'not json'],
         ['poll:publicConfig', '{"version":"abc","at":"yesterday"}'],
         ['hint:botConfig', 'soon'],
-        ['hint:landing', '-3'],
+        ['hint:guestSupport', '-3'],
         ['something:else', '1'],
         ['poll:connectPage', `{"version":"${V1}","at":7}`],
       ]),
@@ -138,7 +152,7 @@ describe('knownChangeOf', () => {
   it('is one group’s poll and hint', () => {
     expect(knownChangeOf(latest, 'botConfig')).toEqual({ polled: { version: V1, at: 10 }, hintedAt: 20 });
     expect(knownChangeOf(latest, 'legalDocuments.ru')).toEqual({ hintedAt: 30 });
-    expect(knownChangeOf(latest, 'landing')).toEqual({});
+    expect(knownChangeOf(latest, 'connectPage')).toEqual({});
   });
 
   it('is nothing when nothing could be read', () => {

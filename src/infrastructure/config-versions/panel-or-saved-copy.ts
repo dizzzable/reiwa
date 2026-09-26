@@ -4,8 +4,8 @@
  * answered within a head start — the copy saved in reiwa's Redis, while the
  * panel read goes on and lands in the cache when it comes.
  *
- * The API's readers (the landing, the appearance and its emoji packs, the
- * connect screen, the guest chat's config) used to ask for the copy only once
+ * The API's readers (the appearance and its emoji packs, the connect screen,
+ * the guest chat's config) used to ask for the copy only once
  * the panel read had failed. With a panel that HANGS — its VPS down, packets
  * dropped rather than refused — that is the transport's ten seconds, and the
  * first visitors after a restart waited them all with the copy sitting in

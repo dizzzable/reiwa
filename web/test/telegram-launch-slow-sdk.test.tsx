@@ -29,7 +29,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   botSignin: vi.fn(),
-  getLanding: vi.fn(),
   getSession: vi.fn(),
 }));
 const navigate = vi.hoisted(() => vi.fn());
@@ -56,7 +55,6 @@ vi.mock("@/components/ui/brand-logo", () => ({ BrandLogo: () => null }));
 vi.mock("@/lib/branding-provider", () => ({
   useBranding: () => ({ branding: { brandName: "Reiwa", tagline: "" } }),
 }));
-vi.mock("@/features/landing/landing-page", () => ({ LANDING_QUERY_KEY: ["landing"] }));
 
 import ContextRouter from "../src/features/auth/context-router";
 import { __resetTelegramLaunchCaptureForTests } from "../src/lib/telegram-launch-params";
@@ -171,10 +169,11 @@ beforeEach(() => {
   __resetTelegramLaunchCaptureForTests();
   Reflect.deleteProperty(window as unknown as Record<string, unknown>, TELEGRAM);
   withSdkState(undefined);
-  // No cookie and no published landing: every non-Telegram verdict therefore
-  // ends on `/sign-in`, which is the screen the reported bug ended on.
+  // No cookie: every non-Telegram verdict therefore ends on `/sign-in`, which
+  // is the screen the reported bug ended on. `fetchSessionOrNull` answers a
+  // missing session with `null`, so that is what the shared probe resolves to.
   api.getSession.mockResolvedValue(null);
-  queryClient.fetchQuery.mockRejectedValue(new Error("landing unavailable"));
+  queryClient.fetchQuery.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -313,7 +312,7 @@ describe("WebHomePage launch context", () => {
       (options: { queryKey: readonly unknown[] }) =>
         options.queryKey[0] === "session"
           ? Promise.resolve(session)
-          : Promise.reject(new Error("landing unavailable")),
+          : Promise.reject(new Error(`unexpected query ${String(options.queryKey[0])}`)),
     );
 
     mount(<WebHomePage />);

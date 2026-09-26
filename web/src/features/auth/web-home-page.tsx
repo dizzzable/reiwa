@@ -7,10 +7,8 @@ import { motion } from 'motion/react'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { useBranding } from '@/lib/branding-provider'
-import { botSignin, getLanding } from '@/lib/api-client'
+import { botSignin } from '@/lib/api-client'
 import { SESSION_QUERY_KEY, fetchSessionOrNull } from '@/hooks/use-session'
-import { LANDING_QUERY_KEY } from '@/features/landing/landing-page'
-import { parseLandingPayload } from '@/features/landing/landing-schema'
 import { detectTelegramInitData } from './telegram-launch'
 import { keepQuery } from '@/lib/keep-query'
 import { SIGNIN_TOKEN_PARAM, isSigninTokenShape } from '@/lib/magic-link'
@@ -78,8 +76,10 @@ function takeNextDestination(): string | null {
  *      when the user shares the page.
  *   2. **Existing cookie**: probe `GET /api/v1/session` and route to
  *      `?next=` or `/dashboard` on success.
- *   3. **No session**: route to the landing when the operator published one,
- *      else `/sign-in`.
+ *   3. **No session**: `/sign-in`, with the acquisition parameters
+ *      (`keepQuery`). Nothing is asked first: this page used to read the
+ *      operator's web landing here and go to `/welcome` when one was
+ *      published. The cabinet shows no landing since 0.9.7.54.
  *
  * The splash mirrors the TMA bootstrap so brand chrome stays consistent
  * across both contexts. We tag the splash status copy with whichever
@@ -221,25 +221,8 @@ export default function WebHomePage() {
         // forever instead of falling through to the decision below.
       }
 
-      // Step 3 — unauthenticated browser visitor: show the operator-authored
-      // landing when it's enabled + published (has visible sections), else
-      // the current behavior (straight to /sign-in). Reuses the same cached
-      // `/api/v1/landing` fetch the landing page itself uses, so enabling
-      // this never adds a second round-trip once warm.
-      try {
-        const landing = await queryClient.fetchQuery({
-          queryKey: LANDING_QUERY_KEY,
-          queryFn: getLanding,
-          staleTime: 60_000,
-        })
-        const parsed = parseLandingPayload(landing)
-        if (parsed.enabled === true && parsed.sections.length > 0) {
-          navigate(keepQuery('/welcome'), { replace: true })
-          return
-        }
-      } catch {
-        // Landing unavailable — fail closed to /sign-in (current behavior).
-      }
+      // Step 3 — unauthenticated browser visitor: the sign-in form, straight
+      // away and with no request. `keepQuery` carries the ad's marks to it.
       navigate(keepQuery('/sign-in'), { replace: true })
     })()
   }, [navigate, queryClient])

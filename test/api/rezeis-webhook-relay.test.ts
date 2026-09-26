@@ -10,7 +10,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { PublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
 import { createBrandingRouter, resetBrandingCache } from '../../src/api/routes/branding.js';
 import { createConnectPageRouter, resetConnectPageCache } from '../../src/api/routes/connect-page.js';
-import { createLandingRouter, resetLandingCache } from '../../src/api/routes/landing.js';
 import { createRezeisWebhookRouter } from '../../src/api/routes/webhooks.js';
 import type { PlatformPolicyShape } from '../../src/infrastructure/admin-client/namespaces/system.js';
 import { PolicyCache, setPolicyCache } from '../../src/infrastructure/admin-client/policy-cache.js';
@@ -1130,26 +1129,20 @@ describe('Cache invalidations drop the cache they name', () => {
       return vi.fn(async () => (++calls === 1 ? before : after));
     };
     const publicConfig = readsAfterTheFirst(PUBLIC_CONFIG, { ...PUBLIC_CONFIG, defaultCurrency: 'RUB' });
-    const landing = readsAfterTheFirst(
-      { enabled: true, revision: 'before-save' },
-      { enabled: true, revision: 'saved' },
-    );
     const connectPage = readsAfterTheFirst({ platforms: [], revision: 'before-save' }, { platforms: [], revision: 'saved' });
     return {
-      upstream: { publicConfig, landing, connectPage },
+      upstream: { publicConfig, connectPage },
       client: {
         branding: { getReiwaPublicConfig: publicConfig },
-        landing: { getEffective: landing },
         connectPage: { getEffective: connectPage },
       },
     };
   }
 
-  /** The webhook router beside the three public routes it keeps fresh, as `app.ts` mounts them. */
+  /** The webhook router beside the two public routes it keeps fresh, as `app.ts` mounts them. */
   function appWithCaches(client: unknown): express.Express {
     const app = buildApp();
     app.use('/api/v1', createBrandingRouter({ adminClient: client as never }));
-    app.use('/api/v1', createLandingRouter({ adminClient: client as never }));
     app.use('/api/v1', createConnectPageRouter(client as never));
     return app;
   }
@@ -1184,7 +1177,6 @@ describe('Cache invalidations drop the cache they name', () => {
 
   const resetAll = (): void => {
     resetBrandingCache();
-    resetLandingCache();
     resetConnectPageCache();
     setPolicyCache(null);
   };
@@ -1215,8 +1207,6 @@ describe('Cache invalidations drop the cache they name', () => {
     // event for those, and the cabinet serves all three from public-config —
     // tariff cards pick the price currency from it, the tab takes its title.
     { event: 'reiwa.platform.policy_invalidated', path: '/api/v1/public-config', upstream: 'publicConfig', field: 'defaultCurrency', before: 'USD', saved: 'RUB' },
-    // A landing publish or rollback.
-    { event: 'reiwa.landing.invalidate', path: '/api/v1/landing', upstream: 'landing', field: 'revision', before: 'before-save', saved: 'saved' },
     // An edit to the connect screen's catalog.
     { event: 'reiwa.connect-page.invalidate', path: '/api/v1/connect-page', upstream: 'connectPage', field: 'revision', before: 'before-save', saved: 'saved' },
   ] as const)('$event: the next read of $path goes to the panel', async ({ event, path, upstream, field, before, saved }) => {

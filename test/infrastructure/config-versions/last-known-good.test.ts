@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { configVersionOf } from '../../../src/infrastructure/config-versions/config-version.js';
 import {
-  LANDING_LKG,
   LAST_KNOWN_GOOD_RETRY_MS,
   LAST_KNOWN_GOOD_UNREADABLE,
   PLATFORM_POLICY_LKG,
@@ -93,7 +92,7 @@ describe('the last-known-good record', () => {
   it('does not write a payload too large to be a settings group', async () => {
     const { data, redis } = fakeRedis();
     await expect(
-      store(redis).save({ ...LANDING_LKG, maxBytes: 64 }, { enabled: true, text: 'x'.repeat(100) }),
+      store(redis).save({ ...PLATFORM_POLICY_LKG, maxBytes: 64 }, { accessMode: 'PUBLIC', text: 'x'.repeat(100) }),
     ).resolves.toBe('too-large');
     expect(data.size).toBe(0);
   });
@@ -199,8 +198,8 @@ describe('a Redis that could not be read (review R2a-01)', () => {
 });
 
 describe('a copy over the cap (review R2a-07)', () => {
-  const BIG = { enabled: true, text: 'x'.repeat(200) };
-  const SMALL_CAP = { ...LANDING_LKG, maxBytes: 64 };
+  const BIG = { accessMode: 'PUBLIC', text: 'x'.repeat(200) };
+  const SMALL_CAP = { ...PLATFORM_POLICY_LKG, maxBytes: 64 };
 
   it('is not written; warned and reported once per version with its size — not once per save', async () => {
     const { data, redis } = fakeRedis();
@@ -216,7 +215,7 @@ describe('a copy over the cap (review R2a-07)', () => {
 
     expect(data.size).toBe(0);
     expect(reported).toEqual([
-      { group: 'landing', hash: configVersionOf(BIG), bytes: expect.any(Number), maxBytes: 64 },
+      { group: 'platform-policy', hash: configVersionOf(BIG), bytes: expect.any(Number), maxBytes: 64 },
     ]);
     expect((reported[0] as { bytes: number }).bytes).toBeGreaterThan(200);
     expect(logger.warn).toHaveBeenCalledTimes(1);

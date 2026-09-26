@@ -58,13 +58,12 @@ describe('configVersionOf', () => {
 });
 
 describe('the version keys', () => {
-  it('name the nine groups the panel versions', () => {
+  it('name the eight groups the cabinet reads — not the landing, which it serves no more since 0.9.7.54', () => {
     expect(Object.values(CONFIG_VERSION_KEYS).sort()).toEqual([
       'botConfig',
       'connectPage',
       'customEmojiPacks',
       'guestSupport',
-      'landing',
       'legalDocuments.en',
       'legalDocuments.ru',
       'platformPolicy',
