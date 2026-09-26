@@ -293,3 +293,18 @@ export function lastKnownGoodKey(group: string, shape: number): string {
 export function latestConfigVersionsKey(): string {
   return 'reiwa:config-versions:latest:v1';
 }
+
+/**
+ * Build the Redis key for what the panel last said about itself in the version
+ * poll's answer (`infrastructure/config-versions/panel-capabilities.ts`): its
+ * version and the `panel.*` capabilities it declares, or "legacy" when it
+ * declared nothing. The version polls of reiwa-api and reiwa-bot both write it.
+ *
+ * The shape number is in the key, for the reason `lastKnownGoodKey` gives.
+ * Value: JSON `{"kind":"declared"|"legacy","version":string|null,
+ * "capabilities":string[],"at":<epoch ms>}`. No TTL, like the settings copies:
+ * a few hundred bytes, rewritten by every answered poll.
+ */
+export function panelCapabilitiesKey(): string {
+  return 'reiwa:panel-capabilities:v1';
+}

@@ -11,11 +11,17 @@ import { REIWA_VERSION } from "../core/version.js";
 import { printReiwaBanner } from "../core/banner.js";
 import type { LatestConfigVersionsPort } from "../infrastructure/config-versions/latest.js";
 import {
+  NOOP_PANEL_CAPABILITIES,
+  RedisPanelCapabilities,
+  panelRecorder,
+} from "../infrastructure/config-versions/panel-capabilities.js";
+import {
   ConfigVersionPoller,
   type VersionedGroup,
 } from "../infrastructure/config-versions/poller.js";
 import { pruneBrandingAssetCache } from "./branding-pwa.js";
 import { createApp } from "./app.js";
+import { startVersionHeartbeat } from "./version-heartbeat.js";
 
 const config = loadConfig();
 const rezeisAdminUrl = resolveRezeisAdminUrl(config);
@@ -28,12 +34,16 @@ const logger = createLogger({
 });
 
 // ── Clients ───────────────────────────────────────────────────────────────────
+// `surface: "api"`: every call tells the panel it comes from the API process,
+// which serves the web app too, with the `web.*` and `api.*` capabilities
+// (`core/capabilities.ts`).
 const adminClient =
   rezeisAdminUrl && config.REZEIS_TOKEN
     ? new AdminClient(
         rezeisAdminUrl,
         config.REZEIS_TOKEN,
         config.REZEIS_INTERNAL_SHARED_SECRET ?? undefined,
+        { surface: "api" },
       )
     : null;
 
@@ -113,19 +123,16 @@ async function start(): Promise<void> {
   // Report our running version to the admin panel so its "Updates" widget
   // can show the live reiwa version next to the latest release. Fire on
   // boot, then re-announce hourly so an admin restart re-learns it without
-  // requiring a reiwa redeploy. Best-effort: failures are logged at debug.
-  if (adminClient) {
-    const announce = (): void => {
-      adminClient.system
-        .reportReiwaVersion(REIWA_VERSION)
-        .catch((err: unknown) =>
-          logger.debug({ err }, "reiwa version heartbeat failed"),
-        );
-    };
-    announce();
-    const heartbeat = setInterval(announce, 60 * 60 * 1_000);
-    heartbeat.unref();
-  }
+  // requiring a reiwa redeploy. The one at boot is asked again until the
+  // panel takes it — 5 s, doubling, at most 5 min apart — because it is what
+  // replaces the previous release's record on the panel (`version-heartbeat.ts`).
+  // Never awaited: it does not hold up the start.
+  const versionHeartbeat = adminClient
+    ? startVersionHeartbeat({
+        send: () => adminClient.system.reportReiwaVersion(REIWA_VERSION),
+        logger,
+      })
+    : null;
 
   // The version poll: the safety net under the panel's settings webhook. Every
   // ~20 s it asks the panel which version of each settings group is current,
@@ -136,6 +143,12 @@ async function start(): Promise<void> {
   // on every press, so a change this process hears of first reaches the bot's
   // next press rather than the bot's own next poll.
   const latestConfigVersions = app.locals["latestConfigVersions"] as LatestConfigVersionsPort | undefined;
+  // What the panel says about itself in the poll's answer — or "legacy" when it
+  // says nothing — goes into reiwa's Redis too, over whatever was kept
+  // (`config-versions/panel-capabilities.ts`). Nothing reads it yet.
+  const panelCapabilities = webSessionStore
+    ? new RedisPanelCapabilities({ redis: webSessionStore.getRedis(), logger })
+    : NOOP_PANEL_CAPABILITIES;
   const configVersionPoller =
     adminClient !== null
       ? new ConfigVersionPoller({
@@ -143,6 +156,7 @@ async function start(): Promise<void> {
           groups: app.locals["configVersionGroups"] as readonly VersionedGroup[],
           poll: (report) => adminClient.system.pollConfigVersions(report),
           onVersions: (versions, answeredAt) => void latestConfigVersions?.recordPoll(versions, answeredAt),
+          onPanel: panelRecorder(panelCapabilities, { consumer: "api", logger }),
           logger,
         })
       : null;
@@ -165,6 +179,7 @@ async function start(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "reiwa-api shutting down");
+    versionHeartbeat?.stop();
     configVersionPoller?.stop();
     if (sessionStore) await sessionStore.disconnect();
     if (webSessionStore) await webSessionStore.disconnect();

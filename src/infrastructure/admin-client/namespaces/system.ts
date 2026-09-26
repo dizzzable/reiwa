@@ -46,6 +46,26 @@ export interface PlatformPolicyShape {
   readonly defaultCurrency: string;
 }
 
+/**
+ * The version poll's answer, as the panel means it. The poller trusts none of
+ * it: `versionsOf` and `panelOf` check every field
+ * (`infrastructure/config-versions/`).
+ */
+export interface ConfigVersionsAnswer {
+  /** The current version of each settings group: 32 hex digits. */
+  readonly versions: Readonly<Record<string, string>>;
+  /**
+   * What the panel is and what it can do for a cabinet (panel 0.9.7.71 and
+   * newer). An older panel's answer has no `panel`, and the cabinet keeps it
+   * as "legacy" (`config-versions/panel-capabilities.ts`).
+   */
+  readonly panel?: {
+    readonly version: string;
+    /** `panel.*` capability ids, the format of `core/capabilities.ts`. */
+    readonly capabilities: readonly string[];
+  };
+}
+
 export class SystemNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
@@ -75,6 +95,11 @@ export class SystemNamespace {
    * Reports reiwa's running version to the admin panel so its "Updates"
    * widget can show the live reiwa version next to the latest release.
    * Fire-and-forget on the caller side — failures are non-critical.
+   *
+   * The body is `{ version }` and must stay exactly that: the panel's DTO is
+   * strict (`forbidNonWhitelisted`), so any other field is a 400 from every
+   * panel that has not learned it. The build and capabilities travel in the
+   * identity headers instead (`core/capabilities.ts`).
    */
   reportReiwaVersion(version: string): Promise<unknown> {
     return this.transport.request('POST', '/api/internal/system/reiwa-version', { version });
@@ -83,14 +108,19 @@ export class SystemNamespace {
   /**
    * The version poll (`infrastructure/config-versions/poller.ts`): sends which
    * version of each settings group this process holds, and gets back the
-   * panel's `{ versions: { <group>: <version> } }`. A panel that predates the
+   * panel's `{ versions: { <group>: <version> } }` and, from panel 0.9.7.71,
+   * `panel: { version, capabilities }` beside it. A panel that predates the
    * route answers 404, which the poller reads as "not supported".
+   *
+   * The body stays `{ consumer, held }` and nothing else: what this process can
+   * do goes to the panel in the identity headers of every call
+   * (`core/capabilities.ts`), never as a field here.
    */
   pollConfigVersions(report: {
     readonly consumer: 'api' | 'bot';
     readonly held: Readonly<Record<string, string | null>>;
-  }): Promise<unknown> {
-    return this.transport.request('POST', '/api/internal/config-versions', report);
+  }): Promise<ConfigVersionsAnswer> {
+    return this.transport.request<ConfigVersionsAnswer>('POST', '/api/internal/config-versions', report);
   }
 
   /**

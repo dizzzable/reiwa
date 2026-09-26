@@ -21,9 +21,21 @@
  * `sharedSecret` is set, an HMAC-SHA256 signature is added via the
  * `x-request-timestamp` / `x-request-signature` header pair so the
  * upstream guard can verify request integrity.
+ *
+ * Identity: when built with one, every request, stream and binary fetch also
+ * carries `x-reiwa-client` and `x-reiwa-capabilities` — which process is
+ * calling and what it can do (`core/capabilities.ts`). They are set last, after
+ * the caller's own headers, and a caller's spelling of either name in any case
+ * is replaced, never sent beside them. No body is touched.
  */
 import { Pool } from 'undici';
 
+import {
+  REIWA_CAPABILITIES_HEADER,
+  REIWA_CLIENT_HEADER,
+  formatIdentityHeaders,
+  type ReiwaClientIdentity,
+} from '../../core/capabilities.js';
 import { UpstreamError } from '../../core/errors/index.js';
 import {
   REQUEST_SIGNATURE_HEADER,
@@ -114,6 +126,13 @@ export interface AdminTransportOptions {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly sharedSecret?: string | null;
+  /**
+   * Which process is calling, sent as two headers on every call
+   * (`core/capabilities.ts`). Absent or `null` sends neither, and the panel
+   * reads the caller as a cabinet from before the headers. Only tests build a
+   * transport without one; each of the three mains passes its surface.
+   */
+  readonly identity?: ReiwaClientIdentity | null;
 }
 
 export interface BinaryFetchResult {
@@ -144,6 +163,8 @@ export class AdminTransport {
   private readonly pool: Pool;
   /** Long-lived SSE bodies only. See `ADMIN_STREAM_POOL_OPTIONS`. */
   private readonly streamPool: Pool;
+  /** The two identity headers, formatted once; empty for a transport without an identity. */
+  private readonly identityHeaders: Readonly<Record<string, string>>;
 
   constructor(options: AdminTransportOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
@@ -151,6 +172,7 @@ export class AdminTransport {
     this.basePath = parsed.pathname.replace(/\/$/, '');
     this.apiKey = options.apiKey;
     this.sharedSecret = options.sharedSecret ?? null;
+    this.identityHeaders = options.identity ? formatIdentityHeaders(options.identity) : {};
     // `Pool` is keyed by origin (scheme + host + port). Any path component
     // on baseUrl is preserved separately and prepended on every call.
     this.pool = new Pool(parsed.origin, ADMIN_POOL_OPTIONS);
@@ -177,6 +199,7 @@ export class AdminTransport {
     const upper = method.toUpperCase() as HttpMethod;
     const signingHeaders = this.buildSigningHeaders(upper, path, body);
     const traceHeaders = this.buildTraceHeaders();
+    const identityHeaders = this.buildIdentityHeaders();
 
     const response = await this.pool.request({
       method: upper,
@@ -185,10 +208,12 @@ export class AdminTransport {
         'Content-Type': 'application/json',
         // Caller-supplied headers (e.g. the guest support token) are applied
         // first so they can never override auth / trace / signing below.
-        ...extraHeaders,
+        ...callerHeaders(extraHeaders),
         Authorization: `Bearer ${this.apiKey}`,
         ...traceHeaders,
         ...signingHeaders,
+        // Last: which process is calling. Nothing a caller passes speaks for it.
+        ...identityHeaders,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
@@ -225,6 +250,7 @@ export class AdminTransport {
     const fullPath = `${this.basePath}${path}`;
     const signingHeaders = this.buildSigningHeaders('GET', path);
     const traceHeaders = this.buildTraceHeaders();
+    const identityHeaders = this.buildIdentityHeaders();
     // The stream pool, not the request pool — see the note on
     // `ADMIN_STREAM_POOL_OPTIONS`.
     const response = await this.streamPool.request({
@@ -236,7 +262,9 @@ export class AdminTransport {
         Authorization: `Bearer ${this.apiKey}`,
         ...traceHeaders,
         ...signingHeaders,
-        ...extraHeaders,
+        ...callerHeaders(extraHeaders),
+        // After the caller's headers, which come last here: see `request`.
+        ...identityHeaders,
       },
       // SSE responses don't have a meaningful Content-Length and stream
       // for as long as the user keeps the tab open. Disable the body
@@ -267,6 +295,7 @@ export class AdminTransport {
     const fullPath = `${this.basePath}${path}`;
     const signingHeaders = this.buildSigningHeaders('GET', path);
     const traceHeaders = this.buildTraceHeaders();
+    const identityHeaders = this.buildIdentityHeaders();
     const response = await this.pool.request({
       method: 'GET',
       path: fullPath,
@@ -274,7 +303,9 @@ export class AdminTransport {
         Authorization: `Bearer ${this.apiKey}`,
         ...traceHeaders,
         ...signingHeaders,
-        ...extraHeaders,
+        ...callerHeaders(extraHeaders),
+        // After the caller's headers, which come last here: see `request`.
+        ...identityHeaders,
       },
     });
     if (response.statusCode >= 400 && options.includeErrorResponses !== true) {
@@ -323,6 +354,34 @@ export class AdminTransport {
     if (!id) return {};
     return { [REQUEST_ID_HEADER]: id };
   }
+
+  /**
+   * `x-reiwa-client` and `x-reiwa-capabilities` for this process, formatted
+   * once at construction (`core/capabilities.ts`). Nothing for a transport
+   * built without an identity.
+   */
+  private buildIdentityHeaders(): Record<string, string> {
+    return { ...this.identityHeaders };
+  }
+}
+
+/**
+ * A caller's headers as given, except that a caller's spelling of the two
+ * identity names becomes the transport's own lower-case spelling.
+ *
+ * The identity set after these then REPLACES such a header. Left as
+ * `X-Reiwa-Client`, it would travel beside ours: undici sends both lines, and
+ * the panel reads them as one value joined with a comma, so a caller could add
+ * capabilities the process does not have (seen on undici 8.10).
+ */
+function callerHeaders(headers: Record<string, string> | undefined): Record<string, string> {
+  if (headers === undefined) return {};
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const lower = name.toLowerCase();
+    out[lower === REIWA_CLIENT_HEADER || lower === REIWA_CAPABILITIES_HEADER ? lower : name] = value;
+  }
+  return out;
 }
 
 /** Normalize an undici header (string | string[] | undefined) to a string. */

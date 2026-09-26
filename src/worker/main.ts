@@ -12,12 +12,15 @@ const logger = createLogger({
   service: "worker",
 });
 
+// `surface: "worker"`: every call tells the panel it comes from the worker,
+// which declares no capabilities (`core/capabilities.ts`).
 const adminClient =
   rezeisAdminUrl && config.REZEIS_TOKEN
     ? new AdminClient(
         rezeisAdminUrl,
         config.REZEIS_TOKEN,
         config.REZEIS_INTERNAL_SHARED_SECRET ?? undefined,
+        { surface: "worker" },
       )
     : null;
 

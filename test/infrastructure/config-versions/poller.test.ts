@@ -7,6 +7,11 @@ import {
   type VersionedGroup,
 } from '../../../src/infrastructure/config-versions/poller.js';
 import type { ConfigVersionKey } from '../../../src/infrastructure/config-versions/config-version.js';
+import {
+  PANEL_LEGACY_NO_BLOCK,
+  PANEL_LEGACY_NO_ROUTE,
+  type PanelView,
+} from '../../../src/infrastructure/config-versions/panel-capabilities.js';
 
 /**
  * The version poll — the safety net under the panel's settings webhook.
@@ -380,5 +385,124 @@ describe('what a poll tells the key of latest versions', () => {
     expect(await poller.tick()).toBe(0);
     expect(behind.reload).toHaveBeenCalledTimes(1);
     expect(log.debug).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * What a poll says about the panel itself (`panel-capabilities.ts`): the
+ * answer's `panel` block on every answered poll, "legacy" for an answer
+ * without one and for a 404 — and nothing at all for any other failure, which
+ * says nothing about what the panel is.
+ */
+describe('what a poll tells onPanel', () => {
+  it('the answer’s block, with the time the answer came — before anything is re-read', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    const order: string[] = [];
+    const behind = group('publicConfig', V1);
+    behind.reset.mockImplementation(() => order.push('reset'));
+    const onPanel = vi.fn((_panel: PanelView, _at: number) => {
+      order.push('onPanel');
+    });
+    const poller = new ConfigVersionPoller({
+      consumer: 'api',
+      groups: [behind.versioned],
+      poll: async () => ({
+        versions: { publicConfig: V2 },
+        panel: { version: '0.9.7.71', capabilities: ['panel.cabinet-peers'] },
+      }),
+      onPanel,
+    });
+
+    await poller.tick();
+
+    expect(onPanel).toHaveBeenCalledExactlyOnceWith(
+      { kind: 'declared', version: '0.9.7.71', capabilities: ['panel.cabinet-peers'] },
+      1_800_000_000_000,
+    );
+    expect(order).toEqual(['onPanel', 'reset']);
+  });
+
+  it('an answer without the block is legacy — the panel was asked and said nothing about itself', async () => {
+    const onPanel = vi.fn();
+    const poller = new ConfigVersionPoller({
+      consumer: 'bot',
+      groups: [],
+      poll: async () => ({ versions: {} }),
+      onPanel,
+    });
+    await poller.tick();
+    expect(onPanel).toHaveBeenCalledExactlyOnceWith(PANEL_LEGACY_NO_BLOCK, expect.any(Number));
+  });
+
+  it('a 404 is legacy too, at every poll that meets it', async () => {
+    const onPanel = vi.fn();
+    const poller = new ConfigVersionPoller({
+      consumer: 'bot',
+      groups: [],
+      poll: async () => {
+        throw new UpstreamError('POST', '/api/internal/config-versions', 404, 'Cannot POST');
+      },
+      onPanel,
+    });
+    await poller.tick();
+    await poller.tick();
+    expect(onPanel.mock.calls.map(([panel]) => panel)).toEqual([PANEL_LEGACY_NO_ROUTE, PANEL_LEGACY_NO_ROUTE]);
+  });
+
+  it('nothing for a poll that fails any other way', async () => {
+    vi.useFakeTimers();
+    const onPanel = vi.fn();
+    const failing = [
+      async () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+      async () => {
+        throw new UpstreamError('POST', '/api/internal/config-versions', 503, 'Service Unavailable');
+      },
+      async () => ({ message: 'Internal server error', panel: { version: '0.9.7.71', capabilities: [] } }),
+      () => new Promise<never>(() => undefined),
+    ];
+    for (const poll of failing) {
+      const poller = new ConfigVersionPoller({ consumer: 'api', groups: [], poll, onPanel, timeoutMs: 8_000 });
+      const tick = poller.tick();
+      await vi.advanceTimersByTimeAsync(8_000);
+      await tick;
+    }
+    expect(onPanel).not.toHaveBeenCalled();
+  });
+
+  it('a listener that throws costs a debug line, not the poll', async () => {
+    const log = logger();
+    const behind = group('landing', V1);
+    const poller = new ConfigVersionPoller({
+      consumer: 'api',
+      groups: [behind.versioned],
+      poll: async () => ({ versions: { landing: V2 } }),
+      onPanel: () => {
+        throw new Error('redis gone');
+      },
+      logger: log as never,
+    });
+
+    expect(await poller.tick()).toBe(0);
+    expect(behind.reload).toHaveBeenCalledTimes(1);
+    expect(log.debug).toHaveBeenCalledTimes(1);
+  });
+
+  it('the poll’s body stays { consumer, held }: nothing about capabilities in it', async () => {
+    const reports: unknown[] = [];
+    const poller = new ConfigVersionPoller({
+      consumer: 'api',
+      groups: [group('publicConfig', V1).versioned],
+      poll: async (report) => {
+        reports.push(report);
+        return { versions: {} };
+      },
+      onPanel: () => undefined,
+    });
+    await poller.tick();
+    expect(reports).toEqual([{ consumer: 'api', held: { publicConfig: V1 } }]);
+    expect(Object.keys(reports[0] as object)).toEqual(['consumer', 'held']);
   });
 });

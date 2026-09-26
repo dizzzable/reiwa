@@ -32,10 +32,17 @@
  * streak is a warning, the rest are debug, and the recovery is one info line.
  * A panel that predates the route answers 404: said once, and asked again only
  * every `maxBackoffMs`, in case it is upgraded.
+ *
+ * The answer also says what the panel is (`panel-capabilities.ts`): a panel
+ * 0.9.7.71 or newer adds `panel: { version, capabilities }`. Every answered
+ * poll hands that to `onPanel`, and so does every 404, as "legacy". An answer
+ * without the block is "legacy" as well. Nothing else a poll can meet changes
+ * what the panel is said to be.
  */
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import { UpstreamError } from '../../core/errors/index.js';
 import type { ConfigVersionKey } from './config-version.js';
+import { PANEL_LEGACY_NO_ROUTE, panelOf, type PanelView } from './panel-capabilities.js';
 
 /** One settings group this process holds a copy of. */
 export interface VersionedGroup {
@@ -85,6 +92,13 @@ export interface ConfigVersionPollerOptions {
    * before this poll re-reads anything; a throw is logged and forgotten.
    */
   readonly onVersions?: (versions: Readonly<Record<string, string>>, answeredAt: number) => void;
+  /**
+   * Hears what the panel says about itself: after every answered poll (the
+   * answer's `panel` block, or "legacy" when it has none) and after every 404
+   * ("legacy"). `api/main.ts` and `bot/main.ts` keep it in reiwa's Redis
+   * (`panel-capabilities.ts`). A throw is logged and forgotten.
+   */
+  readonly onPanel?: (panel: PanelView, answeredAt: number) => void;
 }
 
 export const CONFIG_VERSION_POLL_INTERVAL_MS = 20_000;
@@ -173,6 +187,9 @@ export class ConfigVersionPoller {
     } catch (err: unknown) {
       this.options.logger?.debug({ err: describe(err) }, 'config versions: recording the answer failed');
     }
+    // An answer without the block is a panel that says nothing about itself:
+    // "legacy", over whatever a newer panel said before a rollback.
+    this.tellPanel(panelOf(answer), now);
     const rereads: Promise<void>[] = [];
     for (const group of this.options.groups) {
       const current = versions[group.key];
@@ -239,9 +256,20 @@ export class ConfigVersionPoller {
     }
   }
 
+  /** Hand what the panel said about itself to `onPanel`. Never throws. */
+  private tellPanel(panel: PanelView, at: number): void {
+    try {
+      this.options.onPanel?.(panel, at);
+    } catch (err: unknown) {
+      this.options.logger?.debug({ err: describe(err) }, 'config versions: recording what the panel is failed');
+    }
+  }
+
   private failed(err: unknown): number {
     this.failures += 1;
     if (err instanceof UpstreamError && err.status === 404) {
+      // A panel without the poll is older than any that says what it can do.
+      this.tellPanel(PANEL_LEGACY_NO_ROUTE, Date.now());
       if (!this.unsupported) {
         this.unsupported = true;
         this.options.logger?.info(

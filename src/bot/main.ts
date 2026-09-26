@@ -43,6 +43,12 @@ import {
   memoiseLatest,
   type LatestConfigVersionsPort,
 } from '../infrastructure/config-versions/latest.js';
+import {
+  NOOP_PANEL_CAPABILITIES,
+  RedisPanelCapabilities,
+  panelRecorder,
+  type PanelCapabilitiesPort,
+} from '../infrastructure/config-versions/panel-capabilities.js';
 import { ConfigVersionPoller, type VersionedGroup } from '../infrastructure/config-versions/poller.js';
 import {
   configurePolicyCache,
@@ -191,6 +197,20 @@ function getLatestConfigVersions(logger?: LoggerPort): LatestConfigVersionsPort 
 }
 
 /**
+ * What the panel says about itself in the version poll's answer, or "legacy"
+ * when it says nothing (`infrastructure/config-versions/panel-capabilities.ts`).
+ * The bot's poll writes it, as the API's does. Without Redis nothing is kept.
+ */
+let panelCapabilities: PanelCapabilitiesPort | null = null;
+
+function getPanelCapabilities(logger?: LoggerPort): PanelCapabilitiesPort {
+  if (panelCapabilities !== null) return panelCapabilities;
+  const redis = getSettingsRedis(logger);
+  panelCapabilities = redis !== null ? new RedisPanelCapabilities({ redis, logger }) : NOOP_PANEL_CAPABILITIES;
+  return panelCapabilities;
+}
+
+/**
  * Durable last-known-good store for the bot config (Workstream 4), so a reboot
  * before the first upstream fetch seeds the cache from the last good config
  * instead of the hardcoded default. `undefined` when Redis isn't configured →
@@ -265,12 +285,15 @@ async function startBot(): Promise<void> {
   });
 
   const rezeisAdminUrl = resolveRezeisAdminUrl(config);
+  // `surface: 'bot'`: every call tells the panel it comes from the bot, with
+  // the `bot.*` capabilities (`core/capabilities.ts`).
   const adminClient =
     rezeisAdminUrl && config.REZEIS_TOKEN
       ? new AdminClient(
           rezeisAdminUrl,
           config.REZEIS_TOKEN,
           config.REZEIS_INTERNAL_SHARED_SECRET ?? undefined,
+          { surface: 'bot' },
         )
       : null;
 
@@ -620,6 +643,8 @@ async function startBot(): Promise<void> {
           // What the panel said goes into reiwa's key of latest versions too,
           // which every press compares with (the API's poll writes it as well).
           onVersions: (versions, answeredAt) => void getLatestConfigVersions(logger).recordPoll(versions, answeredAt),
+          // And what it says about itself, or "legacy" (the API's poll too).
+          onPanel: panelRecorder(getPanelCapabilities(logger), { consumer: 'bot', logger }),
           logger,
         })
       : null;

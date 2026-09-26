@@ -16,7 +16,14 @@
  * and the `request()` escape hatch. The SSE proxy is the only
  * consumer of `openStream()`; everything else flows through a
  * namespace.
+ *
+ * The 4th argument names the process the client speaks for — `api`, `bot` or
+ * `worker` — and puts its identity and capabilities on every call
+ * (`core/capabilities.ts`). Each main passes its own:
+ *
+ *   new AdminClient(baseUrl, apiKey, sharedSecret, { surface: 'api' });
  */
+import { reiwaClientIdentity, type ReiwaSurface } from '../../core/capabilities.js';
 import {
   ActivityNamespace,
   AddOnsNamespace,
@@ -50,6 +57,15 @@ import {
   WebAuthNamespace,
 } from './namespaces/index.js';
 import { AdminTransport } from './transport.js';
+
+export interface AdminClientOptions {
+  /**
+   * The process this client speaks for. Without options the client sends no
+   * identity at all, and the panel reads it as a cabinet from before the
+   * headers: only tests build one that way.
+   */
+  readonly surface: ReiwaSurface;
+}
 
 export class AdminClient {
   private readonly transport: AdminTransport;
@@ -86,8 +102,13 @@ export class AdminClient {
   readonly advertising: AdvertisingNamespace;
   readonly aiConfig: AiConfigNamespace;
 
-  constructor(baseUrl: string, apiKey: string, sharedSecret?: string | null) {
-    this.transport = new AdminTransport({ baseUrl, apiKey, sharedSecret });
+  constructor(baseUrl: string, apiKey: string, sharedSecret?: string | null, options?: AdminClientOptions) {
+    this.transport = new AdminTransport({
+      baseUrl,
+      apiKey,
+      sharedSecret,
+      identity: options === undefined ? null : reiwaClientIdentity(options.surface),
+    });
     this.system = new SystemNamespace(this.transport);
     this.catalog = new CatalogNamespace(this.transport);
     this.user = new UserNamespace(this.transport);
