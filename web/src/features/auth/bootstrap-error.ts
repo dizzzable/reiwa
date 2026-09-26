@@ -63,6 +63,12 @@ export function resolveBootstrapError(
       case 'SERVICE_RESTRICTED':
         userMsg = t('bootstrap.serviceRestricted')
         break
+      // A blocked account (or an identity on the panel's blocklist): the BFF
+      // names it by the panel's code or, from an older panel, its sentence.
+      // «Try again later» would never come true.
+      case 'USER_BLOCKED':
+        userMsg = t('bootstrap.accountBlocked')
+        break
       default:
         // Do not forward raw server strings (Origin/CSRF, Access denied, …)
         // — they leak deployment internals to every Mini App user.

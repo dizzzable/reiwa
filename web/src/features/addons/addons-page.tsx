@@ -46,6 +46,8 @@ import {
   resolveAddOnPickPath,
 } from "@/features/addons/reset-traffic-policy";
 import { describeAddOnEnd, describeResetSoon } from "@/features/addons/add-on-end";
+import { answerAddOnPurchaseFailure, type AddOnPurchaseReread } from "@/features/addons/purchase-refusal";
+import { PLATFORM_POLICY_QUERY_KEY } from "@/lib/platform-policy-query-key";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -93,6 +95,18 @@ function isGatewayOfferable(
 function isFree(addOn: EligibleAddOn): boolean {
   return addOn.prices.length > 0 && addOn.prices.every((p) => Number(p.price) === 0);
 }
+
+/**
+ * The queries a refused purchase reads again (`purchase-refusal.ts`), by the
+ * keys this page's steps read them under — prefixes, so every subscription's
+ * add-on list and every subscription query is covered.
+ */
+const REREAD_QUERY_KEYS: Readonly<Record<AddOnPurchaseReread, readonly unknown[]>> = {
+  eligibility: ["add-ons-eligibility"],
+  gateways: ["gateways"],
+  subscriptions: subscriptionQueryKeys.root,
+  policy: PLATFORM_POLICY_QUERY_KEY,
+};
 
 
 
@@ -733,12 +747,19 @@ function CheckoutStep() {
         navigate("/dashboard", { replace: true });
       }
     },
-    onError: () => {
-      // Keep the user inside the wizard (back on review) so they can retry
-      // without losing their subscription / add-on / gateway selection —
-      // instead of bouncing to the dashboard and starting over.
-      toast.error(t("addons.purchaseError"));
-      setStep("review");
+    onError: (error) => {
+      // Keep the user inside the wizard so they can act without losing their
+      // subscription / add-on / gateway selection — instead of bouncing to the
+      // dashboard and starting over. A refusal the panel names says why and
+      // goes back to the step where the next move is made, with what went
+      // stale read again (`purchase-refusal.ts`); anything else keeps the
+      // generic toast and the confirmation screen, for a retry.
+      const answer = answerAddOnPurchaseFailure(error);
+      toast.error(t(answer.messageKey));
+      for (const stale of answer.reread) {
+        void queryClient.invalidateQueries({ queryKey: REREAD_QUERY_KEYS[stale] });
+      }
+      setStep(answer.step);
     },
   });
 

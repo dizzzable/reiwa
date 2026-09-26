@@ -1,7 +1,32 @@
 import type { Request } from 'express';
 
+import { UpstreamError } from '../../core/errors/index.js';
 import { isUpstreamUserNotFound, readUpstreamCode } from './upstream-error.js';
 import { getRequestLogger } from '../middleware/logger-accessor.js';
+
+/**
+ * `USER_BLOCKED`, as the panel's error filter actually delivers it.
+ *
+ * Rezeis Admin 0.9.7.71 and later forward the code (`SAFE_PRODUCT_CODES`), and
+ * a body that names a code is read by that code alone. 0.9.7.70 and older strip
+ * it and forward only the sentence — `403 { message: 'USER_BLOCKED', errorCode:
+ * 'FORBIDDEN' }` for the session read every caller of this helper meets
+ * (rezeis-admin `internal-user.service.ts#getSession`, whose sentence is the
+ * code itself) — so a body with no code is read by that status and that exact
+ * message. Until this, the helper read only the code, which that panel never
+ * sent: a blocked customer kept their cabinet session.
+ */
+function isBlockedAnswer(error: unknown): boolean {
+  const code = readUpstreamCode(error);
+  if (code !== null) return code === 'USER_BLOCKED';
+  if (!(error instanceof UpstreamError) || error.status !== 403) return false;
+  try {
+    const body: unknown = JSON.parse(error.body);
+    return typeof body === 'object' && body !== null && (body as { message?: unknown }).message === 'USER_BLOCKED';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Invalidates a WebSession the panel has just told us is no longer usable.
@@ -23,7 +48,7 @@ export async function invalidateStaleUserSession(
   req: Request,
   error: unknown,
 ): Promise<boolean> {
-  const blocked = readUpstreamCode(error) === 'USER_BLOCKED';
+  const blocked = isBlockedAnswer(error);
   if (!blocked && !isUpstreamUserNotFound(error)) return false;
 
   try {

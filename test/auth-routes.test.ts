@@ -16,6 +16,8 @@ import express, { type Request, type Response, type NextFunction } from "express
 import cookieParser from "cookie-parser";
 import http from "node:http";
 
+import { UpstreamError } from "../src/core/errors/upstream-error.js";
+
 // ── Mock Dependencies ───────────────────────────────────────────────────────
 
 /**
@@ -500,4 +502,63 @@ describe("POST /api/v1/auth/change-password", () => {
     assert.equal(res.body.redirectUrl, "/dashboard");
     assert.equal(adminClient.webAuth.changePassword.mock.calls.length, 1);
   });
+
+  /**
+   * The panel's refusals of this call, as its `AdminSafeExceptionFilter` writes
+   * them — produced by running the filter (`$SW/pair/a1-work/filter-body.cjs`),
+   * the same on Rezeis Admin 0.9.7.70 and 0.9.7.71. Every one carries this
+   * call's path, which contains the word "password"; the route used to read
+   * that word as a wrong current password.
+   */
+  const CHANGE_PASSWORD_PATH = "/api/internal/web-auth/change-password";
+  function panelRefusal(status: number, fields: Record<string, unknown>): UpstreamError {
+    return new UpstreamError(
+      "POST",
+      CHANGE_PASSWORD_PATH,
+      status,
+      JSON.stringify({
+        timestamp: "2026-09-26T12:00:00.000Z",
+        path: CHANGE_PASSWORD_PATH,
+        requestId: "req-a1-1",
+        statusCode: status,
+        ...fields,
+      }),
+    );
+  }
+
+  async function changeRefusedWith(error: UpstreamError) {
+    const { app, adminClient } = await buildApp({ authenticated: true });
+    adminClient.webAuth.changePassword.mockRejectedValueOnce(error);
+    return request(app, {
+      method: "POST",
+      path: "/api/v1/auth/change-password",
+      body: { currentPasswordHash: "a".repeat(64), newPasswordHash: "b".repeat(64) },
+    });
+  }
+
+  it("answers the panel's 401 as a wrong current password (its sentence is scrubbed to «Request failed»)", async () => {
+    const res = await changeRefusedWith(
+      panelRefusal(401, { message: "Request failed", errorCode: "UNAUTHORIZED", error: "Unauthorized" }),
+    );
+
+    assert.equal(res.status, 401);
+    assert.equal(res.body.code, "CURRENT_PASSWORD_INCORRECT");
+  });
+
+  for (const [name, status, fields] of [
+    ["a missing web account (404)", 404, { message: "Web account not found", errorCode: "NOT_FOUND", error: "Not Found" }],
+    [
+      "a panel fault (500)",
+      500,
+      { message: "Internal server error", errorCode: "INTERNAL_SERVER_ERROR", error: "Internal Server Error" },
+    ],
+  ] as const) {
+    it(`does not call ${name} a wrong current password`, async () => {
+      const res = await changeRefusedWith(panelRefusal(status, fields));
+
+      assert.equal(res.status, 500);
+      assert.notEqual(res.body.code, "CURRENT_PASSWORD_INCORRECT");
+      assert.deepEqual(res.body, { message: "Internal server error" });
+    });
+  }
 });

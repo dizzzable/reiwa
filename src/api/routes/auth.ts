@@ -246,6 +246,18 @@ function isBotDevTelegramId(
   return telegramId === String(config.BOT_DEV_ID);
 }
 
+/**
+ * The sentences the panel refuses a blocked Telegram account's bootstrap with
+ * (rezeis-admin `internal-user-edge.service.ts`): an existing account that is
+ * blocked, and an identity on the blocklist. Both carry `USER_BLOCKED`, which
+ * the panel's error filter strips up to 0.9.7.70; the sentence survives it.
+ * Read only when the body names no code.
+ */
+const BLOCKED_BOOTSTRAP_SENTENCES: ReadonlySet<string> = new Set([
+  "This account is blocked",
+  "Registration is not available for this account",
+]);
+
 function bootstrapClientError(input: {
   message: string;
   code?: string;
@@ -939,7 +951,14 @@ export function createAuthRouter(deps: {
     } catch (e: unknown) {
       const { message: errMsg } = describeUpstreamError(e);
 
-      if (isUpstreamStatus(e, 401) || errMsg.toLowerCase().includes("password")) {
+      // A wrong current password is the panel's 401, and only that. The word
+      // "password" in the answer is no evidence of it: the panel's error filter
+      // scrubs the word out of the sentence («Invalid current password» arrives
+      // as «Request failed») and writes this call's own path,
+      // `/api/internal/web-auth/change-password`, into EVERY error body — so
+      // matching the word answered a missing web account, a panel fault or a
+      // restart with «Current password is incorrect».
+      if (isUpstreamStatus(e, 401)) {
         // A `code` beside the sentence: the cabinet has no way to
         // translate prose, and this refusal is one the customer has to
         // act on. The sentence stays for logs and older clients.
@@ -1300,6 +1319,15 @@ export function createAuthRouter(deps: {
         // Misc 403: public message only; debug only for BOT_DEV_ID.
         if (code && productCodes.has(code)) {
           res.status(403).json({ code, message });
+          return;
+        }
+        // A blocked account, or a Telegram id on the panel's blocklist — said
+        // as such, not as «try again later», which never changes. The code
+        // from Rezeis Admin 0.9.7.71 (`SAFE_PRODUCT_CODES`); up to 0.9.7.70 the
+        // filter strips it and forwards the sentence, read whole. A body that
+        // names another code is that code, whatever its sentence.
+        if (code === "USER_BLOCKED" || (code === undefined && BLOCKED_BOOTSTRAP_SENTENCES.has(message))) {
+          res.status(403).json({ code: "USER_BLOCKED", message: "This account is blocked" });
           return;
         }
         res.status(403).json(

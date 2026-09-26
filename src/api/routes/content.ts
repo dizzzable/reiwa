@@ -7,8 +7,10 @@ import { requireMode } from "../middleware/access-mode.js";
 import { resolveUserIdentity } from "../middleware/user-identity.js";
 import { buildPaymentReturnUrl, resolvePurchaseContext } from "../../lib/payment-return-url.js";
 import { sendSafeError } from "../lib/error-response.js";
+import { describeUpstreamError } from "../lib/upstream-error.js";
 import { applyUploadRelayHeaders } from "../lib/upload-relay-headers.js";
 import { getRequestLogger } from "../middleware/logger-accessor.js";
+import { readAddOnPurchaseRefusal } from "./add-on-purchase-errors.js";
 
 const FAQ_UPLOAD_PREFIX = "/uploads/faq/";
 const FAQ_MEDIA_PROXY_PREFIX = "/api/v1/faq/media/";
@@ -346,6 +348,20 @@ export function createContentRouter(deps: {
         });
         res.json(result ?? {});
       } catch (e: unknown) {
+        // A refusal the panel names — an add-on withdrawn or changed while the
+        // page was open, a lapsed subscription, a payment method switched off —
+        // goes to the page as its code and a fixed sentence, so it can say
+        // what to do next. Only the allowlist in `add-on-purchase-errors.ts`;
+        // the panel's own words stay in this log line and nowhere else.
+        const refusal = readAddOnPurchaseRefusal(e);
+        if (refusal !== null) {
+          getRequestLogger(req).warn(
+            { code: refusal.body.code, upstreamStatus: describeUpstreamError(e).status },
+            "add-ons/purchase refused",
+          );
+          res.status(refusal.status).json(refusal.body);
+          return;
+        }
         sendSafeError(req, res, e, 400, "Add-on purchase failed", "add-ons/purchase");
       }
     },

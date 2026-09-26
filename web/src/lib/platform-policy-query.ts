@@ -27,9 +27,10 @@
 import type { Query, UseQueryOptions } from "@tanstack/react-query";
 
 import { getPlatformPolicy } from "@/lib/api-client";
+import { PLATFORM_POLICY_QUERY_KEY } from "@/lib/platform-policy-query-key";
 import type { PlatformPolicy } from "@/types/api";
 
-export const PLATFORM_POLICY_QUERY_KEY = ["platform-policy"] as const;
+export { PLATFORM_POLICY_QUERY_KEY };
 
 /** The first ask again 3 s after a failure, doubling to 30 s. */
 export const PLATFORM_POLICY_RETRY_FIRST_MS = 3_000;

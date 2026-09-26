@@ -153,6 +153,9 @@ export const en: RuDict = {
     registrationDisabled: 'Registration is currently disabled. Contact support.',
     inviteRequired: 'Invite-only registration. Open the bot via a referral link.',
     serviceRestricted: 'Service is temporarily unavailable. Try again later.',
+    // The account is blocked in the panel (or the Telegram account is on its
+    // blocklist): «try again later» would not be true.
+    accountBlocked: 'This account is blocked. If this is a mistake, contact support.',
     // Generic refusal — no operator/env diagnostics (those only arrive as
     // `debug` for BOT_DEV_ID from the server).
     accessDenied: 'Could not sign in. Try again later or contact support.',
@@ -1381,6 +1384,22 @@ export const en: RuDict = {
     resetTrafficDone: 'Traffic reset',
     resetTrafficFailed: 'Could not reset traffic. Please try again.',
     purchaseError: 'Failed to create payment. Please try again later.',
+    // Why the panel refused the add-on purchase and what to do next, by the
+    // refusal code (`features/addons/purchase-refusal.ts`). A refusal without a
+    // known code still shows `purchaseError`.
+    refusal: {
+      unavailable: 'This add-on is no longer available for your subscription. The list has been refreshed — choose another one.',
+      changed: 'The add-on changed while you were choosing it. The list has been refreshed — check the terms and price and choose again.',
+      alreadyUnlimited: 'Your subscription is already unlimited — it does not need this add-on. The list has been refreshed.',
+      subscriptionInactive: 'The subscription is not active, so add-ons cannot be bought for it. Renew the subscription first.',
+      paymentMethod: 'This payment method is unavailable right now. Choose another one or contact support.',
+      telegramOnly: 'Telegram Stars can only be paid in the Telegram app. Choose another payment method.',
+      providerNoAnswer:
+        'The payment provider did not respond, so the payment page did not open. Wait a few minutes and try again.',
+      attemptOutdated: 'This payment attempt is out of date. Press “Proceed to payment” again.',
+      purchasesDisabled: 'Purchases are temporarily disabled. Please try again later.',
+      serviceRestricted: 'The service is temporarily unavailable for maintenance. Please try again later.',
+    },
     free: 'Free',
     freeApplied: 'Add-on activated',
     validUntil: 'Valid until {{date}}',
