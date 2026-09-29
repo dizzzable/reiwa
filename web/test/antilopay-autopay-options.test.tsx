@@ -61,7 +61,17 @@ const SBP_CAPTION = "purchase.gateway.autopayCaptionSbp";
 const CARD_HINT = "purchase.quote.autopayProviderCardHint";
 const SBP_HINT = "purchase.quote.autopayProviderHint";
 
-const ANTILOPAY_WIRE = { type: "ANTILOPAY", displayName: "AntiloPay", currency: "RUB", isActive: true, autopay: true };
+// As the panel lists it: `autopay` stays false on a gateway approved a method at a time,
+// and `autopayMethods` names the approved ones (an older cabinet, which knows only the
+// boolean, then offers nothing it cannot sign up).
+const ANTILOPAY_WIRE = {
+  type: "ANTILOPAY",
+  displayName: "AntiloPay",
+  currency: "RUB",
+  isActive: true,
+  autopay: false,
+  autopayMethods: ["CARD", "SBP"],
+};
 const PRICED = {
   planId: "plan-p",
   planName: "Plan P",
@@ -207,8 +217,52 @@ describe("the purchase page offers Antilopay's automatic charging twice", () => 
     expect(option(SBP_CAPTION)).toBeUndefined();
   });
 
-  it("offers neither until the operator's approval reaches the list", async () => {
-    api.getEnabledGateways.mockResolvedValue([{ ...ANTILOPAY_WIRE, autopay: false }]);
+  it("offers neither until the operator approves a method", async () => {
+    api.getEnabledGateways.mockResolvedValue([{ ...ANTILOPAY_WIRE, autopayMethods: [] }]);
+
+    await mountPurchaseGateway();
+
+    expect(option(CARD_CAPTION)).toBeUndefined();
+    expect(option(SBP_CAPTION)).toBeUndefined();
+  });
+
+  it.each([
+    ["only the card", ["CARD"], true, false],
+    ["only SBP", ["SBP"], false, true],
+    ["both, in any order", ["SBP", "CARD"], true, true],
+  ])("offers what the operator approved and nothing else: %s", async (_name, autopayMethods, card, sbp) => {
+    api.getEnabledGateways.mockResolvedValue([{ ...ANTILOPAY_WIRE, autopayMethods }]);
+
+    await mountPurchaseGateway();
+
+    expect(option(CARD_CAPTION) !== undefined, "the card option").toBe(card);
+    expect(option(SBP_CAPTION) !== undefined, "the SBP option").toBe(sbp);
+    expect(option(CAPTION), "never a method-less option").toBeUndefined();
+  });
+
+  it("offers nothing on a panel that lists no methods, whatever its boolean says", async () => {
+    // A panel older than the list: no `autopayMethods`. And a boolean that is true
+    // must not bring the two options back, because a method nobody approved may be one.
+    for (const wire of [
+      { type: "ANTILOPAY", displayName: "AntiloPay", currency: "RUB", isActive: true },
+      { type: "ANTILOPAY", displayName: "AntiloPay", currency: "RUB", isActive: true, autopay: true },
+    ]) {
+      api.getEnabledGateways.mockResolvedValue([wire]);
+      await mountPurchaseGateway();
+
+      expect(option(CARD_CAPTION)).toBeUndefined();
+      expect(option(SBP_CAPTION)).toBeUndefined();
+
+      act(() => root?.unmount());
+      container?.remove();
+      root = null;
+      container = null;
+      usePurchaseStore.getState().reset();
+    }
+  });
+
+  it("ignores a method it does not know", async () => {
+    api.getEnabledGateways.mockResolvedValue([{ ...ANTILOPAY_WIRE, autopayMethods: ["QR", "CARD_INTERNATIONAL"] }]);
 
     await mountPurchaseGateway();
 
@@ -307,6 +361,30 @@ describe("the renewal page offers it twice too", () => {
 
     expect(option(CARD_CAPTION)).toBeDefined();
     expect(option(SBP_CAPTION)).toBeDefined();
+  });
+
+  it.each([
+    ["only the card", ["CARD"], true, false],
+    ["only SBP", ["SBP"], false, true],
+  ])("shows what the operator approved and nothing else: %s", async (_name, autopayMethods, card, sbp) => {
+    api.getEnabledGateways.mockResolvedValue([{ ...ANTILOPAY_WIRE, autopayMethods }]);
+
+    await mountRenewalGateway(30);
+
+    expect(option(CARD_CAPTION) !== undefined, "the card option").toBe(card);
+    expect(option(SBP_CAPTION) !== undefined, "the SBP option").toBe(sbp);
+  });
+
+  it("shows nothing on a panel that lists no methods", async () => {
+    api.getEnabledGateways.mockResolvedValue([
+      { type: "ANTILOPAY", displayName: "AntiloPay", currency: "RUB", isActive: true, autopay: true },
+    ]);
+
+    await mountRenewalGateway(30);
+
+    expect(text()).toContain("AntiloPay");
+    expect(option(CARD_CAPTION)).toBeUndefined();
+    expect(option(SBP_CAPTION)).toBeUndefined();
   });
 
   it("shows neither for a term it has no period for", async () => {

@@ -36,6 +36,8 @@ import {
   autopayCaptionKey,
   autopayHintKey,
   type AutopayMethod,
+  type AutopayGateway,
+  approvesAutopay,
   autopayOptions,
   autopayRefusalMessage,
   isAutopayNotAvailableRefusal,
@@ -877,8 +879,8 @@ function SelectGateway() {
   // one it renews on the plan it is on: onto another plan the panel refuses it
   // (`renewsOntoAnotherPlan`). The price (kopecks, a promo) is only known
   // later; the panel refuses that, and the checkout says so.
-  const autopayOffered = (gw: { type: string; autopay?: boolean }): boolean => {
-    if (gw.autopay !== true) return false;
+  const autopayOffered = (gw: AutopayGateway): boolean => {
+    if (!approvesAutopay(gw)) return false;
     if (!isProviderSubscriptionGateway(gw.type)) return true;
     if (selectedSubscriptionIds.length !== 1) return false;
     const subscriptionId = selectedSubscriptionIds[0]!;
@@ -1021,7 +1023,7 @@ function SelectGateway() {
               </div>
             </button>
             {autopayOffered(gw) &&
-              autopayOptions(gw.type).map((method) => (
+              autopayOptions(gw).map((method) => (
                 <button
                   key={method ?? "autopay"}
                   onClick={() => choose(gw, null, true, method)}

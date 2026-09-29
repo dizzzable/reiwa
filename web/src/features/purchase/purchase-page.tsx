@@ -46,6 +46,7 @@ import {
   autopayCaptionKey,
   autopayHintKey,
   type AutopayMethod,
+  type AutopayGateway,
   autopayOptions,
   autopayRefusalMessage,
   isAutopayNotAvailableRefusal,
@@ -221,10 +222,11 @@ function SelectGateway({
   // Platega's option only where the provider can repeat this exact sum and term.
   // A trial's conversion is an UPGRADE the provider can repeat: it is priced
   // like a new purchase, and the later charges renew the converted trial.
-  const autopayOffered = (gw: { type: string; autopay?: boolean }) =>
+  const autopayOffered = (gw: AutopayGateway) =>
     offersAutopay({
       gatewayType: gw.type,
       autopay: gw.autopay,
+      autopayMethods: gw.autopayMethods,
       purchase:
         selectedDuration === null
           ? null
@@ -371,7 +373,7 @@ function SelectGateway({
               </div>
             </button>
             {autopayOffered(gw) &&
-              autopayOptions(gw.type).map((method) => (
+              autopayOptions(gw).map((method) => (
                 <button
                   key={method ?? "autopay"}
                   onClick={() =>

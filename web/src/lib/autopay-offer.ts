@@ -47,12 +47,34 @@ const ANTILOPAY_PERIOD_DAYS: ReadonlySet<number> = new Set([7, 30, 90, 365]);
  */
 export type AutopayMethod = "CARD" | "SBP";
 
+/** A gateway as the panel lists it, as far as «для автоматического списания» goes. */
+export interface AutopayGateway {
+  readonly type: string;
+  /** The panel's per-gateway `autopay`: approved by the operator and built. */
+  readonly autopay?: boolean;
+  /**
+   * Where the operator approves methods one by one (Antilopay: a card and SBP,
+   * two switches), the panel lists the approved ones here and keeps `autopay`
+   * false. Absent from a panel older than the list — and then Antilopay offers
+   * no automatic charging at all, which is what such a panel supports. A
+   * cabinet older than the list reads `autopay: false` and offers nothing too.
+   */
+  readonly autopayMethods?: readonly string[];
+}
+
 /**
  * The options a gateway's «для автоматического списания» comes in: one (null),
- * or one per method the payer chooses between.
+ * or one per method the operator approved and the payer chooses between.
  */
-export function autopayOptions(gatewayType: string): readonly (AutopayMethod | null)[] {
-  return gatewayType === "ANTILOPAY" ? ["CARD", "SBP"] : [null];
+export function autopayOptions(gateway: Pick<AutopayGateway, "type" | "autopayMethods">): readonly (AutopayMethod | null)[] {
+  if (gateway.type !== "ANTILOPAY") return [null];
+  const approved = Array.isArray(gateway.autopayMethods) ? gateway.autopayMethods : [];
+  return (["CARD", "SBP"] as const).filter((method) => approved.includes(method));
+}
+
+/** Whether the operator approved automatic charging on this gateway, by any method it has. */
+export function approvesAutopay(gateway: AutopayGateway): boolean {
+  return gateway.type === "ANTILOPAY" ? autopayOptions(gateway).length > 0 : gateway.autopay === true;
 }
 
 /** The caption under an autopay option: «для автоматического списания», with the method where there is one. */
@@ -92,6 +114,8 @@ export function offersAutopay(input: {
   readonly gatewayType: string;
   /** The panel's per-gateway `autopay`: approved by the operator and built. */
   readonly autopay: boolean | undefined;
+  /** The methods approved on a gateway that approves them one by one (Antilopay). */
+  readonly autopayMethods?: readonly string[] | undefined;
   /** What is being bought; null when the page does not know it yet. */
   readonly purchase: {
     readonly durationDays: number;
@@ -103,7 +127,7 @@ export function offersAutopay(input: {
     readonly convertsTrial?: boolean;
   } | null;
 }): boolean {
-  if (input.autopay !== true) return false;
+  if (!approvesAutopay({ type: input.gatewayType, autopay: input.autopay, autopayMethods: input.autopayMethods })) return false;
   if (!isProviderSubscriptionGateway(input.gatewayType)) return true;
   const purchase = input.purchase;
   if (purchase === null || purchase.isTrial) return false;

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   autopayCaptionKey,
   autopayHintKey,
+  approvesAutopay,
   autopayOptions,
   AUTOPAY_NOT_AVAILABLE_CODE,
   AUTOPAY_SIGN_UP_HOLD_MINUTES,
@@ -59,24 +60,50 @@ describe("Antilopay", () => {
 
   it("is a provider subscription: offered for a purchase the provider can repeat, never for a trial or a promo price", () => {
     const monthly = { durationDays: 30, price: { currency: "RUB", price: "299" }, isTrial: false };
-    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: true, purchase: monthly })).toBe(true);
-    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: true, purchase: { ...monthly, durationDays: 45 } })).toBe(false);
-    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: true, purchase: { ...monthly, isTrial: true } })).toBe(false);
-    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: false, purchase: monthly })).toBe(false);
+    const approved = { autopay: false, autopayMethods: ["CARD", "SBP"] } as const;
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", ...approved, purchase: monthly })).toBe(true);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", ...approved, purchase: { ...monthly, durationDays: 45 } })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", ...approved, purchase: { ...monthly, isTrial: true } })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: false, autopayMethods: [], purchase: monthly })).toBe(false);
     expect(
       offersAutopay({
         gatewayType: "ANTILOPAY",
-        autopay: true,
+        ...approved,
         purchase: { ...monthly, price: { currency: "RUB", price: "249", discountSource: "PURCHASE" } },
       }),
     ).toBe(false);
   });
 
-  it("comes in two options, a card and SBP, where every other gateway has one", () => {
-    expect(autopayOptions("ANTILOPAY")).toEqual(["CARD", "SBP"]);
+  it("is offered by the methods the operator approved, never by the boolean that other gateways read", () => {
+    const monthly = { durationDays: 30, price: { currency: "RUB", price: "299" }, isTrial: false };
+    // A panel older than the list sends none; nothing is offered whatever `autopay` says.
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: true, purchase: monthly })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: undefined, purchase: monthly })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: false, autopayMethods: ["SBP"], purchase: monthly })).toBe(true);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: false, autopayMethods: ["QR"], purchase: monthly })).toBe(false);
+    // And the list means nothing on a gateway with one switch.
+    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: false, autopayMethods: ["CARD", "SBP"], purchase: monthly })).toBe(false);
+  });
+
+  it("comes in one option per approved method — a card first, then SBP — where every other gateway has one", () => {
+    expect(autopayOptions({ type: "ANTILOPAY", autopayMethods: ["CARD", "SBP"] })).toEqual(["CARD", "SBP"]);
+    expect(autopayOptions({ type: "ANTILOPAY", autopayMethods: ["SBP", "CARD"] })).toEqual(["CARD", "SBP"]);
+    expect(autopayOptions({ type: "ANTILOPAY", autopayMethods: ["CARD"] })).toEqual(["CARD"]);
+    expect(autopayOptions({ type: "ANTILOPAY", autopayMethods: ["SBP"] })).toEqual(["SBP"]);
+    expect(autopayOptions({ type: "ANTILOPAY", autopayMethods: [] })).toEqual([]);
+    expect(autopayOptions({ type: "ANTILOPAY" }), "an older panel").toEqual([]);
+    expect(autopayOptions({ type: "ANTILOPAY", autopayMethods: ["QR", "card"] }), "only the two it knows, as written").toEqual([]);
     for (const gateway of ["YOOKASSA", "PLATEGA", "ROLLYPAY"]) {
-      expect(autopayOptions(gateway), gateway).toEqual([null]);
+      expect(autopayOptions({ type: gateway, autopayMethods: ["CARD", "SBP"] }), gateway).toEqual([null]);
     }
+  });
+
+  it("asks the approval of the gateway by the one switch it has, or by its methods", () => {
+    expect(approvesAutopay({ type: "YOOKASSA", autopay: true })).toBe(true);
+    expect(approvesAutopay({ type: "YOOKASSA", autopay: false })).toBe(false);
+    expect(approvesAutopay({ type: "ANTILOPAY", autopay: false, autopayMethods: ["CARD"] })).toBe(true);
+    expect(approvesAutopay({ type: "ANTILOPAY", autopay: true })).toBe(false);
+    expect(approvesAutopay({ type: "ANTILOPAY", autopayMethods: [] })).toBe(false);
   });
 
   it("says which way each option charges, and tells the payer the truth about it on the quote", () => {

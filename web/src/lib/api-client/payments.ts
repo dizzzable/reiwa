@@ -25,6 +25,13 @@ export interface GatewayOption {
    * option. Absent from panels older than 0.9.7.62.
    */
   autopay?: boolean;
+  /**
+   * On a gateway whose operator approves methods one by one (Antilopay: a card
+   * and SBP), the approved ones: the picker offers one «для автоматического
+   * списания» option per method listed, and `autopay` is false there. Absent
+   * from panels older than the list, which offer none.
+   */
+  autopayMethods?: AutopayMethod[];
 }
 
 export const getEnabledGateways = () =>
