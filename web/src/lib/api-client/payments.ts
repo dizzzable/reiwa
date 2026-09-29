@@ -9,6 +9,7 @@
  */
 import { apiClient } from "./transport.js";
 import { getClientSource } from "@/lib/client-source";
+import type { AutopayMethod } from "@/lib/autopay-offer";
 import type { CheckoutResult, PaymentPurchaseType, PaymentStatus } from "@/types/api";
 
 export type CreationPurchaseType = Extract<PaymentPurchaseType, "NEW" | "ADDITIONAL">;
@@ -41,6 +42,7 @@ export const createCheckout = (
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
   purchaseType: CreationPurchaseType = "NEW",
+  autopayMethod?: AutopayMethod,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -56,6 +58,7 @@ export const createCheckout = (
       ...(typeof savePaymentMethodConsent === "boolean"
         ? { savePaymentMethodConsent }
         : {}),
+      ...(autopayMethod === undefined ? {} : { autopayMethod }),
     })
     .then((r) => r.data);
 
@@ -94,6 +97,7 @@ export const createUpgradeCheckout = (
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
+  autopayMethod?: AutopayMethod,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -110,6 +114,7 @@ export const createUpgradeCheckout = (
       ...(typeof savePaymentMethodConsent === "boolean"
         ? { savePaymentMethodConsent }
         : {}),
+      ...(autopayMethod === undefined ? {} : { autopayMethod }),
     })
     .then((r) => r.data);
 
@@ -152,6 +157,7 @@ export const createRenewalCheckout = (
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
+  autopayMethod?: AutopayMethod,
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/renewal-checkout", {
@@ -170,5 +176,6 @@ export const createRenewalCheckout = (
       ...(typeof savePaymentMethodConsent === "boolean"
         ? { savePaymentMethodConsent }
         : {}),
+      ...(autopayMethod === undefined ? {} : { autopayMethod }),
     })
     .then((r) => r.data);

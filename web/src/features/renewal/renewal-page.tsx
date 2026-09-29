@@ -33,6 +33,10 @@ import { gatewayLabel } from "@/lib/gateway-display";
 import { createRenewalIdempotencyKey } from "./renewal-idempotency";
 import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
 import {
+  autopayCaptionKey,
+  autopayHintKey,
+  type AutopayMethod,
+  autopayOptions,
   isAutopayNotAvailableRefusal,
   isProviderPeriod,
   isProviderSubscriptionGateway,
@@ -905,15 +909,17 @@ function SelectGateway() {
     gw: { type: string; displayName: string; currency: string },
     savedPaymentMethodId: string | null = null,
     autopay = false,
+    autopayMethod: AutopayMethod | null = null,
   ): void => {
     selectGateway({
       id: gw.type,
       label: autopay
-        ? `${gatewayLabel(gw.type, gw.displayName)} · ${t("purchase.gateway.autopayCaption")}`
+        ? `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(autopayMethod))}`
         : gatewayLabel(gw.type, gw.displayName),
       icon: GATEWAY_ICONS[gw.type] ?? "💳",
       currency: gw.currency,
       ...(autopay ? { autopay: true } : {}),
+      ...(autopay && autopayMethod !== null ? { autopayMethod } : {}),
     } satisfies GatewayOption);
     // selectGateway clears saved method; re-apply after the store update.
     queueMicrotask(() => selectSavedPaymentMethod(savedPaymentMethodId));
@@ -1013,18 +1019,20 @@ function SelectGateway() {
                 <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
               </div>
             </button>
-            {autopayOffered(gw) && (
-              <button
-                onClick={() => choose(gw, null, true)}
-                className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-              >
-                <AutopayGatewayMark type={gw.type} currency={gw.currency} />
-                <div className="text-left">
-                  <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
-                  <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t("purchase.gateway.autopayCaption")}</p>
-                </div>
-              </button>
-            )}
+            {autopayOffered(gw) &&
+              autopayOptions(gw.type).map((method) => (
+                <button
+                  key={method ?? "autopay"}
+                  onClick={() => choose(gw, null, true, method)}
+                  className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+                >
+                  <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
+                  <div className="text-left">
+                    <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
+                    <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t(autopayCaptionKey(method))}</p>
+                  </div>
+                </button>
+              ))}
           </Fragment>
         ))}
         {gateways.length === 0 && (
@@ -1289,11 +1297,7 @@ function RenewalReview() {
         <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-4 py-3 text-sm leading-snug text-[color:var(--brand-foreground)]">
           <p className="font-medium text-[color:var(--brand-foreground)]">{t("purchase.quote.autopayTitle")}</p>
           <p className="mt-0.5 text-xs text-[color:var(--brand-muted-foreground)]">
-            {t(
-              isProviderSubscriptionGateway(selectedGateway?.id)
-                ? "purchase.quote.autopayProviderHint"
-                : "purchase.quote.autopayHint",
-            )}
+            {t(autopayHintKey(selectedGateway?.id, selectedGateway?.autopayMethod))}
           </p>
         </div>
       )}
@@ -1410,6 +1414,10 @@ function CheckoutStep() {
       // runs; this consent is what tells the panel to create one.
       const providerSubscription =
         selectedGateway.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
+      // The payer's choice where the gateway offers two ways (Antilopay); every
+      // other gateway keeps the shorter call.
+      const autopayMethodArg: [AutopayMethod] | [] =
+        providerSubscription && selectedGateway.autopayMethod !== undefined ? [selectedGateway.autopayMethod] : [];
       return createRenewalCheckout(
         selectedSubscriptionIds,
         selectedGateway.id,
@@ -1420,6 +1428,7 @@ function CheckoutStep() {
         selectedSavedPaymentMethodId,
         interactiveYookassa ? savePaymentMethodConsent : undefined,
         interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
+        ...autopayMethodArg,
       );
     },
     onSuccess: (result) => {

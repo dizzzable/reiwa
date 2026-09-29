@@ -16,6 +16,11 @@ export interface CreateCheckoutOptions {
   readonly savePaymentMethod?: boolean;
   /** Explicit consent to save card for autopay (required when save is true). */
   readonly savePaymentMethodConsent?: boolean;
+  /**
+   * Antilopay only: how the customer signs up for automatic charging, a card or
+   * SBP. Two different kinds of recurrent payment, chosen before the form opens.
+   */
+  readonly autopayMethod?: 'CARD' | 'SBP';
 }
 
 export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
@@ -138,6 +143,9 @@ export class PaymentsNamespace {
     if (typeof options.savePaymentMethodConsent === 'boolean') {
       payload['savePaymentMethodConsent'] = options.savePaymentMethodConsent;
     }
+    if (options.autopayMethod === 'CARD' || options.autopayMethod === 'SBP') {
+      payload['autopayMethod'] = options.autopayMethod;
+    }
     return this.transport.request('POST', '/api/internal/payments/checkout', payload);
   }
 
@@ -249,6 +257,7 @@ export class PaymentsNamespace {
       readonly savedPaymentMethodId?: string;
       readonly savePaymentMethod?: boolean;
       readonly savePaymentMethodConsent?: boolean;
+      readonly autopayMethod?: 'CARD' | 'SBP';
     },
   ): Promise<unknown> {
     const payload: Record<string, unknown> = {
@@ -285,6 +294,9 @@ export class PaymentsNamespace {
     }
     if (typeof input.savePaymentMethodConsent === 'boolean') {
       payload['savePaymentMethodConsent'] = input.savePaymentMethodConsent;
+    }
+    if (input.autopayMethod === 'CARD' || input.autopayMethod === 'SBP') {
+      payload['autopayMethod'] = input.autopayMethod;
     }
     return this.transport.request('POST', '/api/internal/payments/renewal-checkout', payload);
   }

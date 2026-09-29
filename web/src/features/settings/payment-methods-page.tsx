@@ -442,7 +442,11 @@ function ProviderSubscriptionCard({
   return (
     <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3.5">
       <div className="flex items-center gap-3">
-        <AutopayGatewayMark type={subscription.gatewayType} currency={subscription.currency} />
+        <AutopayGatewayMark
+          type={subscription.gatewayType}
+          currency={subscription.currency}
+          method={subscription.method}
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-[var(--brand-foreground)]">
             {subscription.planName ?? t('paymentMethods.providerSubscriptions.fallbackPlan')}
@@ -465,8 +469,19 @@ function ProviderSubscriptionCard({
             ? t('paymentMethods.providerSubscriptions.nextCharge', {
                 date: formatDate(subscription.nextChargeAt, dateZone),
               })
-            : t('paymentMethods.providerSubscriptions.via')}
+            : t(
+                subscription.method === 'CARD'
+                  ? 'paymentMethods.providerSubscriptions.viaCard'
+                  : 'paymentMethods.providerSubscriptions.via',
+              )}
       </p>
+      {subscription.endsAt ? (
+        <p className="mt-1 text-[11px] leading-snug text-[var(--brand-muted-foreground)]">
+          {t('paymentMethods.providerSubscriptions.ends', {
+            date: formatDate(subscription.endsAt, dateZone),
+          })}
+        </p>
+      ) : null}
       <StadiumButton
         variant="ghost"
         size="sm"

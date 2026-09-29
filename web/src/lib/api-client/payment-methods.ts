@@ -44,6 +44,10 @@ export interface ProviderSubscription {
   subscriptionId: string | null;
   nextChargeAt: string | null;
   lastChargeAt: string | null;
+  /** When the provider's plan of charges ends (Antilopay); absent or null when it names no end. */
+  endsAt?: string | null;
+  /** CARD or SBP where the gateway offers both (Antilopay). */
+  method?: string | null;
 }
 
 export interface SavedPaymentMethodsResponse {

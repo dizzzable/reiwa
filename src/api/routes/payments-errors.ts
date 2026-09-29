@@ -148,6 +148,7 @@ const CHECKOUT_REFUSAL_REASONS: ReadonlyMap<string, ReadonlySet<string>> = new M
       "PENDING_SIGN_UP",
       "PLAN",
       "PLAN_CHANGE",
+      "METHOD",
     ]),
   ],
 ]);

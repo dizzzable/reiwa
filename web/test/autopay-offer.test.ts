@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  autopayCaptionKey,
+  autopayHintKey,
+  autopayOptions,
   AUTOPAY_NOT_AVAILABLE_CODE,
   AUTOPAY_SIGN_UP_HOLD_MINUTES,
   AUTOPAY_SIGN_UP_PENDING_REASON,
@@ -40,6 +43,62 @@ describe("isProviderPeriod", () => {
     }
     for (const days of [1, 7, 31, 60, 360, 730]) {
       expect(isProviderPeriod("ROLLYPAY", days), String(days)).toBe(false);
+    }
+  });
+});
+
+describe("Antilopay", () => {
+  it("has a period for a week, a month, a quarter and a year, and for nothing else", () => {
+    for (const days of [7, 30, 90, 365]) {
+      expect(isProviderPeriod("ANTILOPAY", days), String(days)).toBe(true);
+    }
+    for (const days of [1, 14, 31, 60, 180, 360, 730]) {
+      expect(isProviderPeriod("ANTILOPAY", days), String(days)).toBe(false);
+    }
+  });
+
+  it("is a provider subscription: offered for a purchase the provider can repeat, never for a trial or a promo price", () => {
+    const monthly = { durationDays: 30, price: { currency: "RUB", price: "299" }, isTrial: false };
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: true, purchase: monthly })).toBe(true);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: true, purchase: { ...monthly, durationDays: 45 } })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: true, purchase: { ...monthly, isTrial: true } })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ANTILOPAY", autopay: false, purchase: monthly })).toBe(false);
+    expect(
+      offersAutopay({
+        gatewayType: "ANTILOPAY",
+        autopay: true,
+        purchase: { ...monthly, price: { currency: "RUB", price: "249", discountSource: "PURCHASE" } },
+      }),
+    ).toBe(false);
+  });
+
+  it("comes in two options, a card and SBP, where every other gateway has one", () => {
+    expect(autopayOptions("ANTILOPAY")).toEqual(["CARD", "SBP"]);
+    for (const gateway of ["YOOKASSA", "PLATEGA", "ROLLYPAY"]) {
+      expect(autopayOptions(gateway), gateway).toEqual([null]);
+    }
+  });
+
+  it("says which way each option charges, and tells the payer the truth about it on the quote", () => {
+    expect(autopayCaptionKey("CARD")).toBe("purchase.gateway.autopayCaptionCard");
+    expect(autopayCaptionKey("SBP")).toBe("purchase.gateway.autopayCaptionSbp");
+    expect(autopayCaptionKey(null)).toBe("purchase.gateway.autopayCaption");
+    expect(autopayHintKey("ANTILOPAY", "CARD")).toBe("purchase.quote.autopayProviderCardHint");
+    expect(autopayHintKey("ANTILOPAY", "SBP")).toBe("purchase.quote.autopayProviderHint");
+    expect(autopayHintKey("PLATEGA", undefined)).toBe("purchase.quote.autopayProviderHint");
+    expect(autopayHintKey("YOOKASSA", undefined)).toBe("purchase.quote.autopayHint");
+  });
+
+  it("has every caption and hint in both dictionaries", () => {
+    for (const dictionary of [ru, en]) {
+      const gateway = dictionary.purchase.gateway as Record<string, unknown>;
+      const quote = dictionary.purchase.quote as Record<string, unknown>;
+      for (const key of ["autopayCaption", "autopayCaptionCard", "autopayCaptionSbp"]) {
+        expect(typeof gateway[key], key).toBe("string");
+      }
+      for (const key of ["autopayProviderHint", "autopayProviderCardHint"]) {
+        expect(typeof quote[key], key).toBe("string");
+      }
     }
   });
 });

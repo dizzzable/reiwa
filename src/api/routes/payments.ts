@@ -67,6 +67,7 @@ export function createPaymentsRouter(deps: {
           savedPaymentMethodId,
           savePaymentMethod,
           savePaymentMethodConsent,
+          autopayMethod,
           // Explicit origin hint from the SPA ("tma" | "web"). Decides whether
           // the post-payment redirect returns the user to Telegram or the web
           // app. See resolvePurchaseContext for why this is sent in the body.
@@ -131,6 +132,7 @@ export function createPaymentsRouter(deps: {
             ...(typeof savePaymentMethodConsent === "boolean"
               ? { savePaymentMethodConsent }
               : {}),
+            ...(autopayMethod === "CARD" || autopayMethod === "SBP" ? { autopayMethod } : {}),
           },
         );
         res.json(checkout ?? {});
@@ -192,6 +194,7 @@ export function createPaymentsRouter(deps: {
           savedPaymentMethodId,
           savePaymentMethod,
           savePaymentMethodConsent,
+          autopayMethod,
           successUrl: bodySuccessUrl,
           failUrl: bodyFailUrl,
         } = (req.body ?? {}) as Record<string, unknown>;
@@ -300,6 +303,7 @@ export function createPaymentsRouter(deps: {
             ...(typeof savePaymentMethodConsent === "boolean"
               ? { savePaymentMethodConsent }
               : {}),
+            ...(autopayMethod === "CARD" || autopayMethod === "SBP" ? { autopayMethod } : {}),
           },
         );
         res.json(result ?? {});

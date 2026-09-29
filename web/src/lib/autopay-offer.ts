@@ -4,7 +4,7 @@
  * ЮKassa saves a method and the panel charges it later, any sum at any time, so
  * its option is offered whenever the panel says the gateway may (`autopay`).
  *
- * On Platega and RollyPay the PROVIDER runs the subscription: it repeats the
+ * On Platega, RollyPay and Antilopay the PROVIDER runs the subscription: it repeats the
  * first charge's sum every period, on its own schedule. So the option is
  * offered only for a purchase it can repeat exactly — the panel's
  * `resolveProviderSubscriptionTerms` (rezeis `provider-subscription-terms.util.ts`)
@@ -14,7 +14,7 @@
  *     to the same rule);
  *   - a term that is one of the provider's periods: on Platega 1–31 days,
  *     1–12 months of 30 days, 1–3 years of 365 days; on RollyPay 30, 90, 180
- *     or 365 days;
+ *     or 365 days; on Antilopay 7, 30, 90 or 365 days;
  *   - no one-time promo discount (`discountSource: "PURCHASE"`), which would be
  *     charged again every period; a personal discount is permanent and may be;
  *   - a new purchase, a renewal, or the conversion of the buyer's trial — what
@@ -31,10 +31,42 @@
 import type { PlanPrice } from "@/types/api";
 
 /** The panel's `PROVIDER_SUBSCRIPTION_GATEWAY_TYPES`. */
-export const PROVIDER_SUBSCRIPTION_GATEWAYS: ReadonlySet<string> = new Set(["PLATEGA", "ROLLYPAY"]);
+export const PROVIDER_SUBSCRIPTION_GATEWAYS: ReadonlySet<string> = new Set(["PLATEGA", "ROLLYPAY", "ANTILOPAY"]);
 
 /** RollyPay's fixed tariffs: month, quarter, half a year and a year, in days. */
 const ROLLYPAY_PERIOD_DAYS: ReadonlySet<number> = new Set([30, 90, 180, 365]);
+
+/** Antilopay's periods: a week, a month, a quarter and a year, in days. */
+const ANTILOPAY_PERIOD_DAYS: ReadonlySet<number> = new Set([7, 30, 90, 365]);
+
+/**
+ * How a payer signs up for automatic charging where the gateway offers two
+ * ways: Antilopay repeats a charge on a card or over SBP, and the two are
+ * different kinds of recurrent payment, so the payer says which BEFORE the
+ * payment form opens. The panel takes it as `autopayMethod`.
+ */
+export type AutopayMethod = "CARD" | "SBP";
+
+/**
+ * The options a gateway's «для автоматического списания» comes in: one (null),
+ * or one per method the payer chooses between.
+ */
+export function autopayOptions(gatewayType: string): readonly (AutopayMethod | null)[] {
+  return gatewayType === "ANTILOPAY" ? ["CARD", "SBP"] : [null];
+}
+
+/** The caption under an autopay option: «для автоматического списания», with the method where there is one. */
+export function autopayCaptionKey(method: AutopayMethod | null | undefined): string {
+  if (method === "CARD") return "purchase.gateway.autopayCaptionCard";
+  if (method === "SBP") return "purchase.gateway.autopayCaptionSbp";
+  return "purchase.gateway.autopayCaption";
+}
+
+/** What the quote step tells the payer about the automatic charging they chose. */
+export function autopayHintKey(gatewayType: string | null | undefined, method: AutopayMethod | null | undefined): string {
+  if (!isProviderSubscriptionGateway(gatewayType)) return "purchase.quote.autopayHint";
+  return method === "CARD" ? "purchase.quote.autopayProviderCardHint" : "purchase.quote.autopayProviderHint";
+}
 
 export function isProviderSubscriptionGateway(gatewayType: string | null | undefined): boolean {
   return typeof gatewayType === "string" && PROVIDER_SUBSCRIPTION_GATEWAYS.has(gatewayType);
@@ -44,6 +76,7 @@ export function isProviderSubscriptionGateway(gatewayType: string | null | undef
 export function isProviderPeriod(gatewayType: string, days: number): boolean {
   if (!Number.isInteger(days) || days <= 0) return false;
   if (gatewayType === "ROLLYPAY") return ROLLYPAY_PERIOD_DAYS.has(days);
+  if (gatewayType === "ANTILOPAY") return ANTILOPAY_PERIOD_DAYS.has(days);
   return days <= 31 || (days % 30 === 0 && days <= 360) || (days % 365 === 0 && days <= 1095);
 }
 

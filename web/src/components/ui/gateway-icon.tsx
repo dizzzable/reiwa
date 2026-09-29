@@ -6,11 +6,12 @@
  * gateway `type` (+ optional `currency`) so every payment-method picker shows
  * a consistent brand icon instead of a bare emoji.
  */
-import { Repeat } from "lucide-react";
+import { CreditCard, Repeat } from "lucide-react";
 
 // The owner's `icon/svg/sbp.svg` without its baked white square, which read
 // as a white tile on the dark theme.
 import sbpIconUrl from "@/assets/methods/sbp.svg?url";
+import type { AutopayMethod } from "@/lib/autopay-offer";
 import { currencyIconUrl, gatewayEmoji, gatewayIconUrl } from "@/lib/gateway-display";
 import { cn } from "@/lib/utils";
 
@@ -22,10 +23,28 @@ const SBP_AUTOPAY_GATEWAYS: ReadonlySet<string> = new Set(["PLATEGA", "ROLLYPAY"
  * second row of the same gateway reads as "this one charges again" before its
  * caption is read. An SBP subscription shows the SBP mark beside the
  * gateway's own (the owner's picture: Platega, and SBP next to it); ЮKassa,
- * which may save a card, SBP or a wallet, gets a repeat badge instead.
+ * which may save a card, SBP or a wallet, gets a repeat badge instead. A gateway
+ * with two methods (Antilopay) shows the one this option charges: the card mark
+ * or the SBP mark.
  */
-export function AutopayGatewayMark({ type, currency }: { type: string; currency?: string | null }) {
-  if (SBP_AUTOPAY_GATEWAYS.has(type)) {
+export function AutopayGatewayMark({
+  type,
+  currency,
+  method,
+}: {
+  type: string;
+  currency?: string | null;
+  method?: AutopayMethod | string | null;
+}) {
+  if (method === "CARD") {
+    return (
+      <span className="flex h-7 shrink-0 items-center gap-1">
+        <GatewayIcon type={type} currency={currency} className="h-7 w-7" />
+        <CreditCard aria-hidden className="h-6 w-6 text-[color:var(--brand-muted-foreground)]" />
+      </span>
+    );
+  }
+  if (method === "SBP" || SBP_AUTOPAY_GATEWAYS.has(type)) {
     return (
       <span className="flex h-7 shrink-0 items-center gap-1">
         <GatewayIcon type={type} currency={currency} className="h-7 w-7" />

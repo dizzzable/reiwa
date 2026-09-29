@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { AutopayMethod } from "@/lib/autopay-offer";
 import type { Plan, PlanDuration, SubscriptionQuote } from "@/types/api";
 
 // No device step: the wizard used to ask «На каком устройстве?» between the
@@ -24,6 +25,11 @@ export type GatewayOption = {
    * `selectGateway` turns it into `savePaymentMethodConsent`.
    */
   autopay?: boolean;
+  /**
+   * How the customer signs up where the gateway offers two ways (Antilopay:
+   * a card, or SBP). Sent with the checkout as `autopayMethod`.
+   */
+  autopayMethod?: AutopayMethod;
 };
 
 // Gateways are now fetched dynamically via GET /api/v1/gateways

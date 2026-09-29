@@ -43,6 +43,10 @@ import type { Plan, PlanDuration } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
 import { gatewayLabel } from "@/lib/gateway-display";
 import {
+  autopayCaptionKey,
+  autopayHintKey,
+  type AutopayMethod,
+  autopayOptions,
   autopayRefusalMessage,
   isAutopayNotAvailableRefusal,
   isProviderSubscriptionGateway,
@@ -366,26 +370,29 @@ function SelectGateway({
                 <p className="text-xs text-muted-foreground">{gw.currency}</p>
               </div>
             </button>
-            {autopayOffered(gw) && (
-              <button
-                onClick={() =>
-                  onSelect({
-                    id: gw.type,
-                    label: `${gatewayLabel(gw.type, gw.displayName)} · ${t("purchase.gateway.autopayCaption")}`,
-                    icon: GATEWAY_ICONS[gw.type] ?? "💳",
-                    currency: gw.currency,
-                    autopay: true,
-                  })
-                }
-                className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-              >
-                <AutopayGatewayMark type={gw.type} currency={gw.currency} />
-                <div className="text-left">
-                  <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
-                  <p className="text-xs text-muted-foreground">{t("purchase.gateway.autopayCaption")}</p>
-                </div>
-              </button>
-            )}
+            {autopayOffered(gw) &&
+              autopayOptions(gw.type).map((method) => (
+                <button
+                  key={method ?? "autopay"}
+                  onClick={() =>
+                    onSelect({
+                      id: gw.type,
+                      label: `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(method))}`,
+                      icon: GATEWAY_ICONS[gw.type] ?? "💳",
+                      currency: gw.currency,
+                      autopay: true,
+                      ...(method === null ? {} : { autopayMethod: method }),
+                    })
+                  }
+                  className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+                >
+                  <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
+                  <div className="text-left">
+                    <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
+                    <p className="text-xs text-muted-foreground">{t(autopayCaptionKey(method))}</p>
+                  </div>
+                </button>
+              ))}
           </Fragment>
         ))}
         {gateways.length === 0 && (
@@ -724,11 +731,7 @@ function QuoteView({
         <div className="rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-snug text-foreground">
           <p className="font-medium">{t("purchase.quote.autopayTitle")}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {t(
-              isProviderSubscriptionGateway(selectedGateway?.id)
-                ? "purchase.quote.autopayProviderHint"
-                : "purchase.quote.autopayHint",
-            )}
+            {t(autopayHintKey(selectedGateway?.id, selectedGateway?.autopayMethod))}
           </p>
         </div>
       )}
@@ -854,6 +857,10 @@ function CheckoutStep({
       // a one-off payment.
       const providerSubscription =
         selectedGateway?.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
+      // Where the gateway offers two ways (Antilopay: a card, or SBP) the payer's
+      // choice rides along; the call keeps its shorter form for every other gateway.
+      const autopayMethodArg: [AutopayMethod] | [] =
+        providerSubscription && selectedGateway?.autopayMethod !== undefined ? [selectedGateway.autopayMethod] : [];
       if (convertTrialId !== null) {
         // The trial's UPGRADE, paid every way a purchase is: a card charged or
         // saved, or «для автоматического списания» — the panel makes the
@@ -867,6 +874,7 @@ function CheckoutStep({
           selectedSavedPaymentMethodId,
           interactiveYookassa ? savePaymentMethodConsent : undefined,
           interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
+          ...autopayMethodArg,
         );
       }
       return createCheckout(
@@ -877,6 +885,7 @@ function CheckoutStep({
         interactiveYookassa ? savePaymentMethodConsent : undefined,
         interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
         purchaseType,
+        ...autopayMethodArg,
       );
     },
     onSuccess: (result) => {

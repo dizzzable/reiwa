@@ -77,6 +77,8 @@ describe("checkout refusal reasons", () => {
     expect(
       extractCheckoutRefusalReason(JSON.stringify({ message: { code: AUTOPAY, reason: "PLAN_CHANGE" } }), AUTOPAY),
     ).toBe("PLAN_CHANGE");
+    // Antilopay: the sign-up named neither a card nor SBP.
+    expect(extractCheckoutRefusalReason(JSON.stringify({ code: AUTOPAY, reason: "METHOD" }), AUTOPAY)).toBe("METHOD");
   });
 
   it.each([

@@ -395,6 +395,9 @@ export const en: RuDict = {
       empty: 'Payment methods are temporarily unavailable',
       savedTitle: 'Saved cards',
       autopayCaption: 'for automatic charging',
+      // Antilopay repeats a charge two ways; the payer chooses before the form opens.
+      autopayCaptionCard: 'by card, for automatic charging',
+      autopayCaptionSbp: 'via SBP, for automatic charging',
       useSaved: 'Charge saved method',
     },
     quote: {
@@ -416,6 +419,8 @@ export const en: RuDict = {
         'The payment method is saved, and when your subscription is about to end the renewal is charged to it automatically. You can turn this off at any time under Payment methods.',
       autopayProviderHint:
         'Your bank sets up a subscription over SBP: this amount is charged now and then at the start of each term. You can turn it off at any time under Payment methods.',
+      autopayProviderCardHint:
+        'You make the first payment by card on the payment page, and the same amount is then charged to the card at the start of each term. You can turn it off at any time under Payment methods.',
       trialConversion:
         'Your trial subscription will become the «{{plan}}» plan. Your connection link stays the same, and the term starts when you pay.',
     },
@@ -886,6 +891,8 @@ export const en: RuDict = {
       everyYear_many: 'every {{count}} years',
       everyYear_other: 'every {{count}} years',
       via: 'Automatic charging over SBP',
+      viaCard: 'Automatic charging to your card',
+      ends: 'Charges end {{date}}',
       nextCharge: 'Next charge {{date}}',
       pastDue: 'The last charge failed. To keep your access, renew manually or turn automatic charging off.',
       cancel: 'Turn off automatic charging',
