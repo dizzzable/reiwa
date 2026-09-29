@@ -446,6 +446,9 @@ export const ru = {
       trialConversionRequired:
         'У вас есть пробная подписка — эта покупка переведёт её на выбранный тариф. Проверьте сумму и оплатите ещё раз.',
       autopayNotAvailable: 'Автоматическое списание недоступно для этой покупки. Выберите обычную оплату.',
+      // Одобрение выключено (переключатель у оператора) или шлюз отказал в
+      // повторных списаниях: дело не в этой покупке, а в способе на сейчас.
+      autopayUnavailableNow: 'Автоматическое списание сейчас недоступно. Выберите обычную оплату.',
       // The panel's PENDING_SIGN_UP: another autopay sign-up converting the same
       // trial still waits for the bank. Never the ordinary payment here: paid
       // beside that sign-up, the trial would be converted twice.

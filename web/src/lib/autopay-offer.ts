@@ -170,15 +170,33 @@ export function isAutopaySignUpPendingRefusal(err: unknown): boolean {
 }
 
 /**
- * What the purchase page says for an autopay refusal: the message key and its
- * values. A sign-up already under way has its own; every other reason, and a
- * refusal that names none (an older panel), keeps the ordinary-payment text.
+ * The panel's reason for that refusal when the approval is off — the operator's
+ * switch, or a gateway that refused the repeat charge (Antilopay's errors 29 and
+ * 30). Nothing is wrong with THIS purchase: automatic charging is unavailable
+ * for now, and the ordinary payment is the way on.
+ */
+export const AUTOPAY_NOT_APPROVED_REASON = "NOT_APPROVED";
+
+export function isAutopayNotApprovedRefusal(err: unknown): boolean {
+  if (!isAutopayNotAvailableRefusal(err)) return false;
+  const data = (err as { response?: { data?: { reason?: unknown } } }).response?.data;
+  return data?.reason === AUTOPAY_NOT_APPROVED_REASON;
+}
+
+/**
+ * What the purchase and the renewal pages say for an autopay refusal: the
+ * message key and its values. A sign-up already under way has its own, and so
+ * has an approval that is off («сейчас недоступно», not «для этой покупки»);
+ * every other reason, and a refusal that names none (an older panel), keeps the
+ * ordinary-payment text.
  */
 export function autopayRefusalMessage(err: unknown): {
   readonly key: string;
   readonly values?: Readonly<Record<string, number>>;
 } {
-  return isAutopaySignUpPendingRefusal(err)
-    ? { key: "purchase.checkout.autopaySignUpPending", values: { minutes: AUTOPAY_SIGN_UP_HOLD_MINUTES } }
-    : { key: "purchase.checkout.autopayNotAvailable" };
+  if (isAutopaySignUpPendingRefusal(err)) {
+    return { key: "purchase.checkout.autopaySignUpPending", values: { minutes: AUTOPAY_SIGN_UP_HOLD_MINUTES } };
+  }
+  if (isAutopayNotApprovedRefusal(err)) return { key: "purchase.checkout.autopayUnavailableNow" };
+  return { key: "purchase.checkout.autopayNotAvailable" };
 }

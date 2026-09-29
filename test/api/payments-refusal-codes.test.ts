@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { UpstreamError } from "../../src/core/errors/upstream-error.js";
 import {
   extractAbandonRefusalCode,
   extractCheckoutRefusalCode,
   extractCheckoutRefusalReason,
+  resolveRenewalCheckoutError,
 } from "../../src/api/routes/payments-errors.js";
 
 /**
@@ -89,6 +91,28 @@ describe("checkout refusal reasons", () => {
     ["a non-JSON body", "<html>502 Bad Gateway</html>", AUTOPAY],
   ])("does not forward %s", (_name, body, code) => {
     expect(extractCheckoutRefusalReason(body, code)).toBeUndefined();
+  });
+});
+
+describe("renewal checkout refusals", () => {
+  const AUTOPAY = "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE";
+  const refusal = (body: unknown) => resolveRenewalCheckoutError(new UpstreamError("POST", "/x", 400, JSON.stringify(body)));
+
+  it("carries the reason of an autopay refusal, as the purchase route does", () => {
+    expect(refusal({ code: AUTOPAY, reason: "NOT_APPROVED" })?.body).toEqual({
+      code: AUTOPAY,
+      message: "Automatic charging is not available for this renewal. Choose the ordinary payment.",
+      reason: "NOT_APPROVED",
+    });
+  });
+
+  it("drops a reason outside the allowlist, and answers a refusal with none as before", () => {
+    expect(refusal({ code: AUTOPAY, reason: "postgres://admin:secret@db/rezeis" })?.body).not.toHaveProperty("reason");
+    expect(refusal({ code: AUTOPAY })?.body).not.toHaveProperty("reason");
+  });
+
+  it("carries no reason on a code that declares none", () => {
+    expect(refusal({ code: "QUOTE_CHANGED", reason: "NOT_APPROVED" })?.body).not.toHaveProperty("reason");
   });
 });
 

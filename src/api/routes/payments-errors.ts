@@ -36,7 +36,8 @@ export function normalizeWireDecimal(value: string): string | null {
 
 export interface RenewalCheckoutErrorResponse {
   status: number;
-  body: { code: string; message: string };
+  /** `reason`: only an allowlisted one, and only where the code carries any (`CHECKOUT_REFUSAL_REASONS`). */
+  body: { code: string; message: string; reason?: string };
 }
 
 /**
@@ -275,7 +276,14 @@ export function resolveRenewalCheckoutError(
 
   if (typeof code === "string" && RENEWAL_ERROR_MESSAGES[code]) {
     const contract = RENEWAL_ERROR_MESSAGES[code]!;
-    return { status: contract.status, body: { code, message: contract.message } };
+    // «Для автоматического списания» refused: the page answers an approval that
+    // is off, or a gateway that refused, differently from a term it has no
+    // period for, and the reason is what tells them apart.
+    const reason = extractCheckoutRefusalReason(error.body, code);
+    return {
+      status: contract.status,
+      body: { code, message: contract.message, ...(reason !== undefined ? { reason } : {}) },
+    };
   }
   if (error.status === 409) {
     const contract = RENEWAL_ERROR_MESSAGES.QUOTE_CHANGED!;

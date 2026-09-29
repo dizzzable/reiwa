@@ -103,6 +103,32 @@ describe("Antilopay", () => {
   });
 });
 
+describe("the words for a refused autopay", () => {
+  const refusal = (reason?: string) => ({
+    response: { data: { code: "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE", ...(reason === undefined ? {} : { reason }) } },
+  });
+
+  it("says «сейчас недоступно» when the approval is off or the gateway refused, and not «для этой покупки»", () => {
+    expect(autopayRefusalMessage(refusal("NOT_APPROVED"))).toEqual({ key: "purchase.checkout.autopayUnavailableNow" });
+  });
+
+  it("keeps the other texts for the other reasons, and for a refusal that names none", () => {
+    expect(autopayRefusalMessage(refusal("DURATION"))).toEqual({ key: "purchase.checkout.autopayNotAvailable" });
+    expect(autopayRefusalMessage(refusal())).toEqual({ key: "purchase.checkout.autopayNotAvailable" });
+    expect(autopayRefusalMessage(refusal("PENDING_SIGN_UP")).key).toBe("purchase.checkout.autopaySignUpPending");
+  });
+
+  it("does not take the reason of another code for an autopay refusal", () => {
+    const other = { response: { data: { code: "TRIAL_ALREADY_USED", reason: "NOT_APPROVED" } } };
+    expect(autopayRefusalMessage(other)).toEqual({ key: "purchase.checkout.autopayNotAvailable" });
+  });
+
+  it("has the new text in both dictionaries", () => {
+    expect(typeof (ru.purchase.checkout as Record<string, unknown>).autopayUnavailableNow).toBe("string");
+    expect(typeof (en.purchase.checkout as Record<string, unknown>).autopayUnavailableNow).toBe("string");
+  });
+});
+
 describe("isRepeatablePrice", () => {
   it("takes whole roubles, with or without a personal discount", () => {
     expect(isRepeatablePrice({ currency: "RUB", price: "299.00", discountSource: "NONE" })).toBe(true);

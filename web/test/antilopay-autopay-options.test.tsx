@@ -331,3 +331,63 @@ describe("the renewal page offers it twice too", () => {
     expect(useRenewalStore.getState().savePaymentMethodConsent).toBe(true);
   });
 });
+
+describe("a refusal of automatic charging says the truth", () => {
+  const refusal = (reason: string) => ({
+    response: { data: { code: "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE", message: "AUTOPAY_NOT_AVAILABLE_FOR_PURCHASE", reason } },
+  });
+
+  it("on a purchase: an approval that is off is «сейчас недоступно», any other reason «для этой покупки»", async () => {
+    for (const [reason, key] of [
+      ["NOT_APPROVED", "purchase.checkout.autopayUnavailableNow"],
+      ["DURATION", "purchase.checkout.autopayNotAvailable"],
+    ] as const) {
+      api.createCheckout.mockReset();
+      api.createCheckout.mockRejectedValue(refusal(reason));
+      toast.error.mockClear();
+      await mountPurchaseGateway();
+
+      await tap(option(SBP_CAPTION), "SBP option");
+      await waitUntil(() => buttons().some((candidate) => candidate.textContent?.trim() === PAY));
+      await tap(buttons().find((candidate) => candidate.textContent?.trim() === PAY), "Pay");
+      await waitUntil(() => toast.error.mock.calls.length > 0);
+
+      expect(toast.error, reason).toHaveBeenCalledWith(key);
+      expect(usePurchaseStore.getState().step, "back to the quote, where the ordinary payment is").toBe("quote");
+      act(() => root?.unmount());
+      container?.remove();
+      root = null;
+      container = null;
+      usePurchaseStore.getState().reset();
+    }
+  }, 20_000);
+
+  it("on a renewal too, and the payer's choice went with the request", async () => {
+    api.createRenewalCheckout.mockRejectedValue(refusal("NOT_APPROVED"));
+    api.getRenewalOptions.mockResolvedValue({ userId: "user-1", items: [], currency: "RUB", total: "299" });
+    api.getAllSubscriptions.mockResolvedValue({ subscriptions: [] });
+    api.getSubscriptionAddOns.mockResolvedValue([]);
+    api.getAddOnEntitlements.mockResolvedValue([]);
+    useRenewalStore.setState({
+      step: "checkout",
+      navDirection: "forward",
+      selectedSubscriptionIds: ["sub-a"],
+      selectedDurations: {},
+      selectedPlans: {},
+      selectedGateway: { id: "ANTILOPAY", label: "AntiloPay", icon: "", currency: "RUB", autopay: true, autopayMethod: "CARD" },
+      selectedSavedPaymentMethodId: null,
+      savePaymentMethodConsent: true,
+      reviewQuote: { amount: "299", currency: "RUB" },
+    });
+
+    await mount(<RenewalPage />);
+    await waitUntil(() => toast.error.mock.calls.length > 0);
+
+    expect(toast.error).toHaveBeenCalledWith("purchase.checkout.autopayUnavailableNow");
+    const call = api.createRenewalCheckout.mock.calls[0]!;
+    expect(call[1]).toBe("ANTILOPAY");
+    expect(call[8], "the consent that makes it a subscription").toBe(true);
+    expect(call[9], "the payer's choice").toBe("CARD");
+    expect(useRenewalStore.getState().step, "back to choosing the payment").toBe("gateway");
+  }, 15_000);
+});

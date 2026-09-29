@@ -428,6 +428,9 @@ export const en: RuDict = {
       creating: 'Creating payment…',
       trialConversionRequired:
         'You have a trial subscription — this purchase will move it onto the chosen plan. Check the amount and pay again.',
+      // The approval is off (the operator's switch) or the gateway refused repeat
+      // charges: not about this purchase, about the method for now.
+      autopayUnavailableNow: 'Automatic charging is not available right now. Choose the ordinary payment.',
       autopayNotAvailable: 'Automatic charging is not available for this purchase. Choose the ordinary payment.',
       // The panel's PENDING_SIGN_UP; see the Russian dictionary.
       autopaySignUpPending:

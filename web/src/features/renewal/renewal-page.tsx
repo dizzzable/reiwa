@@ -37,6 +37,7 @@ import {
   autopayHintKey,
   type AutopayMethod,
   autopayOptions,
+  autopayRefusalMessage,
   isAutopayNotAvailableRefusal,
   isProviderPeriod,
   isProviderSubscriptionGateway,
@@ -1443,8 +1444,10 @@ function CheckoutStep() {
     onError: (err) => {
       if (isAutopayNotAvailableRefusal(err)) {
         // Nothing was created, and paying again the same way changes nothing:
-        // back to choosing the payment, where the ordinary one is.
-        toast.error(t("purchase.checkout.autopayNotAvailable"));
+        // back to choosing the payment, where the ordinary one is. An approval
+        // that is off says «сейчас недоступно», not «для этой покупки».
+        const refusal = autopayRefusalMessage(err);
+        toast.error(t(refusal.key, refusal.values));
         goBack("gateway");
         return;
       }
