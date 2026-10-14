@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { AutopayDelay } from "@/lib/autopay-delay";
 import type { AutopayMethod } from "@/lib/autopay-offer";
 import type { Plan, PlanDuration, SubscriptionQuote } from "@/types/api";
 
@@ -30,6 +31,12 @@ export type GatewayOption = {
    * a card, or SBP). Sent with the checkout as `autopayMethod`.
    */
   autopayMethod?: AutopayMethod;
+  /**
+   * The delay of the first charge the customer was shown on this option (an
+   * Antilopay SBP sign-up only): the consent step says it, and the checkout
+   * sends it back, so the panel makes the payment with exactly that delay.
+   */
+  autopayDelay?: AutopayDelay;
 };
 
 // Gateways are now fetched dynamically via GET /api/v1/gateways

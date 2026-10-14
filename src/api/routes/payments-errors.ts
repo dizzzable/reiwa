@@ -150,6 +150,9 @@ const CHECKOUT_REFUSAL_REASONS: ReadonlyMap<string, ReadonlySet<string>> = new M
       "PLAN",
       "PLAN_CHANGE",
       "METHOD",
+      // The delay of the first SBP charge the customer was shown is not the one
+      // the panel gives now (the operator changed it, or it was used elsewhere).
+      "DELAY_CHANGED",
     ]),
   ],
 ]);

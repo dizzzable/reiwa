@@ -71,7 +71,12 @@ export function createPlansRouter(deps: {
   });
 
   // GET /api/v1/gateways
-  router.get("/gateways", async (req, res) => {
+  //
+  // The list is the same for everyone but for one thing: the Antilopay entry of a
+  // customer who may still use the delay of the first SBP charge carries it
+  // (`autopayDelay`, given once per customer). So the customer, when there is
+  // one, is named to the panel, and the answer is not kept for anybody else.
+  router.get("/gateways", optionalSession, async (req: AuthRequest, res) => {
     try {
       // Drop gateways that can't operate in the caller's context. In the
       // browser cabinet (`web`) this hides TELEGRAM_STARS, which only
@@ -81,7 +86,9 @@ export function createPlansRouter(deps: {
       // to `WEB` and filtered Stars out under this very comment.
       const ctx = (req as { context?: string }).context;
       const channel = resolvePurchaseChannel(ctx);
-      const gateways = await adminClient?.payments.getEnabledGateways(channel);
+      const identity = hasUserIdentity(req) ? resolveUserIdentity(req) : undefined;
+      const gateways = await adminClient?.payments.getEnabledGateways(channel, identity?.userId);
+      if (identity?.userId !== undefined) res.setHeader("Cache-Control", "private, no-store");
       res.json(gateways ?? []);
     } catch (e: unknown) {
       sendSafeError(req, res, e, 500, "Failed to load gateways", "gateways");

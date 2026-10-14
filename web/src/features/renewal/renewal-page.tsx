@@ -35,6 +35,7 @@ import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
 import {
   autopayCaptionKey,
   autopayHintKey,
+  isAutopayDelayChangedRefusal,
   type AutopayMethod,
   type AutopayGateway,
   approvesAutopay,
@@ -45,6 +46,7 @@ import {
   isProviderSubscriptionGateway,
   renewsOntoAnotherPlan,
 } from "@/lib/autopay-offer";
+import { type AutopayDelay, autopayDelayFor, autopayTail, describeAutopayDelay } from "@/lib/autopay-delay";
 import type { RenewalOptions } from "@/types/api";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
@@ -913,6 +915,7 @@ function SelectGateway() {
     savedPaymentMethodId: string | null = null,
     autopay = false,
     autopayMethod: AutopayMethod | null = null,
+    autopayDelay: AutopayDelay | null = null,
   ): void => {
     selectGateway({
       id: gw.type,
@@ -923,6 +926,7 @@ function SelectGateway() {
       currency: gw.currency,
       ...(autopay ? { autopay: true } : {}),
       ...(autopay && autopayMethod !== null ? { autopayMethod } : {}),
+      ...(autopay && autopayDelay !== null ? { autopayDelay } : {}),
     } satisfies GatewayOption);
     // selectGateway clears saved method; re-apply after the store update.
     queueMicrotask(() => selectSavedPaymentMethod(savedPaymentMethodId));
@@ -1023,19 +1027,28 @@ function SelectGateway() {
               </div>
             </button>
             {autopayOffered(gw) &&
-              autopayOptions(gw).map((method) => (
-                <button
-                  key={method ?? "autopay"}
-                  onClick={() => choose(gw, null, true, method)}
-                  className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-                >
-                  <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
-                  <div className="text-left">
-                    <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
-                    <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t(autopayCaptionKey(method))}</p>
-                  </div>
-                </button>
-              ))}
+              autopayOptions(gw).map((method) => {
+                // An SBP sign-up with a delayed first charge says so where it is
+                // chosen. The sum is priced at the review, which says it too.
+                const delay = autopayDelayFor(gw, method);
+                return (
+                  <button
+                    key={method ?? "autopay"}
+                    onClick={() => choose(gw, null, true, method, delay)}
+                    className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+                  >
+                    <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
+                    <div className="text-left">
+                      <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
+                      <p className="text-xs text-[color:var(--brand-muted-foreground)]">
+                        {delay === null
+                          ? t(autopayCaptionKey(method))
+                          : t("purchase.gateway.autopayCaptionSbpDelayShort", { delay: describeAutopayDelay(t, delay) })}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
           </Fragment>
         ))}
         {gateways.length === 0 && (
@@ -1300,7 +1313,15 @@ function RenewalReview() {
         <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-4 py-3 text-sm leading-snug text-[color:var(--brand-foreground)]">
           <p className="font-medium text-[color:var(--brand-foreground)]">{t("purchase.quote.autopayTitle")}</p>
           <p className="mt-0.5 text-xs text-[color:var(--brand-muted-foreground)]">
-            {t(autopayHintKey(selectedGateway?.id, selectedGateway?.autopayMethod))}
+            {selectedGateway?.autopayDelay !== undefined
+              ? // Nothing is charged now: the plan is theirs for the delay, the first
+                // charge is this sum, after it, and then every term.
+                t("purchase.quote.autopayDelayHint", {
+                  delay: describeAutopayDelay(t, selectedGateway.autopayDelay),
+                  amount: formatPrice(confirmedAmount, confirmedCurrency),
+                  term: t("purchase.duration.days", { count: items[0]?.durationDays ?? 0 }),
+                })
+              : t(autopayHintKey(selectedGateway?.id, selectedGateway?.autopayMethod))}
           </p>
         </div>
       )}
@@ -1419,8 +1440,12 @@ function CheckoutStep() {
         selectedGateway.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
       // The payer's choice where the gateway offers two ways (Antilopay); every
       // other gateway keeps the shorter call.
-      const autopayMethodArg: [AutopayMethod] | [] =
-        providerSubscription && selectedGateway.autopayMethod !== undefined ? [selectedGateway.autopayMethod] : [];
+      // And the delay of the first charge the payer was shown beside it, if any:
+      // the panel makes the payment with exactly that delay, or refuses it.
+      const autopay = autopayTail(
+        providerSubscription ? selectedGateway.autopayMethod : undefined,
+        selectedGateway.autopayDelay,
+      );
       return createRenewalCheckout(
         selectedSubscriptionIds,
         selectedGateway.id,
@@ -1431,7 +1456,7 @@ function CheckoutStep() {
         selectedSavedPaymentMethodId,
         interactiveYookassa ? savePaymentMethodConsent : undefined,
         interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
-        ...autopayMethodArg,
+        ...autopay,
       );
     },
     onSuccess: (result) => {
@@ -1450,6 +1475,9 @@ function CheckoutStep() {
         // that is off says «сейчас недоступно», not «для этой покупки».
         const refusal = autopayRefusalMessage(err);
         toast.error(t(refusal.key, refusal.values));
+        // The delay the payer read is gone: the list is read again, so what is
+        // offered on the way back is what the panel gives now.
+        if (isAutopayDelayChangedRefusal(err)) void queryClient.invalidateQueries({ queryKey: ["gateways"] });
         goBack("gateway");
         return;
       }

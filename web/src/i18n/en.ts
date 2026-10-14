@@ -371,6 +371,33 @@ export const en: RuDict = {
     cashbackUpTo_many: 'up to +{{count}} points',
     cashbackUpTo_other: 'up to +{{count}} points',
   },
+  // The delay of the first SBP charge (Antilopay), in words. The Russian
+  // dictionary explains why the forms are what they are; here a unit is plural
+  // for anything but one.
+  autopayDelay: {
+    duration: {
+      DAY_one: '{{count}} day',
+      DAY_few: '{{count}} days',
+      DAY_many: '{{count}} days',
+      DAY_other: '{{count}} days',
+      WEEK_one: '{{count}} week',
+      WEEK_few: '{{count}} weeks',
+      WEEK_many: '{{count}} weeks',
+      WEEK_other: '{{count}} weeks',
+      MONTH_one: '{{count}} month',
+      MONTH_few: '{{count}} months',
+      MONTH_many: '{{count}} months',
+      MONTH_other: '{{count}} months',
+      QUARTER_one: '{{count}} quarter',
+      QUARTER_few: '{{count}} quarters',
+      QUARTER_many: '{{count}} quarters',
+      QUARTER_other: '{{count}} quarters',
+      YEAR_one: '{{count}} year',
+      YEAR_few: '{{count}} years',
+      YEAR_many: '{{count}} years',
+      YEAR_other: '{{count}} years',
+    },
+  },
   purchase: {
     label: 'Purchase',
     back: '← Back',
@@ -398,6 +425,12 @@ export const en: RuDict = {
       // Antilopay repeats a charge two ways; the payer chooses before the form opens.
       autopayCaptionCard: 'by card, for automatic charging',
       autopayCaptionSbp: 'via SBP, for automatic charging',
+      // With a delay of the first charge: what happens now, what starts at once, and when the first charge comes.
+      autopayCaptionSbpDelay:
+        'via SBP, for automatic charging. Nothing is charged now: access for {{delay}} starts right away, and the first charge of {{amount}} comes after {{delay}}.',
+      // The same where the sum is priced later (a renewal prices it at the review).
+      autopayCaptionSbpDelayShort:
+        'via SBP, for automatic charging. Nothing is charged now: access for {{delay}} starts right away, and the first charge comes after {{delay}}.',
       useSaved: 'Charge saved method',
     },
     quote: {
@@ -421,6 +454,9 @@ export const en: RuDict = {
         'Your bank sets up a subscription over SBP: this amount is charged now and then at the start of each term. You can turn it off at any time under Payment methods.',
       autopayProviderCardHint:
         'You make the first payment by card on the payment page, and the same amount is then charged to the card at the start of each term. You can turn it off at any time under Payment methods.',
+      // An SBP subscription with a delay: the consent says plainly what is NOT charged now.
+      autopayDelayHint:
+        'Your bank sets up a subscription over SBP. Nothing is charged now: access to the plan starts right away for {{delay}}. The first charge of {{amount}} comes after {{delay}}, then the same amount is charged at the start of each term ({{term}}). You can turn it off at any time under Payment methods.',
       trialConversion:
         'Your trial subscription will become the «{{plan}}» plan. Your connection link stays the same, and the term starts when you pay.',
     },
@@ -431,6 +467,10 @@ export const en: RuDict = {
       // The approval is off (the operator's switch) or the gateway refused repeat
       // charges: not about this purchase, about the method for now.
       autopayUnavailableNow: 'Automatic charging is not available right now. Choose the ordinary payment.',
+      // The panel refused: the delay you saw is no longer the one it gives (the operator
+      // changed it, or you already used it). Nothing was created or charged.
+      autopayDelayChanged:
+        'The terms of the delayed first charge have changed. Nothing was charged: choose the payment method again to see the current terms.',
       autopayNotAvailable: 'Automatic charging is not available for this purchase. Choose the ordinary payment.',
       // The panel's PENDING_SIGN_UP; see the Russian dictionary.
       autopaySignUpPending:

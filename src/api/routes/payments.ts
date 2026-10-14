@@ -32,6 +32,26 @@ function gateForPurchaseType(body: unknown): AccessModeGate {
   return 'purchase.new';
 }
 
+/**
+ * The delay of the first Antilopay SBP charge the customer was shown, as the
+ * page sends it (`autopayDelayCount`, `autopayDelayUnit`): both, a whole number
+ * of days' worth and one of Antilopay's own upper-case words. Anything else is
+ * dropped, so the panel is handed a delay only as the page read it off the
+ * panel's own list, never as something made up on the way.
+ */
+const AUTOPAY_DELAY_UNITS = ["DAY", "WEEK", "MONTH", "QUARTER", "YEAR"] as const;
+type AutopayDelayUnit = (typeof AUTOPAY_DELAY_UNITS)[number];
+
+export function readShownAutopayDelay(body: Record<string, unknown>):
+  | { readonly count: number; readonly unit: AutopayDelayUnit }
+  | undefined {
+  const count = body["autopayDelayCount"];
+  const unit = body["autopayDelayUnit"];
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 366) return undefined;
+  if (typeof unit !== "string" || !(AUTOPAY_DELAY_UNITS as readonly string[]).includes(unit)) return undefined;
+  return { count, unit: unit as AutopayDelayUnit };
+}
+
 export function createPaymentsRouter(deps: {
   adminClient: AdminClient | null;
   sessionStore: SessionStore | null;
@@ -94,6 +114,7 @@ export function createPaymentsRouter(deps: {
         const failOverride = typeof bodyFailUrl === "string" ? bodyFailUrl : null;
 
         const context = resolvePurchaseContext(req.context, source);
+        const shownDelay = readShownAutopayDelay((req.body ?? {}) as Record<string, unknown>);
 
         const successUrl = buildPaymentReturnUrl({
           context,
@@ -133,6 +154,7 @@ export function createPaymentsRouter(deps: {
               ? { savePaymentMethodConsent }
               : {}),
             ...(autopayMethod === "CARD" || autopayMethod === "SBP" ? { autopayMethod } : {}),
+            ...(shownDelay === undefined ? {} : { autopayDelay: shownDelay }),
           },
         );
         res.json(checkout ?? {});
@@ -250,6 +272,7 @@ export function createPaymentsRouter(deps: {
         const failOverride =
           typeof bodyFailUrl === "string" ? bodyFailUrl : null;
         const context = resolvePurchaseContext(req.context, source);
+        const shownDelay = readShownAutopayDelay((req.body ?? {}) as Record<string, unknown>);
 
         const successUrl = buildPaymentReturnUrl({
           context,
@@ -304,6 +327,7 @@ export function createPaymentsRouter(deps: {
               ? { savePaymentMethodConsent }
               : {}),
             ...(autopayMethod === "CARD" || autopayMethod === "SBP" ? { autopayMethod } : {}),
+            ...(shownDelay === undefined ? {} : { autopayDelay: shownDelay }),
           },
         );
         res.json(result ?? {});

@@ -10,6 +10,7 @@
 import { apiClient } from "./transport.js";
 import { getClientSource } from "@/lib/client-source";
 import type { AutopayMethod } from "@/lib/autopay-offer";
+import type { AutopayTail } from "@/lib/autopay-delay";
 import type { CheckoutResult, PaymentPurchaseType, PaymentStatus } from "@/types/api";
 
 export type CreationPurchaseType = Extract<PaymentPurchaseType, "NEW" | "ADDITIONAL">;
@@ -32,6 +33,26 @@ export interface GatewayOption {
    * from panels older than the list, which offer none.
    */
   autopayMethods?: AutopayMethod[];
+  /**
+   * Antilopay's delay of the first SBP charge this customer may still use
+   * (`lib/autopay-delay.ts`), as the panel lists it: unread, so a malformed one
+   * is none. Absent from a panel older than the delay, and for a customer who
+   * used it.
+   */
+  autopayDelay?: unknown;
+}
+
+/**
+ * The method, and the delay the customer was shown beside it, as the checkout
+ * body carries them. The delay only when the panel's own list offered one: a
+ * panel older than the delay would refuse the fields, and it never offered one.
+ */
+function autopayFields(autopay: AutopayTail): Record<string, unknown> {
+  const [autopayMethod, delay] = autopay;
+  return {
+    ...(autopayMethod === undefined ? {} : { autopayMethod }),
+    ...(delay === undefined ? {} : { autopayDelayCount: delay.count, autopayDelayUnit: delay.unit }),
+  };
 }
 
 export const getEnabledGateways = () =>
@@ -49,7 +70,7 @@ export const createCheckout = (
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
   purchaseType: CreationPurchaseType = "NEW",
-  autopayMethod?: AutopayMethod,
+  ...autopay: AutopayTail
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -65,7 +86,7 @@ export const createCheckout = (
       ...(typeof savePaymentMethodConsent === "boolean"
         ? { savePaymentMethodConsent }
         : {}),
-      ...(autopayMethod === undefined ? {} : { autopayMethod }),
+      ...autopayFields(autopay),
     })
     .then((r) => r.data);
 
@@ -104,7 +125,7 @@ export const createUpgradeCheckout = (
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
-  autopayMethod?: AutopayMethod,
+  ...autopay: AutopayTail
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/checkout", {
@@ -121,7 +142,7 @@ export const createUpgradeCheckout = (
       ...(typeof savePaymentMethodConsent === "boolean"
         ? { savePaymentMethodConsent }
         : {}),
-      ...(autopayMethod === undefined ? {} : { autopayMethod }),
+      ...autopayFields(autopay),
     })
     .then((r) => r.data);
 
@@ -164,7 +185,7 @@ export const createRenewalCheckout = (
   savedPaymentMethodId?: string | null,
   savePaymentMethod?: boolean,
   savePaymentMethodConsent?: boolean,
-  autopayMethod?: AutopayMethod,
+  ...autopay: AutopayTail
 ) =>
   apiClient
     .post<CheckoutResult>("/payments/renewal-checkout", {
@@ -183,6 +204,6 @@ export const createRenewalCheckout = (
       ...(typeof savePaymentMethodConsent === "boolean"
         ? { savePaymentMethodConsent }
         : {}),
-      ...(autopayMethod === undefined ? {} : { autopayMethod }),
+      ...autopayFields(autopay),
     })
     .then((r) => r.data);

@@ -42,6 +42,10 @@ const CONTRACT: ReadonlyArray<readonly [id: string, since: string]> = [
   ['web.lifetime-subscription', '0.9.7.53'],
   ['web.bell-addon-not-applied', '0.9.7.53'],
   ['web.panel-timezone-dates', '0.9.7.53'],
+  // «Отсрочка первого списания по СБП»: the one id that is not since 0.9.7.53. The panel's
+  // registry has it with the same release (`web.autopay-first-charge-delay`, since
+  // 0.9.7.56), and the pair's end-to-end run compares the two.
+  ['web.autopay-first-charge-delay', '0.9.7.56'],
   ['api.appearance-report', '0.9.7.53'],
   ['api.config-version-poll', '0.9.7.53'],
   ['bot.config-version-poll', '0.9.7.53'],
@@ -89,11 +93,18 @@ describe('the registry is the contract with the panel', () => {
     }
   });
 
-  it('dates every id to a release no newer than this one', () => {
+  it('dates every id to a release no newer than this one, or to the very next while it is not out yet', () => {
     const current = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
+    // The release after this one: an id that arrives in the work the next release
+    // will carry is dated to it, and the release commit that raises package.json
+    // makes the first clause hold. Anything further out is a typo, not a plan.
+    const next = versionParts(current);
+    next[next.length - 1] = (next[next.length - 1] ?? 0) + 1;
     for (const capability of CABINET_CAPABILITIES) {
       expect(capability.since, capability.id).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
-      expect(compareVersions(capability.since, current), `${capability.id} since ${capability.since}`).toBeLessThanOrEqual(0);
+      const released = compareVersions(capability.since, current) <= 0;
+      const upcoming = compareVersions(capability.since, next.join('.')) === 0;
+      expect(released || upcoming, `${capability.id} since ${capability.since}, this release is ${current}`).toBe(true);
     }
   });
 });

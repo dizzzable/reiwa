@@ -45,14 +45,15 @@ import { gatewayLabel } from "@/lib/gateway-display";
 import {
   autopayCaptionKey,
   autopayHintKey,
-  type AutopayMethod,
   type AutopayGateway,
   autopayOptions,
   autopayRefusalMessage,
+  isAutopayDelayChangedRefusal,
   isAutopayNotAvailableRefusal,
   isProviderSubscriptionGateway,
   offersAutopay,
 } from "@/lib/autopay-offer";
+import { autopayDelayFor, autopayTail, describeAutopayDelay } from "@/lib/autopay-delay";
 import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
 import {
   formatSavedPaymentMethodMeta,
@@ -180,6 +181,11 @@ export function SelectDuration({
       </div>
     </div>
   );
+}
+
+/** A price the way the quote prints it: the symbol, two decimals and the currency. */
+function formatAutopayAmount(price: number | string, currency: string): string {
+  return `${CURRENCY_SYMBOLS[currency] ?? ""}${Number(price).toFixed(2)} ${currency}`;
 }
 
 const GATEWAY_ICONS: Record<string, string> = {
@@ -373,28 +379,42 @@ function SelectGateway({
               </div>
             </button>
             {autopayOffered(gw) &&
-              autopayOptions(gw).map((method) => (
-                <button
-                  key={method ?? "autopay"}
-                  onClick={() =>
-                    onSelect({
-                      id: gw.type,
-                      label: `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(method))}`,
-                      icon: GATEWAY_ICONS[gw.type] ?? "💳",
-                      currency: gw.currency,
-                      autopay: true,
-                      ...(method === null ? {} : { autopayMethod: method }),
-                    })
-                  }
-                  className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-                >
-                  <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
-                  <div className="text-left">
-                    <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
-                    <p className="text-xs text-muted-foreground">{t(autopayCaptionKey(method))}</p>
-                  </div>
-                </button>
-              ))}
+              autopayOptions(gw).map((method) => {
+                // An SBP sign-up with a delayed first charge says so where it is
+                // chosen: nothing is charged now, the plan is theirs at once.
+                const delay = autopayDelayFor(gw, method);
+                const price = selectedDuration?.prices.find((candidate) => candidate.gatewayType === gw.type);
+                const caption =
+                  delay === null
+                    ? t(autopayCaptionKey(method))
+                    : t("purchase.gateway.autopayCaptionSbpDelay", {
+                        delay: describeAutopayDelay(t, delay),
+                        amount: price === undefined ? "—" : formatAutopayAmount(price.price, price.currency),
+                      });
+                return (
+                  <button
+                    key={method ?? "autopay"}
+                    onClick={() =>
+                      onSelect({
+                        id: gw.type,
+                        label: `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(method))}`,
+                        icon: GATEWAY_ICONS[gw.type] ?? "💳",
+                        currency: gw.currency,
+                        autopay: true,
+                        ...(method === null ? {} : { autopayMethod: method }),
+                        ...(delay === null ? {} : { autopayDelay: delay }),
+                      })
+                    }
+                    className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+                  >
+                    <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
+                    <div className="text-left">
+                      <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
+                      <p className="text-xs text-muted-foreground">{caption}</p>
+                    </div>
+                  </button>
+                );
+              })}
           </Fragment>
         ))}
         {gateways.length === 0 && (
@@ -733,7 +753,15 @@ function QuoteView({
         <div className="rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-snug text-foreground">
           <p className="font-medium">{t("purchase.quote.autopayTitle")}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {t(autopayHintKey(selectedGateway?.id, selectedGateway?.autopayMethod))}
+            {selectedGateway?.autopayDelay !== undefined
+              ? // Nothing is charged now: the plan is theirs for the delay, the first
+                // charge is this sum, after it, and then every term.
+                t("purchase.quote.autopayDelayHint", {
+                  delay: describeAutopayDelay(t, selectedGateway.autopayDelay),
+                  amount: `${CURRENCY_SYMBOLS[quote.currency] ?? ""}${quote.finalPrice.toFixed(2)} ${quote.currency}`,
+                  term: t("purchase.duration.days", { count: quote.durationDays }),
+                })
+              : t(autopayHintKey(selectedGateway?.id, selectedGateway?.autopayMethod))}
           </p>
         </div>
       )}
@@ -861,8 +889,12 @@ function CheckoutStep({
         selectedGateway?.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
       // Where the gateway offers two ways (Antilopay: a card, or SBP) the payer's
       // choice rides along; the call keeps its shorter form for every other gateway.
-      const autopayMethodArg: [AutopayMethod] | [] =
-        providerSubscription && selectedGateway?.autopayMethod !== undefined ? [selectedGateway.autopayMethod] : [];
+      // And the delay of the first charge the payer was shown beside it, if any:
+      // the panel makes the payment with exactly that delay, or refuses it.
+      const autopay = autopayTail(
+        providerSubscription ? selectedGateway?.autopayMethod : undefined,
+        selectedGateway?.autopayDelay,
+      );
       if (convertTrialId !== null) {
         // The trial's UPGRADE, paid every way a purchase is: a card charged or
         // saved, or «для автоматического списания» — the panel makes the
@@ -876,7 +908,7 @@ function CheckoutStep({
           selectedSavedPaymentMethodId,
           interactiveYookassa ? savePaymentMethodConsent : undefined,
           interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
-          ...autopayMethodArg,
+          ...autopay,
         );
       }
       return createCheckout(
@@ -887,7 +919,7 @@ function CheckoutStep({
         interactiveYookassa ? savePaymentMethodConsent : undefined,
         interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
         purchaseType,
-        ...autopayMethodArg,
+        ...autopay,
       );
     },
     onSuccess: (result) => {
@@ -932,6 +964,15 @@ function CheckoutStep({
         // the buyer is told to finish that one or let it lapse.
         const refusal = autopayRefusalMessage(err);
         toast.error(t(refusal.key, refusal.values));
+        if (isAutopayDelayChangedRefusal(err)) {
+          // The consent the buyer read is no longer true, and nobody was charged:
+          // the list is read again (it now says what the panel gives), and the
+          // buyer chooses the payment anew instead of confirming the old words.
+          void queryClient.invalidateQueries({ queryKey: ["gateways"] });
+          goBack();
+          goBack();
+          return;
+        }
         goBack();
         return;
       }

@@ -21,6 +21,18 @@ export interface CreateCheckoutOptions {
    * SBP. Two different kinds of recurrent payment, chosen before the form opens.
    */
   readonly autopayMethod?: 'CARD' | 'SBP';
+  /**
+   * Antilopay SBP: the delay of the first charge the customer was SHOWN. The
+   * panel makes the checkout with exactly that delay, or refuses it
+   * (`DELAY_CHANGED`); a checkout that names none is charged at activation.
+   */
+  readonly autopayDelay?: AutopayDelayShown;
+}
+
+/** What the customer read: a count and Antilopay's own word for the unit (upper-case). */
+export interface AutopayDelayShown {
+  readonly count: number;
+  readonly unit: 'DAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'YEAR';
 }
 
 export type PurchaseType = 'NEW' | 'ADDITIONAL' | 'RENEW' | 'UPGRADE';
@@ -94,10 +106,14 @@ export class PaymentsNamespace {
    * unrecognised channel here by silently falling back to `WEB`, which is how
    * Telegram Stars stayed invisible in the Mini App.
    */
-  getEnabledGateways(channel: 'WEB' | 'TELEGRAM' = 'WEB'): Promise<unknown> {
+  getEnabledGateways(channel: 'WEB' | 'TELEGRAM' = 'WEB', userId?: string): Promise<unknown> {
+    // The customer, when the caller knows one: the panel then says which delay of
+    // the first SBP charge this customer may still be offered (it is given once).
+    // A panel that does not know the query ignores it.
+    const customer = typeof userId === 'string' && userId.length > 0 ? `&userId=${encodeURIComponent(userId)}` : '';
     return this.transport.request(
       'GET',
-      `/api/internal/payments/gateways?channel=${encodeURIComponent(channel)}`,
+      `/api/internal/payments/gateways?channel=${encodeURIComponent(channel)}${customer}`,
     );
   }
 
@@ -145,6 +161,10 @@ export class PaymentsNamespace {
     }
     if (options.autopayMethod === 'CARD' || options.autopayMethod === 'SBP') {
       payload['autopayMethod'] = options.autopayMethod;
+    }
+    if (options.autopayDelay !== undefined) {
+      payload['autopayDelayCount'] = options.autopayDelay.count;
+      payload['autopayDelayUnit'] = options.autopayDelay.unit;
     }
     return this.transport.request('POST', '/api/internal/payments/checkout', payload);
   }
@@ -258,6 +278,7 @@ export class PaymentsNamespace {
       readonly savePaymentMethod?: boolean;
       readonly savePaymentMethodConsent?: boolean;
       readonly autopayMethod?: 'CARD' | 'SBP';
+      readonly autopayDelay?: AutopayDelayShown;
     },
   ): Promise<unknown> {
     const payload: Record<string, unknown> = {
@@ -297,6 +318,10 @@ export class PaymentsNamespace {
     }
     if (input.autopayMethod === 'CARD' || input.autopayMethod === 'SBP') {
       payload['autopayMethod'] = input.autopayMethod;
+    }
+    if (input.autopayDelay !== undefined) {
+      payload['autopayDelayCount'] = input.autopayDelay.count;
+      payload['autopayDelayUnit'] = input.autopayDelay.unit;
     }
     return this.transport.request('POST', '/api/internal/payments/renewal-checkout', payload);
   }

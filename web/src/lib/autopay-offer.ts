@@ -60,6 +60,12 @@ export interface AutopayGateway {
    * cabinet older than the list reads `autopay: false` and offers nothing too.
    */
   readonly autopayMethods?: readonly string[];
+  /**
+   * Antilopay only, and only for a customer who may still use it: the delay of
+   * the first SBP charge (`lib/autopay-delay.ts`). Absent from a panel older
+   * than the delay, and then the consent says the charge is made now.
+   */
+  readonly autopayDelay?: unknown;
 }
 
 /**
@@ -194,6 +200,20 @@ export function isAutopaySignUpPendingRefusal(err: unknown): boolean {
 }
 
 /**
+ * The panel's reason for that refusal when the delay of the first SBP charge the
+ * customer was shown is not the one it gives now: the operator changed it, or
+ * the customer used it in another tab. Nothing was created and nobody was
+ * charged; the list of gateways is read again and the customer chooses anew.
+ */
+export const AUTOPAY_DELAY_CHANGED_REASON = "DELAY_CHANGED";
+
+export function isAutopayDelayChangedRefusal(err: unknown): boolean {
+  if (!isAutopayNotAvailableRefusal(err)) return false;
+  const data = (err as { response?: { data?: { reason?: unknown } } }).response?.data;
+  return data?.reason === AUTOPAY_DELAY_CHANGED_REASON;
+}
+
+/**
  * The panel's reason for that refusal when the approval is off — the operator's
  * switch, or a gateway that refused the repeat charge (Antilopay's errors 29 and
  * 30). Nothing is wrong with THIS purchase: automatic charging is unavailable
@@ -222,5 +242,6 @@ export function autopayRefusalMessage(err: unknown): {
     return { key: "purchase.checkout.autopaySignUpPending", values: { minutes: AUTOPAY_SIGN_UP_HOLD_MINUTES } };
   }
   if (isAutopayNotApprovedRefusal(err)) return { key: "purchase.checkout.autopayUnavailableNow" };
+  if (isAutopayDelayChangedRefusal(err)) return { key: "purchase.checkout.autopayDelayChanged" };
   return { key: "purchase.checkout.autopayNotAvailable" };
 }
