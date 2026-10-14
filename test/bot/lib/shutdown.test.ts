@@ -167,8 +167,10 @@ describe('installBotShutdownHandlers', () => {
   let previousInt: NodeJS.SignalsListener[];
 
   beforeEach(() => {
-    previousTerm = process.listeners('SIGTERM');
-    previousInt = process.listeners('SIGINT');
+    // @types/node 26 types `listeners('SIGTERM')` as taking only 'SIGTERM'; the
+    // restore below puts each one back on the very signal it came from.
+    previousTerm = process.listeners('SIGTERM') as NodeJS.SignalsListener[];
+    previousInt = process.listeners('SIGINT') as NodeJS.SignalsListener[];
   });
 
   afterEach(() => {
