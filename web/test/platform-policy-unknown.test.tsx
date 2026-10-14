@@ -105,7 +105,7 @@ async function elapse(ms: number): Promise<void> {
   }
 }
 
-const seen: { access?: AccessModeState; recovery?: { enabled: boolean; isLoading: boolean } } = {};
+const seen: { access?: AccessModeState; recovery?: { enabled: boolean; byLogin: boolean; isLoading: boolean } } = {};
 function Probe() {
   const access = useAccessMode();
   const recovery = useSubscriptionLinkRecovery();
@@ -168,7 +168,7 @@ describe("reading an unreadable policy", () => {
       inviteOnly: false,
     });
     // Link recovery waits too, instead of reading the outage as "switched off".
-    expect(seen.recovery).toEqual({ enabled: false, isLoading: true });
+    expect(seen.recovery).toEqual({ enabled: false, byLogin: false, isLoading: true });
   });
 
   it("asks again on its own, 3 s after the failure and doubling to 30 s — hidden page or not", async () => {
@@ -199,7 +199,7 @@ describe("reading an unreadable policy", () => {
 
     await elapse(3_000);
     expect(seen.access).toMatchObject({ mode: "INVITED", known: true, isLoading: false, inviteOnly: true });
-    expect(seen.recovery).toEqual({ enabled: true, isLoading: false });
+    expect(seen.recovery).toEqual({ enabled: true, byLogin: false, isLoading: false });
 
     await elapse(10 * 60_000);
     expect(api.getPlatformPolicy).toHaveBeenCalledTimes(2);

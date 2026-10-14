@@ -156,7 +156,7 @@ describe('a refusal for the hold reaches the page as the hold', () => {
     expect(readBalanceHoldRefusal(failure)).toEqual({ until: HOLD_UNTIL });
     const message = balanceHoldRefusalMessage(failure, ruT, 'Europe/Moscow', 'ru');
     expect(message).toBe(
-      `Баланс партнёра временно заморожен до ${formatHoldEnd(HOLD_UNTIL, 'Europe/Moscow', 'ru')} после восстановления пароля по ссылке подписки.`,
+      `Баланс партнёра временно заморожен до ${formatHoldEnd(HOLD_UNTIL, 'Europe/Moscow', 'ru')} после восстановления пароля без Telegram и почты.`,
     );
     // 11:30 UTC is 14:30 in Moscow, and the sentence says which clock it is.
     expect(message).toMatch(/до 21 сентября\D+14:30 GMT\+3 после/);
@@ -170,7 +170,7 @@ describe('a refusal for the hold reaches the page as the hold', () => {
     expect(readBalanceHoldRefusal(failure)).toEqual({ until: HOLD_UNTIL });
     const message = balanceHoldRefusalMessage(failure, enT, null, 'en');
     expect(message).toBe(
-      `Your partner balance is on hold until ${formatHoldEnd(HOLD_UNTIL, null, 'en')} after the password was recovered with the subscription link.`,
+      `Your partner balance is on hold until ${formatHoldEnd(HOLD_UNTIL, null, 'en')} after the password was recovered without Telegram or email.`,
     );
     expect(message).toMatch(/until September 21\D+11:30\sAM UTC after/);
   });
