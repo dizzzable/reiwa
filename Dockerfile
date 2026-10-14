@@ -12,20 +12,20 @@
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Full deps (incl. dev) — used to compile TypeScript ──────────────────────
-FROM node:24-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
 # ── Build backend — emit dist/ from src/ ────────────────────────────────────
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
 # ── Build frontend SPA — emit web/dist ──────────────────────────────────────
-FROM node:24-alpine AS build-web
+FROM node:26-alpine AS build-web
 WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci
@@ -37,16 +37,16 @@ COPY src/application/ports/public-config-persistence.port.ts /app/src/applicatio
 RUN npm run build
 
 # ── Production deps only — no tsx / vitest / typescript in the runtime image ─
-FROM node:24-alpine AS prod-deps
+FROM node:26-alpine AS prod-deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
 # ── Runtime — slim image: prod node_modules + compiled dist + assets + SPA ───
-FROM node:24-alpine AS runtime
+FROM node:26-alpine AS runtime
 # ── OS packages, patched at build time ─────────────────────────────────────
 #
-# `node:24-alpine` is rebuilt on its own schedule, so between two of its
+# `node:26-alpine` is rebuilt on its own schedule, so between two of its
 # rebuilds this image inherits whatever OpenSSL that snapshot happened to ship.
 # Trivy found ten CVEs that way — `libssl3` 3.5.7-r0 against a fixed 3.5.8-r0 —
 # and every one of them was already patched in Alpine's repository at the time.

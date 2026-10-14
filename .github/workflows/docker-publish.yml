@@ -93,7 +93,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          # Re-resolve `node:24-alpine` instead of reusing whatever digest the
+          # Re-resolve `node:26-alpine` instead of reusing whatever digest the
           # runner last saw. Without it the OS-patch layer is keyed to a stale
           # base and the CVE fix above never re-runs.
           pull: true

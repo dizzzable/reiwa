@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
  * WHY THIS EXISTS. The root Dockerfile's `build-web` stage is not a checkout of
  * the repository. It is:
  *
- *     FROM node:24-alpine AS build-web
+ *     FROM node:26-alpine AS build-web
  *     WORKDIR /app/web
  *     COPY web/package*.json ./
  *     RUN npm ci

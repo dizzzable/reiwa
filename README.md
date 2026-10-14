@@ -12,7 +12,7 @@
   <a href="https://github.com/dizzzable/reiwa/releases/latest"><img src="https://img.shields.io/badge/version-0.9.7.55-blue" alt="Version" /></a>
   <a href="https://github.com/dizzzable/reiwa/pkgs/container/reiwa"><img src="https://img.shields.io/badge/ghcr.io-reiwa-2496ED?logo=docker&logoColor=white" alt="GHCR" /></a>
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
-  <img src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/Node.js-26-339933?logo=nodedotjs&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white" alt="Express" />
   <img src="https://img.shields.io/badge/grammY-1.42-009688" alt="grammY" />
   <img src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white" alt="React" />
@@ -219,7 +219,7 @@ npm run dev:worker    # фоновые задачи
 cd web && npm install && npm run dev   # фронт (отдельный терминал)
 ```
 
-**Системные требования:** Node.js 24+, Redis/Valkey 8+, доступный экземпляр `rezeis-admin`.
+**Системные требования:** Node.js 26+, Redis/Valkey 8+, доступный экземпляр `rezeis-admin`.
 
 ---
 
