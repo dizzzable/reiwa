@@ -60,6 +60,21 @@ export default defineConfig({
     // `threads` pool did not reproduce it in three runs, which is the next thing
     // to try if this becomes worth another look.
     fileParallelism: false,
+    // Node's own Web Storage stays off in the test workers. Node 25 turned
+    // `localStorage` and `sessionStorage` on by default; on Node 26 they are
+    // accessors on `globalThis`, and vitest's jsdom environment copies a jsdom
+    // property onto the global only when the global lacks it (`getWindowKeys`
+    // skips every `k in global` that is not on its short list of DOM class
+    // names — `Storage` is on it, `localStorage` and `sessionStorage` are not).
+    // A `web/test` file written for jsdom therefore met Node's `localStorage`,
+    // which is `undefined` without `--localstorage-file`, and failed whole
+    // ("localStorage is undefined" in a `beforeEach`). Node 24 had neither
+    // global, which is why CI passed. With the flag the only storage is
+    // jsdom's, per file, and a spec can stub it. This is a worker flag and not
+    // a setup file on purpose: a setup file runs after the environment has
+    // chosen which storage to expose. Browsers and the shipped bot/API are
+    // untouched; this is the test process only.
+    execArgv: ['--no-experimental-webstorage'],
     environment: 'node',
     globals: false,
   },
