@@ -8,29 +8,37 @@ import { NetworkBg } from '@/components/ui/network-bg'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { GuestSupportLink } from '@/features/support/guest-support-link'
 import { useSubscriptionLinkRecovery } from '@/lib/use-access-mode'
-import { recoverBySubscription, type ResetHandoffState } from './password-reset-api'
+import { recoverByLogin, recoverBySubscription, type ResetHandoffState } from './password-reset-api'
 
 /**
  * `/recover/subscription` — for an account with neither Telegram nor a
- * verified e-mail.
+ * verified e-mail. (The path keeps the name it had when the VPN subscription
+ * link was asked for; it is the login alone now, see below.)
  *
- * The VPN subscription link (from the customer's app) is the proof. The login
- * only picks the account and adds friction — it is NOT a secret: the panel
- * names VPN profiles after it. So the panel lets this path set a password only
- * for an account that has no other way in; for any other it sends the ordinary
- * reset link to the account's Telegram or e-mail, and this page shows the
- * answer the "forgot password" form gives everybody. Every failed check gets
- * one answer, shown as it is — it never hints which half was wrong. A customer
- * who forgot the login as well cannot use this path, by design: it would turn
- * the page into a way to look a login up.
+ * Two screens, one route. A panel that announced `panel.login-recovery` takes
+ * the LOGIN ALONE — the owner's decision, made knowing a login is no secret —
+ * and the customer goes straight on to choosing a new password. A panel that did
+ * not (an older one, beside this newer cabinet) still needs the VPN subscription
+ * link beside the login, so the screen that asks for both stays for it
+ * (`policy.byLogin` tells them apart, and fails closed to the link screen).
+ *
+ * Either way the panel lets this path set a password only for an account that
+ * has no other way in; for any other it sends the ordinary reset link to the
+ * account's Telegram or e-mail, and this page shows the answer the "forgot
+ * password" form gives everybody. A customer who forgot the login as well cannot
+ * use this path, by design: it would turn the page into a way to look a login
+ * up.
  *
  * On success the reset token goes to `/reset-password` in the router's
  * navigation state — memory, not the address bar.
  *
- * The operator can switch the path off («Восстановление пароля по ссылке
- * подписки»). Then — and against a panel that predates the switch — the page
- * says so and points to support instead of showing a form the panel refuses.
+ * The operator can switch the path off («Восстановление пароля по логину»).
+ * Then — and against a panel that predates the switch — the page says so and
+ * points to support instead of showing a form the panel refuses.
  */
+/** From this long a wait is "tomorrow", not a count of minutes. */
+const LONG_WAIT_SECONDS = 2 * 60 * 60
+
 export default function RecoverSubscriptionPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -43,18 +51,22 @@ export default function RecoverSubscriptionPage() {
   // Switched off while the page was open: the panel's own refusal.
   const [disabledByServer, setDisabledByServer] = useState(false)
   const off = !policy.isLoading && (!policy.enabled || disabledByServer)
+  // Which screen the panel can take. Unknown or absent is the link screen.
+  const byLogin = policy.byLogin
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (submitting) return
-    if (link.trim().length === 0 || login.trim().length === 0) {
-      setError(t('auth.recoverSubscription.required'))
+    if ((!byLogin && link.trim().length === 0) || login.trim().length === 0) {
+      setError(t(byLogin ? 'auth.recoverLogin.required' : 'auth.recoverSubscription.required'))
       return
     }
     setError(null)
     setSubmitting(true)
     try {
-      const answer = await recoverBySubscription(link.trim(), login.trim())
+      const answer = byLogin
+        ? await recoverByLogin(login.trim())
+        : await recoverBySubscription(link.trim(), login.trim())
       if (answer.status === 'verified') {
         const state: ResetHandoffState = { resetToken: answer.token, login: answer.login }
         navigate('/reset-password', { state })
@@ -65,12 +77,17 @@ export default function RecoverSubscriptionPage() {
       const response = (err as { response?: { status?: number; data?: { code?: string; retryAfter?: number } } })
         ?.response
       if (response?.data?.code === 'NOT_VERIFIED') {
-        setError(t('auth.recoverSubscription.notVerified'))
+        setError(t(byLogin ? 'auth.recoverLogin.notVerified' : 'auth.recoverSubscription.notVerified'))
       } else if (response?.data?.code === 'RECOVERY_DISABLED') {
         setDisabledByServer(true)
       } else if (response?.status === 429) {
         const seconds = typeof response.data?.retryAfter === 'number' ? response.data.retryAfter : 3600
-        setError(t('auth.recoverSubscription.rateLimited', { count: Math.max(1, Math.ceil(seconds / 60)) }))
+        // The account's five-a-day is a wait of a day, not of minutes to count down.
+        setError(
+          byLogin && seconds >= LONG_WAIT_SECONDS
+            ? t('auth.recoverLogin.rateLimitedLong')
+            : t('auth.recoverSubscription.rateLimited', { count: Math.max(1, Math.ceil(seconds / 60)) }),
+        )
       } else if (response?.status === 503) {
         setError(t('auth.recoverSubscription.unavailable'))
       } else {
@@ -95,7 +112,9 @@ export default function RecoverSubscriptionPage() {
             <Link2 className="h-7 w-7 text-(--brand-primary)" />
           </div>
           <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">
-            {off ? t('auth.recoverSubscription.disabledTitle') : t('auth.recoverSubscription.title')}
+            {off
+              ? t(byLogin ? 'auth.recoverLogin.disabledTitle' : 'auth.recoverSubscription.disabledTitle')
+              : t(byLogin ? 'auth.recoverLogin.title' : 'auth.recoverSubscription.title')}
           </h1>
           <p
             className="mt-2 text-sm text-[color:var(--brand-muted-foreground)]"
@@ -105,7 +124,7 @@ export default function RecoverSubscriptionPage() {
               ? t('auth.recoverSubscription.loading')
               : off
                 ? t('auth.recoverSubscription.disabledBody')
-                : t('auth.recoverSubscription.description')}
+                : t(byLogin ? 'auth.recoverLogin.description' : 'auth.recoverSubscription.description')}
           </p>
         </div>
 
@@ -124,29 +143,31 @@ export default function RecoverSubscriptionPage() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4" noValidate data-testid="recover-subscription-form">
-            <div>
-              <label htmlFor="recover-subscription-link" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
-                {t('auth.recoverSubscription.linkLabel')}
-              </label>
-              <textarea
-                id="recover-subscription-link"
-                name="subscription-link"
-                rows={3}
-                autoComplete="off"
-                spellCheck={false}
-                value={link}
-                onChange={(event) => {
-                  setLink(event.target.value)
-                  setError(null)
-                }}
-                placeholder={t('auth.recoverSubscription.linkPlaceholder')}
-                disabled={submitting}
-                className="glass-input w-full resize-none rounded-xl px-4 py-3 font-mono text-xs"
-              />
-              <p className="mt-1.5 text-xs text-[color:var(--brand-muted-foreground)]">
-                {t('auth.recoverSubscription.linkHint')}
-              </p>
-            </div>
+            {!byLogin && (
+              <div>
+                <label htmlFor="recover-subscription-link" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
+                  {t('auth.recoverSubscription.linkLabel')}
+                </label>
+                <textarea
+                  id="recover-subscription-link"
+                  name="subscription-link"
+                  rows={3}
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={link}
+                  onChange={(event) => {
+                    setLink(event.target.value)
+                    setError(null)
+                  }}
+                  placeholder={t('auth.recoverSubscription.linkPlaceholder')}
+                  disabled={submitting}
+                  className="glass-input w-full resize-none rounded-xl px-4 py-3 font-mono text-xs"
+                />
+                <p className="mt-1.5 text-xs text-[color:var(--brand-muted-foreground)]">
+                  {t('auth.recoverSubscription.linkHint')}
+                </p>
+              </div>
+            )}
             <div>
               <label htmlFor="recover-subscription-login" className="mb-1.5 block text-xs font-medium text-[color:var(--brand-muted-foreground)]">
                 {t('auth.recoverSubscription.loginLabel')}
@@ -176,7 +197,9 @@ export default function RecoverSubscriptionPage() {
               </div>
             )}
             <StadiumButton type="submit" variant="primary" size="lg" fullWidth loading={submitting}>
-              {submitting ? t('auth.recoverSubscription.submitting') : t('auth.recoverSubscription.submit')}
+              {submitting
+                ? t('auth.recoverSubscription.submitting')
+                : t(byLogin ? 'auth.recoverLogin.submit' : 'auth.recoverSubscription.submit')}
             </StadiumButton>
           </form>
         )}
@@ -184,7 +207,7 @@ export default function RecoverSubscriptionPage() {
         <div className="mt-6 space-y-3 text-center text-xs text-[color:var(--brand-muted-foreground)]">
           {!policy.isLoading && !off && (
             <>
-              <p>{t('auth.recoverSubscription.lockedHint')}</p>
+              <p>{t(byLogin ? 'auth.recoverLogin.lockedHint' : 'auth.recoverSubscription.lockedHint')}</p>
               <p>{t('auth.recoverSubscription.forgotLogin')}</p>
             </>
           )}

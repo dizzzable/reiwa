@@ -13,7 +13,9 @@
  *     failed — says the password IS changed and hands the login to `/sign-in`;
  *   - `/recover/subscription` hands the token on in memory, never in the URL,
  *     shows the panel's one failure message as it is, and the recovery form's
- *     one answer for an account that has a channel;
+ *     one answer for an account that has a channel — asking for the login ALONE
+ *     of a panel that announced `panel.login-recovery`, and for the link as well
+ *     of one that did not;
  *   - «Сохраните данные для входа» copies, shares and saves honestly, only
  *     offers what the browser can do, and keeps the destination on a detour to
  *     the privacy page, which then offers «Продолжить»;
@@ -52,6 +54,7 @@ const api = vi.hoisted(() => ({
   inspectResetLink: vi.fn(),
   resetPassword: vi.fn(),
   recoverBySubscription: vi.fn(),
+  recoverByLogin: vi.fn(),
 }));
 vi.mock('@/features/auth/password-reset-api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -738,6 +741,191 @@ describe('/recover/subscription', () => {
   it('says in advance that an encrypted Happ link will not work', async () => {
     const page = await mount(React.createElement(RecoverSubscriptionPage));
     expect(page.textContent).toContain('happ://crypt');
+  });
+});
+
+// ── /recover/subscription, the login alone ──────────────────────────────────
+//
+// The owner's decision: recovery only by login, not by pasting the link. A panel
+// that announced `panel.login-recovery` takes it; the cabinet learns that from
+// `/platform-policy` (`subscriptionRecoveryByLogin`), and with anything else keeps
+// the screen that asks for the link — the tests above, which never set the field.
+
+describe('/recover/subscription — the login alone, for a panel that can take it', () => {
+  const BY_LOGIN = { subscriptionLinkRecovery: true, subscriptionRecoveryByLogin: true };
+
+  beforeEach(() => {
+    appApi.getPlatformPolicy.mockResolvedValue(BY_LOGIN);
+  });
+
+  async function sendLogin(page: HTMLElement, login: string): Promise<void> {
+    await typeInto(page.querySelector('input[name="username"]'), login);
+    await submit(page.querySelector('form'));
+  }
+
+  it('asks for the login and nothing else', async () => {
+    const page = await mount(React.createElement(RecoverSubscriptionPage));
+
+    expect(page.querySelector('textarea'), 'the link field is still there').toBeNull();
+    expect(page.querySelector('input[name="username"]')).not.toBeNull();
+    expect(page.querySelector('h1')?.textContent).toBe('Восстановление по логину');
+    expect(page.textContent).toContain(tr('auth.recoverLogin.description'));
+    expect(page.textContent).not.toContain(tr('auth.recoverSubscription.linkLabel'));
+    expect(page.textContent).not.toContain('happ://crypt');
+  });
+
+  it('sends the login alone and hands the token to /reset-password in memory', async () => {
+    api.recoverByLogin.mockResolvedValue({ status: 'verified', token: TOKEN, login: 'Alice', expiresAt: 'x' });
+    const page = await mount(React.createElement(RecoverSubscriptionPage));
+
+    await sendLogin(page, ' alice ');
+
+    expect(api.recoverByLogin.mock.calls).toEqual([['alice']]);
+    expect(api.recoverBySubscription).not.toHaveBeenCalled();
+    expect(route.navigate.mock.calls).toEqual([['/reset-password', { state: { resetToken: TOKEN, login: 'Alice' } }]]);
+  });
+
+  it('does not send an empty login, and says what is missing', async () => {
+    const page = await mount(React.createElement(RecoverSubscriptionPage));
+
+    await sendLogin(page, '   ');
+
+    expect(api.recoverByLogin).not.toHaveBeenCalled();
+    expect(page.querySelector('[data-testid="recover-subscription-error"]')?.textContent).toBe(
+      tr('auth.recoverLogin.required'),
+    );
+  });
+
+  it('shows the recovery form’s one answer when the account has a channel, and goes nowhere', async () => {
+    api.recoverByLogin.mockResolvedValue({ status: 'accepted' });
+    const page = await mount(React.createElement(RecoverSubscriptionPage));
+
+    await sendLogin(page, 'alice');
+
+    expect(page.querySelector('[data-testid="recover-subscription-sent"]')?.textContent).toContain(tr('auth.recover.sent'));
+    expect(page.querySelector('form')).toBeNull();
+    expect(route.navigate).not.toHaveBeenCalled();
+  });
+
+  it('answers an unknown, blocked or malformed login with the one failure message, which names no link', async () => {
+    api.recoverByLogin.mockRejectedValue(upstreamError(400, { code: 'NOT_VERIFIED' }));
+    const page = await mount(React.createElement(RecoverSubscriptionPage));
+
+    await sendLogin(page, 'nobody');
+
+    const shown = page.querySelector('[data-testid="recover-subscription-error"]')?.textContent ?? '';
+    expect(shown).toBe(tr('auth.recoverLogin.notVerified'));
+    expect(shown.toLowerCase()).not.toContain('ссылк');
+    expect(route.navigate).not.toHaveBeenCalled();
+  });
+
+  it('counts a short wait in minutes and calls a day-long one "tomorrow"', async () => {
+    api.recoverByLogin.mockRejectedValue(upstreamError(429, { code: 'RATE_LIMITED', retryAfter: 3600 }));
+    let page = await mount(React.createElement(RecoverSubscriptionPage));
+    await sendLogin(page, 'alice');
+    expect(page.querySelector('[data-testid="recover-subscription-error"]')?.textContent).toBe(
+      'Слишком много попыток. Попробуйте через 60 минут.',
+    );
+    await React.act(async () => root?.unmount());
+    host?.remove();
+
+    api.recoverByLogin.mockRejectedValue(upstreamError(429, { code: 'RATE_LIMITED', retryAfter: 86_400 }));
+    page = await mount(React.createElement(RecoverSubscriptionPage));
+    await sendLogin(page, 'alice');
+    expect(page.querySelector('[data-testid="recover-subscription-error"]')?.textContent).toBe(
+      tr('auth.recoverLogin.rateLimitedLong'),
+    );
+  });
+
+  it('shows the "off" notice, in words about the login, when the operator has switched it off', async () => {
+    appApi.getPlatformPolicy.mockResolvedValue({ subscriptionLinkRecovery: false, subscriptionRecoveryByLogin: true });
+
+    const page = await mount(React.createElement(RecoverSubscriptionPage));
+
+    expect(page.querySelector('h1')?.textContent).toBe('Восстановление по логину отключено');
+    expect(page.querySelector('form')).toBeNull();
+    expect(api.recoverByLogin).not.toHaveBeenCalled();
+  });
+
+  it('has its sentences in both languages', async () => {
+    const keys = [
+      'auth.recoverLogin.title',
+      'auth.recoverLogin.description',
+      'auth.recoverLogin.required',
+      'auth.recoverLogin.submit',
+      'auth.recoverLogin.notVerified',
+      'auth.recoverLogin.rateLimitedLong',
+      'auth.recoverLogin.lockedHint',
+      'auth.recoverLogin.disabledTitle',
+      'auth.recover.noAccessBodyLogin',
+      'auth.recover.noAccessActionLogin',
+    ];
+    const russian = keys.map((key) => tr(key));
+    await i18n.changeLanguage('en');
+    const english = keys.map((key) => tr(key));
+    english.forEach((text, index) => expect(text, keys[index]).not.toBe(russian[index]));
+    expect(english[0]).toBe('Recovery with your login');
+  });
+});
+
+describe('a newer cabinet beside an older panel keeps the screen that asks for the link', () => {
+  // `subscriptionRecoveryByLogin` absent (an older cabinet API), false (the panel
+  // announced nothing) — both are the panel that still requires the link.
+  const olderPanels: Array<[string, Record<string, unknown>]> = [
+    ['the field is absent', { subscriptionLinkRecovery: true }],
+    ['the panel did not announce it', { subscriptionLinkRecovery: true, subscriptionRecoveryByLogin: false }],
+  ];
+
+  for (const [situation, policy] of olderPanels) {
+    it(`asks for the link and the login, and sends both, when ${situation}`, async () => {
+      appApi.getPlatformPolicy.mockResolvedValue(policy);
+      api.recoverBySubscription.mockResolvedValue({ status: 'verified', token: TOKEN, login: 'Alice', expiresAt: 'x' });
+      const page = await mount(React.createElement(RecoverSubscriptionPage));
+
+      expect(page.querySelector('textarea')).not.toBeNull();
+      expect(page.querySelector('h1')?.textContent).toBe('Восстановление по ссылке подписки');
+      await typeInto(page.querySelector('textarea'), 'https://sub.example.com/AliceShort01q');
+      await typeInto(page.querySelector('input[name="username"]'), 'alice');
+      await submit(page.querySelector('form'));
+
+      expect(api.recoverBySubscription.mock.calls).toEqual([['https://sub.example.com/AliceShort01q', 'alice']]);
+      expect(api.recoverByLogin).not.toHaveBeenCalled();
+    });
+
+    it(`/recover points at the link recovery, in the link's words, when ${situation}`, async () => {
+      appApi.getPlatformPolicy.mockResolvedValue(policy);
+
+      const page = await mount(React.createElement(RecoverPage));
+
+      expect(page.querySelector('[data-testid="recover-no-access"]')?.textContent).toContain(tr('auth.recover.noAccessBody'));
+      expect(page.textContent).toContain(tr('auth.recover.noAccessAction'));
+      expect(page.textContent).not.toContain(tr('auth.recover.noAccessActionLogin'));
+    });
+  }
+
+  it('/recover points at the recovery by login, in its words, once the panel announced it', async () => {
+    appApi.getPlatformPolicy.mockResolvedValue({ subscriptionLinkRecovery: true, subscriptionRecoveryByLogin: true });
+
+    const page = await mount(React.createElement(RecoverPage));
+
+    const block = page.querySelector('[data-testid="recover-no-access"]');
+    expect(block?.textContent).toContain(tr('auth.recover.noAccessBodyLogin'));
+    expect(block?.textContent).toContain(tr('auth.recover.noAccessActionLogin'));
+    expect(block?.textContent).not.toContain(tr('auth.recover.noAccessAction'));
+    expect([...(block?.querySelectorAll('a') ?? [])].map((link) => link.getAttribute('href'))).toContain(
+      '/recover/subscription',
+    );
+  });
+
+  it('/recover still offers support alone when the operator switched recovery off, whatever the panel can do', async () => {
+    appApi.getPlatformPolicy.mockResolvedValue({ subscriptionLinkRecovery: false, subscriptionRecoveryByLogin: true });
+
+    const page = await mount(React.createElement(RecoverPage));
+
+    expect(page.querySelector('[data-testid="recover-no-access"]')?.textContent).toContain(
+      tr('auth.recover.noAccessSupportOnly'),
+    );
+    expect(page.textContent).not.toContain(tr('auth.recover.noAccessActionLogin'));
   });
 });
 

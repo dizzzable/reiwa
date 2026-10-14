@@ -340,7 +340,11 @@ export class WebAuthNamespace {
    * the reset link an account with a channel is sent instead.
    */
   recoverPasswordBySubscription(input: {
-    readonly link: string;
+    /**
+     * Absent for a panel that announces `panel.login-recovery`; REQUIRED by one
+     * that does not (its DTO refuses a body without it).
+     */
+    readonly link?: string;
     readonly login: string;
     readonly clientIp: string | null;
     readonly cabinetUrl: string | null;
@@ -349,7 +353,7 @@ export class WebAuthNamespace {
       'POST',
       '/api/internal/web-auth/password-reset/subscription',
       {
-        link: input.link,
+        ...(input.link === undefined ? {} : { link: input.link }),
         login: input.login,
         ...(input.clientIp === null ? {} : { clientIp: input.clientIp }),
         ...(input.cabinetUrl === null ? {} : { cabinetUrl: input.cabinetUrl }),

@@ -62,6 +62,15 @@ export const recoverBySubscription = (link: string, login: string) =>
     .then((r) => r.data)
 
 /**
+ * The same route, with the login alone — for a panel that announced
+ * `panel.login-recovery`. The route is named for the link it used to need.
+ */
+export const recoverByLogin = (login: string) =>
+  apiClient
+    .post<SubscriptionRecoveryAnswer>('/auth/recover/subscription', { username: login })
+    .then((r) => r.data)
+
+/**
  * How the subscription page hands a reset token to `/reset-password`: in the
  * router's navigation state, which the reset page reads once and then erases
  * — never in the address, where it would stay in history and could leave in a

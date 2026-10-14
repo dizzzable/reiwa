@@ -11,6 +11,11 @@ import type { WebFirstPasswordResult } from "../../infrastructure/admin-client/n
 import { requireMode } from "../middleware/access-mode.js";
 import { createAccountRateLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
 import { createTelegramLaunchLimiter } from "../middleware/telegram-launch-limits.js";
+import {
+  NOOP_PANEL_CAPABILITIES,
+  PANEL_CAPABILITY,
+  RedisPanelCapabilities,
+} from "../../infrastructure/config-versions/panel-capabilities.js";
 import { createSessionMiddleware } from "../middleware/session.js";
 import { createAuthBruteForceDetection } from "../middleware/brute-force-detection.js";
 import { createFreshSessionCheck } from "../middleware/fresh-session-check.js";
@@ -180,8 +185,10 @@ const resetPasswordSchema = z.object({
   passwordHash: hex64,
 });
 
+// `link` is what a cabinet screen from before recovery by login still sends,
+// and what a panel that cannot do it still needs; the route decides below.
 const subscriptionRecoverySchema = z.object({
-  link: z.string().trim().min(1).max(4096),
+  link: z.string().trim().min(1).max(4096).optional(),
   username: z.string().trim().min(1).max(64),
 });
 
@@ -326,6 +333,11 @@ export function createAuthRouter(deps: {
   const passwordResetLimiter = createRedisRateLimiter(redis, "passwordReset");
   const passwordResetInspectLimiter = createRedisRateLimiter(redis, "passwordResetInspect");
   const recoverSubscriptionLimiter = createRedisRateLimiter(redis, "recoverSubscription");
+  // What the panel announced about itself in the version poll. Nothing known is
+  // "cannot": a panel that says nothing is asked the way it has always been.
+  const panelCapabilities = redis !== null
+    ? new RedisPanelCapabilities({ redis })
+    : NOOP_PANEL_CAPABILITIES;
 
   // Create brute-force detection middleware
   const bruteForceDetection = createAuthBruteForceDetection(getRedis);
@@ -820,16 +832,22 @@ export function createAuthRouter(deps: {
 
   // ── POST /api/v1/auth/recover/subscription ──────────────────────────────────
   //
-  // Recovery for a customer with neither Telegram nor e-mail. The VPN
-  // subscription link is the proof; the login only picks the account and adds
-  // friction — it is not a secret (the panel names VPN profiles after it). So
-  // the panel lets this path set a password ONLY for an account that has no
-  // other way in; an account with Telegram or a verified e-mail gets the
+  // Recovery for a customer with neither Telegram nor e-mail. The route keeps
+  // the name it had when the VPN subscription link was the proof.
+  //
+  // A panel that announces `panel.login-recovery` wants the LOGIN ALONE (the
+  // owner's decision: the login is enough, though it is no secret), and the
+  // route sends it nothing else — a `link` from an older screen is dropped. A
+  // panel that does not announce it still requires the link beside the login,
+  // so without one the request is refused here as malformed instead of being
+  // sent to a panel that would answer 400 to the whole call.
+  //
+  // Either way the panel lets this path set a password ONLY for an account that
+  // has no other way in; an account with Telegram or a verified e-mail gets the
   // ordinary reset link there instead, and the visitor gets the answer the
-  // "forgot password" form gives everybody. Every failed check is one answer.
-  // On success the reset token comes back in the BODY — the SPA carries it to
-  // `/reset-password` in memory, never in an address that would land in
-  // history or a Referer.
+  // "forgot password" form gives everybody. On success the reset token comes
+  // back in the BODY — the SPA carries it to `/reset-password` in memory, never
+  // in an address that would land in history or a Referer.
   router.post("/auth/recover/subscription", recoverSubscriptionLimiter, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
     const parsed = subscriptionRecoverySchema.safeParse(req.body);
@@ -841,9 +859,14 @@ export function createAuthRouter(deps: {
       res.status(503).json({ code: "RECOVERY_UNAVAILABLE", message: "Service unavailable" });
       return;
     }
+    const byLogin = await panelCapabilities.can(PANEL_CAPABILITY.loginRecovery);
+    if (!byLogin && parsed.data.link === undefined) {
+      res.status(400).json({ code: "VALIDATION_FAILED", message: "Validation failed" });
+      return;
+    }
     try {
       const result = await adminClient.webAuth.recoverPasswordBySubscription({
-        link: parsed.data.link,
+        ...(byLogin || parsed.data.link === undefined ? {} : { link: parsed.data.link }),
         login: parsed.data.username,
         clientIp: req.ip ?? req.socket.remoteAddress ?? null,
         // THIS cabinet's configured address — the reset link sent to the
@@ -864,14 +887,19 @@ export function createAuthRouter(deps: {
           res.json(RECOVER_ACCEPTED);
           return;
         case "mismatch":
-          res.status(400).json({ code: "NOT_VERIFIED", message: "Could not verify the link and the login" });
+          res.status(400).json({
+            code: "NOT_VERIFIED",
+            message: byLogin ? "Could not recover access with this login" : "Could not verify the link and the login",
+          });
           return;
         case "disabled":
           // The operator switched this path off. The panel says so before it
           // looks anything up, so this answer is the same for every visitor.
           res.status(403).json({
             code: "RECOVERY_DISABLED",
-            message: "Password recovery by subscription link is turned off",
+            message: byLogin
+              ? "Password recovery by login is turned off"
+              : "Password recovery by subscription link is turned off",
           });
           return;
         case "rate_limited":

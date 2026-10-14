@@ -6,12 +6,13 @@
  * the version poll. The capabilities are `panel.*` ids: what that panel can do
  * for a cabinet.
  *
- * NOTHING IN THIS CABINET ASKS YET. The carrier ships first because a signal
- * has to exist on the OLDER side before anything can depend on it: without it,
- * a panel that does not say what it can do looks exactly like a panel that
- * can do nothing. The first feature that needs a newer panel hides itself
- * unless `can('panel.<id>')` says yes. The detections that exist today (a 404
- * on a route, a missing field) stay exactly as they are.
+ * The carrier shipped first because a signal has to exist on the OLDER side
+ * before anything can depend on it: without it, a panel that does not say what
+ * it can do looks exactly like a panel that can do nothing. A feature that
+ * needs a newer panel hides itself unless `can('panel.<id>')` says yes; the
+ * first is `PANEL_CAPABILITY.loginRecovery` (recovery by login alone, asked
+ * by `/auth/recover/subscription` and `/platform-policy`). The detections that
+ * existed before it (a 404 on a route, a missing field) stay exactly as they are.
  *
  * ── What is kept (`redis/keys.ts` `panelCapabilitiesKey`) ───────────────────
  *
@@ -39,6 +40,21 @@ import type { Redis } from 'ioredis';
 import type { LoggerPort } from '../../application/ports/logger.port.js';
 import { isCapabilityId } from '../../core/capabilities.js';
 import { panelCapabilitiesKey } from '../redis/keys.js';
+
+/**
+ * The `panel.*` ids this cabinet asks for. Each is the same string as in the
+ * panel's own table (`rezeis-admin/src/modules/reiwa-peers/panel-capabilities.ts`),
+ * added in the same pair of releases; a panel that does not announce it is
+ * treated as one that cannot do it.
+ */
+export const PANEL_CAPABILITY = {
+  /**
+   * `POST /api/internal/web-auth/password-reset/subscription` takes a login
+   * alone. Without it the panel still requires the subscription link beside the
+   * login, so the cabinet keeps the screen that asks for one.
+   */
+  loginRecovery: 'panel.login-recovery',
+} as const;
 
 /** What one poll heard the panel say about itself. */
 export type PanelView =

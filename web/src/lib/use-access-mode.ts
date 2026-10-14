@@ -52,15 +52,28 @@ export function useAccessMode(): AccessModeState {
 }
 
 /**
- * «Восстановление пароля по ссылке подписки» — the operator's switch, from the
- * same shared platform-policy query. Fails CLOSED: absent (a panel that
+ * «Восстановление пароля по логину» (stored as `subscriptionLinkRecovery`: it was
+ * «по ссылке подписки» until the owner decided the login is enough) — the
+ * operator's switch, from the same shared platform-policy query. Fails CLOSED: absent (a panel that
  * predates the switch, which has no subscription-recovery endpoint either) and
  * an unanswered policy both read as OFF, so the cabinet never offers a path the
  * panel will refuse. `isLoading` lets a page wait instead of flashing "off" —
  * and it stays `true` while the policy cannot be read at all, so an outage is
  * not presented as the operator having switched the path off.
+ *
+ * `byLogin` says which screen the panel can take: `true` only when it announced
+ * `panel.login-recovery`, so a newer cabinet beside an older panel keeps the
+ * screen that asks for the link. It fails closed the same way.
  */
-export function useSubscriptionLinkRecovery(): { readonly enabled: boolean; readonly isLoading: boolean } {
+export function useSubscriptionLinkRecovery(): {
+  readonly enabled: boolean
+  readonly byLogin: boolean
+  readonly isLoading: boolean
+} {
   const { data } = useQuery(platformPolicyQueryOptions);
-  return { enabled: data?.subscriptionLinkRecovery === true, isLoading: data === undefined };
+  return {
+    enabled: data?.subscriptionLinkRecovery === true,
+    byLogin: data?.subscriptionRecoveryByLogin === true,
+    isLoading: data === undefined,
+  };
 }

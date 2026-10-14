@@ -633,9 +633,9 @@ export const en: RuDict = {
   },
   partnerBalanceHold: {
     notice:
-      'Your partner balance is on hold until {{until}}. The account password was recently recovered with the subscription link. Someone else could have used that link, so after such a recovery the balance can’t be spent or withdrawn for a while. Once the hold ends, the balance is available again.',
-    refused: 'Your partner balance is on hold after the password was recovered with the subscription link.',
-    refusedUntil: 'Your partner balance is on hold until {{until}} after the password was recovered with the subscription link.',
+      'Your partner balance is on hold until {{until}}. The account password was recently recovered without Telegram or email — with just the login or the subscription link. Someone else could have done that, so after such a recovery the balance can’t be spent or withdrawn for a while. Once the hold ends, the balance is available again.',
+    refused: 'Your partner balance is on hold after the password was recovered without Telegram or email.',
+    refusedUntil: 'Your partner balance is on hold until {{until}} after the password was recovered without Telegram or email.',
   },
   partnerAds: {
     title: 'Advertising',
@@ -1070,6 +1070,8 @@ export const en: RuDict = {
       noAccessTitle: 'No access to Telegram or email?',
       noAccessBody: 'If neither Telegram nor an email is linked to your account, you can set a new password with your VPN subscription link. If one is linked, the reset link will be sent there.',
       noAccessAction: 'Recover with the subscription link',
+      noAccessBodyLogin: 'If neither Telegram nor a verified email is linked to your account, you can set a new password by entering just your login. If one is linked, the reset link will be sent there.',
+      noAccessActionLogin: 'Recover with your login',
       noAccessSupport: 'Lost access to the linked Telegram or email, or forgot your login too? Contact support.',
       noAccessSupportOnly: 'Contact support — they will help you get back into your account.',
     },
@@ -1100,6 +1102,18 @@ export const en: RuDict = {
       changedTitle: 'Password changed — sign in with your new password',
       changedLogin: 'Your login: {{login}}',
       signIn: 'Sign in',
+    },
+    // Recovery by login: for a panel that can take it (it announces panel.login-recovery).
+    // An older panel also wants the subscription link, and keeps the block below.
+    recoverLogin: {
+      title: 'Recovery with your login',
+      description: 'For an account without Telegram or a verified email: enter your cabinet login and set a new password right away. If Telegram or an email is linked to the account, the reset link will be sent there.',
+      required: 'Enter your login',
+      submit: 'Continue',
+      notVerified: 'Could not recover access with this login. If Telegram or an email is linked to the account, use “Forgot password?”, or contact support.',
+      rateLimitedLong: 'Too many attempts. Try again tomorrow or contact support.',
+      lockedHint: 'This option is available a few times a day for one account — after that, contact support.',
+      disabledTitle: 'Recovery by login is turned off',
     },
     recoverSubscription: {
       title: 'Recovery with the subscription link',

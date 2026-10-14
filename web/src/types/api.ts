@@ -486,6 +486,14 @@ export interface PlatformPolicy {
   /** «Восстановление пароля по ссылке подписки» (operator switch). Absent → OFF:
    *  a panel without the field has no subscription-recovery endpoint either. */
   subscriptionLinkRecovery?: boolean;
+  /**
+   * Not the panel's field: the cabinet's API adds it to `/platform-policy`. `true`
+   * only when the panel announced `panel.login-recovery` in the version poll, i.e.
+   * it takes a login alone; anything else (absent, an older cabinet API, a panel
+   * that said nothing) is `false`, and the recovery screen keeps asking for the
+   * subscription link beside the login, which an older panel requires.
+   */
+  subscriptionRecoveryByLogin?: boolean;
 }
 
 // ─── Devices (HWID) ───────────────────────────────────────────────────────

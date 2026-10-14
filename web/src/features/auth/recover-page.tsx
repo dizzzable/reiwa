@@ -27,9 +27,10 @@ const autoFocusFinePointer =
  * Below the form, the ways on for somebody the form cannot help:
  *   - forgot the login, has Telegram → the bot sends the link and names the
  *     login (`t.me/<bot>?start=pwreset`);
- *   - no access to Telegram or e-mail → recovery by the VPN subscription link
- *     plus the login (`/recover/subscription`) when the operator has it on
- *     («Восстановление пароля по ссылке подписки»), and support for the rest.
+ *   - no access to Telegram or e-mail → recovery by the login alone
+ *     (`/recover/subscription`, which asks for the VPN subscription link too
+ *     when the panel is an older one) when the operator has it on
+ *     («Восстановление пароля по логину»), and support for the rest.
  */
 export default function RecoverPage() {
   const { t } = useTranslation()
@@ -230,13 +231,15 @@ export default function RecoverPage() {
           <p className="text-sm font-medium text-[color:var(--brand-foreground)]">{t('auth.recover.noAccessTitle')}</p>
           {subscriptionRecovery.enabled ? (
             <>
-              <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.recover.noAccessBody')}</p>
+              <p className="text-xs text-[color:var(--brand-muted-foreground)]">
+                {t(subscriptionRecovery.byLogin ? 'auth.recover.noAccessBodyLogin' : 'auth.recover.noAccessBody')}
+              </p>
               <Link
                 to="/recover/subscription"
                 className="inline-flex items-center gap-1.5 text-sm font-medium text-(--brand-primary) hover:brightness-110"
               >
                 <Link2 className="h-3.5 w-3.5" />
-                {t('auth.recover.noAccessAction')}
+                {t(subscriptionRecovery.byLogin ? 'auth.recover.noAccessActionLogin' : 'auth.recover.noAccessAction')}
               </Link>
               <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.recover.noAccessSupport')}</p>
             </>

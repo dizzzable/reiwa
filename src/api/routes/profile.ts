@@ -12,13 +12,25 @@ import { sendSafeError } from "../lib/error-response.js";
 import { describeUpstreamError } from "../lib/upstream-error.js";
 import { invalidateStaleUserSession } from "../lib/stale-user-session.js";
 import { getPolicyCache } from "../../infrastructure/admin-client/policy-cache.js";
+import {
+  NOOP_PANEL_CAPABILITIES,
+  PANEL_CAPABILITY,
+  RedisPanelCapabilities,
+  type PanelCapabilitiesPort,
+} from "../../infrastructure/config-versions/panel-capabilities.js";
+import type { WebSessionStore } from "../../infrastructure/redis/session.js";
 
 export function createProfileRouter(deps: {
   adminClient: AdminClient | null;
   sessionStore: SessionStore | null;
   config: ReiwaConfig;
+  /** Where the panel's announced capabilities are kept; without it, none are known. */
+  webSessionStore?: WebSessionStore | null;
 }) {
   const { adminClient, sessionStore } = deps;
+  const redis = deps.webSessionStore?.getRedis() ?? null;
+  const panelCapabilities: PanelCapabilitiesPort =
+    redis !== null ? new RedisPanelCapabilities({ redis }) : NOOP_PANEL_CAPABILITIES;
   // Identity-agnostic auth: accepts the WebSession (reiwa_id) used by
   // browser/Mini-App/magic-link logins AND the legacy Telegram session.
   // The whole profile surface (/session, /me, password, email, language)
@@ -184,7 +196,12 @@ export function createProfileRouter(deps: {
       res.status(503).json({ message: "Platform policy unavailable" });
       return;
     }
-    res.json(policy);
+    // Not the panel's field: THIS panel's capability, which the recovery screen
+    // gates on. `true` only when the panel announced it in the version poll; a
+    // panel that said nothing, a poll that never answered and no Redis all read
+    // `false`, and the cabinet keeps the screen that asks for the link.
+    const subscriptionRecoveryByLogin = await panelCapabilities.can(PANEL_CAPABILITY.loginRecovery);
+    res.json({ ...policy, subscriptionRecoveryByLogin });
   });
 
   // GET /api/v1/me — full profile (same data as /session)

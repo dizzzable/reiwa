@@ -145,7 +145,7 @@ async function start(): Promise<void> {
   const latestConfigVersions = app.locals["latestConfigVersions"] as LatestConfigVersionsPort | undefined;
   // What the panel says about itself in the poll's answer — or "legacy" when it
   // says nothing — goes into reiwa's Redis too, over whatever was kept
-  // (`config-versions/panel-capabilities.ts`). Nothing reads it yet.
+  // (`config-versions/panel-capabilities.ts`). The routes read it as `PANEL_CAPABILITY`.
   const panelCapabilities = webSessionStore
     ? new RedisPanelCapabilities({ redis: webSessionStore.getRedis(), logger })
     : NOOP_PANEL_CAPABILITIES;

@@ -26,6 +26,7 @@ import type { WebSessionStore } from '../../src/infrastructure/redis/session.js'
 import type { WebAuthNamespace } from '../../src/infrastructure/admin-client/namespaces/web-auth.js';
 import { UpstreamError } from '../../src/core/errors/index.js';
 import { createAuthRouter } from '../../src/api/routes/auth.js';
+import { panelCapabilitiesKey } from '../../src/infrastructure/redis/keys.js';
 import { sendSocketless, type SocketlessResponse } from './socketless-request.js';
 
 type ResetWebAuth = Pick<
@@ -48,10 +49,26 @@ function nextAddress(): string {
   return `198.51.100.${address % 250}`;
 }
 
+/** What the panel's last poll answer left in Redis: it announced these capabilities. */
+function announced(capabilities: readonly string[]): string {
+  return JSON.stringify({ kind: 'declared', version: '0.9.7.74', capabilities, at: Date.now() });
+}
+
 function buildApp(
   webAuth: Partial<ResetWebAuth>,
-  options: { readonly domain?: string; readonly sessionFails?: boolean } = {},
+  options: {
+    readonly domain?: string;
+    readonly sessionFails?: boolean;
+    /** What Redis holds under the panel's capabilities key: nothing (the default), a panel that announced, or one that said nothing. */
+    readonly panel?: { readonly announced: readonly string[] } | 'legacy';
+  } = {},
 ) {
+  const heldPanel =
+    options.panel === undefined
+      ? null
+      : options.panel === 'legacy'
+        ? JSON.stringify({ kind: 'legacy', version: null, capabilities: [], at: Date.now() })
+        : announced(options.panel.announced);
   const createWebSession = vi.fn(async (_userId: string) => {
     if (options.sessionFails === true) throw new Error('redis is down');
     return 'session-1';
@@ -90,7 +107,7 @@ function buildApp(
       // remembers which counter each request was charged to.
       webSessionStore: {
         getRedis: () => ({
-          get: async () => null,
+          get: async (key: string) => (key === panelCapabilitiesKey() ? heldPanel : null),
           eval: async (_script: string, _keys: number, key: string) => {
             limiterKeys.push(key);
             return [1, 60];
@@ -528,5 +545,111 @@ describe('POST /auth/recover/subscription', () => {
     expect(response.status).toBe(429);
     expect(response.headers['retry-after']).toBe('3600');
     expect(response.body).toEqual({ code: 'RATE_LIMITED', retryAfter: 3600 });
+  });
+});
+
+// Recovery by login alone (the owner's decision) reaches a panel only if the
+// panel announced `panel.login-recovery` in the version poll. The cabinet is
+// updated before or after the panel, and neither order may break the screen.
+describe('POST /auth/recover/subscription — the login alone, and the panel that can take it', () => {
+  const LOGIN_ONLY = { announced: ['panel.login-recovery'] } as const;
+  const verified = {
+    status: 'verified' as const,
+    token: TOKEN,
+    login: 'alice',
+    expiresAt: '2026-09-18T12:15:00.000Z',
+  };
+
+  it('sends a panel that announced it the login and NOTHING else — a link from an older screen is dropped', async () => {
+    const recoverPasswordBySubscription = vi.fn<ResetWebAuth['recoverPasswordBySubscription']>(async () => verified);
+    const { app } = buildApp({ recoverPasswordBySubscription }, { panel: LOGIN_ONLY });
+
+    const loginOnly = await post(app, '/api/v1/auth/recover/subscription', { username: ' alice ' });
+    const withLink = await post(app, '/api/v1/auth/recover/subscription', {
+      link: 'https://sub.example.com/AliceShort01q',
+      username: 'alice',
+    });
+
+    expect(loginOnly.status).toBe(200);
+    expect(withLink.status).toBe(200);
+    for (const [call] of recoverPasswordBySubscription.mock.calls) {
+      expect(call).not.toHaveProperty('link');
+      expect(call).toMatchObject({ login: 'alice', cabinetUrl: 'https://cabinet.example.com' });
+    }
+    expect(recoverPasswordBySubscription).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps asking a panel that did NOT announce it for the link, and refuses a request without one itself', async () => {
+    const recoverPasswordBySubscription = vi.fn<ResetWebAuth['recoverPasswordBySubscription']>(async () => verified);
+    // Both of the ways an older panel looks from here: no answer kept at all, and an answer without the block.
+    for (const panel of [undefined, 'legacy' as const, { announced: [] as string[] }]) {
+      const { app } = buildApp({ recoverPasswordBySubscription }, { panel });
+
+      const withoutLink = await post(app, '/api/v1/auth/recover/subscription', { username: 'alice' });
+      const withLink = await post(app, '/api/v1/auth/recover/subscription', {
+        link: 'https://sub.example.com/AliceShort01q',
+        username: 'alice',
+      });
+
+      expect(withoutLink.status, JSON.stringify(panel)).toBe(400);
+      expect(withoutLink.body).toEqual({ code: 'VALIDATION_FAILED', message: 'Validation failed' });
+      expect(withLink.status, JSON.stringify(panel)).toBe(200);
+    }
+    // The refused ones never reached the panel, whose DTO would have answered 400 to the call.
+    expect(recoverPasswordBySubscription).toHaveBeenCalledTimes(3);
+    for (const [call] of recoverPasswordBySubscription.mock.calls) {
+      expect(call).toMatchObject({ link: 'https://sub.example.com/AliceShort01q', login: 'alice' });
+    }
+  });
+
+  it('says what the account budget says: a 24-hour wait, as a 429', async () => {
+    const { app } = buildApp(
+      { recoverPasswordBySubscription: async () => ({ status: 'rate_limited' as const, retryAfterSeconds: 86_400 }) },
+      { panel: LOGIN_ONLY },
+    );
+
+    const response = await post(app, '/api/v1/auth/recover/subscription', { username: 'alice' });
+
+    expect(response.status).toBe(429);
+    expect(response.headers['retry-after']).toBe('86400');
+    expect(response.body).toEqual({ code: 'RATE_LIMITED', retryAfter: 86_400 });
+  });
+
+  it('answers an unknown, blocked or malformed login with the one code, in words that fit the login-only path', async () => {
+    const { app } = buildApp({ recoverPasswordBySubscription: async () => ({ status: 'mismatch' as const }) }, { panel: LOGIN_ONLY });
+
+    const response = await post(app, '/api/v1/auth/recover/subscription', { username: 'nobody' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ code: 'NOT_VERIFIED', message: 'Could not recover access with this login' });
+  });
+
+  it('still gives an account with a channel the "forgot password" form’s one answer', async () => {
+    const { app } = buildApp({ recoverPasswordBySubscription: async () => ({ status: 'sent_to_channels' as const }) }, { panel: LOGIN_ONLY });
+
+    const response = await post(app, '/api/v1/auth/recover/subscription', { username: 'alice' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: 'accepted',
+      message: 'If this login exists and has Telegram or an email linked, a reset link has been sent.',
+    });
+  });
+
+  it('says the operator switched it off, in words that fit the path asked for', async () => {
+    const disabled = async () => ({ status: 'disabled' as const });
+    const byLogin = await post(buildApp({ recoverPasswordBySubscription: disabled }, { panel: LOGIN_ONLY }).app, '/api/v1/auth/recover/subscription', { username: 'alice' });
+    const byLink = await post(buildApp({ recoverPasswordBySubscription: disabled }).app, '/api/v1/auth/recover/subscription', { link: 'AliceShort01q', username: 'alice' });
+
+    expect(byLogin.status).toBe(403);
+    expect(byLogin.body).toEqual({ code: 'RECOVERY_DISABLED', message: 'Password recovery by login is turned off' });
+    expect(byLink.body).toEqual({ code: 'RECOVERY_DISABLED', message: 'Password recovery by subscription link is turned off' });
+  });
+
+  it('still refuses an empty login', async () => {
+    const { app } = buildApp({}, { panel: LOGIN_ONLY });
+    const response = await post(app, '/api/v1/auth/recover/subscription', { username: '   ' });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ code: 'VALIDATION_FAILED', message: 'Validation failed' });
   });
 });
