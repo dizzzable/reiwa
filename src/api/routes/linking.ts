@@ -143,6 +143,26 @@ export function createLinkingRouter(deps: {
         res.status(409).json({ message: "Email is already linked to another account" });
         return;
       }
+      // The panel's refusals the customer can act on, each with a `code` the SPA
+      // turns into a sentence. They used to fall through to the 500 below, which
+      // the SPA can only show as "could not do that, try later" — and that is
+      // what every Telegram-first customer saw while the panel (older than the
+      // shell account it now makes for them) answered 404.
+      if (isUpstreamStatus(e, 404)) {
+        res.status(404).json({
+          code: "EMAIL_LINK_UNAVAILABLE",
+          message: "Linking an e-mail is not available for this account",
+        });
+        return;
+      }
+      if (isUpstreamStatus(e, 400) || isUpstreamStatus(e, 422)) {
+        res.status(400).json({ code: "EMAIL_REJECTED", message: "The e-mail address was not accepted" });
+        return;
+      }
+      if (isUpstreamStatus(e, 429)) {
+        res.status(429).json({ code: "EMAIL_RATE_LIMITED", message: "Too many requests. Please retry later." });
+        return;
+      }
       if (isUpstreamStatus(e, 503) || errMsg.includes("unavailable")) {
         res.status(503).json({ message: "Service unavailable. Please retry after 30 seconds." });
         return;
@@ -195,6 +215,12 @@ export function createLinkingRouter(deps: {
 
       if (isUpstreamStatus(e, 410) || errMsg.toLowerCase().includes("expired")) {
         res.status(410).json({ message: "Verification code has expired" });
+        return;
+      }
+      // The address was taken by another account between the code being sent
+      // and being entered; the panel spends the code and says so.
+      if (isUpstreamStatus(e, 409)) {
+        res.status(409).json({ message: "Email is already linked to another account" });
         return;
       }
       if (isUpstreamStatus(e, 429) || errMsg.toLowerCase().includes("too many attempts")) {

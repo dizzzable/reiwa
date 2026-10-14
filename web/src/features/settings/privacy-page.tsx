@@ -14,7 +14,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router";
-import { Check, Copy, FileText, Key, LogOut, Mail, Send } from "lucide-react";
+import { Check, Copy, FileText, Key, KeyRound, LogOut, Mail, Send } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -39,6 +39,8 @@ import { LegalDocumentDialog } from "@/components/legal-document-dialog";
 import { useLegalDocuments } from "@/lib/use-legal-documents";
 import type { LegalDocument } from "@/lib/api-client";
 import { signOutOtherDevices } from "@/features/auth/account-security-api";
+import { SaveCredentialsScreen, type SavedCredentials } from "@/features/auth/save-credentials";
+import { SetLoginPasswordForm } from "./set-login-password-form";
 
 export default function PrivacyPage() {
   const { t } = useTranslation();
@@ -47,8 +49,11 @@ export default function PrivacyPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [activeSheet, setActiveSheet] = useState<
-    "password" | "telegram" | "email" | "signOutEverywhere" | null
+    "password" | "loginPassword" | "telegram" | "email" | "signOutEverywhere" | null
   >(null);
+  // The login and password the customer just chose here, for «Сохраните данные
+  // для входа». Component memory only, and gone once they press «Продолжить».
+  const [savedCredentials, setSavedCredentials] = useState<SavedCredentials | null>(null);
 
   // `?next=` — set by «Сохраните данные для входа» when the customer detours
   // here to link Telegram or e-mail on the way to somewhere else (a deep link
@@ -64,6 +69,11 @@ export default function PrivacyPage() {
 
   const telegramLinked = Boolean(session?.telegramId);
   const emailVerified = Boolean(session?.webAccount?.emailVerifiedAt);
+  // A customer who came in through the bot or the Mini App has no login: no web
+  // account at all, or the shell linking an e-mail made. They have no password
+  // to change either, so for them the entry below sets a first login and
+  // password instead.
+  const hasLogin = Boolean(session?.webAccount?.login);
 
   // Deep-link: `?link=telegram|email` (from the quests dialog and the trial
   // CTA) opens that linking form straight away, so a button that says
@@ -84,6 +94,19 @@ export default function PrivacyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkTarget, emailEnabled, brandingLoading]);
 
+  // A login and password were just chosen: show them before anything else, as
+  // every other place that sets one does. «Продолжить» goes on to where the
+  // customer was heading, else back here.
+  if (savedCredentials !== null) {
+    return (
+      <SaveCredentialsScreen
+        login={savedCredentials.login}
+        password={savedCredentials.password}
+        continueTo={continueTo ?? "/settings/privacy"}
+      />
+    );
+  }
+
   return (
     <div className="min-h-full pb-6">
       {/* Header */}
@@ -94,13 +117,23 @@ export default function PrivacyPage() {
 
       {/* Menu items */}
       <div className="mx-5 space-y-1.5">
-        <PrivacyItem
-          icon={<Key className="h-5 w-5" />}
-          iconBg="bg-amber-500/10 text-amber-400"
-          label={t("privacy.changePassword")}
-          sublabel={t("privacy.changePasswordSub")}
-          onClick={() => setActiveSheet("password")}
-        />
+        {hasLogin ? (
+          <PrivacyItem
+            icon={<Key className="h-5 w-5" />}
+            iconBg="bg-amber-500/10 text-amber-400"
+            label={t("privacy.changePassword")}
+            sublabel={t("privacy.changePasswordSub")}
+            onClick={() => setActiveSheet("password")}
+          />
+        ) : (
+          <PrivacyItem
+            icon={<KeyRound className="h-5 w-5" />}
+            iconBg="bg-amber-500/10 text-amber-400"
+            label={t("privacy.loginPassword")}
+            sublabel={t("privacy.loginPasswordSub")}
+            onClick={() => setActiveSheet("loginPassword")}
+          />
+        )}
         <PrivacyItem
           icon={<Send className="h-5 w-5" />}
           iconBg="bg-blue-500/10 text-blue-400"
@@ -141,9 +174,10 @@ export default function PrivacyPage() {
             onClick={() => setActiveSheet("email")}
           />
         )}
-        {/* Only an account with a web login has a password to change and a
-            place for the panel to keep the moment; a Telegram-only one signs in
-            through Telegram and has neither. */}
+        {/* Only an account with a web account row has a place for the panel to
+            keep the moment; a Telegram-only customer who never linked an e-mail
+            has none. (The row may be a shell without a login: it keeps the
+            moment all the same.) */}
         {session?.webAccount && (
           <PrivacyItem
             icon={<LogOut className="h-5 w-5" />}
@@ -196,6 +230,26 @@ export default function PrivacyPage() {
         </DialogContent>
       </Dialog>
 
+      {/* First login and password — the permanent entry for a customer who has none */}
+      {!hasLogin && (
+        <Dialog
+          open={activeSheet === "loginPassword"}
+          onOpenChange={(open) => !open && setActiveSheet(null)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("privacy.loginPassword")}</DialogTitle>
+            </DialogHeader>
+            <SetLoginPasswordForm
+              onSaved={(credentials) => {
+                setActiveSheet(null);
+                setSavedCredentials(credentials);
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Link Telegram Dialog */}
       <Dialog open={activeSheet === "telegram"} onOpenChange={(open) => !open && setActiveSheet(null)}>
         <DialogContent>
@@ -216,7 +270,12 @@ export default function PrivacyPage() {
             <LinkEmailForm
               verified={emailVerified}
               currentEmail={session?.webAccount?.email ?? null}
+              offerLogin={!hasLogin}
               onSuccess={() => setActiveSheet(null)}
+              onLoginSaved={(credentials) => {
+                setActiveSheet(null);
+                setSavedCredentials(credentials);
+              }}
             />
           </DialogContent>
         </Dialog>
@@ -428,15 +487,24 @@ function LinkTelegramForm({ linked }: { linked: boolean }) {
 function LinkEmailForm({
   verified,
   currentEmail,
+  offerLogin,
   onSuccess,
+  onLoginSaved,
 }: {
   verified: boolean;
   currentEmail: string | null;
+  /**
+   * The customer has no login yet (they came in through the bot or the Mini
+   * App). Once the address is confirmed they are OFFERED one, once, and may
+   * decline: nothing here forces it, and nothing asks again on a later visit.
+   */
+  offerLogin: boolean;
   onSuccess: () => void;
+  onLoginSaved: (credentials: SavedCredentials) => void;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [step, setStep] = useState<"email" | "code">("email");
+  const [step, setStep] = useState<"email" | "code" | "offer">("email");
   const [email, setEmail] = useState(currentEmail ?? "");
   const [code, setCode] = useState("");
 
@@ -452,9 +520,20 @@ function LinkEmailForm({
     },
     onError: (err: unknown) => {
       if (sessionRefusalHandled(err, t)) return;
-      const status = (err as { response?: { status?: number } })?.response?.status;
+      const response = (err as { response?: { status?: number; data?: { code?: string } } } | null)
+        ?.response;
+      const status = response?.status;
+      const code = response?.data?.code;
       if (status === 409) {
         toast.error(t("privacy.emailAlreadyLinked"));
+      } else if (status === 404 && code === "EMAIL_LINK_UNAVAILABLE") {
+        // The panel does not know this account (a panel older than the one that
+        // makes it, or a customer it has deleted) - trying again will not help.
+        toast.error(t("privacy.emailLinkUnavailable"));
+      } else if (status === 400 && code === "EMAIL_REJECTED") {
+        toast.error(t("privacy.emailInvalid"));
+      } else if (status === 429) {
+        toast.error(t("privacy.emailTooManyRequests"));
       } else {
         toast.error(t("privacy.linkError"));
       }
@@ -467,7 +546,9 @@ function LinkEmailForm({
       if (data.verified) {
         toast.success(t("privacy.emailVerified"));
         void queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
-        onSuccess();
+        // With no login yet, the address just proved is the moment to offer one.
+        if (offerLogin) setStep("offer");
+        else onSuccess();
       } else {
         toast.error(t("privacy.emailCodeInvalid"));
       }
@@ -477,6 +558,10 @@ function LinkEmailForm({
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 410) {
         toast.error(t("privacy.emailCodeExpired"));
+      } else if (status === 409) {
+        // Taken by another account between the code being sent and entered.
+        toast.error(t("privacy.emailAlreadyLinked"));
+        setStep("email");
       } else if (status === 429) {
         toast.error(t("privacy.emailTooManyAttempts"));
         setStep("email");
@@ -487,6 +572,20 @@ function LinkEmailForm({
   });
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  if (step === "offer") {
+    return (
+      <div className="py-4" data-testid="login-offer">
+        <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 p-3 text-emerald-400">
+          <Check className="h-4 w-4 shrink-0" />
+          <p className="text-sm">{t("privacy.emailVerifiedHint", { email: email.trim() })}</p>
+        </div>
+        <p className="mt-4 text-sm font-medium text-[var(--brand-foreground)]">{t("privacy.setLoginOfferTitle")}</p>
+        <p className="mt-1 text-xs text-[var(--brand-muted-foreground)]">{t("privacy.setLoginOfferBody")}</p>
+        <SetLoginPasswordForm hint={null} onSaved={onLoginSaved} onLater={onSuccess} />
+      </div>
+    );
+  }
 
   if (verified && step === "email" && !initiateMutation.isPending) {
     return (

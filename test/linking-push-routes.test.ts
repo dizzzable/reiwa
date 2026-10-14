@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import express, { type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import http from "node:http";
+import { UpstreamError } from "../src/core/errors/index.js";
 
 // ── Mock Dependencies ───────────────────────────────────────────────────────
 
@@ -304,6 +305,72 @@ describe("POST /api/v1/link/email/verify", () => {
     assert.equal(res.body.success, true);
     assert.equal(res.body.verified, true);
     assert.equal(adminClient.linking.email.verify.mock.calls.length, 1);
+  });
+});
+
+// ── What the panel refuses, said so the SPA can name it ─────────────────────
+
+describe("the panel's refusals of an e-mail link reach the SPA as themselves, not as a 500", () => {
+  async function initiateRefusedBy(status: number, body: string) {
+    const adminClient = createMockAdminClient();
+    adminClient.linking.email.initiate.mockRejectedValue(
+      new UpstreamError("POST", "/api/internal/link/email/initiate", status, body),
+    );
+    const { app } = await buildLinkingApp({ adminClient, authenticated: true });
+    return request(app, {
+      method: "POST",
+      path: "/api/v1/link/email/initiate",
+      body: { email: "test@example.com" },
+    });
+  }
+
+  it("answers 404 with a code when the panel does not know the account", async () => {
+    // A panel older than the shell account answers exactly this for a customer
+    // who came through the bot — the log line that started this.
+    const res = await initiateRefusedBy(404, '{"message":"Web account not found for this userId"}');
+    assert.equal(res.status, 404);
+    assert.equal(res.body.code, "EMAIL_LINK_UNAVAILABLE");
+  });
+
+  it("answers 400 with a code when the panel rejects the address", async () => {
+    for (const status of [400, 422]) {
+      const res = await initiateRefusedBy(status, '{"message":["email must be an email"]}');
+      assert.equal(res.status, 400, `panel ${status}`);
+      assert.equal(res.body.code, "EMAIL_REJECTED", `panel ${status}`);
+    }
+  });
+
+  it("answers 429 with a code when the panel is rate limiting", async () => {
+    const res = await initiateRefusedBy(429, '{"message":"ThrottlerException: Too Many Requests"}');
+    assert.equal(res.status, 429);
+    assert.equal(res.body.code, "EMAIL_RATE_LIMITED");
+  });
+
+  it("keeps answering 409 for an address another account holds, and 503 for an unavailable panel", async () => {
+    assert.equal((await initiateRefusedBy(409, '{"message":"Email is already linked to another web account"}')).status, 409);
+    assert.equal((await initiateRefusedBy(503, '{"message":"unavailable"}')).status, 503);
+  });
+
+  it("still answers 500 for a fault of ours (the panel refusing the cabinet's own credentials)", async () => {
+    for (const status of [401, 403, 500]) {
+      assert.equal((await initiateRefusedBy(status, "{}")).status, 500, `panel ${status}`);
+    }
+  });
+
+  it("answers 409 when the address was taken between the code being sent and entered", async () => {
+    const adminClient = createMockAdminClient();
+    adminClient.linking.email.verify.mockRejectedValue(
+      new UpstreamError("POST", "/api/internal/link/email/verify", 409, '{"message":"Email is already linked to another web account"}'),
+    );
+    const { app } = await buildLinkingApp({ adminClient, authenticated: true });
+
+    const res = await request(app, {
+      method: "POST",
+      path: "/api/v1/link/email/verify",
+      body: { code: "123456" },
+    });
+
+    assert.equal(res.status, 409);
   });
 });
 
