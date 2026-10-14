@@ -39,13 +39,13 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** The ids and releases agreed with the panel. A change here is a change there. */
 const CONTRACT: ReadonlyArray<readonly [id: string, since: string]> = [
   ['web.addon-reset-end', '0.9.7.53'],
-  ['web.lifetime-subscription', '0.9.7.53'],
-  ['web.bell-addon-not-applied', '0.9.7.53'],
-  ['web.panel-timezone-dates', '0.9.7.53'],
   // «Отсрочка первого списания по СБП»: the one id that is not since 0.9.7.53. The panel's
   // registry has it with the same release (`web.autopay-first-charge-delay`, since
   // 0.9.7.56), and the pair's end-to-end run compares the two.
   ['web.autopay-first-charge-delay', '0.9.7.56'],
+  ['web.lifetime-subscription', '0.9.7.53'],
+  ['web.bell-addon-not-applied', '0.9.7.53'],
+  ['web.panel-timezone-dates', '0.9.7.53'],
   ['api.appearance-report', '0.9.7.53'],
   ['api.config-version-poll', '0.9.7.53'],
   ['bot.config-version-poll', '0.9.7.53'],

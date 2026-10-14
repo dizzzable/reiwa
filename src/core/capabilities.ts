@@ -86,6 +86,16 @@ export const CABINET_CAPABILITIES: readonly CabinetCapability[] = Object.freeze(
     since: '0.9.7.53',
     implementedBy: 'web/src/features/addons/add-on-end.ts',
   },
+  // «Отсрочка первого списания по СБП» (Antilopay): the autopay consent says that
+  // nothing is charged now, that access for the delay starts at once and when the
+  // first charge comes, and the delay it showed is sent back with the checkout.
+  // The panel offers the delay only to a cabinet that declares this: an older one
+  // would write «спишется сразу» over a charge that does not come.
+  {
+    id: 'web.autopay-first-charge-delay',
+    since: '0.9.7.56',
+    implementedBy: 'web/src/lib/autopay-delay.ts',
+  },
   // A subscription with no end date is neither renewed nor upgraded by a
   // purchase, and the page says why instead of offering a dead button.
   {
@@ -105,16 +115,6 @@ export const CABINET_CAPABILITIES: readonly CabinetCapability[] = Object.freeze(
     id: 'web.panel-timezone-dates',
     since: '0.9.7.53',
     implementedBy: 'web/src/lib/operator-time-zone-provider.tsx',
-  },
-  // «Отсрочка первого списания по СБП» (Antilopay): the autopay consent says that
-  // nothing is charged now, that access for the delay starts at once and when the
-  // first charge comes, and the delay it showed is sent back with the checkout.
-  // The panel offers the delay only to a cabinet that declares this: an older one
-  // would write «спишется сразу» over a charge that does not come.
-  {
-    id: 'web.autopay-first-charge-delay',
-    since: '0.9.7.56',
-    implementedBy: 'web/src/lib/autopay-delay.ts',
   },
   // The API tells the panel which appearance fields it did not take, for
   // «Кабинет не принял часть оформления» on «WEB Reiwa».
