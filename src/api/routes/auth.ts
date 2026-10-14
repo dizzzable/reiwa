@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 import { createHash, randomBytes } from "node:crypto";
 import type { AdminClient } from "../../lib/admin-client.js";
@@ -9,7 +9,8 @@ import { diagnoseTelegramInitData, parseUnverifiedTelegramInitData, validateTele
 import { LEGAL_DOCUMENT_KEYS } from "../../infrastructure/admin-client/namespaces/legal-documents.js";
 import type { WebFirstPasswordResult } from "../../infrastructure/admin-client/namespaces/web-auth.js";
 import { requireMode } from "../middleware/access-mode.js";
-import { authLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
+import { createAccountRateLimiter, createRedisRateLimiter } from "../middleware/rate-limit.js";
+import { createTelegramLaunchLimiter } from "../middleware/telegram-launch-limits.js";
 import { createSessionMiddleware } from "../middleware/session.js";
 import { createAuthBruteForceDetection } from "../middleware/brute-force-detection.js";
 import { createFreshSessionCheck } from "../middleware/fresh-session-check.js";
@@ -293,6 +294,33 @@ export function createAuthRouter(deps: {
 
   // Create endpoint-specific rate limiters
   const loginRateLimiter = createRedisRateLimiter(redis, "login");
+  // The bot's magic link and the social sign-in flow had no business sharing the
+  // password form's budget (5 wrong passwords per 15 min per address): a stale
+  // link or a tap on "Войти через Google" is not a guess. See `RATE_LIMITS`.
+  const botSigninRateLimiter = createRedisRateLimiter(redis, "botSignin");
+  const oauthRateLimiter = createRedisRateLimiter(redis, "oauth");
+  // Finishing a social sign-up needs the session it created, so it is metered
+  // by the account, not by an address a whole carrier shares. It is no place to
+  // guess anything: the login it sets is the caller's own.
+  const finishSetupAccountLimiter = createAccountRateLimiter({ windowMs: 15 * 60 * 1000, limit: 20 });
+  const finishSetupRateLimiter: RequestHandler = (req, res, next) => {
+    if (!req.webSession) {
+      // No session: the handler answers 401 and there is nothing to meter.
+      next();
+      return;
+    }
+    finishSetupAccountLimiter(req, res, next);
+  };
+  // The Mini App's two sign-in routes, metered by what the launch proves and not
+  // by the address it came from (`telegram-launch-limits.ts`).
+  const telegramBootstrapLimiter = createTelegramLaunchLimiter({
+    kind: "bootstrap",
+    botToken: config.BOT_TOKEN,
+  });
+  const telegramLinkExistingLimiter = createTelegramLaunchLimiter({
+    kind: "link-existing",
+    botToken: config.BOT_TOKEN,
+  });
   const registerRateLimiter = createRedisRateLimiter(redis, "register");
   const recoverRateLimiter = createRedisRateLimiter(redis, "recover");
   const passwordResetLimiter = createRedisRateLimiter(redis, "passwordReset");
@@ -314,16 +342,17 @@ export function createAuthRouter(deps: {
   // Single-use; the token is consumed atomically on the admin side so
   // a refreshed page can't replay the auth.
   //
-  // Auth: the token itself. We rate-limit against `loginRateLimiter`
-  // because invalid tokens are just as much a brute-force surface as
-  // failed passwords — without rate limiting an attacker could try
-  // millions of token guesses against the consume endpoint.
+  // Auth: the token itself. We rate-limit it (`botSignin`: failed attempts
+  // only, per address) because invalid tokens are a brute-force surface too —
+  // without rate limiting an attacker could try millions of token guesses
+  // against the consume endpoint. A guess is hopeless (256 bits), so the budget
+  // is sized for stale links, not for passwords.
   //
   // Returns:
   //   - 200 + `{ success: true, redirectUrl: "/dashboard" }` on success
   //     (cookie is set as a side-effect; SPA does the actual nav).
   //   - 401 + `{ success: false, message: "..." }` on bad / expired token.
-  router.post("/auth/bot-signin", loginRateLimiter, async (req: Request, res: Response) => {
+  router.post("/auth/bot-signin", botSigninRateLimiter, async (req: Request, res: Response) => {
     try {
       const token = typeof req.body?.token === "string" ? req.body.token : null;
       if (token === null || token.length !== 64 || !/^[a-f0-9]+$/i.test(token)) {
@@ -1155,7 +1184,7 @@ export function createAuthRouter(deps: {
   // also resolves an EXISTING user (e.g. imported from Remnawave with a
   // subscription), so the Mini App lands on their real subscription instead
   // of creating a duplicate.
-  router.post("/auth/telegram/bootstrap", authLimiter, async (req, res) => {
+  router.post("/auth/telegram/bootstrap", telegramBootstrapLimiter, async (req, res) => {
     try {
       const initData = (req.headers.authorization ?? "").replace(
         /^tma\s+/i,
@@ -1369,7 +1398,7 @@ export function createAuthRouter(deps: {
   // then re-mint the WebSession as the existing account so the subscription
   // shows up and bot→Mini App auto-login lands there. Typed refusals
   // (needs_admin_merge / other-telegram) map to 409 for the SPA to explain.
-  router.post("/auth/telegram/link-existing", authLimiter, async (req: AuthRequest, res) => {
+  router.post("/auth/telegram/link-existing", telegramLinkExistingLimiter, async (req: AuthRequest, res) => {
     try {
       const initData = (req.headers.authorization ?? "").replace(/^tma\s+/i, "");
       if (!initData || !config.BOT_TOKEN) {
@@ -1503,7 +1532,7 @@ export function createAuthRouter(deps: {
     }
   });
 
-  router.get("/auth/ext/:provider/start", loginRateLimiter, async (req: Request, res: Response) => {
+  router.get("/auth/ext/:provider/start", oauthRateLimiter, async (req: Request, res: Response) => {
     const provider = String(req.params.provider);
     const upper = toExtProvider(provider);
     if (!upper || !adminClient) {
@@ -1529,7 +1558,7 @@ export function createAuthRouter(deps: {
     }
   });
 
-  router.get("/auth/ext/:provider/callback", loginRateLimiter, async (req: AuthRequest, res: Response) => {
+  router.get("/auth/ext/:provider/callback", oauthRateLimiter, async (req: AuthRequest, res: Response) => {
     const provider = String(req.params.provider);
     if (!adminClient) {
       res.redirect("/sign-in?error=ext_unavailable");
@@ -1633,7 +1662,7 @@ export function createAuthRouter(deps: {
       .regex(/^[a-f0-9]+$/i, "Password hash must be a valid hex string"),
   });
 
-  router.post("/auth/ext/finish-setup", loginRateLimiter, async (req: AuthRequest, res: Response) => {
+  router.post("/auth/ext/finish-setup", finishSetupRateLimiter, async (req: AuthRequest, res: Response) => {
     try {
       if (!req.webSession || !req.webSessionId) {
         res.status(401).json({ message: "Unauthorized" });

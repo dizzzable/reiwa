@@ -34,6 +34,9 @@ const OAUTH_NAVIGATION_PATH = /^\/api\/v1\/auth\/ext\/[^/]+\/(start|callback)\b/
 /** `GET /api/v1/config-versions` exactly (a query string allowed) — see `apiLimiter`. */
 const CONFIG_VERSIONS_PATH = /^\/api\/v1\/config-versions(?:[?#]|$)/;
 
+/** `POST /api/v1/auth/telegram/bootstrap` exactly (a query string allowed) — see `apiLimiter`. */
+const TELEGRAM_LAUNCH_PATH = /^\/api\/v1\/auth\/telegram\/bootstrap(?:[?#]|$)/;
+
 export function isBrowserNavigation(req: Request): boolean {
   if (req.method !== "GET") {
     return false;
@@ -88,17 +91,17 @@ function createGenericLimitHandler(fallbackWindowMs: number) {
 
 // ── Generic in-memory rate limiter (express-rate-limit) ─────────────────────
 
-const AUTH_LIMITER_WINDOW_MS = 15 * 60 * 1000;
 const API_LIMITER_WINDOW_MS = 60 * 1000;
 
-export const authLimiter = rateLimit({
-  windowMs: AUTH_LIMITER_WINDOW_MS,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: "Too many requests, please try again later" },
-  handler: createGenericLimitHandler(AUTH_LIMITER_WINDOW_MS),
-});
+// `authLimiter` stood here: 20 per 15 minutes per address, ONE counter for the
+// Mini App bootstrap and for "I already have an account". Every cold start of
+// the Mini App spent one, and behind a carrier NAT, a VPN exit or a CDN edge
+// that does not forward the visitor's address all of an operator's customers
+// are one address - so the twenty-first launch in a quarter of an hour was
+// refused with "Слишком много попыток", valid signature or not. Those two
+// routes are metered by `createTelegramLaunchLimiter` now
+// (`telegram-launch-limits.ts`), by what a launch PROVES rather than by where
+// it came from.
 
 export const apiLimiter = rateLimit({
   windowMs: API_LIMITER_WINDOW_MS,
@@ -126,11 +129,17 @@ export const apiLimiter = rateLimit({
   //   process's memory — nothing upstream to protect. Counted, many open
   //   cabinets behind one carrier NAT address spent the shared budget on it and
   //   real calls got 429 (review R2a-10).
+  // - The Mini App launch (POST): a launch signed by Telegram must not be
+  //   refused for what other customers on the same address did, and this budget
+  //   is exactly that - 120 a minute per address, spent by every page of every
+  //   customer behind it. The launch has its own meter, which counts what a
+  //   signature does not prove (`createTelegramLaunchLimiter`).
   skip: (req) =>
     req.originalUrl.startsWith("/api/v1/realtime/stream") ||
     req.originalUrl.startsWith("/api/v1/webhooks/rezeis") ||
     (req.method === "GET" && OAUTH_NAVIGATION_PATH.test(req.originalUrl)) ||
-    (req.method === "GET" && CONFIG_VERSIONS_PATH.test(req.originalUrl)),
+    (req.method === "GET" && CONFIG_VERSIONS_PATH.test(req.originalUrl)) ||
+    (req.method === "POST" && TELEGRAM_LAUNCH_PATH.test(req.originalUrl)),
 });
 
 /**
@@ -206,6 +215,18 @@ export interface RateLimitConfig {
    * real signup.
    */
   refundFailedAttempts?: boolean;
+  /**
+   * The mirror of `refundFailedAttempts`: an attempt that SUCCEEDED (any status
+   * below 400) is given back once the response is known, so the budget counts
+   * only the attempts that failed.
+   *
+   * For a sign-in the address is not what is being protected - a guess is - and
+   * a customer who gets in has guessed nothing. Counting them anyway made the
+   * budget a rationing of how many customers behind one address (a carrier NAT,
+   * a VPN exit, a CDN edge) may sign in per quarter of an hour. Same refund
+   * script, so the same guarantees: never into a later window, never below zero.
+   */
+  refundSuccessfulAttempts?: boolean;
 }
 
 /**
@@ -230,10 +251,16 @@ function isRefundableOutcome(statusCode: number): boolean {
   return statusCode === 400 || statusCode === 403 || statusCode === 409;
 }
 
+/** A response that let the caller in or on: nothing was guessed wrong. */
+function isSuccessfulOutcome(statusCode: number): boolean {
+  return statusCode < 400;
+}
+
 /**
  * Predefined rate limit configurations per endpoint.
  *
- * Sign-in: 5 requests/15min/IP — 5 attempts pass, the 6th is blocked
+ * Sign-in: 5 FAILED attempts/15min/IP — 5 pass, the 6th is blocked; a sign-in
+ *   that succeeds is given back, so the budget is spent by wrong passwords only
  * Registration: 5 signups/hour/IP — the 6th is blocked; attempts that created
  *   nothing (400/422/5xx) are refunded, so the budget caps accounts, not typos
  * Recovery: 3 requests/hour per address (an IPv6 /64) — 3 pass, the 4th is
@@ -246,6 +273,37 @@ export const RATE_LIMITS = {
     maxAttempts: 5,
     windowSeconds: TTL.RATE_LOGIN,
     keyBuilder: rateLoginKey,
+    onExceed: "block",
+    blockBehavior: "after_limit",
+    refundSuccessfulAttempts: true,
+  } satisfies RateLimitConfig,
+
+  // The bot's magic link: a 64-hex token the panel issued, single-use. A
+  // guess is hopeless (256 bits), so what a failure here means is an expired
+  // or already-used link - which a customer produces by opening an old
+  // message - and the wrong-password budget above is the wrong size for it.
+  // Its own counter, so a few stale links cannot lock the sign-in form and the
+  // other way round; successes are given back.
+  botSignin: {
+    maxAttempts: 30,
+    windowSeconds: TTL.RATE_LOGIN,
+    keyBuilder: (ip) => `rate:botsignin:${ipRateBucket(ip)}`,
+    onExceed: "block",
+    blockBehavior: "after_limit",
+    refundSuccessfulAttempts: true,
+  } satisfies RateLimitConfig,
+
+  // Starting and finishing a social sign-in. Both are redirects the provider
+  // and the state cookie make safe (a forged callback fails the state check), so
+  // there is nothing to guess; this only keeps one address from hammering the
+  // provider exchange. It shared the password budget - five a quarter of an
+  // hour for everybody behind one address - and counted every redirect, so
+  // the fifth customer to tap "Войти через Google" was told to wait. A flood
+  // cap, high on purpose.
+  oauth: {
+    maxAttempts: 120,
+    windowSeconds: TTL.RATE_LOGIN,
+    keyBuilder: (ip) => `rate:oauth:${ipRateBucket(ip)}`,
     onExceed: "block",
     blockBehavior: "after_limit",
   } satisfies RateLimitConfig,
@@ -290,8 +348,7 @@ export const RATE_LIMITS = {
   } satisfies RateLimitConfig,
 
   // Reading a reset link's state — once per page load, and again on a retry.
-  // Kept apart from `authLimiter`, whose 20 per 15 minutes the Mini App
-  // bootstrap and Telegram linking spend too.
+  // Kept apart from the sign-in budget and from the Mini App launch's meters.
   passwordResetInspect: {
     maxAttempts: 30,
     windowSeconds: 15 * 60,
@@ -579,9 +636,15 @@ export function createRedisRateLimiter(
 
       // Registered only on the path that actually consumed an attempt, so a
       // rejected request never refunds a budget it did not spend.
-      if (config.refundFailedAttempts === true) {
+      const refundWhen =
+        config.refundSuccessfulAttempts === true
+          ? isSuccessfulOutcome
+          : config.refundFailedAttempts === true
+            ? isRefundableOutcome
+            : null;
+      if (refundWhen !== null) {
         res.on("finish", () => {
-          if (!isRefundableOutcome(res.statusCode)) return;
+          if (!refundWhen(res.statusCode)) return;
           void redis.eval(REFUND_SCRIPT, 1, key, String(ttl)).catch((error: unknown) => {
             getRequestLogger(req).warn(
               { err: error, component: "rate-limit", endpoint },

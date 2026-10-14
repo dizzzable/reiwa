@@ -375,8 +375,10 @@ describe('the reset routes have budgets of their own', () => {
   });
 
   it('does not share the in-memory budget of the Mini App bootstrap and linking', async () => {
-    // `authLimiter` allows 20 per 15 minutes per address. These routes are
-    // metered by their own Redis counters, which this fake always lets through.
+    // The Mini App's launch routes are metered in memory (`telegram-launch-limits.ts`,
+    // 20 bad launches per 15 minutes per address - once the shared `authLimiter`).
+    // These routes are metered by their own Redis counters, which this fake always
+    // lets through.
     const { app } = buildApp({
       inspectPasswordReset: async () => ({ status: 'expired' as const }),
       recoverPasswordBySubscription: async () => ({ status: 'mismatch' as const }),
