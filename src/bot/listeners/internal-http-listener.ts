@@ -99,6 +99,7 @@ import { invalidateLegalDocumentsCache } from '../../infrastructure/admin-client
 import { invalidatePolicyCache } from '../../infrastructure/admin-client/policy-cache.js';
 import type { BotConfigCache } from '../../infrastructure/bot-config/cache.js';
 import type { createLogger } from '../../infrastructure/logger/index.js';
+import { pushedCallbackData } from '../lib/menu-anew.js';
 import { isTelegramSafeButtonUrl } from '../widgets/main-keyboard.js';
 import { htmlCopy, markdownCopy, markdownV2Copy, messageCopy } from '../widgets/operator-copy.js';
 import { loggableTelegramError } from './telegram-error-log.js';
@@ -729,7 +730,10 @@ function buildKeyboard(
       kb.url(textArg, item.url);
     } else if (typeof item.callbackData === 'string' && item.callbackData.length > 0) {
       beginButton(eff);
-      kb.text(textArg, item.callbackData);
+      // Every message here is pushed — a notification, a broadcast post — and
+      // its «Главное меню» must not wipe it: the menu comes as a new message
+      // (`lib/menu-anew.ts`, the owner, 15.10.2026).
+      kb.text(textArg, pushedCallbackData(item.callbackData));
     }
   }
   return placed ? kb : undefined;

@@ -219,6 +219,9 @@ function BrowserPushSection() {
  *
  * The two "after 2 days" / "after 3 days" rows are gone: no emitter produces
  * those reminders, so those controls governed nothing even in principle.
+ * «Через 3, 7 и 14 дней после» are the panel's «Возврат покупателя» reminders
+ * (15.10.2026): off until the operator turns them on, and `available` lists
+ * them only then — so the subscriber sees exactly the ones that are sent.
  *
  * `connect_help` — «Помощь с подключением» — is ONE switch for two types: the
  * panel files the trial-and-gift notice (`connect_help_trial`) under the same
@@ -240,6 +243,9 @@ const NOTIFICATION_SWITCHES: ReadonlyArray<{
   { type: "expires_in_1_days", labelKey: "notifications.days1", group: "before" },
   { type: "expired", labelKey: "notifications.dayOf", group: "before" },
   { type: "expired_1_day_ago", labelKey: "notifications.after1", group: "after" },
+  { type: "expired_3_days_ago", labelKey: "notifications.after3", group: "after" },
+  { type: "expired_7_days_ago", labelKey: "notifications.after7", group: "after" },
+  { type: "expired_14_days_ago", labelKey: "notifications.after14", group: "after" },
   {
     type: "connect_help",
     labelKey: "connectHelp.settingsSwitch",

@@ -1747,6 +1747,8 @@ export const en: RuDict = {
     after1: '1 day after',
     after2: '2 days after',
     after3: '3 days after',
+    after7: '7 days after',
+    after14: '14 days after',
     // A paid add-on — extra traffic or devices — before and at its end.
     addonsGroup: 'Add-ons',
     addonEndsSoon: '3 days before an add-on ends',

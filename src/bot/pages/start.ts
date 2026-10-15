@@ -27,6 +27,10 @@
  *   • `menu` is answered by the same handler — see where both are registered.
  *   • The render is `showMainMenu`, which a button the bot no longer knows
  *     gets too, with the «Меню обновилось» toast (`pages/stale-button.ts`).
+ *
+ * `bot.callbackQuery('menu:new')` — «Главное меню» under a broadcast post or a
+ * notification (`lib/menu-anew.ts`): the same menu, sent as a NEW message, so
+ * the post it was pressed under stays (the owner, 15.10.2026).
  */
 import { InlineKeyboard } from 'grammy';
 
@@ -36,6 +40,7 @@ import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/b
 import { answerCallback } from '../lib/callback-answer.js';
 import { isSameChannelChat, resolveChannelChatId, resolveChannelGateVerdict } from '../lib/channel-gate.js';
 import { configWithin, MESSAGE_CONFIG_BUDGET_MS, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
+import { MENU_ANEW_CALLBACK } from '../lib/menu-anew.js';
 import { inlineButton } from '../widgets/inline-button.js';
 import { messageCopy, plainCopy } from '../widgets/operator-copy.js';
 import { sendChannelJoinPrompt } from './channel-join-prompt.js';
@@ -836,6 +841,10 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
   // answered it, and such a button only spun. The same handler, not a copy:
   // the own-chat rule, the RESTRICTED alert and the banner restore included.
   bot.callbackQuery('menu', backToMainMenu);
+  // «Главное меню» under a broadcast post or a notification: the menu below the
+  // post, not in its place. Every rule of the in-place menu holds — the own
+  // chat, the RESTRICTED alert, the double tap.
+  bot.callbackQuery(MENU_ANEW_CALLBACK, (ctx) => showMainMenu(ctx, deps, { anew: true }));
 };
 
 /**
@@ -870,6 +879,12 @@ export interface MainMenuPress {
    * «В меню» always was.
    */
   readonly noticeKey?: string;
+  /**
+   * The menu as a new message, the pressed one left as it is (`menu:new`):
+   * under a broadcast post or a notification, the message is what the
+   * subscriber was reading.
+   */
+  readonly anew?: boolean;
 }
 
 /**
@@ -938,6 +953,10 @@ export async function showMainMenu(ctx: BotContext, deps: PageDeps, press: MainM
   // token (review R2a-09).
   const pressed = pressedMessageKey(ctx);
   if (pressed !== null && menuSentAnewFor.has(pressed)) return;
+  if (press.anew === true) {
+    await sendMenuAnew(ctx, deps, pressed);
+    return;
+  }
   const botCfg = await deps.getConfig();
   const lang = coerceLocale(deps.userLocale.getSync(ctx.from?.id ?? 0));
   const view = await buildWelcomeView(ctx, deps);
@@ -975,20 +994,8 @@ export async function showMainMenu(ctx: BotContext, deps: PageDeps, press: MainM
     );
   } catch (err: unknown) {
     if (isUneditableMessageError(err)) {
-      // Checked and marked with no wait in between: a press handled beside this
-      // one (a webhook runner) cannot send a second menu either.
-      if (pressed !== null) {
-        if (menuSentAnewFor.has(pressed)) return;
-        menuSentAnewFor.set(pressed, true, MENU_SENT_ANEW_WINDOW_MS);
-      }
       // Not the menu's fault, and not the user's: that message cannot show it.
-      await sendWelcomeScreen(ctx, deps).catch((sendErr: unknown) => {
-        // Nothing reached the user, so nothing is remembered: the tap they try
-        // again within the window gets the menu, not only an answer (review
-        // R3b-04).
-        if (pressed !== null) menuSentAnewFor.delete(pressed);
-        deps.logger?.warn({ err: sendErr, telegramId: ctx.from?.id }, 'menu:main: the menu could not be sent anew');
-      });
+      await sendMenuAnew(ctx, deps, pressed);
       return;
     }
     // Telegram refuses edits when the new content is byte-identical
@@ -1004,4 +1011,26 @@ export async function showMainMenu(ctx: BotContext, deps: PageDeps, press: MainM
       );
     }
   }
+}
+
+/**
+ * The welcome screen as a new message for the press on `pressed` — a message
+ * Telegram will not edit, or one that must stay (`menu:new`). Once per message
+ * within {@link MENU_SENT_ANEW_WINDOW_MS}: a double tap sends nothing more — not
+ * a second menu, not a second sign-in token (review R2a-09).
+ */
+async function sendMenuAnew(ctx: BotContext, deps: PageDeps, pressed: string | null): Promise<void> {
+  // Checked and marked with no wait in between: a press handled beside this
+  // one (a webhook runner) cannot send a second menu either.
+  if (pressed !== null) {
+    if (menuSentAnewFor.has(pressed)) return;
+    menuSentAnewFor.set(pressed, true, MENU_SENT_ANEW_WINDOW_MS);
+  }
+  await sendWelcomeScreen(ctx, deps).catch((sendErr: unknown) => {
+    // Nothing reached the user, so nothing is remembered: the tap they try
+    // again within the window gets the menu, not only an answer (review
+    // R3b-04).
+    if (pressed !== null) menuSentAnewFor.delete(pressed);
+    deps.logger?.warn({ err: sendErr, telegramId: ctx.from?.id }, 'menu:main: the menu could not be sent anew');
+  });
 }

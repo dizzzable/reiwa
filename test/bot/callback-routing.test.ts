@@ -228,6 +228,13 @@ const KNOWN: ReadonlyArray<readonly [string, (calls: readonly ApiCall[]) => void
   ],
   ['ai_support_exit', (calls) => expect(sentText(calls)).toEqual(['ru:ai_support.exited'])],
   ['menu:main', (calls) => expect(String(sentText(calls)[0])).toContain('Привет, Ann!')],
+  [
+    'menu:new',
+    (calls) => {
+      expect(calls.map((c) => c.method)).toEqual(['answerCallbackQuery', 'sendMessage']);
+      expect(String(sentText(calls)[0])).toContain('Привет, Ann!');
+    },
+  ],
   ['lang:en', (calls) => expect(sentText(calls)).toEqual(['en:lang.changed(lang=en:lang.name.en)'])],
   [
     `quest_channel:${QUEST}`,
@@ -469,6 +476,75 @@ describe('callback routing — every page, in main.ts order', () => {
       // The menu that did go out is remembered as before: a double tap on it sends nothing.
       const doubleTap = await press('menu:main', DEFAULT_BOT_CONFIG, undefined, { refuse: UNEDITABLE });
       expect(doubleTap.map((c) => c.method)).toEqual(['answerCallbackQuery']);
+    });
+  });
+
+  // «Главное меню» under a broadcast post or a notification (the owner,
+  // 15.10.2026): the post is what the subscriber was reading, so the menu comes
+  // below it. `menu:main` drew it in place, and the post was gone.
+  describe('`menu:new`: the menu as a new message, the pressed post left as it is', () => {
+    const touchesThePost = (calls: readonly ApiCall[]): ApiCall[] =>
+      calls.filter((c) => c.method.startsWith('editMessage') || c.method === 'deleteMessage');
+
+    it('sends the welcome screen below the post and never edits or deletes the post', async () => {
+      const calls = await press('menu:new', DEFAULT_BOT_CONFIG);
+      expect(touchesThePost(calls)).toEqual([]);
+      const sent = calls.filter((c) => c.method === 'sendMessage');
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.payload['chat_id']).toBe(USER.id);
+      expect(String(sent[0]?.payload['text'])).toContain(WELCOME);
+      expect(answersOf(calls).map((c) => c.payload['text'])).toEqual([undefined]);
+    });
+
+    it('a post with a photo stays too: the menu, with its banner, as a new message', async () => {
+      const withBanner: BotConfig = {
+        ...DEFAULT_BOT_CONFIG,
+        visual: { ...DEFAULT_BOT_CONFIG.visual, bannerUrl: 'https://cdn.example/welcome.jpg' },
+      };
+      const calls = await press('menu:new', withBanner, undefined, {
+        messageExtra: { photo: [{ file_id: 'post-photo', file_unique_id: 'u1', width: 10, height: 10 }] },
+      });
+      expect(touchesThePost(calls)).toEqual([]);
+      const photos = calls.filter((c) => c.method === 'sendPhoto');
+      expect(photos).toHaveLength(1);
+      expect(String(photos[0]?.payload['caption'])).toContain(WELCOME);
+    });
+
+    it('a double tap sends ONE menu — no second sign-in token', async () => {
+      const first = await press('menu:new', DEFAULT_BOT_CONFIG);
+      const second = await press('menu:new', DEFAULT_BOT_CONFIG);
+      expect(first.filter((c) => c.method === 'sendMessage')).toHaveLength(1);
+      expect(second.map((c) => c.method)).toEqual(['answerCallbackQuery']);
+    });
+
+    it('a later press, once the window is over, gets a menu again', async () => {
+      await press('menu:new', DEFAULT_BOT_CONFIG);
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now + MENU_SENT_ANEW_WINDOW_MS);
+      try {
+        const later = await press('menu:new', DEFAULT_BOT_CONFIG);
+        expect(later.filter((c) => c.method === 'sendMessage')).toHaveLength(1);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('pressed in a group, it only stops the spinner: no menu there, and no sign-in token', async () => {
+      const calls = await press('menu:new', DEFAULT_BOT_CONFIG, undefined, {
+        chat: { id: -100777, type: 'supergroup', title: 'Operators' },
+      });
+      expect(calls.map((c) => c.method)).toEqual(['answerCallbackQuery']);
+    });
+
+    it('under RESTRICTED: the refusal alert, and no menu', async () => {
+      const adminClient = {
+        system: { getPlatformPolicy: vi.fn().mockResolvedValue({ accessMode: 'RESTRICTED', channelRequired: false }) },
+      };
+      const calls = await press('menu:new', DEFAULT_BOT_CONFIG, undefined, { adminClient });
+      expect(answersOf(calls).map((c) => c.payload)).toEqual([
+        { callback_query_id: 'cq-1', text: 'ru:access_mode.restricted', show_alert: true },
+      ]);
+      expect(sentText(calls)).toEqual([]);
     });
   });
 

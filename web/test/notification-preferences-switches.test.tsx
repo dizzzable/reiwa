@@ -194,8 +194,29 @@ describe("the expiry notification switches", () => {
 
   it("offers no switch for a reminder nobody sends", async () => {
     // «через 2 дня» / «через 3 дня» after expiry had switches and no emitter.
+    // «Через 3 дня после» is a reminder again (15.10.2026) — but only on a
+    // panel that says it sends it, which this one does not.
     await render();
     expect(switchFor("notifications.after2")).toBeUndefined();
     expect(switchFor("notifications.after3")).toBeUndefined();
+  });
+
+  it("draws «Через 3, 7 и 14 дней после» when the operator sends them, and saves each by its type", async () => {
+    // «Возврат покупателя»: the panel lists these only while the operator has
+    // them on.
+    api.getNotificationPreferences.mockResolvedValue({
+      prefs: { expired_7_days_ago: false },
+      available: [...ALL_FIVE, "expired_3_days_ago", "expired_7_days_ago", "expired_14_days_ago"],
+    });
+    await render();
+    expect(switches()).toHaveLength(8);
+    expect(switchFor("notifications.after3")?.getAttribute("aria-checked")).toBe("true");
+    expect(switchFor("notifications.after7")?.getAttribute("aria-checked")).toBe("false");
+    expect(switchFor("notifications.after14")?.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      switchFor("notifications.after14")?.click();
+    });
+    expect(api.updateNotificationPreferences).toHaveBeenCalledWith({ expired_14_days_ago: false });
   });
 });

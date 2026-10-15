@@ -1790,6 +1790,8 @@ export const ru = {
     after1: 'Через 1 день после',
     after2: 'Через 2 дня после',
     after3: 'Через 3 дня после',
+    after7: 'Через 7 дней после',
+    after14: 'Через 14 дней после',
     // A paid add-on — extra traffic or devices — before and at its end.
     addonsGroup: 'Дополнительные опции',
     addonEndsSoon: 'За 3 дня до окончания опции',
