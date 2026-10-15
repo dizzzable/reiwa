@@ -233,7 +233,7 @@ export function GatewayPicker({
                 const price = purchase?.priceFor(gw.type);
                 const caption =
                   delay === null
-                    ? t(autopayCaptionKey(method))
+                    ? t(autopayCaptionKey(method, gw.type))
                     : t("purchase.gateway.autopayCaptionSbpDelay", {
                         delay: describeAutopayDelay(t, delay),
                         amount: price === undefined ? "—" : formatPaymentAmount(price.price, price.currency),
@@ -244,7 +244,7 @@ export function GatewayPicker({
                     onClick={() =>
                       onSelect({
                         ...option(gw),
-                        label: `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(method))}`,
+                        label: `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(method, gw.type))}`,
                         autopay: true,
                         ...(method === null ? {} : { autopayMethod: method }),
                         ...(delay === null ? {} : { autopayDelay: delay }),

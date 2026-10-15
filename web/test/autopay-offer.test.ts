@@ -9,6 +9,7 @@ import {
   AUTOPAY_SIGN_UP_HOLD_MINUTES,
   AUTOPAY_SIGN_UP_PENDING_REASON,
   autopayRefusalMessage,
+  impliedAutopayMethod,
   isAutopayNotAvailableRefusal,
   isAutopaySignUpPendingRefusal,
   isProviderPeriod,
@@ -127,6 +128,49 @@ describe("Antilopay", () => {
         expect(typeof quote[key], key).toBe("string");
       }
     }
+  });
+});
+
+describe("AuraPay", () => {
+  const monthly = { durationDays: 30, price: { currency: "RUB", price: "299" }, isTrial: false };
+
+  it("has a period for exactly the terms the panel signs AuraPay up for", () => {
+    for (const days of [7, 14, 30, 60, 90, 180, 365]) {
+      expect(isProviderPeriod("AURAPAY", days), String(days)).toBe(true);
+    }
+    for (const days of [1, 31, 45, 120, 360, 730]) {
+      expect(isProviderPeriod("AURAPAY", days), String(days)).toBe(false);
+    }
+  });
+
+  it("is a provider subscription behind its one switch: never for a trial, a promo price or another term", () => {
+    expect(offersAutopay({ gatewayType: "AURAPAY", autopay: true, purchase: monthly })).toBe(true);
+    expect(offersAutopay({ gatewayType: "AURAPAY", autopay: false, purchase: monthly })).toBe(false);
+    expect(offersAutopay({ gatewayType: "AURAPAY", autopay: true, purchase: { ...monthly, isTrial: true } })).toBe(false);
+    expect(offersAutopay({ gatewayType: "AURAPAY", autopay: true, purchase: { ...monthly, durationDays: 45 } })).toBe(false);
+    expect(
+      offersAutopay({ gatewayType: "AURAPAY", autopay: true, purchase: { ...monthly, price: { currency: "RUB", price: "299.50" } } }),
+    ).toBe(false);
+    expect(
+      offersAutopay({
+        gatewayType: "AURAPAY",
+        autopay: true,
+        purchase: { ...monthly, price: { currency: "RUB", price: "249", discountSource: "PURCHASE" } },
+      }),
+    ).toBe(false);
+    expect(offersAutopay({ gatewayType: "AURAPAY", autopay: true, purchase: null })).toBe(false);
+  });
+
+  it("comes in one option, which the payer reads as a card's, and sends no method", () => {
+    expect(autopayOptions({ type: "AURAPAY", autopayMethods: ["CARD"] })).toEqual([null]);
+    expect(impliedAutopayMethod("AURAPAY")).toBe("CARD");
+    for (const gateway of ["YOOKASSA", "PLATEGA", "ROLLYPAY", "ANTILOPAY", null, undefined]) {
+      expect(impliedAutopayMethod(gateway), String(gateway)).toBeNull();
+    }
+    expect(autopayCaptionKey(null, "AURAPAY")).toBe("purchase.gateway.autopayCaptionCard");
+    expect(autopayCaptionKey(null, "PLATEGA")).toBe("purchase.gateway.autopayCaption");
+    expect(autopayHintKey("AURAPAY", undefined)).toBe("purchase.quote.autopayProviderCardHint");
+    expect(autopayHintKey("AURAPAY", null)).toBe("purchase.quote.autopayProviderCardHint");
   });
 });
 

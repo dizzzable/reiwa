@@ -118,6 +118,12 @@ describe("«Способы оплаты» and Antilopay's automatic charging", (
     expect(marks).toEqual([{ type: "ANTILOPAY", method: "CARD" }]);
   });
 
+  it("says an AuraPay autopay charges the card, though the panel names no method for it", async () => {
+    const shown = await render([{ ...SUBSCRIPTION, gatewayType: "AURAPAY", method: null }]);
+
+    expect(shown).toContain("paymentMethods.providerSubscriptions.viaCard");
+  });
+
   it("says an SBP autopay goes over SBP, and marks it with SBP", async () => {
     const shown = await render([{ ...SUBSCRIPTION, method: "SBP" }]);
 

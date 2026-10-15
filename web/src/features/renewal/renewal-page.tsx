@@ -920,7 +920,7 @@ function SelectGateway() {
     selectGateway({
       id: gw.type,
       label: autopay
-        ? `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(autopayMethod))}`
+        ? `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(autopayMethod, gw.type))}`
         : gatewayLabel(gw.type, gw.displayName),
       icon: GATEWAY_ICONS[gw.type] ?? "💳",
       currency: gw.currency,
@@ -1042,7 +1042,7 @@ function SelectGateway() {
                       <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
                       <p className="text-xs text-[color:var(--brand-muted-foreground)]">
                         {delay === null
-                          ? t(autopayCaptionKey(method))
+                          ? t(autopayCaptionKey(method, gw.type))
                           : t("purchase.gateway.autopayCaptionSbpDelayShort", { delay: describeAutopayDelay(t, delay) })}
                       </p>
                     </div>

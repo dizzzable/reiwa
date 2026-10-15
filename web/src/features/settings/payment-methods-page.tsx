@@ -32,6 +32,7 @@ import {
 import { useOperatorTimeZone } from '@/lib/operator-time-zone';
 import { formatDate } from '@/lib/utils';
 import { AutopayGatewayMark } from '@/components/ui/gateway-icon';
+import { impliedAutopayMethod } from '@/lib/autopay-offer';
 import { BackButton } from '@/components/ui/back-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StadiumButton } from '@/components/ui/stadium-button';
@@ -470,7 +471,7 @@ function ProviderSubscriptionCard({
                 date: formatDate(subscription.nextChargeAt, dateZone),
               })
             : t(
-                subscription.method === 'CARD'
+                (subscription.method ?? impliedAutopayMethod(subscription.gatewayType)) === 'CARD'
                   ? 'paymentMethods.providerSubscriptions.viaCard'
                   : 'paymentMethods.providerSubscriptions.via',
               )}

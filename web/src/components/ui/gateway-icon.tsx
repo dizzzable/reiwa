@@ -11,7 +11,7 @@ import { CreditCard, Repeat } from "lucide-react";
 // The owner's `icon/svg/sbp.svg` without its baked white square, which read
 // as a white tile on the dark theme.
 import sbpIconUrl from "@/assets/methods/sbp.svg?url";
-import type { AutopayMethod } from "@/lib/autopay-offer";
+import { type AutopayMethod, impliedAutopayMethod } from "@/lib/autopay-offer";
 import { currencyIconUrl, gatewayEmoji, gatewayIconUrl } from "@/lib/gateway-display";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +25,7 @@ const SBP_AUTOPAY_GATEWAYS: ReadonlySet<string> = new Set(["PLATEGA", "ROLLYPAY"
  * gateway's own (the owner's picture: Platega, and SBP next to it); ЮKassa,
  * which may save a card, SBP or a wallet, gets a repeat badge instead. A gateway
  * with two methods (Antilopay) shows the one this option charges: the card mark
- * or the SBP mark.
+ * or the SBP mark; a card-only one (AuraPay) the card mark.
  */
 export function AutopayGatewayMark({
   type,
@@ -36,7 +36,8 @@ export function AutopayGatewayMark({
   currency?: string | null;
   method?: AutopayMethod | string | null;
 }) {
-  if (method === "CARD") {
+  const shown = method ?? impliedAutopayMethod(type);
+  if (shown === "CARD") {
     return (
       <span className="flex h-7 shrink-0 items-center gap-1">
         <GatewayIcon type={type} currency={currency} className="h-7 w-7" />
@@ -44,7 +45,7 @@ export function AutopayGatewayMark({
       </span>
     );
   }
-  if (method === "SBP" || SBP_AUTOPAY_GATEWAYS.has(type)) {
+  if (shown === "SBP" || SBP_AUTOPAY_GATEWAYS.has(type)) {
     return (
       <span className="flex h-7 shrink-0 items-center gap-1">
         <GatewayIcon type={type} currency={currency} className="h-7 w-7" />
