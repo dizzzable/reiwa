@@ -151,7 +151,8 @@ describe("PlansPage at capacity", () => {
     // real numbers rather than the generic fallback.
     const notice = container?.querySelector("[role='status']");
     expect(notice).not.toBeNull();
-    expect(notice?.textContent).toContain("subscription.limitReachedDetail");
+    // A cap of one has its own sentence: «…пока у вас есть текущая».
+    expect(notice?.textContent).toContain("subscription.limitReachedOne");
     expect(notice?.textContent).toContain('"current":1');
     expect(notice?.textContent).toContain('"max":1');
 

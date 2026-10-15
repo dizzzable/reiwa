@@ -8,6 +8,7 @@ import { usePurchaseStore } from '@/stores/purchase.store'
 import {
   isSubscriptionLimitReached,
   notifySubscriptionLimitReached,
+  subscriptionLimitMessage,
 } from '@/lib/subscription-limit'
 import { subscriptionQueryKeys } from '@/lib/subscription-query-keys'
 import { useTrialToConvert } from '@/lib/trial-conversion'
@@ -85,14 +86,7 @@ export default function PlansPage() {
     navigate('/purchase')
   }
 
-  const limitNotice =
-    typeof actionPolicy?.activeSubscriptionCount === 'number' &&
-    typeof actionPolicy?.maxSubscriptions === 'number'
-      ? t('subscription.limitReachedDetail', {
-          current: actionPolicy.activeSubscriptionCount,
-          max: actionPolicy.maxSubscriptions,
-        })
-      : t('subscription.limitReached')
+  const limitNotice = subscriptionLimitMessage(t, actionPolicy)
 
   return (
     <div className="pb-8">

@@ -26,7 +26,7 @@ import { useAccessMode } from "@/lib/use-access-mode";
 import { AccessModeBanner } from "@/components/access-mode-banner";
 import {
   isSubscriptionLimitReached,
-  notifySubscriptionLimitReached,
+  subscriptionLimitMessage,
 } from "@/lib/subscription-limit";
 import { trialToConvert } from "@/lib/trial-conversion";
 import { cn } from "@/lib/utils";
@@ -286,12 +286,10 @@ export default function DashboardPage() {
 
   const handleBuy = () => {
     if (purchasesBlocked) return;
-    // Hard stop: never open the plan catalog when capacity is full.
-    // Server also rejects NEW/ADDITIONAL drafts with SUBSCRIPTION_LIMIT_REACHED.
-    if (buyLimitReached) {
-      notifySubscriptionLimitReached(t, actionPolicy);
-      return;
-    }
+    // At capacity the catalogue still opens: being full is a reason not to BUY,
+    // not a reason not to LOOK. The plans page says why above the list and
+    // refuses the tap on a plan; the server rejects NEW/ADDITIONAL drafts with
+    // SUBSCRIPTION_LIMIT_REACHED all the same.
     navigate("/plans");
   };
 
@@ -410,17 +408,7 @@ export default function DashboardPage() {
                   : "border-(--brand-primary)/40 bg-(--brand-primary)/15 text-(--brand-primary) hover:bg-(--brand-primary)/25",
               )}
               aria-label={t("card.actions.buy")}
-              title={
-                buyLimitReached
-                  ? typeof actionPolicy?.activeSubscriptionCount === "number" &&
-                    typeof actionPolicy?.maxSubscriptions === "number"
-                    ? t("subscription.limitReachedDetail", {
-                        current: actionPolicy.activeSubscriptionCount,
-                        max: actionPolicy.maxSubscriptions,
-                      })
-                    : t("subscription.limitReached")
-                  : undefined
-              }
+              title={buyLimitReached ? subscriptionLimitMessage(t, actionPolicy) : undefined}
             >
               <BuyGlyph className="h-4 w-4" style={buyDecor.glyphStyle} />
             </button>

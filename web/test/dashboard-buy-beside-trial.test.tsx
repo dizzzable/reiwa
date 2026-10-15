@@ -169,14 +169,16 @@ describe("DashboardPage «Купить» at the limit", () => {
     expect(navigate).toHaveBeenCalledWith("/plans");
   });
 
-  it("still refuses a full account without a trial", async () => {
+  // Owner, 15.10.2026: at the limit the plans can be looked at, not bought —
+  // «Тарифы» says why above the list and refuses the tap on a plan.
+  it("opens the catalogue to look at for a full account without a trial, with no refusal on the way", async () => {
     api.getAllSubscriptions.mockResolvedValue({ subscriptions: [subscription("paid", false)] });
     render();
     await settle();
 
     act(() => buyButton()?.click());
 
-    expect(toast.warning).toHaveBeenCalledTimes(1);
-    expect(navigate).not.toHaveBeenCalledWith("/plans");
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith("/plans");
   });
 });

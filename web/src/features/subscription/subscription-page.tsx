@@ -11,7 +11,7 @@ import { SubscriptionStatusBadge } from '@/components/ui/subscription-status-bad
 import { TipCard } from '@/components/ui/tip-card'
 import {
   isSubscriptionLimitReached,
-  notifySubscriptionLimitReached,
+  subscriptionLimitMessage,
 } from '@/lib/subscription-limit'
 import { useOperatorTimeZone } from '@/lib/operator-time-zone'
 import { calendarDaysUntil, phoneZone } from '@/lib/operator-zone'
@@ -101,13 +101,9 @@ export default function SubscriptionPage() {
           </TipCard>
           <StadiumButton
             fullWidth size="lg"
-            onClick={() => {
-              if (isSubscriptionLimitReached(policy)) {
-                notifySubscriptionLimitReached(t, policy)
-                return
-              }
-              navigate('/plans')
-            }}
+            // At capacity it still opens the catalogue to look at; the plans
+            // page says why a plan cannot be bought.
+            onClick={() => navigate('/plans')}
             icon={<ShoppingCart className="h-5 w-5" />}
             glow={!isSubscriptionLimitReached(policy)}
           >
@@ -216,18 +212,16 @@ export default function SubscriptionPage() {
                 {t(trial !== null ? 'subscription.buyForTrial' : 'subscription.buyNew')}
               </StadiumButton>
             )}
-            {/* Capacity full: no Buy CTA, only an explanation. Server also
+            {/* Capacity full: no Buy CTA, an explanation and a way to LOOK at
+                the plans — the plans page refuses the tap on one. Server also
                 rejects NEW/ADDITIONAL checkout with SUBSCRIPTION_LIMIT_REACHED. */}
             {trial === null && isSubscriptionLimitReached(policy) && (
-              <TipCard tone="warning">
-                {typeof policy?.activeSubscriptionCount === 'number' &&
-                typeof policy?.maxSubscriptions === 'number'
-                  ? t('subscription.limitReachedDetail', {
-                      current: policy.activeSubscriptionCount,
-                      max: policy.maxSubscriptions,
-                    })
-                  : t('subscription.limitReached')}
-              </TipCard>
+              <>
+                <TipCard tone="warning">{subscriptionLimitMessage(t, policy)}</TipCard>
+                <StadiumButton fullWidth variant="outline" onClick={() => navigate('/plans')}>
+                  {t('subscription.viewPlans')}
+                </StadiumButton>
+              </>
             )}
             {(canUpgrade || upgradeClosed) && (
               <StadiumButton

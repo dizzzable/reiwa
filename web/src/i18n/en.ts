@@ -331,10 +331,12 @@ export const en: RuDict = {
     buyForTrial: 'Buy a subscription',
     upgradePlan: 'Upgrade plan',
     manageDevices: 'Manage devices',
-    limitReached:
-      'Subscription limit reached. Delete one of your existing subscriptions or contact support.',
+    limitReached: 'Subscription limit reached: you cannot buy another subscription.',
+    limitReachedOne:
+      'Subscription limit {{current}}/{{max}}: you cannot buy another subscription while you have your current one.',
     limitReachedDetail:
-      'Subscription limit reached ({{current}} of {{max}}). Delete one of your existing subscriptions or contact support if you need a higher limit.',
+      'Subscription limit {{current}}/{{max}}: all slots are taken, so you cannot buy another subscription.',
+    viewPlans: 'View plans',
   },
   plans: {
     title: 'Plans',

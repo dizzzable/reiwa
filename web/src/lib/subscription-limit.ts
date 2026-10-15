@@ -34,6 +34,24 @@ export function isSubscriptionLimitReached(
 }
 
 /**
+ * The one sentence every screen says at capacity. A cap of one reads as "while
+ * you have your current one", a larger cap as "all slots are taken". It says
+ * "have", not "is active": the panel counts every subscription that is not
+ * deleted, an expired one included.
+ */
+export function subscriptionLimitMessage(
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  policy?: ActionPolicy | null,
+): string {
+  const current = policy?.activeSubscriptionCount;
+  const max = policy?.maxSubscriptions;
+  if (typeof current !== "number" || typeof max !== "number" || max < 1) {
+    return t("subscription.limitReached");
+  }
+  return t(max === 1 ? "subscription.limitReachedOne" : "subscription.limitReachedDetail", { current, max });
+}
+
+/**
  * User-facing notice when an action is REFUSED at capacity — a Buy press, or a
  * navigation the app is about to undo. Never a page-load announcement: this
  * fires a toast, a haptic and (by default) a blocking native dialog, which is
@@ -51,12 +69,7 @@ export function notifySubscriptionLimitReached(
   policy?: ActionPolicy | null,
   options?: { readonly nativeAlert?: boolean },
 ): void {
-  const current = policy?.activeSubscriptionCount;
-  const max = policy?.maxSubscriptions;
-  const message =
-    typeof current === "number" && typeof max === "number" && max >= 1
-      ? t("subscription.limitReachedDetail", { current, max })
-      : t("subscription.limitReached");
+  const message = subscriptionLimitMessage(t, policy);
 
   toast.warning(message, { duration: 5_000 });
   try {
