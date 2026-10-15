@@ -196,32 +196,24 @@ describe("offersAutopay", () => {
     expect(offersAutopay({ gatewayType: "PLATEGA", autopay: false, purchase: monthly })).toBe(false);
   });
 
-  // A change of a paid plan: the panel refuses a provider subscription on it.
-  // ЮKassa saves a card on any purchase, so it stays.
-  it("offers no provider subscription on a change of a paid plan, and still ЮKassa's", () => {
-    const change = { ...monthly, planChange: true };
-    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: change })).toBe(false);
-    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: change })).toBe(false);
-    expect(offersAutopay({ gatewayType: "YOOKASSA", autopay: true, purchase: change })).toBe(true);
-    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: { ...monthly, planChange: false } })).toBe(true);
-  });
-
-  // Buying beside a trial converts it: an UPGRADE priced like a new purchase,
-  // whose later charges renew the converted trial — the panel makes one.
-  it("offers it on a trial's conversion, on the terms any purchase has", () => {
-    const conversion = { ...monthly, planChange: true, convertsTrial: true };
-    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: conversion })).toBe(true);
-    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: conversion })).toBe(true);
-    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: { ...conversion, durationDays: 45 } })).toBe(false);
-    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: { ...conversion, durationDays: 60 } })).toBe(false);
+  // «Сменить тариф» — up or down — and buying beside a trial, which converts it:
+  // an UPGRADE priced like a new purchase, whose later charges renew the
+  // subscription it changed. The panel makes one on the terms any purchase has
+  // (the owner, 15.10.2026; a change of a paid plan was refused before).
+  it("offers it on a plan change, on the terms any purchase has", () => {
+    const change = monthly;
+    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: change })).toBe(true);
+    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: change })).toBe(true);
+    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: true, purchase: { ...change, durationDays: 45 } })).toBe(false);
+    expect(offersAutopay({ gatewayType: "ROLLYPAY", autopay: true, purchase: { ...change, durationDays: 60 } })).toBe(false);
     expect(
       offersAutopay({
         gatewayType: "PLATEGA",
         autopay: true,
-        purchase: { ...conversion, price: { currency: "RUB", price: "249", discountSource: "PURCHASE" } },
+        purchase: { ...change, price: { currency: "RUB", price: "249", discountSource: "PURCHASE" } },
       }),
     ).toBe(false);
-    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: false, purchase: conversion })).toBe(false);
+    expect(offersAutopay({ gatewayType: "PLATEGA", autopay: false, purchase: change })).toBe(false);
   });
 
   it("offers RollyPay's option on its own periods only", () => {

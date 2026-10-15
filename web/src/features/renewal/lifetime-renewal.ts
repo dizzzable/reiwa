@@ -10,8 +10,8 @@ import type { Subscription } from "@/types/api";
  *  - no renewal — not the card's «Продлить», not the subscription page, not
  *    the renewal list. Where one would have been offered, the page says
  *    «Подписка бессрочная — продлевать не нужно» (`renewal.reason.lifetime`);
- *  - no upgrade — the card's «Улучшить» and the subscription page's «Улучшить
- *    план» are disabled, the upgrade page leaves such a subscription out of its
+ *  - no upgrade — the card's and the subscription page's «Сменить тариф»
+ *    are disabled, the upgrade page leaves such a subscription out of its
  *    list, and each says «Подписка бессрочная — сменить тариф можно только
  *    через поддержку» (`upgrade.lifetime`). An upgrade restarts the
  *    term at the payment, which would give it an end date. A trial is still

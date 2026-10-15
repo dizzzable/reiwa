@@ -17,12 +17,12 @@
  *     or 365 days; on Antilopay 7, 30, 90 or 365 days;
  *   - no one-time promo discount (`discountSource: "PURCHASE"`), which would be
  *     charged again every period; a personal discount is permanent and may be;
- *   - a new purchase, a renewal, or the conversion of the buyer's trial — what
- *     buying beside a trial is (`lib/trial-conversion.ts`): an UPGRADE priced
- *     like a new purchase, the plan's full price with its term from payment,
- *     so every later charge renews what the first one bought. Never a trial
- *     plan, and never a change of a plan somebody already pays for: the panel
- *     refuses a provider subscription on any other UPGRADE.
+ *   - a new purchase, a renewal, or a plan change — «Сменить тариф», up or
+ *     down, and what buying beside a trial is (`lib/trial-conversion.ts`): an
+ *     UPGRADE priced like a new purchase, the plan's full price with its term
+ *     from payment, so every later charge renews what the first one bought.
+ *     Never a trial plan. A panel older than 15.10.2026 refuses it on a paid
+ *     plan's change (reason `PURCHASE_TYPE`), and the page says so.
  * The refusal stays the authority: this is the same rule written twice, and a
  * panel that changes it answers with the code, which the pages handle. RollyPay
  * also needs a tariff the operator named for that sum and period, which only
@@ -127,17 +127,12 @@ export function offersAutopay(input: {
     readonly durationDays: number;
     readonly price: Pick<PlanPrice, "currency" | "price" | "discountSource"> | undefined;
     readonly isTrial: boolean;
-    /** An UPGRADE rather than a subscription created or renewed. */
-    readonly planChange?: boolean;
-    /** The UPGRADE converts the buyer's trial (`lib/trial-conversion.ts`). */
-    readonly convertsTrial?: boolean;
   } | null;
 }): boolean {
   if (!approvesAutopay({ type: input.gatewayType, autopay: input.autopay, autopayMethods: input.autopayMethods })) return false;
   if (!isProviderSubscriptionGateway(input.gatewayType)) return true;
   const purchase = input.purchase;
   if (purchase === null || purchase.isTrial) return false;
-  if (purchase.planChange === true && purchase.convertsTrial !== true) return false;
   return isProviderPeriod(input.gatewayType, purchase.durationDays) && isRepeatablePrice(purchase.price);
 }
 

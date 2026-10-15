@@ -1,15 +1,14 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, Check, CreditCard } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   getActionPolicy,
   getQuote,
   createCheckout,
   createUpgradeCheckout,
-  getEnabledGateways,
   activatePromocode,
   getPaymentMethods,
   type CreationPurchaseType,
@@ -31,6 +30,7 @@ import {
 } from "@/lib/subscription-provisioning-receipt";
 import { AccessModeBlockedScreen, AccessModePendingScreen } from "@/components/access-mode-banner";
 import { PromoInput } from "./components/promo-input";
+import { AutopayConsentNotice, GatewayPicker } from "./components/gateway-picker";
 import {
   isPlanUnavailableRefusal,
   isQuoteNotEligibleRefusal,
@@ -41,24 +41,15 @@ import {
 import type { GatewayOption } from "@/stores/purchase.store";
 import type { Plan, PlanDuration } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
-import { gatewayLabel } from "@/lib/gateway-display";
 import {
-  autopayCaptionKey,
-  autopayHintKey,
-  type AutopayGateway,
-  autopayOptions,
   autopayRefusalMessage,
   isAutopayDelayChangedRefusal,
   isAutopayNotAvailableRefusal,
   isProviderSubscriptionGateway,
-  offersAutopay,
 } from "@/lib/autopay-offer";
-import { autopayDelayFor, autopayTail, describeAutopayDelay } from "@/lib/autopay-delay";
-import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
-import {
-  formatSavedPaymentMethodMeta,
-  formatSavedPaymentMethodTitle,
-} from "@/lib/saved-payment-method-display";
+import { autopayTail } from "@/lib/autopay-delay";
+import { GatewayIcon } from "@/components/ui/gateway-icon";
+import { formatSavedPaymentMethodTitle } from "@/lib/saved-payment-method-display";
 import { toast } from "sonner";
 import {
   isSubscriptionLimitError,
@@ -183,247 +174,36 @@ export function SelectDuration({
   );
 }
 
-/** A price the way the quote prints it: the symbol, two decimals and the currency. */
-function formatAutopayAmount(price: number | string, currency: string): string {
-  return `${CURRENCY_SYMBOLS[currency] ?? ""}${Number(price).toFixed(2)} ${currency}`;
-}
-
-const GATEWAY_ICONS: Record<string, string> = {
-  YOOKASSA: "💳",
-  YOOMONEY: "💳",
-  TBANK: "🏦",
-  ROBOKASSA: "💳",
-  CRYPTOMUS: "₿",
-  HELEKET: "💎",
-  CRYPTOPAY: "₿",
-  STRIPE: "💲",
-  TELEGRAM_STARS: "⭐",
-  MULENPAY: "💳",
-  CLOUDPAYMENTS: "☁️",
-  PAL24: "💳",
-  WATA: "💳",
-  PLATEGA: "💳",
-};
-
-function SelectGateway({
-  onSelect,
-  convertsTrial,
-}: {
-  onSelect: (gw: GatewayOption) => void;
-  /** The purchase converts the buyer's trial: an UPGRADE, see `offersAutopay`. */
-  convertsTrial: boolean;
-}) {
-  const { t } = useTranslation();
+function SelectGateway({ onSelect }: { onSelect: (gw: GatewayOption) => void }) {
   const lastNav = usePurchaseStore((s) => s.lastNav);
   const selectedGateway = usePurchaseStore((s) => s.selectedGateway);
   const selectedSavedPaymentMethodId = usePurchaseStore((s) => s.selectedSavedPaymentMethodId);
   const selectSavedPaymentMethod = usePurchaseStore((s) => s.selectSavedPaymentMethod);
   const selectedPlan = usePurchaseStore((s) => s.selectedPlan);
   const selectedDuration = usePurchaseStore((s) => s.selectedDuration);
-  const { data: gateways = [], isLoading } = useQuery({
-    queryKey: ["gateways"],
-    queryFn: getEnabledGateways,
-    staleTime: 300_000,
-  });
-  // Platega's option only where the provider can repeat this exact sum and term.
-  // A trial's conversion is an UPGRADE the provider can repeat: it is priced
-  // like a new purchase, and the later charges renew the converted trial.
-  const autopayOffered = (gw: AutopayGateway) =>
-    offersAutopay({
-      gatewayType: gw.type,
-      autopay: gw.autopay,
-      autopayMethods: gw.autopayMethods,
-      purchase:
+  return (
+    <GatewayPicker
+      // A trial's conversion is an UPGRADE the provider can repeat: it is priced
+      // like a new purchase, and the later charges renew the converted trial.
+      purchase={
         selectedDuration === null
           ? null
           : {
               durationDays: selectedDuration.days,
-              price: selectedDuration.prices.find((price) => price.gatewayType === gw.type),
+              priceFor: (gatewayType) => selectedDuration.prices.find((price) => price.gatewayType === gatewayType),
               isTrial: selectedPlan?.isTrial === true,
-              planChange: convertsTrial,
-              convertsTrial,
-            },
-    });
-  const yookassaEnabled = gateways.some((gw) => gw.type === "YOOKASSA" && gw.isActive !== false);
-  const { data: paymentMethodsData, isPending: paymentMethodsPending } = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: getPaymentMethods,
-    enabled: yookassaEnabled,
-    staleTime: 15_000,
-    retry: false,
-  });
-  const savedYookassaMethods = (paymentMethodsData?.methods ?? []).filter(
-    (method) => method.gatewayType === "YOOKASSA" && method.autopayEnabled !== false,
-  );
-
-  // Auto-select if only one gateway is available — but ONLY when the user
-  // arrived here going forward. Without the guard, pressing "back" from the
-  // quote step re-mounts this and immediately re-advances (a trap).
-  //
-  // And never over a saved card: for a YooKassa subscriber this screen offers
-  // "charge a saved card" beside "new payment page", which is a choice even
-  // with one gateway. Decide only once the cards are known — while their read
-  // is still out, "no cards yet" looks exactly like "no cards". Nor over a
-  // gateway offering «для автоматического списания»: that is a second option.
-  const savedMethodsUnknown = yookassaEnabled && paymentMethodsPending;
-  useEffect(() => {
-    if (
-      !isLoading &&
-      gateways.length === 1 &&
-      !autopayOffered(gateways[0]) &&
-      lastNav === "forward" &&
-      !savedMethodsUnknown &&
-      savedYookassaMethods.length === 0
-    ) {
-      const gw = gateways[0];
-      onSelect({
-        id: gw.type,
-        label: gatewayLabel(gw.type, gw.displayName),
-        icon: GATEWAY_ICONS[gw.type] ?? "💳",
-        currency: gw.currency,
-      });
-    }
-  }, [isLoading, gateways, lastNav, savedMethodsUnknown, savedYookassaMethods.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sort: in TMA context, put Telegram Stars first
-  const isTma = !!window.Telegram?.WebApp?.initData;
-  const sortedGateways = [...gateways].sort((a, b) => {
-    if (isTma) {
-      if (a.type === "TELEGRAM_STARS") return -1;
-      if (b.type === "TELEGRAM_STARS") return 1;
-    }
-    return 0;
-  });
-
-  if (isLoading)
-    return (
-      <div className="px-5 space-y-2">
-        {[1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="theme-skeleton h-16 animate-pulse rounded-2xl"
-          />
-        ))}
-      </div>
-    );
-
-  return (
-    <div className="space-y-3">
-      <h2 className="px-5 text-base font-semibold">{t("purchase.gateway.title")}</h2>
-      {savedYookassaMethods.length > 0 && (
-        <div className="px-5 space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {t("purchase.gateway.savedTitle")}
-          </p>
-          {savedYookassaMethods.map((method) => {
-            const selected =
-              selectedGateway?.id === "YOOKASSA" && selectedSavedPaymentMethodId === method.id;
-            return (
-              <button
-                key={method.id}
-                type="button"
-                onClick={() => {
-                  const yookassa = gateways.find((gw) => gw.type === "YOOKASSA");
-                  if (!yookassa) return;
-                  onSelect({
-                    id: yookassa.type,
-                    label: gatewayLabel(yookassa.type, yookassa.displayName),
-                    icon: GATEWAY_ICONS[yookassa.type] ?? "💳",
-                    currency: yookassa.currency,
-                  });
-                  // selectGateway clears saved method; re-apply after store update.
-                  queueMicrotask(() => selectSavedPaymentMethod(method.id));
-                }}
-                className={cn(
-                  "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
-                  selected && "border-(--brand-primary)/40 bg-(--brand-primary)/5",
-                )}
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
-                  <CreditCard className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 text-left">
-                  <p className="truncate font-medium text-foreground">
-                    {formatSavedPaymentMethodTitle(method, t)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatSavedPaymentMethodMeta(method, t)}
-                  </p>
-                </div>
-                {selected && <Check className="ml-auto h-4 w-4 shrink-0 text-(--brand-primary)" />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <div className="px-5 space-y-2">
-        {sortedGateways.map((gw) => (
-          <Fragment key={gw.type}>
-            <button
-              onClick={() =>
-                onSelect({
-                  id: gw.type,
-                  label: gatewayLabel(gw.type, gw.displayName),
-                  icon: GATEWAY_ICONS[gw.type] ?? "💳",
-                  currency: gw.currency,
-                })
-              }
-              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-            >
-              <span className="flex h-7 w-7 items-center justify-center text-2xl">
-                <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
-              </span>
-              <div className="text-left">
-                <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
-                <p className="text-xs text-muted-foreground">{gw.currency}</p>
-              </div>
-            </button>
-            {autopayOffered(gw) &&
-              autopayOptions(gw).map((method) => {
-                // An SBP sign-up with a delayed first charge says so where it is
-                // chosen: nothing is charged now, the plan is theirs at once.
-                const delay = autopayDelayFor(gw, method);
-                const price = selectedDuration?.prices.find((candidate) => candidate.gatewayType === gw.type);
-                const caption =
-                  delay === null
-                    ? t(autopayCaptionKey(method))
-                    : t("purchase.gateway.autopayCaptionSbpDelay", {
-                        delay: describeAutopayDelay(t, delay),
-                        amount: price === undefined ? "—" : formatAutopayAmount(price.price, price.currency),
-                      });
-                return (
-                  <button
-                    key={method ?? "autopay"}
-                    onClick={() =>
-                      onSelect({
-                        id: gw.type,
-                        label: `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(method))}`,
-                        icon: GATEWAY_ICONS[gw.type] ?? "💳",
-                        currency: gw.currency,
-                        autopay: true,
-                        ...(method === null ? {} : { autopayMethod: method }),
-                        ...(delay === null ? {} : { autopayDelay: delay }),
-                      })
-                    }
-                    className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-                  >
-                    <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
-                    <div className="text-left">
-                      <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
-                      <p className="text-xs text-muted-foreground">{caption}</p>
-                    </div>
-                  </button>
-                );
-              })}
-          </Fragment>
-        ))}
-        {gateways.length === 0 && (
-          <div className="py-8 text-center text-sm text-muted-foreground">
-            {t("purchase.gateway.empty")}
-          </div>
-        )}
-      </div>
-    </div>
+            }
+      }
+      selectedGateway={selectedGateway}
+      selectedSavedPaymentMethodId={selectedSavedPaymentMethodId}
+      onSelect={onSelect}
+      onSelectSaved={(gateway, methodId) => {
+        onSelect(gateway);
+        // selectGateway clears saved method; re-apply after store update.
+        queueMicrotask(() => selectSavedPaymentMethod(methodId));
+      }}
+      autoSelect={lastNav === "forward"}
+    />
   );
 }
 
@@ -498,9 +278,6 @@ function QuoteView({
   // `AnimatePresence mode="wait"` keeps a step it is leaving mounted for its
   // exit (about 200 ms), and that copy keeps re-rendering from the store.
   const isCurrentStep = step === "quote";
-  // Picking «для автоматического списания» is the customer's consent to save
-  // the method; this says what that consent means before they pay.
-  const showAutopayNotice = selectedGateway?.autopay === true && !selectedSavedPaymentMethodId;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -749,22 +526,15 @@ function QuoteView({
         }}
       />
 
-      {showAutopayNotice && (
-        <div className="rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-snug text-foreground">
-          <p className="font-medium">{t("purchase.quote.autopayTitle")}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {selectedGateway?.autopayDelay !== undefined
-              ? // Nothing is charged now: the plan is theirs for the delay, the first
-                // charge is this sum, after it, and then every term.
-                t("purchase.quote.autopayDelayHint", {
-                  delay: describeAutopayDelay(t, selectedGateway.autopayDelay),
-                  amount: `${CURRENCY_SYMBOLS[quote.currency] ?? ""}${quote.finalPrice.toFixed(2)} ${quote.currency}`,
-                  term: t("purchase.duration.days", { count: quote.durationDays }),
-                })
-              : t(autopayHintKey(selectedGateway?.id, selectedGateway?.autopayMethod))}
-          </p>
-        </div>
-      )}
+      {/* Picking «для автоматического списания» is the customer's consent to
+          save the method; this says what that consent means before they pay. */}
+      <AutopayConsentNotice
+        gateway={selectedGateway}
+        savedPaymentMethodId={selectedSavedPaymentMethodId}
+        amount={quote.finalPrice}
+        currency={quote.currency}
+        durationDays={quote.durationDays}
+      />
 
       {/* The panel already refused exactly this quote and did not say why, yet
           prices it again: not a withdrawn plan, and not something another press
@@ -1171,7 +941,7 @@ export default function PurchasePage() {
             <SelectDuration plan={selectedPlan} preferredCurrency={defaultCurrency} onSelect={selectDuration} />
           )}
           {step === "gateway" && (
-            <SelectGateway onSelect={selectGateway} convertsTrial={convertTrialId !== null} />
+            <SelectGateway onSelect={selectGateway} />
           )}
           {step === "quote" && (
             <QuoteView

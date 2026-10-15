@@ -5,14 +5,14 @@
  * These are actions **on the current subscription**:
  *   - Connect (Link2) — raises `onConnect`; the page decides what connecting
  *     means (today: opens the subscription URL instead of copying it).
- *   - Upgrade (ArrowUpCircle) — navigates to plans with upgrade intent
+ *   - Change plan (ArrowUpDown) — the plan change, up or down («Сменить тариф»)
  *   - Renew (RotateCcw) — navigates to plans with renew intent
  *
  * Buy and Promo live in the page header (top-right corner icons) since they
  * are global actions not tied to a specific subscription card.
  */
 
-import { ArrowUpCircle, Link2, Plus, RotateCcw } from "lucide-react";
+import { ArrowUpDown, Link2, Plus, RotateCcw } from "lucide-react";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -85,7 +85,7 @@ export function SubscriptionActions({
   const reasonKey = renewalReasonKey(sub, policyLifetime);
   const renewalReason = reasonKey === null ? null : t(reasonKey);
   // Nor is its plan changed by a purchase (`features/renewal/lifetime-renewal.ts`):
-  // «Улучшить» is closed, and says why.
+  // «Сменить тариф» is closed, and says why.
   const upgradeClosed = isUpgradeClosedForLifetime(sub, policyLifetime);
   const upgradeReasonId = useId();
 
@@ -123,7 +123,7 @@ export function SubscriptionActions({
         highlighted={connectHighlighted}
       />
       <ActionButton
-        icon={<ArrowUpCircle className="h-5 w-5" />}
+        icon={<ArrowUpDown className="h-5 w-5" />}
         label={t("card.actions.upgrade")}
         disabled={disabled || !canRenewOrUpgrade || purchasesBlocked || upgradeClosed}
         ariaDescribedBy={upgradeClosed ? upgradeReasonId : undefined}
@@ -210,7 +210,9 @@ function ActionButton({
       )}
     >
       <span className="text-(--brand-primary)">{icon}</span>
-      <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-[color:var(--brand-foreground)]">{label}</span>
+      {/* Two lines, not an ellipsis: «Сменить тариф» does not fit a quarter of a
+          phone's width on one, and «Сменить та…» names nothing. */}
+      <span className="line-clamp-2 w-full px-0.5 text-center text-[10.5px] font-medium leading-tight text-[color:var(--brand-foreground)]">{label}</span>
     </button>
   );
 }

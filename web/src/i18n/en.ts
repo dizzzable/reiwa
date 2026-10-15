@@ -329,7 +329,7 @@ export const en: RuDict = {
     renewFull: 'Renew subscription',
     buyNew: 'Buy a new subscription',
     buyForTrial: 'Buy a subscription',
-    upgradePlan: 'Upgrade plan',
+    upgradePlan: 'Change plan',
     manageDevices: 'Manage devices',
     limitReached: 'Subscription limit reached: you cannot buy another subscription.',
     limitReachedOne:
@@ -1297,7 +1297,7 @@ export const en: RuDict = {
     actions: {
       buy: 'Buy',
       connect: 'Connect',
-      upgrade: 'Upgrade',
+      upgrade: 'Change plan',
       renew: 'Renew',
       promo: 'Promo',
       topUp: 'Options',
@@ -1521,7 +1521,7 @@ export const en: RuDict = {
     noneRenewable: 'No subscriptions are available to renew.',
     loadError: 'Could not load the subscriptions to renew.',
     reason: {
-      trial: "A trial can't be renewed — upgrade to a regular plan instead.",
+      trial: "A trial can't be renewed — change it to a regular plan instead.",
       noPlan: 'This subscription has no plan — pick a plan when renewing.',
       noGateway: 'No payment method is available right now. Contact support.',
       archived: 'The plan is archived — renewing moves it to an available plan.',
@@ -1541,23 +1541,23 @@ export const en: RuDict = {
     checkoutError: 'Failed to create payment. Please try again later.',
   },
   upgrade: {
-    title: 'Upgrade',
+    title: 'Change plan',
     back: '← Back',
-    selectSubtitle: 'Choose a subscription to upgrade',
-    noneUpgradeable: 'No subscriptions available to upgrade.',
-    noTargets: 'No upgrades are available for this subscription.',
+    selectSubtitle: 'Choose the subscription whose plan you want to change',
+    noneUpgradeable: 'No subscriptions whose plan can be changed.',
+    noTargets: 'There are no other plans for this subscription.',
     lifetime: 'This subscription never expires — only support can change its plan.',
     choosePlan: 'Choose a new plan',
     chooseDuration: 'Choose a term',
     devices: 'devices',
     gb: 'GB',
     unlimited: 'Unlimited',
-    reviewTitle: 'Confirm upgrade',
+    reviewTitle: 'Confirm plan change',
     newPlan: 'New plan',
     total: 'Total',
-    resetsExpiry: 'The upgrade starts immediately and resets the subscription expiry.',
+    resetsExpiry: 'The new plan starts immediately, and the subscription term starts over.',
     resetsExpiryWithRemainder:
-      'The upgrade starts immediately: the term starts over, and the paid remainder of your current plan is added to it as days.',
+      'The new plan starts immediately: the term starts over, and the paid remainder of your current plan is added to it as days.',
     paidRemainder:
       'Paid remainder of your current plan: +{{days}} d on top of the new term — the exact number is counted at payment.',
     keepsAbovePlan: 'Above your plan: {{items}} — you keep this on the new plan too.',
@@ -1614,7 +1614,7 @@ export const en: RuDict = {
     },
     step2: {
       title: 'Subscription actions',
-      body: 'Buy a new one, connect a device, or upgrade your plan — three buttons right under the card.',
+      body: 'Buy a new one, connect a device, or change your plan — three buttons right under the card.',
     },
     step3: {
       title: 'Device management',

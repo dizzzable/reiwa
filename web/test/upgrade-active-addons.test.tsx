@@ -18,6 +18,8 @@ const api = vi.hoisted(() => ({
   createUpgradeCheckout: vi.fn(),
   getAllSubscriptions: vi.fn(),
   getEnabledGateways: vi.fn(),
+  // The payment step reads the saved ЮKassa cards beside the gateways.
+  getPaymentMethods: vi.fn(async () => ({ methods: [] })),
   getPlans: vi.fn(),
   getQuote: vi.fn(),
   getUpgradeOptions: vi.fn(),

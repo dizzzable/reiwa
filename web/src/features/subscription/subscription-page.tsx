@@ -64,7 +64,7 @@ export default function SubscriptionPage() {
   // subscription with no end date has nothing to renew.
   const reasonKey = renewalReasonKey(sub ?? null, policy?.lifetime)
   const renewalReason = reasonKey === null ? null : t(reasonKey)
-  // Nor is its plan changed by a purchase: «Улучшить план» is closed, and says why.
+  // Nor is its plan changed by a purchase: «Сменить тариф» is closed, and says why.
   const upgradeClosed = isUpgradeClosedForLifetime(sub ?? null, policy?.lifetime)
   const canUpgrade = policy?.canUpgrade === true && !upgradeClosed
   const upgradeReasonId = useId()

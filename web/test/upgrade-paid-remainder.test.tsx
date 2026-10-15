@@ -19,6 +19,8 @@ const api = vi.hoisted(() => ({
   createUpgradeCheckout: vi.fn(),
   getAllSubscriptions: vi.fn(),
   getEnabledGateways: vi.fn(),
+  // The payment step reads the saved ЮKassa cards beside the gateways.
+  getPaymentMethods: vi.fn(async () => ({ methods: [] })),
   getPlans: vi.fn(),
   getQuote: vi.fn(),
   getUpgradeOptions: vi.fn(),
@@ -87,9 +89,11 @@ const PRICED = {
   gatewayType: "YOOKASSA",
 };
 
-const OLD_TIP = "Улучшение начинается сразу и сбрасывает срок действия подписки.";
+// «Сменить тариф» (the owner, 15.10.2026): a change goes up or down, so neither
+// tip says «Улучшение» any more.
+const OLD_TIP = "Новый тариф начинается сразу, и срок подписки считается заново.";
 const NEW_TIP =
-  "Улучшение начинается сразу: срок считается заново, а оплаченный остаток прежнего тарифа добавляется к нему днями.";
+  "Новый тариф начинается сразу: срок считается заново, а оплаченный остаток прежнего тарифа добавляется к нему днями.";
 const LINE_PREFIX = "Оплаченный остаток прежнего тарифа";
 
 let ruT: TFunction;
@@ -227,7 +231,7 @@ describe("the wording", () => {
       "Paid remainder of your current plan: +1 d on top of the new term — the exact number is counted at payment.",
     );
     expect(enT("upgrade.resetsExpiryWithRemainder")).toBe(
-      "The upgrade starts immediately: the term starts over, and the paid remainder of your current plan is added to it as days.",
+      "The new plan starts immediately: the term starts over, and the paid remainder of your current plan is added to it as days.",
     );
     expect(ruT("upgrade.paidRemainder", { days: 1 })).toContain("+1 дн.");
   });

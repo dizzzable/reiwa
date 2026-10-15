@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { ArrowUpCircle, Check } from "lucide-react";
+import { ArrowUpDown, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import {
   createUpgradeCheckout,
   getAllSubscriptions,
-  getEnabledGateways,
+  getPaymentMethods,
   getPlans,
   getQuote,
   getUpgradeOptions,
@@ -21,9 +21,15 @@ import { describeActiveAddOns } from "./active-add-ons";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { useUpgradeStore } from "@/stores/upgrade.store";
-import type { GatewayOption } from "@/stores/purchase.store";
-import { gatewayLabel } from "@/lib/gateway-display";
-import { GatewayIcon } from "@/components/ui/gateway-icon";
+import { AutopayConsentNotice, GatewayPicker } from "@/features/purchase/components/gateway-picker";
+import {
+  autopayRefusalMessage,
+  isAutopayDelayChangedRefusal,
+  isAutopayNotAvailableRefusal,
+  isProviderSubscriptionGateway,
+} from "@/lib/autopay-offer";
+import { autopayTail } from "@/lib/autopay-delay";
+import { formatSavedPaymentMethodTitle } from "@/lib/saved-payment-method-display";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
 import { BackButton } from "@/components/ui/back-button";
@@ -46,23 +52,6 @@ import {
   warnsLifetime,
 } from "@/features/renewal/lifetime-renewal";
 
-const GATEWAY_ICONS: Record<string, string> = {
-  YOOKASSA: "💳",
-  YOOMONEY: "💳",
-  TBANK: "🏦",
-  ROBOKASSA: "💳",
-  CRYPTOMUS: "₿",
-  HELEKET: "💎",
-  CRYPTOPAY: "₿",
-  STRIPE: "💲",
-  TELEGRAM_STARS: "⭐",
-  MULENPAY: "💳",
-  CLOUDPAYMENTS: "☁️",
-  PAL24: "💳",
-  WATA: "💳",
-  PLATEGA: "💳",
-};
-
 const CURRENCY_SYMBOLS: Record<string, string> = { RUB: "₽", USD: "$", EUR: "€" };
 
 export default function UpgradePage() {
@@ -81,7 +70,7 @@ export default function UpgradePage() {
 
   useEffect(() => () => reset(), [reset]);
 
-  // Upgrade is a new purchase — blocked under PURCHASE_BLOCKED / RESTRICTED,
+  // A plan change («Сменить тариф», up or down) is a new purchase — blocked under PURCHASE_BLOCKED / RESTRICTED,
   // and waiting while the policy is not known.
   if (accessModePending) {
     return <AccessModePendingScreen />;
@@ -100,7 +89,7 @@ export default function UpgradePage() {
       <div className="flex items-center gap-3 px-5 pb-4">
         <BackButton fallback="/dashboard" label={t("upgrade.back")} />
         <div className="flex items-center gap-2">
-          <ArrowUpCircle className="h-5 w-5 text-(--brand-primary)" />
+          <ArrowUpDown className="h-5 w-5 text-(--brand-primary)" />
           <h1 className="text-lg font-semibold">{t("upgrade.title")}</h1>
         </div>
       </div>
@@ -333,61 +322,59 @@ function SelectDuration() {
 
 function SelectGateway() {
   const { t } = useTranslation();
-  const { selectedGateway, selectGateway, setStep } = useUpgradeStore();
-  const { data: gateways = [], isLoading } = useQuery({
-    queryKey: ["gateways"],
-    queryFn: getEnabledGateways,
+  const {
+    selectedPlan,
+    selectedDurationDays,
+    selectedGateway,
+    selectedSavedPaymentMethodId,
+    selectGateway,
+    selectSavedPaymentMethod,
+    setStep,
+  } = useUpgradeStore();
+  // The target's prices per gateway, from the catalogue the plan step drew its
+  // cards from (same key): whether a provider can repeat this sum for this term
+  // is read off them. A target the catalogue does not list is offered the
+  // ordinary payment and ЮKassa's option only.
+  const { data: catalog } = useQuery({
+    queryKey: ["plans"],
+    queryFn: getPlans,
     staleTime: 300_000,
   });
-
-  const choose = (gw: { type: string; displayName: string; currency: string }): void =>
-    selectGateway({
-      id: gw.type,
-      label: gatewayLabel(gw.type, gw.displayName),
-      icon: GATEWAY_ICONS[gw.type] ?? "💳",
-      currency: gw.currency,
-    } satisfies GatewayOption);
-
-  // Only while no gateway is chosen. Back from the review keeps the choice, and
-  // re-advancing bounced the subscriber straight into the review they were
-  // leaving — with a price error there, Back could never get out. Purchase and
-  // renewal guard this effect on the navigation direction; this store records
-  // none, and a gateway still chosen is what marks the way back in.
-  useEffect(() => {
-    if (!isLoading && gateways.length === 1 && selectedGateway === null) choose(gateways[0]!);
-  }, [isLoading, gateways, selectedGateway]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (isLoading) {
-    return (
-      <div className="px-5 space-y-2">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="theme-skeleton h-16 animate-pulse rounded-2xl" />
-        ))}
-      </div>
-    );
-  }
+  const duration = catalog
+    ?.find((plan) => String(plan.id) === String(selectedPlan?.id))
+    ?.durations.find((candidate) => candidate.days === selectedDurationDays);
 
   return (
     <div className="space-y-3">
-      <h2 className="px-5 text-base font-semibold">{t("purchase.gateway.title")}</h2>
-      <div className="px-5 space-y-2">
-        {gateways.map((gw) => (
-          <button
-            key={gw.type}
-            onClick={() => choose(gw)}
-            className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
-          >
-            <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
-            <div className="text-left">
-              <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
-              <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
-            </div>
-          </button>
-        ))}
-        {gateways.length === 0 && (
-          <div className="py-8 text-center text-sm text-[color:var(--brand-muted-foreground)]">{t("purchase.gateway.empty")}</div>
-        )}
-      </div>
+      <GatewayPicker
+        // A plan change is paid every way a purchase is, «для автоматического
+        // списания» included: its later charges renew this subscription on the
+        // new plan (the owner, 15.10.2026).
+        purchase={
+          selectedDurationDays === null
+            ? null
+            : {
+                durationDays: selectedDurationDays,
+                priceFor: (gatewayType) => duration?.prices.find((price) => price.gatewayType === gatewayType),
+                // Never a trial: the panel offers none as a target (`getTransitionPlans`).
+                isTrial: false,
+              }
+        }
+        selectedGateway={selectedGateway}
+        selectedSavedPaymentMethodId={selectedSavedPaymentMethodId}
+        onSelect={selectGateway}
+        onSelectSaved={(gateway, methodId) => {
+          selectGateway(gateway);
+          selectSavedPaymentMethod(methodId);
+        }}
+        // Only while no gateway is chosen. Back from the review keeps the choice,
+        // and re-advancing bounced the subscriber straight into the review they
+        // were leaving — with a price error there, Back could never get out. This
+        // store records no navigation direction; a gateway still chosen is what
+        // marks the way back in. And not before the prices are read: until then
+        // a lone gateway's «для автоматического списания» is not known to exist.
+        autoSelect={selectedGateway === null && catalog !== undefined}
+      />
       <div className="px-5">
         <StadiumButton fullWidth variant="ghost" onClick={() => setStep("duration")}>
           {t("upgrade.back")}
@@ -419,8 +406,22 @@ function useLeaveWithdrawnTarget(): () => void {
 function UpgradeReview({ refused }: { readonly refused: boolean }) {
   const { t } = useTranslation();
   const dateZone = useOperatorTimeZone();
-  const { selectedSubscriptionId, selectedPlan, selectedDurationDays, selectedGateway, setStep } =
-    useUpgradeStore();
+  const {
+    selectedSubscriptionId,
+    selectedPlan,
+    selectedDurationDays,
+    selectedGateway,
+    selectedSavedPaymentMethodId,
+    setStep,
+  } = useUpgradeStore();
+  const { data: paymentMethodsData } = useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: getPaymentMethods,
+    enabled: selectedGateway?.id === "YOOKASSA" && !!selectedSavedPaymentMethodId,
+    staleTime: 15_000,
+    retry: false,
+  });
+  const savedMethod = paymentMethodsData?.methods.find((method) => method.id === selectedSavedPaymentMethodId);
 
   const { data: quote, isLoading, error } = useQuery({
     queryKey: [
@@ -521,6 +522,9 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
           value={t("purchase.duration.days", { count: quote.durationDays })}
         />
         <Row label={t("purchase.quote.method")} value={selectedGateway?.label ?? "—"} />
+        {savedMethod && (
+          <Row label={t("purchase.quote.savedMethod")} value={formatSavedPaymentMethodTitle(savedMethod, t)} />
+        )}
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("upgrade.total")}</span>
           <span className="text-lg font-bold text-(--brand-primary)">
@@ -537,6 +541,15 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
       )}
       {carriedLine !== null && <TipCard tone="info">{carriedLine}</TipCard>}
       {addOnsLine !== null && <TipCard tone="info">{addOnsLine}</TipCard>}
+      {/* What «для автоматического списания» agrees to: the new plan's price,
+          every term, from now on. */}
+      <AutopayConsentNotice
+        gateway={selectedGateway}
+        savedPaymentMethodId={selectedSavedPaymentMethodId}
+        amount={quote.finalPrice}
+        currency={quote.currency}
+        durationDays={quote.durationDays}
+      />
       {/* Refused at checkout without a reason, yet priced again: not a
           withdrawn target, and not something another press of Pay changes. */}
       {refused && <TipCard tone="danger">{t("purchase.checkout.notAccepted")}</TipCard>}
@@ -575,6 +588,8 @@ function CheckoutStep({ onQuoteRefused }: { readonly onQuoteRefused: () => void 
     selectedPlan,
     selectedDurationDays,
     selectedGateway,
+    selectedSavedPaymentMethodId,
+    savePaymentMethodConsent,
     setCheckoutResult,
     setStep,
     reset,
@@ -583,13 +598,30 @@ function CheckoutStep({ onQuoteRefused }: { readonly onQuoteRefused: () => void 
   const leaveWithdrawnTarget = useLeaveWithdrawnTarget();
 
   const mutation = useMutation({
-    mutationFn: () =>
-      createUpgradeCheckout(
+    mutationFn: () => {
+      const interactiveYookassa = selectedGateway?.id === "YOOKASSA" && !selectedSavedPaymentMethodId;
+      // On Platega, RollyPay and Antilopay «для автоматического списания» is a
+      // subscription the provider runs, and this consent is what tells the panel
+      // to make one instead of a one-off payment; its later charges renew this
+      // subscription on the new plan. The payer's method (Antilopay: a card or
+      // SBP) and the delay they were shown ride along, as on a purchase.
+      const providerSubscription =
+        selectedGateway?.autopay === true && isProviderSubscriptionGateway(selectedGateway.id);
+      const autopay = autopayTail(
+        providerSubscription ? selectedGateway?.autopayMethod : undefined,
+        selectedGateway?.autopayDelay,
+      );
+      return createUpgradeCheckout(
         selectedPlan!.id,
         selectedDurationDays!,
         selectedGateway!.id,
         selectedSubscriptionId!,
-      ),
+        selectedSavedPaymentMethodId,
+        interactiveYookassa ? savePaymentMethodConsent : undefined,
+        interactiveYookassa ? savePaymentMethodConsent : providerSubscription ? true : undefined,
+        ...autopay,
+      );
+    },
     onSuccess: (result) => {
       setCheckoutResult(result.paymentId, result.checkoutUrl ?? null);
       // Stash the URL first: `startCheckoutRedirect` cannot navigate inside a
@@ -608,6 +640,20 @@ function CheckoutStep({ onQuoteRefused }: { readonly onQuoteRefused: () => void 
         void queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.all });
         void queryClient.resetQueries({ queryKey: ["upgrade-options"] });
         reset();
+        return;
+      }
+      if (isAutopayNotAvailableRefusal(err)) {
+        // Nothing was created. Back to the review, where «Изменить» leads to the
+        // ordinary payment — or, when the delay of the first charge the customer
+        // was shown is no longer given, to the payment step read anew.
+        const refusal = autopayRefusalMessage(err);
+        toast.error(t(refusal.key, refusal.values));
+        if (isAutopayDelayChangedRefusal(err)) {
+          void queryClient.invalidateQueries({ queryKey: ["gateways"] });
+          setStep("gateway");
+          return;
+        }
+        setStep("review");
         return;
       }
       if (isPlanUnavailableRefusal(err)) {
