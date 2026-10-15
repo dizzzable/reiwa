@@ -55,7 +55,9 @@ const BOT_INFO: UserFromGetMe = {
 
 const USER = { id: 4242, is_bot: false, first_name: 'Ann', language_code: 'ru' } as const;
 const PRIVATE = { id: USER.id, type: 'private', first_name: USER.first_name } as const;
-const API = new Api('123456789:AAHfakeTokenForFreshnessSpecs000000');
+// Not 35 characters after the colon: that is the shape of a real bot token, and
+// GitHub's secret scanning reported this fake one as a public leak.
+const API = new Api('123456789:AAHfakeTokenForFreshnessSpecs');
 
 function contextOf(update: Omit<Update, 'update_id'>): BotContext {
   return new Context({ update_id: 1, ...update } as Update, API, BOT_INFO) as BotContext;
