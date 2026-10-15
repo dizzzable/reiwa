@@ -18,6 +18,7 @@
  *   - end to end through React Query: the refetch carries `?v=<version>`, and
  *     the page redraws with the new data.
  */
+import type { AxiosRequestConfig } from "axios";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -348,8 +349,8 @@ describe("end to end through React Query", () => {
     const { ConfigVersionWatcherMount } = await import("@/lib/config-version-watcher-mount");
     const get = vi
       .spyOn(apiClient, "get")
-      .mockImplementation(async (url: string, config?: { params?: Record<string, string> }) =>
-        bodyOf(url, config?.params?.["v"]),
+      .mockImplementation(async (url: string, config?: AxiosRequestConfig) =>
+        bodyOf(url, (config?.params as Record<string, string> | undefined)?.["v"]),
       );
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -450,8 +451,8 @@ describe("end to end through React Query", () => {
     const { ConfigVersionWatcherMount } = await import("@/lib/config-version-watcher-mount");
     const get = vi
       .spyOn(apiClient, "get")
-      .mockImplementation(async (url: string, config?: { params?: Record<string, string> }) =>
-        bodyOf(url, config?.params?.["v"]),
+      .mockImplementation(async (url: string, config?: AxiosRequestConfig) =>
+        bodyOf(url, (config?.params as Record<string, string> | undefined)?.["v"]),
       );
     const queryFn = fetcherOf({ getConnectPage });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
