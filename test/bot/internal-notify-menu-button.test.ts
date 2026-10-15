@@ -49,11 +49,30 @@ afterEach(async () => {
   }
 });
 
-async function notify(path: string, body: Record<string, unknown>): Promise<{ status: number; sendMessage: ReturnType<typeof vi.fn> }> {
+const DEV_ID = 555000222;
+
+interface Sent {
+  readonly status: number;
+  readonly sendMessage: ReturnType<typeof vi.fn>;
+  readonly sendPhoto: ReturnType<typeof vi.fn>;
+  readonly sendVideo: ReturnType<typeof vi.fn>;
+}
+
+async function notify(path: string, body: Record<string, unknown>): Promise<Sent> {
   const sendMessage = vi.fn(async () => ({ message_id: 11 }));
-  const bot = { api: { sendMessage } } as unknown as ListenerOptions['bot'];
+  const sendPhoto = vi.fn(async () => ({ message_id: 12 }));
+  const sendVideo = vi.fn(async () => ({ message_id: 13 }));
+  const bot = { api: { sendMessage, sendPhoto, sendVideo } } as unknown as ListenerOptions['bot'];
   const cache = { get: async () => DEFAULT_BOT_CONFIG } as unknown as ListenerOptions['cache'];
-  const server = startInternalHttpListener({ bot, cache, secret: SECRET, port: 0, logger: silentLogger, devId: 1 });
+  const server = startInternalHttpListener({
+    bot,
+    cache,
+    secret: SECRET,
+    port: 0,
+    logger: silentLogger,
+    devId: DEV_ID,
+    keyboardUrls: { miniAppUrl: 'https://app.example.com', publicWebUrl: null },
+  });
   if (server === null) throw new Error('listener did not start');
   servers.push(server);
   await once(server, 'listening');
@@ -84,7 +103,18 @@ async function notify(path: string, body: Record<string, unknown>): Promise<{ st
     req.on('error', reject);
     req.end(raw);
   });
-  return { status, sendMessage };
+  return { status, sendMessage, sendPhoto, sendVideo };
+}
+
+/** Every button of a keyboard, row by row, as `[label, action]`. */
+function buttonsOf(options: Record<string, unknown> | undefined): unknown[][] {
+  const markup = options?.['reply_markup'] as { inline_keyboard: Array<Array<Record<string, unknown>>> } | undefined;
+  return (markup?.inline_keyboard ?? []).map((row) =>
+    row.map((button) => [
+      button['text'],
+      button['callback_data'] ?? (button['web_app'] as { url?: string } | undefined)?.url ?? button['url'],
+    ]),
+  );
 }
 
 /** The callback data of every button of the first message sent, row by row. */
@@ -129,5 +159,85 @@ describe('«Главное меню» under a pushed message', () => {
     for (const data of ['help', 'invite', 'screen:promo', 'menu:mainx', 'menus', 'back_to_menu']) {
       expect(pushedCallbackData(data)).toBe(data);
     }
+  });
+});
+
+/**
+ * A broadcast's test send (the owner, 15.10.2026: «что бы тестово так же
+ * было»): the post as a recipient gets it — its photo or video, its own
+ * buttons drawn as `/notify` draws them, and no «❌ Закрыть», which no
+ * recipient has. Every other dev card keeps «❌ Закрыть».
+ */
+describe('a broadcast test send in the developer’s chat', () => {
+  const BUTTONS = [
+    { text: '🎁 Активировать промокод', webAppPath: '/promo?code=SALE30' },
+    { text: '🏠 Главное меню', callbackData: 'menu:new' },
+  ];
+
+  it('a text post: its buttons — the Mini App one joined to the bot’s url — and no «❌ Закрыть»', async () => {
+    const sent = await notify('/notify-dev', { text: '<b>Акция</b>', parseMode: 'HTML', preview: true, buttons: BUTTONS });
+
+    expect(sent.status).toBe(204);
+    const [chatId, text, options] = sent.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+    expect(chatId).toBe(DEV_ID);
+    expect(text).toBe('<b>Акция</b>');
+    expect(options['parse_mode']).toBe('HTML');
+    expect(buttonsOf(options)).toEqual([
+      [['🎁 Активировать промокод', 'https://app.example.com/promo?code=SALE30']],
+      [['🏠 Главное меню', 'menu:new']],
+    ]);
+    // A recipient's post shows its link previews.
+    expect(options['link_preview_options']).toBeUndefined();
+  });
+
+  it('a photo: the photo, the text as its caption, the buttons', async () => {
+    const sent = await notify('/notify-dev', {
+      text: 'Скидка',
+      parseMode: 'HTML',
+      preview: true,
+      media: { type: 'photo', fileId: 'file-1' },
+      buttons: [BUTTONS[1]],
+    });
+
+    expect(sent.sendMessage).not.toHaveBeenCalled();
+    const [chatId, photo, options] = sent.sendPhoto.mock.calls[0] as [number, string, Record<string, unknown>];
+    expect([chatId, photo]).toEqual([DEV_ID, 'file-1']);
+    expect(options['caption']).toBe('Скидка');
+    expect(options['parse_mode']).toBe('HTML');
+    expect(buttonsOf(options)).toEqual([[['🏠 Главное меню', 'menu:new']]]);
+  });
+
+  it('a video, streamable as a recipient’s is', async () => {
+    const sent = await notify('/notify-dev', {
+      text: 'Ролик',
+      preview: true,
+      media: { type: 'video', fileId: 'file-2' },
+    });
+
+    const [, video, options] = sent.sendVideo.mock.calls[0] as [number, string, Record<string, unknown>];
+    expect(video).toBe('file-2');
+    expect(options['supports_streaming']).toBe(true);
+    expect(options['caption']).toBe('Ролик');
+    // No buttons asked for, none drawn — not even «❌ Закрыть».
+    expect(options['reply_markup']).toBeUndefined();
+  });
+
+  it('a photo with no words has no caption', async () => {
+    const sent = await notify('/notify-dev', { text: ' ', preview: true, media: { type: 'photo', fileId: 'file-1' } });
+    const [, , options] = sent.sendPhoto.mock.calls[0] as [number, string, Record<string, unknown>];
+    expect(options['caption']).toBeUndefined();
+  });
+
+  it('an ordinary dev card keeps «❌ Закрыть», and a photo or buttons it was sent do not apply', async () => {
+    const sent = await notify('/notify-dev', {
+      text: 'Сбой очереди',
+      media: { type: 'photo', fileId: 'file-1' },
+      buttons: BUTTONS,
+    });
+
+    expect(sent.sendPhoto).not.toHaveBeenCalled();
+    const [, , options] = sent.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+    expect(buttonsOf(options)).toEqual([[['❌ Закрыть', 'close']]]);
+    expect(options['link_preview_options']).toEqual({ is_disabled: true });
   });
 });

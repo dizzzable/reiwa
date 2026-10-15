@@ -184,6 +184,23 @@ interface DevNotifyPayload {
   readonly eventId?: unknown;
   readonly text?: unknown;
   readonly parseMode?: unknown;
+  /**
+   * A broadcast's test send: the post exactly as a recipient gets it — its
+   * `media`, its `buttons`, and no «❌ Закрыть» (see `handleNotifyDev`).
+   */
+  readonly preview?: unknown;
+  /** With `preview`: the post's photo or video, by Telegram file id; the text is its caption. */
+  readonly media?: unknown;
+  /** With `preview`: the post's buttons, in `/notify`'s shape. */
+  readonly buttons?: unknown;
+}
+
+/** A preview's photo or video, or `null` for none or a malformed one. */
+function readPreviewMedia(input: unknown): { readonly type: 'photo' | 'video'; readonly fileId: string } | null {
+  if (input === null || typeof input !== 'object') return null;
+  const { type, fileId } = input as { type?: unknown; fileId?: unknown };
+  if ((type !== 'photo' && type !== 'video') || typeof fileId !== 'string' || fileId.trim().length === 0) return null;
+  return { type, fileId: fileId.trim() };
 }
 
 interface DevNotifyDocumentPayload {
@@ -895,7 +912,7 @@ export function startInternalHttpListener(opts: ListenerOptions): http.Server | 
         return;
       }
       if (url === '/notify-dev') {
-        await handleNotifyDev({ bot, devId, logger, raw, res, cache });
+        await handleNotifyDev({ bot, devId, logger, raw, res, cache, keyboardUrls });
         return;
       }
       if (url === '/notify-dev-document') {
@@ -1051,6 +1068,8 @@ interface DevNotifyHandlerOptions {
    * a plan's or a user's name reached the operator as the token.
    */
   readonly cache?: BotConfigCache | null;
+  /** For a preview's buttons — a Mini App one is joined to the bot's own url, as on `/notify`. */
+  readonly keyboardUrls?: KeyboardUrls;
 }
 
 /**
@@ -1104,18 +1123,41 @@ async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
   }
   const claimKey = claim.kind === 'claimed' ? claim.key : null;
   const parseMode = isValidParseMode(payload.parseMode) ? payload.parseMode : undefined;
+  const emojiCtx = await resolveEmojiContext(opts.cache);
   // The operator's emoji tokens, in the form the parse mode carries.
-  const card = renderNotifyBody(text, parseMode, await resolveEmojiContext(opts.cache));
-  // Universal "Close" button so the dev can dismiss a handled event card
+  const card = renderNotifyBody(text, parseMode, emojiCtx);
+  // A broadcast's test send (the owner, 15.10.2026: «что бы тестово так же
+  // было»): the post as a recipient gets it — its photo or video, ITS buttons
+  // drawn as `/notify` draws them (a promo's Mini App button, «🏠 Главное
+  // меню»), and no «❌ Закрыть», which no recipient has. Every other card:
+  // the universal "Close" button, so the dev can dismiss a handled event
   // (routed by the shared `close` callback → deletes the message).
-  const keyboard = new InlineKeyboard().text('❌ Закрыть', 'close');
+  const preview = payload.preview === true;
+  const media = preview ? readPreviewMedia(payload.media) : null;
+  const keyboard = preview
+    ? buildKeyboard(payload.buttons, opts.keyboardUrls, emojiCtx)
+    : new InlineKeyboard().text('❌ Закрыть', 'close');
   try {
-    await bot.api.sendMessage(devId, card.text, {
-      ...(card.parseMode !== undefined ? { parse_mode: card.parseMode } : {}),
-      ...(card.entities !== undefined ? { entities: card.entities } : {}),
-      link_preview_options: { is_disabled: true },
-      reply_markup: keyboard,
-    });
+    if (media !== null) {
+      // The text is the caption; a post with a photo and no words has none.
+      const caption = card.text.trim().length > 0 ? card.text : undefined;
+      const options = {
+        ...(caption !== undefined ? { caption } : {}),
+        ...(caption !== undefined && card.parseMode !== undefined ? { parse_mode: card.parseMode } : {}),
+        ...(caption !== undefined && card.entities !== undefined ? { caption_entities: card.entities } : {}),
+        ...(keyboard !== undefined ? { reply_markup: keyboard } : {}),
+      };
+      if (media.type === 'photo') await bot.api.sendPhoto(devId, media.fileId, options);
+      else await bot.api.sendVideo(devId, media.fileId, { ...options, supports_streaming: true });
+    } else {
+      await bot.api.sendMessage(devId, card.text, {
+        ...(card.parseMode !== undefined ? { parse_mode: card.parseMode } : {}),
+        ...(card.entities !== undefined ? { entities: card.entities } : {}),
+        // A recipient's post shows its link previews; an event card does not.
+        ...(preview ? {} : { link_preview_options: { is_disabled: true } }),
+        ...(keyboard !== undefined ? { reply_markup: keyboard } : {}),
+      });
+    }
     if (claimKey !== null) IDEMPOTENCY_CACHE.settle(claimKey);
     res.statusCode = 204;
     res.end();

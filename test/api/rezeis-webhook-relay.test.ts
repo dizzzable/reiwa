@@ -620,6 +620,32 @@ describe('Rezeis webhook relay', () => {
     });
   });
 
+  it('forwards a broadcast test send as the post: preview, its photo and its buttons', async () => {
+    // The owner, 15.10.2026: «что бы тестово так же было».
+    const buttons = [
+      { text: '🎁 Активировать промокод', webAppPath: '/promo?code=SALE30' },
+      { text: '🏠 Главное меню', callbackData: 'menu:new' },
+    ];
+    const { status, url, body } = await relay('reiwa.dev.notify', {
+      text: 'Скидка',
+      parseMode: 'HTML',
+      preview: true,
+      media: { type: 'photo', fileId: 'file-1' },
+      buttons,
+    });
+
+    expect(status).toBe(204);
+    expect(url).toBe('http://reiwa-bot:5100/notify-dev');
+    expect(body).toMatchObject({ text: 'Скидка', preview: true, media: { type: 'photo', fileId: 'file-1' }, buttons });
+  });
+
+  it('forwards no preview fields for an ordinary dev card', async () => {
+    const { body } = await relay('reiwa.dev.notify', { text: 'карточка' });
+    expect(body).not.toHaveProperty('preview');
+    expect(body).not.toHaveProperty('media');
+    expect(body).not.toHaveProperty('buttons');
+  });
+
   it('forwards the dedup key on a dev error report', async () => {
     const { status, url, body } = await relay('reiwa.dev.notify.document', {
       eventId: 'sysevt:reiwa.error:2026-08-18T09:00:00.000Z:error-report',

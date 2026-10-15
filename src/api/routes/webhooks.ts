@@ -243,7 +243,7 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
  *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
  *   - `reiwa.channel.broadcast.document` → POST bot `/notify-broadcast-document` { eventId, chatId, content, filename?, caption?, topicThreadId?, parseMode? }
- *   - `reiwa.dev.notify`        → POST bot `/notify-dev`            { eventId?, text, parseMode? }
+ *   - `reiwa.dev.notify`        → POST bot `/notify-dev`            { eventId?, text, parseMode?, preview?, media?, buttons? }
  *   - `reiwa.dev.notify.document` → POST bot `/notify-dev-document` { eventId?, content, filename?, caption?, parseMode? }
  *   - `reiwa.backup.document`   → POST bot `/notify-backup-document` { recordId, token, chatId, filename?, caption?, topicThreadId? }
  * Unknown event types are ack'd (204).
@@ -400,7 +400,21 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           // Auto dev-fallback: deliver a system-event card to the bot's
           // BOT_DEV_ID (the bot knows it; rezeis doesn't). Used when no
           // operator group/topic is configured. Best-effort.
-          const parsed = parseRelayMetadata(z.object({ text: textSchema, eventId: optionalEventIdSchema, parseMode: parseModeSchema.optional() }), meta);
+          const parsed = parseRelayMetadata(
+            z.object({
+              text: textSchema,
+              eventId: optionalEventIdSchema,
+              parseMode: parseModeSchema.optional(),
+              // A broadcast's test send: the post as a recipient gets it — its
+              // photo or video and its own buttons (`handleNotifyDev`).
+              preview: z.boolean().optional(),
+              media: z
+                .object({ type: z.enum(["photo", "video"]), fileId: z.string().trim().min(1).max(256) })
+                .optional(),
+              buttons: buttonsSchema.optional(),
+            }),
+            meta,
+          );
           // Forward the dedup key when the panel sent one: the panel now relays
           // this event off a BullMQ queue with 4 attempts (15s/30s/60s backoff),
           // so the bot can see the same card up to four times. Omit the field
@@ -409,6 +423,9 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.eventId ? { eventId: parsed.eventId } : {}),
             text: parsed.text,
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
+            ...(parsed.preview === true ? { preview: true } : {}),
+            ...(parsed.media ? { media: parsed.media } : {}),
+            ...(parsed.buttons ? { buttons: parsed.buttons } : {}),
           });
           break;
         }
