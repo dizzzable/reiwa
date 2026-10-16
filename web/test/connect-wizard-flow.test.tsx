@@ -389,6 +389,27 @@ describe("the guided connect walk", () => {
     expect(container.querySelector("[data-wizard-copy]")).not.toBeNull();
   });
 
+  it("draws the QR sheet's copy button in the screen's text colour, not the accent's", async () => {
+    // The sheet lays its own sunken fill under the button. The walk used to
+    // hand it the primary button, whose accent foreground — dark under a light
+    // accent — then sat on that dark fill: a label nobody could read.
+    subscriptionsPayload = { subscriptions: [subscription("a", "Семейный")] };
+    await render();
+    await click("[data-wizard-begin]");
+    await click("[data-wizard-device-ok]");
+    await click("[data-wizard-installed]");
+    await click("[data-wizard-show-qr]");
+
+    const sheet = document.querySelector("[data-testid='connect-link-dialog']");
+    const copy = Array.from(sheet?.querySelectorAll("button") ?? []).find((button) =>
+      button.textContent?.includes("connect.copyLink"),
+    );
+    expect(copy).toBeDefined();
+    const classes = (copy?.className ?? "").split(/\s+/);
+    expect(classes.filter((name) => name.startsWith("bg-"))).toEqual(["bg-[color:var(--color-surface)]"]);
+    expect(classes.some((name) => name.startsWith("text-[color:"))).toBe(false);
+  });
+
   it("goes back along the way it came, and leaves from the first screen", async () => {
     subscriptionsPayload = { subscriptions: [subscription("a", "Семейный")] };
     await render();

@@ -117,6 +117,7 @@ import {
   PRIMARY_BUTTON,
   RAISED,
   Radar,
+  SHEET_BUTTON,
   SMALL_CORNER,
   SuccessBurst,
   SUNKEN,
@@ -951,6 +952,7 @@ export default function ConnectWizard() {
                     type="button"
                     className={`${SMALL_CORNER} flex h-[42px] flex-1 items-center justify-center gap-1.5 bg-[color:var(--color-surface-high)] text-[13px] font-medium`}
                     onClick={() => setSheet('link')}
+                    data-wizard-show-qr=""
                   >
                     <QrCode aria-hidden="true" className="size-3.5" />
                     {t('connectWizard.showQr')}
@@ -1293,7 +1295,7 @@ export default function ConnectWizard() {
         <ConnectLinkDialog
           url={subscriptionUrl}
           surface={{ raised: RAISED, sunken: SUNKEN }}
-          buttonClassName={PRIMARY_BUTTON}
+          buttonClassName={SHEET_BUTTON}
           themeStyle={themeStyle}
           onCopy={copyLink}
           onClose={() => setSheet(null)}

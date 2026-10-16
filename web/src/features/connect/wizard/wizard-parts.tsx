@@ -60,6 +60,16 @@ export const GHOST_BUTTON =
   'flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-item)] px-4 ' +
   'text-[15px] font-medium text-[color:var(--brand-muted-foreground)]'
 
+/**
+ * The QR sheet's copy button: shape only. The sheet lays its own sunken
+ * surface under the button, so a class with a fill or a text colour of its
+ * own fights it — PRIMARY_BUTTON there put the accent's foreground, dark
+ * under a light accent, on the dark sunken fill, and the label vanished.
+ */
+export const SHEET_BUTTON =
+  'flex min-h-[52px] w-full items-center justify-center gap-2 px-4 text-[15px] font-medium ' +
+  'transition-transform active:scale-[0.98]'
+
 /** The header: back, where we are, help — and four segments that fill as the walk goes. */
 export function WizardHeader({
   label,

@@ -59,7 +59,12 @@ export function ConnectLinkDialog({
 }: {
   url: string
   surface: { readonly raised: string; readonly sunken: string }
-  /** The screen's own step-button shape, so this sheet has no second one. */
+  /**
+   * The screen's own button SHAPE, so this sheet has no second one. Shape
+   * only: the sheet lays `surface.sunken` under it, and a class that brings a
+   * fill or a text colour of its own fights that surface — the accent's
+   * foreground on the sunken fill is a label nobody can read.
+   */
   buttonClassName: string
   /**
    * The concept's tokens, verbatim from the screen that opened this.
