@@ -43,6 +43,8 @@ const CONTRACT: ReadonlyArray<readonly [id: string, since: string]> = [
   // registry has it with the same release (`web.autopay-first-charge-delay`, since
   // 0.9.7.56), and the pair's end-to-end run compares the two.
   ['web.autopay-first-charge-delay', '0.9.7.56'],
+  // AuraPay's subscription, the same release on both sides (`web.aurapay-autopay`).
+  ['web.aurapay-autopay', '0.9.7.56'],
   ['web.lifetime-subscription', '0.9.7.53'],
   ['web.bell-addon-not-applied', '0.9.7.53'],
   ['web.panel-timezone-dates', '0.9.7.53'],

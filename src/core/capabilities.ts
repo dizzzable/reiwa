@@ -96,6 +96,16 @@ export const CABINET_CAPABILITIES: readonly CabinetCapability[] = Object.freeze(
     since: '0.9.7.56',
     implementedBy: 'web/src/lib/autopay-delay.ts',
   },
+  // AuraPay «картой, для автоматического списания»: the cabinet knows AuraPay
+  // runs the subscription (`PROVIDER_SUBSCRIPTION_GATEWAYS`), offers it only on
+  // AuraPay's terms, and sends the consent that makes one. The panel offers it
+  // only to a cabinet that declares this: an older one would offer it as a kept
+  // card, send no consent, and the payer would get a one-off payment.
+  {
+    id: 'web.aurapay-autopay',
+    since: '0.9.7.56',
+    implementedBy: 'web/src/lib/autopay-offer.ts',
+  },
   // A subscription with no end date is neither renewed nor upgraded by a
   // purchase, and the page says why instead of offering a dead button.
   {
