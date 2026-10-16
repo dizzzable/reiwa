@@ -63,7 +63,9 @@ vi.mock("@/features/dashboard/dashboard-page", () => probe("dashboard"));
 vi.mock("@/features/auth/open-in-browser-page", () => probe("open-in-browser"));
 vi.mock("@/features/subscription/subscription-page", () => probe("subscription"));
 vi.mock("@/features/subscription/devices-page", () => probe("devices"));
-vi.mock("@/features/connect/connect-page", () => probe("connect"));
+// The route's own module: it picks the page with every instruction or the
+// guided walk (`connect-route.tsx`), and either is "connect" here.
+vi.mock("@/features/connect/connect-route", () => probe("connect"));
 vi.mock("@/features/plans/plans-page", () => probe("plans"));
 vi.mock("@/features/renewal/renewal-page", () => probe("renew"));
 vi.mock("@/features/upgrade/upgrade-page", () => probe("upgrade"));

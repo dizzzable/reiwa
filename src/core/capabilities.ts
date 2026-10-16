@@ -106,6 +106,16 @@ export const CABINET_CAPABILITIES: readonly CabinetCapability[] = Object.freeze(
     since: '0.9.7.56',
     implementedBy: 'web/src/lib/autopay-offer.ts',
   },
+  // The «Интерактивный» connect mode: «Подключить» opens the guided walk —
+  // subscription, device, app, adding the subscription, the first connection —
+  // when the panel's `connectScreenMode` says so. Nothing is withheld from an
+  // older cabinet: it reads only `connectScreenEnabled` and opens the page with
+  // every instruction; the panel tells the operator as much.
+  {
+    id: 'web.connect-interactive',
+    since: '0.9.7.57',
+    implementedBy: 'web/src/features/connect/wizard/connect-wizard.tsx',
+  },
   // A subscription with no end date is neither renewed nor upgraded by a
   // purchase, and the page says why instead of offering a dead button.
   {

@@ -110,6 +110,21 @@ export class SubscriptionNamespace {
     );
   }
 
+  /**
+   * Whether this subscription's VPN profile is online right now — asked by the
+   * guided connect walk every few seconds while the customer switches the VPN
+   * on. A live read on the panel's side (`onlineAt` from Remnawave, stamped
+   * with the panel's clock), path-shaped like the two above, no body. A panel
+   * older than the walk answers 404; the caller reads that as "cannot tell".
+   */
+  getConnection(identity: UserIdentity, subscriptionId: string): Promise<unknown> {
+    return this.transport.request(
+      'GET',
+      `/api/internal/user/${encodeURIComponent(reference(identity))}` +
+        `/subscriptions/${encodeURIComponent(subscriptionId)}/connection`,
+    );
+  }
+
   getQuote(
     identity: UserIdentity,
     purchaseType: PurchaseType,

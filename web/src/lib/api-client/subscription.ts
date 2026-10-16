@@ -67,6 +67,16 @@ export const dismissConnectHelp = (subscriptionId: string) =>
     .then((r) => r.data);
 
 /**
+ * Whether one subscription's VPN profile is online right now — the guided
+ * connect walk's poll. Returned untyped: `features/connect/wizard/connection-watch.ts`
+ * re-reads it fail-closed, and anything it cannot vouch for means "cannot tell".
+ */
+export const getSubscriptionConnection = (subscriptionId: string, signal?: AbortSignal) =>
+  apiClient
+    .get<unknown>(`/subscription/${encodeURIComponent(subscriptionId)}/connection`, { signal })
+    .then((r) => r.data);
+
+/**
  * Lists the user's renewable subscriptions with per-item renewal pricing.
  * Pass the selected `gatewayType` for an accurate combined total; omit it
  * for an indicative price using the default-resolved gateway. `subscriptionIds`

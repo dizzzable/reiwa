@@ -11,6 +11,7 @@ import { sendSafeError } from "../lib/error-response.js";
 import { attachConnectSignatures, createConnectHandoffSigner } from "../lib/connect-handoff-signature.js";
 import { invalidateStaleUserSession } from "../lib/stale-user-session.js";
 import { describeUpstreamError } from "../lib/upstream-error.js";
+import { narrowSubscriptionConnection, UNKNOWN_CONNECTION } from "../lib/subscription-connection.js";
 
 /**
  * A subscription id as the panel mints them (cuid), with room for other id
@@ -417,6 +418,45 @@ export function createSubscriptionRouter(deps: {
           return;
         }
         sendSafeError(req, res, error, 502, "Failed to hide the tip", "subscription/connect-help/dismiss");
+      }
+    },
+  );
+
+  // GET /api/v1/subscription/:subscriptionId/connection — the guided connect
+  // walk asking, every few seconds, whether the VPN came online.
+  //
+  // Always a 200 with `{ state }`, and `unknown` for everything that is not an
+  // answer about the profile: no panel connection, a panel older than the walk
+  // (404), an outage. The walk shows a manual «Всё работает» on `unknown`, so
+  // turning a failure into an error status would only make the SPA retry a
+  // question nobody can answer. Narrowed field by field — the panel's body
+  // never reaches the browser as it came.
+  router.get(
+    "/subscription/:subscriptionId/connection",
+    requireSession,
+    async (req: AuthRequest, res) => {
+      const subscriptionId = String(req.params["subscriptionId"] ?? "");
+      if (!SUBSCRIPTION_ID_SHAPE.test(subscriptionId)) {
+        res.status(400).json({ message: "subscriptionId is invalid" });
+        return;
+      }
+      res.setHeader("Cache-Control", "no-store");
+      if (!adminClient) {
+        res.json(UNKNOWN_CONNECTION);
+        return;
+      }
+      try {
+        const answer = await adminClient.subscription.getConnection(resolveUserIdentity(req), subscriptionId);
+        res.json(narrowSubscriptionConnection(answer));
+      } catch (error: unknown) {
+        if (await invalidateStaleUserSession(req, error)) {
+          res.status(401).json({ message: "Session expired" });
+          return;
+        }
+        if (describeUpstreamError(error).status !== 404) {
+          req.log?.warn({ err: error }, "GET /subscription/:id/connection failed; answering unknown");
+        }
+        res.json(UNKNOWN_CONNECTION);
       }
     },
   );

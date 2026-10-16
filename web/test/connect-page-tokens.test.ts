@@ -157,3 +157,63 @@ describe("the connect screen borrows the cabinet's tokens", () => {
     }
   });
 });
+
+/**
+ * The guided walk («Интерактивный») is the same screen in another order, and
+ * the owner's rule for it was the same: colours, corners and the face are
+ * inherited from the connect theme or the cabinet. So it answers to the same
+ * three checks — with one honest difference, below.
+ */
+const WALK = [
+  "src/features/connect/wizard/connect-wizard.tsx",
+  "src/features/connect/wizard/wizard-parts.tsx",
+  "src/features/connect/wizard/connect-wizard.css",
+] as const;
+
+describe("the guided walk borrows the same tokens", () => {
+  const declared = declaredTokens(read("src/index.css"));
+
+  it("declares every token it reads", () => {
+    for (const file of WALK) {
+      const used = usedTokens(read(file));
+      expect(used.size, `${file} reads no token at all`).toBeGreaterThan(0);
+      const missing = [...used].filter((token) => !declared.has(token));
+      expect(missing, `${file} reads tokens that index.css does not declare`).toEqual([]);
+    }
+  });
+
+  it("takes every corner from the theme", () => {
+    for (const file of WALK.filter((path) => path.endsWith(".tsx"))) {
+      const corners = Array.from(
+        codeLines(read(file)).join(" ").matchAll(/rounded-\[([^\]]+)\]/g),
+        (m) => m[1],
+      ).filter(
+        (value) =>
+          !/var\(--radius-(card|item)\)/.test(value) || /[\d.](px|rem|em)\b/.test(value),
+      );
+      expect(corners, `${file} pins a corner the theme cannot move`).toEqual([]);
+    }
+  });
+
+  it("says «round» in exactly one place, for what is round by nature", () => {
+    // The radar's rings, the success badge, a live dot, confetti: a circle is
+    // what those ARE, as the recommendation dot is on the page. They take
+    // `CIRCLE`, and `rounded-full` appears nowhere else — so a chip or a button
+    // cannot quietly become a pill the theme has no say over.
+    const lines = WALK.filter((path) => path.endsWith(".tsx")).flatMap((file) =>
+      codeLines(read(file))
+        .filter((line) => line.includes("rounded-full"))
+        .map((line) => `${file}: ${line.trim()}`),
+    );
+    expect(lines).toEqual([
+      "src/features/connect/wizard/wizard-parts.tsx: export const CIRCLE = 'rounded-full'",
+    ]);
+  });
+
+  it("hardcodes no colour of its own", () => {
+    for (const file of WALK) {
+      const literals = Array.from(read(file).matchAll(/#[0-9a-f]{3,8}\b/gi), (m) => m[0]);
+      expect(literals, `${file} paints with a literal colour`).toEqual([]);
+    }
+  });
+});

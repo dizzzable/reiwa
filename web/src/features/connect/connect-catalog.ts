@@ -263,6 +263,21 @@ export function isConnectScreenEnabled(payload: unknown): boolean {
 }
 
 /**
+ * How the cabinet's own screen connects: every instruction on one page, or
+ * the guided walk (`connectScreenMode`, panel 0.9.7.75+).
+ *
+ * Read off the raw payload for the reason above, and fail-closed towards the
+ * page: a panel that has never heard of the walk sends nothing, and a value
+ * this cabinet does not know is one it cannot render. The page is the screen
+ * every operator already had.
+ */
+export type ConnectScreenMode = 'screen' | 'interactive';
+
+export function readConnectScreenMode(payload: unknown): ConnectScreenMode {
+  return isRecord(payload) && payload['connectScreenMode'] === 'interactive' ? 'interactive' : 'screen';
+}
+
+/**
  * Read whatever the edge returned.
  *
  * `null` for anything unusable — including the `null` the edge itself serves

@@ -94,8 +94,10 @@ const SubscriptionPage = lazy(
 const DevicesPage = lazy(
   () => import("@/features/subscription/devices-page"),
 );
+// The page with every instruction or the guided walk, as the panel's
+// `connectScreenMode` says (`features/connect/connect-route.tsx`).
 const ConnectPage = lazy(
-  () => import("@/features/connect/connect-page"),
+  () => import("@/features/connect/connect-route"),
 );
 const ConnectOpenPage = lazy(
   () => import("@/features/connect/connect-open-page"),

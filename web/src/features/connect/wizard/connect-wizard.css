@@ -1,0 +1,91 @@
+/*
+ * The guided connect walk's motion. Every colour is a token the connect theme
+ * can move; nothing here paints a literal. All of it stops under the system's
+ * «reduce motion» — the walk still works, it simply stops moving.
+ */
+
+@keyframes cw-drift {
+  0% { transform: translate(-4%, 0) scale(1); }
+  50% { transform: translate(3%, 3%) scale(1.06); }
+  100% { transform: translate(6%, -2%) scale(1); }
+}
+
+.cw-aurora {
+  background:
+    radial-gradient(38% 46% at 30% 30%, color-mix(in oklab, var(--brand-primary) 60%, transparent), transparent 72%),
+    radial-gradient(30% 40% at 74% 36%, color-mix(in oklab, var(--brand-primary) 40%, transparent), transparent 72%),
+    radial-gradient(26% 30% at 52% 12%, color-mix(in oklab, var(--brand-primary) 45%, transparent), transparent 72%);
+  filter: blur(18px);
+  animation: cw-drift 16s ease-in-out infinite alternate;
+  transition: opacity 0.6s;
+}
+
+@keyframes cw-shimmer {
+  0% { transform: translateX(-120%); }
+  35%, 100% { transform: translateX(120%); }
+}
+
+.cw-shimmer { position: relative; overflow: hidden; }
+.cw-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.38) 50%, transparent 70%);
+  animation: cw-shimmer 3.2s ease-in-out 1s infinite;
+  pointer-events: none;
+}
+
+@keyframes cw-packet {
+  0% { transform: translateX(0); opacity: 0; }
+  15%, 85% { opacity: 1; }
+  100% { transform: translateX(100px); opacity: 0; }
+}
+
+.cw-packet {
+  animation: cw-packet 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  box-shadow: 0 0 14px var(--brand-primary);
+}
+
+@keyframes cw-ring {
+  0% { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+.cw-ring { opacity: 0; animation: cw-ring 2.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite; }
+.cw-ring:nth-child(2) { animation-delay: 0.8s; }
+.cw-ring:nth-child(3) { animation-delay: 1.6s; }
+
+@keyframes cw-converge {
+  from { transform: scale(2); opacity: 0.8; }
+  to { transform: scale(1); opacity: 0; }
+}
+
+[data-cw-found="true"] .cw-ring { animation: cw-converge 0.5s ease-in forwards; }
+
+@keyframes cw-breathe {
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+.cw-live { animation: cw-breathe 1.2s ease-in-out infinite; box-shadow: 0 0 8px var(--brand-primary); }
+
+@keyframes cw-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.cw-draw path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: cw-draw 0.3s ease-out 0.28s forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-aurora,
+  .cw-shimmer::after,
+  .cw-packet,
+  .cw-ring,
+  .cw-live,
+  .cw-draw path {
+    animation: none !important;
+  }
+  .cw-shimmer::after { display: none; }
+  .cw-packet { left: 50px; opacity: 1; }
+  .cw-ring:first-child { opacity: 0.5; transform: scale(1.6); }
+  .cw-draw path { stroke-dashoffset: 0; }
+}
