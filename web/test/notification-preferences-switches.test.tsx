@@ -219,4 +219,27 @@ describe("the expiry notification switches", () => {
     });
     expect(api.updateNotificationPreferences).toHaveBeenCalledWith({ expired_14_days_ago: false });
   });
+
+  it("offers no «За 3 часа» / «За 1 час» while the operator has them off", async () => {
+    await render();
+    expect(switchFor("notifications.hours3")).toBeUndefined();
+    expect(switchFor("notifications.hour1")).toBeUndefined();
+  });
+
+  it("draws «За 3 часа» and «За 1 час» when the operator sends them, and saves each by its type", async () => {
+    // The last hours (17.10.2026): extra reminders the panel lists only while
+    // the operator has them on.
+    api.getNotificationPreferences.mockResolvedValue({
+      prefs: {},
+      available: [...ALL_FIVE, "expires_in_3_hours", "expires_in_1_hour"],
+    });
+    await render();
+    expect(switchFor("notifications.hours3")?.getAttribute("aria-checked")).toBe("true");
+    expect(switchFor("notifications.hour1")?.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      switchFor("notifications.hour1")?.click();
+    });
+    expect(api.updateNotificationPreferences).toHaveBeenCalledWith({ expires_in_1_hour: false });
+  });
 });

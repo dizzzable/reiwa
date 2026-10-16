@@ -241,6 +241,10 @@ const NOTIFICATION_SWITCHES: ReadonlyArray<{
   { type: "expires_in_3_days", labelKey: "notifications.days3", group: "before" },
   { type: "expires_in_2_days", labelKey: "notifications.days2", group: "before" },
   { type: "expires_in_1_days", labelKey: "notifications.days1", group: "before" },
+  // The last hours — the panel's extra reminders, offered only while the
+  // operator has them on (Rezeis Admin 0.9.7.76+).
+  { type: "expires_in_3_hours", labelKey: "notifications.hours3", group: "before" },
+  { type: "expires_in_1_hour", labelKey: "notifications.hour1", group: "before" },
   { type: "expired", labelKey: "notifications.dayOf", group: "before" },
   { type: "expired_1_day_ago", labelKey: "notifications.after1", group: "after" },
   { type: "expired_3_days_ago", labelKey: "notifications.after3", group: "after" },

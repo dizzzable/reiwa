@@ -1944,6 +1944,8 @@ export const en: RuDict = {
     days3: '3 days before',
     days2: '2 days before',
     days1: '1 day before',
+    hours3: '3 hours before',
+    hour1: '1 hour before',
     dayOf: 'On expiry day',
     after1: '1 day after',
     after2: '2 days after',
