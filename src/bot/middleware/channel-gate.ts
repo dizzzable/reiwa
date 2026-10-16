@@ -42,10 +42,6 @@
  *   - `/lang` and `lang:*` — see LANGUAGE;
  *   - `/paysupport` — Telegram's Stars terms oblige a bot that takes payments to
  *     answer it, and a buyer who left the channel still has a charge to ask about;
- *   - the ways out of AI-support mode: `ai_support_exit`, and `/cancel` while the
- *     chat is in that mode (out of it, `/cancel` does nothing and is gated like
- *     any command). Leaving a mode is not a feature, and a user the gate stops
- *     would otherwise be trapped in it until they subscribe;
  *   - `close` — the dismiss button on the operator's own cards (`pages/close.ts`).
  * The quest verify button (`quest_channel:<id>`) is gated with a FRESH check:
  * it is pressed right after joining, and a remembered "not subscribed" must not
@@ -85,7 +81,6 @@ import { channelGateApiFor, channelGateDepsOf, isOwnPrivateChat } from '../lib/b
 import { answerCallback } from '../lib/callback-answer.js';
 import { resolveChannelGateVerdict } from '../lib/channel-gate.js';
 import { configWithin, TOAST_CONFIG_BUDGET_MS } from '../lib/config-within.js';
-import { AI_SUPPORT_EXIT_CALLBACK, CANCEL_COMMAND, isInAiSupportMode } from '../pages/ai-support-mode.js';
 import { CHECK_CHANNEL_CALLBACK_RE, sendChannelJoinPromptUnlessRecent } from '../pages/channel-join-prompt.js';
 import { CLOSE_CALLBACK } from '../pages/close.js';
 import { coerceLocale } from '../pages/coerce-locale.js';
@@ -131,7 +126,6 @@ export const USER_AUTHORED_FIELDS = [
 
 /** grammY's own matchers, so an exemption means exactly what the page registers. */
 const isExemptCommand = Context.has.command(['start', LANG_COMMAND, PAYSUPPORT_COMMAND]);
-const isCancelCommand = Context.has.command(CANCEL_COMMAND);
 
 function isUserAuthored(message: Message): boolean {
   return USER_AUTHORED_FIELDS.some((field) => message[field] !== undefined);
@@ -150,7 +144,6 @@ export function channelGateScope(ctx: BotContext): ChannelGateScope {
 
   if (message !== undefined) {
     if (!isUserAuthored(message) || isExemptCommand(ctx)) return 'pass';
-    if (isCancelCommand(ctx) && isInAiSupportMode(ctx)) return 'pass';
     return 'gate';
   }
 
@@ -165,8 +158,7 @@ export function channelGateScope(ctx: BotContext): ChannelGateScope {
     if (
       CHECK_CHANNEL_CALLBACK_RE.test(data) ||
       LANG_CALLBACK_RE.test(data) ||
-      data === CLOSE_CALLBACK ||
-      data === AI_SUPPORT_EXIT_CALLBACK
+      data === CLOSE_CALLBACK
     ) {
       return 'pass';
     }

@@ -36,9 +36,9 @@ export interface FakeBot {
   callbackQuery(matcher: string | RegExp, handler: (ctx: BotContext) => Promise<void>): void;
   on(filter: string, handler: (ctx: BotContext) => Promise<void>): void;
   /**
-   * Recorded but not indexed. Only `ai-support` uses it, as a catch-all, and
-   * no test drives it through this fixture — it exists so a spec can register
-   * EVERY page against one fake bot without the catch-all page throwing.
+   * Recorded but not indexed. No page registers a `hears` catch-all since the
+   * AI-support mode was retired (16.10.2026); kept so a page that adds one can
+   * still be registered against this fake bot without throwing.
    */
   hears(matcher: string | RegExp, handler: (ctx: BotContext) => Promise<void>): void;
 }

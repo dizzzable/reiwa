@@ -2297,24 +2297,10 @@ export const en: RuDict = {
     newTicket: 'New ticket',
     contactTelegram: 'Contact support on Telegram',
     contactPrefill: 'Hello! I need help.',
-    /** Full-screen AI assistant (header + entry points). */
-    aiTitle: 'Quick help',
-    quickHelp: 'Quick help',
-    quickHelpAria: 'Open the AI assistant',
-    aiSuggestion:
-      'Try the AI assistant first — it answers about 90% of common questions (plans, VPN setup, apps) without a ticket.',
-    tryAi: 'Ask AI',
-    aiEmptyTitle: 'How can I help?',
-    aiEmptyHint:
-      'Ask about plans, VPN setup, apps, or common issues — I give guidance only. Personal actions (refunds, plan changes, access) need a human operator.',
-    aiPlaceholder: 'Type your question…',
-    aiError: 'Could not get a response. Try again or create a ticket.',
-    aiInputLabel: 'Message to the AI assistant',
-    aiSend: 'Send',
-    aiThinking: 'AI is typing…',
+    /** The answer is being written — the AI assistant leads the ticket (panel 0.9.7.76+). */
+    typing: 'Support is typing…',
     emptyTitle: 'You have no tickets',
     emptyHint: 'Create a ticket if you need help',
-    emptyHintWithAi: 'You can ask AI first — many questions are solved without a ticket',
     statusOpen: 'Open',
     statusWaitingShort: 'Reply',
     statusClosed: 'Closed',

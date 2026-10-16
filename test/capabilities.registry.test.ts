@@ -47,6 +47,9 @@ const CONTRACT: ReadonlyArray<readonly [id: string, since: string]> = [
   ['web.aurapay-autopay', '0.9.7.56'],
   // The «Интерактивный» connect mode, the same release on both sides (`web.connect-interactive`).
   ['web.connect-interactive', '0.9.7.57'],
+  // One support — no separate AI chat, the Telegram button by the operator's
+  // switch — the same release on both sides (`web.support-unified`).
+  ['web.support-unified', '0.9.7.58'],
   ['web.lifetime-subscription', '0.9.7.53'],
   ['web.bell-addon-not-applied', '0.9.7.53'],
   ['web.panel-timezone-dates', '0.9.7.53'],

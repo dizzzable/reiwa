@@ -182,6 +182,30 @@ describe('public branding configuration routes', () => {
     expect(response.body).toMatchObject(REIWA_OWNED_TARGETS);
   });
 
+  it('withholds the Telegram support handle when the operator switched the button off', async () => {
+    // «Поддержка» → «Настройки» → «Кнопка Telegram в поддержке кабинета»
+    // (panel 0.9.7.76+): the Support page then shows tickets only.
+    const app = makeApp(
+      vi.fn(async () => ({ ...OPERATOR_PUBLIC_CONFIG, telegramSupportButton: false })),
+      createMemoryPersistence(),
+    );
+
+    const response = await request(app, '/api/v1/public-config');
+
+    expect(response.status).toBe(200);
+    expect((response.body as Record<string, unknown>)['supportUsername']).toBeNull();
+    expect((response.body as Record<string, unknown>)['botUsername']).toBe('ReiwaBot');
+  });
+
+  it('keeps the Telegram support handle for a panel that predates the switch', async () => {
+    // No `telegramSupportButton` at all: the button every install had stays.
+    const app = makeApp(vi.fn(async () => OPERATOR_PUBLIC_CONFIG), createMemoryPersistence());
+
+    const response = await request(app, '/api/v1/public-config');
+
+    expect((response.body as Record<string, unknown>)['supportUsername']).toBe('ReiwaSupport');
+  });
+
   it('serves the last successful public config after Rezeis becomes unavailable', async () => {
     const persistence = createMemoryPersistence();
     const firstApp = makeApp(

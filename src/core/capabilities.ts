@@ -116,6 +116,14 @@ export const CABINET_CAPABILITIES: readonly CabinetCapability[] = Object.freeze(
     since: '0.9.7.57',
     implementedBy: 'web/src/features/connect/wizard/connect-wizard.tsx',
   },
+  // One support: «Поддержка» has no separate AI chat — the assistant answers
+  // in the tickets (panel 0.9.7.76+) — and the Telegram button follows the
+  // operator's switch. An older cabinet keeps both; the panel says so.
+  {
+    id: 'web.support-unified',
+    since: '0.9.7.58',
+    implementedBy: 'web/src/features/support/support-page.tsx',
+  },
   // A subscription with no end date is neither renewed nor upgraded by a
   // purchase, and the page says why instead of offering a dead button.
   {

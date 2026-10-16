@@ -45,9 +45,6 @@ vi.mock("motion/react", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/lib/api-client", () => api);
-vi.mock("@/lib/api-client/ai-chat", () => ({
-  getAiChatConfig: vi.fn(async () => ({ enabled: false })),
-}));
 vi.mock("@/lib/branding-provider", () => ({
   useBranding: () => ({ supportUsername: null }),
 }));
@@ -160,5 +157,32 @@ describe("a support thread names who is speaking", () => {
     await render();
     const labels = container.textContent?.split("support.chatAuthorSupport").length ?? 0;
     expect(labels - 1).toBe(1);
+  });
+});
+
+describe("support is writing — the AI assistant leads the ticket (panel 0.9.7.76+)", () => {
+  it("shows «Поддержка печатает…» while the client had the last word", async () => {
+    api.getTicket.mockResolvedValue({
+      ...ticket([{ id: "m-1", authorType: "user", content: "Не работает VPN" }]),
+      replyPending: true,
+    });
+    await render();
+    expect(container.querySelector("[data-testid='support-typing']")?.textContent).toContain("support.typing");
+  });
+
+  it("shows nothing for a panel that sends no flag", async () => {
+    api.getTicket.mockResolvedValue(ticket([{ id: "m-1", authorType: "user", content: "Не работает VPN" }]));
+    await render();
+    expect(container.querySelector("[data-testid='support-typing']")).toBeNull();
+  });
+
+  it("does not type into a closed thread", async () => {
+    api.getTicket.mockResolvedValue({
+      ...ticket([{ id: "m-1", authorType: "user", content: "Спасибо" }]),
+      status: "closed",
+      replyPending: true,
+    });
+    await render();
+    expect(container.querySelector("[data-testid='support-typing']")).toBeNull();
   });
 });

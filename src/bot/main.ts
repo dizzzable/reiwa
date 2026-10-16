@@ -79,7 +79,7 @@ import {
   registerRulesPage,
   registerStaleButtonPage,
   registerStartPage,
-  registerAiSupportPage,
+  registerSupportCommandPage,
 } from './pages/index.js';
 import {
   notifyOperatorBotStarted,
@@ -473,17 +473,15 @@ async function startBot(): Promise<void> {
   registerHelpCallbackPage(bot, pageDeps);
   registerHelpCommandPage(bot, pageDeps);
   registerPaySupportPage(bot, pageDeps);
-  // Telegram Stars. Registered BEFORE the AI-support catch-all: a
-  // `successful_payment` message carries no text so `bot.hears` would not
-  // match it anyway, but the ordering is the guarantee rather than the
-  // accident of another page’s filter.
+  // Telegram Stars.
   registerPaymentsPage(bot, pageDeps);
   registerMenuPage(bot, pageDeps);
   registerStartPage(bot, pageDeps);
   registerQuestChannelPage(bot, pageDeps);
   registerClosePage(bot, pageDeps);
-  // AI support — /support command enters AI chat mode
-  registerAiSupportPage(bot, pageDeps);
+  // `/support` opens the ticket page. The AI assistant answers in the
+  // tickets now; the bot's separate AI chat mode is gone (16.10.2026).
+  registerSupportCommandPage(bot, pageDeps);
   // Dynamic screens next to last. Besides `screen:<shortId>` this page answers a
   // callback whose whole data is a screen's bare shortId, and that handler must
   // see only data no page above has claimed: a screen whose shortId is spelled

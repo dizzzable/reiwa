@@ -58,7 +58,7 @@ import {
 } from '../../src/bot/lib/channel-gate.js';
 import { createChannelGateMiddleware } from '../../src/bot/middleware/channel-gate.js';
 import { createLocaleDetectMiddleware } from '../../src/bot/middleware/locale-detect.js';
-import { registerAiSupportPage } from '../../src/bot/pages/ai-support.js';
+import { registerSupportCommandPage } from '../../src/bot/pages/support-command.js';
 import { resetChannelJoinPromptMemory } from '../../src/bot/pages/channel-join-prompt.js';
 import { registerClosePage } from '../../src/bot/pages/close.js';
 import { registerHelpCommandPage } from '../../src/bot/pages/help.js';
@@ -551,7 +551,7 @@ async function runBot(
   registerStartPage(bot, deps);
   registerQuestChannelPage(bot, deps);
   registerClosePage(bot, deps);
-  registerAiSupportPage(bot, deps);
+  registerSupportCommandPage(bot, deps);
   const handledInMs: number[] = [];
   try {
     for (const step of steps) {
@@ -964,16 +964,16 @@ describe('channel gate in front of every update — a non-subscriber is stopped'
     expect(sentTexts(calls)).toEqual(['ru:channel.required']);
   });
 
-  it('/cancel outside AI-support mode is a command like any other', async () => {
+  it('/cancel is a command like any other — there is no AI-support mode to leave any more', async () => {
     const { calls, reached } = await runBot(panelPolicy(), () => member('left'), [commandUpdate(30, 'cancel')]);
 
     expect(reached).toEqual([]);
     expect(sentTexts(calls)).toEqual(['ru:channel.required']);
   });
 
-  it('/cancel with AI-support mode switched off in the session is a command like any other too', async () => {
+  it('/cancel is gated even for a chat whose session still carries the retired AI-support flag', async () => {
     const { calls, reached } = await runBot(panelPolicy(), () => member('left'), [commandUpdate(184, 'cancel')], {
-      sessions: { [String(USER_A.id)]: { aiSupportMode: false } },
+      sessions: { [String(USER_A.id)]: { aiSupportMode: true } },
     });
 
     expect(reached).toEqual([]);
@@ -1324,20 +1324,6 @@ describe('channel gate in front of every update — what a non-subscriber still 
     expect(toasts(calls)).toEqual([undefined]);
     expect(callsTo(calls, 'deleteMessage')).toHaveLength(1);
     expect(sentTexts(calls)).toEqual([]);
-  });
-
-  it('the ways out of AI-support mode pass: /cancel while in the mode, and the exit button', async () => {
-    const { calls, reached } = await runBot(
-      panelPolicy(),
-      () => member('left'),
-      [commandUpdate(52, 'cancel'), callbackUpdate(53, 'ai_support_exit')],
-      { sessions: { [String(USER_A.id)]: { aiSupportMode: true } } },
-    );
-
-    expect(reached).toEqual([52, 53]);
-    expect(sentTexts(calls)).toEqual(['ru:ai_support.exited']);
-    expect(callsTo(calls, 'editMessageText').map((call) => call.payload.text)).toEqual(['ru:ai_support.exited']);
-    expect(callsTo(calls, 'getChatMember')).toHaveLength(0);
   });
 });
 

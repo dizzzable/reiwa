@@ -2344,24 +2344,10 @@ export const ru = {
     newTicket: 'Новый тикет',
     contactTelegram: 'Написать в поддержку в Telegram',
     contactPrefill: 'Здравствуйте! Мне нужна помощь.',
-    /** Full-screen AI assistant (header + entry points). */
-    aiTitle: 'Быстрая помощь',
-    quickHelp: 'Быстрая помощь',
-    quickHelpAria: 'Открыть AI-помощника',
-    aiSuggestion:
-      'Перед тикетом спросите AI-помощника — около 90% типовых вопросов (тарифы, настройка VPN, приложения) он закрывает сам.',
-    tryAi: 'Спросить AI',
-    aiEmptyTitle: 'Чем помочь?',
-    aiEmptyHint:
-      'Спросите про тарифы, настройку VPN, приложения или частые сбои — отвечу рекомендациями. Для персональных действий (возврат, смена тарифа, доступ) нужен живой оператор.',
-    aiPlaceholder: 'Напишите вопрос…',
-    aiError: 'Не удалось получить ответ. Попробуйте ещё раз или создайте тикет.',
-    aiInputLabel: 'Сообщение AI-помощнику',
-    aiSend: 'Отправить',
-    aiThinking: 'AI печатает…',
+    /** The answer is being written — the AI assistant leads the ticket (panel 0.9.7.76+). */
+    typing: 'Поддержка печатает…',
     emptyTitle: 'У вас нет обращений',
     emptyHint: 'Создайте тикет, если нужна помощь',
-    emptyHintWithAi: 'Сначала можно спросить AI — многие вопросы решаются без тикета',
     statusOpen: 'Открыт',
     statusWaitingShort: 'Ответ',
     statusClosed: 'Закрыт',

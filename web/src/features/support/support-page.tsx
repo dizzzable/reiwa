@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams, useNavigate } from 'react-router'
+import { useSearchParams } from 'react-router'
 import { motion } from 'motion/react'
-import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, Sparkles, X, FileX } from 'lucide-react'
+import { ArrowLeft, Send, Plus, MessageSquare, Loader2, Paperclip, FileX } from 'lucide-react'
 import {
   getTickets,
   getTicket,
@@ -15,7 +15,6 @@ import {
 import { useMediaViewer } from '@/features/media-viewer/use-media-viewer'
 import { collectViewableAttachments, indexOfAttachment } from '@/features/media-viewer/support-attachments'
 import type { SupportTicket, SupportAttachmentMeta } from '@/lib/api-client'
-import { getAiChatConfig } from '@/lib/api-client/ai-chat'
 import { BackButton } from '@/components/ui/back-button'
 import { useBranding } from '@/lib/branding-provider'
 import { cn, getActiveLocale } from '@/lib/utils'
@@ -122,7 +121,7 @@ function SupportAttachmentView({
   )
 }
 
-function TicketList({ tickets, onSelect, onCreate, aiEnabled, onQuickHelp }: { tickets: SupportTicket[]; onSelect: (id: string) => void; onCreate: () => void; aiEnabled: boolean; onQuickHelp: () => void }) {
+function TicketList({ tickets, onSelect, onCreate }: { tickets: SupportTicket[]; onSelect: (id: string) => void; onCreate: () => void }) {
   const { t } = useTranslation()
   const { supportUsername } = useBranding()
 
@@ -142,18 +141,10 @@ function TicketList({ tickets, onSelect, onCreate, aiEnabled, onQuickHelp }: { t
           <h1 className="text-lg font-semibold">{t('support.title')}</h1>
         </div>
         <div className="flex items-center gap-2">
-          {/* Slot between title and Telegram / New ticket (see product mock). */}
-          {aiEnabled && (
-            <button
-              type="button"
-              onClick={onQuickHelp}
-              aria-label={t('support.quickHelpAria')}
-              title={t('support.quickHelp')}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-(--brand-primary)/40 bg-(--brand-primary)/15 text-(--brand-primary) hover:bg-(--brand-primary)/25 active:scale-95 transition-all"
-            >
-              <Sparkles className="h-4 w-4" />
-            </button>
-          )}
+          {/* No separate AI chat beside the tickets any more (16.10.2026):
+              the assistant answers in the tickets themselves, as support. The
+              Telegram button follows the operator's switch — the cabinet's BFF
+              withholds the handle when it is off. */}
           {supportUsername && (
             <button
               type="button"
@@ -183,18 +174,8 @@ function TicketList({ tickets, onSelect, onCreate, aiEnabled, onQuickHelp }: { t
           </div>
           <p className="text-sm text-[color:var(--brand-muted-foreground)]">{t('support.emptyTitle')}</p>
           <p className="text-xs text-[color:var(--brand-muted-foreground)]">
-            {aiEnabled ? t('support.emptyHintWithAi') : t('support.emptyHint')}
+            {t('support.emptyHint')}
           </p>
-          {aiEnabled && (
-            <button
-              type="button"
-              onClick={onQuickHelp}
-              className="mt-1 flex items-center gap-2 rounded-full border border-(--brand-primary)/40 bg-(--brand-primary)/10 px-4 py-2.5 text-sm font-medium text-(--brand-primary) active:scale-95 transition-transform"
-            >
-              <Sparkles className="h-4 w-4" />
-              {t('support.tryAi')}
-            </button>
-          )}
         </div>
       ) : (
         <div className="px-5 space-y-2">
@@ -406,6 +387,18 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
             </motion.div>
           )
         })}
+        {/* Support is writing the answer to the client's last message — the AI
+            assistant leads this thread (panel 0.9.7.76+). An older panel sends
+            no flag and nothing shows. Gone with the next poll that brings the
+            reply. */}
+        {ticket.replyPending === true && ticket.status !== 'closed' && (
+          <div className="flex justify-start" data-testid="support-typing">
+            <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-[color:var(--color-surface-high)] px-4 py-2.5 text-sm text-[color:var(--brand-muted-foreground)]">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              {t('support.typing')}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Input */}
@@ -477,11 +470,10 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
   )
 }
 
-function CreateTicketForm({ onBack, onCreated, aiEnabled, onQuickHelp }: { onBack: () => void; onCreated: (id: string) => void; aiEnabled: boolean; onQuickHelp: () => void }) {
+function CreateTicketForm({ onBack, onCreated }: { onBack: () => void; onCreated: (id: string) => void }) {
   const { t } = useTranslation()
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
-  const [aiHintDismissed, setAiHintDismissed] = useState(false)
 
   const mutation = useMutation({
     mutationFn: () => createTicket(subject.trim(), message.trim()),
@@ -502,29 +494,6 @@ function CreateTicketForm({ onBack, onCreated, aiEnabled, onQuickHelp }: { onBac
       </div>
 
       <div className="px-5 space-y-4">
-        {aiEnabled && !aiHintDismissed && (
-          <div className="relative flex items-start gap-3 rounded-xl border border-(--brand-primary)/30 bg-(--brand-primary)/[0.06] p-4 pr-9">
-            <Sparkles className="h-5 w-5 shrink-0 text-(--brand-primary)" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{t('support.aiSuggestion')}</p>
-              <button
-                type="button"
-                onClick={onQuickHelp}
-                className="mt-1.5 text-sm font-medium text-(--brand-primary) active:scale-95 transition-transform"
-              >
-                {t('support.tryAi')} →
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAiHintDismissed(true)}
-              aria-label={t('common.close')}
-              className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-[color:var(--brand-muted-foreground)] hover:text-[color:var(--brand-foreground)]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
         <div className="space-y-1.5">
           <label className="text-xs uppercase tracking-wide text-[color:var(--brand-muted-foreground)]">{t('support.subjectLabel')}</label>
           <input
@@ -561,25 +530,12 @@ export default function SupportPage() {
   const [view, setView] = useState<'list' | 'chat' | 'create'>('list')
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
-  const navigate = useNavigate()
 
   const { data: tickets = [], isLoading } = useQuery({
     queryKey: ['tickets'],
     queryFn: getTickets,
     refetchInterval: 10000,
   })
-
-  // The AI assistant is offered ONLY when the operator has it enabled — a
-  // disabled assistant is hidden from users entirely (no pill, no banner, and
-  // `/support/ai` redirects back here).
-  const { data: aiConfig } = useQuery({
-    queryKey: ['ai-chat', 'config'],
-    queryFn: getAiChatConfig,
-    staleTime: 60_000,
-  })
-  const aiEnabled = aiConfig?.enabled === true
-
-  const openQuickHelp = () => navigate('/support/ai')
 
   // Deep-link: the bot "Открыть обращение" notification button opens
   // `/support?ticket=<id>` (mini-app or web). Jump straight into that ticket so
@@ -607,8 +563,6 @@ export default function SupportPage() {
       <CreateTicketForm
         onBack={() => setView('list')}
         onCreated={(id) => { setSelectedTicketId(id); setView('chat') }}
-        aiEnabled={aiEnabled}
-        onQuickHelp={openQuickHelp}
       />
     )
   }
@@ -628,8 +582,6 @@ export default function SupportPage() {
         tickets={tickets}
         onSelect={(id) => { setSelectedTicketId(id); setView('chat') }}
         onCreate={() => setView('create')}
-        aiEnabled={aiEnabled}
-        onQuickHelp={openQuickHelp}
       />
     </div>
   )

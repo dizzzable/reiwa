@@ -30,7 +30,7 @@ import { resetChannelGateMemory } from '../../src/bot/lib/channel-gate.js';
 import { createChannelGateMiddleware } from '../../src/bot/middleware/channel-gate.js';
 import { resetChannelJoinPromptMemory } from '../../src/bot/pages/channel-join-prompt.js';
 import {
-  registerAiSupportPage,
+  registerSupportCommandPage,
   registerClosePage,
   registerDynamicScreenPage,
   registerHelpCallbackPage,
@@ -91,7 +91,7 @@ const PAGES: ReadonlyArray<readonly [string, PageRegistrar]> = [
   ['registerStartPage', registerStartPage],
   ['registerQuestChannelPage', registerQuestChannelPage],
   ['registerClosePage', registerClosePage],
-  ['registerAiSupportPage', registerAiSupportPage],
+  ['registerSupportCommandPage', registerSupportCommandPage],
   ['registerDynamicScreenPage', registerDynamicScreenPage],
   ['registerStaleButtonPage', registerStaleButtonPage],
 ];
@@ -226,7 +226,6 @@ const KNOWN: ReadonlyArray<readonly [string, (calls: readonly ApiCall[]) => void
     `check_channel:q:${QUEST}`,
     (calls) => expect(answersOf(calls)[0]?.payload['text']).toBe('ru:channel.verified'),
   ],
-  ['ai_support_exit', (calls) => expect(sentText(calls)).toEqual(['ru:ai_support.exited'])],
   ['menu:main', (calls) => expect(String(sentText(calls)[0])).toContain('Привет, Ann!')],
   [
     'menu:new',

@@ -14,7 +14,6 @@ import {
   rateGuestReplyKey,
   rateGuestUploadKey,
   rateTicketUploadKey,
-  rateAiChatKey,
   ratePaymentMethodSetupKey,
   bannedIpKey,
   TTL,
@@ -404,16 +403,6 @@ export const RATE_LIMITS = {
     maxAttempts: 12,
     windowSeconds: TTL.RATE_TICKET_UPLOAD,
     keyBuilder: rateTicketUploadKey,
-    onExceed: "block",
-    blockBehavior: "after_limit",
-  } satisfies RateLimitConfig,
-
-  // AI chat — each message fans out to up to two paid LLM completions, so keep
-  // a tight 15/minute/IP budget on top of the required session auth.
-  aiChat: {
-    maxAttempts: 15,
-    windowSeconds: TTL.RATE_AI_CHAT,
-    keyBuilder: rateAiChatKey,
     onExceed: "block",
     blockBehavior: "after_limit",
   } satisfies RateLimitConfig,

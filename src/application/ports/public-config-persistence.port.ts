@@ -525,6 +525,7 @@ function publicConfigChecks(value: Record<string, unknown>): readonly PublicConf
     inRoot("supportUsername", "not-a-string-or-null", () => hasOptionalNullableString(value, "supportUsername")),
     inRoot("platformBranding", "not-a-valid-platform-branding", () => hasOptionalPlatformBranding(value, "platformBranding")),
     inRoot("emailEnabled", "not-a-boolean", () => hasOptionalBoolean(value, "emailEnabled")),
+    inRoot("telegramSupportButton", "not-a-boolean", () => hasOptionalBoolean(value, "telegramSupportButton")),
     inBranding("planCardStyles", "not-a-valid-plan-card-style-map", () => hasOptionalPlanCardStyles(branding, "planCardStyles")),
     { fields: ["branding.navItems"], run: () => describeNavItems(branding) },
     inBranding("navGap", "out-of-range[0..24]", () => hasOptionalNumberInRange(branding, "navGap", 0, 24)),

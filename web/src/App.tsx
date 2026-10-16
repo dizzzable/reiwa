@@ -129,7 +129,6 @@ const MyAddOnsPage = lazy(() => import("@/features/settings/my-addons-page"));
 const FaqPage = lazy(() => import("@/features/settings/faq-page"));
 const PromocodesSettingsPage = lazy(() => import("@/features/settings/promocodes-page"));
 const SupportPage = lazy(() => import("@/features/support/support-page"));
-const AiSupportPage = lazy(() => import("@/features/support/ai-support-page"));
 const PointsExchangePage = lazy(() => import("@/features/referrals/points-exchange-page"));
 const WheelPage = lazy(() => import("@/features/wheel/wheel-page"));
 const EventsPage = lazy(() => import("@/features/events/events-page"));
@@ -240,7 +239,9 @@ export default function App() {
             <Route path="/settings/faq" element={<FaqPage />} />
             <Route path="/settings/promocodes" element={<PromocodesSettingsPage />} />
             <Route path="/support" element={<SupportPage />} />
-            <Route path="/support/ai" element={<AiSupportPage />} />
+            {/* The separate AI chat is gone (16.10.2026): the assistant answers in
+                the tickets. An old link or bookmark lands on them. */}
+            <Route path="/support/ai" element={<Navigate to="/support" replace />} />
           </Route>
 
           {/* Unknown paths fall through to the web home which routes the

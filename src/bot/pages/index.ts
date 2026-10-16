@@ -33,7 +33,7 @@
  *                   «Меню обновилось» and the current main menu.
  */
 export { registerDynamicScreenPage } from './dynamic-screen.js';
-export { registerAiSupportPage } from './ai-support.js';
+export { registerSupportCommandPage } from './support-command.js';
 export { registerClosePage } from './close.js';
 export { registerHelpCallbackPage } from './help-callback.js';
 export { registerHelpCommandPage } from './help.js';

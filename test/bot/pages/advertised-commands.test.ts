@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BOT_COMMANDS } from '../../../src/core/enums/command.enum.js';
 import {
-  registerAiSupportPage,
+  registerSupportCommandPage,
   registerClosePage,
   registerDynamicScreenPage,
   registerHelpCallbackPage,
@@ -34,10 +34,11 @@ import { buildDeps, buildFakeBot } from './helpers.js';
  * together shows the gap, which is exactly what this file does — and why it
  * asserts over the WHOLE list rather than naming the two that were missing.
  *
- * NOT asserted, deliberately: the reverse direction. `/support` and `/cancel`
- * have handlers (`ai-support.ts`) and are not advertised, which is a product
- * choice about a feature that costs money per message — not an oversight to
- * fail a build over. If that ever changes, the assertion to add is here.
+ * NOT asserted, deliberately: the reverse direction. `/support` has a handler
+ * (`support-command.ts`, the door to the tickets) and is not advertised —
+ * `/help` and the menu's «Помощь» are the doors people see. A product choice,
+ * not an oversight to fail a build over. If that ever changes, the assertion
+ * to add is here.
  */
 
 const REGISTRARS: readonly PageRegistrar[] = [
@@ -53,7 +54,7 @@ const REGISTRARS: readonly PageRegistrar[] = [
   registerQuestChannelPage,
   registerClosePage,
   registerDynamicScreenPage,
-  registerAiSupportPage,
+  registerSupportCommandPage,
 ];
 
 function registeredCommands(): Set<string> {

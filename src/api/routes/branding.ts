@@ -120,6 +120,21 @@ let generation = 0;
 let packsGeneration = 0;
 
 /** Drop the cached public-config (the version poll's reset for that group alone). */
+/**
+ * Whether the panel lets the Support page offer the Telegram button.
+ *
+ * Only an explicit `false` withholds it: a panel older than 0.9.7.76 sends no
+ * `telegramSupportButton` at all, and the button every install had before the
+ * switch must not disappear on a cabinet update.
+ */
+export function telegramSupportOffered(body: unknown): boolean {
+  return !(
+    typeof body === "object" &&
+    body !== null &&
+    (body as Record<string, unknown>)["telegramSupportButton"] === false
+  );
+}
+
 export function resetPublicConfigCache(): void {
   cached = null;
   inflight = null;
@@ -633,11 +648,16 @@ export function createBrandingRouter(deps: {
       // Merge the reiwa-owned support handle (env) into the cabinet config so
       // the Support page can deep-link to the Telegram support account. Done
       // per-response (not in the cached body) since it's a static env value.
+      //
+      // Unless the operator switched the Telegram button off («Поддержка» →
+      // «Настройки» → «Кнопка Telegram в поддержке кабинета», panel 0.9.7.76+):
+      // then the handle is withheld and the Support page shows tickets only.
+      // A panel that predates the switch sends no flag — the button stays.
       const body =
         payload.body !== null && typeof payload.body === "object"
           ? {
               ...(payload.body as Record<string, unknown>),
-              supportUsername,
+              supportUsername: telegramSupportOffered(payload.body) ? supportUsername : null,
               botUsername,
               webBaseUrl,
             }

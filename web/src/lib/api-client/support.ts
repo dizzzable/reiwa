@@ -12,6 +12,12 @@ export interface SupportTicket {
   createdAt: string;
   updatedAt: string;
   messages: SupportTicketMessage[];
+  /**
+   * Support is writing the answer to the client's last message — the AI
+   * assistant leads the thread (Rezeis Admin 0.9.7.76+). Absent from an older
+   * panel, which reads as "no".
+   */
+  replyPending?: boolean;
 }
 
 export interface SupportAttachmentMeta {
