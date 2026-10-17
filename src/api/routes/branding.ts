@@ -119,7 +119,6 @@ let generation = 0;
 /** The same, for the packs: the version poll resets them on their own. */
 let packsGeneration = 0;
 
-/** Drop the cached public-config (the version poll's reset for that group alone). */
 /**
  * Whether the panel lets the Support page offer the Telegram button.
  *
@@ -135,6 +134,7 @@ export function telegramSupportOffered(body: unknown): boolean {
   );
 }
 
+/** Drop the cached public-config (the version poll's reset for that group alone). */
 export function resetPublicConfigCache(): void {
   cached = null;
   inflight = null;
@@ -649,9 +649,10 @@ export function createBrandingRouter(deps: {
       // the Support page can deep-link to the Telegram support account. Done
       // per-response (not in the cached body) since it's a static env value.
       //
-      // Unless the operator switched the Telegram button off («Поддержка» →
-      // «Настройки» → «Кнопка Telegram в поддержке кабинета», panel 0.9.7.76+):
-      // then the handle is withheld and the Support page shows tickets only.
+      // Unless the operator switched the Telegram button off («Тикеты
+      // поддержки» → «Настройки» → «Кнопка Telegram в поддержке кабинета»,
+      // panel 0.9.7.76+): then the handle is withheld and the Support page
+      // shows tickets only.
       // A panel that predates the switch sends no flag — the button stays.
       const body =
         payload.body !== null && typeof payload.body === "object"

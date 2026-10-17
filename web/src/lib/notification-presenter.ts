@@ -91,14 +91,23 @@ export function presentNotification(
   };
 }
 
-/** Build a localized expiry-reminder body from the notification payload. */
-function presentExpiryBody(payload: Record<string, unknown>, t: TFunction): string {
+/**
+ * Build a localized expiry-reminder body from the notification payload.
+ *
+ * The reminders hours before the end (Rezeis Admin 0.9.7.76+) carry
+ * `hoursLeft` and no `daysLeft`; a panel that sent `daysLeft: 0` for them
+ * would have read «истекает через 0 дней».
+ */
+export function presentExpiryBody(payload: Record<string, unknown>, t: TFunction): string {
+  const planName = readString(payload.planName) ?? readString(payload.plan);
+  const plan = planName ? `«${planName}» ` : "";
+  if (typeof payload.hoursLeft === "number" && Number.isFinite(payload.hoursLeft) && payload.hoursLeft > 0) {
+    return t("notifications.expiryHoursBody", { count: Math.round(payload.hoursLeft), plan });
+  }
   const days =
     typeof payload.daysLeft === "number" && Number.isFinite(payload.daysLeft)
       ? Math.max(0, Math.round(payload.daysLeft))
       : null;
-  const planName = readString(payload.planName) ?? readString(payload.plan);
-  const plan = planName ? `«${planName}» ` : "";
   return days != null
     ? t("notifications.expiryBody", { count: days, plan })
     : t("notifications.expiryBodyGeneric", { plan });

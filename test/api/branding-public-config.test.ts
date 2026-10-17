@@ -183,7 +183,7 @@ describe('public branding configuration routes', () => {
   });
 
   it('withholds the Telegram support handle when the operator switched the button off', async () => {
-    // «Поддержка» → «Настройки» → «Кнопка Telegram в поддержке кабинета»
+    // «Тикеты поддержки» → «Настройки» → «Кнопка Telegram в поддержке кабинета»
     // (panel 0.9.7.76+): the Support page then shows tickets only.
     const app = makeApp(
       vi.fn(async () => ({ ...OPERATOR_PUBLIC_CONFIG, telegramSupportButton: false })),
