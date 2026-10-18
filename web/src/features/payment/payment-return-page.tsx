@@ -93,10 +93,11 @@ export default function PaymentReturnPage() {
   // (the only place it exists — it is not on any other query). `null` = the
   // panel said nothing worth showing.
   const [cashbackPoints, setCashbackPoints] = useState<number | null>(null);
-  // The panel's word on an SBP sign-up waiting for its first charge, kept so the
-  // timeout can say that instead of «Платёж не прошёл».
-  const [signUp, setSignUp] = useState<AutopaySignUpStatus | null>(null);
-  const awaitingRef = useRef(false);
+  // The panel's latest word on an SBP sign-up waiting for its first charge,
+  // kept so the timeout can say that instead of «Платёж не прошёл», and the day
+  // of that charge, shown only while it is still ahead.
+  const signUpRef = useRef<AutopaySignUpStatus | null>(null);
+  const [awaitingDate, setAwaitingDate] = useState<string | null>(null);
   const pollCountRef = useRef(0);
   const provisioningSuccessRef = useRef(false);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -168,9 +169,13 @@ export default function PaymentReturnPage() {
       if (pollCountRef.current >= MAX_POLLS) {
         // A confirmed SBP subscription whose bank has not charged yet is not a
         // payment that failed: its plan comes with the charge.
-        if (awaitingRef.current) {
+        const signUp = signUpRef.current;
+        if (signUp !== null) {
           clearPendingCheckout(paymentId);
           clearSubscriptionProvisioningReceipt(paymentId);
+          // A day Antilopay names for a charge made at activation is today or
+          // past: no date then, only that the bank has not charged yet.
+          setAwaitingDate(firstChargeIsLater(signUp, Date.now()) ? signUp.firstChargeAt : null);
           setState("awaiting-charge");
         } else {
           setState("timeout");
@@ -251,13 +256,13 @@ export default function PaymentReturnPage() {
         if (result === "awaiting-charge") {
           // The SBP subscription is confirmed; the plan comes with its first
           // charge. One delayed for days is not waited for here: the page says
-          // when. One made at activation
-          // is polled for as any payment, and the timeout says this instead.
-          awaitingRef.current = true;
-          setSignUp(status.autopaySignUp ?? null);
+          // when. One made at activation is polled for as any payment, and the
+          // timeout says this instead.
+          signUpRef.current = status.autopaySignUp ?? null;
           if (firstChargeIsLater(status.autopaySignUp, Date.now())) {
             clearPendingCheckout(paymentId);
             clearSubscriptionProvisioningReceipt(paymentId);
+            setAwaitingDate(status.autopaySignUp?.firstChargeAt ?? null);
             setState("awaiting-charge");
             return;
           }
@@ -377,7 +382,7 @@ export default function PaymentReturnPage() {
           {state === "awaiting-charge" && (
             <AwaitingChargeState
               key="awaiting-charge"
-              firstChargeAt={signUp?.firstChargeAt ?? null}
+              firstChargeAt={awaitingDate}
               onHome={() => navigate("/dashboard", { replace: true })}
             />
           )}

@@ -134,9 +134,11 @@ describe("the payment page of an SBP sign-up whose plan comes with its first cha
     expect(readSubscriptionProvisioningReceipt(PAYMENT_ID)).toBeNull();
   });
 
-  it("waits for a charge made at activation, and ends on «автоплатёж подключён» instead of the timeout", async () => {
+  it("waits for a charge made at activation, and ends on «автоплатёж подключён» instead of the timeout, with no date already past", async () => {
     vi.useFakeTimers();
-    api.getPaymentStatus.mockResolvedValue(status({ autopaySignUp: { state: "AWAITING_FIRST_CHARGE", firstChargeAt: null } }));
+    // Antilopay names the day of a charge made at activation: today, 00:00 UTC.
+    const today = `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
+    api.getPaymentStatus.mockResolvedValue(status({ autopaySignUp: { state: "AWAITING_FIRST_CHARGE", firstChargeAt: today } }));
     mount();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -149,6 +151,7 @@ describe("the payment page of an SBP sign-up whose plan comes with its first cha
     const text = container?.textContent ?? "";
     expect(text).toContain("paymentAnim.autopayAwaitingTitle");
     expect(text).toContain("paymentAnim.autopayAwaitingHint");
+    expect(text).not.toContain("paymentAnim.autopayAwaitingHintDate");
     expect(text).not.toContain("paymentAnim.failed");
     expect(api.getPaymentStatus.mock.calls.length).toBeGreaterThan(1);
   });
