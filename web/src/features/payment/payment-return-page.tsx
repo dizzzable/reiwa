@@ -167,7 +167,7 @@ export default function PaymentReturnPage() {
       if (cancelled) return;
       if (pollCountRef.current >= MAX_POLLS) {
         // A confirmed SBP subscription whose bank has not charged yet is not a
-        // payment that failed: its plan comes with the charge, and so does a notice.
+        // payment that failed: its plan comes with the charge.
         if (awaitingRef.current) {
           clearPendingCheckout(paymentId);
           clearSubscriptionProvisioningReceipt(paymentId);
@@ -251,7 +251,7 @@ export default function PaymentReturnPage() {
         if (result === "awaiting-charge") {
           // The SBP subscription is confirmed; the plan comes with its first
           // charge. One delayed for days is not waited for here: the page says
-          // when, and the customer is told when it comes. One made at activation
+          // when. One made at activation
           // is polled for as any payment, and the timeout says this instead.
           awaitingRef.current = true;
           setSignUp(status.autopaySignUp ?? null);
@@ -594,7 +594,7 @@ function SuccessState({
 
 /**
  * An SBP subscription the customer confirmed in the bank, whose first charge has
- * not come yet: the plan comes with it, and a notice with it. Not a failure,
+ * not come yet: the plan comes with it. Not a failure,
  * not a success — the date, when the panel knows it, and the way home.
  */
 function AwaitingChargeState({
