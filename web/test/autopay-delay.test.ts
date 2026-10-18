@@ -189,15 +189,19 @@ describe("the sentences the consent is made of", () => {
     return instance.t(key, values);
   };
 
-  it("says in Russian that nothing is charged now, what starts at once, when the first charge comes and then every term", async () => {
+  // Since 18.10.2026 the delay gives no access (the owner: «без доступа на время
+  // отсрочки»): the consent says the plan comes with the first charge, and
+  // promises nothing at once.
+  it("says in Russian that nothing is charged now, that the plan comes with the first charge, when it comes and then every term", async () => {
     const text = await sentence("ru", "purchase.quote.autopayDelayHint", {
       delay: "2 недели",
       amount: "₽299.00 RUB",
       term: "30 дней",
     });
     expect(text).toContain("Сейчас ничего не спишется");
-    expect(text).toContain("доступ к тарифу откроется сразу на 2 недели");
     expect(text).toContain("Первое списание ₽299.00 RUB произойдёт через 2 недели");
+    expect(text).toContain("тариф откроется сразу после него — до этого доступа к тарифу нет");
+    expect(text).not.toContain("откроется сразу на");
     expect(text).toContain("в начале каждого срока (30 дней)");
     expect(text).toContain("«Способах оплаты»");
     expect(text).not.toContain("спишется сейчас");
@@ -210,8 +214,9 @@ describe("the sentences the consent is made of", () => {
       term: "30 days",
     });
     expect(text).toContain("Nothing is charged now");
-    expect(text).toContain("access to the plan starts right away for 1 week");
     expect(text).toContain("The first charge of ₽299.00 RUB comes after 1 week");
+    expect(text).toContain("the plan opens right after it — there is no access to the plan before that");
+    expect(text).not.toContain("starts right away");
     expect(text).toContain("at the start of each term (30 days)");
     expect(text).toContain("Payment methods");
   });
@@ -220,13 +225,13 @@ describe("the sentences the consent is made of", () => {
     const ruWith = await sentence("ru", "purchase.gateway.autopayCaptionSbpDelay", { delay: "7 дней", amount: "₽299.00 RUB" });
     expect(ruWith).toContain("по СБП, для автоматического списания");
     expect(ruWith).toContain("Сейчас ничего не спишется");
-    expect(ruWith).toContain("доступ на 7 дней откроется сразу");
-    expect(ruWith).toContain("первое списание ₽299.00 RUB — через 7 дней");
+    expect(ruWith).toContain("первое списание ₽299.00 RUB — через 7 дней, тариф откроется сразу после него");
+    expect(ruWith).not.toContain("доступ на 7 дней");
     const ruShort = await sentence("ru", "purchase.gateway.autopayCaptionSbpDelayShort", { delay: "7 дней" });
-    expect(ruShort).toContain("первое списание — через 7 дней");
+    expect(ruShort).toContain("первое списание — через 7 дней, тариф откроется сразу после него");
     const enWith = await sentence("en", "purchase.gateway.autopayCaptionSbpDelay", { delay: "7 days", amount: "₽299.00 RUB" });
-    expect(enWith).toContain("Nothing is charged now: access for 7 days starts right away");
-    expect(enWith).toContain("the first charge of ₽299.00 RUB comes after 7 days");
+    expect(enWith).toContain("Nothing is charged now: the first charge of ₽299.00 RUB comes after 7 days");
+    expect(enWith).toContain("the plan opens right after it");
     const enShort = await sentence("en", "purchase.gateway.autopayCaptionSbpDelayShort", { delay: "7 days" });
     expect(enShort).toContain("the first charge comes after 7 days");
   });

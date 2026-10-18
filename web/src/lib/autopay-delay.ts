@@ -2,10 +2,13 @@
  * «Отсрочка первого списания по СБП» (Antilopay), as the cabinet says it.
  *
  * The operator can give an SBP subscription a delay: nothing is charged when the
- * customer signs up, the plan is theirs for the delay's length straight away,
- * and the first charge comes after it, then every term. The panel names the
- * delay on the Antilopay entry of its list of gateways (`autopayDelay`), and
- * only for a customer who may still use it — it is given once.
+ * customer signs up, the first charge comes after it, then every term. Since
+ * 18.10.2026 the plan comes with that first charge and not before (the owner's
+ * «без доступа на время отсрочки»), and the consent says so
+ * (`web.autopay-delay-access-after-charge`, declared beside the capability
+ * below). The panel names the delay on the Antilopay entry of its list of
+ * gateways (`autopayDelay`), and only for a customer who may still use it — it
+ * is given once.
  *
  * This is what makes it safe to give: the consent must be true. A cabinet that
  * wrote «эта сумма спишется сейчас» over a charge that does not come would have

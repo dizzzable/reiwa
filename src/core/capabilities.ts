@@ -96,6 +96,16 @@ export const CABINET_CAPABILITIES: readonly CabinetCapability[] = Object.freeze(
     since: '0.9.7.56',
     implementedBy: 'web/src/lib/autopay-delay.ts',
   },
+  // The same consent says the plan comes with the first charge, not for the
+  // delay (the owner, 18.10.2026: «без доступа на время отсрочки»), and the
+  // payment page tells a sign-up waiting for its first charge from an unpaid
+  // one. The panel offers the delay only to a cabinet that declares this too:
+  // an older one would promise access at once.
+  {
+    id: 'web.autopay-delay-access-after-charge',
+    since: '0.9.7.59',
+    implementedBy: 'web/src/lib/autopay-delay.ts',
+  },
   // AuraPay «картой, для автоматического списания»: the cabinet knows AuraPay
   // runs the subscription (`PROVIDER_SUBSCRIPTION_GATEWAYS`), offers it only on
   // AuraPay's terms, and sends the consent that makes one. The panel offers it

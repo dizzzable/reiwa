@@ -429,10 +429,10 @@ export const en: RuDict = {
       autopayCaptionSbp: 'via SBP, for automatic charging',
       // With a delay of the first charge: what happens now, what starts at once, and when the first charge comes.
       autopayCaptionSbpDelay:
-        'via SBP, for automatic charging. Nothing is charged now: access for {{delay}} starts right away, and the first charge of {{amount}} comes after {{delay}}.',
+        'via SBP, for automatic charging. Nothing is charged now: the first charge of {{amount}} comes after {{delay}}, and the plan opens right after it.',
       // The same where the sum is priced later (a renewal prices it at the review).
       autopayCaptionSbpDelayShort:
-        'via SBP, for automatic charging. Nothing is charged now: access for {{delay}} starts right away, and the first charge comes after {{delay}}.',
+        'via SBP, for automatic charging. Nothing is charged now: the first charge comes after {{delay}}, and the plan opens right after it.',
       useSaved: 'Charge saved method',
     },
     quote: {
@@ -458,7 +458,7 @@ export const en: RuDict = {
         'You make the first payment by card on the payment page, and the same amount is then charged to the card at the start of each term. You can turn it off at any time under Payment methods.',
       // An SBP subscription with a delay: the consent says plainly what is NOT charged now.
       autopayDelayHint:
-        'Your bank sets up a subscription over SBP. Nothing is charged now: access to the plan starts right away for {{delay}}. The first charge of {{amount}} comes after {{delay}}, then the same amount is charged at the start of each term ({{term}}). You can turn it off at any time under Payment methods.',
+        'Your bank sets up a subscription over SBP. Nothing is charged now. The first charge of {{amount}} comes after {{delay}}, and the plan opens right after it — there is no access to the plan before that. Then the same amount is charged at the start of each term ({{term}}). You can turn it off at any time under Payment methods.',
       trialConversion:
         'Your trial subscription will become the «{{plan}}» plan. Your connection link stays the same, and the term starts when you pay.',
     },
@@ -1848,6 +1848,10 @@ export const en: RuDict = {
     successHint: 'Your subscription is being activated. You can return to the app.',
     failed: 'Payment failed',
     failedHint: 'Try again or pick another payment method.',
+    autopayAwaitingTitle: 'Automatic payment is set up',
+    autopayAwaitingHintDate: 'The first charge is on {{date}}. The plan opens right after it, and we will send you a notice.',
+    autopayAwaitingHint: 'Waiting for the bank to charge. The plan opens right after the payment, and we will send you a notice.',
+    autopayChargeFailedHint: 'The bank did not make the first charge, so the plan was not given. Try again or pick another payment method.',
     openPayment: 'Open payment page',
     openPaymentHint: "If the payment page didn't open automatically, tap the button below.",
     cashbackCredited_one: 'You earned +{{count}} point',

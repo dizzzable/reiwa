@@ -317,7 +317,20 @@ export interface PaymentStatus {
    * is worth showing (> 0), so absent / `null` means "say nothing".
    */
   cashbackPoints?: number | null;
+  /**
+   * An Antilopay SBP sign-up whose plan comes with its first charge (panel
+   * 0.9.7.77+): the payer confirmed the subscription in the bank and the first
+   * charge is awaited — at once, or on `firstChargeAt` (a day, at 00:00 UTC)
+   * after the delay — or that charge did not come. Absent from an older panel,
+   * `null` for every other payment.
+   */
+  autopaySignUp?: AutopaySignUpStatus | null;
   updatedAt: string;
+}
+
+export interface AutopaySignUpStatus {
+  readonly state: "AWAITING_FIRST_CHARGE" | "FIRST_CHARGE_FAILED";
+  readonly firstChargeAt: string | null;
 }
 
 // ─── Transaction ─────────────────────────────────────────────────────────────

@@ -43,6 +43,9 @@ const CONTRACT: ReadonlyArray<readonly [id: string, since: string]> = [
   // registry has it with the same release (`web.autopay-first-charge-delay`, since
   // 0.9.7.56), and the pair's end-to-end run compares the two.
   ['web.autopay-first-charge-delay', '0.9.7.56'],
+  // The plan with the first charge, not for the delay, the same release on both
+  // sides (`web.autopay-delay-access-after-charge`).
+  ['web.autopay-delay-access-after-charge', '0.9.7.59'],
   // AuraPay's subscription, the same release on both sides (`web.aurapay-autopay`).
   ['web.aurapay-autopay', '0.9.7.56'],
   // The «Интерактивный» connect mode, the same release on both sides (`web.connect-interactive`).

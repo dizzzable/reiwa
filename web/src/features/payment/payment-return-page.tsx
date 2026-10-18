@@ -21,16 +21,17 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { ExternalLink } from "lucide-react";
+import { Clock, ExternalLink } from "lucide-react";
 
 import { toast } from "sonner";
 
 import { abandonCheckout, getPaymentStatus } from "@/lib/api-client";
-import { resolvePaymentResult } from "./payment-result-policy";
+import { firstChargeIsLater, resolvePaymentResult } from "./payment-result-policy";
+import type { AutopaySignUpStatus } from "@/types/api";
 import { PaymentNumber } from "./payment-number";
 import { Button } from "@/components/ui/button";
 import { useBranding } from "@/lib/branding-provider";
-import { openExternalUrl } from "@/lib/utils";
+import { formatDate, openExternalUrl } from "@/lib/utils";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
 import { readPendingCheckout, readPendingCheckoutReturnTo, readPendingCheckoutLabel, clearPendingCheckout } from "@/lib/pending-checkout";
 import { markPushPromptEligible } from "@/features/push-prompt/push-prompt-storage";
@@ -41,7 +42,12 @@ import {
   shouldTrackSubscriptionProvisioningReceipt,
 } from "@/lib/subscription-provisioning-receipt";
 
-type PaymentState = "processing" | "success" | "failed" | "timeout";
+/**
+ * `awaiting-charge`: an SBP subscription confirmed in the bank whose first
+ * charge — the one that gives the plan — is still to come; `charge-failed`:
+ * it did not come (`payment-result-policy.ts`).
+ */
+type PaymentState = "processing" | "success" | "failed" | "timeout" | "awaiting-charge" | "charge-failed";
 
 const MAX_POLLS = 30;
 const POLL_INTERVAL_MS = 2000;
@@ -87,6 +93,10 @@ export default function PaymentReturnPage() {
   // (the only place it exists — it is not on any other query). `null` = the
   // panel said nothing worth showing.
   const [cashbackPoints, setCashbackPoints] = useState<number | null>(null);
+  // The panel's word on an SBP sign-up waiting for its first charge, kept so the
+  // timeout can say that instead of «Платёж не прошёл».
+  const [signUp, setSignUp] = useState<AutopaySignUpStatus | null>(null);
+  const awaitingRef = useRef(false);
   const pollCountRef = useRef(0);
   const provisioningSuccessRef = useRef(false);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,7 +166,15 @@ export default function PaymentReturnPage() {
     async function poll() {
       if (cancelled) return;
       if (pollCountRef.current >= MAX_POLLS) {
-        setState("timeout");
+        // A confirmed SBP subscription whose bank has not charged yet is not a
+        // payment that failed: its plan comes with the charge, and so does a notice.
+        if (awaitingRef.current) {
+          clearPendingCheckout(paymentId);
+          clearSubscriptionProvisioningReceipt(paymentId);
+          setState("awaiting-charge");
+        } else {
+          setState("timeout");
+        }
         return;
       }
       try {
@@ -167,6 +185,7 @@ export default function PaymentReturnPage() {
           status: status.status,
           checkoutUrl,
           errorCode: status.failureReason ?? undefined,
+          autopaySignUp: status.autopaySignUp ?? null,
         });
         const existingProvisioningReceipt =
           readSubscriptionProvisioningReceipt(paymentId);
@@ -222,12 +241,26 @@ export default function PaymentReturnPage() {
         // polling it to the 60s cap only stranded the buyer on the *timeout*
         // screen (with a button reopening a settled invoice) and left the
         // pending-checkout and provisioning receipt behind in storage.
-        if (result === "failed") {
+        if (result === "failed" || result === "charge-failed") {
           clearPendingCheckout(paymentId);
           clearSubscriptionProvisioningReceipt(paymentId);
-          setState("failed");
+          setState(result);
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
           return;
+        }
+        if (result === "awaiting-charge") {
+          // The SBP subscription is confirmed; the plan comes with its first
+          // charge. One delayed for days is not waited for here: the page says
+          // when, and the customer is told when it comes. One made at activation
+          // is polled for as any payment, and the timeout says this instead.
+          awaitingRef.current = true;
+          setSignUp(status.autopaySignUp ?? null);
+          if (firstChargeIsLater(status.autopaySignUp, Date.now())) {
+            clearPendingCheckout(paymentId);
+            clearSubscriptionProvisioningReceipt(paymentId);
+            setState("awaiting-charge");
+            return;
+          }
         }
         pollCountRef.current += 1;
         timer = setTimeout(poll, POLL_INTERVAL_MS);
@@ -312,7 +345,7 @@ export default function PaymentReturnPage() {
           background:
             state === "success"
               ? "radial-gradient(circle at center, rgba(34,197,94,0.08) 0%, transparent 60%)"
-              : state === "failed" || state === "timeout"
+              : state === "failed" || state === "timeout" || state === "charge-failed"
                 ? "radial-gradient(circle at center, rgba(239,68,68,0.08) 0%, transparent 60%)"
                 : "radial-gradient(circle at center, color-mix(in oklab, var(--brand-foreground) 3%, transparent) 0%, transparent 60%)",
         }}
@@ -341,9 +374,17 @@ export default function PaymentReturnPage() {
               onExchange={handleExchangeCashback}
             />
           )}
-          {(state === "failed" || state === "timeout") && (
+          {state === "awaiting-charge" && (
+            <AwaitingChargeState
+              key="awaiting-charge"
+              firstChargeAt={signUp?.firstChargeAt ?? null}
+              onHome={() => navigate("/dashboard", { replace: true })}
+            />
+          )}
+          {(state === "failed" || state === "timeout" || state === "charge-failed") && (
             <FailedState
               key="failed"
+              hint={state === "charge-failed" ? t("paymentAnim.autopayChargeFailedHint") : undefined}
               isTimeout={state === "timeout"}
               checkoutUrl={checkoutUrl}
               onOpenPayment={openPayment}
@@ -551,7 +592,50 @@ function SuccessState({
 
 // ─── Failed ─────────────────────────────────────────────────────────────────
 
+/**
+ * An SBP subscription the customer confirmed in the bank, whose first charge has
+ * not come yet: the plan comes with it, and a notice with it. Not a failure,
+ * not a success — the date, when the panel knows it, and the way home.
+ */
+function AwaitingChargeState({
+  firstChargeAt,
+  onHome,
+}: {
+  /** A day, at 00:00 UTC (Antilopay names a date): printed on that calendar day. */
+  firstChargeAt: string | null;
+  onHome: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      className="relative z-10 flex flex-col items-center gap-6"
+    >
+      <div
+        className="flex h-24 w-24 items-center justify-center rounded-full"
+        style={{ backgroundColor: "color-mix(in oklab, var(--brand-primary) 15%, transparent)" }}
+      >
+        <Clock className="h-12 w-12 text-(--brand-primary)" aria-hidden="true" />
+      </div>
+      <div role="status" aria-live="polite">
+        <h2 className="text-xl font-semibold text-foreground">{t("paymentAnim.autopayAwaitingTitle")}</h2>
+        <p className="mt-2 max-w-xs text-sm text-muted-foreground">
+          {firstChargeAt !== null
+            ? t("paymentAnim.autopayAwaitingHintDate", { date: formatDate(firstChargeAt, "UTC") })
+            : t("paymentAnim.autopayAwaitingHint")}
+        </p>
+      </div>
+      <Button onClick={onHome} className="w-full max-w-xs">
+        {t("payment.backToDashboard")}
+      </Button>
+    </motion.div>
+  );
+}
+
 function FailedState({
+  hint,
   isTimeout,
   checkoutUrl,
   onOpenPayment,
@@ -560,6 +644,8 @@ function FailedState({
   onAbandon,
   abandoning,
 }: {
+  /** What to say under «Платёж не прошёл», when there is more to say than «попробуйте ещё раз». */
+  hint?: string | undefined;
   isTimeout: boolean;
   checkoutUrl: string | null;
   onOpenPayment: () => void;
@@ -615,7 +701,7 @@ function FailedState({
           {t("paymentAnim.failed")}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          {t("paymentAnim.failedHint")}
+          {hint ?? t("paymentAnim.failedHint")}
         </p>
       </div>
 

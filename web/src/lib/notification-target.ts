@@ -54,6 +54,17 @@ export function resolveNotificationTarget(
     return { kind: 'route', path: '/support' };
   }
 
+  // «Автосписание не прошло» (panel 0.9.7.77): the first automatic SBP charge
+  // did not come, so the plan was not given → where the customer can pay, like
+  // the notice's own button: the plans for a subscription that was never made,
+  // the renewal for one they have. Ahead of the substring rules below.
+  if (t === 'autopay_first_charge_failed_new') {
+    return { kind: 'route', path: '/plans' };
+  }
+  if (t === 'autopay_first_charge_failed') {
+    return { kind: 'route', path: '/renew' };
+  }
+
   // A paid add-on three days before it ends, or when it has (`addon_*`, all
   // six) → the add-on page on that subscription, where it is bought again —
   // the address the notice's «Купить снова» and its push open.
