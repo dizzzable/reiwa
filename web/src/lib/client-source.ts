@@ -4,8 +4,9 @@
  * Detects which surface the SPA is running in so the backend can build a
  * post-payment redirect that returns the user to the right place:
  *
- *   - "tma" → running inside a Telegram Mini App → redirect back to Telegram
- *     (a `t.me/<bot>?start=payment_return` deep link).
+ *   - "tma" → running inside a Telegram Mini App → back to Telegram, through
+ *     the cabinet's `/payment-return/telegram`, whose button is the
+ *     `t.me/<bot>?start=payment_return` deep link.
  *   - "web" → a regular browser tab → redirect back to the web app
  *     (`${REIWA_DOMAIN}/payment-return`).
  *

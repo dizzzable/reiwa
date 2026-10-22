@@ -115,6 +115,9 @@ const AddOnsPage = lazy(() => import("@/features/addons/addons-page"));
 const PaymentReturn = lazy(
   () => import("@/features/payment/payment-return-page"),
 );
+const PaymentReturnTelegram = lazy(
+  () => import("@/features/payment/payment-return-telegram-page"),
+);
 const ActivityPage = lazy(() => import("@/features/activity/activity-page"));
 const PromoPage = lazy(() => import("@/features/promo/promo-page"));
 const ReferralsPage = lazy(() => import("@/features/referrals/referrals-page"));
@@ -190,6 +193,10 @@ export default function App() {
           <Route path="/claim" element={<ClaimPage />} />
           <Route path="/finish-setup" element={<FinishSetupPage />} />
           <Route path="/payment-return" element={<PaymentReturn />} />
+          {/* Where the gateway sends a buyer who paid from the Mini App: a tap
+              back to Telegram from whatever browser the payment ran in. Public
+              — that browser has none of the Mini App's session. */}
+          <Route path="/payment-return/telegram" element={<PaymentReturnTelegram />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           {/* Public reader for the operator's legal documents — the bot links
               here, and the sign-up form needs it before an account exists. */}

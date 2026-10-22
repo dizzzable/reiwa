@@ -662,8 +662,10 @@ export const registerStartPage: PageRegistrar = (bot, deps) => {
       return;
     }
 
-    // Phase 0b: post-payment return. The payment provider redirects Mini-App
-    // buyers to `t.me/<bot>?start=payment_return` (see lib/payment-return-url).
+    // Phase 0b: post-payment return. The payment provider sends Mini-App
+    // buyers to the cabinet's `/payment-return/telegram`, whose button is
+    // `t.me/<bot>?start=payment_return` — or, where the cabinet does not know
+    // its own address, straight to that link (see lib/payment-return-url).
     // Telegram opens this chat; we acknowledge the payment and offer a one-tap
     // button back into the Mini App, where the payment-return screen is already
     // polling the final status. Handled before bootstrap/channel-gate — a

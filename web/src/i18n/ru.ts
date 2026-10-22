@@ -1902,6 +1902,12 @@ export const ru = {
     autopayChargeFailedHint: 'Банк не провёл первое списание, поэтому тариф не выдан. Попробуйте ещё раз или выберите другой способ оплаты.',
     openPayment: 'Открыть страницу оплаты',
     openPaymentHint: 'Если страница оплаты не открылась автоматически, нажмите кнопку ниже.',
+    // Касса вернула покупателя из мини-приложения: одна страница и на успех, и на отказ.
+    backToTelegramTitle: 'Вернитесь в Telegram',
+    backToTelegramBody: 'Страница оплаты закрыта. Прошла ли оплата, покажет кабинет в Telegram.',
+    backToTelegramButton: 'Вернуться в Telegram',
+    backToTelegramClose: 'Если кнопка не сработала, закройте это окно и вернитесь в Telegram сами.',
+    backToTelegramCloseOnly: 'Закройте это окно и вернитесь в Telegram.',
     cashbackCredited_one: 'Начислен +{{count}} балл',
     cashbackCredited_few: 'Начислено +{{count}} балла',
     cashbackCredited_many: 'Начислено +{{count}} баллов',

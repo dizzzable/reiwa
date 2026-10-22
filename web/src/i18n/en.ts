@@ -1854,6 +1854,12 @@ export const en: RuDict = {
     autopayChargeFailedHint: 'The bank did not make the first charge, so the plan was not given. Try again or pick another payment method.',
     openPayment: 'Open payment page',
     openPaymentHint: "If the payment page didn't open automatically, tap the button below.",
+    // The gateway sent a Mini App buyer back: one page for success and failure alike.
+    backToTelegramTitle: 'Go back to Telegram',
+    backToTelegramBody: 'The payment page is done. The cabinet in Telegram will show whether the payment went through.',
+    backToTelegramButton: 'Back to Telegram',
+    backToTelegramClose: "If the button doesn't work, close this window and switch back to Telegram yourself.",
+    backToTelegramCloseOnly: 'Close this window and switch back to Telegram.',
     cashbackCredited_one: 'You earned +{{count}} point',
     cashbackCredited_few: 'You earned +{{count}} points',
     cashbackCredited_many: 'You earned +{{count}} points',

@@ -228,6 +228,7 @@ import LegalPage from "@/features/legal/legal-page";
 import GuestSupportPage from "@/features/support/guest-support-page";
 import OnboardingPage from "@/features/onboarding/onboarding-page";
 import PaymentReturnPage from "@/features/payment/payment-return-page";
+import PaymentReturnTelegramPage from "@/features/payment/payment-return-telegram-page";
 import TmaBootstrapPage from "@/features/auth/tma-bootstrap-page";
 import ConnectOpenPage from "@/features/connect/connect-open-page";
 import { ChannelGateScreen } from "@/features/channel-gate/channel-gate-screen";
@@ -441,6 +442,18 @@ describe("a route outside StealthLayout owns its scroller", () => {
         "cannot scroll: a subscriber who left a Telegram Mini App to reach this " +
         "page, on a short phone or with large text, could not reach the button " +
         "that opens the app or the copy button under it.",
+    ).toEqual({ blockAxisScrolling: true, blockSizeBounded: true });
+  });
+
+  it("/payment-return/telegram keeps its way back to Telegram reachable", () => {
+    const page = renderOutsideShell(<PaymentReturnTelegramPage />);
+    const box = blockAxis(page);
+    expect(
+      { blockAxisScrolling: box.scrolls, blockSizeBounded: box.bounded },
+      "/payment-return/telegram renders outside the shell, so #root — which " +
+        `clips — is its only container. Its outermost box resolved to { ${box.resolved} }, ` +
+        "which cannot scroll: a buyer back from the payment page in a short " +
+        "in-app browser, or with large text, could not reach the button back to Telegram.",
     ).toEqual({ blockAxisScrolling: true, blockSizeBounded: true });
   });
 

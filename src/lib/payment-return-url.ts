@@ -5,15 +5,25 @@
  * Two contexts are supported:
  *
  *  - **`tma`** — Request originated from a Telegram Mini App (validated initData).
- *    The redirect must take the user back to Telegram. We build a bot deep link
- *    of the form `https://t.me/<BOT_USERNAME>?start=payment_return`. Telegram
- *    opens the bot chat, and the Mini App is re-opened from the chat's menu
- *    button (or the inline button the bot's `/start` handler may render).
+ *    The way back to Telegram is the bot deep link
+ *    `https://t.me/<BOT_USERNAME>?start=payment_return`: Telegram opens the bot
+ *    chat, and the bot's `/start` handler answers with a button back into the
+ *    Mini App. The Mini App short name itself stays in BotFather — we
+ *    deliberately do NOT require it here, because the `?start=...` form is
+ *    universal across every Mini App variant (menu-button Web App, named Web
+ *    App, attached Web App) and avoids duplicating BotFather configuration in
+ *    env vars.
  *
- *    The Mini App short name itself stays in BotFather — we deliberately do
- *    NOT require it here, because the `?start=...` form is universal across
- *    every Mini App variant (menu-button Web App, named Web App, attached
- *    Web App) and avoids duplicating BotFather configuration in env vars.
+ *    The gateway is NOT handed that link. It sends the payer to this cabinet's
+ *    `/payment-return/telegram`, whose button is the link. The gateway's page
+ *    runs wherever `openLink` opened it — on Android, Telegram's in-app
+ *    browser — and there the redirect to t.me loaded t.me as a web page, whose
+ *    script went on to `tg:resolve?…`: a scheme that web view does not know, so
+ *    a payer who had just paid met «Не удалось открыть веб-страницу»
+ *    (net::ERR_UNKNOWN_URL_SCHEME; WATA, 0.9.7.71). Our own https page loads in
+ *    every browser, and a TAP on a t.me link is what Telegram's in-app browser
+ *    resolves inside the app. The direct link stays the fallback for a cabinet
+ *    that does not know its own address.
  *
  *  - **`web`** — Request originated from a regular web browser. The redirect
  *    targets the public web origin we expose, e.g.
@@ -37,6 +47,12 @@ import type { RequestContext } from "../api/middleware/context-detection.js";
 /** Stable token forwarded to `/start` so the bot can route the user back. */
 const TMA_START_PARAM = "payment_return";
 
+/**
+ * The cabinet's page that sends a Mini App payer back to Telegram with a tap
+ * (`web/src/features/payment/payment-return-telegram-page.tsx`).
+ */
+const TELEGRAM_RETURN_PAGE = "/payment-return/telegram";
+
 export interface BuildPaymentReturnUrlInput {
   readonly context: RequestContext;
   readonly config: ReiwaConfig;
@@ -55,7 +71,11 @@ export function buildPaymentReturnUrl(input: BuildPaymentReturnUrlInput): string
   }
 
   if (input.context === "tma") {
-    return buildTelegramReturnUrl(input.config) ?? buildWebReturnUrl(input.config);
+    return (
+      buildTelegramReturnPageUrl(input.config) ??
+      buildTelegramReturnUrl(input.config) ??
+      buildWebReturnUrl(input.config)
+    );
   }
 
   return buildWebReturnUrl(input.config);
@@ -85,6 +105,22 @@ export function resolvePurchaseContext(
     return clientSource;
   }
   return detected ?? "web";
+}
+
+/**
+ * The cabinet's own way back to Telegram — only where there is a bot to go
+ * back to: the page's button is the same deep link, and without a bot username
+ * the page would have nothing to offer.
+ */
+function buildTelegramReturnPageUrl(config: ReiwaConfig): string | null {
+  if (!config.BOT_USERNAME) {
+    return null;
+  }
+  const baseUrl = resolveReiwaPublicUrl(config);
+  if (!baseUrl) {
+    return null;
+  }
+  return `${baseUrl}${TELEGRAM_RETURN_PAGE}`;
 }
 
 function buildTelegramReturnUrl(config: ReiwaConfig): string | null {
