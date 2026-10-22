@@ -17,7 +17,7 @@ import { getEnabledGateways, getPaymentMethods } from "@/lib/api-client";
 import type { GatewayOption } from "@/stores/purchase.store";
 import type { PlanPrice } from "@/types/api";
 import { cn } from "@/lib/utils";
-import { gatewayLabel } from "@/lib/gateway-display";
+import { gatewayCaption, gatewayLabel } from "@/lib/gateway-display";
 import {
   autopayCaptionKey,
   autopayHintKey,
@@ -119,10 +119,16 @@ export function GatewayPicker({
   const savedYookassaMethods = (paymentMethodsData?.methods ?? []).filter(
     (method) => method.gatewayType === "YOOKASSA" && method.autopayEnabled !== false,
   );
-  const option = (gw: { type: string; displayName: string; currency: string }): GatewayOption => ({
+  const option = (gw: {
+    type: string;
+    displayName?: string | null;
+    displayIconSvg?: string | null;
+    currency: string;
+  }): GatewayOption => ({
     id: gw.type,
     label: gatewayLabel(gw.type, gw.displayName),
     icon: GATEWAY_ICONS[gw.type] ?? "💳",
+    ...(gw.displayIconSvg ? { iconSvg: gw.displayIconSvg } : {}),
     currency: gw.currency,
   });
 
@@ -217,12 +223,12 @@ export function GatewayPicker({
               onClick={() => onSelect(option(gw))}
               className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
             >
-              <span className="flex h-7 w-7 items-center justify-center text-2xl">
-                <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center text-2xl">
+                <GatewayIcon type={gw.type} currency={gw.currency} iconSvg={gw.displayIconSvg} className="h-7 w-7" />
               </span>
-              <div className="text-left">
+              <div className="min-w-0 text-left">
                 <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
-                <p className="text-xs text-muted-foreground">{gw.currency}</p>
+                <p className="whitespace-pre-line text-xs text-muted-foreground">{gatewayCaption(gw)}</p>
               </div>
             </button>
             {autopayOffered(gw) &&
@@ -252,7 +258,12 @@ export function GatewayPicker({
                     }
                     className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
                   >
-                    <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
+                    <AutopayGatewayMark
+                      type={gw.type}
+                      currency={gw.currency}
+                      method={method}
+                      iconSvg={gw.displayIconSvg}
+                    />
                     <div className="text-left">
                       <p className="font-medium text-foreground">{gatewayLabel(gw.type, gw.displayName)}</p>
                       <p className="text-xs text-muted-foreground">{caption}</p>

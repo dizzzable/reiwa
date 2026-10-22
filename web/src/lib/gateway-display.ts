@@ -1,11 +1,20 @@
 /**
  * gateway-display
  * ───────────────
- * The backend gateway listing only carries `type` + `currency` (the
- * PaymentGateway model has no display-name column), so the SPA derives the
- * payment-system name + icon from the gateway type. Icons are the real SVG
- * assets shared with the admin panel (`src/assets/payments` + `currency`),
- * loaded as URLs via Vite glob; an emoji is the last-resort fallback.
+ * The SPA derives the payment-system name + icon from the gateway type. Icons
+ * are the real SVG assets shared with the admin panel (`src/assets/payments` +
+ * `currency`), loaded as URLs via Vite glob; an emoji is the last-resort
+ * fallback.
+ *
+ * Unless the operator named the gateway themselves (panel 0.9.7.78+, «Как шлюз
+ * видят клиенты»): the listing then carries `displayName`, `displayDescription`
+ * — the line under the name, in place of the currency code — and
+ * `displayIconSvg`. Operators asked for it because customers did not know what
+ * «Platega» or «Wata» take and were afraid to press them.
+ *
+ * The operator's SVG is shown ONLY as an image source (`customGatewayIconUrl`):
+ * an SVG loaded as an image runs no script and fetches nothing, so it is never
+ * put into the page as markup. The panel checks it on save as well.
  */
 
 const paymentIconModules = import.meta.glob("../assets/payments/*.svg", {
@@ -108,6 +117,26 @@ const GATEWAY_LABELS: Record<string, string> = {
   SEVERPAY: "SeverPay",
   LAVA: "Lava",
 };
+
+/**
+ * The operator's icon as an image source — a `data:` URL, for an `<img>` and
+ * nothing else — or `null` where there is none or it is not an SVG.
+ */
+export function customGatewayIconUrl(svg: string | null | undefined): string | null {
+  if (typeof svg !== "string") return null;
+  const trimmed = svg.trim();
+  if (!trimmed.startsWith("<svg")) return null;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(trimmed)}`;
+}
+
+/** The line under a gateway's name: the operator's, else the currency code. */
+export function gatewayCaption(gateway: {
+  readonly currency: string;
+  readonly displayDescription?: string | null;
+}): string {
+  const description = gateway.displayDescription?.trim();
+  return description ? description : gateway.currency;
+}
 
 /** Real payment-system SVG URL for a gateway type, or `null`. */
 export function gatewayIconUrl(type: string): string | null {

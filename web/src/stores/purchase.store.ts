@@ -19,6 +19,8 @@ export type GatewayOption = {
   id: string;
   label: string;
   icon: string;
+  /** The operator's icon for the gateway, where they set one: the review shows it too. */
+  iconSvg?: string;
   currency: string;
   /**
    * The gateway's «для автоматического списания» option. Picking it is the

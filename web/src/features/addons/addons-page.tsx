@@ -26,7 +26,7 @@ import {
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { GatewayIcon } from "@/components/ui/gateway-icon";
-import { gatewayLabel } from "@/lib/gateway-display";
+import { gatewayCaption, gatewayLabel } from "@/lib/gateway-display";
 import { SubscriptionSelectCard } from "@/components/subscription/subscription-select-card";
 import { StepTransition } from "@/components/ui/step-transition";
 import { startCheckoutRedirect } from "@/lib/utils";
@@ -516,11 +516,12 @@ function SelectGateway() {
     staleTime: 300_000,
   });
 
-  const choose = (gw: { type: string; displayName: string; currency: string }) =>
+  const choose = (gw: { type: string; displayName?: string | null; displayIconSvg?: string | null; currency: string }) =>
     selectGateway({
       id: gw.type,
       label: gatewayLabel(gw.type, gw.displayName),
       icon: "💳",
+      ...(gw.displayIconSvg ? { iconSvg: gw.displayIconSvg } : {}),
       currency: gw.currency,
     });
 
@@ -576,10 +577,10 @@ function SelectGateway() {
               onClick={() => choose(gw)}
               className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
             >
-              <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
+              <GatewayIcon type={gw.type} currency={gw.currency} iconSvg={gw.displayIconSvg} className="h-7 w-7 shrink-0" />
               <div className="min-w-0 flex-1 text-left">
                 <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
-                <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
+                <p className="whitespace-pre-line text-xs text-[color:var(--brand-muted-foreground)]">{gatewayCaption(gw)}</p>
               </div>
               {price && (
                 <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">{price}</span>

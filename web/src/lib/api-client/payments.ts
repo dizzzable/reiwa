@@ -17,7 +17,15 @@ export type CreationPurchaseType = Extract<PaymentPurchaseType, "NEW" | "ADDITIO
 
 export interface GatewayOption {
   type: string;
-  displayName: string;
+  /**
+   * The operator's name for the gateway («Карта или СБП»), the line under it in
+   * place of the currency code, and their SVG icon — «Как шлюз видят клиенты»,
+   * panel 0.9.7.78+. Each is absent where the operator set none; the SVG is
+   * shown only as an image (`lib/gateway-display.ts`).
+   */
+  displayName?: string | null;
+  displayDescription?: string | null;
+  displayIconSvg?: string | null;
   currency: string;
   isActive: boolean;
   /**

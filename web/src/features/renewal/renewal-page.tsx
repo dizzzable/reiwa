@@ -29,7 +29,7 @@ import type { RenewalOptionItem, Subscription } from "@/types/api";
 import { cn, startCheckoutRedirect } from "@/lib/utils";
 import { savePendingCheckout } from "@/lib/pending-checkout";
 import { TariffCard } from "@/features/plans/tariff-card";
-import { gatewayLabel } from "@/lib/gateway-display";
+import { gatewayCaption, gatewayLabel } from "@/lib/gateway-display";
 import { createRenewalIdempotencyKey } from "./renewal-idempotency";
 import { AutopayGatewayMark, GatewayIcon } from "@/components/ui/gateway-icon";
 import {
@@ -911,7 +911,7 @@ function SelectGateway() {
   const savedMethodsUnknown = yookassaEnabled && paymentMethodsPending;
 
   const choose = (
-    gw: { type: string; displayName: string; currency: string },
+    gw: { type: string; displayName?: string | null; displayIconSvg?: string | null; currency: string },
     savedPaymentMethodId: string | null = null,
     autopay = false,
     autopayMethod: AutopayMethod | null = null,
@@ -923,6 +923,7 @@ function SelectGateway() {
         ? `${gatewayLabel(gw.type, gw.displayName)} · ${t(autopayCaptionKey(autopayMethod, gw.type))}`
         : gatewayLabel(gw.type, gw.displayName),
       icon: GATEWAY_ICONS[gw.type] ?? "💳",
+      ...(gw.displayIconSvg ? { iconSvg: gw.displayIconSvg } : {}),
       currency: gw.currency,
       ...(autopay ? { autopay: true } : {}),
       ...(autopay && autopayMethod !== null ? { autopayMethod } : {}),
@@ -1020,10 +1021,10 @@ function SelectGateway() {
               onClick={() => choose(gw)}
               className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
             >
-              <GatewayIcon type={gw.type} currency={gw.currency} className="h-7 w-7" />
-              <div className="text-left">
+              <GatewayIcon type={gw.type} currency={gw.currency} iconSvg={gw.displayIconSvg} className="h-7 w-7 shrink-0" />
+              <div className="min-w-0 text-left">
                 <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
-                <p className="text-xs text-[color:var(--brand-muted-foreground)]">{gw.currency}</p>
+                <p className="whitespace-pre-line text-xs text-[color:var(--brand-muted-foreground)]">{gatewayCaption(gw)}</p>
               </div>
             </button>
             {autopayOffered(gw) &&
@@ -1037,7 +1038,12 @@ function SelectGateway() {
                     onClick={() => choose(gw, null, true, method, delay)}
                     className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
                   >
-                    <AutopayGatewayMark type={gw.type} currency={gw.currency} method={method} />
+                    <AutopayGatewayMark
+                      type={gw.type}
+                      currency={gw.currency}
+                      method={method}
+                      iconSvg={gw.displayIconSvg}
+                    />
                     <div className="text-left">
                       <p className="font-medium text-[color:var(--brand-foreground)]">{gatewayLabel(gw.type, gw.displayName)}</p>
                       <p className="text-xs text-[color:var(--brand-muted-foreground)]">

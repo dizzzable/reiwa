@@ -482,6 +482,7 @@ function QuoteView({
               <GatewayIcon
                 type={selectedGateway.id}
                 currency={selectedGateway.currency}
+                iconSvg={selectedGateway.iconSvg}
                 className="h-4 w-4"
               />
             ) : undefined
