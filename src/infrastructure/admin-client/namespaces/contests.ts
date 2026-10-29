@@ -1,8 +1,8 @@
 /**
  * Contests namespace — the events with a draw at the end, as the person
- * entering them sees them: what is running, whether they are in, and how they
- * did. Scoped to the session's identity throughout; who else entered and who
- * else won never comes down this path.
+ * entering them sees them: what is running, whether they are in, how they
+ * did, and who won a finished one (names masked). Scoped to the session's
+ * identity throughout; who else entered never comes down this path.
  */
 import type { AdminTransport } from '../transport.js';
 import type { UserIdentity } from './subscription.js';
@@ -20,20 +20,30 @@ function reference(identity: UserIdentity): string {
 export class ContestsNamespace {
   constructor(private readonly transport: AdminTransport) {}
 
-  /** Running contests, plus drawn ones this person took part in. */
+  /**
+   * Running contests, this person's results, and — `results=all` — every
+   * contest drawn lately with its masked winners. Without the flag a panel
+   * keeps to what an older cabinet can draw; a panel older than the flag
+   * ignores it.
+   */
   list(identity: UserIdentity): Promise<unknown> {
     return this.transport.request(
       'GET',
-      `/api/internal/contests/${encodeURIComponent(reference(identity))}`,
+      `/api/internal/contests/${encodeURIComponent(reference(identity))}?results=all`,
     );
   }
 
-  /** Enter. Answered, not thrown, when refused — the reason is shown inline. */
-  enter(identity: UserIdentity, contestId: string): Promise<unknown> {
+  /**
+   * Enter. Answered, not thrown, when refused — the reason is shown inline.
+   *
+   * `channelMember` is what Telegram said about the contest's channel, on the
+   * second call the panel asks for; absent on the first.
+   */
+  enter(identity: UserIdentity, contestId: string, channelMember?: boolean | null): Promise<unknown> {
     return this.transport.request(
       'POST',
       `/api/internal/contests/${encodeURIComponent(reference(identity))}/${encodeURIComponent(contestId)}/enter`,
-      {},
+      channelMember === undefined ? {} : { channelMember },
     );
   }
 }

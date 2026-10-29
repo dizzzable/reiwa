@@ -53,6 +53,7 @@ export {
   type ContestView,
   type ContestStatus,
   type ContestEntryRefusal,
+  type ContestEntryAnswer,
   type ContestPrizeView,
 } from "./contests.js";
 

@@ -351,6 +351,23 @@ async function askTelegram(api: ChatMemberApi, chatId: string, userId: number): 
   }
 }
 
+/**
+ * One plain question about one chat, for a door that is not the gate: a
+ * contest that needs its own channel (the owner, 29.10.2026). `true` and
+ * `false` are Telegram's answer; `null` is "could not be asked" — an outage,
+ * a flood, a bot that is not an admin there, a user Telegram will not look
+ * up — and lets the person in, the rule «Канал обязателен» follows too. No
+ * memory and no back-off: a contest asks once, at the moment of entering.
+ */
+export async function probeChannelMembership(
+  api: ChatMemberApi,
+  chatId: string,
+  userId: number,
+): Promise<boolean | null> {
+  const answer = await askTelegram(api, chatId, userId);
+  return answer.kind === 'member' ? answer.subscribed : null;
+}
+
 /** Sorts a failed `getChatMember` into what the gate does about it. */
 function classifyTelegramFailure(err: unknown): TelegramAnswer {
   if (err instanceof GrammyError) {

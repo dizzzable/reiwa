@@ -5,9 +5,11 @@
  * behaves on every install until somebody configures one: an icon that opens
  * a page saying "not available" is worse than no icon.
  *
- * A dot marks a spin waiting to be taken — free or on the balance. It is the
- * only thing this button says about the wheel: no counts, no odds, nothing
- * that would need to stay in step with the page behind it.
+ * A dot marks something waiting for the person: a spin to take — free or on
+ * the balance — or a running contest they can still enter. It is the only
+ * thing this button says: no counts, no odds, nothing that would need to stay
+ * in step with the page behind it. A contest used to be invisible from here —
+ * the same icon whether one was running or not.
  */
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -36,6 +38,9 @@ export function WheelIcon() {
   });
 
   const hasContest = (contests.data ?? []).some((contest) => contest.status === "ACTIVE");
+  const contestOpen = (contests.data ?? []).some(
+    (contest) => contest.status === "ACTIVE" && !contest.entered && contest.closed === null,
+  );
   if (!data?.enabled && !hasContest) return null;
   const WheelGlyph = decor.Glyph ?? CircleDot;
 
@@ -51,7 +56,7 @@ export function WheelIcon() {
       style={decor.wrapperStyle}
     >
       <WheelGlyph className="h-4 w-4" style={decor.glyphStyle} />
-      {data?.canSpin ? (
+      {data?.canSpin || contestOpen ? (
         <span
           aria-hidden
           className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[color:var(--brand-accent,#fbbf24)]"

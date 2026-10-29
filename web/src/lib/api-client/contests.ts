@@ -8,7 +8,16 @@ import type { WheelLocalizedText, WheelPrize, WheelSectorKind, WheelSpinStatus }
 export type ContestStatus = "DRAFT" | "ACTIVE" | "DRAWN" | "CANCELLED";
 
 /** Why the enter button is not there. */
-export type ContestEntryRefusal = "NOT_OPEN" | "NOT_STARTED" | "ENDED" | "NOT_ELIGIBLE" | "FULL";
+export type ContestEntryRefusal =
+  | "NOT_OPEN"
+  | "NOT_STARTED"
+  | "ENDED"
+  | "NOT_ELIGIBLE"
+  | "FULL"
+  /** Telegram says the person is not in the contest's channel. */
+  | "CHANNEL_REQUIRED"
+  /** The contest needs a channel and the account has no Telegram to check. */
+  | "NEEDS_TELEGRAM";
 
 export interface ContestPrizeView {
   place: number;
@@ -29,7 +38,7 @@ export interface ContestView {
   prizes: ContestPrizeView[];
   entered: boolean;
   closed: ContestEntryRefusal | null;
-  /** This person's own result once drawn. Nobody else's. */
+  /** This person's own result once drawn. */
   myResult: {
     place: number;
     prizeTitle: WheelLocalizedText;
@@ -37,16 +46,31 @@ export interface ContestView {
     prize: WheelPrize | null;
     ticketId: string | null;
   } | null;
+  /** The channel entering needs. Absent from a panel older than channels. */
+  channel?: { joinUrl: string } | null;
+  /** What earns extra chances, and how many this person holds. `null`: one each. */
+  tickets?: { perPurchase: number; perReferral: number; max: number | null; mine: number } | null;
+  /** SHA-256 of the draw key, promised from the start. */
+  seedHash?: string | null;
+  /** The draw key itself, once the draw has used it. */
+  seed?: string | null;
+  /** Who won a finished contest, names masked. */
+  winners?: Array<{ place: number; name: string | null; prizeTitle: WheelLocalizedText }> | null;
+  drawnEntries?: number | null;
+  drawnTickets?: number | null;
+}
+
+export interface ContestEntryAnswer {
+  entered: boolean;
+  reason: ContestEntryRefusal | null;
+  /** With `CHANNEL_REQUIRED`: where to join. */
+  joinUrl?: string;
 }
 
 export const getContests = (): Promise<ContestView[]> =>
   apiClient.get<ContestView[]>("/contests").then((r) => (Array.isArray(r.data) ? r.data : []));
 
-export const enterContest = (
-  contestId: string,
-): Promise<{ entered: boolean; reason: ContestEntryRefusal | null }> =>
+export const enterContest = (contestId: string): Promise<ContestEntryAnswer> =>
   apiClient
-    .post<{ entered: boolean; reason: ContestEntryRefusal | null }>(
-      `/contests/${encodeURIComponent(contestId)}/enter`,
-    )
+    .post<ContestEntryAnswer>(`/contests/${encodeURIComponent(contestId)}/enter`)
     .then((r) => r.data);
