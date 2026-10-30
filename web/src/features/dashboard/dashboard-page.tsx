@@ -511,6 +511,8 @@ export default function DashboardPage() {
                 subscriptionUrl={activeSubscription?.url ?? null}
                 deviceLimit={activeSubscription?.deviceLimit ?? null}
                 trafficLimit={activeSubscription?.trafficLimit ?? null}
+                canAddDevice={activeSubscription?.status === "ACTIVE"}
+                subscriptionName={activeSubscription?.plan?.name ?? null}
               />
             </div>
           )}

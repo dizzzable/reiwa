@@ -12,6 +12,14 @@
  *
  * Revoke acts on a single device of this subscription.
  *
+ * A free slot is offered as a row of its own under the devices (the owner,
+ * 30.10.2026): «Можно подключить ещё N устройств», quiet on purpose — a dashed
+ * circle and muted words, the list's last line, not a call to action. Tapping
+ * it shows THIS subscription's link as a QR code, so a second phone, a TV box
+ * or a laptop adds it from its VPN app's camera scanner instead of somebody
+ * mailing themselves the link. Only for a subscription that runs and has a
+ * link, and only while a slot is free (or the subscription has no limit).
+ *
  * REGENERATION HAS TWO OUTCOMES, NOT ONE. Admin-side the wipe runs after the
  * new link is rotated AND persisted, and is non-fatal, so
  * `{ regenerated: true, devicesCleared: false }` is a successful response
@@ -22,7 +30,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { Copy, Globe, Info, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { Copy, Globe, Info, Plus, QrCode, RefreshCw, Smartphone, Trash2 } from "lucide-react";
 import { AndroidGlyph, AppleGlyph, WindowsGlyph, MacosGlyph, LinuxGlyph } from "@/components/ui/device-glyphs";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -32,6 +40,7 @@ import {
   deleteSubscriptionDevice,
   regenerateSubscriptionLink,
 } from "@/lib/api-client";
+import { LocalQr } from "@/components/ui/local-qr";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadErrorCard } from "@/components/ui/load-error-card";
 import { StadiumButton } from "@/components/ui/stadium-button";
@@ -67,6 +76,14 @@ interface DevicesListProps {
   trafficLimit?: number | null;
   /** Prevents actions while a destructive card presentation owns this row. */
   disabled?: boolean;
+  /**
+   * Whether a new device can join this subscription now — it runs. Off, the
+   * «можно подключить ещё» row is not offered: a code that adds an expired
+   * subscription to a second phone is a second thing that does not work.
+   */
+  canAddDevice?: boolean;
+  /** The plan's name, under the code, so it is clear WHICH subscription it adds. */
+  subscriptionName?: string | null;
 }
 
 export function DevicesList({
@@ -80,6 +97,8 @@ export function DevicesList({
   deviceLimit,
   trafficLimit,
   disabled = false,
+  canAddDevice = false,
+  subscriptionName = null,
 }: DevicesListProps) {
   const { t } = useTranslation();
   // «Был в сети» on the operator's calendar, as the subscription's dates are.
@@ -90,11 +109,13 @@ export function DevicesList({
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [revokeHwid, setRevokeHwid] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     if (!disabled) return;
     setRegenerateOpen(false);
     setRevokeHwid(null);
+    setAddOpen(false);
   }, [disabled]);
 
   const revokeMutation = useMutation({
@@ -150,6 +171,13 @@ export function DevicesList({
       toast.error(t("devices.error"));
     }
   };
+
+  // Free slots; `null` — no limit. Shown only after a successful read: a
+  // failed one has no rows, and «ещё 3» would be a guess.
+  const limited = deviceLimit !== null && deviceLimit !== undefined && deviceLimit > 0;
+  const freeSlots = limited ? Math.max(0, deviceLimit - devices.length) : null;
+  const offerAdd =
+    !isError && !disabled && canAddDevice && Boolean(subscriptionUrl) && (freeSlots === null || freeSlots > 0);
 
   if (isLoading) {
     return (
@@ -217,7 +245,9 @@ export function DevicesList({
             {t("devices.empty")}
           </p>
         </div>
-      ) : (
+      ) : null}
+
+      {isError || devices.length === 0 ? null : (
         <div className="space-y-2">
           {devices.map((device, i) => (
             <motion.div
@@ -253,6 +283,33 @@ export function DevicesList({
             </motion.div>
           ))}
         </div>
+      )}
+
+      {offerAdd && (
+        // A `motion.div` around a plain button, not a `motion.button`: the
+        // dashboard's specs stand `motion` in with `div` and `span` only.
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: devices.length * 0.04 + 0.06 }}
+        >
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="group mt-2 flex w-full items-center gap-3 rounded-[var(--radius-item)] p-3 text-left transition-colors hover:bg-[color:var(--color-surface)]"
+          data-testid="devices-add-more"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-[color:var(--color-border-strong)] text-[color:var(--brand-muted-foreground)] transition-colors group-hover:border-(--brand-ink)/60 group-hover:text-(--brand-ink)">
+            <Plus className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1 text-xs text-[color:var(--brand-muted-foreground)] transition-colors group-hover:text-[color:var(--brand-foreground)]">
+            {freeSlots === null
+              ? t(devices.length === 0 ? "devices.addUnlimitedFirst" : "devices.addUnlimited")
+              : t(devices.length === 0 ? "devices.addFirst" : "devices.addMore", { count: freeSlots })}
+          </span>
+          <QrCode aria-hidden className="h-3.5 w-3.5 shrink-0 text-[color:var(--brand-muted-foreground)] opacity-50 transition-opacity group-hover:opacity-90" />
+        </button>
+        </motion.div>
       )}
 
       {/* ── Regenerate-link confirmation ── */}
@@ -324,6 +381,36 @@ export function DevicesList({
               {t("common.cancel")}
             </StadiumButton>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add a device: this subscription's link as a code ── */}
+      <Dialog open={offerAdd && addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{t("devices.addTitle")}</DialogTitle>
+            <DialogDescription>{t("devices.addBody")}</DialogDescription>
+          </DialogHeader>
+          {/* White on purpose, whatever the theme: a light concept would
+              otherwise put a light code on a light plate, and a code that does
+              not scan is worth less than one that does not match. Plain style,
+              as on the connect sheet — VPN apps' scanners are the least
+              forgiving readers there are. */}
+          <div className="mt-1 flex justify-center">
+            <div className="rounded-[var(--radius-card)] bg-white p-2">
+              {subscriptionUrl ? (
+                <LocalQr url={subscriptionUrl} label={t("devices.addTitle")} size={208} captioned={false} />
+              ) : null}
+            </div>
+          </div>
+          <p className="text-center text-xs text-[color:var(--brand-muted-foreground)]">
+            {[subscriptionName, freeSlots === null ? null : t("devices.addSlots", { count: freeSlots })]
+              .filter((part): part is string => Boolean(part))
+              .join(" · ")}
+          </p>
+          <StadiumButton variant="secondary" size="md" fullWidth icon={<Copy className="h-4 w-4" />} onClick={() => void handleCopy()}>
+            {t("devices.addCopy")}
+          </StadiumButton>
         </DialogContent>
       </Dialog>
 
