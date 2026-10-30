@@ -44,6 +44,12 @@ const BEFORE: ReadonlyArray<readonly [string, NotificationTarget]> = [
   ["expired_1_day_ago", ROUTE("/renew")],
   ["limited", ROUTE("/renew")],
   ["subscription_limited", ROUTE("/renew")],
+  // Every contest notice opens «События» (30.10.2026; it used to show in place).
+  ["contest_started", ROUTE("/events")],
+  ["contest_won", ROUTE("/events")],
+  ["contest_won_review", ROUTE("/events")],
+  ["contest_rank", ROUTE("/events")],
+  ["contest_reminder_chasing", ROUTE("/events")],
   ["broadcast", MODAL],
   ["ADMIN_MESSAGE", MODAL],
   ["cashback_credited", MODAL],

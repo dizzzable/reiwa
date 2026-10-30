@@ -85,6 +85,13 @@ export function resolveNotificationTarget(
     return { kind: 'route', path: '/support' };
   }
 
+  // Every contest notice — the announcement, a result, a held prize, a
+  // reminder → «События», where the contest, the board and the prize are.
+  // The panel's push and the bot button open the same page.
+  if (t.startsWith('contest_')) {
+    return { kind: 'route', path: '/events' };
+  }
+
   // Referral events → the referral cabinet (who joined, rewards, etc.).
   if (t.includes('referral')) {
     return { kind: 'route', path: '/referrals' };
