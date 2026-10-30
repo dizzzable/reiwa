@@ -65,6 +65,7 @@ vi.mock("../src/features/dashboard/components/notification-bell", () => ({
 }));
 vi.mock("../src/features/dashboard/components/quests-icon", () => ({ QuestsIcon: () => null }));
 vi.mock("../src/features/dashboard/components/wheel-icon", () => ({ WheelIcon: () => null }));
+vi.mock("../src/features/dashboard/components/contests-icon", () => ({ ContestsIcon: () => null }));
 vi.mock("../src/features/dashboard/components/empty-subscription-cta", () => ({
   EmptySubscriptionCta: () => null,
 }));

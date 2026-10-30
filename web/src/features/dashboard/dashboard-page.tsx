@@ -45,6 +45,7 @@ import { resolveDevicesViewState } from "@/lib/devices-view-state";
 import { NotificationBell } from "./components/notification-bell";
 import { useIconDecor } from "@/lib/icon-decor";
 import { QuestsIcon } from "./components/quests-icon";
+import { ContestsIcon } from "./components/contests-icon";
 import { WheelIcon } from "./components/wheel-icon";
 import { EmptySubscriptionCta } from "./components/empty-subscription-cta";
 import { TrialCta } from "./components/trial-cta";
@@ -426,6 +427,7 @@ export default function DashboardPage() {
           </button>
           <QuestsIcon />
           <WheelIcon />
+          <ContestsIcon />
           <NotificationBell />
         </div>
       </div>

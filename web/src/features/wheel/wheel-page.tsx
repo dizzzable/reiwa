@@ -173,7 +173,7 @@ export default function WheelPage() {
   if (!wheel.data?.enabled) {
     return (
       <div className="mx-auto max-w-md space-y-4 p-4">
-        <BackButton fallback="/events" />
+        <BackButton fallback="/" />
         <TipCard>{t('wheel.disabled')}</TipCard>
       </div>
     )
@@ -185,7 +185,7 @@ export default function WheelPage() {
 
   return (
     <div className="mx-auto max-w-md space-y-5 p-4">
-      <BackButton fallback="/events" />
+      <BackButton fallback="/" />
 
       <header className="text-center">
         <h1 className="text-2xl font-bold">{t('wheel.title')}</h1>

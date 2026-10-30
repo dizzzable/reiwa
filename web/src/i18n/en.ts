@@ -2095,9 +2095,9 @@ export const en: RuDict = {
     },
   },
   events: {
-    title: 'Events',
-    subtitle: 'The wheel is always on; contests run for a while',
-    empty: 'Nothing is on right now. Come back later.',
+    title: 'Contests',
+    subtitle: 'Draws and leaderboards — while they run',
+    empty: 'No contests right now. Come back later.',
     running: 'Running now',
     finished: 'Finished',
     unnamed: 'Contest',
@@ -2167,11 +2167,6 @@ export const en: RuDict = {
     entered: 'You are in',
     youAreIn: 'You are in. Results after it ends.',
     enterFailed: 'Could not enter',
-    wheel: {
-      title: 'Wheel of fortune',
-      canSpin: 'You have a spin — go',
-      later: 'No spins right now',
-    },
     refusal: {
       NOT_OPEN: 'Entries are closed.',
       NOT_STARTED: 'The contest has not started yet.',

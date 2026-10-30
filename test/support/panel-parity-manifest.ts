@@ -952,6 +952,7 @@ export const PANEL_BRANDING_VOCABULARY: PanelBrandingVocabulary = {
     "dashboardIconKeys": [
       "quests",
       "wheel",
+      "contests",
       "bell",
       "buy",
       "promo"

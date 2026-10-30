@@ -3,12 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { BarChart3, CircleDot, ExternalLink, Loader2, PartyPopper, Ticket, Trophy, Users } from 'lucide-react'
+import { BarChart3, ExternalLink, Loader2, PartyPopper, Ticket, Trophy, Users } from 'lucide-react'
 
 import {
   enterContest,
   getContests,
-  getWheel,
   type ContestLeaderboardView,
   type ContestMetric,
   type ContestView,
@@ -20,10 +19,11 @@ import { pickLocalized } from '@/lib/pick-localized'
 import { formatDateTime, getActiveLocale, openExternalUrl } from '@/lib/utils'
 
 /**
- * Events: what is running, how the person did, and who won.
+ * Contests: what is running, how the person did, and who won.
  *
- * Two kinds live here. The wheel is the permanent one and gets a card that
- * simply leads to it. Contests are the temporary kind: a window, a list of
+ * Contests only. The wheel is a different mechanic with an icon of its own
+ * on the dashboard (the owner, 30.10.2026); it used to have a card here and
+ * one icon led to both. A contest is a window, a list of
  * prizes, a button — the conditions, when there are any (a channel to join,
  * tickets for paying and for friends who pay) — and, once the draw has run,
  * this person's own result and the winners with their names masked (the
@@ -41,7 +41,6 @@ export default function EventsPage() {
   const [joinUrls, setJoinUrls] = useState<Readonly<Record<string, string>>>({})
 
   const contests = useQuery({ queryKey: ['contests'], queryFn: getContests })
-  const wheel = useQuery({ queryKey: ['wheel'], queryFn: getWheel, staleTime: 60_000 })
 
   const enter = useMutation({
     mutationFn: (contestId: string) => enterContest(contestId),
@@ -72,25 +71,11 @@ export default function EventsPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t('events.subtitle')}</p>
       </header>
 
-      {wheel.data?.enabled ? (
-        <Link to="/wheel" className="block rounded-2xl border p-4 transition-colors hover:bg-accent">
-          <div className="flex items-center gap-3">
-            <CircleDot className="h-6 w-6 shrink-0" />
-            <div className="min-w-0">
-              <div className="font-semibold">{t('events.wheel.title')}</div>
-              <div className="text-sm text-muted-foreground">
-                {wheel.data.canSpin ? t('events.wheel.canSpin') : t('events.wheel.later')}
-              </div>
-            </div>
-          </div>
-        </Link>
-      ) : null}
-
       {contests.isLoading ? (
         <div className="flex justify-center py-8">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
-      ) : items.length === 0 && !wheel.data?.enabled ? (
+      ) : items.length === 0 ? (
         <TipCard>{t('events.empty')}</TipCard>
       ) : null}
 
