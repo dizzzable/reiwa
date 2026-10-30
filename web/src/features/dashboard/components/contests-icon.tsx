@@ -7,7 +7,7 @@
  * opens «Сейчас конкурсов нет» is worse than no icon. A finished contest's
  * result is still one tap away from the notice that announced it.
  *
- * A dot marks a draw the person can still enter, in the brand colour and
+ * A dot marks a draw the person can still enter, in the brand ink and
  * rippling like the bell's badge (still under reduced motion). It used to ask
  * for `--brand-accent`, which nothing sets, so it was amber on every theme.
  * A leaderboard takes everybody in by itself, so it never asks for a tap and
@@ -53,8 +53,8 @@ export function ContestsIcon() {
       <Glyph className="h-4 w-4" style={decor.glyphStyle} />
       {open ? (
         <span aria-hidden className="absolute right-1 top-1 flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-(--brand-primary) opacity-60 motion-safe:animate-ping" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-(--brand-primary)" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-(--brand-ink) opacity-60 motion-safe:animate-ping" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-(--brand-ink)" />
         </span>
       ) : null}
     </button>

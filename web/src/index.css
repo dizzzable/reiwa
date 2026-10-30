@@ -36,6 +36,10 @@
   --brand-muted-foreground: #a1a1a1;
   --brand-surface: #18181b;
   --brand-surface-high: #27272a;
+  /* The primary as drawn on a card (icons, dots, rings): `lib/brand-ink.ts`
+     moves it toward the text colour where the theme's primary would vanish.
+     The default primary stands out on the default card as it is. */
+  --brand-ink: var(--brand-primary);
   --brand-font: 'Geist Variable', system-ui, sans-serif;
   --glass-blur: 16px;
 }

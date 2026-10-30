@@ -41,9 +41,12 @@ import { cn, formatDateTime, getActiveLocale, openExternalUrl } from '@/lib/util
  * `useReducedMotion` itself and simply arrives where it ends.
  *
  * Colour follows the operator's theme, which may be light. Surfaces, text and
- * borders are theme tokens. The brand colour is a fill, a ring or an icon,
- * never the text itself: an operator may pick a pale primary for a light
- * background, and text in it would vanish. Amber and the medals are the only
+ * borders are theme tokens. The brand colour is never the text itself, and
+ * what is drawn in it on a card — icons, dots, rings, the bar — is
+ * `--brand-ink`, the primary moved toward the text colour where the theme's
+ * own primary would vanish (lib/brand-ink.ts). Only the button keeps the bare
+ * primary: it is a fill, with `primaryFg` on it — edged in the ink, for the
+ * theme whose card is the primary. Amber and the medals are the only
  * fixed colours, and each has a darker shade for a light scheme — `dark:`
  * here is the `.dark` class the branding sets from the background.
  */
@@ -207,7 +210,7 @@ function ContestCard({
       {/* Positioned, so it paints over the celebration's light and not under it. */}
       <div className="relative space-y-3">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-item)] bg-(--brand-primary)/12 text-(--brand-primary)">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-item)] bg-(--brand-ink)/12 text-(--brand-ink)">
             {board === null ? <Gift className="h-5 w-5" /> : <BarChart3 className="h-5 w-5" />}
           </div>
           <div className="min-w-0 flex-1">
@@ -273,12 +276,12 @@ function ContestCard({
         ) : contest.entered ? (
           // Springs in where the button was, so the tap visibly lands.
           <motion.p
-            className="theme-title flex items-center gap-2 rounded-[var(--radius-item)] border border-(--brand-primary)/35 bg-(--brand-primary)/10 px-3 py-2.5 text-sm font-medium"
+            className="theme-title flex items-center gap-2 rounded-[var(--radius-item)] border border-(--brand-ink)/35 bg-(--brand-ink)/10 px-3 py-2.5 text-sm font-medium"
             initial={reduceMotion ? false : { opacity: 0, scale: 0.94 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ type: 'spring', stiffness: 420, damping: 26 }}
           >
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-(--brand-ink)" />
             {t('events.youAreIn')}
           </motion.p>
         ) : contest.closed !== null ? (
@@ -287,7 +290,10 @@ function ContestCard({
           </p>
         ) : (
           <StadiumButton
-            className="w-full"
+            // The inset ring is the ink: the same colour as the fill wherever
+            // the primary stands out, so it disappears into it, and a darker
+            // edge where the theme paints the card in the primary itself.
+            className="w-full ring-1 ring-(--brand-ink)/45 ring-inset"
             // The breathing halo is one of the cabinet's animations the
             // system setting does not reach, so it is asked here instead.
             glow={!reduceMotion && !entering}
@@ -309,8 +315,8 @@ function ContestCard({
 function LiveDot() {
   return (
     <span aria-hidden className="relative flex h-2 w-2 shrink-0">
-      <span className="absolute inline-flex h-full w-full rounded-full bg-(--brand-primary) opacity-60 motion-safe:animate-ping" />
-      <span className="relative inline-flex h-2 w-2 rounded-full bg-(--brand-primary)" />
+      <span className="absolute inline-flex h-full w-full rounded-full bg-(--brand-ink) opacity-60 motion-safe:animate-ping" />
+      <span className="relative inline-flex h-2 w-2 rounded-full bg-(--brand-ink)" />
     </span>
   )
 }
@@ -549,7 +555,7 @@ function Leaderboard({ board, live }: { readonly board: ContestLeaderboardView; 
               key={row.rank}
               className={cn(
                 'flex items-center justify-between gap-2 rounded-[var(--radius-item)] px-1.5 py-1',
-                row.me && 'theme-title bg-(--brand-primary)/12 font-semibold ring-1 ring-(--brand-primary)/40 ring-inset',
+                row.me && 'theme-title bg-(--brand-ink)/12 font-semibold ring-1 ring-(--brand-ink)/40 ring-inset',
               )}
               initial={reduceMotion ? false : { opacity: 0, x: -6 }}
               animate={{ opacity: 1, x: 0 }}
@@ -598,9 +604,9 @@ function PrizeBar({ share }: { readonly share: number }) {
   const reduceMotion = useReducedMotion() === true
   const width = `${Math.round(Math.min(1, Math.max(0, Number.isFinite(share) ? share : 0)) * 100)}%`
   return (
-    <div aria-hidden className="h-1.5 overflow-hidden rounded-full bg-(--brand-primary)/15">
+    <div aria-hidden className="h-1.5 overflow-hidden rounded-full bg-(--brand-ink)/15">
       <motion.div
-        className="h-full rounded-full bg-(--brand-primary)"
+        className="h-full rounded-full bg-(--brand-ink)"
         initial={reduceMotion ? false : { width: 0 }}
         animate={{ width }}
         transition={{ duration: 0.8, delay: 0.25, ease: EASE }}
