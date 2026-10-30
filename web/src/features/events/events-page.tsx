@@ -216,7 +216,8 @@ function ContestCard({
           <div className="min-w-0 flex-1">
             <h3 className="theme-title flex items-center gap-2 font-semibold">
               <span className="min-w-0 break-words">{title}</span>
-              {live && starts.getTime() <= now ? <LiveDot /> : null}
+              {/* Running, not merely ACTIVE: an ended contest stays ACTIVE until its draw. */}
+              {live && starts.getTime() <= now && ends.getTime() > now ? <LiveDot /> : null}
             </h3>
             {description ? (
               <p className="theme-muted mt-1 whitespace-pre-line text-sm">{description}</p>
@@ -258,7 +259,9 @@ function ContestCard({
           ))}
         </ul>
 
-        {board !== null ? <Leaderboard board={board} live={live} /> : null}
+        {board !== null ? (
+          <Leaderboard board={board} live={live} eligible={contest.closed !== 'NOT_ELIGIBLE'} />
+        ) : null}
 
         {live && board === null ? <Conditions contest={contest} channelUrl={channelUrl} /> : null}
 
@@ -314,7 +317,7 @@ function ContestCard({
 /** A running contest's pulse beside its title. Holds still when motion is turned down. */
 function LiveDot() {
   return (
-    <span aria-hidden className="relative flex h-2 w-2 shrink-0">
+    <span aria-hidden data-testid="contest-live-dot" className="relative flex h-2 w-2 shrink-0">
       <span className="absolute inline-flex h-full w-full rounded-full bg-(--brand-ink) opacity-60 motion-safe:animate-ping" />
       <span className="relative inline-flex h-2 w-2 rounded-full bg-(--brand-ink)" />
     </span>
@@ -531,7 +534,16 @@ function RankBadge({ rank }: { readonly rank: number }) {
  * own row marked — their place when it is below the top, and while it runs
  * how much more takes a prize place, as words and as a bar that fills.
  */
-function Leaderboard({ board, live }: { readonly board: ContestLeaderboardView; readonly live: boolean }) {
+function Leaderboard({
+  board,
+  live,
+  eligible,
+}: {
+  readonly board: ContestLeaderboardView
+  readonly live: boolean
+  /** Outside the audience, «в рейтинге все» would contradict the refusal under the board. */
+  readonly eligible: boolean
+}) {
   const { t } = useTranslation()
   const reduceMotion = useReducedMotion() === true
   const score = useScore()
@@ -545,7 +557,7 @@ function Leaderboard({ board, live }: { readonly board: ContestLeaderboardView; 
           {t(`events.board.metric.${board.metric}`)}
         </p>
       ) : null}
-      {live ? <p className="theme-muted text-xs">{t('events.board.everyone')}</p> : null}
+      {live && eligible ? <p className="theme-muted text-xs">{t('events.board.everyone')}</p> : null}
       {board.top.length === 0 ? (
         <p className="theme-muted text-xs">{t('events.board.empty')}</p>
       ) : (

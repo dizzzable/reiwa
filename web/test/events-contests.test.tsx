@@ -185,6 +185,20 @@ describe("a running contest", () => {
     expect(text()).toContain(`SHA-256: ${HASH}`);
     expect(text()).not.toContain(SEED);
   });
+
+  it("stops pulsing «live» once the end has passed, while the draw is still to come", async () => {
+    await show([
+      contest(),
+      contest({
+        id: "c-ended",
+        startAt: new Date(Date.now() - 50 * HOUR).toISOString(),
+        endAt: new Date(Date.now() - 60_000).toISOString(),
+        closed: "ENDED",
+      }),
+    ]);
+
+    expect(container?.querySelectorAll('[data-testid="contest-live-dot"]').length, "only the running one").toBe(1);
+  });
 });
 
 describe("a finished contest", () => {
@@ -320,6 +334,13 @@ describe("a leaderboard", () => {
     expect(text()).toContain("2–10 место:");
     expect(container?.querySelectorAll("button").length, "nothing to enter").toBe(0);
     expect(text()).not.toContain(ru.events.fairness.title);
+  });
+
+  it("does not tell somebody outside the audience that everybody is on the board", async () => {
+    await show([ranked({ closed: "NOT_ELIGIBLE", leaderboard: board({ mine: null, toPrize: null }) })]);
+
+    expect(text()).toContain(ru.events.refusal.NOT_ELIGIBLE);
+    expect(text()).not.toContain(ru.events.board.everyone);
   });
 
   it("marks my own row in the top instead of repeating my place", async () => {
