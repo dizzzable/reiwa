@@ -188,7 +188,7 @@ describe("a running contest", () => {
 
   it("stops pulsing «live» once the end has passed, while the draw is still to come", async () => {
     await show([
-      contest(),
+      contest({}),
       contest({
         id: "c-ended",
         startAt: new Date(Date.now() - 50 * HOUR).toISOString(),
