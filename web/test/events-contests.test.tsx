@@ -237,6 +237,48 @@ describe("a finished contest", () => {
   });
 });
 
+/**
+ * The wheel's burst over a won contest (30.10.2026). Once per device: a
+ * party on every visit to the page would stop meaning anything. jsdom has no
+ * IntersectionObserver, so here the card counts as seen the moment it shows.
+ */
+describe("a win", () => {
+  const won = (status: "SETTLED" | "PENDING" | "REFUSED"): ContestView =>
+    contest({
+      id: `c-won-${status}`,
+      status: "DRAWN",
+      entered: true,
+      seed: SEED,
+      myResult: { place: 1, prizeTitle: { ru: "30 дней" }, status, prize: null, ticketId: null },
+    });
+  const burstIn = (card: Element | null | undefined): Element | null => card?.querySelector(":scope > div[aria-hidden]") ?? null;
+  const cards = (): Element[] => [...(container?.querySelectorAll('[data-testid="contest-card"]') ?? [])];
+
+  beforeEach(() => window.localStorage.removeItem("reiwa:contests-celebrated:v1"));
+
+  it("is celebrated the first time this device shows it, and only then", async () => {
+    await show([won("SETTLED")]);
+    expect(burstIn(cards()[0]), "the first look").not.toBeNull();
+    expect(burstIn(cards()[0])?.querySelectorAll("span").length, "with confetti").toBeGreaterThan(0);
+
+    act(() => root?.unmount());
+    container?.remove();
+    await show([won("SETTLED")]);
+
+    expect(burstIn(cards()[0]), "the second look just says it").toBeNull();
+    expect(text()).toContain("30 дней");
+  });
+
+  it("lights a prize still owed without the confetti, and leaves a refused one alone", async () => {
+    await show([won("PENDING"), won("REFUSED")]);
+    const [owed, refused] = cards();
+
+    expect(burstIn(owed)).not.toBeNull();
+    expect(burstIn(owed)?.querySelectorAll("span").length, "no confetti for a prize still owed").toBe(0);
+    expect(burstIn(refused)).toBeNull();
+  });
+});
+
 describe("a leaderboard", () => {
   const board = (overrides: Partial<NonNullable<ContestView["leaderboard"]>> = {}): ContestView["leaderboard"] => ({
     metric: "TRAFFIC",

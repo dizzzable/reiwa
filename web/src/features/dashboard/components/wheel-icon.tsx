@@ -49,10 +49,10 @@ export function WheelIcon() {
     >
       <WheelGlyph className="h-4 w-4" style={decor.glyphStyle} />
       {data.canSpin ? (
-        <span
-          aria-hidden
-          className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[color:var(--brand-accent,#fbbf24)]"
-        />
+        <span aria-hidden className="absolute right-1 top-1 flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-(--brand-primary) opacity-60 motion-safe:animate-ping" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-(--brand-primary)" />
+        </span>
       ) : null}
     </button>
   );
