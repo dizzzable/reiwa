@@ -236,3 +236,101 @@ describe("a finished contest", () => {
     expect(text()).not.toContain(ru.events.fairness.title);
   });
 });
+
+describe("a leaderboard", () => {
+  const board = (overrides: Partial<NonNullable<ContestView["leaderboard"]>> = {}): ContestView["leaderboard"] => ({
+    metric: "TRAFFIC",
+    currency: "RUB",
+    minScore: null,
+    top: [
+      { rank: 1, name: "Ан***а", score: 12.4 * 1024 ** 3, me: false },
+      { rank: 2, name: "Бо***с", score: 5 * 1024 ** 3, me: false },
+    ],
+    total: 57,
+    mine: { rank: 14, score: 1024 ** 3 },
+    toPrize: 4 * 1024 ** 3 + 1,
+    ...overrides,
+  });
+  const ranked = (overrides: Partial<ContestView> = {}): ContestView =>
+    contest({
+      id: "c-board",
+      kind: "LEADERBOARD",
+      closed: "AUTOMATIC",
+      seedHash: null,
+      prizes: [
+        { place: 1, kind: "POINTS", title: { ru: "1000 баллов" }, amount: 1000 },
+        { place: 2, placeTo: 10, kind: "POINTS", title: { ru: "100 баллов" }, amount: 100 },
+      ],
+      leaderboard: board(),
+      ...overrides,
+    });
+
+  it("shows the top with masked names, my place, and how far a prize is — with no button", async () => {
+    await show([ranked()]);
+
+    const shown = container?.querySelector('[data-testid="contest-leaderboard"]')?.textContent ?? "";
+    expect(shown).toContain(ru.events.board.metric.TRAFFIC);
+    expect(shown).toContain("Ан***а");
+    expect(shown).toContain("12,4 ГБ");
+    expect(container?.querySelector('[data-testid="contest-my-place"]')?.textContent).toBe("Ваше место — 14, результат — 1 ГБ");
+    expect(container?.querySelector('[data-testid="contest-to-prize"]')?.textContent).toContain("До призового места не хватает: 4 ГБ");
+    expect(text()).toContain("57 в рейтинге");
+    expect(text()).toContain("2–10 место:");
+    expect(container?.querySelectorAll("button").length, "nothing to enter").toBe(0);
+    expect(text()).not.toContain(ru.events.fairness.title);
+  });
+
+  it("marks my own row in the top instead of repeating my place", async () => {
+    await show([
+      ranked({
+        leaderboard: board({
+          metric: "REFERRALS_PAID",
+          top: [{ rank: 1, name: "Ми***й", score: 3, me: true }],
+          mine: { rank: 1, score: 3 },
+          toPrize: 0,
+        }),
+      }),
+    ]);
+
+    expect(text()).toContain(ru.events.board.you);
+    expect(text()).toContain("3 друга");
+    expect(text()).not.toContain("Ми***й");
+    expect(container?.querySelector('[data-testid="contest-my-place"]')).toBeNull();
+    expect(text()).toContain(ru.events.board.holding);
+  });
+
+  it("says roubles for payments", async () => {
+    await show([ranked({ leaderboard: board({ metric: "PAYMENTS_SUM", top: [{ rank: 1, name: "Ан***а", score: 125_000, me: false }] }) })]);
+
+    expect(text().replace(/\s/g, " ")).toContain("1 250 ₽");
+  });
+
+  it("tells a winner whose prize waits for the operator's check", async () => {
+    await show([
+      ranked({
+        status: "DRAWN",
+        leaderboard: board({ toPrize: null, mine: { rank: 1, score: 3 } }),
+        myResult: {
+          place: 1,
+          prizeTitle: { ru: "1000 баллов" },
+          status: "PENDING",
+          prize: null,
+          ticketId: null,
+          held: true,
+          score: 3,
+        },
+      }),
+    ]);
+
+    expect(text()).toContain(ru.events.result.held);
+    expect(text()).not.toContain(ru.events.result.pending);
+  });
+
+  it("gives somebody without a prize their place, not a draw's «не повезло»", async () => {
+    await show([ranked({ status: "DRAWN", entered: true, leaderboard: board({ toPrize: null }) })]);
+
+    expect(container?.querySelector('[data-testid="contest-my-place"]')?.textContent).toBe("Ваше место — 14, результат — 1 ГБ");
+    expect(text()).not.toContain(ru.events.result.notThisTime);
+    expect(container?.querySelector('[data-testid="contest-to-prize"]')).toBeNull();
+  });
+});

@@ -55,6 +55,9 @@ export {
   type ContestEntryRefusal,
   type ContestEntryAnswer,
   type ContestPrizeView,
+  type ContestKind,
+  type ContestMetric,
+  type ContestLeaderboardView,
 } from "./contests.js";
 
 // Auth

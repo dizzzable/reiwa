@@ -3,9 +3,16 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CircleDot, ExternalLink, Loader2, PartyPopper, Ticket, Trophy, Users } from 'lucide-react'
+import { BarChart3, CircleDot, ExternalLink, Loader2, PartyPopper, Ticket, Trophy, Users } from 'lucide-react'
 
-import { enterContest, getContests, getWheel, type ContestView } from '@/lib/api-client'
+import {
+  enterContest,
+  getContests,
+  getWheel,
+  type ContestLeaderboardView,
+  type ContestMetric,
+  type ContestView,
+} from '@/lib/api-client'
 import { BackButton } from '@/components/ui/back-button'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { TipCard } from '@/components/ui/tip-card'
@@ -22,6 +29,10 @@ import { formatDateTime, getActiveLocale, openExternalUrl } from '@/lib/utils'
  * this person's own result and the winners with their names masked (the
  * owner, 29.10.2026: everybody should see that a draw went to real people).
  * Who else entered and anybody's odds are not on this screen.
+ *
+ * A leaderboard (30.10.2026) has no button: everybody in its audience is on
+ * it. The card shows the top with names masked, where this person stands,
+ * and how much more takes a prize place.
  */
 export default function EventsPage() {
   const { t } = useTranslation()
@@ -147,6 +158,7 @@ function ContestCard({
   const ends = new Date(contest.endAt)
   const live = contest.status === 'ACTIVE'
   const channelUrl = contest.channel?.joinUrl ?? joinUrl
+  const board = contest.kind === 'LEADERBOARD' ? (contest.leaderboard ?? null) : null
 
   return (
     <article className="space-y-3 rounded-2xl border p-4" data-testid="contest-card">
@@ -164,12 +176,16 @@ function ContestCard({
         {live ? (
           <span>
             {t('events.until', { time: formatDateTime(ends) })}
-            {ends.getTime() > now ? ` · ${t('events.drawIn', { when: relativeFrom(ends, now) })}` : ''}
+            {ends.getTime() > now
+              ? ` · ${t(board === null ? 'events.drawIn' : 'events.board.resultsIn', { when: relativeFrom(ends, now) })}`
+              : ''}
           </span>
         ) : null}
         <span className="inline-flex items-center gap-1">
           <Users className="h-3.5 w-3.5" />
-          {t('events.entries', { count: contest.drawnEntries ?? contest.entries })}
+          {board === null
+            ? t('events.entries', { count: contest.drawnEntries ?? contest.entries })
+            : t('events.board.ranked', { count: board.total })}
         </span>
       </div>
 
@@ -177,21 +193,31 @@ function ContestCard({
         {contest.prizes.map((prize) => (
           <li key={prize.place} className="flex items-center gap-2">
             <Trophy className="h-4 w-4 shrink-0 text-amber-400" />
-            <span className="text-muted-foreground">{t('events.place', { place: prize.place })}</span>
+            <span className="text-muted-foreground">
+              {prize.placeTo != null && prize.placeTo > prize.place
+                ? t('events.placeRange', { from: prize.place, to: prize.placeTo })
+                : t('events.place', { place: prize.place })}
+            </span>
             <span>{pickLocalized(prize.title, i18n.language, t('events.unnamed'))}</span>
           </li>
         ))}
       </ul>
 
-      {live ? <Conditions contest={contest} channelUrl={channelUrl} /> : null}
+      {board !== null ? <Leaderboard board={board} live={live} /> : null}
+
+      {live && board === null ? <Conditions contest={contest} channelUrl={channelUrl} /> : null}
 
       {contest.status === 'CANCELLED' ? (
         <p className="text-sm text-muted-foreground">{t('events.cancelled')}</p>
       ) : contest.status === 'DRAWN' ? (
         <>
-          {contest.entered ? <Result contest={contest} /> : null}
-          <Winners contest={contest} />
+          {contest.entered || contest.myResult !== null ? <Result contest={contest} /> : null}
+          {board === null ? <Winners contest={contest} /> : null}
         </>
+      ) : board !== null ? (
+        contest.closed === 'NOT_ELIGIBLE' ? (
+          <p className="text-sm text-muted-foreground">{t('events.refusal.NOT_ELIGIBLE')}</p>
+        ) : null
       ) : contest.entered ? (
         <p className="text-sm font-medium">{t('events.youAreIn')}</p>
       ) : contest.closed !== null ? (
@@ -258,6 +284,9 @@ function Result({ contest }: { readonly contest: ContestView }) {
   const { t, i18n } = useTranslation()
   const result = contest.myResult
   if (result === null) {
+    // A leaderboard says this person's place on the board itself; «не
+    // повезло» is a draw's word, not a ranking's.
+    if (contest.kind === 'LEADERBOARD') return null
     return <p className="text-sm text-muted-foreground">{t('events.result.notThisTime')}</p>
   }
   const secret = result.prize?.key ?? result.prize?.promoCode ?? null
@@ -271,7 +300,9 @@ function Result({ contest }: { readonly contest: ContestView }) {
         })}
       </p>
       {secret ? <p className="break-all font-mono">{secret}</p> : null}
-      {result.status === 'PENDING' ? (
+      {result.status === 'PENDING' && result.held === true && result.ticketId === null ? (
+        <p className="text-xs text-amber-500">{t('events.result.held')}</p>
+      ) : result.status === 'PENDING' ? (
         <p className="text-xs text-amber-500">
           {t('events.result.pending')}
           {result.ticketId ? (
@@ -286,6 +317,93 @@ function Result({ contest }: { readonly contest: ContestView }) {
       ) : null}
       {result.status === 'REFUSED' ? (
         <p className="text-xs text-muted-foreground">{t('events.result.refused')}</p>
+      ) : null}
+    </div>
+  )
+}
+
+/** A leaderboard score as a person says it: «3 друга», «1 250 ₽», «12,4 ГБ», «350 баллов». */
+function useScore(): (metric: ContestMetric | null, score: number, currency: string) => string {
+  const { t } = useTranslation()
+  return (metric, score, currency) => {
+    const locale = getActiveLocale()
+    switch (metric) {
+      case 'REFERRALS_PAID':
+        return t('events.board.friends', { count: score })
+      case 'POINTS_EARNED':
+        return t('events.board.points', { count: score })
+      case 'TRAFFIC': {
+        const gb = score / 1024 ** 3
+        return t('events.board.gb', { value: gb.toLocaleString(locale, { maximumFractionDigits: gb >= 100 ? 0 : 1 }) })
+      }
+      case 'PAYMENTS_SUM': {
+        const major = score / 100
+        try {
+          return new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency,
+            maximumFractionDigits: Number.isInteger(major) ? 0 : 2,
+          }).format(major)
+        } catch {
+          return `${major.toLocaleString(locale)} ${currency}`
+        }
+      }
+      default:
+        return score.toLocaleString(locale)
+    }
+  }
+}
+
+/**
+ * The board: what it ranks by, the top with names masked — this person's
+ * own row marked — their place when it is below the top, and while it runs
+ * how much more takes a prize place.
+ */
+function Leaderboard({ board, live }: { readonly board: ContestLeaderboardView; readonly live: boolean }) {
+  const { t } = useTranslation()
+  const score = useScore()
+  const say = (value: number) => score(board.metric, value, board.currency)
+  const mineInTop = board.top.some((row) => row.me)
+  return (
+    <div className="space-y-2 rounded-lg bg-muted p-3 text-sm" data-testid="contest-leaderboard">
+      {board.metric !== null ? (
+        <p className="flex items-center gap-2 font-medium">
+          <BarChart3 className="h-4 w-4 shrink-0 text-amber-400" />
+          {t(`events.board.metric.${board.metric}`)}
+        </p>
+      ) : null}
+      {live ? <p className="text-xs text-muted-foreground">{t('events.board.everyone')}</p> : null}
+      {board.top.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{t('events.board.empty')}</p>
+      ) : (
+        <ol className="space-y-0.5">
+          {board.top.map((row) => (
+            <li
+              key={row.rank}
+              className={`flex items-center justify-between gap-2 rounded px-1 ${row.me ? 'bg-background font-medium' : ''}`}
+            >
+              <span className="min-w-0 truncate">
+                <span className="mr-2 tabular-nums text-muted-foreground">{row.rank}.</span>
+                {row.me ? t('events.board.you') : (row.name ?? t('events.winnerAnon'))}
+              </span>
+              <span className="shrink-0 tabular-nums">{say(row.score)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {board.mine !== null && !mineInTop ? (
+        <p className="font-medium" data-testid="contest-my-place">
+          {t('events.board.mine', { rank: board.mine.rank, score: say(board.mine.score) })}
+        </p>
+      ) : null}
+      {live && board.mine === null ? <p className="text-xs text-muted-foreground">{t('events.board.notYet')}</p> : null}
+      {live && board.toPrize !== null ? (
+        <p className="text-xs" data-testid="contest-to-prize">
+          {board.toPrize === 0 ? t('events.board.holding') : t('events.board.toPrize', { amount: say(board.toPrize) })}
+        </p>
+      ) : null}
+      {board.minScore !== null && board.minScore > 0 ? (
+        <p className="text-xs text-muted-foreground">{t('events.board.minScore', { amount: say(board.minScore) })}</p>
       ) : null}
     </div>
   )
