@@ -174,7 +174,7 @@ function BrowserPushSection() {
           </div>
           <div className="flex-1 space-y-2">
             <p className="text-sm text-[var(--brand-foreground)]">{t("notifications.pushDescription")}</p>
-            <p className="text-xs text-(--brand-primary)/90">{t("notifications.pushBroadcastsHint")}</p>
+            <p className="text-xs text-(--brand-ink-text)/90">{t("notifications.pushBroadcastsHint")}</p>
             <div className="flex items-center justify-between">
               <Label className="text-sm text-[var(--brand-foreground)] cursor-pointer">
                 {isSubscribed
@@ -205,7 +205,7 @@ function BrowserPushSection() {
           </div>
         )}
         {isPermissionDenied && (
-          <p className="rounded-xl bg-(--brand-primary)/10 border border-(--brand-primary)/20 px-3 py-2 text-xs text-(--brand-primary)">
+          <p className="rounded-xl bg-(--brand-ink)/10 border border-(--brand-ink)/20 px-3 py-2 text-xs text-(--brand-ink-text)">
             {t("notifications.pushPermissionDenied")}
           </p>
         )}

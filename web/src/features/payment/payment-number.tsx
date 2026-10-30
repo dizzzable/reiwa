@@ -83,7 +83,7 @@ export function PaymentNumber({
           onClick={() => void copy()}
           aria-label={t("paymentNumber.copy")}
           title={t("paymentNumber.copy")}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand-primary)"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand-ink)"
         >
           {outcome === "copied" ? (
             <Check className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />

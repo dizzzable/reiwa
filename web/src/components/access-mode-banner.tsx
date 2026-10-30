@@ -63,7 +63,7 @@ export function AccessModeBanner({
 export function AccessModePendingScreen() {
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4" data-testid="access-mode-pending">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       <PolicyWaitNote />
     </div>
   );

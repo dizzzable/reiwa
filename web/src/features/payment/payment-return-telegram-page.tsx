@@ -53,7 +53,7 @@ export default function PaymentReturnTelegramPage() {
       <div className="mx-auto flex min-h-full w-full max-w-sm flex-col items-center justify-center gap-4 py-10 text-center">
         <span
           aria-hidden="true"
-          className="flex size-14 items-center justify-center rounded-full bg-(--brand-primary)/15 text-(--brand-primary)"
+          className="flex size-14 items-center justify-center rounded-full bg-(--brand-ink)/15 text-(--brand-ink)"
         >
           <Send className="size-7" />
         </span>

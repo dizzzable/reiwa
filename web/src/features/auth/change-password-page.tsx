@@ -167,7 +167,7 @@ export default function ChangePasswordPage() {
         {/* Form — once the page knows which one this account needs. */}
         {passwordStatePending ? (
           <div className="flex h-32 items-center justify-center" role="status" aria-label={t('firstPassword.checking')}>
-            <div className="h-7 w-7 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+            <div className="h-7 w-7 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">

@@ -126,9 +126,9 @@ export default function PlansPage() {
         {trial !== null ? (
           <div
             role="note"
-            className="flex items-start gap-3 rounded-2xl border border-(--brand-primary)/25 bg-(--brand-primary)/10 px-4 py-3"
+            className="flex items-start gap-3 rounded-2xl border border-(--brand-ink)/25 bg-(--brand-ink)/10 px-4 py-3"
           >
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-primary)" />
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-ink)" />
             <p className="text-xs leading-relaxed text-[color:var(--brand-foreground)]">
               {t('plans.trialConversion')}
             </p>

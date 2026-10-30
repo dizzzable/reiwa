@@ -137,7 +137,7 @@ function ShellLoading({ policyWait = false }: { readonly policyWait?: boolean } 
     >
       <div
         className="relative z-10 size-8 animate-spin rounded-full border-2 border-t-transparent"
-        style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
+        style={{ borderColor: "var(--brand-ink)", borderTopColor: "transparent" }}
       />
       {policyWait && (
         <div className="relative z-10">

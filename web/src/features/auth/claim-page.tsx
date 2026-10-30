@@ -222,7 +222,7 @@ export default function ClaimPage() {
   if (isLoading) {
     return (
       <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       </div>
     )
   }
@@ -253,7 +253,7 @@ export default function ClaimPage() {
               boxShadow: '0 0 40px rgba(244,63,94,0.3)',
             }}
           >
-            <ShieldCheck className="h-8 w-8 text-(--brand-primary)" />
+            <ShieldCheck className="h-8 w-8 text-(--brand-ink)" />
           </div>
           <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">
             {t(mode === 'login' ? 'claim.linkExisting.title' : 'claim.title')}
@@ -290,7 +290,7 @@ export default function ClaimPage() {
               className={`glass-input w-full rounded-xl px-4 py-3 text-sm ${
                 usernameError
                   ? 'border-red-500/50 focus:border-red-500'
-                  : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
+                  : 'border-[color:var(--color-border-soft)] focus:border-(--brand-ink)/50'
               }`}
               aria-invalid={!!usernameError}
               aria-describedby="claim-username-error"
@@ -322,7 +322,7 @@ export default function ClaimPage() {
                 className={`glass-input w-full rounded-xl px-4 py-3 pr-12 text-sm ${
                   passwordError
                     ? 'border-red-500/50 focus:border-red-500'
-                    : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
+                    : 'border-[color:var(--color-border-soft)] focus:border-(--brand-ink)/50'
                 }`}
                 aria-invalid={!!passwordError}
                 aria-describedby="claim-password-error"
@@ -392,13 +392,13 @@ export default function ClaimPage() {
                 <motion.div
                   animate={{ opacity: [1, 0.6, 1] }}
                   transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                  className="inline-flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 rounded-full border border-(--brand-primary)/30 bg-(--brand-primary)/10 px-4 py-2 text-sm"
+                  className="inline-flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 rounded-full border border-(--brand-ink)/30 bg-(--brand-ink)/10 px-4 py-2 text-sm"
                 >
                   <span className="text-[color:var(--brand-foreground)]">{t('claim.linkExisting.prompt')}</span>
                   <button
                     type="button"
                     onClick={() => switchMode('login')}
-                    className="font-bold text-(--brand-primary) underline decoration-2 underline-offset-2 transition-all hover:brightness-125 active:scale-95"
+                    className="font-bold text-(--brand-ink-text) underline decoration-2 underline-offset-2 transition-all hover:brightness-125 active:scale-95"
                   >
                     {t('claim.linkExisting.action')}
                   </button>
@@ -408,7 +408,7 @@ export default function ClaimPage() {
               <button
                 type="button"
                 onClick={() => switchMode('claim')}
-                className="text-xs font-medium text-[color:var(--brand-muted-foreground)] transition-colors hover:text-(--brand-primary) hover:underline"
+                className="text-xs font-medium text-[color:var(--brand-muted-foreground)] transition-colors hover:text-(--brand-ink-text) hover:underline"
               >
                 {t('claim.linkExisting.back')}
               </button>

@@ -143,7 +143,7 @@ export function ConnectLinkDialog({
       >
         <div className="flex items-start justify-between gap-3">
           <span className="flex items-center gap-2 text-sm font-semibold">
-            <QrCode aria-hidden="true" className="size-4 text-[color:var(--brand-primary)]" />
+            <QrCode aria-hidden="true" className="size-4 text-[color:var(--brand-ink)]" />
             {t('connect.linkSheetHeading')}
           </span>
           <button
@@ -152,7 +152,7 @@ export function ConnectLinkDialog({
             aria-label={t('common.close')}
             onClick={onClose}
             // The same corner the header actions take — see `SMALL_CORNER`.
-            className={`${surface.sunken} flex size-7 shrink-0 items-center justify-center rounded-[min(var(--radius-item),35%)] text-[color:var(--brand-primary)]`}
+            className={`${surface.sunken} flex size-7 shrink-0 items-center justify-center rounded-[min(var(--radius-item),35%)] text-[color:var(--brand-ink)]`}
           >
             <X aria-hidden="true" className="size-3.5" />
           </button>

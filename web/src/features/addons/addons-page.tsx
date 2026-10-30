@@ -150,7 +150,7 @@ export default function AddOnsPage() {
       <div className="flex items-center gap-3 px-5 pb-4">
         <BackButton fallback="/dashboard" label={t("addons.back")} />
         <div className="flex items-center gap-2">
-          <Plus className="h-5 w-5 text-(--brand-primary)" />
+          <Plus className="h-5 w-5 text-(--brand-ink)" />
           <h1 className="text-lg font-semibold">{t("addons.title")}</h1>
         </div>
       </div>
@@ -373,7 +373,7 @@ function SelectAddOn() {
               onClick={() => onPick(addOn)}
               className="theme-surface theme-outline flex w-full items-center gap-3 rounded-[var(--radius-card)] p-4 text-left transition-[filter,transform] hover:brightness-105 active:scale-[0.98]"
             >
-              <div className="theme-surface-high flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-item)] text-(--brand-primary)">
+              <div className="theme-surface-high flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-item)] text-(--brand-ink)">
                 {isEmojiIcon(addOn.icon) ? (
                   <EmojiText text={addOn.icon} className="text-xl leading-none" />
                 ) : custom ? (
@@ -417,12 +417,12 @@ function SelectAddOn() {
                   the words "бесплатно ещё 1 раз" on the very configuration the
                   setting exists for. */}
               {isFreeResetTraffic(addOn) ? (
-                <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
+                <span className="shrink-0 text-sm font-semibold text-(--brand-ink-text)">
                   {t("addons.free")}
                 </span>
               ) : (
                 price && (
-                  <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">
+                  <span className="shrink-0 text-sm font-semibold text-(--brand-ink-text)">
                     {free ? t("addons.free") : formatPrice(price.price, price.currency)}
                   </span>
                 )
@@ -575,7 +575,7 @@ function SelectGateway() {
             <button
               key={gw.type}
               onClick={() => choose(gw)}
-              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-ink)/30 active:scale-[0.98] transition-all"
             >
               <GatewayIcon type={gw.type} currency={gw.currency} iconSvg={gw.displayIconSvg} className="h-7 w-7 shrink-0" />
               <div className="min-w-0 flex-1 text-left">
@@ -583,7 +583,7 @@ function SelectGateway() {
                 <p className="whitespace-pre-line text-xs text-[color:var(--brand-muted-foreground)]">{gatewayCaption(gw)}</p>
               </div>
               {price && (
-                <span className="shrink-0 text-sm font-semibold text-(--brand-primary)">{price}</span>
+                <span className="shrink-0 text-sm font-semibold text-(--brand-ink-text)">{price}</span>
               )}
             </button>
           );
@@ -671,7 +671,7 @@ function ReviewStep() {
           <div className="h-px bg-[color:var(--color-border-soft)]" />
           <div className="flex items-center justify-between">
             <span className="text-sm text-[color:var(--brand-muted-foreground)]">{t("addons.total")}</span>
-            <span className="text-base font-semibold text-(--brand-primary)">{priceLabel}</span>
+            <span className="text-base font-semibold text-(--brand-ink-text)">{priceLabel}</span>
           </div>
         </div>
       </div>
@@ -776,7 +776,7 @@ function CheckoutStep() {
 
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4" role="status" aria-live="polite">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       <p className="text-sm text-[color:var(--brand-muted-foreground)]">{t("addons.creating")}</p>
     </div>
   );

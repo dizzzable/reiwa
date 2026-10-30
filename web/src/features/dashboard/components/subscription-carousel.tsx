@@ -98,14 +98,14 @@ export function SubscriptionCarouselPagination({
           disabled={disabled}
           aria-label={getLabel(index)}
           aria-current={index === activeIndex ? "true" : undefined}
-          className="group flex h-6 w-6 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--brand-bg-primary)] disabled:cursor-not-allowed"
+          className="group flex h-6 w-6 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--brand-bg-primary)] disabled:cursor-not-allowed"
         >
           <span
             aria-hidden="true"
             className={cn(
               "h-1.5 rounded-full transition-all duration-200",
               index === activeIndex
-                ? "w-4 bg-(--brand-primary)"
+                ? "w-4 bg-(--brand-ink)"
                 : "w-1.5 bg-[color:var(--color-border-strong)] group-hover:bg-[color:var(--brand-muted-foreground)]",
             )}
           />

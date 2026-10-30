@@ -443,7 +443,7 @@ function ProcessingState({
           <circle
             cx="50" cy="50" r="44"
             fill="none"
-            stroke="var(--brand-primary)"
+            stroke="var(--brand-ink)"
             strokeWidth="4"
             strokeLinecap="round"
             strokeDasharray="70 210"
@@ -467,7 +467,7 @@ function ProcessingState({
           <motion.div
             key={i}
             className="h-2 w-2 rounded-full"
-            style={{ backgroundColor: "var(--brand-primary)" }}
+            style={{ backgroundColor: "var(--brand-ink)" }}
             animate={{ y: [0, -6, 0] }}
             transition={{
               duration: 0.6,
@@ -584,7 +584,7 @@ function SuccessState({
             <button
               type="button"
               onClick={onExchange}
-              className="text-xs font-semibold text-(--brand-primary) underline underline-offset-4"
+              className="text-xs font-semibold text-(--brand-ink-text) underline underline-offset-4"
             >
               {t("paymentAnim.cashbackExchange")}
             </button>
@@ -620,9 +620,9 @@ function AwaitingChargeState({
     >
       <div
         className="flex h-24 w-24 items-center justify-center rounded-full"
-        style={{ backgroundColor: "color-mix(in oklab, var(--brand-primary) 15%, transparent)" }}
+        style={{ backgroundColor: "color-mix(in oklab, var(--brand-ink) 15%, transparent)" }}
       >
-        <Clock className="h-12 w-12 text-(--brand-primary)" aria-hidden="true" />
+        <Clock className="h-12 w-12 text-(--brand-ink)" aria-hidden="true" />
       </div>
       <div role="status" aria-live="polite">
         <h2 className="text-xl font-semibold text-foreground">{t("paymentAnim.autopayAwaitingTitle")}</h2>

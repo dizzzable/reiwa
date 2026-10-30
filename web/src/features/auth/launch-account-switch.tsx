@@ -151,7 +151,7 @@ export function LaunchAccountSwitch({
           <div
             aria-hidden="true"
             className="size-8 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--brand-primary)', borderTopColor: 'transparent' }}
+            style={{ borderColor: 'var(--brand-ink)', borderTopColor: 'transparent' }}
           />
           <p className="text-sm text-[color:var(--brand-muted-foreground)]">
             {launch.label === null

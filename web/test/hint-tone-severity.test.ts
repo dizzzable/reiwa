@@ -86,7 +86,7 @@ describe('the stripe a hint tone is drawn as', () => {
     ['INFO', 'bg-blue-500/70'],
     ['SUCCESS', 'bg-emerald-500/70'],
     ['WARNING', 'bg-amber-500/70'],
-    ['DANGER', 'bg-(--brand-primary)/70'],
+    ['DANGER', 'bg-(--brand-ink)/70'],
   ])('draws %s with its own rule', (tone, rail) => {
     expect(railForTone(tone)).toBe(rail);
   });

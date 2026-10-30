@@ -113,7 +113,7 @@ export function SelectDuration({
             <button
               key={dur.id}
               onClick={() => onSelect(dur)}
-              className="w-full glass-card p-4 flex items-center justify-between hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+              className="w-full glass-card p-4 flex items-center justify-between hover:border-(--brand-ink)/30 active:scale-[0.98] transition-all"
             >
               <div className="text-left">
                 <p className="font-medium text-foreground">
@@ -153,7 +153,7 @@ export function SelectDuration({
                           </span>
                         </div>
                       )}
-                      <p className="text-(--brand-primary) font-semibold">
+                      <p className="text-(--brand-ink-text) font-semibold">
                         {sym}
                         {Number(displayPrice.price).toFixed(2)}
                       </p>
@@ -424,7 +424,7 @@ function QuoteView({
   if (isLoading || withdrawn) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       </div>
     );
   }
@@ -503,7 +503,7 @@ function QuoteView({
         )}
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("purchase.quote.total")}</span>
-          <span className="text-lg font-bold text-(--brand-primary)">
+          <span className="text-lg font-bold text-(--brand-ink-text)">
             {CURRENCY_SYMBOLS[quote.currency] ?? ""}
             {quote.finalPrice.toFixed(2)} {quote.currency}
           </span>
@@ -793,7 +793,7 @@ function CheckoutStep({
 
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       <p className="text-sm text-muted-foreground">{t("purchase.checkout.creating")}</p>
     </div>
   );
@@ -882,7 +882,7 @@ export default function PurchasePage() {
   if (!trialKnown) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       </div>
     );
   }
@@ -924,7 +924,7 @@ export default function PurchasePage() {
             key={s}
             className={cn(
               "h-1.5 flex-1 rounded-full transition-colors",
-              i <= activeIndex ? "bg-(--brand-primary)" : "bg-[color:var(--color-surface-high)]",
+              i <= activeIndex ? "bg-(--brand-ink)" : "bg-[color:var(--color-surface-high)]",
             )}
           />
         ))}

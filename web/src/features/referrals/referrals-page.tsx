@@ -100,7 +100,7 @@ export default function ReferralsPage() {
         />
         <StatRow
           icon={Info}
-          iconColor="var(--brand-primary)"
+          iconColor="var(--brand-ink)"
           label={t("referrals.howItWorks")}
           sublabel={t("referrals.howItWorksSub")}
           onClick={() => setActiveSheet("info")}
@@ -169,8 +169,8 @@ export default function ReferralsPage() {
                 <div
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold"
                   style={{
-                    backgroundColor: "color-mix(in oklab, var(--brand-primary) 15%, transparent)",
-                    color: "var(--brand-primary)",
+                    backgroundColor: "color-mix(in oklab, var(--brand-ink) 15%, transparent)",
+                    color: "var(--brand-ink-text)",
                   }}
                 >
                   {step}

@@ -119,7 +119,7 @@ function EntitlementRow({
       transition={{ delay: index * 0.03 }}
       className="theme-surface flex items-center gap-3 rounded-2xl border p-3.5"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--brand-primary)/10 text-(--brand-primary)">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--brand-ink)/10 text-(--brand-ink)">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">

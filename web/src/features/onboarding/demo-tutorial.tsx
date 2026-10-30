@@ -71,7 +71,7 @@ export function DemoTutorial({ open, onClose }: DemoTutorialProps) {
             <X className="h-4 w-4" />
           </button>
 
-          <p className="text-xs font-semibold uppercase tracking-wider text-(--brand-primary)">
+          <p className="text-xs font-semibold uppercase tracking-wider text-(--brand-ink-text)">
             {t("onboarding.demo.title")}
           </p>
           <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t("onboarding.demo.intro")}</p>
@@ -88,7 +88,7 @@ export function DemoTutorial({ open, onClose }: DemoTutorialProps) {
               <div className="rounded-lg bg-[color:var(--color-surface-high)] px-2 py-1.5">{t("onboarding.demo.sampleTraffic")}</div>
             </div>
             <div className="mt-2 flex gap-2">
-              <span className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-(--brand-primary)/15 py-1.5 text-[11px] text-(--brand-primary)">
+              <span className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-(--brand-ink)/15 py-1.5 text-[11px] text-(--brand-ink-text)">
                 <Wifi className="h-3 w-3" /> VPN
               </span>
               <span className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-[color:var(--color-surface-high)] py-1.5 text-[11px] text-[color:var(--brand-foreground)]">
@@ -115,7 +115,7 @@ export function DemoTutorial({ open, onClose }: DemoTutorialProps) {
               <span
                 key={k}
                 className={`h-1.5 rounded-full transition-all ${
-                  i === step ? "w-5 bg-(--brand-primary)" : "w-1.5 bg-[color:var(--color-border-strong)]"
+                  i === step ? "w-5 bg-(--brand-ink)" : "w-1.5 bg-[color:var(--color-border-strong)]"
                 }`}
               />
             ))}

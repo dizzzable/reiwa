@@ -206,10 +206,10 @@ function ActionButton({
       className={cn(
         "flex flex-col items-center gap-1.5 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] px-1 py-3 transition-all duration-150 hover:bg-[color:var(--color-surface-high)] active:scale-95 disabled:pointer-events-none disabled:opacity-40",
         highlighted &&
-          "border-(--brand-primary) ring-2 ring-(--brand-primary) ring-offset-2 ring-offset-(--brand-bg-primary)",
+          "border-(--brand-ink) ring-2 ring-(--brand-ink) ring-offset-2 ring-offset-(--brand-bg-primary)",
       )}
     >
-      <span className="text-(--brand-primary)">{icon}</span>
+      <span className="text-(--brand-ink-text)">{icon}</span>
       {/* Two lines, not an ellipsis: «Сменить тариф» does not fit a quarter of a
           phone's width on one, and «Сменить та…» names nothing. */}
       <span className="line-clamp-2 w-full px-0.5 text-center text-[10.5px] font-medium leading-tight text-[color:var(--brand-foreground)]">{label}</span>

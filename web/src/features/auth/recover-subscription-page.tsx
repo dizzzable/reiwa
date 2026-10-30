@@ -108,8 +108,8 @@ export default function RecoverSubscriptionPage() {
         className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col justify-center py-8"
       >
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-(--brand-primary)/10">
-            <Link2 className="h-7 w-7 text-(--brand-primary)" />
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-(--brand-ink)/10">
+            <Link2 className="h-7 w-7 text-(--brand-ink)" />
           </div>
           <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">
             {off
@@ -136,7 +136,7 @@ export default function RecoverSubscriptionPage() {
             data-testid="recover-subscription-sent"
           >
             <div className="flex flex-col items-center gap-3 text-center">
-              <MailCheck className="h-8 w-8 text-(--brand-primary)" />
+              <MailCheck className="h-8 w-8 text-(--brand-ink)" />
               <p className="text-sm leading-relaxed text-[color:var(--brand-foreground)]">{t('auth.recover.sent')}</p>
               <p className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.recover.sentHint')}</p>
             </div>

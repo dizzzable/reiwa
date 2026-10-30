@@ -167,8 +167,8 @@ export function SaveCredentialsScreen({
         data-testid="save-credentials"
       >
         <div className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-(--brand-primary)/10">
-            <KeyRound className="h-7 w-7 text-(--brand-primary)" />
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-(--brand-ink)/10">
+            <KeyRound className="h-7 w-7 text-(--brand-ink)" />
           </div>
           <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">
             {t('auth.saveCredentials.title')}
@@ -194,7 +194,7 @@ export function SaveCredentialsScreen({
               <button
                 type="button"
                 onClick={() => setShown((value) => !value)}
-                className="inline-flex shrink-0 items-center gap-1 text-xs text-(--brand-primary) hover:brightness-110"
+                className="inline-flex shrink-0 items-center gap-1 text-xs text-(--brand-ink-text) hover:brightness-110"
               >
                 {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 {shown ? t('auth.saveCredentials.hide') : t('auth.saveCredentials.show')}

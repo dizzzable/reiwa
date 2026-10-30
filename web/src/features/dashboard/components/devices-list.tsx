@@ -245,7 +245,7 @@ export function DevicesList({
               <button
                 onClick={() => setRevokeHwid(device.hwid)}
                 disabled={disabled || revokeMutation.isPending}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-pill)] text-[color:var(--brand-muted-foreground)] opacity-70 transition-colors hover:bg-(--brand-primary)/10 hover:text-(--brand-primary) hover:opacity-100"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-pill)] text-[color:var(--brand-muted-foreground)] opacity-70 transition-colors hover:bg-(--brand-ink)/10 hover:text-(--brand-ink) hover:opacity-100"
                 aria-label={t("devices.revoke")}
               >
                 <Trash2 className="h-3.5 w-3.5" />

@@ -143,7 +143,7 @@ const GuestSupportPage = lazy(() => import("@/features/support/guest-support-pag
 function PageLoader() {
   return (
     <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
     </div>
   );
 }

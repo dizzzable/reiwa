@@ -117,13 +117,13 @@ export default function ActivityPage() {
                   onClick={() => { if (!n.isRead) markOneMutation.mutate(n.id) }}
                   className={cn(
                     'glass-card p-4 cursor-pointer transition-all',
-                    !n.isRead && 'border-(--brand-primary)/20 bg-(--brand-primary)/3',
+                    !n.isRead && 'border-(--brand-ink)/20 bg-(--brand-ink)/3',
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        {!n.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />}
+                        {!n.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-ink)" />}
                         <p className="theme-title truncate text-sm font-medium">{n.title}</p>
                       </div>
                       <p className="theme-muted mt-1 line-clamp-2 text-xs">

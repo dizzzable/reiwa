@@ -195,8 +195,8 @@ export function GatewayPicker({
                   onSelectSaved(option(yookassa), method.id);
                 }}
                 className={cn(
-                  "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
-                  selected && "border-(--brand-primary)/40 bg-(--brand-primary)/5",
+                  "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-ink)/30 active:scale-[0.98] transition-all",
+                  selected && "border-(--brand-ink)/40 bg-(--brand-ink)/5",
                 )}
               >
                 <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
@@ -210,7 +210,7 @@ export function GatewayPicker({
                     {formatSavedPaymentMethodMeta(method, t)}
                   </p>
                 </div>
-                {selected && <Check className="ml-auto h-4 w-4 shrink-0 text-(--brand-primary)" />}
+                {selected && <Check className="ml-auto h-4 w-4 shrink-0 text-(--brand-ink)" />}
               </button>
             );
           })}
@@ -221,7 +221,7 @@ export function GatewayPicker({
           <Fragment key={gw.type}>
             <button
               onClick={() => onSelect(option(gw))}
-              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-ink)/30 active:scale-[0.98] transition-all"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center text-2xl">
                 <GatewayIcon type={gw.type} currency={gw.currency} iconSvg={gw.displayIconSvg} className="h-7 w-7" />
@@ -256,7 +256,7 @@ export function GatewayPicker({
                         ...(delay === null ? {} : { autopayDelay: delay }),
                       })
                     }
-                    className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+                    className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-ink)/30 active:scale-[0.98] transition-all"
                   >
                     <AutopayGatewayMark
                       type={gw.type}

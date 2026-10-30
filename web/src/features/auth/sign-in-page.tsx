@@ -279,7 +279,7 @@ export default function SignInPage() {
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center gap-3 rounded-xl border border-(--brand-primary)/30 bg-(--brand-primary)/10 px-4 py-3 text-center text-sm text-[color:var(--brand-foreground)]"
+              className="flex flex-col items-center gap-3 rounded-xl border border-(--brand-ink)/30 bg-(--brand-ink)/10 px-4 py-3 text-center text-sm text-[color:var(--brand-foreground)]"
               role="status"
               data-testid="signin-password-not-set"
               data-delivery={passwordNotSet}
@@ -290,7 +290,7 @@ export default function SignInPage() {
                   href={botShortcut(botUsername) ?? undefined}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-medium text-(--brand-primary) hover:brightness-110"
+                  className="font-medium text-(--brand-ink-text) hover:brightness-110"
                   data-testid="signin-password-not-set-bot"
                 >
                   {t('auth.passwordNotSet.openBot')}
@@ -345,7 +345,7 @@ export default function SignInPage() {
         >
           <Link
             to="/recover"
-            className="text-[color:var(--brand-muted-foreground)] transition-colors hover:text-(--brand-primary)"
+            className="text-[color:var(--brand-muted-foreground)] transition-colors hover:text-(--brand-ink-text)"
           >
             {t('auth.forgotPassword')}
           </Link>
@@ -353,7 +353,7 @@ export default function SignInPage() {
             {t('auth.noAccount')}{' '}
             <Link
               to={keepQuery('/register')}
-              className="text-(--brand-primary) transition-colors hover:brightness-110"
+              className="text-(--brand-ink-text) transition-colors hover:brightness-110"
             >
               {t('auth.register')}
             </Link>

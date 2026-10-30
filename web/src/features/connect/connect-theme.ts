@@ -36,6 +36,8 @@
  */
 import type { CSSProperties } from 'react'
 
+import { MIN_TEXT_CONTRAST, readableBrandInk, splitHexAlpha } from '@/lib/brand-ink'
+
 /**
  * Every custom property this screen is allowed to set, without the `--`.
  *
@@ -346,5 +348,37 @@ export function connectThemeStyle(theme: ConnectScreenTheme | null): CSSProperti
   // a property whose only value is the inline one renders as nothing the moment
   // the inline style is absent. The rail has no cabinet-wide meaning, so it is
   // read straight off the theme by the element that draws it.
+
+  Object.assign(style, connectInk(theme))
   return style as CSSProperties
+}
+
+/**
+ * `--brand-ink` and `--brand-ink-text` for a screen that brings its own
+ * primary.
+ *
+ * The cabinet writes both on the root from ITS primary. A screen that
+ * redefines `--brand-primary` here and left the inks alone would draw its
+ * icons in the cabinet's colour — a red concept with green icons. So they are
+ * derived from this theme's own primary, foreground and surface, the way
+ * `applyBrandingToDocument` derives the root's. Not names from the payload:
+ * values computed here, from tokens that already passed the grammar.
+ *
+ * A theme without a foreground or a surface to measure against gets its bare
+ * primary — what the screen drew before the inks existed.
+ */
+function connectInk(theme: ConnectScreenTheme): Record<string, string> {
+  const primary = theme.tokens['brand-primary']
+  if (primary === undefined) return {}
+  const foreground = theme.tokens['brand-foreground']
+  const surface = theme.tokens['color-surface'] === undefined ? null : splitHexAlpha(theme.tokens['color-surface'])
+  if (foreground === undefined || surface === null) {
+    return { '--brand-ink': primary, '--brand-ink-text': primary }
+  }
+  const ground = theme.backgroundColor !== null ? (splitHexAlpha(theme.backgroundColor)?.hex ?? surface.hex) : surface.hex
+  const tone = { foreground, surface: surface.hex, surfaceOpacity: surface.alpha }
+  return {
+    '--brand-ink': readableBrandInk(primary, tone, ground),
+    '--brand-ink-text': readableBrandInk(primary, tone, ground, MIN_TEXT_CONTRAST),
+  }
 }

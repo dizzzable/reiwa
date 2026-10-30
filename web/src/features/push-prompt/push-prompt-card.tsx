@@ -239,7 +239,7 @@ export function PushPromptCard() {
   return (
     <div className="mx-5 mt-4" data-testid="push-prompt">
       <div className="flex items-start gap-3 rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--brand-primary)/15 text-(--brand-primary)">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--brand-ink)/15 text-(--brand-ink)">
           <Bell className="h-5 w-5" aria-hidden />
         </div>
         {phase.kind === "result" ? (

@@ -9,7 +9,7 @@ function RouteContentFallback() {
       data-route-content-loading
       className="flex min-h-32 items-center justify-center"
     >
-      <div className="size-6 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <div className="size-6 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
     </div>
   );
 }

@@ -95,7 +95,7 @@ export function PartnerAdvertisingSection() {
   return (
     <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
       <div className="flex items-center gap-2">
-        <Megaphone className="h-4 w-4 text-(--brand-primary)" />
+        <Megaphone className="h-4 w-4 text-(--brand-ink)" />
         <h2 className="text-sm font-semibold">{t("partnerAds.title")}</h2>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{t("partnerAds.subtitle")}</p>
@@ -123,7 +123,7 @@ export function PartnerAdvertisingSection() {
               onClick={() => togglePlatform(p)}
               className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
                 selected.includes(p)
-                  ? "border-(--brand-primary) bg-(--brand-primary)/15 text-foreground"
+                  ? "border-(--brand-ink) bg-(--brand-ink)/15 text-foreground"
                   : "border-[var(--color-border-strong)] text-muted-foreground"
               }`}
             >
@@ -135,7 +135,7 @@ export function PartnerAdvertisingSection() {
           value={channel}
           onChange={(e) => setChannel(e.target.value)}
           placeholder={t("partnerAds.channelPlaceholder")}
-          className="w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--brand-foreground)] outline-none focus:border-(--brand-primary)"
+          className="w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--brand-foreground)] outline-none focus:border-(--brand-ink)"
         />
         <div>
           <label className="text-[11px] text-muted-foreground">{t("partnerAds.windowLabel")}</label>
@@ -145,7 +145,7 @@ export function PartnerAdvertisingSection() {
             max="365"
             value={windowDays}
             onChange={(e) => setWindowDays(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--brand-foreground)] outline-none focus:border-(--brand-primary)"
+            className="mt-1 w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--brand-foreground)] outline-none focus:border-(--brand-ink)"
           />
           <p className="mt-1 text-[11px] text-muted-foreground">{t("partnerAds.windowHint")}</p>
         </div>

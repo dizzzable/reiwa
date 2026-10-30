@@ -40,7 +40,7 @@ export function BrandLogo({
   }
   return (
     <ReiwaLogo
-      className={`${className ?? ""} text-(--brand-primary)`.trim()}
+      className={`${className ?? ""} text-(--brand-ink-text)`.trim()}
       style={style}
       title={branding.brandName}
     />

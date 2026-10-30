@@ -76,7 +76,7 @@ export function SideNav() {
             className="size-8 shrink-0 rounded-lg object-contain"
           />
         ) : (
-          <ReiwaLogo className="size-8 shrink-0 text-(--brand-primary)" title={branding.brandName} />
+          <ReiwaLogo className="size-8 shrink-0 text-(--brand-ink)" title={branding.brandName} />
         )}
         <span className="truncate text-base font-semibold text-[var(--brand-foreground)]">{branding.brandName}</span>
       </div>
@@ -105,7 +105,7 @@ export function SideNav() {
                   <m.span
                     layoutId="side-nav-active-pill"
                     className="absolute inset-0 -z-10 rounded-xl"
-                    style={{ backgroundColor: "var(--brand-primary)" }}
+                    style={{ backgroundColor: "var(--brand-ink)" }}
                     transition={{ type: "spring", stiffness: 380, damping: 30 }}
                   />
                 )}

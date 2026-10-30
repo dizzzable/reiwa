@@ -11,8 +11,9 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 
-import { readableBrandInk } from "../src/lib/brand-ink";
+import { MIN_TEXT_CONTRAST, readableBrandInk } from "../src/lib/brand-ink";
 import { applyBrandingToDocument } from "../src/lib/branding-document";
+import { connectThemeStyle, readConnectTheme } from "../src/features/connect/connect-theme";
 import { DEFAULT_BRANDING, DEFAULT_SURFACE_THEME, type Branding } from "../src/types/branding";
 
 function rgb(hex: string): [number, number, number] {
@@ -69,6 +70,14 @@ describe("readableBrandInk", () => {
     expect(ratio(ink, card(DEFAULT_SURFACE_THEME.surface, DEFAULT_SURFACE_THEME.surfaceOpacity, "#0a0a0a"))).toBeGreaterThanOrEqual(3);
   });
 
+  for (const theme of LIGHT) {
+    it(`gives ${theme.id}'s primary 4.5:1 when it is words`, () => {
+      const behind = card(theme.surface, theme.surfaceOpacity, theme.bgPrimary);
+      const words = readableBrandInk(theme.primary, theme, theme.bgPrimary, MIN_TEXT_CONTRAST);
+      expect(ratio(words, behind)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
   it("hands back what it cannot read rather than inventing a colour", () => {
     expect(readableBrandInk("oklch(70% 0.2 140)", DEFAULT_SURFACE_THEME, "#0a0a0a")).toBe("oklch(70% 0.2 140)");
   });
@@ -91,5 +100,38 @@ describe("applyBrandingToDocument", () => {
     expect(style.getPropertyValue("--brand-primary")).toBe(theme.primary);
     expect(style.getPropertyValue("--brand-ink")).toBe(readableBrandInk(theme.primary, branding.surfaceTheme!, theme.bgPrimary));
     expect(style.getPropertyValue("--brand-ink")).not.toBe(theme.primary);
+    expect(style.getPropertyValue("--brand-ink-text")).toBe(
+      readableBrandInk(theme.primary, branding.surfaceTheme!, theme.bgPrimary, MIN_TEXT_CONTRAST),
+    );
+  });
+});
+
+/**
+ * The connect screen may bring its own concept, scoped to its column. Its
+ * icons must take ITS primary's ink, not the one the cabinet wrote on the root
+ * from a different primary.
+ */
+describe("a connect screen with its own primary", () => {
+  it("derives its inks from its own primary, foreground and surface", () => {
+    const theme = readConnectTheme({
+      tokens: { "brand-primary": "#E6FF58", "brand-foreground": "#09080D", "color-surface": "#F4F3EDF0" },
+      backgroundColor: "#F5F2F7",
+    });
+    const style = connectThemeStyle(theme) as Record<string, string>;
+    const behind = card("#F4F3ED", 0xf0 / 255, "#F5F2F7");
+
+    expect(ratio(style["--brand-ink"]!, behind)).toBeGreaterThanOrEqual(3);
+    expect(ratio(style["--brand-ink-text"]!, behind)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps its bare primary when there is no surface to measure it against", () => {
+    const style = connectThemeStyle(readConnectTheme({ tokens: { "brand-primary": "#FF6B7A" } })) as Record<string, string>;
+    expect(style["--brand-ink"]).toBe("#FF6B7A");
+    expect(style["--brand-ink-text"]).toBe("#FF6B7A");
+  });
+
+  it("writes no ink when it does not redefine the primary — the root's answers", () => {
+    const style = connectThemeStyle(readConnectTheme({ tokens: { "color-surface": "#ffffff" } })) as Record<string, string>;
+    expect(style["--brand-ink"]).toBeUndefined();
   });
 });

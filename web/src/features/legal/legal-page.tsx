@@ -88,7 +88,7 @@ export default function LegalPage() {
             <button
               type="button"
               onClick={retry}
-              className="mt-2 text-xs font-medium text-(--brand-primary) underline underline-offset-4"
+              className="mt-2 text-xs font-medium text-(--brand-ink-text) underline underline-offset-4"
             >
               {t("common.retry")}
             </button>
@@ -179,7 +179,7 @@ function DocumentSwitcher({
             className={[
               "shrink-0 rounded-xl px-3 py-2 text-xs leading-snug font-medium transition-colors lg:shrink lg:text-[0.8125rem]",
               active
-                ? "bg-(--brand-primary)/12 text-(--brand-primary) ring-1 ring-(--brand-primary)/30"
+                ? "bg-(--brand-ink)/12 text-(--brand-ink-text) ring-1 ring-(--brand-ink)/30"
                 : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
             ].join(" ")}
           >
@@ -212,7 +212,7 @@ function Block({ block }: { block: LegalBlock }) {
   if (block.kind === "section") {
     return (
       <h3 className="mt-8 flex gap-2.5 border-t border-white/5 pt-6 text-[0.9375rem] font-semibold text-foreground first:mt-0 first:border-0 first:pt-0">
-        <span className="tabular-nums text-(--brand-primary)">{block.number}.</span>
+        <span className="tabular-nums text-(--brand-ink-text)">{block.number}.</span>
         <span className="text-balance">{block.text}</span>
       </h3>
     );

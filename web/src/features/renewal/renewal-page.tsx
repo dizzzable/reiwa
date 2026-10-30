@@ -403,7 +403,7 @@ export default function RenewalPage() {
   if (step === "subscriptions" && (!decided || redirectToUpgrade)) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       </div>
     );
   }
@@ -413,7 +413,7 @@ export default function RenewalPage() {
       <div className="flex items-center gap-3 px-5 pb-4">
         <BackButton fallback="/dashboard" label={t("renewal.back")} />
         <div className="flex items-center gap-2">
-          <RotateCcw className="h-5 w-5 text-(--brand-primary)" />
+          <RotateCcw className="h-5 w-5 text-(--brand-ink)" />
           <h1 className="text-lg font-semibold">{t("renewal.title")}</h1>
         </div>
       </div>
@@ -606,11 +606,11 @@ function SelectSubscriptions() {
                 subtitle={subtitle}
                 trailing={
                   needsPlan ? (
-                    <span className="text-xs font-medium text-(--brand-primary)">
+                    <span className="text-xs font-medium text-(--brand-ink-text)">
                       {t("renewal.choosePlanCta")}
                     </span>
                   ) : (
-                    <span className="text-sm font-semibold text-(--brand-primary)">
+                    <span className="text-sm font-semibold text-(--brand-ink-text)">
                       {formatPrice(option.amount, option.currency)}
                     </span>
                   )
@@ -993,8 +993,8 @@ function SelectGateway() {
                   choose(yookassa, method.id);
                 }}
                 className={cn(
-                  "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all",
-                  selected && "border-(--brand-primary)/40 bg-(--brand-primary)/5",
+                  "w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-ink)/30 active:scale-[0.98] transition-all",
+                  selected && "border-(--brand-ink)/40 bg-(--brand-ink)/5",
                 )}
               >
                 <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
@@ -1008,7 +1008,7 @@ function SelectGateway() {
                     {formatSavedPaymentMethodMeta(method, t)}
                   </p>
                 </div>
-                {selected && <Check className="ml-auto h-4 w-4 shrink-0 text-(--brand-primary)" />}
+                {selected && <Check className="ml-auto h-4 w-4 shrink-0 text-(--brand-ink)" />}
               </button>
             );
           })}
@@ -1019,7 +1019,7 @@ function SelectGateway() {
           <Fragment key={gw.type}>
             <button
               onClick={() => choose(gw)}
-              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+              className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-ink)/30 active:scale-[0.98] transition-all"
             >
               <GatewayIcon type={gw.type} currency={gw.currency} iconSvg={gw.displayIconSvg} className="h-7 w-7 shrink-0" />
               <div className="min-w-0 text-left">
@@ -1036,7 +1036,7 @@ function SelectGateway() {
                   <button
                     key={method ?? "autopay"}
                     onClick={() => choose(gw, null, true, method, delay)}
-                    className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-primary)/30 active:scale-[0.98] transition-all"
+                    className="w-full glass-card p-4 flex items-center gap-4 hover:border-(--brand-ink)/30 active:scale-[0.98] transition-all"
                   >
                     <AutopayGatewayMark
                       type={gw.type}
@@ -1218,7 +1218,7 @@ function RenewalReview() {
   ) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       </div>
     );
   }
@@ -1293,7 +1293,7 @@ function RenewalReview() {
         })}
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("renewal.total")}</span>
-          <span className="text-lg font-bold text-(--brand-primary)">
+          <span className="text-lg font-bold text-(--brand-ink-text)">
             {formatPrice(confirmedAmount, confirmedCurrency)}
           </span>
         </div>
@@ -1519,7 +1519,7 @@ function CheckoutStep() {
 
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4" role="status" aria-live="polite">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       <p className="text-sm text-[color:var(--brand-muted-foreground)]">{t("renewal.creating")}</p>
     </div>
   );

@@ -271,7 +271,7 @@ export default function SettingsPage() {
         {canChooseThemeMode && (
           <MenuItem
             icon={themeMode === "light" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            iconBg="bg-(--brand-primary)/10 text-(--brand-primary)"
+            iconBg="bg-(--brand-ink)/10 text-(--brand-ink-text)"
             tint={iconTint("themeMode")}
             label={t("settings.themeMode")}
             sublabel={
@@ -284,7 +284,7 @@ export default function SettingsPage() {
         )}
         <MenuItem
           icon={<MessageSquare className="h-5 w-5" />}
-          iconBg="bg-(--brand-primary)/10 text-(--brand-primary)"
+          iconBg="bg-(--brand-ink)/10 text-(--brand-ink-text)"
           tint={iconTint("support")}
           label={t("settings.support")}
           sublabel={t("settings.supportSub")}
@@ -302,7 +302,7 @@ export default function SettingsPage() {
         {install.canInstall || install.isIos || install.isTelegramWebview ? (
           <MenuItem
             icon={<Download className="h-5 w-5" />}
-            iconBg="bg-(--brand-primary)/10 text-(--brand-primary)"
+            iconBg="bg-(--brand-ink)/10 text-(--brand-ink-text)"
             tint={iconTint("install")}
             label={t("settings.installApp")}
             sublabel={
@@ -448,7 +448,7 @@ export default function SettingsPage() {
               </DialogHeader>
               <ol className="space-y-3 py-1 text-sm text-[color:var(--brand-muted-foreground)]">
                 <li className="flex items-start gap-2">
-                  <Globe className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <Globe className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-ink)" />
                   <span>
                     {t("settings.installTelegramStep1")}
                     {/*
@@ -466,7 +466,7 @@ export default function SettingsPage() {
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <Download className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <Download className="mt-0.5 h-4 w-4 shrink-0 text-(--brand-ink)" />
                   <span>{t("settings.installTelegramStep2")}</span>
                 </li>
               </ol>
@@ -481,15 +481,15 @@ export default function SettingsPage() {
               </DialogHeader>
               <ol className="space-y-3 py-1 text-sm text-[color:var(--brand-muted-foreground)]">
                 <li className="flex items-center gap-2">
-                  <Share className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <Share className="h-4 w-4 shrink-0 text-(--brand-ink)" />
                   <span>{t("settings.installIosStep1")}</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Download className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <Download className="h-4 w-4 shrink-0 text-(--brand-ink)" />
                   <span>{t("settings.installIosStep2")}</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-(--brand-primary)" />
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-(--brand-ink)" />
                   <span>{t("settings.installIosStep3")}</span>
                 </li>
               </ol>
@@ -601,13 +601,13 @@ function LangOption({
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-xl border p-3.5 transition-all active:scale-[0.98] ${
         active
-          ? "border-(--brand-primary)/50 bg-(--brand-primary)/5"
+          ? "border-(--brand-ink)/50 bg-(--brand-ink)/5"
           : "border-[color:var(--color-border-soft)] hover:border-[color:var(--color-border-strong)]"
       }`}
     >
       <FlagIcon code={code} className="h-5 w-7" />
       <span className="flex-1 text-left text-sm font-medium">{label}</span>
-      {active && <CheckCircle2 className="h-4 w-4" style={{ color: "var(--brand-primary)" }} />}
+      {active && <CheckCircle2 className="h-4 w-4" style={{ color: "var(--brand-ink)" }} />}
     </button>
   );
 }
@@ -629,13 +629,13 @@ function ThemeModeOption({
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-xl border p-3.5 transition-all active:scale-[0.98] ${
         active
-          ? "border-(--brand-primary)/50 bg-(--brand-primary)/5"
+          ? "border-(--brand-ink)/50 bg-(--brand-ink)/5"
           : "border-[color:var(--color-border-soft)] hover:border-[color:var(--color-border-strong)]"
       }`}
     >
-      <Icon className="h-5 w-5 text-(--brand-primary)" />
+      <Icon className="h-5 w-5 text-(--brand-ink)" />
       <span className="flex-1 text-left text-sm font-medium">{label}</span>
-      {active && <CheckCircle2 className="h-4 w-4" style={{ color: "var(--brand-primary)" }} />}
+      {active && <CheckCircle2 className="h-4 w-4" style={{ color: "var(--brand-ink)" }} />}
     </button>
   );
 }

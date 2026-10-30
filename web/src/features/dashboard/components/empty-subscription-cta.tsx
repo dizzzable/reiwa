@@ -27,9 +27,9 @@ export function EmptySubscriptionCta({ onBuy }: EmptySubscriptionCtaProps) {
     >
       <div
         className="mb-4 flex h-16 w-16 items-center justify-center rounded-full"
-        style={{ backgroundColor: "color-mix(in oklab, var(--brand-primary) 15%, transparent)" }}
+        style={{ backgroundColor: "color-mix(in oklab, var(--brand-ink) 15%, transparent)" }}
       >
-        <ShoppingCart className="h-7 w-7" style={{ color: "var(--brand-primary)" }} />
+        <ShoppingCart className="h-7 w-7" style={{ color: "var(--brand-ink)" }} />
       </div>
       <h2 className="text-lg font-semibold text-[color:var(--brand-foreground)]">
         {t("subscription.noSubscription")}

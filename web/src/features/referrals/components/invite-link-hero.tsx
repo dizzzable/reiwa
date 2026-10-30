@@ -193,7 +193,7 @@ export function InviteLinkHero({ telegramLink, webLink, brandName }: InviteLinkH
                   exit={{ scale: 0 }}
                   transition={{ duration: 0.15 }}
                 >
-                  <Check className="h-5 w-5 text-(--brand-primary)" />
+                  <Check className="h-5 w-5 text-(--brand-ink)" />
                 </motion.span>
               ) : (
                 <motion.span
@@ -268,11 +268,11 @@ function ActionTile({
       className={cn(
         "flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-3 transition-all duration-150 active:scale-95",
         active
-          ? "border-(--brand-primary)/30 bg-(--brand-primary)/10"
+          ? "border-(--brand-ink)/30 bg-(--brand-ink)/10"
           : "border-[var(--color-border-soft)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-high)]",
       )}
     >
-      <span className="text-(--brand-primary)">{children}</span>
+      <span className="text-(--brand-ink-text)">{children}</span>
       <span className="w-full truncate px-0.5 text-center text-[10.5px] font-medium text-[var(--brand-foreground)]">
         {label}
       </span>

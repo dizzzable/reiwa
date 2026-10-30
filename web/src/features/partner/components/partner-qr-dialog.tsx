@@ -108,7 +108,7 @@ export function PartnerQrDialog({
         <button
           type="button"
           aria-label={t(kind === "bot" ? "partnerAds.qrEnlargeBot" : "partnerAds.qrEnlargeWeb")}
-          className="cursor-zoom-in rounded-md outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-(--brand-primary)"
+          className="cursor-zoom-in rounded-md outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-(--brand-ink)"
         >
           {children}
         </button>

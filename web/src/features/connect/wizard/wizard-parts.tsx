@@ -43,7 +43,7 @@ export const SUNKEN =
   'rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]'
 
 /** The accent, softened, for an icon's tile and the selected outline's glow. */
-export const ACCENT_SOFT = 'bg-[color-mix(in_oklab,var(--brand-primary)_14%,transparent)]'
+export const ACCENT_SOFT = 'bg-[color-mix(in_oklab,var(--brand-ink)_14%,transparent)]'
 
 export const PRIMARY_BUTTON =
   'relative flex min-h-14 w-full items-center justify-center gap-2.5 rounded-[var(--radius-item)] px-5 ' +
@@ -135,7 +135,7 @@ export function WizardHeader({
           >
             <span
               className={cn(
-                'block h-full bg-[color:var(--brand-primary)] transition-[width] duration-500 ease-[cubic-bezier(.65,0,.35,1)]',
+                'block h-full bg-[color:var(--brand-ink)] transition-[width] duration-500 ease-[cubic-bezier(.65,0,.35,1)]',
                 index < filled ? 'w-full' : 'w-0',
               )}
             />
@@ -255,7 +255,7 @@ export function Radar({ found }: { found: boolean }) {
         <i
           key={ring}
           aria-hidden="true"
-          className={`cw-ring absolute size-[92px] ${CIRCLE} border-2 border-[color:var(--brand-primary)]`}
+          className={`cw-ring absolute size-[92px] ${CIRCLE} border-2 border-[color:var(--brand-ink)]`}
         />
       ))}
       <motion.span
@@ -265,8 +265,8 @@ export function Radar({ found }: { found: boolean }) {
         className={cn(
           `relative grid size-[92px] place-items-center ${CIRCLE} border-[1.5px] transition-colors duration-300`,
           found
-            ? 'border-[color:var(--brand-primary)] bg-[color:var(--brand-primary)] text-[color:var(--brand-primary-fg)]'
-            : 'border-[color-mix(in_oklab,var(--brand-primary)_55%,transparent)] bg-[color:var(--color-surface-high)] text-[color:var(--brand-primary)] shadow-[0_0_40px_color-mix(in_oklab,var(--brand-primary)_34%,transparent)]',
+            ? 'border-[color:var(--brand-ink)] bg-[color:var(--brand-primary)] text-[color:var(--brand-primary-fg)]'
+            : 'border-[color-mix(in_oklab,var(--brand-ink)_55%,transparent)] bg-[color:var(--color-surface-high)] text-[color:var(--brand-ink-text)] shadow-[0_0_40px_color-mix(in_oklab,var(--brand-primary)_34%,transparent)]',
         )}
       >
         {found ? <DrawnCheck className="size-[34px]" /> : <Power className="size-[34px]" />}
@@ -293,10 +293,10 @@ export function SuccessBurst({ reduced }: { reduced: boolean }) {
           rotate: 420 + index * 40,
           color:
             index % 3 === 0
-              ? 'var(--brand-primary)'
+              ? 'var(--brand-ink)'
               : index % 3 === 1
                 ? 'var(--brand-foreground)'
-                : 'color-mix(in oklab, var(--brand-primary) 55%, var(--brand-foreground))',
+                : 'color-mix(in oklab, var(--brand-ink) 55%, var(--brand-foreground))',
         }
       }),
     [],
@@ -449,7 +449,7 @@ export function HelpSheet({
                       index > 0 && 'border-t border-[color:var(--color-border-soft)]',
                     )}
                   >
-                    <span className="mt-px shrink-0 text-[color:var(--brand-primary)] [&>svg]:size-[17px]">
+                    <span className="mt-px shrink-0 text-[color:var(--brand-ink)] [&>svg]:size-[17px]">
                       {tip.icon}
                     </span>
                     <div className="min-w-0">

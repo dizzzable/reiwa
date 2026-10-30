@@ -36,10 +36,12 @@
   --brand-muted-foreground: #a1a1a1;
   --brand-surface: #18181b;
   --brand-surface-high: #27272a;
-  /* The primary as drawn on a card (icons, dots, rings): `lib/brand-ink.ts`
-     moves it toward the text colour where the theme's primary would vanish.
-     The default primary stands out on the default card as it is. */
+  /* The primary as drawn on a card — icons, dots, rings (`--brand-ink`) and
+     words (`--brand-ink-text`): `lib/brand-ink.ts` moves it toward the text
+     colour where the theme's primary would vanish. The default primary stands
+     out on the default card as it is. */
   --brand-ink: var(--brand-primary);
+  --brand-ink-text: var(--brand-primary);
   --brand-font: 'Geist Variable', system-ui, sans-serif;
   --glass-blur: 16px;
 }
@@ -290,8 +292,10 @@ body {
 .glass-input:focus,
 .glass-input:focus-visible {
   outline: none;
-  border-color: color-mix(in oklab, var(--brand-primary) 55%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand-primary) 18%, transparent);
+  /* The ink, not the primary: a focus ring is the one place a pale primary
+     must not disappear into a light field. */
+  border-color: color-mix(in oklab, var(--brand-ink) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand-ink) 18%, transparent);
 }
 
 /* iOS auto-zooms the page when a focused control's font-size is below 16px

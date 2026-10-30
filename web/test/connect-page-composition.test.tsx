@@ -497,7 +497,9 @@ describe("what colour an icon takes", () => {
   /**
    * The default is the theme, and that is what makes ONE catalog look right on
    * all 104 concepts: the step glyphs are drawn on `currentColor`, so the ring
-   * hands them whatever accent is in force.
+   * hands them whatever accent is in force — as `--brand-ink` (30.10.2026),
+   * the accent moved toward the text colour on the concepts whose own primary
+   * would vanish on the card.
    *
    * The override exists because the page this screen replaces carries a colour
    * per step (`svgIconColor`), and an operator who used it would otherwise lose
@@ -506,7 +508,7 @@ describe("what colour an icon takes", () => {
   it("follows the theme when the operator set nothing", () => {
     const el = render();
     const ring = el.querySelector<HTMLElement>("[data-connect-step] span");
-    expect(ring?.style.color).toBe("var(--brand-primary)");
+    expect(ring?.style.color).toBe("var(--brand-ink)");
   });
 
   it("uses the operator's colour when they set one", () => {
@@ -552,7 +554,7 @@ describe("what colour an icon takes", () => {
       expect(
         el.querySelector<HTMLElement>("[data-connect-step] span")?.style.color,
         bad,
-      ).toBe("var(--brand-primary)");
+      ).toBe("var(--brand-ink)");
       act(() => root?.unmount());
       host?.remove();
     }
@@ -1013,8 +1015,9 @@ describe("the chosen app keeps its logo", () => {
     expect(tint?.className).toContain("pointer-events-none");
     // The frosting the concept's own blur provides.
     expect(chip?.className).toContain("backdrop-blur-[var(--glass-blur)]");
-    // And the border still carries it for anyone the wash is too subtle for.
-    expect(chip?.className).toContain("border-[color:var(--brand-primary)]");
+    // And the border still carries it for anyone the wash is too subtle for —
+    // in the ink, which stays visible where a pale primary would not.
+    expect(chip?.className).toContain("border-[color:var(--brand-ink)]");
   });
 
   it("keeps the mark on the chosen chip, at the same weight as the others", () => {

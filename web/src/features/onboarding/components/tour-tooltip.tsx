@@ -62,9 +62,9 @@ export function TourTooltip({
             key={i}
             className={`h-1 rounded-full transition-all duration-200 ${
               i === step
-                ? "w-4 bg-(--brand-primary)"
+                ? "w-4 bg-(--brand-ink)"
                 : i < step
-                  ? "w-1.5 bg-(--brand-primary)/50"
+                  ? "w-1.5 bg-(--brand-ink)/50"
                   : "w-1.5 bg-[color:var(--color-border-strong)]"
             }`}
           />

@@ -221,7 +221,10 @@ describe("token values", () => {
     });
     const style = connectThemeStyle(theme) as Record<string, string>;
     const custom = Object.keys(style).filter((key) => key.startsWith("--"));
-    expect(custom).toEqual(["--brand-primary"]);
+    // The two inks are not names from the payload: they are computed here from
+    // the primary that passed, so a screen with its own primary does not draw
+    // its icons in the cabinet's (30.10.2026).
+    expect(custom).toEqual(["--brand-primary", "--brand-ink", "--brand-ink-text"]);
   });
 
   it("declares the real properties the tokens exist to feed, and no others", () => {

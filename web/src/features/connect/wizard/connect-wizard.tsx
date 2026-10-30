@@ -424,7 +424,7 @@ export default function ConnectWizard() {
               <div className="mt-5 flex flex-col gap-4">
                 <div className={`${SUNKEN} flex items-center gap-3 p-3.5`} data-wizard-select-info="">
                   <span
-                    className={`${SMALL_CORNER} ${ACCENT_SOFT} grid size-[38px] shrink-0 place-items-center text-[color:var(--brand-primary)]`}
+                    className={`${SMALL_CORNER} ${ACCENT_SOFT} grid size-[38px] shrink-0 place-items-center text-[color:var(--brand-ink)]`}
                   >
                     <MonitorSmartphone aria-hidden="true" className="size-[18px]" />
                   </span>
@@ -490,7 +490,7 @@ export default function ConnectWizard() {
               className={`${SUNKEN} flex h-[34px] max-w-full items-center gap-2 self-start pl-3 pr-1.5 text-[13px] font-medium text-[color:var(--brand-muted-foreground)]`}
               data-wizard-chip=""
             >
-              <i aria-hidden="true" className={`cw-live size-[7px] shrink-0 ${CIRCLE} bg-[color:var(--brand-primary)]`} />
+              <i aria-hidden="true" className={`cw-live size-[7px] shrink-0 ${CIRCLE} bg-[color:var(--brand-ink)]`} />
               <span className="min-w-0 truncate">
                 {planName} ·{' '}
                 {end === null
@@ -502,7 +502,7 @@ export default function ConnectWizard() {
                   <i aria-hidden="true" className="h-3.5 w-px shrink-0 bg-[color:var(--color-border-strong)]" />
                   <button
                     type="button"
-                    className={`${SMALL_CORNER} h-7 shrink-0 px-2 font-semibold text-[color:var(--brand-primary)]`}
+                    className={`${SMALL_CORNER} h-7 shrink-0 px-2 font-semibold text-[color:var(--brand-ink-text)]`}
                     onClick={() => {
                       setSheet(null)
                       dispatch({ type: 'restart', to: 'select', direction: -1 })
@@ -537,7 +537,7 @@ export default function ConnectWizard() {
                     className={cn(
                       `${SMALL_CORNER} grid size-9 shrink-0 place-items-center [&>svg]:size-[17px]`,
                       index === 0
-                        ? `${ACCENT_SOFT} text-[color:var(--brand-primary)]`
+                        ? `${ACCENT_SOFT} text-[color:var(--brand-ink-text)]`
                         : 'bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)]',
                     )}
                   >
@@ -592,18 +592,18 @@ export default function ConnectWizard() {
               initial={reduced ? false : { scale: 0.96, opacity: 0.55 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 320, damping: 22 }}
-              className="flex flex-col gap-3.5 rounded-[var(--radius-card)] border-[1.5px] border-[color-mix(in_oklab,var(--brand-primary)_55%,transparent)] bg-[color:var(--color-surface-high)] p-[18px] shadow-[0_12px_36px_-10px_color-mix(in_oklab,var(--brand-primary)_34%,transparent)] backdrop-blur-[var(--glass-blur)]"
+              className="flex flex-col gap-3.5 rounded-[var(--radius-card)] border-[1.5px] border-[color-mix(in_oklab,var(--brand-ink)_55%,transparent)] bg-[color:var(--color-surface-high)] p-[18px] shadow-[0_12px_36px_-10px_color-mix(in_oklab,var(--brand-primary)_34%,transparent)] backdrop-blur-[var(--glass-blur)]"
               data-wizard-device=""
             >
               <span
-                className={`${SMALL_CORNER} ${ACCENT_SOFT} flex h-6 items-center gap-1.5 self-start px-2.5 text-xs font-medium text-[color:var(--brand-primary)]`}
+                className={`${SMALL_CORNER} ${ACCENT_SOFT} flex h-6 items-center gap-1.5 self-start px-2.5 text-xs font-medium text-[color:var(--brand-ink-text)]`}
               >
                 <Sparkles aria-hidden="true" className="size-3" />
                 {auto ? t('connectWizard.autoTag') : t('connectWizard.chosenTag')}
               </span>
               <div className="flex items-center gap-3.5">
                 <span
-                  className={`${SMALL_CORNER} ${ACCENT_SOFT} grid size-14 shrink-0 place-items-center text-[color:var(--brand-primary)]`}
+                  className={`${SMALL_CORNER} ${ACCENT_SOFT} grid size-14 shrink-0 place-items-center text-[color:var(--brand-ink)]`}
                 >
                   <CatalogIcon
                     markup={cat.icons[plat.iconKey ?? '']}
@@ -747,7 +747,7 @@ export default function ConnectWizard() {
                 ))
               )}
               <p className="flex items-start gap-2.5 border-t border-[color:var(--color-border-soft)] pt-3 text-[13px] leading-snug text-[color:var(--brand-muted-foreground)]">
-                <CornerDownLeft aria-hidden="true" className="mt-px size-[15px] shrink-0 text-[color:var(--brand-primary)]" />
+                <CornerDownLeft aria-hidden="true" className="mt-px size-[15px] shrink-0 text-[color:var(--brand-ink)]" />
                 {t('connectWizard.returnHint')}
               </p>
             </motion.div>
@@ -835,7 +835,7 @@ export default function ConnectWizard() {
               </span>
               <span className="relative mb-[22px] h-14 w-28">
                 <span className="absolute left-1 right-1 top-[27px] border-t-2 border-dotted border-[color:var(--color-border-strong)]" />
-                <i className={`cw-packet absolute left-0 top-[22px] size-3 ${CIRCLE} bg-[color:var(--brand-primary)]`} />
+                <i className={`cw-packet absolute left-0 top-[22px] size-3 ${CIRCLE} bg-[color:var(--brand-ink)]`} />
                 <span
                   className={`absolute left-[42px] top-3.5 grid size-7 place-items-center ${SMALL_CORNER} border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface-high)]`}
                 >
@@ -1008,7 +1008,7 @@ export default function ConnectWizard() {
             <div className="-mt-2 flex flex-col items-center gap-1.5 text-center" role="status" aria-live="polite">
               <p className="flex items-center gap-2 text-base font-semibold" data-wizard-status={watch.verdict}>
                 {waitingLive && (
-                  <i aria-hidden="true" className={`cw-live size-2 ${CIRCLE} bg-[color:var(--brand-primary)]`} />
+                  <i aria-hidden="true" className={`cw-live size-2 ${CIRCLE} bg-[color:var(--brand-ink)]`} />
                 )}
                 {statusTitle}
               </p>

@@ -49,7 +49,7 @@ export const HINT_TONE_RAIL: Record<CabinetHint["tone"], string> = {
   INFO: "bg-blue-500/70",
   SUCCESS: "bg-emerald-500/70",
   WARNING: "bg-amber-500/70",
-  DANGER: "bg-(--brand-primary)/70",
+  DANGER: "bg-(--brand-ink)/70",
 };
 
 function lookup<T>(table: Record<CabinetHint["tone"], T>, tone: string, fallback: T): T {

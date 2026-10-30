@@ -191,7 +191,7 @@ export default function RecoverPage() {
           >
             <div className="flex flex-col items-center gap-3 text-center">
               {answer.status === 'accepted' ? (
-                <MailCheck className="h-8 w-8 text-(--brand-primary)" />
+                <MailCheck className="h-8 w-8 text-(--brand-ink)" />
               ) : (
                 <AlertTriangle className="h-8 w-8 text-amber-400" />
               )}
@@ -213,7 +213,7 @@ export default function RecoverPage() {
               href={telegramShortcut}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-(--brand-primary) hover:brightness-110"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-(--brand-ink-text) hover:brightness-110"
               data-testid="recover-telegram-shortcut"
             >
               <Send className="h-3.5 w-3.5" />
@@ -236,7 +236,7 @@ export default function RecoverPage() {
               </p>
               <Link
                 to="/recover/subscription"
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-(--brand-primary) hover:brightness-110"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-(--brand-ink-text) hover:brightness-110"
               >
                 <Link2 className="h-3.5 w-3.5" />
                 {t(subscriptionRecovery.byLogin ? 'auth.recover.noAccessActionLogin' : 'auth.recover.noAccessAction')}

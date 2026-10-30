@@ -11,8 +11,8 @@ const STEPS = [
     icon: Shield,
     titleKey: 'intro.step1.title',
     descriptionKey: 'intro.step1.description',
-    color: 'text-(--brand-primary)',
-    bg: 'bg-(--brand-primary)/10',
+    color: 'text-(--brand-ink-text)',
+    bg: 'bg-(--brand-ink)/10',
   },
   {
     icon: Zap,
@@ -130,7 +130,7 @@ export default function OnboardingPage() {
             <div
               key={i}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === step ? 'w-6 bg-(--brand-primary)' : 'w-1.5 bg-[color:var(--color-border-strong)]'
+                i === step ? 'w-6 bg-(--brand-ink)' : 'w-1.5 bg-[color:var(--color-border-strong)]'
               }`}
             />
           ))}

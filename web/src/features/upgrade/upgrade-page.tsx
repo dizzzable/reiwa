@@ -89,7 +89,7 @@ export default function UpgradePage() {
       <div className="flex items-center gap-3 px-5 pb-4">
         <BackButton fallback="/dashboard" label={t("upgrade.back")} />
         <div className="flex items-center gap-2">
-          <ArrowUpDown className="h-5 w-5 text-(--brand-primary)" />
+          <ArrowUpDown className="h-5 w-5 text-(--brand-ink)" />
           <h1 className="text-lg font-semibold">{t("upgrade.title")}</h1>
         </div>
       </div>
@@ -245,7 +245,7 @@ function SelectPlan() {
             <button
               key={option.id}
               onClick={() => selectPlan(option)}
-              className="w-full glass-card flex items-center justify-between gap-3 p-4 text-left transition-all hover:border-(--brand-primary)/30 active:scale-[0.98]"
+              className="w-full glass-card flex items-center justify-between gap-3 p-4 text-left transition-all hover:border-(--brand-ink)/30 active:scale-[0.98]"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-[color:var(--brand-foreground)]">{option.name}</p>
@@ -303,7 +303,7 @@ function SelectDuration() {
           <button
             key={d.id}
             onClick={() => selectDuration(d.days)}
-            className="glass-card p-4 text-center transition-all hover:border-(--brand-primary)/30 active:scale-[0.97]"
+            className="glass-card p-4 text-center transition-all hover:border-(--brand-ink)/30 active:scale-[0.97]"
           >
             <span className="text-sm font-medium text-[color:var(--brand-foreground)]">
               {t("purchase.duration.days", { count: d.days })}
@@ -474,7 +474,7 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
   if (isLoading || withdrawn) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       </div>
     );
   }
@@ -527,7 +527,7 @@ function UpgradeReview({ refused }: { readonly refused: boolean }) {
         )}
         <div className="flex items-center justify-between px-4 py-3.5">
           <span className="font-semibold">{t("upgrade.total")}</span>
-          <span className="text-lg font-bold text-(--brand-primary)">
+          <span className="text-lg font-bold text-(--brand-ink-text)">
             {symbol}
             {quote.finalPrice.toFixed(2)} {quote.currency}
           </span>
@@ -695,7 +695,7 @@ function CheckoutStep({ onQuoteRefused }: { readonly onQuoteRefused: () => void 
 
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-4">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       <p className="text-sm text-[color:var(--brand-muted-foreground)]">{t("upgrade.creating")}</p>
     </div>
   );

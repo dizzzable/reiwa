@@ -427,7 +427,7 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
           </label>
           <button
             type="button"
-            className="text-xs font-medium text-(--brand-primary) disabled:opacity-40"
+            className="text-xs font-medium text-(--brand-ink-text) disabled:opacity-40"
             disabled={balance < minimum}
             onClick={() => setAmountText(formatAmountForInput(balance))}
           >
@@ -443,7 +443,7 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
           onChange={(event) => setAmountText(event.target.value)}
           aria-invalid={amountError !== null}
           aria-describedby={amountError !== null ? `${AMOUNT_HELP_ID} ${AMOUNT_ERROR_ID}` : AMOUNT_HELP_ID}
-          className="h-11 w-full rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-3 text-base text-[var(--brand-foreground)] outline-none focus-visible:border-(--brand-primary) aria-invalid:border-red-500/60"
+          className="h-11 w-full rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-3 text-base text-[var(--brand-foreground)] outline-none focus-visible:border-(--brand-ink) aria-invalid:border-red-500/60"
         />
         <p id={AMOUNT_HELP_ID} className="text-xs text-[var(--brand-muted-foreground)]">
           {t("partnerWithdraw.amountLimits", {
@@ -474,7 +474,7 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
               className={cn(
                 "rounded-xl border px-3 py-2 text-left text-sm transition-colors",
                 method === value
-                  ? "border-(--brand-primary) bg-(--brand-primary)/10 text-[var(--brand-foreground)]"
+                  ? "border-(--brand-ink) bg-(--brand-ink)/10 text-[var(--brand-foreground)]"
                   : "border-[var(--color-border-soft)] bg-[var(--color-surface)] text-[var(--brand-muted-foreground)]",
               )}
             >
@@ -496,7 +496,7 @@ function WithdrawFlow({ info, onFinished }: { info: PartnerInfo | null; onFinish
           onChange={(event) => setRequisites(event.target.value)}
           aria-invalid={requisitesError !== null}
           aria-describedby={requisitesError !== null ? REQUISITES_ERROR_ID : undefined}
-          className="w-full rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-3 py-2 text-base text-[var(--brand-foreground)] outline-none focus-visible:border-(--brand-primary) aria-invalid:border-red-500/60"
+          className="w-full rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-3 py-2 text-base text-[var(--brand-foreground)] outline-none focus-visible:border-(--brand-ink) aria-invalid:border-red-500/60"
         />
         {requisitesError !== null ? (
           <p id={REQUISITES_ERROR_ID} className="text-xs text-red-400" data-testid="partner-withdraw-requisites-error">

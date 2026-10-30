@@ -63,7 +63,7 @@ export function AutopayGatewayMark({
       <GatewayIcon type={type} currency={currency} iconSvg={iconSvg} className="h-7 w-7" />
       <span
         aria-hidden
-        className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-(--brand-primary) text-white ring-2 ring-background"
+        className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-(--brand-ink) text-white ring-2 ring-background"
       >
         <Repeat className="h-2.5 w-2.5" />
       </span>

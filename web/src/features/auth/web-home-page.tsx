@@ -255,7 +255,7 @@ export default function WebHomePage() {
         >
           <span
             className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--brand-primary)', borderTopColor: 'transparent' }}
+            style={{ borderColor: 'var(--brand-ink)', borderTopColor: 'transparent' }}
           />
           {statusKey === 'signin' ? t('bootstrap.connectingViaTelegram') : t('bootstrap.connecting')}
         </motion.div>

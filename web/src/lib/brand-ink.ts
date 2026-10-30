@@ -15,12 +15,20 @@
  * just far enough — darker on a light card, lighter on a dark one, still the
  * brand's hue. Mixing happens in OKLab, where halfway looks halfway.
  *
+ * Two tokens come out of it: `--brand-ink` at 3:1 for icons, dots, rings and
+ * bars, and `--brand-ink-text` at 4.5:1 (WCAG 1.4.3) for words — a link, a
+ * sum, a label. Where it is not obvious which a thing is, the text one: it
+ * only ever moves further from the primary, never less readable.
+ *
  * The card is taken as the theme's surface over its background colour. An
  * app background image or gradient is not sampled; the surface is nearly
  * opaque in every concept theme, so what shows through barely moves it.
  */
 
-const MIN_CONTRAST = 3;
+/** WCAG 1.4.11: icons and other graphics. */
+export const MIN_GRAPHIC_CONTRAST = 3;
+/** WCAG 1.4.3: body-size text. */
+export const MIN_TEXT_CONTRAST = 4.5;
 
 type Rgb = readonly [number, number, number];
 
@@ -30,7 +38,12 @@ export interface InkSurface {
   readonly surfaceOpacity: number;
 }
 
-export function readableBrandInk(primary: string, theme: InkSurface, background: string): string {
+export function readableBrandInk(
+  primary: string,
+  theme: InkSurface,
+  background: string,
+  minContrast: number = MIN_GRAPHIC_CONTRAST,
+): string {
   const brand = parseHex(primary);
   const text = parseHex(theme.foreground);
   const surface = parseHex(theme.surface);
@@ -39,23 +52,35 @@ export function readableBrandInk(primary: string, theme: InkSurface, background:
 
   const alpha = Number.isFinite(theme.surfaceOpacity) ? Math.min(1, Math.max(0, theme.surfaceOpacity)) : 1;
   const card: Rgb = [0, 1, 2].map((i) => surface[i]! * alpha + backdrop[i]! * (1 - alpha)) as unknown as Rgb;
-  if (contrast(brand, card) >= MIN_CONTRAST) return primary;
+  if (contrast(brand, card) >= minContrast) return primary;
 
   // Twentieths: the first share of the brand that clears the bar, so a colour
   // that is nearly there moves only a little.
   for (let step = 19; step >= 0; step -= 1) {
     const ink = mixOklab(brand, text, step / 20);
-    if (contrast(ink, card) >= MIN_CONTRAST) return toHex(ink);
+    if (contrast(ink, card) >= minContrast) return toHex(ink);
   }
   return theme.foreground;
 }
 
 function parseHex(value: string): Rgb | null {
-  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim());
+  const split = splitHexAlpha(value);
+  return split === null ? null : split.rgb;
+}
+
+/**
+ * `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa` as a colour and its opacity.
+ * The connect screen's theme sends its surfaces with the alpha in the hex.
+ */
+export function splitHexAlpha(value: string): { readonly rgb: Rgb; readonly alpha: number; readonly hex: string } | null {
+  const match = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(value.trim());
   if (match === null) return null;
-  const digits = match[1]!.length === 3 ? [...match[1]!].map((d) => d + d).join("") : match[1]!;
-  const n = Number.parseInt(digits, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const raw = match[1]!;
+  const digits = raw.length <= 4 ? [...raw].map((d) => d + d).join("") : raw;
+  const n = Number.parseInt(digits.slice(0, 6), 16);
+  const rgb: Rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const alpha = digits.length === 8 ? Number.parseInt(digits.slice(6), 16) / 255 : 1;
+  return { rgb, alpha, hex: `#${digits.slice(0, 6)}` };
 }
 
 function toHex(rgb: Rgb): string {

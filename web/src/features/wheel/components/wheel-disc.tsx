@@ -214,7 +214,7 @@ export const WheelDisc = forwardRef<
         style={{
           borderLeft: '11px solid transparent',
           borderRight: '11px solid transparent',
-          borderTop: '20px solid var(--brand-primary, #f8fafc)',
+          borderTop: '20px solid var(--brand-ink, #f8fafc)',
           transformOrigin: '50% 10%',
         }}
       />
@@ -341,7 +341,7 @@ export const WheelDisc = forwardRef<
           cy={CENTER}
           r={RADIUS * 0.19}
           fill="none"
-          stroke="var(--brand-primary, #22c55e)"
+          stroke="var(--brand-ink, #22c55e)"
           strokeOpacity={0.55}
           strokeWidth={1.5}
         />

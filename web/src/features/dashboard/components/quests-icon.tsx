@@ -175,7 +175,7 @@ function QuestsExchangeLink({ onNavigate }: { onNavigate: () => void }): JSX.Ele
         onNavigate();
         navigate("/referrals/exchange");
       }}
-      className="text-xs font-medium text-(--brand-primary) hover:brightness-110"
+      className="text-xs font-medium text-(--brand-ink-text) hover:brightness-110"
     >
       {t("quests.exchangeLink")}
     </button>
@@ -213,7 +213,7 @@ function QuestRow({
 
   return (
     <div className="flex items-center gap-3 rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-item)] bg-(--brand-primary)/12 text-(--brand-primary)">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-item)] bg-(--brand-ink)/12 text-(--brand-ink)">
         {quest.iconKind === "SVG" && quest.iconRef.length > 0 ? (
           <img src={questIconUrl(quest.iconRef)} alt="" className="h-5 w-5" />
         ) : (
@@ -229,7 +229,7 @@ function QuestRow({
         <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-snug text-[color:var(--brand-muted-foreground)]">
           {loc(quest.description, i18n.language)}
         </p>
-        <p className="mt-1 text-[11px] font-medium text-(--brand-primary)">
+        <p className="mt-1 text-[11px] font-medium text-(--brand-ink-text)">
           {rewardSummary(t, quest)}
           {quest.type === "INVITE_FRIENDS" && quest.requiredFriends
             ? ` · ${t("quests.progress", { current: quest.progress, required: quest.requiredFriends })}`

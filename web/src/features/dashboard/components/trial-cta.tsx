@@ -249,13 +249,13 @@ export function TrialCta({ knownSubscriptionIds, onActivated }: TrialCtaProps) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: "spring", damping: 20 }}
-      className="mx-5 mb-4 flex flex-col items-center rounded-[var(--radius-card)] border border-(--brand-primary)/25 bg-(--brand-primary)/[0.06] p-7 text-center"
+      className="mx-5 mb-4 flex flex-col items-center rounded-[var(--radius-card)] border border-(--brand-ink)/25 bg-(--brand-ink)/[0.06] p-7 text-center"
     >
       <div
         className="mb-4 flex h-16 w-16 items-center justify-center rounded-full"
-        style={{ backgroundColor: "color-mix(in oklab, var(--brand-primary) 18%, transparent)" }}
+        style={{ backgroundColor: "color-mix(in oklab, var(--brand-ink) 18%, transparent)" }}
       >
-        <Gift className="h-7 w-7" style={{ color: "var(--brand-primary)" }} />
+        <Gift className="h-7 w-7" style={{ color: "var(--brand-ink)" }} />
       </div>
       <h2 className="text-lg font-semibold text-[color:var(--brand-foreground)]">
         {needsTelegramLink

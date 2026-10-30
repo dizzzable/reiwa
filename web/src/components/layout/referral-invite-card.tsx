@@ -70,7 +70,7 @@ export function ReferralInviteCard() {
     <NavLink
       to="/referrals"
       data-testid="side-referral-card"
-      className="group relative block overflow-hidden rounded-2xl border border-[var(--color-border-soft)] bg-[color-mix(in_oklab,var(--brand-primary)_8%,var(--color-surface-high))] p-3 transition-colors duration-200 hover:border-[color-mix(in_oklab,var(--brand-primary)_45%,transparent)]"
+      className="group relative block overflow-hidden rounded-2xl border border-[var(--color-border-soft)] bg-[color-mix(in_oklab,var(--brand-ink)_8%,var(--color-surface-high))] p-3 transition-colors duration-200 hover:border-[color-mix(in_oklab,var(--brand-ink)_45%,transparent)]"
     >
       {/* Brand-tinted bloom. Decorative, and derived from the operator's own
           accent, so it cannot clash with a palette it has never seen. */}
@@ -105,7 +105,7 @@ export function ReferralInviteCard() {
             </div>
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-semibold tabular-nums text-[var(--brand-primary)]">
+            <div className="text-sm font-semibold tabular-nums text-[var(--brand-ink-text)]">
               {qualified}
             </div>
             <div className="truncate text-[11px] text-[var(--brand-muted-foreground)]">

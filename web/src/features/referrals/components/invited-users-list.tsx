@@ -40,7 +40,7 @@ export function InvitedUsersList() {
       {/* Header */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Users className="h-4 w-4 text-(--brand-primary)" />
+          <Users className="h-4 w-4 text-(--brand-ink)" />
           <p className="text-sm font-semibold text-[var(--brand-foreground)]">
             {t("referrals.invitedList")}
           </p>
@@ -82,7 +82,7 @@ export function InvitedUsersList() {
               className="flex items-center gap-3 rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-3 py-2.5"
             >
               {/* Avatar bubble with first initial */}
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-(--brand-primary)/12 text-xs font-bold text-(--brand-primary)">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-(--brand-ink)/12 text-xs font-bold text-(--brand-ink-text)">
                 {u.label.replace(/^[@:]+/, "").slice(0, 1).toUpperCase() || "?"}
               </div>
               <p className="min-w-0 flex-1 truncate text-sm text-[var(--brand-foreground)]">

@@ -302,7 +302,7 @@ function TicketChat({ ticketId, onBack }: { ticketId: string; onBack: () => void
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-(--brand-primary)" />
+        <Loader2 className="h-8 w-8 animate-spin text-(--brand-ink)" />
       </div>
     )
   }
@@ -553,7 +553,7 @@ export default function SupportPage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-(--brand-primary)" />
+        <Loader2 className="h-8 w-8 animate-spin text-(--brand-ink)" />
       </div>
     )
   }

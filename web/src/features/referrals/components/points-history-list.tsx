@@ -226,7 +226,7 @@ export function PointsHistoryList() {
   return (
     <div className="rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-4">
       <div className="mb-3 flex items-center gap-2">
-        <History className="h-4 w-4 text-(--brand-primary)" />
+        <History className="h-4 w-4 text-(--brand-ink)" />
         <p className="text-sm font-semibold text-[var(--brand-foreground)]">
           {t("pointsHistory.title")}
         </p>

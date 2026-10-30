@@ -179,7 +179,7 @@ export function TariffCard({ plan, onClick, selected, index = 0 }: TariffCardPro
         "overflow-hidden rounded-card p-5 text-left text-[color:var(--card-foreground)] select-none",
         "transition-transform duration-150 active:scale-[0.98]",
         selected
-          ? "ring-2 ring-(--brand-primary)"
+          ? "ring-2 ring-(--brand-ink)"
           : "ring-1 ring-[rgb(var(--card-foreground-rgb)/0.12)]",
       )}
     >

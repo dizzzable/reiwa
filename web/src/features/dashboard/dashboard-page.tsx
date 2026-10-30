@@ -367,7 +367,7 @@ export default function DashboardPage() {
               className="h-8 w-8 shrink-0 rounded-lg object-contain"
             />
           ) : (
-            <ReiwaLogo className="h-8 w-8 shrink-0 text-(--brand-primary)" title={branding.brandName} />
+            <ReiwaLogo className="h-8 w-8 shrink-0 text-(--brand-ink)" title={branding.brandName} />
           )}
           <div className="min-w-0 leading-tight">
             <p className="truncate text-sm font-semibold text-[color:var(--brand-foreground)]">
@@ -393,7 +393,7 @@ export default function DashboardPage() {
               <motion.span
                 aria-hidden
                 className="pointer-events-none absolute inset-0 rounded-[var(--radius-pill)]"
-                style={{ border: "1.5px solid var(--brand-primary)" }}
+                style={{ border: "1.5px solid var(--brand-ink)" }}
                 initial={{ opacity: 0.5, scale: 1 }}
                 animate={{ opacity: 0, scale: 1.75 }}
                 transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
@@ -406,7 +406,7 @@ export default function DashboardPage() {
                 "relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-pill)] border transition-all disabled:pointer-events-none disabled:opacity-40",
                 purchasesBlocked || buyLimitReached
                   ? "border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--brand-muted-foreground)]"
-                  : "border-(--brand-primary)/40 bg-(--brand-primary)/15 text-(--brand-primary) hover:bg-(--brand-primary)/25",
+                  : "border-(--brand-ink)/40 bg-(--brand-ink)/15 text-(--brand-ink-text) hover:bg-(--brand-ink)/25",
               )}
               aria-label={t("card.actions.buy")}
               title={buyLimitReached ? subscriptionLimitMessage(t, actionPolicy) : undefined}
@@ -441,7 +441,7 @@ export default function DashboardPage() {
         <div className="flex h-48 items-center justify-center">
           <div
             className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: "var(--brand-primary)", borderTopColor: "transparent" }}
+            style={{ borderColor: "var(--brand-ink)", borderTopColor: "transparent" }}
           />
         </div>
       ) : hasCarouselItems || deleteGuardActive ? (

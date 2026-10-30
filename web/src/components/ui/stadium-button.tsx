@@ -28,7 +28,7 @@ const variantClasses: Record<ButtonVariant, string> = {
   danger:
     'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 hover:text-red-300',
   outline:
-    'bg-transparent text-(--brand-primary) border border-(--brand-primary)/50 hover:bg-(--brand-primary)/10 hover:border-(--brand-primary)/80',
+    'bg-transparent text-(--brand-ink-text) border border-(--brand-ink)/50 hover:bg-(--brand-ink)/10 hover:border-(--brand-ink)/80',
 }
 
 const sizeClasses: Record<ButtonSize, string> = {

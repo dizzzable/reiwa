@@ -164,7 +164,7 @@ export default function PromoPage() {
                     type="button"
                     disabled={mutation.isPending}
                     onClick={() => mutation.mutate({ subscriptionId: id })}
-                    className="flex w-full items-center justify-between rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-5 py-4 text-left transition-colors hover:border-(--brand-primary)/50 disabled:opacity-50"
+                    className="flex w-full items-center justify-between rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface-high)] px-5 py-4 text-left transition-colors hover:border-(--brand-ink)/50 disabled:opacity-50"
                   >
                     <span className="theme-title text-sm font-medium">{label}</span>
                     <ChevronRight className="theme-muted h-4 w-4" />

@@ -117,7 +117,7 @@ export default function PointsExchangePage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-(--brand-primary)" />
+        <Loader2 className="h-8 w-8 animate-spin text-(--brand-ink)" />
       </div>
     )
   }
@@ -135,7 +135,7 @@ export default function PointsExchangePage() {
         <button
           type="button"
           onClick={copyGiftCode}
-          className="flex w-full max-w-xs items-center justify-between gap-3 rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-surface-high)] px-5 py-4 transition-colors hover:border-(--brand-primary)/50"
+          className="flex w-full max-w-xs items-center justify-between gap-3 rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-surface-high)] px-5 py-4 transition-colors hover:border-(--brand-ink)/50"
         >
           <span className="font-mono text-lg font-bold tracking-widest text-[var(--brand-foreground)]">{giftCode}</span>
           {copied ? <Check className="h-5 w-5 text-emerald-400" /> : <Copy className="h-5 w-5 text-[var(--brand-muted-foreground)]" />}
@@ -324,7 +324,7 @@ export default function PointsExchangePage() {
             {/* Preview */}
             <div className="rounded-xl bg-[var(--color-surface-high)] p-4 text-center">
               <p className="text-xs text-[var(--brand-muted-foreground)] mb-1">{t('pointsExchange.youReceive')}</p>
-              <p className="text-2xl font-bold text-(--brand-primary)">
+              <p className="text-2xl font-bold text-(--brand-ink-text)">
                 {computedValue} {selectedType ? typeUnit(selectedType) : ''}
               </p>
             </div>

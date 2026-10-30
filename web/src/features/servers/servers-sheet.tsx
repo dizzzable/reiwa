@@ -541,7 +541,7 @@ function ServerRow({
           <div className="mt-1 flex">
             <span
               data-testid="server-badge"
-              className="inline-flex max-w-full rounded-md bg-(--brand-primary)/12 px-1.5 py-0.5 text-[10px] leading-tight font-medium text-(--brand-primary) ring-1 ring-(--brand-primary)/25 ring-inset"
+              className="inline-flex max-w-full rounded-md bg-(--brand-ink)/12 px-1.5 py-0.5 text-[10px] leading-tight font-medium text-(--brand-ink-text) ring-1 ring-(--brand-ink)/25 ring-inset"
             >
               <span className="truncate">{server.description}</span>
             </span>

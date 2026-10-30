@@ -23,7 +23,7 @@ interface StatCardProps {
 
 export function StatCard({
   icon: Icon,
-  iconColor = "var(--brand-primary)",
+  iconColor = "var(--brand-ink)",
   value,
   label,
   sublabel,

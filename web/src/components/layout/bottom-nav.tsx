@@ -103,7 +103,7 @@ export function BottomNav() {
                     <m.span
                       layoutId="bottom-nav-active-pill"
                       className="absolute inset-0 -z-10 rounded-2xl"
-                      style={{ backgroundColor: "var(--brand-primary)" }}
+                      style={{ backgroundColor: "var(--brand-ink)" }}
                       transition={{
                         type: "spring",
                         stiffness: 380,

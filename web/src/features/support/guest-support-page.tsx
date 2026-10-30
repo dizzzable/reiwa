@@ -199,7 +199,7 @@ export default function GuestSupportPage(): JSX.Element {
 
         {openingLink ? (
           <div className="flex h-48 flex-col items-center justify-center gap-3">
-            <Loader2 className="h-7 w-7 animate-spin text-(--brand-primary)" />
+            <Loader2 className="h-7 w-7 animate-spin text-(--brand-ink)" />
             <span className="text-sm text-muted-foreground">{t('guestSupport.link.opening')}</span>
           </div>
         ) : confirming !== null && linkInput !== undefined ? (
@@ -237,7 +237,7 @@ export default function GuestSupportPage(): JSX.Element {
           </div>
         ) : conversationQuery.isLoading ? (
           <div className="flex h-48 items-center justify-center">
-            <Loader2 className="h-7 w-7 animate-spin text-(--brand-primary)" />
+            <Loader2 className="h-7 w-7 animate-spin text-(--brand-ink)" />
           </div>
         ) : ticket && ticket.status !== 'closed' ? (
           <ChatView
@@ -626,7 +626,7 @@ function ResumeBanner({ code }: { code: string }): JSX.Element {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   return (
-    <div className="rounded-xl border border-(--brand-primary)/30 bg-(--brand-primary)/10 p-4">
+    <div className="rounded-xl border border-(--brand-ink)/30 bg-(--brand-ink)/10 p-4">
       <div className="text-sm font-medium text-foreground">{t('guestSupport.resume.title')}</div>
       <p className="mt-1 text-xs text-muted-foreground">{t('guestSupport.resume.body')}</p>
       <div className="mt-2 flex items-center gap-2">
@@ -722,7 +722,7 @@ function TurnstileWidget({
 // ── shared bits ──────────────────────────────────────────────────────────────
 
 const INPUT_CLASS =
-  'glass-input w-full rounded-xl px-3 py-2 text-sm text-foreground focus:border-(--brand-primary) focus:outline-none'
+  'glass-input w-full rounded-xl px-3 py-2 text-sm text-foreground focus:border-(--brand-ink) focus:outline-none'
 
 function Field({
   label,

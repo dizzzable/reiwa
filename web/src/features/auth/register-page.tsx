@@ -338,7 +338,7 @@ export default function RegisterPage() {
   if (accessModeLoading) {
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-(--brand-bg-primary)">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
         {/* A wait that goes on says why; the form still waits for the policy. */}
         <PolicyWaitNote />
       </div>
@@ -368,7 +368,7 @@ export default function RegisterPage() {
               boxShadow: '0 0 40px rgba(244,63,94,0.3)',
             }}
           >
-            <UserPlus className="h-8 w-8 text-(--brand-primary)" />
+            <UserPlus className="h-8 w-8 text-(--brand-ink)" />
           </div>
           <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">{t('register.title')}</h1>
           <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t('register.subtitle')}</p>
@@ -406,7 +406,7 @@ export default function RegisterPage() {
                   className={`glass-input w-full rounded-xl px-4 py-3 text-sm ${
                     inviteError
                       ? 'border-red-500/50 focus:border-red-500'
-                      : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
+                      : 'border-[color:var(--color-border-soft)] focus:border-(--brand-ink)/50'
                   }`}
                   aria-invalid={!!inviteError}
                   aria-describedby="invite-error"
@@ -459,7 +459,7 @@ export default function RegisterPage() {
                 className={`glass-input w-full rounded-xl px-4 py-3 text-sm ${
                   usernameError || usernameUnavailable
                     ? 'border-red-500/50 focus:border-red-500'
-                    : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
+                    : 'border-[color:var(--color-border-soft)] focus:border-(--brand-ink)/50'
                 }`}
                 aria-invalid={!!(usernameError || usernameUnavailable)}
                 aria-describedby="username-error"
@@ -497,7 +497,7 @@ export default function RegisterPage() {
                   className={`glass-input w-full rounded-xl px-4 py-3 pr-12 text-sm ${
                     passwordError
                       ? 'border-red-500/50 focus:border-red-500'
-                      : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
+                      : 'border-[color:var(--color-border-soft)] focus:border-(--brand-ink)/50'
                   }`}
                   aria-invalid={!!passwordError}
                   aria-describedby="password-error"
@@ -552,7 +552,7 @@ export default function RegisterPage() {
                     >
                       <input
                         type="checkbox"
-                        className="mt-0.5 h-4 w-4 shrink-0 accent-(--brand-primary)"
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-(--brand-ink)"
                         checked={acceptedDocuments.includes(document.key)}
                         onChange={(event) =>
                           setAcceptedDocuments((prev) =>
@@ -566,7 +566,7 @@ export default function RegisterPage() {
                         {t('register.legal.accept')}{' '}
                         <button
                           type="button"
-                          className="underline underline-offset-2 hover:text-(--brand-primary)"
+                          className="underline underline-offset-2 hover:text-(--brand-ink-text)"
                           onClick={() => setOpenDocument(document)}
                         >
                           {document.title}
@@ -639,7 +639,7 @@ export default function RegisterPage() {
         >
           <p className="text-sm text-[color:var(--brand-muted-foreground)]">
             {t('register.hasAccount')}{' '}
-            <Link to="/login" className="text-(--brand-primary) hover:text-(--brand-primary) transition-colors">
+            <Link to="/login" className="text-(--brand-ink-text) hover:text-(--brand-ink-text) transition-colors">
               {t('register.signIn')}
             </Link>
           </p>

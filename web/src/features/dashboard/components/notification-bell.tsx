@@ -215,12 +215,12 @@ export function NotificationBell() {
                   }}
                   className={cn(
                     "w-full rounded-[var(--radius-item)] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-3 text-left transition-colors hover:bg-[color:var(--color-surface-high)]",
-                    !n.isRead && "border-(--brand-primary)/20 bg-(--brand-primary)/3",
+                    !n.isRead && "border-(--brand-ink)/20 bg-(--brand-ink)/3",
                   )}
                 >
                   <div className="flex items-center gap-2">
                     {!n.isRead && (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-primary)" />
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-(--brand-ink)" />
                     )}
                     <p className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium text-[color:var(--brand-foreground)]">
                       <EmojiText text={n.title} />
@@ -254,7 +254,7 @@ export function NotificationBell() {
               setOpen(false);
               navigate("/settings/notifications/feed");
             }}
-            className="mt-1 flex min-h-7 items-center justify-center gap-1 rounded-[var(--radius-pill)] px-2 text-xs font-medium text-(--brand-primary) hover:bg-[color:var(--color-surface-high)] hover:underline"
+            className="mt-1 flex min-h-7 items-center justify-center gap-1 rounded-[var(--radius-pill)] px-2 text-xs font-medium text-(--brand-ink-text) hover:bg-[color:var(--color-surface-high)] hover:underline"
           >
             {t("notifications.seeAll")}
             <ChevronRight className="h-3.5 w-3.5" />

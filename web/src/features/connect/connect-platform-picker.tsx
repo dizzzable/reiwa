@@ -156,7 +156,7 @@ export function PlatformPicker({
         <span className="truncate">{line(current.title, locale)}</span>
         <ChevronsUpDown
           aria-hidden="true"
-          className="size-3 shrink-0 text-[color:var(--brand-primary)] md:size-3.5"
+          className="size-3 shrink-0 text-[color:var(--brand-ink)] md:size-3.5"
         />
       </button>
 
@@ -201,7 +201,7 @@ export function PlatformPicker({
                   <span
                     aria-hidden="true"
                     data-connect-platform-tint=""
-                    className={`pointer-events-none absolute inset-0 rounded-[var(--radius-item)] bg-[color:var(--brand-primary)] ${
+                    className={`pointer-events-none absolute inset-0 rounded-[var(--radius-item)] bg-[color:var(--brand-ink)] ${
                       selected ? 'opacity-20' : 'opacity-10'
                     }`}
                   />
@@ -213,7 +213,7 @@ export function PlatformPicker({
                 {selected && (
                   <Check
                     aria-hidden="true"
-                    className="relative z-10 size-3.5 shrink-0 text-[color:var(--brand-primary)]"
+                    className="relative z-10 size-3.5 shrink-0 text-[color:var(--brand-ink)]"
                   />
                 )}
               </li>
@@ -237,7 +237,7 @@ function PlatformMark({ markup }: { markup?: string }) {
   return (
     <span
       aria-hidden="true"
-      className="relative z-10 inline-flex size-[13px] shrink-0 text-[color:var(--brand-primary)] [&>svg]:size-full md:size-[15px]"
+      className="relative z-10 inline-flex size-[13px] shrink-0 text-[color:var(--brand-ink)] [&>svg]:size-full md:size-[15px]"
       dangerouslySetInnerHTML={{ __html: markup }}
     />
   )

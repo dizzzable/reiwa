@@ -2,7 +2,7 @@ import {
   DEFAULT_SURFACE_THEME,
   type Branding,
 } from "../types/branding";
-import { readableBrandInk } from "./brand-ink";
+import { MIN_TEXT_CONTRAST, readableBrandInk } from "./brand-ink";
 
 /**
  * Legacy radius classes remain readable for snapshots created before the
@@ -98,13 +98,18 @@ export function applyBrandingToDocument(branding: Branding): void {
   root.style.setProperty("--brand-muted-foreground", surface.mutedForeground);
   root.style.setProperty("--brand-surface", surface.surface);
   root.style.setProperty("--brand-surface-high", surface.surfaceHigh);
-  // The primary as an icon or a dot on a card, moved toward the text colour
-  // when the theme's own primary would vanish there. `theme-bootstrap.js`
-  // does not write it: nothing it paints before React draws in it, and React
-  // applies this in a layout effect, before its first paint.
+  // The primary as an icon or a dot on a card, and as words on it, moved
+  // toward the text colour when the theme's own primary would vanish there.
+  // `theme-bootstrap.js` does not write them: nothing it paints before React
+  // draws in them, and React applies this in a layout effect, before its
+  // first paint.
   root.style.setProperty(
     "--brand-ink",
     readableBrandInk(branding.primary, surface, branding.bgPrimary),
+  );
+  root.style.setProperty(
+    "--brand-ink-text",
+    readableBrandInk(branding.primary, surface, branding.bgPrimary, MIN_TEXT_CONTRAST),
   );
   root.style.setProperty(
     "--color-surface",

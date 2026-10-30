@@ -71,9 +71,9 @@ export function ConnectHelpBanner({
     <section
       data-testid="connect-help-banner"
       aria-labelledby={titleId}
-      className="relative mx-5 mt-4 flex items-start gap-3 rounded-xl border-l-4 border-l-(--brand-primary)/60 bg-(--brand-primary)/10 p-4 pr-11 text-sm leading-relaxed"
+      className="relative mx-5 mt-4 flex items-start gap-3 rounded-xl border-l-4 border-l-(--brand-ink)/60 bg-(--brand-ink)/10 p-4 pr-11 text-sm leading-relaxed"
     >
-      <LifeBuoy className="mt-0.5 h-5 w-5 shrink-0 text-(--brand-primary)" aria-hidden />
+      <LifeBuoy className="mt-0.5 h-5 w-5 shrink-0 text-(--brand-ink)" aria-hidden />
       <div className="min-w-0 flex-1 space-y-2">
         <p id={titleId} className="font-semibold text-[color:var(--brand-foreground)]">
           {t("connectHelp.bannerTitle")}

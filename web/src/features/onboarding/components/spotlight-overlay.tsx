@@ -120,7 +120,7 @@ export function SpotlightOverlay({
         <motion.div
           className="absolute border-2 pointer-events-none"
           style={{
-            borderColor: "var(--brand-primary)",
+            borderColor: "var(--brand-ink)",
             borderRadius,
             top: rect.y,
             left: rect.x,

@@ -566,7 +566,7 @@ function RoundAction({
   href?: string
   disabled?: boolean
 }) {
-  const className = `${SUNKEN} ${SMALL_CORNER} flex size-8 items-center justify-center text-[color:var(--brand-primary)] disabled:opacity-40 md:size-9`
+  const className = `${SUNKEN} ${SMALL_CORNER} flex size-8 items-center justify-center text-[color:var(--brand-ink)] disabled:opacity-40 md:size-9`
   if (href !== undefined) {
     return (
       <a href={href} aria-label={label} title={label} className={className}>
@@ -675,7 +675,7 @@ function Fact({
           {label}
         </span>
         <span
-          className={`${SMALL_CORNER} flex size-6 shrink-0 items-center justify-center border border-[color:var(--color-border-soft)] text-[color:var(--brand-primary)]`}
+          className={`${SMALL_CORNER} flex size-6 shrink-0 items-center justify-center border border-[color:var(--color-border-soft)] text-[color:var(--brand-ink)]`}
         >
           {icon}
         </span>
@@ -757,7 +757,7 @@ function AppTab({
       // rounding for the cabinet and it applies here too.
       className={`relative flex h-12 min-w-0 flex-1 basis-[9rem] items-center gap-2 overflow-hidden rounded-[var(--radius-item)] border bg-[color:var(--color-surface)] py-0 pl-4 pr-12 ${
         selected
-          ? 'border-[color:var(--brand-primary)] text-[color:var(--brand-foreground)] backdrop-blur-[var(--glass-blur)]'
+          ? 'border-[color:var(--brand-ink)] text-[color:var(--brand-foreground)] backdrop-blur-[var(--glass-blur)]'
           : 'border-[color:var(--color-border-soft)] text-[color:var(--brand-muted-foreground)]'
       }`}
     >
@@ -786,7 +786,7 @@ function AppTab({
         <span
           aria-hidden="true"
           data-connect-app-tint=""
-          className="pointer-events-none absolute inset-0 bg-[color:var(--brand-primary)] opacity-[0.18]"
+          className="pointer-events-none absolute inset-0 bg-[color:var(--brand-ink)] opacity-[0.18]"
         />
       )}
       <span className="relative z-10 min-w-0 truncate text-base">{app.name}</span>
@@ -846,7 +846,7 @@ function StepRow({
             Absent — the ordinary case — means follow the theme. */}
         <span
           className={`${SMALL_CORNER} flex size-7 shrink-0 items-center justify-center border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]`}
-          style={{ color: step.iconColor ?? 'var(--brand-primary)' }}
+          style={{ color: step.iconColor ?? 'var(--brand-ink)' }}
         >
           <Icon
             markup={catalog.icons[step.iconKey ?? '']}
@@ -936,7 +936,7 @@ function StepButton({
   if (button.kind === 'external') {
     return (
       <button type="button" className={`${SUNKEN} ${STEP_BUTTON}`} onClick={() => openExternalUrl(button.url)}>
-        <ExternalLink aria-hidden="true" className="size-4 text-[color:var(--brand-primary)]" />
+        <ExternalLink aria-hidden="true" className="size-4 text-[color:var(--brand-ink)]" />
         {label}
       </button>
     )

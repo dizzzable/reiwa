@@ -151,7 +151,7 @@ export default function FinishSetupPage() {
   if (isLoading) {
     return (
       <div className="flex h-dvh items-center justify-center bg-(--brand-bg-primary)">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-primary) border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--brand-ink) border-t-transparent" />
       </div>
     )
   }
@@ -181,7 +181,7 @@ export default function FinishSetupPage() {
               boxShadow: '0 0 40px rgba(244,63,94,0.3)',
             }}
           >
-            <ShieldCheck className="h-8 w-8 text-(--brand-primary)" />
+            <ShieldCheck className="h-8 w-8 text-(--brand-ink)" />
           </div>
           <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">{t('finishSetup.title')}</h1>
           <p className="mt-2 text-center text-sm text-[color:var(--brand-muted-foreground)]">{t('finishSetup.subtitle')}</p>
@@ -211,7 +211,7 @@ export default function FinishSetupPage() {
               placeholder={t('finishSetup.usernamePlaceholder')}
               disabled={submitting}
               className={`glass-input w-full rounded-xl px-4 py-3 text-sm ${
-                usernameError ? 'border-red-500/50 focus:border-red-500' : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
+                usernameError ? 'border-red-500/50 focus:border-red-500' : 'border-[color:var(--color-border-soft)] focus:border-(--brand-ink)/50'
               }`}
               aria-invalid={!!usernameError}
             />
@@ -237,7 +237,7 @@ export default function FinishSetupPage() {
                 placeholder={t('finishSetup.passwordPlaceholder')}
                 disabled={submitting}
                 className={`glass-input w-full rounded-xl px-4 py-3 pr-12 text-sm ${
-                  passwordError ? 'border-red-500/50 focus:border-red-500' : 'border-[color:var(--color-border-soft)] focus:border-(--brand-primary)/50'
+                  passwordError ? 'border-red-500/50 focus:border-red-500' : 'border-[color:var(--color-border-soft)] focus:border-(--brand-ink)/50'
                 }`}
                 aria-invalid={!!passwordError}
               />

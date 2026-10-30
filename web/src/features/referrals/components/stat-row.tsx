@@ -23,7 +23,7 @@ interface StatRowProps {
 
 export function StatRow({
   icon: Icon,
-  iconColor = "var(--brand-primary)",
+  iconColor = "var(--brand-ink)",
   value,
   label,
   sublabel,

@@ -61,7 +61,7 @@ export function ExternalAuthButtons() {
               href={externalStartPath(p.provider)}
               title={t('auth.continueWith', { provider: p.displayName })}
               aria-label={t('auth.continueWith', { provider: p.displayName })}
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] transition-colors hover:border-(--brand-primary)/50 hover:bg-[color:var(--color-surface)]"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] transition-colors hover:border-(--brand-ink)/50 hover:bg-[color:var(--color-surface)]"
             >
               <ProviderIcon provider={p.provider} className="h-5 w-5 shrink-0" />
             </a>
@@ -71,7 +71,7 @@ export function ExternalAuthButtons() {
               href={externalStartPath('TELEGRAM')}
               title={t('auth.continueWith', { provider: telegram.displayName })}
               aria-label={t('auth.continueWith', { provider: telegram.displayName })}
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] transition-colors hover:border-(--brand-primary)/50 hover:bg-[color:var(--color-surface)]"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] transition-colors hover:border-(--brand-ink)/50 hover:bg-[color:var(--color-surface)]"
             >
               <ProviderIcon provider="TELEGRAM" className="h-5 w-5 shrink-0" />
             </a>
