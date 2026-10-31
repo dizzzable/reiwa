@@ -1234,16 +1234,29 @@ export default function ConnectWizard() {
     <div
       data-connect-theme={theme === null ? 'inherit' : 'concept'}
       data-connect-mode="interactive"
-      className="relative min-h-[100dvh] overflow-x-clip"
+      className="min-h-[100dvh] overflow-x-clip"
       style={themeStyle}
     >
-      <div
-        aria-hidden="true"
-        className={cn(
-          'cw-aurora pointer-events-none absolute -left-1/4 -right-1/4 -top-[18%] h-[62%]',
-          step === 'done' ? 'opacity-80' : step === 'start' ? 'opacity-55' : 'opacity-30',
-        )}
-      />
+      {/* The glow belongs to the PAGE, not to this column. On a desktop the
+          walk sits in `<main>`'s centred `max-w-[46rem]` column, and a glow
+          laid out and clipped here was a lit rectangle with a hard seam down
+          each side — "градиент распределился только на модуль с подключением".
+          So this element is NOT positioned: the frame below takes `<main>`
+          (the nearest positioned ancestor) as its containing block, spans it
+          edge to edge — the sidebar is a sibling of `<main>`, so the glow stops
+          where the navigation begins — and escapes the `overflow-x-clip` above,
+          which clips only what this element contains. The frame clips the
+          aurora's own overhang itself, so `<main>` never gets content wider
+          than it is and is never scrolled sideways by a focus. On a phone
+          `<main>` is the full width and nothing changes. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-clip" data-wizard-glow="">
+        <div
+          className={cn(
+            'cw-aurora absolute -left-1/4 -right-1/4 -top-[18%] h-[62%]',
+            step === 'done' ? 'opacity-80' : step === 'start' ? 'opacity-55' : 'opacity-30',
+          )}
+        />
+      </div>
       <div className="relative mx-auto w-full max-w-[30rem] px-5 pt-4">
         <WizardHeader
           label={step === null ? t('connectWizard.title') : stepLabel(step)}

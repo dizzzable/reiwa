@@ -283,6 +283,22 @@ describe("the guided connect walk", () => {
     expect(container.querySelector("[data-wizard-chip]")?.textContent).toContain("Семейный");
   });
 
+  it("lays the glow out against the page, not against its own column", async () => {
+    // jsdom has no layout, so this pins the two facts the layout rests on: the
+    // frame is positioned, and nothing between it and `<main>` is. A `relative`
+    // back on the walk's root makes the root the containing block again, and on
+    // a desktop the glow shrinks back to a lit rectangle with a seam down each
+    // side of the column — which is how it was reported.
+    await render();
+    const frame = container.querySelector<HTMLElement>("[data-wizard-glow]");
+    expect(frame?.className).toContain("absolute");
+    expect(frame?.className).toContain("inset-0");
+    expect(frame?.querySelector(".cw-aurora")).not.toBeNull();
+    const walkRoot = frame?.parentElement;
+    expect(walkRoot?.getAttribute("data-connect-mode")).toBe("interactive");
+    expect(walkRoot?.className).not.toMatch(/\b(relative|absolute|fixed|sticky|transform)\b/);
+  });
+
   it("offers renewal instead of connecting a single expired subscription", async () => {
     subscriptionsPayload = { subscriptions: [subscription("a", "Пробный", { status: "EXPIRED" })] };
     await render();
