@@ -16,7 +16,7 @@
 
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Wifi, WifiOff } from "lucide-react";
+import { Infinity as InfinityIcon, Wifi, WifiOff } from "lucide-react";
 
 import { CustomIconView } from "@/components/ui/custom-icon-view";
 import { EmojiText } from "@/components/ui/emoji-text";
@@ -26,6 +26,7 @@ import { cn, formatDate } from "@/lib/utils";
 import type { Subscription } from "@/types/api";
 
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
+import { isLifetimeSubscription } from "@/features/renewal/lifetime-renewal";
 import { subscriptionCardEnd } from "./subscription-card-end";
 import { SubscriptionCardFrame } from "./subscription-card-frame";
 import {
@@ -242,8 +243,14 @@ export function SubscriptionCardContent({
             </p>
           </div>
         ) : trafficTotalGb === null ? (
-          <p className="w-fit text-[10px] font-medium tracking-wider uppercase">
-            {t("card.trafficUnlimited")}
+          // «Трафик ∞» rather than the words «Безлимитный трафик» (the owner,
+          // 31.10.2026: the sign says it). The words stay for a screen reader.
+          <p className="w-fit text-[10px] font-medium tracking-wider uppercase" data-card-traffic-unlimited="">
+            <span aria-hidden="true" className="flex items-center gap-1.5">
+              {t("card.traffic")}
+              <InfinityIcon className="size-4" strokeWidth={2.25} />
+            </span>
+            <span className="sr-only">{t("card.trafficUnlimited")}</span>
           </p>
         ) : null}
 
@@ -269,9 +276,17 @@ export function SubscriptionCardContent({
                 <p className="text-[10px] font-medium tracking-wider uppercase">
                   {t("card.expiresOn")}
                 </p>
-                <p className="truncate text-[13px] font-semibold @sm:text-sm">
-                  {formatDate(rawExpiry, dateZone)}
-                </p>
+                {isLifetimeSubscription(sub) ? (
+                  // No end date: «∞», not the «—» an unreadable date prints.
+                  <p className="flex h-5 items-center" data-card-lifetime="">
+                    <InfinityIcon aria-hidden="true" className="size-5" strokeWidth={2.25} />
+                    <span className="sr-only">{t("card.noEnd")}</span>
+                  </p>
+                ) : (
+                  <p className="truncate text-[13px] font-semibold @sm:text-sm">
+                    {formatDate(rawExpiry, dateZone)}
+                  </p>
+                )}
               </>
             )}
           </div>

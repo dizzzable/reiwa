@@ -1293,7 +1293,11 @@ export const en: RuDict = {
     /** Device read failed — the card slot must not claim "No devices yet". */
     devicesUnavailable: 'Unavailable',
     trafficUsed: 'Used',
+    /** Unlimited on the card: «Traffic ∞» is seen, `trafficUnlimited` is what a screen reader says. */
+    traffic: 'Traffic',
     trafficUnlimited: 'Unlimited traffic',
+    /** A subscription with no end: ∞ is seen under «Expires», this is for a screen reader. */
+    noEnd: 'never',
     actions: {
       buy: 'Buy',
       connect: 'Connect',

@@ -88,6 +88,16 @@ export function SubscriptionActions({
   // «Сменить тариф» is closed, and says why.
   const upgradeClosed = isUpgradeClosedForLifetime(sub, policyLifetime);
   const upgradeReasonId = useId();
+  // A lifetime subscription's two notes are not SHOWN (the owner, 31.10.2026:
+  // the greyed-out buttons and the ∞ on the card already say nothing is to be
+  // done). They stay in the page as the buttons' `aria-describedby`, so a
+  // screen reader still hears why. The trial's note stays visible: it names
+  // something to do — change the plan.
+  const LIFETIME_NOTE = "sr-only";
+  const renewalNoteClass =
+    reasonKey === "renewal.reason.lifetime"
+      ? LIFETIME_NOTE
+      : "col-span-4 px-1 pt-1 text-xs leading-relaxed text-[color:var(--brand-muted-foreground)]";
 
   // Top-up (докупка) is only meaningful when the subscription actually has
   // eligible add-on options. Query the SAME v2 subscription-scoped eligibility
@@ -161,7 +171,7 @@ export function SubscriptionActions({
         <p
           id={renewalReasonId}
           role="note"
-          className="col-span-4 px-1 pt-1 text-xs leading-relaxed text-[color:var(--brand-muted-foreground)]"
+          className={renewalNoteClass}
         >
           {renewalReason}
         </p>
@@ -170,7 +180,7 @@ export function SubscriptionActions({
         <p
           id={upgradeReasonId}
           role="note"
-          className="col-span-4 px-1 text-xs leading-relaxed text-[color:var(--brand-muted-foreground)]"
+          className={LIFETIME_NOTE}
         >
           {t("upgrade.lifetime")}
         </p>

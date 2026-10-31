@@ -111,6 +111,14 @@ function renewButtonElement(container: ParentNode): HTMLButtonElement {
   return button;
 }
 
+/** The `class` of the note a button's `aria-describedby` points at. */
+function noteClass(markup: string, id: string): string {
+  const start = markup.indexOf(`id="${id}"`);
+  if (start < 0) throw new Error(`no element with id ${id}`);
+  const tag = markup.slice(start, markup.indexOf(">", start));
+  return tag.match(/class="([^"]*)"/)?.[1] ?? "";
+}
+
 describe("SubscriptionActions renewal guard", () => {
   it.each([
     ["free", subscription({ id: "free-trial", isTrial: true, trialFree: true })],
@@ -126,6 +134,8 @@ describe("SubscriptionActions renewal guard", () => {
     expect(markup).toContain(`id="${descriptionId}"`);
     expect(markup).toContain('role="note"');
     expect(markup).toContain("renewal.reason.trial");
+    // Shown, unlike a lifetime's: it names something to do.
+    expect(noteClass(markup, descriptionId ?? "")).not.toContain("sr-only");
 
     const buttonElement = renewButtonElement(
       renderActionsIntoDom(sub, true, onRenew),
@@ -187,6 +197,8 @@ describe("SubscriptionActions renewal guard", () => {
       expect(markup).toContain(`id="${descriptionId}"`);
       expect(markup).toContain("renewal.reason.lifetime");
       expect(markup).not.toContain("renewal.reason.trial");
+      // Said to a screen reader, not printed under the buttons (the owner, 31.10.2026).
+      expect(noteClass(markup, descriptionId ?? "")).toBe("sr-only");
 
       const onRenew = vi.fn();
       const buttonElement = renewButtonElement(renderActionsIntoDom(sub, policyCanRenew, onRenew, policyLifetime));
@@ -279,6 +291,7 @@ describe("SubscriptionActions upgrade guard", () => {
     expect(descriptionId).toBeTruthy();
     expect(markup).toContain(`id="${descriptionId}"`);
     expect(markup).toContain("upgrade.lifetime");
+    expect(noteClass(markup, descriptionId ?? "")).toBe("sr-only");
 
     const onUpgrade = vi.fn();
     const element = upgradeButtonIntoDom(sub, policyLifetime, onUpgrade);
