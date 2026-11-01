@@ -134,6 +134,53 @@ export function telegramSupportOffered(body: unknown): boolean {
   );
 }
 
+/** The reiwa-owned values every public-config answer carries beside the panel's body. */
+export interface PublicConfigExtras {
+  readonly supportUsername: string | null;
+  readonly botUsername: string | null;
+  readonly webBaseUrl: string | null;
+}
+
+/** The extras from their raw settings: handles without `@`, the URL without a trailing `/`, blanks as `null`. */
+export function publicConfigExtrasOf(raw: {
+  readonly supportUsername?: string | null;
+  readonly botUsername?: string | null;
+  readonly webBaseUrl?: string | null;
+}): PublicConfigExtras {
+  const handle = (value: string | null | undefined): string | null =>
+    typeof value === 'string' && value.trim().length > 0 ? value.replace(/^@+/, '').trim() : null;
+  return {
+    supportUsername: handle(raw.supportUsername),
+    botUsername: handle(raw.botUsername),
+    webBaseUrl:
+      typeof raw.webBaseUrl === 'string' && raw.webBaseUrl.trim().length > 0
+        ? raw.webBaseUrl.replace(/\/+$/, '').trim()
+        : null,
+  };
+}
+
+/**
+ * What `GET /public-config` answers for a cached body — and, the same object,
+ * what the SPA document carries (`api/document-public-config.ts`), so the
+ * first frame and the first fetch can never disagree.
+ *
+ * The reiwa-owned support handle (env) is merged per answer, not cached, so
+ * the Support page can deep-link to the Telegram support account — unless the
+ * operator switched the Telegram button off («Тикеты поддержки» →
+ * «Настройки» → «Кнопка Telegram в поддержке кабинета», panel 0.9.7.76+): then
+ * the handle is withheld and the Support page shows tickets only. A panel that
+ * predates the switch sends no flag — the button stays.
+ */
+export function publicConfigResponseBody(body: unknown, extras: PublicConfigExtras): unknown {
+  if (body === null || typeof body !== 'object') return body;
+  return {
+    ...(body as Record<string, unknown>),
+    supportUsername: telegramSupportOffered(body) ? extras.supportUsername : null,
+    botUsername: extras.botUsername,
+    webBaseUrl: extras.webBaseUrl,
+  };
+}
+
 /** Drop the cached public-config (the version poll's reset for that group alone). */
 export function resetPublicConfigCache(): void {
   cached = null;
@@ -587,18 +634,7 @@ export function createBrandingRouter(deps: {
 }) {
   const { adminClient, logger, publicConfigPersistence } = deps;
   packsLastKnownGood = deps.lastKnownGood ?? NOOP_LAST_KNOWN_GOOD;
-  const supportUsername =
-    typeof deps.supportUsername === 'string' && deps.supportUsername.trim().length > 0
-      ? deps.supportUsername.replace(/^@+/, '').trim()
-      : null;
-  const botUsername =
-    typeof deps.botUsername === 'string' && deps.botUsername.trim().length > 0
-      ? deps.botUsername.replace(/^@+/, '').trim()
-      : null;
-  const webBaseUrl =
-    typeof deps.webBaseUrl === 'string' && deps.webBaseUrl.trim().length > 0
-      ? deps.webBaseUrl.replace(/\/+$/, '').trim()
-      : null;
+  const extras = publicConfigExtrasOf(deps);
   const router = Router();
 
   // Background-refresh closure has no `req` in scope, so `getRequestLogger`
@@ -645,24 +681,7 @@ export function createBrandingRouter(deps: {
       }
       res.setHeader("ETag", payload.etag);
       res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
-      // Merge the reiwa-owned support handle (env) into the cabinet config so
-      // the Support page can deep-link to the Telegram support account. Done
-      // per-response (not in the cached body) since it's a static env value.
-      //
-      // Unless the operator switched the Telegram button off («Тикеты
-      // поддержки» → «Настройки» → «Кнопка Telegram в поддержке кабинета»,
-      // panel 0.9.7.76+): then the handle is withheld and the Support page
-      // shows tickets only.
-      // A panel that predates the switch sends no flag — the button stays.
-      const body =
-        payload.body !== null && typeof payload.body === "object"
-          ? {
-              ...(payload.body as Record<string, unknown>),
-              supportUsername: telegramSupportOffered(payload.body) ? supportUsername : null,
-              botUsername,
-              webBaseUrl,
-            }
-          : payload.body;
+      const body = publicConfigResponseBody(payload.body, extras);
       res.json(body);
     } catch (e: unknown) {
       getRequestLogger(req).error({ err: e }, "GET /public-config failed");

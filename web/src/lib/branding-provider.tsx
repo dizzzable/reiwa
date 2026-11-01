@@ -33,10 +33,11 @@ import { useTranslation } from "react-i18next";
 
 import { getReiwaPublicConfig } from "@/lib/api-client";
 import {
-  readPublicConfigSnapshot,
+  readInitialPublicConfig,
   writePublicConfigSnapshot,
 } from "@/lib/public-config-snapshot";
 import {
+  BOOT_SCREEN_MAX_MS,
   DEFAULTS_PAINT_MESSAGE,
   DEFAULTS_PAINT_REPORT_AFTER_MS,
   publicConfigRefetchInBackground,
@@ -45,6 +46,7 @@ import {
   shouldPersistPublicConfig,
   shouldRefetchOnReturn,
   shouldReportDefaultsPaint,
+  shouldShowBootScreen,
 } from "@/lib/branding-provider-policy";
 import { reportClientError } from "@/lib/client-error-reporter";
 import { documentTitleOf } from "@/lib/document-title";
@@ -117,9 +119,22 @@ function readStoredThemeMode(key: string | null): BrandingThemeMode | null {
 }
 
 export function BrandingProvider({ children }: PropsWithChildren) {
-  const { i18n } = useTranslation();
-  const [snapshot] = useState(readPublicConfigSnapshot);
+  const { i18n, t } = useTranslation();
+  // What the first render starts from: the copy the API wrote into this
+  // document, else this browser's own saved copy (`public-config-snapshot.ts`).
+  // The document's copy is what lets a FIRST visit start in the operator's
+  // identity — the browser snapshot exists only from the second.
+  const [snapshot] = useState(readInitialPublicConfig);
   const queryClient = useQueryClient();
+  // With no copy at all, the page waits on a neutral screen rather than
+  // painting the built-in «Reiwa» — for at most `BOOT_SCREEN_MAX_MS`.
+  const [bootWindowOver, setBootWindowOver] = useState(false);
+  useEffect(() => {
+    if (snapshot !== null) return;
+    const timer = window.setTimeout(() => setBootWindowOver(true), BOOT_SCREEN_MAX_MS);
+    return () => window.clearTimeout(timer);
+  }, [snapshot]);
+  const bootPossible = snapshot === null && !bootWindowOver;
 
   const {
     data,
@@ -180,7 +195,7 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     // an upstream still warming. Self-terminating: `query.state.data` sees only
     // real fetched payloads, because `placeholderData` is never written to
     // the cache, so the polling stops for good on the first one that lands.
-    refetchInterval: (query) => publicConfigRefetchInterval(query.state.data),
+    refetchInterval: (query) => publicConfigRefetchInterval(query.state.data, bootPossible),
     // Poll REGARDLESS of what the platform claims about visibility, for as long
     // as the cabinet has never received an operator payload. Without this the
     // line above is decorative on the surface it was written for: React Query
@@ -232,6 +247,10 @@ export function BrandingProvider({ children }: PropsWithChildren) {
   }, [refetch]);
 
   const config = selectBrandingProviderConfig(data, snapshot);
+  // The neutral screen, and while it is up the head keeps what the server
+  // wrote: the effects below that name the brand (title, icons, home-screen
+  // title) would otherwise write the built-in «Reiwa» into it.
+  const booting = shouldShowBootScreen(snapshot, data !== undefined && !isPlaceholderData, bootWindowOver);
   const defaultThemeMode: BrandingThemeMode =
     config.branding.themeDefaultMode === "light" ? "light" : "dark";
   const themePreferenceKey = themeModeStorageKey(config.branding);
@@ -330,17 +349,19 @@ export function BrandingProvider({ children }: PropsWithChildren) {
   const projectName = config.platformBranding?.projectName;
   const brandName = config.branding.brandName;
   useEffect(() => {
+    if (booting) return;
     const title = documentTitleOf({ platformBranding: { webTitle, projectName }, branding: { brandName } });
     if (title !== null) {
       document.title = title;
     }
-  }, [webTitle, projectName, brandName]);
+  }, [booting, webTitle, projectName, brandName]);
 
   // Point the iOS "Add to Home Screen" icon at the operator's PWA icon / logo.
   // iOS reads `<link rel="apple-touch-icon">` from the DOM at install time, so
   // updating it here white-labels the home-screen icon on Safari (the dynamic
   // manifest covers Android/Chrome). Falls back to the static Reiwa icon.
   useEffect(() => {
+    if (booting) return;
     const icon =
       config.branding.pwaIconUrl?.trim() ||
       config.branding.logoUrl?.trim() ||
@@ -352,7 +373,7 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       document.head.appendChild(link);
     }
     link.href = icon;
-  }, [config.branding.pwaIconUrl, config.branding.logoUrl]);
+  }, [booting, config.branding.pwaIconUrl, config.branding.logoUrl]);
 
   // White-label the browser-tab favicon (`<link rel="icon">`, hardcoded to
   // `/Reiwa-logo.svg` in index.html). The apple-touch-icon effect above only
@@ -361,6 +382,7 @@ export function BrandingProvider({ children }: PropsWithChildren) {
   // shows on the installed PWA but NOT in the browser tab. Prefer the explicit
   // PWA icon, then the brand logo; fall back to the static Reiwa SVG.
   useEffect(() => {
+    if (booting) return;
     const favicon =
       config.branding.pwaIconUrl?.trim() ||
       config.branding.logoUrl?.trim() ||
@@ -375,12 +397,13 @@ export function BrandingProvider({ children }: PropsWithChildren) {
     // isn't mis-typed; let the browser sniff the actual content type.
     link.removeAttribute("type");
     link.href = favicon;
-  }, [config.branding.pwaIconUrl, config.branding.logoUrl]);
+  }, [booting, config.branding.pwaIconUrl, config.branding.logoUrl]);
 
   // White-label the iOS home-screen app title. Safari bakes the value of
   // `<meta name="apple-mobile-web-app-title">` (hardcoded "Reiwa" in index.html)
   // into the installed icon label, so patch it from the operator brand name.
   useEffect(() => {
+    if (booting) return;
     const name = config.branding.brandName?.trim();
     if (!name) return;
     let meta = document.querySelector<HTMLMetaElement>(
@@ -392,7 +415,7 @@ export function BrandingProvider({ children }: PropsWithChildren) {
       document.head.appendChild(meta);
     }
     meta.content = name;
-  }, [config.branding.brandName]);
+  }, [booting, config.branding.brandName]);
 
   // Keep browser/PWA chrome in sync after a successful live refresh. The
   // synchronous head bootstrap covers cold starts; this effect covers theme
@@ -453,8 +476,32 @@ export function BrandingProvider({ children }: PropsWithChildren) {
 
   return (
     <BrandingContext.Provider value={value}>
-      {children}
+      {booting ? <BrandingBootScreen label={t("common.loading")} /> : children}
     </BrandingContext.Provider>
+  );
+}
+
+/**
+ * What a visitor with no copy of the operator config sees while it is on its
+ * way: no name, no mark, no palette of anyone's — the page background and a
+ * quiet spinner. It used to be the built-in «Reiwa» identity, painted as a
+ * working cabinet (`BOOT_SCREEN_MAX_MS`).
+ */
+function BrandingBootScreen({ label }: { readonly label: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      data-branding-boot=""
+      className="flex h-dvh w-full items-center justify-center bg-(--brand-bg-primary) text-foreground"
+    >
+      <span
+        aria-hidden="true"
+        className="size-6 animate-spin rounded-full border-2 border-current border-t-transparent opacity-40 motion-reduce:animate-none"
+      />
+      <span className="sr-only">{label}</span>
+    </div>
   );
 }
 

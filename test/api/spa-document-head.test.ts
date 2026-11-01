@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../src/api/app.js';
+import { neutralizeStockHead } from '../../src/api/document-public-config.js';
 import { resetBrandingCache } from '../../src/api/routes/branding.js';
 import type { PublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
 import { setPolicyCache } from '../../src/infrastructure/admin-client/policy-cache.js';
@@ -152,7 +153,7 @@ describe('HEAD of a cabinet page (review R1-24)', () => {
     expect(get.headers['location']).toBe('/welcome?utm_source=x');
   });
 
-  it('HEAD / with the branding unreadable is 200 too — the build’s file, headers only', async () => {
+  it('HEAD / with the branding unreadable is 200 too — the unbranded shell, headers only', async () => {
     const { app } = build(async () => {
       throw new Error('connect ECONNREFUSED');
     });
@@ -161,7 +162,7 @@ describe('HEAD of a cabinet page (review R1-24)', () => {
     const head = await sendSocketless(app, { method: 'HEAD', url: '/' });
 
     expect(get.status).toBe(200);
-    expect(text(get.body)).toBe(TEMPLATE);
+    expect(text(get.body)).toBe(neutralizeStockHead(TEMPLATE));
     expect(head.status).toBe(200);
     expect(String(head.headers['content-type'])).toContain('text/html');
     expect(text(head.body)).toBe('');

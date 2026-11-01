@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from '../../src/api/app.js';
 import { resetBrandingCache } from '../../src/api/routes/branding.js';
+import { splitEmbeddedPublicConfig } from './embedded-public-config.js';
 import type { PublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
 
 const OPERATOR_ICON = '/uploads/branding/northern-lights.png';
@@ -358,8 +359,14 @@ describe('SPA document head (served bytes, before any JavaScript runs)', () => {
     // documented rule is that a vector still beats the stock icon.
     expect(document.body).toContain(`<link rel="apple-touch-icon" href="${OPERATOR_LOGO}" />`);
     expect(document.body).not.toContain(STOCK_ICON);
-    // Still not inlined: the fallback is a short path, so the document stays small.
-    expect(document.body.length).toBeLessThan(2_000);
+    // Still not inlined in the HEAD TAGS: the fallback is a short path. The
+    // config the document carries (`document-public-config.ts`) has the icon,
+    // as the public-config answer does — bounded by its own cap, which a real
+    // 512 KB icon is far over (`DOCUMENT_PUBLIC_CONFIG_MAX_LENGTH`).
+    const served = splitEmbeddedPublicConfig(document.body);
+    expect(served.html.length).toBeLessThan(2_000);
+    expect(served.html).not.toContain(huge);
+    expect(served.config).not.toBeNull();
 
     resetBrandingCache();
     const manifest = await get(

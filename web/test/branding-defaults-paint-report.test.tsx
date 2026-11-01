@@ -32,6 +32,7 @@ const reporter = vi.hoisted(() => ({ reportClientError: vi.fn() }));
 vi.mock("@/lib/api-client", () => api);
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
+    t: (key: string) => key,
     i18n: { language: "ru", changeLanguage: vi.fn().mockResolvedValue(undefined) },
   }),
 }));
@@ -39,6 +40,7 @@ vi.mock("react-i18next", () => ({
 // are empty at once.
 vi.mock("@/lib/public-config-snapshot", () => ({
   readPublicConfigSnapshot: () => null,
+  readInitialPublicConfig: () => null,
   writePublicConfigSnapshot: vi.fn(),
 }));
 vi.mock("@/lib/client-error-reporter", () => reporter);

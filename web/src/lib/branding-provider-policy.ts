@@ -54,8 +54,47 @@ export const PUBLIC_CONFIG_RETRY_INTERVAL_MS = 15_000;
  */
 export function publicConfigRefetchInterval(
   fetched: PublicConfig | undefined,
+  booting = false,
 ): number | false {
-  return fetched === undefined ? PUBLIC_CONFIG_RETRY_INTERVAL_MS : false;
+  if (fetched !== undefined) return false;
+  return booting ? BOOT_RETRY_INTERVAL_MS : PUBLIC_CONFIG_RETRY_INTERVAL_MS;
+}
+
+/**
+ * How long a visitor with NO copy of the operator config — none written into
+ * the document, none saved by this browser — waits on the neutral boot screen
+ * before the cabinet paints its built-in defaults after all.
+ *
+ * The screen replaced exactly that paint: a new visitor used to see the name
+ * «Reiwa», its mark and palette until the bootstrap request answered (the
+ * owner, 01.11.2026 — a friend «увидел reiwa а не мое название»). With the API
+ * writing its copy into every document it can, this screen is the rare case:
+ * a document served while the server itself held nothing, seconds after a
+ * start. Past this window the server is not starting, it has no config at all
+ * — and a working cabinet in the stock identity beats a spinner forever (the
+ * defaults paint is then reported, `DEFAULTS_PAINT_REPORT_AFTER_MS`).
+ */
+export const BOOT_SCREEN_MAX_MS = 12_000;
+
+/**
+ * The bootstrap poll's cadence while the boot screen is up. Faster than
+ * {@link PUBLIC_CONFIG_RETRY_INTERVAL_MS}: someone is looking at a spinner,
+ * and the window ends after {@link BOOT_SCREEN_MAX_MS} — four attempts at
+ * most, each answered from the server's process cache once it holds one.
+ */
+export const BOOT_RETRY_INTERVAL_MS = 3_000;
+
+/**
+ * Whether the page waits on the neutral boot screen instead of painting the
+ * built-in identity: no copy to start from (`seed`), no payload yet, and the
+ * window not over.
+ */
+export function shouldShowBootScreen(
+  seed: PublicConfig | null,
+  hasPayload: boolean,
+  windowOver: boolean,
+): boolean {
+  return seed === null && !hasPayload && !windowOver;
 }
 
 /**

@@ -98,6 +98,13 @@ async function start(): Promise<void> {
   await connectStore(sessionStore, "SessionStore");
   await connectStore(webSessionStore, "WebSessionStore");
 
+  // The operator config, read before the first visitor asks for it — up to
+  // three seconds, then the server listens and the reading goes on in the
+  // background (`public-config-warmup.ts`). After Redis: the saved copy is one
+  // of the two places it can come from.
+  const warmPublicConfig = app.locals["warmPublicConfig"] as (() => Promise<unknown>) | undefined;
+  if (warmPublicConfig !== undefined) await warmPublicConfig();
+
   const server = createServer(app);
   const port = config.PORT ?? config.REIWA_PORT;
   server.listen(port, config.REIWA_HOST, () => {

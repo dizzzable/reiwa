@@ -854,8 +854,21 @@
     };
   }
 
+  /**
+   * The public config the API wrote into this document, ahead of this script
+   * (`DOCUMENT_PUBLIC_CONFIG_ELEMENT_ID` in
+   * `src/application/ports/public-config-persistence.port.ts`, repeated here
+   * because this file imports nothing). The server's current copy: fresher
+   * than the stored one, and the only one a first visit has.
+   */
+  function documentSnapshotText() {
+    var element = document.getElementById ? document.getElementById("reiwa-public-config") : null;
+    var text = element ? element.textContent : null;
+    return typeof text === "string" && text.length > 0 ? text : null;
+  }
+
   try {
-    var rawSnapshot = window.localStorage.getItem(STORAGE_KEY);
+    var rawSnapshot = documentSnapshotText() || window.localStorage.getItem(STORAGE_KEY);
     if (!rawSnapshot || rawSnapshot.length > MAX_SNAPSHOT_LENGTH) return;
 
     var snapshot = JSON.parse(rawSnapshot);
@@ -1048,9 +1061,10 @@
     if (themeColor) themeColor.content = branding.bgPrimary;
     // The tab title, by the rule the API writes into the served document and
     // the app applies after boot (`src/lib/document-title.ts`). Only over the
-    // build's own "Reiwa": a document the API already named carries the
-    // current name, and this stored copy may be older than it.
-    if (document.title === STOCK_TITLE) {
+    // build's own "Reiwa", or the empty title of a document the API served
+    // with no config (`neutralizeStockHead`): a document the API already
+    // named carries the current name, and this stored copy may be older.
+    if (document.title === STOCK_TITLE || document.title === "") {
       var title = storedDocumentTitle(snapshot);
       if (title) document.title = title;
     }

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../src/api/app.js';
+import { neutralizeStockHead } from '../../src/api/document-public-config.js';
 import { resetBrandingCache } from '../../src/api/routes/branding.js';
 import type { PublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
 
@@ -173,9 +174,11 @@ describe('SPA document upstream lookups', () => {
 
     const response = await get(app, '/');
 
-    // Unbranded shell, served straight from disk — the documented fallback.
+    // Unbranded shell — the documented fallback — with the build's «Reiwa»
+    // taken out of the head (`neutralizeStockHead`), and no config to carry.
     expect(response.status).toBe(200);
-    expect(response.body).toBe(INDEX_HTML);
+    expect(response.body).toBe(neutralizeStockHead(INDEX_HTML));
+    expect(response.body).toContain('<title></title>');
     expect(panel.getEffective).not.toHaveBeenCalled();
   });
 });

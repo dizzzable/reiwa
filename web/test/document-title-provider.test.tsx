@@ -18,11 +18,13 @@ const api = vi.hoisted(() => ({ getReiwaPublicConfig: vi.fn() }));
 vi.mock("@/lib/api-client", () => api);
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
+    t: (key: string) => key,
     i18n: { language: "ru", changeLanguage: vi.fn().mockResolvedValue(undefined) },
   }),
 }));
 vi.mock("@/lib/public-config-snapshot", () => ({
   readPublicConfigSnapshot: () => null,
+  readInitialPublicConfig: () => null,
   writePublicConfigSnapshot: vi.fn(),
 }));
 vi.mock("@/lib/client-error-reporter", () => ({ reportClientError: vi.fn() }));

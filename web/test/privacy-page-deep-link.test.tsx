@@ -57,6 +57,7 @@ vi.mock("@/components/ui/dialog", () => ({
 }));
 
 import { BrandingProvider } from "../src/lib/branding-provider";
+import { BOOT_SCREEN_MAX_MS } from "../src/lib/branding-provider-policy";
 import PrivacyPage from "../src/features/settings/privacy-page";
 
 const EMAIL_ENABLED_CONFIG: PublicConfig = { ...DEFAULT_PUBLIC_CONFIG, emailEnabled: true };
@@ -177,8 +178,10 @@ describe("PrivacyPage cold-load deep link", () => {
       // `retry: 2` with the default backoff settles the query as `error` inside
       // ~3s. The placeholder branch only applies while the query is `pending`,
       // so the wait releases itself rather than pinning the page on defaults.
+      // With no copy of the config at all the page first waits on the neutral
+      // boot screen, for at most `BOOT_SCREEN_MAX_MS` — bounded too.
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10_000);
+        await vi.advanceTimersByTimeAsync(BOOT_SCREEN_MAX_MS + 10_000);
       });
 
       expect(search).toBe("");

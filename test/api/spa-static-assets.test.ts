@@ -53,7 +53,9 @@ describe('single-image SPA assets', () => {
       const clientRoute = await get(app, '/dashboard');
 
       expect(missingAsset).toEqual({ status: 404, body: '' });
-      expect(clientRoute).toEqual({ status: 200, body: '<!doctype html><title>Reiwa</title>' });
+      // The SPA document — with no operator config here, served with nobody's
+      // name in its title (`neutralizeStockHead`).
+      expect(clientRoute).toEqual({ status: 200, body: '<!doctype html><title></title>' });
     } finally {
       if (previousWebDist === undefined) delete process.env.REIWA_WEB_DIST;
       else process.env.REIWA_WEB_DIST = previousWebDist;

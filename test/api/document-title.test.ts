@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../src/api/app.js';
 import { applyBrandingHead, applyDocumentTitle } from '../../src/api/branding-pwa.js';
+import { neutralizeStockHead } from '../../src/api/document-public-config.js';
 import {
   MAX_DOCUMENT_NAME_LENGTH,
   STOCK_BRAND_NAME,
@@ -17,6 +18,7 @@ import {
 import { resetBrandingCache } from '../../src/api/routes/branding.js';
 import type { PublicConfigSnapshot } from '../../src/application/ports/public-config-persistence.port.js';
 import { setPolicyCache } from '../../src/infrastructure/admin-client/policy-cache.js';
+import { splitEmbeddedPublicConfig } from './embedded-public-config.js';
 import { sendSocketless } from './socketless-request.js';
 
 /**
@@ -314,19 +316,23 @@ describe('the document the API serves', () => {
     );
   });
 
-  it('with no name of the operator’s own, the document is exactly today’s: the build’s «Reiwa», no preview tags', async () => {
+  it('with no name of the operator’s own, the head is exactly today’s: the build’s «Reiwa», no preview tags', async () => {
     const branding = withBrand(STOCK_BRAND_NAME).branding;
     const app = build(panel(withBrand(STOCK_BRAND_NAME)).client);
 
     const res = await documentAt(app, '/');
+    // The document now carries the config it was rendered with
+    // (`document-public-config.ts`); everything else is as it was.
+    const served = splitEmbeddedPublicConfig(text(res.body));
 
     expect(res.status).toBe(200);
-    expect(text(res.body)).toBe(applyBrandingHead(TEMPLATE, branding as Parameters<typeof applyBrandingHead>[1]));
-    expect(text(res.body)).toContain('<title>Reiwa</title>');
-    expect(text(res.body)).not.toMatch(/og:|twitter:/);
+    expect(served.html).toBe(applyBrandingHead(TEMPLATE, branding as Parameters<typeof applyBrandingHead>[1]));
+    expect(served.html).toContain('<title>Reiwa</title>');
+    expect(served.html).not.toMatch(/og:|twitter:/);
+    expect((served.config as { branding: { brandName: string } }).branding.brandName).toBe(STOCK_BRAND_NAME);
   });
 
-  it('with the branding unreadable, the document is the build’s file, byte for byte', async () => {
+  it('with the branding unreadable, the document is the build’s file with nobody’s name in its head', async () => {
     const app = build({
       branding: {
         getReiwaPublicConfig: async () => {
@@ -338,7 +344,12 @@ describe('the document the API serves', () => {
     const res = await documentAt(app, '/');
 
     expect(res.status).toBe(200);
-    expect(text(res.body)).toBe(TEMPLATE);
+    // Not «Reiwa» in the tab, the home-screen title or a link preview fetched
+    // in this window (`neutralizeStockHead`); no config to carry.
+    expect(text(res.body)).toBe(neutralizeStockHead(TEMPLATE));
+    expect(text(res.body)).toContain('<title></title>');
+    expect(text(res.body)).not.toContain('apple-mobile-web-app-title');
+    expect(splitEmbeddedPublicConfig(text(res.body)).config).toBeNull();
   });
 
   it('is revalidated on every load, and a renamed operator is never answered 304 with the old name', async () => {

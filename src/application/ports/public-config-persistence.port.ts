@@ -17,6 +17,26 @@
 export const PUBLIC_CONFIG_COPY_UNREADABLE: unique symbol = Symbol('public-config copy: unreadable');
 
 /**
+ * The SPA document carries the public config it was rendered with, so the
+ * first frame is the operator's even for a visitor whose browser has never
+ * saved a copy — a new subscriber used to see the built-in «Reiwa» until the
+ * bootstrap request answered. The API writes it into the head as
+ * `<script id=… type="application/json">` (`api/document-public-config.ts`);
+ * `web/public/theme-bootstrap.js` repeats the id, being dependency-free.
+ */
+export const DOCUMENT_PUBLIC_CONFIG_ELEMENT_ID = 'reiwa-public-config';
+
+/**
+ * The longest copy written into a document, in UTF-16 units. A config of
+ * uploaded-file URLs is a few kilobytes; only inline `data:` images reach this
+ * (logo, PWA icon, card logo, texture — each legal up to 512 KB), and a
+ * document must not carry those on every page load — the rule the head icons
+ * already keep (`MAX_INLINE_HEAD_ICON_LENGTH`). Above it the document carries
+ * no copy, and a first visit waits on the neutral screen for the fetch.
+ */
+export const DOCUMENT_PUBLIC_CONFIG_MAX_LENGTH = 64_000;
+
+/**
  * The stable minimum of the public-config contract. Additional fields are
  * preserved verbatim so adding an admin-side field does not make older Reiwa
  * snapshots unusable.

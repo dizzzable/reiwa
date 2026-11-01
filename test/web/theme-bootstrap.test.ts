@@ -29,6 +29,10 @@ interface BootstrapStorage {
   readonly entries?: Readonly<Record<string, string>>;
   /** Keys whose read throws, the way a locked-down browser answers. */
   readonly blocked?: readonly string[];
+  /** The text of the copy the API wrote into the document (`#reiwa-public-config`). */
+  readonly documentConfig?: string;
+  /** The title the document arrived with; the build's «Reiwa» by default. */
+  readonly title?: string;
 }
 
 function executeBootstrap(snapshot: unknown, storage: BootstrapStorage = {}) {
@@ -40,7 +44,11 @@ function executeBootstrap(snapshot: unknown, storage: BootstrapStorage = {}) {
   const entries = new Map(Object.entries(storage.entries ?? {}));
   const blocked = new Set(storage.blocked ?? []);
   const document = {
-    title: "Reiwa",
+    title: storage.title ?? "Reiwa",
+    getElementById: (id: string) =>
+      id === "reiwa-public-config" && storage.documentConfig !== undefined
+        ? { textContent: storage.documentConfig }
+        : null,
     documentElement: {
       dataset,
       classList: {
@@ -941,5 +949,49 @@ describe("pre-paint brightness parity with resolveBrandingThemeMode", () => {
       "dark",
       chose("light"),
     );
+  });
+});
+
+describe("pre-paint theme from the copy the document carries", () => {
+  // The API writes the operator config into the document (`#reiwa-public-config`,
+  // `src/api/document-public-config.ts`). A first visit has nothing stored, and
+  // this is what used to let the built-in palette paint before the bundle ran.
+  const operator = {
+    ...DEFAULT_PUBLIC_CONFIG,
+    branding: {
+      ...DEFAULT_PUBLIC_CONFIG.branding,
+      brandName: "Northern Lights",
+      bgPrimary: "#101820",
+      bgSecondary: "#1b2733",
+    },
+  };
+
+  it("paints a first visit — nothing stored — from the document's copy, without asking storage for one", () => {
+    const result = executeBootstrap(undefined, { documentConfig: JSON.stringify(operator) });
+
+    expect(result.properties.get("--brand-bg-primary")).toBe("#101820");
+    expect(result.themeColor.content).toBe("#101820");
+    expect(result.reads).not.toContain(STORAGE_KEY);
+  });
+
+  it("prefers the document's copy — the server's current one — over an older stored one", () => {
+    const stored = { ...operator, branding: { ...operator.branding, bgPrimary: "#ffffff" } };
+
+    const result = executeBootstrap(stored, { documentConfig: JSON.stringify(operator) });
+
+    expect(result.properties.get("--brand-bg-primary")).toBe("#101820");
+  });
+
+  it("falls back to the stored copy when the document carries none or a broken one", () => {
+    expect(executeBootstrap(operator).properties.get("--brand-bg-primary")).toBe("#101820");
+    expect(
+      executeBootstrap(operator, { documentConfig: "{not json" }).properties.get("--brand-bg-primary"),
+    ).toBeUndefined();
+  });
+
+  it("names the tab from the stored copy over the empty title of a document served with no config", () => {
+    const result = executeBootstrap(operator, { title: "" });
+
+    expect(result.document.title).toBe("Northern Lights");
   });
 });

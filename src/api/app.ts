@@ -57,6 +57,8 @@ import {
   getPublicConfigPayload,
   heldCustomEmojiPacksVersion,
   heldPublicConfigVersion,
+  publicConfigExtrasOf,
+  publicConfigResponseBody,
   resetCustomEmojiPacksCache,
   resetPublicConfigCache,
 } from "./routes/branding.js";
@@ -103,6 +105,8 @@ import {
   SPA_HEAD_DEADLINE_MS,
   withHeadDeadline,
 } from "./spa-head-deadline.js";
+import { embedPublicConfig, neutralizeStockHead } from "./document-public-config.js";
+import { PUBLIC_CONFIG_WARMUP, warmPublicConfig } from "./public-config-warmup.js";
 import { applyUploadRelayHeaders } from "./lib/upload-relay-headers.js";
 
 export interface CreateAppDeps {
@@ -403,15 +407,37 @@ export function createApp(deps: CreateAppDeps) {
   // an extra factory layer per route.
   app.locals['adminClient'] = deps.adminClient;
 
+  // The reiwa-owned values beside the panel's body, one set for the route and
+  // for the copy the SPA document carries — the two must never disagree.
+  const publicConfigExtrasInput = {
+    supportUsername: config.BOT_SUPPORT_USERNAME ?? null,
+    botUsername: config.BOT_USERNAME ?? null,
+    webBaseUrl: reiwaPublicUrl,
+  };
+  const publicConfigExtras = publicConfigExtrasOf(publicConfigExtrasInput);
+
+  // Read the operator config before the first visitor asks for it
+  // (`public-config-warmup.ts`). Called by `main.ts` before it listens — not
+  // here, so the many apps the tests build read nothing they did not ask for.
+  app.locals['warmPublicConfig'] = (): Promise<'held' | 'pending'> =>
+    warmPublicConfig(
+      () =>
+        getPublicConfigPayload(
+          deps.adminClient,
+          undefined,
+          publicConfigPersistence,
+          publicConfigRejectionNotifier,
+        ),
+      { ...PUBLIC_CONFIG_WARMUP, logger },
+    );
+
   // ── Routers (all mounted at /api/v1; sub-paths live inside each router) ───
   app.use(
     "/api/v1",
     createBrandingRouter({
       adminClient: deps.adminClient,
       logger,
-      supportUsername: config.BOT_SUPPORT_USERNAME ?? null,
-      botUsername: config.BOT_USERNAME ?? null,
-      webBaseUrl: reiwaPublicUrl,
+      ...publicConfigExtrasInput,
       publicConfigPersistence,
       publicConfigRejectionNotifier,
       lastKnownGood,
@@ -782,10 +808,16 @@ export function createApp(deps: CreateAppDeps) {
       const branding = (body as { branding?: unknown }).branding;
       // The operator's name as the title and in the link-preview tags, from
       // the same copy (`document-title.ts`): a save in the panel reaches the
-      // next document with the copy, no restart.
-      return applyDocumentTitle(
-        applyBrandingHead(template, branding as Parameters<typeof applyBrandingHead>[1]),
-        body,
+      // next document with the copy, no restart. And the copy itself, exactly
+      // as `GET /public-config` would answer it, so the page's first frame is
+      // the operator's for a visitor with no saved copy too
+      // (`document-public-config.ts`).
+      return embedPublicConfig(
+        applyDocumentTitle(
+          applyBrandingHead(template, branding as Parameters<typeof applyBrandingHead>[1]),
+          body,
+        ),
+        publicConfigResponseBody(body, publicConfigExtras),
       );
     };
     const sendSpaDocument = (res: Response, next: NextFunction): void => {
@@ -801,6 +833,21 @@ export function createApp(deps: CreateAppDeps) {
           // configured) or the template is unreadable. The unbranded shell is
           // still a working cabinet, and the React head effects recover the
           // icon once the SPA boots — never fail a document over a favicon.
+          //
+          // Unbranded, not «Reiwa»: the build's own name is taken out of the
+          // head (`neutralizeStockHead`) and the page waits on a neutral
+          // screen until the config arrives. Only a template that cannot be
+          // read goes out as the build's file.
+          let neutral: string | null = null;
+          try {
+            neutral = neutralizeStockHead(readIndexTemplate());
+          } catch {
+            neutral = null;
+          }
+          if (neutral !== null) {
+            res.type("html").send(neutral);
+            return;
+          }
           res.sendFile(indexHtml, (err) => {
             if (err) next(err);
           });

@@ -7,11 +7,39 @@
  * source of truth over a successfully fetched response.
  */
 
-import { isPublicConfigSnapshot } from "../../../src/application/ports/public-config-persistence.port";
+import {
+  DOCUMENT_PUBLIC_CONFIG_ELEMENT_ID,
+  DOCUMENT_PUBLIC_CONFIG_MAX_LENGTH,
+  isPublicConfigSnapshot,
+} from "../../../src/application/ports/public-config-persistence.port";
 import type { PublicConfig } from "@/types/branding";
 
 const STORAGE_KEY = "reiwa_public_config_snapshot_v1";
 const MAX_SNAPSHOT_LENGTH = 512_000;
+
+/**
+ * The public config the API wrote into this document (`api/document-public-config.ts`):
+ * the server's current copy, so fresher than this browser's own snapshot and —
+ * the reason it exists — present for a visitor who has none. `null` when the
+ * document carries none (served while the server had no config) or it does
+ * not validate; like the snapshot, never a source of truth over a response.
+ */
+export function readDocumentPublicConfig(): PublicConfig | null {
+  if (typeof document === "undefined") return null;
+  try {
+    const raw = document.getElementById(DOCUMENT_PUBLIC_CONFIG_ELEMENT_ID)?.textContent;
+    if (!raw || raw.length > DOCUMENT_PUBLIC_CONFIG_MAX_LENGTH) return null;
+    const value: unknown = JSON.parse(raw);
+    return isPublicConfig(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the first render starts from: the document's copy, else this browser's snapshot, else nothing. */
+export function readInitialPublicConfig(): PublicConfig | null {
+  return readDocumentPublicConfig() ?? readPublicConfigSnapshot();
+}
 
 export function readPublicConfigSnapshot(): PublicConfig | null {
   const storage = getLocalStorage();
