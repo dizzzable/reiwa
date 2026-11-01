@@ -85,17 +85,27 @@ export function embedPublicConfig(html: string, body: unknown): string {
 const STOCK_TITLE_ELEMENT = /<title\b[^>]*>\s*Reiwa\s*<\/title\s*>/i;
 const STOCK_APPLE_WEB_APP_TITLE_TAG =
   /[ \t]*<meta\b[^>]*\bname=(["'])apple-mobile-web-app-title\1[^>]*\bcontent=(["'])Reiwa\2[^>]*>[ \t]*\r?\n?/i;
+const STOCK_FAVICON_TAG = /<link\b[^>]*\brel=(["'])icon\1[^>]*\bhref=(["'])\/Reiwa-logo\.svg\2[^>]*>/i;
+const STOCK_APPLE_TOUCH_ICON_TAG =
+  /[ \t]*<link\b[^>]*\brel=(["'])apple-touch-icon\1[^>]*\bhref=(["'])\/icons\/icon-192x192\.png\2[^>]*>[ \t]*\r?\n?/i;
 
 /**
- * The document served when the server has NO operator config at all — the
- * panel unreachable and no saved copy readable, which after a start is a
+ * The document served when the server has NO operator config at all — nothing
+ * in memory, and neither the panel nor the copy in Redis answered within the
+ * document's deadline (or no copy was ever saved), which after a start is a
  * matter of seconds (`public-config-warmup.ts`). It used to be the build's
  * file byte for byte, naming «Reiwa» in the tab, in the home-screen title, and
  * in any link preview fetched in that window — and Telegram keeps a preview.
- * Now nothing is named: an empty `<title>` (the browser shows the address)
- * and no home-screen title. The page itself waits on a neutral screen until
- * the config arrives (`web/src/lib/branding-provider.tsx`).
+ * Now nothing of Reiwa's is in it: an empty `<title>` (the browser shows the
+ * address), no home-screen title, an empty tab icon (`data:,`, which also
+ * keeps the browser from asking for `/favicon.ico`) and no home-screen icon.
+ * The page itself waits on a neutral screen until the config arrives
+ * (`web/src/lib/branding-provider.tsx`), which writes the operator's icons.
  */
 export function neutralizeStockHead(html: string): string {
-  return html.replace(STOCK_TITLE_ELEMENT, () => '<title></title>').replace(STOCK_APPLE_WEB_APP_TITLE_TAG, () => '');
+  return html
+    .replace(STOCK_TITLE_ELEMENT, () => '<title></title>')
+    .replace(STOCK_APPLE_WEB_APP_TITLE_TAG, () => '')
+    .replace(STOCK_FAVICON_TAG, () => '<link rel="icon" href="data:," />')
+    .replace(STOCK_APPLE_TOUCH_ICON_TAG, () => '');
 }

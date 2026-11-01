@@ -332,11 +332,16 @@ describe('SPA document head (served bytes, before any JavaScript runs)', () => {
     expect(response.body.match(/rel="apple-touch-icon"/g)).toHaveLength(1);
   });
 
-  it('leaves the stock head in place when the operator config is unavailable', async () => {
+  it('carries none of Reiwa’s icons when the operator config is unavailable', async () => {
+    // It used to leave the stock head in place: Reiwa's home-screen icon and
+    // tab mark on a document served with no config. Now nobody's
+    // (`neutralizeStockHead`); the SPA writes the operator's once it has them.
     const response = await get(makeApp(null), '/dashboard');
 
     expect(response.status).toBe(200);
-    expect(response.body).toContain(`<link rel="apple-touch-icon" href="${STOCK_ICON}" />`);
+    expect(response.body).not.toContain(STOCK_ICON);
+    expect(response.body).not.toContain('apple-touch-icon');
+    expect(response.body).toContain('<link rel="icon" href="data:," />');
   });
 
   it('does not inline an oversized data: icon into every document', async () => {

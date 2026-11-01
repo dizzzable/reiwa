@@ -111,14 +111,20 @@ describe('embedPublicConfig', () => {
 });
 
 describe('neutralizeStockHead', () => {
-  it('takes the build’s «Reiwa» out of the title and the home-screen title, and nothing else', () => {
+  it('takes everything of Reiwa’s out of the head — title, home-screen title, tab icon, home-screen icon — and nothing else', () => {
     const neutral = neutralizeStockHead(TEMPLATE);
 
     expect(TEMPLATE).toContain('<title>Reiwa</title>');
+    expect(TEMPLATE).toContain('/Reiwa-logo.svg');
+    expect(TEMPLATE).toContain('/icons/icon-192x192.png');
     expect(neutral).toContain('<title></title>');
     expect(neutral).not.toContain('apple-mobile-web-app-title');
+    expect(neutral).not.toContain('Reiwa');
+    expect(neutral).toContain('<link rel="icon" href="data:," />');
+    expect(neutral).not.toContain('apple-touch-icon');
+    expect(neutral).toContain('<link rel="manifest" href="/manifest.webmanifest" />');
     expect(neutral).toContain('<script src="/theme-bootstrap.js"></script>');
-    expect(neutral.split('\n').length).toBe(TEMPLATE.split('\n').length - 1);
+    expect(neutral.split('\n').length).toBe(TEMPLATE.split('\n').length - 2);
   });
 
   it('leaves an operator’s title alone', () => {
