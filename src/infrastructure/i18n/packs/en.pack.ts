@@ -49,6 +49,8 @@ export const EN_PACK: Readonly<Record<string, string>> = {
   'profile.devices': 'Devices: {{count}} available',
   'profile.devices_unlimited': 'Devices: unlimited',
   'profile.traffic': 'Traffic',
+  // The merged subscription's second traffic line (see the RU pack).
+  'profile.traffic_extra': 'Extra traffic',
   'profile.until': 'Until',
   'profile.unlimited': 'Unlimited',
   'common.not_available': 'N/A',

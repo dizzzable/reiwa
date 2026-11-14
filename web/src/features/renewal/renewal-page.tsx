@@ -23,6 +23,7 @@ import { readSessionCheckRefusal } from "@/lib/session-check";
 import { StadiumButton } from "@/components/ui/stadium-button";
 import { TipCard } from "@/components/ui/tip-card";
 import { PromoInput } from "@/features/purchase/components/promo-input";
+import { subscriptionsRenewingOneRow } from "@/features/dashboard/merged-subscription-cards";
 import { useRenewalStore } from "@/stores/renewal.store";
 import type { GatewayOption } from "@/stores/purchase.store";
 import type { RenewalOptionItem, Subscription } from "@/types/api";
@@ -496,10 +497,16 @@ function SelectSubscriptions() {
   // price. We renew the subscriptions the user already owns — the plan/tariff
   // is implicit, so the list shows subscriptions, not plans.
   const optionById = new Map((options?.items ?? []).map((o) => [o.subscriptionId, o]));
+  // ONE ROW PER SOLD MERGED SUBSCRIPTION. A subscription the panel sold as the
+  // bundle's tariff (`merge.bundleRenewal`) is several profiles and ONE product:
+  // one row, the merged plan's own price, and the panel extends every profile of
+  // the set from that one payment. Two plans the customer bought separately keep
+  // their own rows — the panel prices and renews each on its own.
+  const ownSubscriptions = subscriptionsRenewingOneRow(subsData?.subscriptions ?? []);
   // Never a subscription with no end date: there is nothing to renew, and the
   // panel refuses it — even where an older panel's list still calls it
   // renewable.
-  const renewable = (subsData?.subscriptions ?? [])
+  const renewable = ownSubscriptions
     .map((sub) => ({ sub, option: optionById.get(sub.id) }))
     .filter(
       (row): row is { sub: Subscription; option: RenewalOptionItem } =>
@@ -508,7 +515,7 @@ function SelectSubscriptions() {
 
   // Trial subscriptions can't be renewed — the user must UPGRADE to a regular
   // plan instead. Detect them so we can route to the upgrade flow.
-  const trialSubs = (subsData?.subscriptions ?? []).filter((sub) => {
+  const trialSubs = ownSubscriptions.filter((sub) => {
     const opt = optionById.get(sub.id);
     return sub.isTrial && (opt === undefined || !opt.renewable);
   });
@@ -585,8 +592,28 @@ function SelectSubscriptions() {
       <div className="px-5 space-y-2">
         {renewable.map(({ sub, option }, index) => {
           const checked = selectedSubscriptionIds.includes(sub.id);
+          // TWO HALVES ARE ONE PRODUCT. A customer who holds two plans of one
+          // bundle but did not buy it as the merged tariff (`bundleRenewal`
+          // false, so both keep their own rows) can tick BOTH of them — and the
+          // panel then refuses the whole request with
+          // `RENEWAL_DUPLICATE_MERGED_SUBSCRIPTION`, which surfaces as a generic
+          // checkout failure. One row per bundle is selected at a time instead.
+          const bundleId = sub.merge?.bundleId;
+          const bundleTakenElsewhere =
+            bundleId !== undefined &&
+            !checked &&
+            selectedSubscriptionIds.some((id) => {
+              const selected = renewable.find((row) => row.sub.id === id);
+              return selected?.sub.merge?.bundleId === bundleId;
+            });
           const needsPlan = (option.requiresPlanSelection ?? false) && !selectedPlans[sub.id];
-          const planLabel = sub.plan?.name ?? option.planName ?? "";
+          // A merged subscription is named by the PLAN IT WAS SOLD AS — the
+          // bundle's own tariff, which is what the panel priced — not by the
+          // member plan whose profile happens to face the app.
+          const planLabel =
+            sub.merge !== undefined && option.planName
+              ? option.planName
+              : (sub.plan?.name ?? option.planName ?? "");
           const currentDays = selectedDurations[sub.id] ?? option.durationDays;
           const durationLabel = currentDays
             ? t("purchase.duration.days", { count: currentDays })
@@ -603,6 +630,7 @@ function SelectSubscriptions() {
                 onSelect={() => toggleSubscription(sub.id)}
                 control="check"
                 index={index}
+                disabled={bundleTakenElsewhere}
                 subtitle={subtitle}
                 trailing={
                   needsPlan ? (
@@ -872,10 +900,17 @@ function SelectGateway() {
     }
     return null;
   };
-  const currentPlanId = (subscriptionId: string): string | null =>
-    queryClient
+  const currentPlanId = (subscriptionId: string): string | null => {
+    const subscription = queryClient
       .getQueryData<{ subscriptions?: Subscription[] }>(subscriptionQueryKeys.all)
-      ?.subscriptions?.find((subscription) => subscription.id === subscriptionId)?.plan?.id ?? null;
+      ?.subscriptions?.find((entry) => entry.id === subscriptionId);
+    if (subscription === undefined) return null;
+    // A merged subscription renews onto the BUNDLE's own plan row, not onto the
+    // member plan its snapshot names (`bundleRenewal`): comparing the member id
+    // made every merged renewal look like a plan change, so Platega's saved-card
+    // offer silently disappeared on exactly the renewals that keep the plan.
+    return subscription.merge?.bundlePlanId ?? subscription.plan?.id ?? null;
+  };
   // On Platega the provider repeats one sum for one subscription on its own
   // period, so its option needs exactly one subscription on such a term, and
   // one it renews on the plan it is on: onto another plan the panel refuses it
@@ -1271,7 +1306,9 @@ function RenewalReview() {
         {items.map((item) => {
           const sub = subById.get(item.subscriptionId);
           const title = sub ? subscriptionTitle(sub) : (item.planName ?? t("renewal.unknownPlan"));
-          const planLabel = sub?.plan?.name ?? item.planName ?? "";
+          // The same product the list named: a merged subscription is the
+          // BUNDLE's tariff, not the member plan whose profile faces the app.
+          const planLabel = sub?.merge?.bundleName ?? sub?.plan?.name ?? item.planName ?? "";
           const durationLabel = item.durationDays
             ? t("purchase.duration.days", { count: item.durationDays })
             : "";

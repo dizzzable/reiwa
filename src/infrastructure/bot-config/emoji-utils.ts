@@ -28,6 +28,10 @@ export const DEFAULT_UNICODE: Record<string, string> = {
   SUB_PROFILE:     '👤',
   SUB_DEVICES:     '📱',
   SUB_TRAFFIC:     '📈',
+  // The second traffic line of an объединённая подписка. Own slot so an
+  // operator can put a different premium emoji beside «Обходы»; the same glyph
+  // by default, which is what the owner asked the greeting to look like.
+  SUB_TRAFFIC_EXTRA: '📈',
   SUB_EXPIRY:      '📅',
   TRAFFIC_OK:      '🟢',
   TRAFFIC_WARN:    '🟠',
@@ -113,6 +117,83 @@ export function lineWithEmoji(
   }
 
   return { text: fullText, entities };
+}
+
+/**
+ * UTF-16 length of ONE glyph as a Telegram entity has to cover it.
+ *
+ * `firstCharLengthUtf16` answers "how many units is the first CODE POINT". An
+ * emoji presented as text usually carries a variation selector AFTER its base
+ * character (`⚪️` = U+26AA U+FE0F), and Telegram renders that selector as part
+ * of the same emoji: an entity that covers only the base leaves U+FE0F behind
+ * as a stray text character. So the entity length must span both.
+ */
+export function glyphLengthUtf16(glyph: string): number {
+  const base = firstCharLengthUtf16(glyph);
+  return glyph.codePointAt(base) === 0xfe0f ? base + 1 : base;
+}
+
+/**
+ * Build a line with TWO custom-emoji-capable glyphs: the leading slot glyph at
+ * offset 0 and a status dot INSIDE the text:
+ *
+ *   "EMOJI textBeforeDot DOT textAfterDot"   →   "📈 Трафик — 🟢 0% (…)"
+ *
+ * The traffic lines of the mini-profile need exactly this: the operator can
+ * bind a premium emoji both to `SUB_TRAFFIC` and to the status dot slots
+ * (`TRAFFIC_OK` / `TRAFFIC_WARN` / `TRAFFIC_FULL`), and Telegram renders a
+ * custom emoji only through its own entity. Reporting both offsets here keeps
+ * the caller from guessing where the dot landed — the text around it is
+ * operator-editable and may itself contain that glyph.
+ *
+ * Offsets are UTF-16 units (what Telegram counts) and the dot may be astral
+ * (🟢, 2 units) or a BMP character upgraded by VS16 (⚪️, also 2) — see
+ * {@link glyphLengthUtf16}. A slot without a premium id contributes no
+ * entity, so a non-premium deployment gets exactly the unicode text.
+ *
+ * @param emojiKey      Leading slot key (e.g. 'SUB_TRAFFIC')
+ * @param dotKey        Status-dot slot key (e.g. 'TRAFFIC_OK')
+ * @param textBeforeDot Copy between the leading glyph and the dot
+ * @param textAfterDot  Copy after the dot (the caller keeps any of its spaces)
+ * @returns { text, entities } — entities is empty when no premium id is set
+ */
+export function lineWithEmojiAndDot(
+  emojiKey: string,
+  dotKey: string,
+  textBeforeDot: string,
+  textAfterDot: string,
+  botEmojis?: BotEmojiMap | null,
+): { text: string; entities: TgCustomEmojiEntity[] } {
+  const emoji = resolveUnicode(emojiKey, botEmojis);
+  const dot = resolveUnicode(dotKey, botEmojis);
+  const separator = textBeforeDot.startsWith('\n') ? '' : ' ';
+  const beforeDot = emoji + separator + textBeforeDot;
+  const text = beforeDot + dot + textAfterDot;
+  const entities: TgCustomEmojiEntity[] = [];
+
+  const emojiPremiumId = resolvePremiumId(emojiKey, botEmojis);
+  const emojiLength = glyphLengthUtf16(emoji);
+  if (emojiPremiumId && emojiLength > 0) {
+    entities.push({
+      type: 'custom_emoji',
+      offset: 0,
+      length: emojiLength,
+      custom_emoji_id: emojiPremiumId,
+    });
+  }
+
+  const dotPremiumId = resolvePremiumId(dotKey, botEmojis);
+  const dotLength = glyphLengthUtf16(dot);
+  if (dotPremiumId && dotLength > 0) {
+    entities.push({
+      type: 'custom_emoji',
+      offset: utf16Length(beforeDot),
+      length: dotLength,
+      custom_emoji_id: dotPremiumId,
+    });
+  }
+
+  return { text, entities };
 }
 
 /**

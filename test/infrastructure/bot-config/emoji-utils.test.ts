@@ -20,8 +20,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_UNICODE,
   firstCharLengthUtf16,
+  glyphLengthUtf16,
   joinLines,
   lineWithEmoji,
+  lineWithEmojiAndDot,
   resolvePlaceholders,
   resolveUnicode,
   utf16Length,
@@ -113,6 +115,101 @@ describe('lineWithEmoji', () => {
       PACKAGE: { unicode: '📦', tgEmojiId: '   ' },
     });
     expect(out.entities).toEqual([]);
+  });
+});
+
+describe('glyphLengthUtf16', () => {
+  it('returns 0 for an empty string', () => {
+    expect(glyphLengthUtf16('')).toBe(0);
+  });
+
+  it('counts a BMP glyph as 1 unit', () => {
+    expect(glyphLengthUtf16('●')).toBe(1);
+  });
+
+  it('counts an astral emoji as 2 units', () => {
+    expect(glyphLengthUtf16('🟢')).toBe(2);
+  });
+
+  it('counts a BMP glyph plus its VS16 selector as 2 units', () => {
+    // '⚪️' is U+26AA U+FE0F: the selector belongs to the same rendered emoji.
+    expect(glyphLengthUtf16('⚪️')).toBe(2);
+  });
+});
+
+describe('lineWithEmojiAndDot', () => {
+  const PREFIX = '📈 Трафик — '; // leading glyph + separator + copy
+  const PREFIX_LENGTH = 12; // 2 (📈) + 1 (space) + 9 ('Трафик — ')
+
+  it('emits no entities when neither slot has a premium id', () => {
+    const out = lineWithEmojiAndDot('SUB_TRAFFIC', 'TRAFFIC_OK', 'Трафик — ', ' 0%');
+    expect(out.text).toBe('📈 Трафик — 🟢 0%');
+    expect(out.entities).toEqual([]);
+  });
+
+  it('emits the leading slot glyph as an entity at offset 0', () => {
+    const out = lineWithEmojiAndDot('SUB_TRAFFIC', 'TRAFFIC_OK', 'Трафик — ', ' 0%', {
+      SUB_TRAFFIC: { unicode: '📈', tgEmojiId: '5001' },
+    });
+    expect(out.text).toBe('📈 Трафик — 🟢 0%');
+    expect(out.entities).toEqual([
+      { type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: '5001' },
+    ]);
+  });
+
+  it('places a BMP dot entity at its UTF-16 offset with length 1', () => {
+    const out = lineWithEmojiAndDot('SUB_TRAFFIC', 'TRAFFIC_OK', 'Трафик — ', ' 0%', {
+      TRAFFIC_OK: { unicode: '●', tgEmojiId: '5002' },
+    });
+    expect(out.text).toBe('📈 Трафик — ● 0%');
+    expect(out.text.indexOf('●')).toBe(PREFIX_LENGTH);
+    expect(out.entities).toEqual([
+      { type: 'custom_emoji', offset: PREFIX_LENGTH, length: 1, custom_emoji_id: '5002' },
+    ]);
+  });
+
+  it('places an astral dot entity at its UTF-16 offset with length 2', () => {
+    const out = lineWithEmojiAndDot('SUB_TRAFFIC', 'TRAFFIC_WARN', 'Трафик — ', ' 0%', {
+      TRAFFIC_WARN: { unicode: '🟠', tgEmojiId: '5003' },
+    });
+    expect(out.text).toBe('📈 Трафик — 🟠 0%');
+    expect(out.entities).toEqual([
+      { type: 'custom_emoji', offset: PREFIX_LENGTH, length: 2, custom_emoji_id: '5003' },
+    ]);
+  });
+
+  it('covers a VS16 dot with its selector (length 2, not 1)', () => {
+    const out = lineWithEmojiAndDot('SUB_TRAFFIC', 'TRAFFIC_FULL', 'Трафик — ', ' 100%', {
+      TRAFFIC_FULL: { unicode: '⚪\uFE0F', tgEmojiId: '5004' },
+    });
+    expect(out.text).toBe('📈 Трафик — ⚪\uFE0F 100%');
+    expect(out.entities).toEqual([
+      { type: 'custom_emoji', offset: PREFIX_LENGTH, length: 2, custom_emoji_id: '5004' },
+    ]);
+  });
+
+  it('emits both entities when the leading slot and the dot are premium', () => {
+    const out = lineWithEmojiAndDot('SUB_TRAFFIC', 'TRAFFIC_FULL', 'Трафик — ', ' 100%', {
+      SUB_TRAFFIC: { unicode: '📈', tgEmojiId: '5001' },
+      TRAFFIC_FULL: { unicode: '🔴', tgEmojiId: '5005' },
+    });
+    expect(out.text).toBe('📈 Трафик — 🔴 100%');
+    expect(out.entities).toEqual([
+      { type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: '5001' },
+      { type: 'custom_emoji', offset: PREFIX_LENGTH, length: 2, custom_emoji_id: '5005' },
+    ]);
+  });
+
+  it('keeps the dot glued to the copy when the copy starts with a newline', () => {
+    // No separator is added when the first part itself starts a new line, so
+    // the dot offset drops the space the other cases carry.
+    const out = lineWithEmojiAndDot('SUB_TRAFFIC', 'TRAFFIC_OK', '\nТрафик — ', ' 0%', {
+      TRAFFIC_OK: { unicode: '🟢', tgEmojiId: '5002' },
+    });
+    expect(out.text).toBe('📈\nТрафик — 🟢 0%');
+    expect(out.entities).toEqual([
+      { type: 'custom_emoji', offset: utf16Length('📈\nТрафик — '), length: 2, custom_emoji_id: '5002' },
+    ]);
   });
 });
 

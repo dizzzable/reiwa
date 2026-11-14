@@ -261,6 +261,18 @@ const RENEWAL_ERROR_MESSAGES: Record<string, { status: number; message: string }
     status: 400,
     message: "The subscription has no end date and is never renewed.",
   },
+  // TWO HALVES OF ONE MERGED SUBSCRIPTION IN ONE RENEWAL. A merged subscription
+  // is one product whose profiles the panel extends together from one payment
+  // (rezeis `priceRenewalItems`), so renewing two of its profiles separately is
+  // refused. It used to arrive as a bare 400 with no mapping and left here as a
+  // 500 "Failed to create renewal checkout", which the page answered by
+  // returning to the review that produced it — an endless loop for the customer.
+  // A conflict: re-pricing shows ONE row for the product, and the next attempt
+  // is a single renewal.
+  RENEWAL_DUPLICATE_MERGED_SUBSCRIPTION: {
+    status: 409,
+    message: "A merged subscription is renewed as one product. Review the renewal again.",
+  },
 };
 
 /** Maps known upstream renewal outcomes to a safe, stable BFF contract. */

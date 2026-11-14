@@ -27,6 +27,7 @@ import type { Subscription } from "@/types/api";
 
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
 import { isLifetimeSubscription } from "@/features/renewal/lifetime-renewal";
+import type { MergedCardTraffic } from "../merged-subscription-traffic";
 import { subscriptionCardEnd } from "./subscription-card-end";
 import { SubscriptionCardFrame } from "./subscription-card-frame";
 import {
@@ -61,6 +62,12 @@ export interface SubscriptionCardProps {
    * Normal cards continue to resolve the live operator branding themselves.
    */
   visual?: ResolvedSubscriptionCardVisual;
+  /**
+   * The объединённая подписка behind this card, when the customer holds one: an
+   * unlimited plan in the bundle makes the card's own row say «Трафик ∞» (the
+   * owner, 14.11.2026). Nothing else of the group is printed on the card.
+   */
+  mergeTraffic?: MergedCardTraffic;
 }
 
 export function SubscriptionCard({
@@ -70,6 +77,7 @@ export function SubscriptionCard({
   effectActive,
   effectWarm,
   visual,
+  mergeTraffic,
 }: SubscriptionCardProps) {
   const { branding } = useBranding();
   const brandingVisual = useMemo(
@@ -87,6 +95,7 @@ export function SubscriptionCard({
       <SubscriptionCardContent
         subscription={subscription}
         firstDevice={firstDevice}
+        mergeTraffic={mergeTraffic}
       />
     </SubscriptionCardFrame>
   );
@@ -95,6 +104,7 @@ export function SubscriptionCard({
 export interface SubscriptionCardContentProps {
   readonly subscription: Subscription;
   readonly firstDevice?: string | null;
+  readonly mergeTraffic?: MergedCardTraffic;
 }
 
 /**
@@ -104,6 +114,7 @@ export interface SubscriptionCardContentProps {
 export function SubscriptionCardContent({
   subscription,
   firstDevice,
+  mergeTraffic,
 }: SubscriptionCardContentProps) {
   const { t } = useTranslation();
   const { customIcons } = useBranding();
@@ -118,6 +129,7 @@ export function SubscriptionCardContent({
   // Traffic progress (0–1). When unlimited, show full bar.
   const trafficUsedGb = sub.trafficUsed ?? null;
   const trafficTotalGb = sub.trafficLimit ?? null;
+  const mergedUnlimited = mergeTraffic?.hasUnlimited === true;
   const trafficProgress =
     trafficTotalGb !== null && trafficTotalGb > 0 && trafficUsedGb !== null
       ? Math.min(trafficUsedGb / trafficTotalGb, 1)
@@ -193,7 +205,7 @@ export function SubscriptionCardContent({
         <div className="flex min-w-0 items-center gap-2">
           {nameIcon}
           <span className="truncate text-[13px] font-semibold tracking-wide @sm:text-sm">
-            {sub.plan?.name ?? t("subscription.planFallback")}
+            {sub.merge?.bundleName ?? sub.plan?.name ?? t("subscription.planFallback")}
           </span>
         </div>
         <span
@@ -221,7 +233,18 @@ export function SubscriptionCardContent({
 
       {/* Bottom row: traffic + expiry + first device */}
       <div className="relative space-y-2.5">
-        {trafficProgress !== null ? (
+        {mergedUnlimited ? (
+          // The bundle holds an unlimited plan, so the product the customer
+          // bought IS unlimited: the row says so even though the card's own
+          // subscription is the limited half (the owner, 14.11.2026).
+          <p className="w-fit text-[10px] font-medium tracking-wider uppercase" data-card-traffic-unlimited="">
+            <span aria-hidden="true" className="flex items-center gap-1.5">
+              {t("card.traffic")}
+              <InfinityIcon className="size-4" strokeWidth={2.25} />
+            </span>
+            <span className="sr-only">{t("card.trafficUnlimited")}</span>
+          </p>
+        ) : trafficProgress !== null ? (
           <div className="space-y-1">
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-[rgb(var(--card-foreground-rgb)/0.24)] backdrop-blur-sm">
               <div

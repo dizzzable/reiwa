@@ -55,6 +55,8 @@ import {
   selectNewestUnfocusedProvisioningKey,
   subscriptionCarouselItemKey,
 } from "./subscription-lifecycle-policy";
+import { mergedCardTrafficBySubscriptionId } from "./merged-subscription-traffic";
+import { subscriptionsShowingOneCard } from "./merged-subscription-cards";
 import { useSubscriptionProvisioning } from "./use-subscription-provisioning";
 import { PushPromptCard } from "@/features/push-prompt/push-prompt-card";
 import { subscriptionQueryKeys } from "@/lib/subscription-query-keys";
@@ -102,6 +104,14 @@ export default function DashboardPage() {
   });
 
   const subscriptions = allSubsData?.subscriptions ?? [];
+  // ONE card per merged subscription: the customer holds one product (one link,
+  // one device count), even though the panel still stores one row per member
+  // plan. The dropped rows keep feeding the card's traffic pager and the merge
+  // link — see `merged-subscription-cards.ts`.
+  const cardSubscriptions = useMemo(
+    () => subscriptionsShowingOneCard(subscriptions),
+    [subscriptions],
+  );
   const {
     runtimes: provisioningRuntimes,
     completeHandoff,
@@ -113,12 +123,18 @@ export default function DashboardPage() {
   const carouselItems = useMemo(
     () =>
       buildSubscriptionCarouselItems(
-        subscriptions,
+        cardSubscriptions,
         provisioningRuntimes,
       ),
-    [provisioningRuntimes, subscriptions],
+    [cardSubscriptions, provisioningRuntimes],
   );
   const carouselItemKeys = carouselItems.map((item) => item.key);
+  // The plans of an объединённая подписка: the card's traffic row pages through
+  // them, an unlimited plan first («Доп» lines under the card are gone).
+  const mergeTrafficById = useMemo(
+    () => mergedCardTrafficBySubscriptionId(subscriptions),
+    [subscriptions],
+  );
   const carouselItemKeySignature = carouselItemKeys.join("|");
   const [activeItemKey, setActiveItemKey] = useState<string | null>(() =>
     selectNewestUnfocusedProvisioningKey(
@@ -451,6 +467,7 @@ export default function DashboardPage() {
             <SubscriptionCarousel
               items={carouselItems}
               firstDeviceById={firstDeviceById}
+              mergeTrafficById={mergeTrafficById}
               activeItemKey={resolvedActiveItemKey}
               onActiveItemKeyChange={setActiveItemKey}
               onProvisioningComplete={handleProvisioningComplete}
