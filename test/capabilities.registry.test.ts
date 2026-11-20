@@ -60,6 +60,9 @@ const CONTRACT: ReadonlyArray<readonly [id: string, since: string]> = [
   ['api.config-version-poll', '0.9.7.53'],
   ['bot.config-version-poll', '0.9.7.53'],
   ['bot.stale-button-menu', '0.9.7.53'],
+  // Broadcast media through the relay (`/notify` + `/notify-broadcast` take a
+  // `media { type, fileId }` field) — the same release on both sides.
+  ['bot.broadcast-media-notify', '0.9.7.64'],
 ];
 
 const SURFACES: readonly ReiwaSurface[] = ['api', 'bot', 'worker'];

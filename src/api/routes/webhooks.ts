@@ -213,6 +213,18 @@ const bannerUrlSchema = z.union([
 const optionalBannerUrlSchema = bannerUrlSchema.optional().catch(undefined);
 
 /**
+ * A broadcast's media: the photo or video the post was composed with, as a
+ * Telegram `file_id` minted by the admin's own upload (same-bot token). Unlike
+ * `bannerUrl` this is NOT decoration — for a media broadcast the image IS the
+ * delivery — so a malformed `media` field is a loud 400 (the panel records
+ * FAILED with the refusal), never a silent drop to a text-only post.
+ */
+const mediaSchema = z.object({
+  type: z.enum(["photo", "video"]),
+  fileId: z.string().trim().min(1).max(256).regex(/^[A-Za-z0-9_-]+$/),
+});
+
+/**
  * Metadata objects are intentionally NOT `.strict()`. rezeis and reiwa ship as
  * separate images, so a field added on the admin side lands here before this
  * service is updated; rejecting unknown keys would 400 the whole event during
@@ -240,8 +252,8 @@ function parseRelayMetadata<T>(schema: z.ZodType<T>, metadata: Record<string, un
  * Event contract (reads `{ event, metadata }` from the admin webhook body):
  *   - `reiwa.bot.invalidate`    → POST bot `/invalidate`        { reason }, after marking the hint for the bot's next press (`markHinted`)
  *   - `reiwa.platform.policy_invalidated` → POST bot `/invalidate-policy` { reason }, after dropping this process's policy and public-config copies and marking the hint; best-effort (see its case)
- *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl? }
- *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons? }
+ *   - `reiwa.user.notify`       → POST bot `/notify`            { eventId, telegramId, text, parseMode?, buttons?, bannerUrl?, media? }
+ *   - `reiwa.channel.broadcast` → POST bot `/notify-broadcast`  { eventId, chatId, topicThreadId?, text, parseMode?, buttons?, media? }
  *   - `reiwa.channel.broadcast.document` → POST bot `/notify-broadcast-document` { eventId, chatId, content, filename?, caption?, topicThreadId?, parseMode? }
  *   - `reiwa.dev.notify`        → POST bot `/notify-dev`            { eventId?, text, parseMode?, preview?, media?, buttons? }
  *   - `reiwa.dev.notify.document` → POST bot `/notify-dev-document` { eventId?, content, filename?, caption?, parseMode? }
@@ -367,7 +379,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           break;
         }
         case "reiwa.user.notify": {
-          const parsed = parseRelayMetadata(z.object({ telegramId: telegramIdSchema, text: textSchema, eventId: eventIdSchema, parseMode: parseModeSchema.optional(), buttons: buttonsSchema.optional(), bannerUrl: optionalBannerUrlSchema }), meta);
+          const parsed = parseRelayMetadata(z.object({ telegramId: telegramIdSchema, text: textSchema, eventId: eventIdSchema, parseMode: parseModeSchema.optional(), buttons: buttonsSchema.optional(), bannerUrl: optionalBannerUrlSchema, media: mediaSchema.optional() }), meta);
           const { telegramId, text, eventId } = parsed;
           // The bot's /notify only accepts a plain Telegram numeric id
           // (1-19 digits). A non-numeric / out-of-range value (e.g. a dirty
@@ -390,6 +402,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
             ...(parsed.buttons ? { buttons: parsed.buttons } : {}),
             ...(parsed.bannerUrl ? { bannerUrl: parsed.bannerUrl } : {}),
+            ...(parsed.media ? { media: parsed.media } : {}),
           }, BOT_RELAY_TIMEOUT_MS, "retry");
           // Surface the Telegram message id back to admin so it can persist
           // it (broadcast edits/deletes need it within the 48h window).
@@ -408,9 +421,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
               // A broadcast's test send: the post as a recipient gets it — its
               // photo or video and its own buttons (`handleNotifyDev`).
               preview: z.boolean().optional(),
-              media: z
-                .object({ type: z.enum(["photo", "video"]), fileId: z.string().trim().min(1).max(256) })
-                .optional(),
+              media: mediaSchema.optional(),
               buttons: buttonsSchema.optional(),
             }),
             meta,
@@ -444,7 +455,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
           break;
         }
         case "reiwa.channel.broadcast": {
-          const parsed = parseRelayMetadata(z.object({ chatId: chatIdSchema, text: textSchema, eventId: eventIdSchema, topicThreadId: topicThreadIdSchema.optional(), parseMode: parseModeSchema.optional(), buttons: buttonsSchema.optional() }), meta);
+          const parsed = parseRelayMetadata(z.object({ chatId: chatIdSchema, text: textSchema, eventId: eventIdSchema, topicThreadId: topicThreadIdSchema.optional(), parseMode: parseModeSchema.optional(), buttons: buttonsSchema.optional(), media: mediaSchema.optional() }), meta);
           const relayed = await relayToBot("/notify-broadcast", {
             eventId: parsed.eventId,
             chatId: parsed.chatId,
@@ -452,6 +463,7 @@ export function createRezeisWebhookRouter(deps: { config: ReiwaConfig }) {
             ...(parsed.topicThreadId ? { topicThreadId: parsed.topicThreadId } : {}),
             ...(parsed.parseMode ? { parseMode: parsed.parseMode } : {}),
             ...(parsed.buttons ? { buttons: parsed.buttons } : {}),
+            ...(parsed.media ? { media: parsed.media } : {}),
           }, BOT_RELAY_TIMEOUT_MS, "retry");
           // Echo Telegram's message id, as `reiwa.user.notify` does. For a
           // broadcast's channel post (`eventId` `broadcast-channel:<id>`) the

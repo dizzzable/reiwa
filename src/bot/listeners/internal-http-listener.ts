@@ -159,6 +159,8 @@ interface NotifyPayload {
   readonly parseMode?: unknown;
   readonly buttons?: unknown;
   readonly bannerUrl?: unknown;
+  /** A broadcast's photo/video by Telegram file id; the text is its caption. */
+  readonly media?: unknown;
 }
 
 interface BroadcastPayload {
@@ -168,6 +170,8 @@ interface BroadcastPayload {
   readonly text?: unknown;
   readonly parseMode?: unknown;
   readonly buttons?: unknown;
+  /** A broadcast's photo/video by Telegram file id; the text is its caption. */
+  readonly media?: unknown;
 }
 
 interface BroadcastDocumentPayload {
@@ -195,8 +199,8 @@ interface DevNotifyPayload {
   readonly buttons?: unknown;
 }
 
-/** A preview's photo or video, or `null` for none or a malformed one. */
-function readPreviewMedia(input: unknown): { readonly type: 'photo' | 'video'; readonly fileId: string } | null {
+/** A relayed photo or video (preview or a media broadcast), or `null` for none or a malformed one. */
+function readMediaInput(input: unknown): { readonly type: 'photo' | 'video'; readonly fileId: string } | null {
   if (input === null || typeof input !== 'object') return null;
   const { type, fileId } = input as { type?: unknown; fileId?: unknown };
   if ((type !== 'photo' && type !== 'video') || typeof fileId !== 'string' || fileId.trim().length === 0) return null;
@@ -1133,7 +1137,7 @@ async function handleNotifyDev(opts: DevNotifyHandlerOptions): Promise<void> {
   // the universal "Close" button, so the dev can dismiss a handled event
   // (routed by the shared `close` callback → deletes the message).
   const preview = payload.preview === true;
-  const media = preview ? readPreviewMedia(payload.media) : null;
+  const media = preview ? readMediaInput(payload.media) : null;
   const keyboard = preview
     ? buildKeyboard(payload.buttons, opts.keyboardUrls, emojiCtx)
     : new InlineKeyboard().text('❌ Закрыть', 'close');
@@ -1603,6 +1607,15 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
     res.end();
     return;
   }
+  const media = readMediaInput(payload.media);
+  if (payload.media !== undefined && media === null) {
+    // A media broadcast's image IS the delivery — the panel records a text-only
+    // post as SENT, so a malformed field must not quietly become one. Loud 400;
+    // the claim is not held yet, so nothing to release.
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
   if (!IDEMPOTENCY_CACHE.claim(eventId)) {
     // Replay. Delivered: answer with the message id we kept, because the
     // caller's bar for a user notification is proof — a bodiless 204 here was
@@ -1625,12 +1638,34 @@ async function handleNotify(opts: NotifyHandlerOptions): Promise<void> {
 
   try {
     let sent: { message_id: number } | undefined;
+    // A media broadcast → the photo/video IS the delivery. Unlike a banner this
+    // never degrades to a text-only post: a Telegram refusal (caption over 1024
+    // rendered, a file_id the bot does not know, a group the bot left) reaches
+    // the outer catch and is answered 422 — the panel writes the recipient
+    // down as FAILED with Telegram's own reason, and the batch retry sends the
+    // image again. 403 (the bot was blocked) falls through to the same blocked
+    // path a text notification takes.
+    if (media !== null) {
+      const captionOptions = {
+        caption: body.text,
+        parse_mode: parseMode,
+        caption_entities: body.entities,
+        reply_markup,
+      };
+      sent =
+        media.type === 'photo'
+          ? await bot.api.sendPhoto(telegramId, media.fileId, captionOptions)
+          : await bot.api.sendVideo(telegramId, media.fileId, {
+              ...captionOptions,
+              supports_streaming: true,
+            });
+    }
     // Banner-tagged notification → send as a photo with the text as caption
     // (Telegram caption limit 1024). Relative `/uploads/...` URLs are fetched
     // from rezeis by the resolver, which answers `null` rather than throw when
     // that download fails. Any photo failure falls back to text so a banner
     // glitch never drops the notification.
-    if (bannerUrl !== null && body.text.length <= TG_CAPTION_LIMIT) {
+    else if (bannerUrl !== null && body.text.length <= TG_CAPTION_LIMIT) {
       const photo = await resolveBannerSource(bannerUrl, {
         rezeisAdminUrl: opts.rezeisAdminUrl ?? null,
         logger: { warn: (o, m) => opts.logger.warn(o as Record<string, unknown>, m) },
@@ -1739,6 +1774,15 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     res.end();
     return;
   }
+  const media = readMediaInput(payload.media);
+  if (payload.media !== undefined && media === null) {
+    // The channel copy of a media broadcast must not silently lose its image:
+    // a malformed `media` field is a panel bug, and the operator's public post
+    // would read as a text announcement. Loud 400, before any claim is held.
+    res.statusCode = 400;
+    res.end();
+    return;
+  }
   if (!IDEMPOTENCY_CACHE.claim(eventId)) {
     answerReplay(res, IDEMPOTENCY_CACHE.replayOf(eventId));
     return;
@@ -1753,12 +1797,34 @@ async function handleBroadcast(opts: BroadcastHandlerOptions): Promise<void> {
     : undefined;
 
   try {
-    const sent = await bot.api.sendMessage(chatId, body.text, {
-      parse_mode: body.parseMode,
-      entities: body.entities,
-      reply_markup,
-      message_thread_id: messageThreadId,
-    });
+    // A media broadcast's channel copy carries the image too — the operator
+    // sees the post as a recipient does. The text is the caption (the panel
+    // enforces the 1024 caption budget at compose time); a Telegram refusal
+    // lands in `answerTelegramFailure` below, which says 422 and names why.
+    const sent =
+      media !== null
+        ? media.type === 'photo'
+          ? await bot.api.sendPhoto(chatId, media.fileId, {
+              caption: body.text,
+              parse_mode: body.parseMode,
+              caption_entities: body.entities,
+              reply_markup,
+              message_thread_id: messageThreadId,
+            })
+          : await bot.api.sendVideo(chatId, media.fileId, {
+              caption: body.text,
+              parse_mode: body.parseMode,
+              caption_entities: body.entities,
+              reply_markup,
+              message_thread_id: messageThreadId,
+              supports_streaming: true,
+            })
+        : await bot.api.sendMessage(chatId, body.text, {
+            parse_mode: body.parseMode,
+            entities: body.entities,
+            reply_markup,
+            message_thread_id: messageThreadId,
+          });
     // ECHO TELEGRAM'S OWN MESSAGE ID, as `handleNotify` already does. A bodiless
     // 204 is classified by the panel as `unconfirmed` — "the instruction was
     // accepted, nothing is claimed about what happened to it" — and the relay
