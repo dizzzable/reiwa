@@ -517,6 +517,78 @@ describe('Rezeis webhook relay', () => {
     expect(body?.somethingRezeisAddedLater).toBeUndefined();
   });
 
+  // ── media broadcast contract ──────────────────────────────────────────────
+
+  it('relays a photo broadcast through user.notify with its media field', async () => {
+    const { status, body } = await relay(
+      'reiwa.user.notify',
+      {
+        eventId: 'broadcast:evt-media-1',
+        telegramId: '123456789',
+        text: '<b>Заголовок</b>\n\nТекст с <tg-emoji emoji-id="5368324170671202286">🎉</tg-emoji>',
+        parseMode: 'HTML',
+        buttons: [{ text: '🎁 Активировать промокод', webAppPath: '/promo?code=SUMMER' }],
+        media: { type: 'photo', fileId: 'AgACAgIAAxkBAAEBftpk' },
+      },
+      200,
+      { messageId: 21 },
+    );
+    expect(status).toBe(200);
+    expect(body?.media).toEqual({ type: 'photo', fileId: 'AgACAgIAAxkBAAEBftpk' });
+    expect(body?.buttons).toEqual([{ text: '🎁 Активировать промокод', webAppPath: '/promo?code=SUMMER' }]);
+  });
+
+  it('relays a video broadcast through channel.broadcast with its media field', async () => {
+    const { status, body } = await relay(
+      'reiwa.channel.broadcast',
+      {
+        eventId: 'broadcast-channel:evt-media-2',
+        chatId: '-1001234567890',
+        text: '<b>Заголовок</b>',
+        parseMode: 'HTML',
+        media: { type: 'video', fileId: 'BAACAgIAAxkBAAEBftpk' },
+      },
+      200,
+      { messageId: 22 },
+    );
+    expect(status).toBe(200);
+    expect(body?.media).toEqual({ type: 'video', fileId: 'BAACAgIAAxkBAAEBftpk' });
+  });
+
+  it('answers 400 to a user.notify media of an unknown type instead of dropping it', async () => {
+    // Media IS the delivery for a media broadcast — quietly dropping the field
+    // would send the caption alone and the panel would record SENT. A loud 400
+    // is what the panel's FAILED row with a refusal detail is built from.
+    const { status } = await relay(
+      'reiwa.user.notify',
+      {
+        eventId: 'evt-media-3',
+        telegramId: '123456789',
+        text: 'text alone must not win',
+        media: { type: 'animation', fileId: 'AgACAgIAAxkBAAEBftpk' },
+      },
+      200,
+      { messageId: 23 },
+    );
+    expect(status).toBe(400);
+  });
+
+  it('answers 400 to a channel.broadcast media fileId that is not a file id', async () => {
+    const { status } = await relay(
+      'reiwa.channel.broadcast',
+      {
+        eventId: 'evt-media-4',
+        chatId: '-1001234567890',
+        text: 'text',
+        media: { type: 'photo', fileId: 'not a file id!' },
+      },
+      200,
+      { messageId: 24 },
+    );
+    expect(status).toBe(400);
+  });
+
+
   // ── text + caption edges ──────────────────────────────────────────────────
 
   it('forwards a single-space text placeholder instead of 400-ing a banner notification', async () => {

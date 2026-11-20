@@ -181,6 +181,17 @@ export const CABINET_CAPABILITIES: readonly CabinetCapability[] = Object.freeze(
     since: '0.9.7.53',
     implementedBy: 'src/bot/pages/stale-button.ts',
   },
+  // Broadcast media rides the relay: `/notify` and `/notify-broadcast` take a
+  // `media { type: photo|video, fileId }` field and render the caption
+  // themselves — HTML, `<tg-emoji>` premium emoji and the promo `webAppPath`
+  // button the panel cannot build. The panel sends a media broadcast's Telegram
+  // leg through the relay only for a cabinet that declares this; an older one
+  // keeps the panel's own direct Bot API send (plain caption, menu button only).
+  {
+    id: 'bot.broadcast-media-notify',
+    since: '0.9.7.64',
+    implementedBy: 'src/bot/listeners/internal-http-listener.ts',
+  },
 ]);
 
 /** The areas each process speaks for. The API serves the web app, so it speaks for `web` too. */
