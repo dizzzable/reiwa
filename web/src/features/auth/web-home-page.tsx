@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 
 import { NetworkBg } from '@/components/ui/network-bg'
+import { AuthBackdrop } from '@/components/ui/auth-backdrop'
 import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
 import { useBranding } from '@/lib/branding-provider'
 import { botSignin } from '@/lib/api-client'
@@ -230,6 +231,7 @@ export default function WebHomePage() {
   return (
     <div className="relative flex h-dvh flex-col items-center justify-center overflow-hidden bg-(--brand-bg-primary)">
       <NetworkBg intensity="medium" />
+      <AuthBackdrop />
 
       <div className="relative z-10 flex flex-col items-center gap-8 px-8 text-center">
         <EntryBrandTile size="lg" />

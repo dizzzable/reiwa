@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react'
-import { useNavigate, Link, useLocation, useSearchParams } from 'react-router'
+import { useNavigate, useLocation, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
+import { AuthBackdrop } from '@/components/ui/auth-backdrop'
 import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
+import { PressPlate } from '@/components/ui/press-plate'
+import { PressLink } from '@/components/ui/press-link'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { login } from '@/lib/api-client'
 import { hashPassword } from '@/lib/crypto'
@@ -66,7 +69,7 @@ export default function SignInPage() {
   // The account has no password yet (imported without one): where its reset
   // link went. Not an error — the way in for the real owner.
   const [passwordNotSet, setPasswordNotSet] = useState<PasswordNotSetDelivery | null>(null)
-  const { botUsername } = useBranding()
+  const { branding, botUsername } = useBranding()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rateLimitSeconds, setRateLimitSeconds] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -205,37 +208,41 @@ export default function SignInPage() {
     // the inner column keeps content centered while the keyboard is closed.
     <div className="scroll-area entry-scroller relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-4">
       <NetworkBg intensity="medium" />
+      <AuthBackdrop />
 
-      <div className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col items-center justify-center gap-8 py-8">
+      <div className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col items-center justify-center gap-6 py-8">
         {/* Logo */}
         <EntryBrandTile />
 
-        {/* Title */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="text-center"
-        >
-          <h1 className="text-2xl font-bold tracking-wide text-[color:var(--brand-foreground)]">
-            {t('auth.signInTitle')}
-          </h1>
-          <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">
-            {t('auth.signInDescription')}
-          </p>
-        </motion.div>
-
-        {/* Form. Opacity-only entrance: the glass inputs inside carry
+        {/* The entry sheet. Everything the visitor acts on — the title, the
+            fields, the primary action, the two secondary ones and the external
+            providers — sits on one piece of glass over the background.
+            Opacity-only entrance: the glass children inside carry
             backdrop-filter, and moving them (y-slide) re-blurs their backdrop
             every frame on WebKit. */}
-        <motion.form
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.25 }}
-          onSubmit={handleSubmit}
-          className="flex w-full flex-col gap-4"
-          noValidate
+          transition={{ delay: 0.12 }}
+          className="entry-panel w-full px-5 py-6"
         >
+          <div className="text-center">
+            <h1 className="text-2xl font-bold tracking-wide text-[color:var(--brand-foreground)]">
+              {t('auth.signInTitle')}
+            </h1>
+            <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">
+              {t('auth.signInDescription')}
+            </p>
+          </div>
+
+          <motion.form
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.22 }}
+            onSubmit={handleSubmit}
+            className="mt-5 flex w-full flex-col gap-4"
+            noValidate
+          >
           {/* Username field */}
           <div className="flex flex-col gap-1.5">
             <label htmlFor="signin-username" className="text-sm font-medium text-[color:var(--brand-muted-foreground)]">
@@ -313,52 +320,67 @@ export default function SignInPage() {
             </motion.div>
           )}
 
-          {/* Submit button */}
-          <StadiumButton
-            type="submit"
-            variant="primary"
-            size="lg"
-            fullWidth
-            loading={isSubmitting}
-            disabled={isFormDisabled}
-          >
-            {isSubmitting ? t('auth.signingIn') : t('auth.signInButton')}
-          </StadiumButton>
-        </motion.form>
-
-        {/* External sign-in (renders nothing when no providers are enabled) */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.32 }}
-          className="w-full"
-        >
-          <ExternalAuthButtons />
-        </motion.div>
-
-        {/* Links */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="flex flex-col items-center gap-2 text-sm"
-        >
-          <Link
-            to="/recover"
-            className="text-[color:var(--brand-muted-foreground)] transition-colors hover:text-(--brand-ink-text)"
-          >
-            {t('auth.forgotPassword')}
-          </Link>
-          <span className="text-[color:var(--brand-muted-foreground)]">
-            {t('auth.noAccount')}{' '}
-            <Link
-              to={keepQuery('/register')}
-              className="text-(--brand-ink-text) transition-colors hover:brightness-110"
+          {/* Submit button. The press "dent" of the landing cards: the wrapper
+              is the static zone, the plate inside dents under the cursor; the
+              name of the service is stencilled inside the pill and lit by the
+              torch under the cursor. */}
+          <PressPlate className="w-full">
+            <StadiumButton
+              type="submit"
+              variant="primary"
+              size="lg"
+              fullWidth
+              loading={isSubmitting}
+              disabled={isFormDisabled}
+              watermark={branding.brandName}
             >
-              {t('auth.register')}
-            </Link>
-          </span>
-          <GuestSupportLink />
+              {isSubmitting ? t('auth.signingIn') : t('auth.signInButton')}
+            </StadiumButton>
+          </PressPlate>
+
+          {/* Secondary actions sit right under the primary one: recovery on the
+              left, account creation on the right, no "Нет аккаунта?" caption.
+              Same dent + holographic watermark + brand colour as the CTA, only
+              smaller — the hierarchy is carried by size, not by a second hue. */}
+          <div className="grid grid-cols-2 gap-3">
+            <PressPlate>
+              <PressLink to={keepQuery('/recover')} size="sm" watermark={branding.brandName}>
+                {t('auth.forgotPasswordButton')}
+              </PressLink>
+            </PressPlate>
+            <PressPlate>
+              <PressLink to={keepQuery('/register')} size="sm" watermark={branding.brandName}>
+                {t('auth.createAccount')}
+              </PressLink>
+            </PressPlate>
+          </div>
+          </motion.form>
+
+          {/* External sign-in (renders nothing when no providers are enabled) */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mt-5 w-full"
+          >
+            <ExternalAuthButtons />
+          </motion.div>
+
+          {/* The way out, INSIDE the sheet and UNDER the provider icons (the
+              owner's call, 23.11): with the pill above the icons the sheet ended
+              on a control that was not the last thing the eye reaches, and the
+              providers — the other way INTO the cabinet — were pushed below a
+              way OUT of it. Still on the same piece of glass, still the quiet
+              capsule, still last when no provider is enabled (the external
+              block renders nothing). */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.34 }}
+            className="mt-4 flex justify-center"
+          >
+            <GuestSupportLink />
+          </motion.div>
         </motion.div>
       </div>
     </div>

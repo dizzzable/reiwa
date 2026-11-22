@@ -9,7 +9,8 @@ export const en: RuDict = {
   guestSupport: {
     title: 'Support',
     subtitle: 'Describe your problem — no account needed. An operator will reply here.',
-    entry: 'Need help? Contact support',
+    entry: 'Contact support',
+    toHome: 'Back to the home page',
     form: {
       subject: 'Subject',
       subjectPlaceholder: 'Briefly: what do you need help with',
@@ -1085,6 +1086,8 @@ export const en: RuDict = {
     sessionCheckUnavailable:
       'Could not confirm that you are still signed in. Nothing was changed — try again in a minute.',
     forgotPassword: 'Forgot password?',
+    forgotPasswordButton: 'Forgot password',
+    createAccount: 'Create account',
     passwordNotSet: {
       sentTelegram: 'This account has no password yet. We have sent a link to your Telegram — open it and set a password.',
       sentEmail: 'This account has no password yet. We have sent a link to your email — open it and set a password.',

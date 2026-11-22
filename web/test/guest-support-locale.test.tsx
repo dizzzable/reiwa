@@ -13,6 +13,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const page = vi.hoisted(() => ({ language: "en" }));
@@ -103,7 +104,11 @@ async function open(): Promise<void> {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <GuestSupportPage />
+        {/* The page carries <Link to="/"> — its way home. In the app the
+            RouterProvider is always above it. */}
+        <MemoryRouter>
+          <GuestSupportPage />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
   });

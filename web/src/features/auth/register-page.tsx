@@ -2,10 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
-import { UserPlus, Eye, EyeOff, Loader2, Mail } from 'lucide-react'
+import { Eye, EyeOff, Mail } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NetworkBg } from '@/components/ui/network-bg'
+import { AuthBackdrop } from '@/components/ui/auth-backdrop'
+import { EntryBrandTile } from '@/components/ui/entry-brand-tile'
+import { PressPlate } from '@/components/ui/press-plate'
+import { StadiumButton } from '@/components/ui/stadium-button'
 import { SESSION_QUERY_KEY } from '@/hooks/use-session'
+import { useBranding } from '@/lib/branding-provider'
 import { registerUser, checkUsername, login } from '@/lib/api-client'
 import { useAccessMode } from '@/lib/use-access-mode'
 import { useLegalDocuments } from '@/lib/use-legal-documents'
@@ -51,6 +56,7 @@ async function sha256(message: string): Promise<string> {
 export default function RegisterPage() {
   const queryClient = useQueryClient()
   const { t } = useTranslation()
+  const { branding } = useBranding()
   const { registrationBlocked, restricted, inviteOnly, isLoading: accessModeLoading } = useAccessMode()
 
   // Form state
@@ -353,28 +359,36 @@ export default function RegisterPage() {
     // simply clipped it on short viewports.)
     <div className="scroll-area entry-scroller relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-4">
       <NetworkBg intensity="low" />
+      <AuthBackdrop />
 
       <div className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col justify-center py-8">
-        {/* Header */}
+        {/* Header: the mark sits above the sheet, exactly as on /sign-in. */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col items-center mb-8"
+          className="mb-4 flex justify-center"
         >
-          <div
-            className="flex h-16 w-16 items-center justify-center rounded-2xl mb-4"
-            style={{
-              background: 'radial-gradient(circle, rgba(244,63,94,0.2) 0%, transparent 70%)',
-              boxShadow: '0 0 40px rgba(244,63,94,0.3)',
-            }}
-          >
-            <UserPlus className="h-8 w-8 text-(--brand-ink)" />
-          </div>
-          <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">{t('register.title')}</h1>
-          <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t('register.subtitle')}</p>
+          {/* Same mark, and the same silhouette light, as the sign-in screen:
+              the uploaded logo (or the Reiwa mark) with a drop-shadow glow
+              traced from its own alpha — not a "+" glyph inside a glowing
+              square. */}
+          <EntryBrandTile />
         </motion.div>
 
-        {/* Mode-aware body: blocked banner / invite gate / registration form */}
+        {/* Same glass sheet as /sign-in — title, fields, CTA and the external
+            providers all live on one piece of glass over the background. */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.08 }}
+          className="entry-panel w-full px-5 py-6"
+        >
+          <div className="mb-5 text-center">
+            <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">{t('register.title')}</h1>
+            <p className="mt-1 text-sm text-[color:var(--brand-muted-foreground)]">{t('register.subtitle')}</p>
+          </div>
+
+          {/* Mode-aware body: blocked banner / invite gate / registration form */}
         {blockedByMode ? (
           <AccessModeBanner modes={['REG_BLOCKED', 'RESTRICTED']} />
         ) : needsInviteCode ? (
@@ -590,29 +604,29 @@ export default function RegisterPage() {
               </motion.div>
             )}
 
-            {/* Submit button */}
-            <button
-              type="submit"
-              disabled={
-                submitting ||
-                !!usernameError ||
-                !!passwordError ||
-                usernameUnavailable ||
-                !username ||
-                !password ||
-                !allDocumentsAccepted
-              }
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-(--brand-primary) py-3.5 text-sm font-semibold text-(--brand-primary-fg) transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t('register.submitting')}
-                </>
-              ) : (
-                t('register.submit')
-              )}
-            </button>
+            {/* Submit button — the same press + holographic watermark as the
+                sign-in CTA, so the two auth screens behave alike. */}
+            <PressPlate className="w-full">
+              <StadiumButton
+                type="submit"
+                variant="primary"
+                size="lg"
+                fullWidth
+                loading={submitting}
+                disabled={
+                  submitting ||
+                  !!usernameError ||
+                  !!passwordError ||
+                  usernameUnavailable ||
+                  !username ||
+                  !password ||
+                  !allDocumentsAccepted
+                }
+                watermark={branding.brandName}
+              >
+                {t('register.submit')}
+              </StadiumButton>
+            </PressPlate>
           </motion.form>
         )}
 
@@ -630,12 +644,14 @@ export default function RegisterPage() {
           <ExternalAuthButtons />
         </motion.div>
 
-        {/* Sign-in link — always visible */}
+        {/* Sign-in link and the support way out — INSIDE the sheet (the owner's
+            call, 22.11): both were captions on the operator's background, and
+            the sheet is the one surface that stays readable over any photo. */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
-          className="mt-6 text-center"
+          className="mt-5 border-t border-[color:var(--color-border-soft)] pt-4 text-center"
         >
           <p className="text-sm text-[color:var(--brand-muted-foreground)]">
             {t('register.hasAccount')}{' '}
@@ -643,9 +659,10 @@ export default function RegisterPage() {
               {t('register.signIn')}
             </Link>
           </p>
-          <div className="mt-4 flex justify-center">
+          <div className="mt-3 flex justify-center">
             <GuestSupportLink />
           </div>
+        </motion.div>
         </motion.div>
       </div>
     </div>

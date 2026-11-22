@@ -4,10 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'motion/react'
 import { Copy, Eye, EyeOff, KeyRound, Mail, Send, Share2 } from 'lucide-react'
 
+import { AuthBackdrop } from '@/components/ui/auth-backdrop'
 import { NetworkBg } from '@/components/ui/network-bg'
 import { StadiumButton } from '@/components/ui/stadium-button'
 import { detectCurrentPlatform } from '@/features/connect/platform-detect'
 import { useSession } from '@/hooks/use-session'
+import { resolveAuthBackground } from '@/lib/auth-background'
 import { useBranding } from '@/lib/branding-provider'
 import { sanitizeNextDestination } from '@/lib/next-destination'
 
@@ -100,7 +102,14 @@ export function SaveCredentialsScreen({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { session, isLoading: sessionLoading } = useSession()
-  const { emailEnabled } = useBranding()
+  const { branding, emailEnabled } = useBranding()
+  // The operator's own photo/video, when one is set. This screen is the
+  // confirmation step of every entry flow that just set a password, and it used
+  // to drop the background the customer had seen a second earlier on the form —
+  // the flow read as two different products. No media configured → no sheet is
+  // drawn either, and the screen renders exactly as it always did.
+  const background = resolveAuthBackground(branding.authBackground)
+  const hasBackdrop = background.kind !== 'none' && background.url !== null
   const [shown, setShown] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const platform = useMemo(() => detectCurrentPlatform(), [])
@@ -159,124 +168,135 @@ export function SaveCredentialsScreen({
   return (
     <div className="scroll-area entry-scroller relative h-dvh overflow-x-hidden bg-(--brand-bg-primary) px-4">
       <NetworkBg intensity="low" />
+      {/* Painted above the glows and below the column, exactly as on the entry
+          screens; nothing at all when the operator has no media set. */}
+      <AuthBackdrop />
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
-        className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-5 py-8"
+        className="relative z-10 mx-auto flex min-h-full w-full max-w-sm flex-col justify-center py-8"
         data-testid="save-credentials"
       >
-        <div className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-(--brand-ink)/10">
-            <KeyRound className="h-7 w-7 text-(--brand-ink)" />
-          </div>
-          <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">
-            {t('auth.saveCredentials.title')}
-          </h1>
-          <p className="mt-2 text-sm text-[color:var(--brand-muted-foreground)]">
-            {t('auth.saveCredentials.subtitle')}
-          </p>
-        </div>
-
-        <dl className="space-y-3 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-surface)] p-4 text-sm">
-          <div>
-            <dt className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.saveCredentials.loginLabel')}</dt>
-            <dd className="mt-0.5 break-all font-mono text-[color:var(--brand-foreground)]" data-testid="saved-login">
-              {login}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.saveCredentials.passwordLabel')}</dt>
-            <dd className="mt-0.5 flex items-center justify-between gap-3">
-              <span className="break-all font-mono text-[color:var(--brand-foreground)]" data-testid="saved-password">
-                {shown ? password : '•'.repeat(Math.min(Math.max(password.length, 8), 16))}
-              </span>
-              <button
-                type="button"
-                onClick={() => setShown((value) => !value)}
-                className="inline-flex shrink-0 items-center gap-1 text-xs text-(--brand-ink-text) hover:brightness-110"
-              >
-                {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                {shown ? t('auth.saveCredentials.hide') : t('auth.saveCredentials.show')}
-              </button>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.saveCredentials.addressLabel')}</dt>
-            <dd className="mt-0.5 break-all font-mono text-[color:var(--brand-foreground)]">{address}</dd>
-          </div>
-        </dl>
-
-        <div className="flex flex-col gap-2">
-          <StadiumButton type="button" variant="secondary" fullWidth icon={<Copy className="h-4 w-4" />} onClick={() => void handleCopy()}>
-            {t('auth.saveCredentials.copy')}
-          </StadiumButton>
-          {canShare && (
-            <StadiumButton type="button" variant="secondary" fullWidth icon={<Share2 className="h-4 w-4" />} onClick={() => void handleShare()}>
-              {t('auth.saveCredentials.share')}
-            </StadiumButton>
-          )}
-          {credentialConstructor !== null && (
-            <StadiumButton
-              type="button"
-              variant="secondary"
-              fullWidth
-              icon={<KeyRound className="h-4 w-4" />}
-              onClick={() => void handleSaveInBrowser()}
-            >
-              {t('auth.saveCredentials.saveInBrowser')}
-            </StadiumButton>
-          )}
-        </div>
-
-        <div aria-live="polite" className="min-h-5 text-center text-xs" data-testid="save-credentials-notice">
-          {notice !== null && (
-            <span className={notice.kind === 'ok' ? 'text-emerald-400' : 'text-red-400'}>{notice.text}</span>
-          )}
-        </div>
-
-        <p className="text-center text-xs text-[color:var(--brand-muted-foreground)]">{hint}</p>
-
-        {(offerTelegram || offerEmail) && (
-          <div className="space-y-3 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-surface)] p-4">
-            <p className="text-sm font-medium text-[color:var(--brand-foreground)]">{t('auth.saveCredentials.recoveryTitle')}</p>
-            <p className="text-xs text-[color:var(--brand-muted-foreground)]">{recoveryBody}</p>
-            <div className="flex flex-col gap-2">
-              {offerTelegram && (
-                <StadiumButton
-                  type="button"
-                  variant="outline"
-                  fullWidth
-                  icon={<Send className="h-4 w-4" />}
-                  onClick={() => navigate(privacyLinkPath('telegram', continueTo))}
-                >
-                  {t('auth.saveCredentials.linkTelegram')}
-                </StadiumButton>
-              )}
-              {offerEmail && (
-                <StadiumButton
-                  type="button"
-                  variant="outline"
-                  fullWidth
-                  icon={<Mail className="h-4 w-4" />}
-                  onClick={() => navigate(privacyLinkPath('email', continueTo))}
-                >
-                  {t('auth.saveCredentials.linkEmail')}
-                </StadiumButton>
-              )}
+        {/* One sheet for the whole column ONLY while a photo/video is behind it:
+            the heading, the platform hint and the copy notice sit straight on
+            the page (the cards between them are opaque), so on a bright
+            photograph they are the first thing to disappear — the same defect
+            `/recover` had. Without media the wrapper adds nothing but spacing,
+            and the screen renders as it always did. */}
+        <div className={`flex w-full flex-col gap-5 ${hasBackdrop ? 'entry-panel px-5 py-6' : ''}`}>
+          <div className="text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-(--brand-ink)/10">
+              <KeyRound className="h-7 w-7 text-(--brand-ink)" />
             </div>
+            <h1 className="text-2xl font-bold text-[color:var(--brand-foreground)]">
+              {t('auth.saveCredentials.title')}
+            </h1>
+            <p className="mt-2 text-sm text-[color:var(--brand-muted-foreground)]">
+              {t('auth.saveCredentials.subtitle')}
+            </p>
           </div>
-        )}
 
-        <StadiumButton
-          type="button"
-          variant="primary"
-          size="lg"
-          fullWidth
-          onClick={() => navigate(sanitizeNextDestination(continueTo) ?? '/dashboard', { replace: true })}
-        >
-          {t('auth.saveCredentials.continue')}
-        </StadiumButton>
+          <dl className="space-y-3 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-surface)] p-4 text-sm">
+            <div>
+              <dt className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.saveCredentials.loginLabel')}</dt>
+              <dd className="mt-0.5 break-all font-mono text-[color:var(--brand-foreground)]" data-testid="saved-login">
+                {login}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.saveCredentials.passwordLabel')}</dt>
+              <dd className="mt-0.5 flex items-center justify-between gap-3">
+                <span className="break-all font-mono text-[color:var(--brand-foreground)]" data-testid="saved-password">
+                  {shown ? password : '•'.repeat(Math.min(Math.max(password.length, 8), 16))}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShown((value) => !value)}
+                  className="inline-flex shrink-0 items-center gap-1 text-xs text-(--brand-ink-text) hover:brightness-110"
+                >
+                  {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {shown ? t('auth.saveCredentials.hide') : t('auth.saveCredentials.show')}
+                </button>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[color:var(--brand-muted-foreground)]">{t('auth.saveCredentials.addressLabel')}</dt>
+              <dd className="mt-0.5 break-all font-mono text-[color:var(--brand-foreground)]">{address}</dd>
+            </div>
+          </dl>
+
+          <div className="flex flex-col gap-2">
+            <StadiumButton type="button" variant="secondary" fullWidth icon={<Copy className="h-4 w-4" />} onClick={() => void handleCopy()}>
+              {t('auth.saveCredentials.copy')}
+            </StadiumButton>
+            {canShare && (
+              <StadiumButton type="button" variant="secondary" fullWidth icon={<Share2 className="h-4 w-4" />} onClick={() => void handleShare()}>
+                {t('auth.saveCredentials.share')}
+              </StadiumButton>
+            )}
+            {credentialConstructor !== null && (
+              <StadiumButton
+                type="button"
+                variant="secondary"
+                fullWidth
+                icon={<KeyRound className="h-4 w-4" />}
+                onClick={() => void handleSaveInBrowser()}
+              >
+                {t('auth.saveCredentials.saveInBrowser')}
+              </StadiumButton>
+            )}
+          </div>
+
+          <div aria-live="polite" className="min-h-5 text-center text-xs" data-testid="save-credentials-notice">
+            {notice !== null && (
+              <span className={notice.kind === 'ok' ? 'text-emerald-400' : 'text-red-400'}>{notice.text}</span>
+            )}
+          </div>
+
+          <p className="text-center text-xs text-[color:var(--brand-muted-foreground)]">{hint}</p>
+
+          {(offerTelegram || offerEmail) && (
+            <div className="space-y-3 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-surface)] p-4">
+              <p className="text-sm font-medium text-[color:var(--brand-foreground)]">{t('auth.saveCredentials.recoveryTitle')}</p>
+              <p className="text-xs text-[color:var(--brand-muted-foreground)]">{recoveryBody}</p>
+              <div className="flex flex-col gap-2">
+                {offerTelegram && (
+                  <StadiumButton
+                    type="button"
+                    variant="outline"
+                    fullWidth
+                    icon={<Send className="h-4 w-4" />}
+                    onClick={() => navigate(privacyLinkPath('telegram', continueTo))}
+                  >
+                    {t('auth.saveCredentials.linkTelegram')}
+                  </StadiumButton>
+                )}
+                {offerEmail && (
+                  <StadiumButton
+                    type="button"
+                    variant="outline"
+                    fullWidth
+                    icon={<Mail className="h-4 w-4" />}
+                    onClick={() => navigate(privacyLinkPath('email', continueTo))}
+                  >
+                    {t('auth.saveCredentials.linkEmail')}
+                  </StadiumButton>
+                )}
+              </div>
+            </div>
+          )}
+
+          <StadiumButton
+            type="button"
+            variant="primary"
+            size="lg"
+            fullWidth
+            onClick={() => navigate(sanitizeNextDestination(continueTo) ?? '/dashboard', { replace: true })}
+          >
+            {t('auth.saveCredentials.continue')}
+          </StadiumButton>
+        </div>
       </motion.div>
     </div>
   )

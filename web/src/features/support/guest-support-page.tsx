@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
+import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Send, X, Copy, Check, Paperclip, FileX } from 'lucide-react'
+import { ArrowLeft, Loader2, Send, X, Copy, Check, Paperclip, FileX } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useMediaViewer } from '@/features/media-viewer/use-media-viewer'
@@ -264,6 +265,20 @@ export default function GuestSupportPage(): JSX.Element {
             onRestore={(code) => follow({ token: code, confirm: false, from: 'code' })}
           />
         )}
+
+        {/* The way back. This page lives outside the cabinet shell, so nothing
+            here led anywhere: a guest who arrived from the sign-in screen's
+            «Написать в поддержку» was stranded on it, with no header, no menu
+            and no link home. Same quiet glass capsule as the button that brought
+            them here — a way out, not a second brand-coloured action — and it
+            sits under every state of the page (form, thread, closed, disabled).
+            `/` is the entry point for a guest: it sends them to `/sign-in`. */}
+        <div className="mt-8 flex justify-center">
+          <Link to="/" className="support-glass gap-1.5" data-testid="guest-support-home">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            {t('guestSupport.toHome')}
+          </Link>
+        </div>
       </div>
     </div>
   )

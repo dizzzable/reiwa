@@ -2,10 +2,16 @@
  * Minimalist brand marks for the external-auth providers. Kept as small inline
  * SVGs (no extra dependency) so the sign-in / register buttons carry each
  * provider's recognizable icon.
+ *
+ * Restored to the upstream look (v0.9.7.63): Yandex / Mail.ru / Telegram are a
+ * white glyph on their brand-coloured disc again — the owner preferred that to
+ * the bare glyphs, and the disc is what makes the row of chips read as brand
+ * buttons. Do not strip the circles without being asked.
  */
-import type { SVGProps } from "react";
+import type { SVGProps } from 'react'
+import { KeyRound } from 'lucide-react'
 
-type IconProps = SVGProps<SVGSVGElement>;
+type IconProps = SVGProps<SVGSVGElement>
 
 export function GoogleIcon(props: IconProps) {
   return (
@@ -27,7 +33,7 @@ export function GoogleIcon(props: IconProps) {
         d="M12 4.75c1.77 0 3 .77 3.68 1.4l2.7-2.62C16.96 1.99 14.24.9 12 .9 7.3.9 3.24 3.6 1.25 7.67l3.9 3.01C6.12 7.9 8.82 4.75 12 4.75z"
       />
     </svg>
-  );
+  )
 }
 
 export function YandexIcon(props: IconProps) {
@@ -39,7 +45,7 @@ export function YandexIcon(props: IconProps) {
         d="M13.3 6.4h-1.2c-1.5 0-2.9 1.1-2.9 3.2 0 1.3.6 2.2 1.7 2.9l-2 3.9h1.6l1.8-3.6h.9v3.6h1.4V6.4zm-.6 5.1h-.5c-.9 0-1.5-.5-1.5-1.7 0-1.3.7-1.8 1.5-1.8h.5z"
       />
     </svg>
-  );
+  )
 }
 
 export function MailruIcon(props: IconProps) {
@@ -51,7 +57,7 @@ export function MailruIcon(props: IconProps) {
         d="M12 5.6a6.4 6.4 0 1 0 3.5 11.76.9.9 0 1 0-.98-1.5A4.6 4.6 0 1 1 16.6 12v.5a.86.86 0 0 1-1.72 0V12a2.88 2.88 0 1 0-.84 2.03 2.58 2.58 0 0 0 4.36-1.53c.02-.16.04-.33.04-.5A6.4 6.4 0 0 0 12 5.6zm0 8.32A1.92 1.92 0 1 1 12 10.1a1.92 1.92 0 0 1 0 3.84z"
       />
     </svg>
-  );
+  )
 }
 
 export function TelegramIcon(props: IconProps) {
@@ -63,21 +69,28 @@ export function TelegramIcon(props: IconProps) {
         d="M5.5 11.8 16.4 7.6c.5-.18.94.12.78.88l-1.86 8.76c-.13.6-.5.75-1 .47l-2.77-2.04-1.34 1.29c-.15.15-.27.27-.55.27l.2-2.83 5.15-4.65c.22-.2-.05-.31-.35-.11l-6.36 4-2.74-.86c-.6-.19-.6-.6.13-.9z"
       />
     </svg>
-  );
+  )
 }
 
-/** Maps a provider code to its brand icon. */
+/**
+ * Maps a provider code to its brand icon.
+ *
+ * The panel hands out four codes today (TELEGRAM, GOOGLE, YANDEX, MAILRU), but
+ * an unrecognised one gets a neutral key instead of a blank chip — the row is
+ * driven by what the server answers, so a provider added there must still show
+ * something clickable.
+ */
 export function ProviderIcon({ provider, className }: { provider: string; className?: string }) {
   switch (provider) {
-    case "GOOGLE":
-      return <GoogleIcon className={className} />;
-    case "YANDEX":
-      return <YandexIcon className={className} />;
-    case "MAILRU":
-      return <MailruIcon className={className} />;
-    case "TELEGRAM":
-      return <TelegramIcon className={className} />;
+    case 'GOOGLE':
+      return <GoogleIcon className={className} />
+    case 'YANDEX':
+      return <YandexIcon className={className} />
+    case 'MAILRU':
+      return <MailruIcon className={className} />
+    case 'TELEGRAM':
+      return <TelegramIcon className={className} />
     default:
-      return null;
+      return <KeyRound aria-hidden className={className} strokeWidth={2} />
   }
 }

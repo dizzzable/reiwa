@@ -278,7 +278,22 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
 };
+
+/**
+ * The video half of the branding bucket. A background video is served by
+ * STREAMING the admin's response (with Range passed through) and is never
+ * mirrored to this container's disk cache: a 40 MB clip duplicated per request
+ * under `.cache/branding` would cost more than the admin outage it protects
+ * against, and a browser cannot seek a fully buffered copy any better than a
+ * ranged one.
+ */
+export function isBrandingVideoFile(file: string): boolean {
+  const ext = path.extname(file).toLowerCase();
+  return ext === ".mp4" || ext === ".webm";
+}
 
 /** Bare-filename guard shared by the proxy + cache (no traversal). */
 export function isSafeBrandingFile(file: string): boolean {

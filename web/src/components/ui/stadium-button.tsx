@@ -1,8 +1,11 @@
 import { forwardRef, ButtonHTMLAttributes, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { PressWatermark } from './press-watermark'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
 type ButtonSize = 'sm' | 'md' | 'lg'
+
+export type { ButtonVariant, ButtonSize }
 
 interface StadiumButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
@@ -12,6 +15,13 @@ interface StadiumButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   iconPosition?: 'left' | 'right'
   fullWidth?: boolean
   glow?: boolean
+  /**
+   * Holographic watermark text drawn inside the button (the operator's brand
+   * name on the auth screens). Requires the button to sit inside a
+   * `.press-zone` (`<PressPlate>`) for the torch to follow the cursor; without
+   * one the faint stencil still shows, the torch stays centred.
+   */
+  watermark?: string
 }
 
 /**
@@ -32,9 +42,39 @@ const variantClasses: Record<ButtonVariant, string> = {
 }
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'h-9  px-4 text-sm  gap-1.5',
-  md: 'h-11 px-6 text-sm  gap-2',
-  lg: 'h-14 px-8 text-base gap-2.5',
+  // `--press-aperture` is the radius of the watermark torch, sized per pill:
+  // the same 96 px window that reads as a spotlight on an h-14 CTA would light
+  // the WHOLE of an h-9 pill, i.e. turn the flashlight back into a sticker.
+  // The pool of light and the letters inside it read the same variable.
+  sm: 'h-9  px-4 text-sm  gap-1.5 [--press-aperture:56px]',
+  md: 'h-11 px-6 text-sm  gap-2   [--press-aperture:72px]',
+  lg: 'h-14 px-8 text-base gap-2.5 [--press-aperture:96px]',
+}
+
+/**
+ * The pill's own classes, shared with the link form of the same control
+ * (`PressLink`) so a navigation pill and a submit pill cannot drift apart.
+ */
+export function stadiumClasses({
+  variant = 'primary',
+  size = 'md',
+  fullWidth = false,
+}: {
+  variant?: ButtonVariant
+  size?: ButtonSize
+  fullWidth?: boolean
+} = {}): string {
+  return cn(
+    'inline-flex items-center justify-center rounded-full font-medium',
+    // Positioning context for the watermark layer, clipped to the pill.
+    'relative isolate overflow-hidden',
+    'transition-all duration-200 ease-out',
+    'active:scale-[0.97] select-none cursor-pointer',
+    'disabled:opacity-40 disabled:pointer-events-none',
+    variantClasses[variant],
+    sizeClasses[size],
+    fullWidth && 'w-full',
+  )
 }
 
 export const StadiumButton = forwardRef<HTMLButtonElement, StadiumButtonProps>(
@@ -47,6 +87,7 @@ export const StadiumButton = forwardRef<HTMLButtonElement, StadiumButtonProps>(
       iconPosition = 'left',
       fullWidth = false,
       glow = false,
+      watermark,
       children,
       className,
       disabled,
@@ -61,18 +102,13 @@ export const StadiumButton = forwardRef<HTMLButtonElement, StadiumButtonProps>(
         ref={ref}
         disabled={isDisabled}
         className={cn(
-          'inline-flex items-center justify-center rounded-full font-medium',
-          'transition-all duration-200 ease-out',
-          'active:scale-[0.97] select-none cursor-pointer',
-          'disabled:opacity-40 disabled:pointer-events-none',
-          variantClasses[variant],
-          sizeClasses[size],
-          fullWidth && 'w-full',
+          stadiumClasses({ variant, size, fullWidth }),
           glow && variant === 'primary' && 'animate-pulse-glow',
           className,
         )}
         {...props}
       >
+        {watermark ? <PressWatermark text={watermark} /> : null}
         {loading ? (
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
         ) : (
