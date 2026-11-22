@@ -52,6 +52,7 @@ import {
   resolveBrandLogoGeometry,
 } from "../src/components/ui/brand-logo-geometry";
 import { CardWatermark } from "../src/components/ui/card-watermark";
+import { resolveBrandMarkGlow } from "../src/components/ui/brand-mark-glow";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
@@ -255,72 +256,123 @@ describe("EntryBrandTile", () => {
     expect(renderTile("lg").style.width).toBe("96px");
   });
 
-  describe("frame", () => {
-    it("paints surface and hairline for the glass plate, and blurs behind it", () => {
-      state.branding = { ...DEFAULT_BRANDING, brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "glass" } };
+  describe("light", () => {
+    /**
+     * The reported complaint these pin: whatever mark the operator uploaded,
+     * it arrived "inside a highlighted square" — the ring and the bloom
+     * belonged to the plate, so the light never followed the artwork. The
+     * light is now a `drop-shadow` chain ON THE MARK (see
+     * `brand-mark-glow.ts`): computed from its alpha, it traces any silhouette.
+     */
+    it("lights the mark instead of painting a plate for the default frame", () => {
+      state.branding = {
+        ...DEFAULT_BRANDING,
+        logoUrl: "/uploads/branding/mark.svg",
+        brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "glass" },
+      };
       const tile = renderTile();
-      expect(tile.style.backgroundColor).toBe("var(--color-surface)");
-      expect(tile.style.boxShadow).toContain("inset 0 0 0 1px");
-      expect(tile.style.backdropFilter).toBe("blur(24px)");
+      // No square: no plate, no ring, no box-shadow ring around the box.
+      expect(tile.style.backgroundColor).toBe("transparent");
+      expect(tile.style.boxShadow).toBe("");
+      expect(tile.dataset["entryBrandPlate"]).toBe("off");
+
+      const mark = host.querySelector<HTMLElement>('[data-brand-logo="image"]');
+      expect(mark?.style.filter, "the mark carries no light").toContain("drop-shadow(");
     });
 
-    it("drops the backdrop filter for the solid plate but keeps the surface", () => {
-      // The reason `solid` exists: a backdrop-filtered layer is re-sampled per
-      // frame on iOS, and an operator who does not want that cost should not
-      // have to give up the plate to avoid it.
+    it("paints a plate only for the one frame that asks for it", () => {
       state.branding = { ...DEFAULT_BRANDING, brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "solid" } };
       const tile = renderTile();
       expect(tile.style.backgroundColor).toBe("var(--color-surface)");
-      expect(tile.style.backdropFilter).toBe("");
+      expect(tile.dataset["entryBrandPlate"]).toBe("on");
+      // …and the plate carries no ring of its own: the mark's rim does that.
+      expect(tile.style.boxShadow).toBe("");
     });
 
-    it("keeps only the hairline for the outline plate", () => {
-      state.branding = {
-        ...DEFAULT_BRANDING,
-        brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "outline" },
-      };
-      const tile = renderTile();
-      expect(tile.style.backgroundColor).toBe("transparent");
-      expect(tile.style.boxShadow).toContain("inset 0 0 0 1px");
-    });
-
-    it("paints nothing but keeps the box when the plate is turned off", () => {
-      // The operator asked for the plate to be removable. Removing the ELEMENT
-      // would move the heading and the form up by 80 px on every entry screen;
-      // removing only its paint is what "убрать окантовку" has to mean.
-      state.branding = { ...DEFAULT_BRANDING, brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "none" } };
-      const tile = renderTile();
-      expect(tile.style.width).toBe("80px");
-      expect(tile.style.backgroundColor).toBe("transparent");
-      expect(tile.style.boxShadow).not.toContain("inset");
-      expect(tile.style.backdropFilter).toBe("");
-    });
-
-    it("gives the mark the tile's own rounding once there is no plate to sit inside", () => {
+    it("draws an edge rather than a bloom for the outline frame", () => {
       state.branding = {
         ...DEFAULT_BRANDING,
         logoUrl: "/uploads/branding/mark.png",
-        brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "none", fill: 0.5, radius: 30 },
+        brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "outline" },
+      };
+      renderTile();
+      const filter = host.querySelector<HTMLElement>('[data-brand-logo="image"]')?.style.filter ?? "";
+      // Four offset passes at zero blur: the silhouette's own contour, drawn.
+      expect(filter.match(/drop-shadow\(/g)?.length).toBe(4);
+      expect(filter).not.toContain("0px 0px 0");
+    });
+
+    it("leaves the mark bare when the light is off", () => {
+      state.branding = {
+        ...DEFAULT_BRANDING,
+        logoUrl: "/uploads/branding/mark.svg",
+        brandLogo: { ...DEFAULT_BRAND_LOGO, glow: 0 },
       };
       renderTile();
       const mark = host.querySelector<HTMLElement>('[data-brand-logo="image"]');
-      // Concentric inset would give 24 − 20 = 4 px; with no plate the mark IS
-      // the shape, so it takes the full 24.
-      expect(mark?.style.borderRadius).toBe("24px");
+      // No `filter` KEY at all: an empty string would still create a stacking
+      // context and a containing block for nothing.
+      expect(mark?.style.filter).toBe("");
+      expect(mark?.getAttribute("style")).not.toContain("filter");
+    });
+
+    it("leaves the mark bare for a frame with no light", () => {
+      state.branding = {
+        ...DEFAULT_BRANDING,
+        logoUrl: "/uploads/branding/mark.svg",
+        brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "none" },
+      };
+      renderTile();
+      expect(host.querySelector<HTMLElement>('[data-brand-logo="image"]')?.style.filter).toBe("");
     });
   });
 
-  describe("glow", () => {
-    it("scales the brand glow with the setting", () => {
-      state.branding = { ...DEFAULT_BRANDING, brandLogo: { ...DEFAULT_BRAND_LOGO, glow: 0.5 } };
-      expect(renderTile().style.boxShadow).toContain("0 0 30px var(--color-brand-glow)");
+  describe("resolveBrandMarkGlow", () => {
+    it("scales the light with the setting and drops it at zero", () => {
+      // The alpha of the mixed colour is what `glow` drives; a fixed wash (the
+      // old `--color-brand-glow`) could not follow the slider at all.
+      const full = resolveBrandMarkGlow({ frame: "glass", glow: 1 }) ?? "";
+      const weak = resolveBrandMarkGlow({ frame: "glass", glow: 0.2 }) ?? "";
+      expect(full).toContain("var(--brand-primary) 84%");
+      expect(weak).toContain("var(--brand-primary) 38%");
+      expect(resolveBrandMarkGlow({ frame: "glass", glow: 0 })).toBeUndefined();
+      expect(resolveBrandMarkGlow({ frame: "none", glow: 1 })).toBeUndefined();
     });
 
-    it("emits no glow layer at all at zero", () => {
-      state.branding = { ...DEFAULT_BRANDING, brandLogo: { ...DEFAULT_BRAND_LOGO, glow: 0 } };
-      expect(renderTile().style.boxShadow).not.toContain("brand-glow");
+    it("keeps the bloom short enough not to milky-blob the mark", () => {
+      // A chained drop-shadow multiplies near the silhouette; the outer pass is
+      // the one that used to wash the whole tile into a haze, so its radius is
+      // pinned alongside its alpha.
+      const glow = resolveBrandMarkGlow({ frame: "glass", glow: 1 }) ?? "";
+      expect(glow).toContain("0 0 15px");
+      expect(glow).toContain("var(--brand-primary) 46%");
     });
   });
+
+  it("gives the mark the tile's own rounding once there is no plate to sit inside", () => {
+    state.branding = {
+      ...DEFAULT_BRANDING,
+      logoUrl: "/uploads/branding/mark.png",
+      brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "none", fill: 0.5, radius: 30 },
+    };
+    renderTile();
+    const mark = host.querySelector<HTMLElement>('[data-brand-logo="image"]');
+    // Concentric inset would give 24 − 20 = 4 px; with no plate the mark IS
+    // the shape, so it takes the full 24.
+    expect(mark?.style.borderRadius).toBe("24px");
+  });
+
+  it("keeps the box, and moves nothing, when the plate is off", () => {
+    // Removing the ELEMENT would move the heading and the form up by 80 px on
+    // every entry screen; removing only its paint is what "убрать окантовку"
+    // has to mean.
+    state.branding = { ...DEFAULT_BRANDING, brandLogo: { ...DEFAULT_BRAND_LOGO, frame: "none" } };
+    const tile = renderTile();
+    expect(tile.style.width).toBe("80px");
+    expect(tile.style.backgroundColor).toBe("transparent");
+    expect(tile.style.boxShadow).toBe("");
+  });
+
 
   it("falls back to the built-in mark, sized the same, when no logo is uploaded", () => {
     state.branding = {

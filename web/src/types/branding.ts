@@ -723,6 +723,17 @@ export interface Branding {
    * operator to tell.
    */
   qrStyle?: unknown;
+  /**
+   * Image or video behind the entry screens — «Фон https» in Web Reiwa.
+   *
+   * `unknown` for the same reason as `qrStyle` above: the panel ships as its own
+   * image and may be newer than this one, and `describePublicConfigSnapshot`
+   * must never refuse the whole branding snapshot over a wallpaper. The only
+   * reader is `resolveAuthBackground` in `lib/auth-background`, and it is total:
+   * anything it cannot prove safe answers `none`, which is what an older panel's
+   * payload (no key at all) also answers — the previous rendering.
+   */
+  authBackground?: unknown;
   borderRadius: string;
   /** Exact geometry; absent snapshots fall back to legacy borderRadius. */
   cornerRadii?: CornerRadii;
@@ -851,6 +862,7 @@ export const DEFAULT_BRANDING: Branding = {
   iconDecor: {},
   serversGlobe: undefined,
   qrStyle: undefined,
+  authBackground: undefined,
   borderRadius: "rounded-2xl",
   cornerRadii: {
     cardPx: 24,

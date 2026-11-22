@@ -1,7 +1,6 @@
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { LifeBuoy } from 'lucide-react'
 
 import { getGuestSupportConfig } from '@/lib/api-client'
 
@@ -17,6 +16,13 @@ import { getGuestSupportConfig } from '@/lib/api-client'
  * link never appears when the operator has switched the anonymous chat off.
  * Shares the `['guest-support-config']` query key with the guest support page
  * so the config is fetched once and cached across the flow.
+ *
+ * Shape (the owner's call, 22.11): a glass pill from the same vocabulary as the
+ * entry sheet, centred under the actions and only as wide as its caption — NOT
+ * a full-width button, and not a second brand-coloured CTA. The support way out
+ * is optional, so it keeps the muted caption colour it always had; only its
+ * surface became glass. The lifebuoy glyph and the «Нужна помощь?» lead-in are
+ * gone: the caption alone says what the control does (`guestSupport.entry`).
  */
 export function GuestSupportLink() {
   const { t } = useTranslation()
@@ -29,11 +35,7 @@ export function GuestSupportLink() {
   if (!data?.enabled) return null
 
   return (
-    <Link
-      to="/support/guest"
-      className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-xl transition-colors hover:border-(--brand-ink)/40 hover:text-foreground"
-    >
-      <LifeBuoy className="h-3.5 w-3.5" />
+    <Link to="/support/guest" className="support-glass">
       {t('guestSupport.entry')}
     </Link>
   )

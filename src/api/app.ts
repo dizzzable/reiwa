@@ -69,6 +69,7 @@ import {
   applyDocumentTitle,
   buildWebManifest,
   getBrandingAssetCache,
+  isBrandingVideoFile,
   isSafeBrandingFile,
 } from "./branding-pwa.js";
 import { createProfileRouter } from "./routes/profile.js";
@@ -638,16 +639,28 @@ export function createApp(deps: CreateAppDeps) {
   });
 
   // ── Branding assets proxy + disk cache ────────────────────────────────────
-  // Operator logo / PWA icon live on the admin host under
-  // `/uploads/branding/<file>`. Unlike the icons/emoji proxies this one mirrors
-  // the bytes to a local disk cache so the brand survives an admin outage
-  // (fetch-once → serve-from-cache). On admin-down with no cache we redirect to
-  // the default Reiwa icon so the manifest/`<img>` never breaks.
+  // Operator logo / PWA icon / entry-screen wallpaper live on the admin host
+  // under `/uploads/branding/<file>`. Unlike the icons/emoji proxies this one
+  // mirrors the bytes to a local disk cache so the brand survives an admin
+  // outage (fetch-once → serve-from-cache). On admin-down with no cache we
+  // redirect to the default Reiwa icon so the manifest/`<img>` never breaks.
+  //
+  // VIDEOS (the entry-screen background) take a different branch: the admin's
+  // response is streamed through, `Range` included, and never cached on disk.
+  // A background clip is tens of megabytes; mirroring it would put that on this
+  // container's volume for a benefit no reader needs (`<video>` seeks by range,
+  // which the admin's static handler already serves). Missing video answers
+  // 404 — the `<video>` then shows nothing, while redirecting it to the PNG
+  // icon would try to decode a still into a 40-second loop.
   const brandingAssetCache = getBrandingAssetCache();
   app.get("/uploads/branding/:file", async (req: Request, res: Response) => {
     const file = String(req.params["file"] ?? "");
     if (!isSafeBrandingFile(file)) {
       res.status(404).end();
+      return;
+    }
+    if (isBrandingVideoFile(file)) {
+      await serveBrandingVideo(req, res, file, adminBaseUrl, logger);
       return;
     }
     const asset = await brandingAssetCache.resolve({ file, adminBaseUrl, logger });
@@ -990,4 +1003,82 @@ export function createApp(deps: CreateAppDeps) {
   });
 
   return app;
+}
+
+/**
+ * Streams a branding VIDEO from the admin host to the browser, honouring
+ * `Range`.
+ *
+ * Why not `BrandingAssetCache.resolve`: that method reads the whole asset into
+ * a Buffer and writes a copy to this container's disk. For a 40 MB background
+ * clip that is 40 MB of RAM per in-flight request and 40 MB on a volume whose
+ * whole purpose is keeping a small logo available while the panel restarts.
+ * Why Range must pass THROUGH rather than being ignored: iOS Safari refuses to
+ * play a video whose server does not advertise `Accept-Ranges` / answer `206`,
+ * and every browser seeks with it. The admin's static handler already speaks
+ * Range, so this is a relay, not a re-implementation — the upstream status
+ * (`200`/`206`) and the three length headers are copied verbatim.
+ */
+async function serveBrandingVideo(
+  req: Request,
+  res: Response,
+  file: string,
+  adminBaseUrl: string | null,
+  logger?: Logger | undefined,
+): Promise<void> {
+  if (!adminBaseUrl) {
+    res.status(502).end();
+    return;
+  }
+  const range = req.headers.range;
+  try {
+    const upstream = await fetch(`${adminBaseUrl}/uploads/branding/${file}`, {
+      headers: typeof range === "string" ? { range } : undefined,
+    });
+    if (!upstream.ok || upstream.body === null) {
+      res.status(upstream.status === 404 ? 404 : 502).end();
+      return;
+    }
+    res.status(upstream.status === 206 ? 206 : 200);
+    res.setHeader(
+      "Content-Type",
+      upstream.headers.get("content-type") ?? "video/mp4",
+    );
+    res.setHeader("Accept-Ranges", "bytes");
+    // Copied only when present: setting `Content-Range` on a 200 is invalid,
+    // and `Content-Length` may legitimately be absent on a chunked answer.
+    for (const header of ["content-length", "content-range"] as const) {
+      const value = upstream.headers.get(header);
+      if (value !== null) res.setHeader(header, value);
+    }
+    // Short, because the address is stable only while the settings row is: a
+    // replaced background is a NEW filename, and a removed one must stop
+    // playing for visitors within the hour rather than a day.
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    applyUploadRelayHeaders(res, file);
+    const body = upstream.body;
+    const reader = body.getReader();
+    const pump = async (): Promise<void> => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value !== undefined && !res.write(Buffer.from(value))) {
+          await new Promise<void>((resolve) => res.once("drain", resolve));
+        }
+      }
+      res.end();
+    };
+    // A visitor closing the tab mid-stream must not leave the loop writing into
+    // a dead socket: the read is cancelled with the response.
+    res.on("close", () => {
+      void reader.cancel().catch((): void => undefined);
+    });
+    await pump();
+  } catch (err: unknown) {
+    if (logger) {
+      logger.debug({ err, file }, "branding video proxy failed");
+    }
+    if (!res.headersSent) res.status(502).end();
+    else res.destroy();
+  }
 }

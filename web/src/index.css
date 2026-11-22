@@ -350,6 +350,282 @@ body {
 }
 .glass-icon-btn:active { transform: scale(0.94); }
 
+/* ─── Press plate (the «dent under the cursor» of the landing cards) ───────────
+   Geometry only — the watermarks, the sweeping flash and the metaballs of the
+   marketing cards are deliberately NOT here. `--press-*` are written on the
+   STATIC `.press-zone` by `usePressTilt` and inherited by the nested plate, so
+   the plane that moves is never the plane that receives the hover. */
+.press-plate {
+  transform:
+    perspective(1000px)
+    rotateX(var(--press-rx, 0deg))
+    rotateY(var(--press-ry, 0deg))
+    translate3d(0, 0, var(--press-depth, 0px))
+    scale(var(--press-squeeze, 1));
+  /* Short while the cursor travels the plate (the press must follow the
+     pointer, not lag behind it); long on the way out, so the plate floats
+     back. Same split as the landing cards. */
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.press-zone:hover .press-plate {
+  transition-duration: 0.1s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .press-plate,
+  .press-zone:hover .press-plate {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ─── Holographic watermark inside a press button ─────────────────────────────
+   The operator's brand name (`branding.brandName` — Web Reiwa → Идентичность →
+   Название бренда), stencilled across the pill in holographic foil
+   («водяные знаки»). Layers, bottom to top:
+
+     .press-wm-torch  the stencil, masked to the torch's aperture;
+     .press-wm-pool   the light itself, a soft white pool under the cursor.
+
+   The letters exist ONLY where the torch falls — the owner asked for the marks
+   to be visible «только в том месте, куда попадает фонарик», the way the
+   marketing cards behave. There used to be a second, unmasked stencil
+   (`.press-wm-soft`) that lit the whole pill at 42 %; it is gone on purpose:
+   a whole-pill copy plus a masked one is just a dim sticker lit by a spot, not
+   a flashlight. At rest both layers are at opacity 0, so the pill carries no
+   lettering at all.
+
+   `--press-px/--press-py/--press-foil` are written on the static `.press-zone`
+   by `usePressTilt` and inherited down here, so the aperture follows the mouse
+   (or a held finger) and the foil bands turn with it.
+
+   Order matters: the light pool is painted FIRST (below the stencil). Drawn on
+   top of the foil it turned the colours into milky pastel on the live pill;
+   below them it brightens the pill and leaves the foil saturated.
+
+   The whole `.press-wm` is `z-index: -1` inside an isolated button: it paints
+   above the button's own fill and below its label, so the caption stays crisp.
+
+   Colours: a coarse six-stop gradient, not pixel-thin rainbow bands. At 8px the
+   glyph strokes are one or two pixels wide, so thin bands averaged to white on
+   the live pill (measured — the foil was there, just washed out); the coarse
+   gradient keeps a different hue on neighbouring letters, which is what reads
+   as a hologram. The fine stripes on top are sparkle, not colour. */
+.press-wm {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.press-wm-foil {
+  position: absolute;
+  inset: -32% -14%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  transform: rotate(-5deg);
+}
+.press-wm-foil > span {
+  display: block;
+  white-space: nowrap;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: transparent;
+  background-image:
+    repeating-linear-gradient(
+      var(--press-foil, 118deg),
+      rgba(255, 255, 255, 0.2) 0 1px,
+      rgba(255, 255, 255, 0) 1px 4px
+    ),
+    linear-gradient(
+      var(--press-foil, 118deg),
+      #52e6ff 0%,
+      #8f6bff 15%,
+      #ff5fb8 31%,
+      #ffc14d 47%,
+      #4dff9e 64%,
+      #52e6ff 82%
+    );
+  background-size: auto, 58% 100%;
+  background-repeat: no-repeat, repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/* Stagger the rows so they read as woven, not as a ruled sheet. Every offset is
+   negative on purpose: a row that starts inside the pill would leave a bare
+   wedge at its left edge. */
+.press-wm-foil > span:nth-child(5n + 1) { margin-left: -8px; }
+.press-wm-foil > span:nth-child(5n + 2) { margin-left: -78px; }
+.press-wm-foil > span:nth-child(5n + 3) { margin-left: -44px; }
+.press-wm-foil > span:nth-child(5n + 4) { margin-left: -110px; }
+.press-wm-foil > span:nth-child(5n + 5) { margin-left: -26px; }
+
+.press-wm-torch {
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  filter: saturate(1.7) brightness(1.25);
+  /* The aperture IS the lettering: outside this circle the layer is masked
+     away, so the beam carries the foil instead of lighting a stencil that was
+     already drawn. Its radius and falloff are the pool's own below — the spot
+     of light and the letters inside it must be one shape.
+
+     WHITE stops, not black ones. Chromium applies `-webkit-mask` with LUMINANCE
+     semantics, so a black-to-transparent gradient masks the layer away entirely
+     — the first build of this spotlight drew nothing at all, and the sheet of
+     lettering the eye saw across the pill was the unmasked copy beside it. White
+     stops are opaque under BOTH readings (alpha 1, luminance 1), which is also
+     why this survives the minifier collapsing the pair below to the prefixed
+     property alone. */
+  -webkit-mask-image: radial-gradient(
+    circle var(--press-aperture, 96px) at var(--press-px, 50%) var(--press-py, 50%),
+    #fff 0%,
+    rgba(255, 255, 255, 0.9) 44%,
+    transparent 76%
+  );
+}
+/* The standard property in its own at-rule, for the same reason as the glass
+   sheet above: written beside its prefixed twin, Lightning CSS folds the pair to
+   the prefixed one only. */
+@supports (mask-image: radial-gradient(#fff, transparent)) {
+  .press-wm-torch {
+    mask-image: radial-gradient(
+      circle var(--press-aperture, 96px) at var(--press-px, 50%) var(--press-py, 50%),
+      #fff 0%,
+      rgba(255, 255, 255, 0.9) 44%,
+      transparent 76%
+    );
+  }
+}
+.press-wm-pool {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  background: radial-gradient(
+    circle var(--press-aperture, 96px) at var(--press-px, 50%) var(--press-py, 50%),
+    rgba(255, 255, 255, 0.34) 0%,
+    rgba(214, 255, 247, 0.2) 38%,
+    rgba(255, 255, 255, 0) 74%
+  );
+  mix-blend-mode: screen;
+}
+/* Reveal: on hover, on keyboard focus inside, and under a held finger. Only the
+   torch and its pool come up — there is no second, unmasked copy of the
+   lettering any more. */
+.press-zone:hover .press-wm-torch,
+.press-zone:hover .press-wm-pool,
+.press-zone:focus-within .press-wm-torch,
+.press-zone:focus-within .press-wm-pool,
+.press-zone.is-hot .press-wm-torch,
+.press-zone.is-hot .press-wm-pool {
+  opacity: 1;
+}
+@media (hover: none) {
+  /* No cursor to follow: only the finger states light it, never a sticky
+     `:hover` left behind by the last tap. */
+  .press-zone:hover .press-wm-torch,
+  .press-zone:hover .press-wm-pool { opacity: 0; }
+  .press-zone.is-hot .press-wm-torch,
+  .press-zone.is-hot .press-wm-pool { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .press-wm-torch,
+  .press-wm-pool {
+    transition: none;
+  }
+}
+
+/* ─── Entry glass panel (sign-in / register sheet) ─────────────────────────────
+   The auth screens lay their whole form on one sheet of glass over the animated
+   background: a blurred backdrop, a sheen from the top-left corner and a
+   hairline rim. A class rather than a Tailwind stack because `backdrop-filter`
+   needs its `-webkit-` twin to work in older WebKit (Telegram's in-app browser
+   on iOS is the one that matters here).
+
+   The fill is deliberately dense (88% of the surface token): behind it sits a
+   live animated background, and a thinner sheet let the moving shapes compete
+   with the labels. */
+.entry-panel {
+  position: relative;
+  border-radius: var(--radius-card);
+  border: 1px solid color-mix(in oklab, var(--brand-foreground) 10%, transparent);
+  background:
+    linear-gradient(
+      152deg,
+      color-mix(in oklab, var(--brand-foreground) 7%, transparent) 0%,
+      transparent 40%
+    ),
+    color-mix(in oklab, var(--color-surface) 88%, transparent);
+  /* Old WebKit only knows the prefixed property. */
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in oklab, var(--brand-foreground) 12%, transparent),
+    0 28px 64px -28px rgba(0, 0, 0, 0.85);
+}
+
+/* The standard property in its own at-rule, on purpose.
+ *
+ * The CSS minifier runs Lightning CSS with a broad browser target and collapses
+ * `backdrop-filter` + `-webkit-backdrop-filter` written in ONE rule down to the
+ * prefixed twin. Chromium does not implement the prefixed property, so the
+ * result was "computed backdrop-filter: none" — a sheet of glass with no blur
+ * at all in Chrome (measured on the live page). Inside `@supports` the standard
+ * declaration survives the build, and the prefixed one above still covers old
+ * WebKit, so both engines get the blur. Same trap as `.glass-input`
+ * (pre-existing, not fixed here). */
+@supports (backdrop-filter: blur(1px)) {
+  .entry-panel {
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+  }
+}
+
+/* ─── Guest-support pill (the way out under the entry sheet) ───────────────────
+   Same glass vocabulary as `.entry-panel` (blur + hairline rim + inset sheen),
+   but its own component: it is a way out of the form, not a form action, so it
+   stays a capsule only as wide as its caption and keeps the muted caption
+   colour. Centred by its parent, never stretched. */
+.support-glass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  padding: 0 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in oklab, var(--brand-foreground) 12%, transparent);
+  background: color-mix(in oklab, var(--color-surface) 62%, transparent);
+  color: var(--brand-muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in oklab, var(--brand-foreground) 10%, transparent),
+    0 14px 34px -22px rgba(0, 0, 0, 0.9);
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+.support-glass:hover {
+  color: var(--brand-foreground);
+  border-color: color-mix(in oklab, var(--brand-foreground) 22%, transparent);
+}
+.support-glass:focus-visible {
+  outline: 2px solid var(--brand-ink);
+  outline-offset: 3px;
+}
+/* Standard property apart, for the same Lightning-CSS collapse described above. */
+@supports (backdrop-filter: blur(1px)) {
+  .support-glass {
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
+  }
+}
+
 .theme-title { color: var(--brand-foreground); }
 .theme-muted { color: var(--brand-muted-foreground); }
 .theme-subtle {

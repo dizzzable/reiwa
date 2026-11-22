@@ -23,6 +23,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChevronLeft, LifeBuoy, Power, X } from 'lucide-react'
 
 import { BrandLogo } from '@/components/ui/brand-logo'
+import { brandMarkPlateVisible, resolveBrandMarkGlow } from '@/components/ui/brand-mark-glow'
 import { useBranding } from '@/lib/branding-provider'
 import { cn } from '@/lib/utils'
 import { resolveBrandLogo } from '@/types/branding'
@@ -173,29 +174,23 @@ export function AppMark({ markup, name, size }: { markup: string | undefined; na
 
 /**
  * The operator's own mark, presented the way «Брендинг» says to present it —
- * the same plate (glass, solid, outline or none), the same fill of the plate
- * and the same glow as the sign-in tile (`entry-brand-tile.tsx`), at the size
- * this screen needs. Only the corner is the connect theme's, like every other
- * box here. With no logo uploaded it is the default mark in the brand colour,
- * exactly as everywhere else in the cabinet (`BrandLogo`).
+ * the same light and the same plate rules as the sign-in tile
+ * (`entry-brand-tile.tsx`), at the size this screen needs: the glow is a
+ * `drop-shadow` chain on the mark itself (`brand-mark-glow.ts`), so it traces
+ * the uploaded silhouette here too instead of lighting a square. Only the
+ * corner is the connect theme's, like every other box here. With no logo
+ * uploaded it is the default mark in the brand colour, exactly as everywhere
+ * else in the cabinet (`BrandLogo`).
  */
 export function BrandTile({ size }: { size: number }) {
   const { branding } = useBranding()
   const logo = resolveBrandLogo(branding.brandLogo)
-  const filled = logo.frame === 'glass' || logo.frame === 'solid'
+  const plate = brandMarkPlateVisible(logo.frame)
   const mark = Math.round(size * logo.fill)
   const style: CSSProperties = {
     width: size,
     height: size,
-    backgroundColor: filled ? 'var(--color-surface)' : 'transparent',
-    boxShadow: [
-      logo.frame === 'none' ? null : 'inset 0 0 0 1px var(--color-border-soft)',
-      logo.glow > 0 ? `0 0 ${Math.round(28 * logo.glow)}px var(--color-brand-glow)` : null,
-    ]
-      .filter((layer): layer is string => layer !== null)
-      .join(', '),
-    backdropFilter: logo.frame === 'glass' ? 'blur(24px)' : undefined,
-    WebkitBackdropFilter: logo.frame === 'glass' ? 'blur(24px)' : undefined,
+    backgroundColor: plate ? 'var(--color-surface)' : 'transparent',
   }
   return (
     <span
@@ -204,7 +199,7 @@ export function BrandTile({ size }: { size: number }) {
       className={`${SMALL_CORNER} flex shrink-0 items-center justify-center`}
       style={style}
     >
-      <BrandLogo style={{ width: mark, height: mark }} />
+      <BrandLogo style={{ width: mark, height: mark, filter: resolveBrandMarkGlow(logo) }} />
     </span>
   )
 }

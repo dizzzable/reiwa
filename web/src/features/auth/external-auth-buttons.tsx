@@ -11,8 +11,6 @@ import {
 } from '@/lib/api-client'
 import { ProviderIcon } from './provider-icons'
 
-const OAUTH_PROVIDERS = new Set(['GOOGLE', 'YANDEX', 'MAILRU'])
-
 /**
  * Renders the enabled external sign-in options below the login / register form.
  *
@@ -24,6 +22,12 @@ const OAUTH_PROVIDERS = new Set(['GOOGLE', 'YANDEX', 'MAILRU'])
  *     the public config) which redirects to the BFF callback itself.
  *
  * Renders nothing when no providers are enabled.
+ *
+ * The row is the upstream one: a round chip per provider (border + surface
+ * fill) with the provider's own brand icon inside — that look is what the owner
+ * asked to keep. Which providers are in the row still comes from the server
+ * response, not from a hardcoded allow-list, so switching Yandex or Mail.ru on
+ * in the panel adds a chip here with no code change.
  */
 export function ExternalAuthButtons() {
   const { t } = useTranslation()
@@ -36,7 +40,8 @@ export function ExternalAuthButtons() {
     retry: false,
   })
 
-  const oauth = providers.filter((p) => OAUTH_PROVIDERS.has(p.provider))
+  // Every provider but Telegram is a full-page OAuth redirect.
+  const oauth = providers.filter((p) => p.provider !== 'TELEGRAM')
   const telegram = providers.find((p) => p.provider === 'TELEGRAM')
   const telegramOidc = telegram?.mode === 'oidc'
   // Widget needs the bot username; OIDC does not (it redirects to Telegram).
@@ -52,35 +57,46 @@ export function ExternalAuthButtons() {
         <span className="h-px flex-1 bg-[color:var(--color-border-soft)]" />
       </div>
 
-      {/* Compact row of round brand-icon buttons under the sign-in button. */}
+      {/* Round brand-icon chips under the sign-in button. */}
       {(oauth.length > 0 || telegramOidc) && (
-        <div className="flex items-center justify-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           {oauth.map((p) => (
-            <a
-              key={p.provider}
-              href={externalStartPath(p.provider)}
-              title={t('auth.continueWith', { provider: p.displayName })}
-              aria-label={t('auth.continueWith', { provider: p.displayName })}
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] transition-colors hover:border-(--brand-ink)/50 hover:bg-[color:var(--color-surface)]"
-            >
-              <ProviderIcon provider={p.provider} className="h-5 w-5 shrink-0" />
-            </a>
+            <ProviderChip key={p.provider} provider={p.provider} displayName={p.displayName} />
           ))}
           {telegramOidc && telegram && (
-            <a
-              href={externalStartPath('TELEGRAM')}
-              title={t('auth.continueWith', { provider: telegram.displayName })}
-              aria-label={t('auth.continueWith', { provider: telegram.displayName })}
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] transition-colors hover:border-(--brand-ink)/50 hover:bg-[color:var(--color-surface)]"
-            >
-              <ProviderIcon provider="TELEGRAM" className="h-5 w-5 shrink-0" />
-            </a>
+            <ProviderChip provider="TELEGRAM" displayName={telegram.displayName} />
           )}
         </div>
       )}
 
       {telegramWidget && botUsername && <TelegramLoginWidget botUsername={botUsername} />}
     </div>
+  )
+}
+
+/**
+ * One round chip: border + surface fill, the provider's brand icon inside.
+ *
+ * Hover does NOT restyle the circle — the owner wanted the ring to stay put and
+ * only the mark inside to lift and grow, so the chip reads as a lens over the
+ * icon rather than as a highlighted button. Keyboard focus gets the same lift
+ * plus a focus ring, so the effect is not mouse-only.
+ */
+function ProviderChip({ provider, displayName }: { provider: string; displayName: string }) {
+  const { t } = useTranslation()
+  const label = t('auth.continueWith', { provider: displayName })
+
+  return (
+    <a
+      href={externalStartPath(provider)}
+      title={label}
+      aria-label={label}
+      className="group flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-high)] outline-none focus-visible:ring-2 focus-visible:ring-(--brand-ink)/60 focus-visible:ring-offset-2 focus-visible:ring-offset-(--brand-bg-primary)"
+    >
+      <span className="flex h-5 w-5 items-center justify-center transition-[scale,translate] duration-200 ease-out group-hover:-translate-y-px group-hover:scale-[1.35] group-focus-visible:-translate-y-px group-focus-visible:scale-[1.35]">
+        <ProviderIcon provider={provider} className="h-5 w-5 shrink-0" />
+      </span>
+    </a>
   )
 }
 

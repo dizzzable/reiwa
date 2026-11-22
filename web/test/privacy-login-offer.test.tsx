@@ -48,7 +48,10 @@ vi.mock("@/hooks/use-session", () => ({
   useSession: () => sessionState,
 }));
 vi.mock("@/lib/branding-provider", () => ({
-  useBranding: () => ({ emailEnabled: true, isLoading: false }),
+  // `branding` is part of the real provider's answer and the save-credentials
+  // screen reads `authBackground` from it — an operator's photo/video behind
+  // the confirmation step. None configured here, as in the shipped default.
+  useBranding: () => ({ branding: { authBackground: null }, emailEnabled: true, isLoading: false }),
 }));
 vi.mock("@/lib/use-legal-documents", () => ({
   useLegalDocuments: () => ({ documents: [], isLoading: false, failed: false, retry: vi.fn() }),

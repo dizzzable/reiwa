@@ -5,6 +5,7 @@ import { useBranding } from '@/lib/branding-provider'
 import { resolveBrandLogo } from '@/types/branding'
 import { resolveItemRadiusPx } from '@/lib/branding-document'
 import { BrandLogo } from './brand-logo'
+import { brandMarkPlateVisible, resolveBrandMarkGlow } from './brand-mark-glow'
 import { resolveBrandLogoGeometry } from './brand-logo-geometry'
 
 interface EntryBrandTileProps {
@@ -14,24 +15,29 @@ interface EntryBrandTileProps {
 }
 
 /**
- * EntryBrandTile — the glowing glass logo tile every entry screen opens with.
- * One component instead of four copies, so the constraint below cannot be
- * un-fixed on one screen and survive on the rest.
+ * EntryBrandTile — the brand mark every entry screen opens with.
  *
- * Its geometry is the operator's: `branding.brandLogo` decides how big the tile
- * is, how much of it the mark fills, how round it is, whether the plate is
- * painted at all and how far the glow reaches. Every default reproduces the
- * fixed rendering this component used to hard-code, so a deployment that never
- * touches the new controls is pixel-identical apart from the mark itself, which
- * gains 2.4 px on the form screens — see `DEFAULT_BRAND_LOGO`.
+ * It used to be a glowing glass TILE: a rounded square plate, a 1 px ring on
+ * its edge and a box-shadow bloom around THAT edge. With the shipped
+ * `fill: 1` the mark covered the plate completely, so what the eye got was a
+ * highlighted square with a logo inside it — for every logo, because the light
+ * belonged to the box and not to the artwork. See `brand-mark-glow.ts` for the
+ * replacement: the light is a `drop-shadow` chain on the mark itself, computed
+ * from its alpha, so it traces whatever silhouette the operator uploads.
  *
- * The entrance is opacity-only ON PURPOSE. The tile can carry `backdrop-blur`,
- * and animating geometry (the old `scale: 0.8 → 1` spring, or any x/y) on a
- * backdrop-filtered element forces WebKit to re-sample and re-blur the whole
- * backdrop on every frame of the spring — measured jank on iOS exactly while
- * the entry screens mount. Keep springs for elements WITHOUT backdrop-filter;
- * never reintroduce scale/x/y here. The `solid` frame exists partly for this:
- * it is the same plate without the per-frame backdrop cost.
+ * What the operator's `brandLogo` still decides: the tile's size (`size`), how
+ * much of it the mark fills (`fill`), the corner rounding (`radius`, whose
+ * plate leg only matters for `solid` now) and the strength/shape of the light
+ * (`glow`, `frame`). The plate survives for `solid` only — an operator who
+ * explicitly wants a filled plate gets one, everyone else gets the mark and its
+ * own light, which is what a logo is supposed to look like.
+ *
+ * The entrance is opacity-only ON PURPOSE. The mark can now carry a
+ * `filter: drop-shadow`, and animating geometry (the old `scale: 0.8 → 1`
+ * spring, or any x/y) under a filter forces a re-rasterisation of the whole
+ * chain on every frame of the spring — measured jank on iOS exactly while the
+ * entry screens mount. Keep springs for elements WITHOUT filter; never
+ * reintroduce scale/x/y here.
  */
 export function EntryBrandTile({ size = 'md', className }: EntryBrandTileProps) {
   const { branding } = useBranding()
@@ -48,23 +54,25 @@ export function EntryBrandTile({ size = 'md', className }: EntryBrandTileProps) 
     logo,
     itemRadiusPx: resolveItemRadiusPx(branding),
   })
-  const filled = logo.frame === 'glass' || logo.frame === 'solid'
+  const plate = brandMarkPlateVisible(logo.frame)
+  const glow = resolveBrandMarkGlow(logo)
 
   const tileStyle: CSSProperties = {
     width: `${geometry.tilePx}px`,
     height: `${geometry.tilePx}px`,
     borderRadius: `${geometry.tileRadiusPx}px`,
-    backgroundColor: filled ? 'var(--color-surface)' : 'transparent',
-    // The box is kept in every case, including `none`, so turning the plate off
-    // does not move the heading and form below it.
-    boxShadow: [
-      logo.frame === 'none' ? null : 'inset 0 0 0 1px var(--color-border-soft)',
-      logo.glow > 0 ? `0 0 ${Math.round(60 * logo.glow)}px var(--color-brand-glow)` : null,
-    ]
-      .filter((layer): layer is string => layer !== null)
-      .join(', '),
-    backdropFilter: logo.frame === 'glass' ? 'blur(24px)' : undefined,
-    WebkitBackdropFilter: logo.frame === 'glass' ? 'blur(24px)' : undefined,
+    backgroundColor: plate ? 'var(--color-surface)' : 'transparent',
+    // The box is kept in every case, including no plate at all, so turning the
+    // plate off does not move the heading and form below it.
+  }
+
+  const markStyle: CSSProperties = {
+    width: `${geometry.markPx}px`,
+    height: `${geometry.markPx}px`,
+    borderRadius: `${geometry.markRadiusPx}px`,
+    // No filter key at all when there is no light: an empty string would still
+    // create a containing block and a stacking context for nothing.
+    filter: glow,
   }
 
   return (
@@ -84,16 +92,11 @@ export function EntryBrandTile({ size = 'md', className }: EntryBrandTileProps) 
       <div
         data-entry-brand-tile={size}
         data-entry-brand-frame={logo.frame}
+        data-entry-brand-plate={plate ? 'on' : 'off'}
         className="flex items-center justify-center"
         style={tileStyle}
       >
-        <BrandLogo
-          style={{
-            width: `${geometry.markPx}px`,
-            height: `${geometry.markPx}px`,
-            borderRadius: `${geometry.markRadiusPx}px`,
-          }}
-        />
+        <BrandLogo style={markStyle} />
       </div>
     </motion.div>
   )
