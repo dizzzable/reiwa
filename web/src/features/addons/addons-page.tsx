@@ -34,6 +34,7 @@ import { savePendingCheckout } from "@/lib/pending-checkout";
 import { BackButton } from "@/components/ui/back-button";
 import { useBranding } from "@/lib/branding-provider";
 import { customIconId, isEmojiIcon, resolveBuiltInIcon } from "@/features/plans/plan-icons";
+import { subscriptionsShowingOneCard } from "@/features/dashboard/merged-subscription-cards";
 import { CustomIconView } from "@/components/ui/custom-icon-view";
 import { EmojiText } from "@/components/ui/emoji-text";
 import { useAddOnStore } from "@/stores/addons.store";
@@ -176,8 +177,14 @@ function SelectSubscription() {
     staleTime: 60_000,
   });
 
-  const active = (data?.subscriptions ?? []).filter(
-    (s) => s.status === "ACTIVE" || s.status === "LIMITED",
+  // ONE ROW PER MERGED PRODUCT. An объединённая подписка is one product with
+  // one card, but the payload holds one subscription per plan of the bundle —
+  // listing both would offer «доп. трафик» for the unlimited half (which has an
+  // offer for nothing) and let the customer buy into the wrong profile. The
+  // card's own row is the plan the app faces, and that is the one the offer and
+  // the top-up are about.
+  const active = subscriptionsShowingOneCard(
+    (data?.subscriptions ?? []).filter((s) => s.status === "ACTIVE" || s.status === "LIMITED"),
   );
 
   useEffect(() => {

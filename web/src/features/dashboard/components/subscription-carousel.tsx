@@ -39,6 +39,10 @@ import {
   type SubscriptionCarouselProvisioningItem,
   type SubscriptionCarouselSubscriptionItem,
 } from "../subscription-lifecycle-policy";
+import type {
+  MergedCardTraffic,
+  MergedCardTrafficBySubscriptionId,
+} from "../merged-subscription-traffic";
 import { resolveGlobePreferences } from "@/components/reactbits/originkit/globe-preferences";
 import { ServersSheet } from "@/features/servers/servers-sheet";
 
@@ -55,6 +59,12 @@ import type { SubscriptionDeletionServerStatus } from "./subscription-deletion-m
 interface SubscriptionCarouselProps {
   readonly items: readonly SubscriptionCarouselItem[];
   readonly firstDeviceById?: Readonly<Record<string, string | null>>;
+  /**
+   * subscription id → what the card adds to its own traffic row: an unlimited
+   * plan anywhere in the bundle makes the row say «Трафик ∞»
+   * (`merged-subscription-traffic.ts`).
+   */
+  readonly mergeTrafficById?: MergedCardTrafficBySubscriptionId;
   readonly activeItemKey: string | null;
   readonly onActiveItemKeyChange: (itemKey: string | null) => void;
   readonly onProvisioningComplete: (
@@ -152,6 +162,7 @@ const CARD_EFFECT_WARM_RADIUS = 1;
 export function SubscriptionCarousel({
   items,
   firstDeviceById,
+  mergeTrafficById,
   activeItemKey,
   onActiveItemKeyChange,
   onProvisioningComplete,
@@ -488,6 +499,7 @@ export function SubscriptionCarousel({
                   firstDeviceById?.[displayItem.subscription.id] ??
                   null
                 }
+                mergeTraffic={mergeTrafficById?.[displayItem.subscription.id]}
                 effectActive={
                   index === activeIndex || itemDeletion !== null
                 }
@@ -663,6 +675,7 @@ function SlideShell({
 function RealSubscriptionSlide({
   item,
   firstDevice,
+  mergeTraffic,
   effectActive,
   effectWarm,
   visual,
@@ -678,6 +691,7 @@ function RealSubscriptionSlide({
 }: {
   readonly item: SubscriptionCarouselSubscriptionItem;
   readonly firstDevice: string | null;
+  readonly mergeTraffic?: MergedCardTraffic;
   readonly effectActive: boolean;
   readonly effectWarm: boolean;
   readonly visual: ResolvedSubscriptionCardVisual | null;
@@ -714,6 +728,7 @@ function RealSubscriptionSlide({
           subscription={item.subscription}
           index={item.slotIndex}
           firstDevice={firstDevice}
+          mergeTraffic={mergeTraffic}
           effectActive={effectActive}
           effectWarm={effectWarm}
           visual={visual ?? undefined}

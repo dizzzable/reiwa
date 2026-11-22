@@ -54,6 +54,10 @@ export const RU_PACK: Readonly<Record<string, string>> = {
   'profile.devices': 'Устройств: {{count}} доступно',
   'profile.devices_unlimited': 'Устройств: безлимит',
   'profile.traffic': 'Трафик',
+  // Вторая строка трафика объединённой подписки. Своя подпись — оператор
+  // переименовывает её в «Обходы» (или как угодно ещё) в «Карте бота», не
+  // трогая основную строку. Значение по умолчанию — как в макете владельца.
+  'profile.traffic_extra': 'Трафик доп.',
   'profile.until': 'До',
   'profile.unlimited': 'Безлимит',
   'common.not_available': 'Н/Д',

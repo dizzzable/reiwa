@@ -274,6 +274,25 @@ export interface Subscription {
   profileName?: string | null
   url: string
   plan: { id: number; name: string; type: string } | null
+  /**
+   * The operator's plan grouping (a plan bundle) this subscription is part of,
+   * when the customer holds two or more of its plans. Every such subscription
+   * carries the same merged `url`; this says why, so the greeting draws ONE
+   * block instead of two, and `visiblePlanId` names the plan the VPN app shows.
+   * `null`/absent for a subscription on its own.
+   */
+  merge?: {
+    bundleId: string
+    bundleName: string
+    visiblePlanId: string | null
+    /**
+     * The caption the bundle card set for THIS plan's extra «Трафик доп.» line
+     * (admin `PlanBundleMember.trafficLabel`). Absent/`null` — the bot prints its
+     * own `profile.traffic_extra` text, which is also what every bundle saved
+     * before the field existed means.
+     */
+    trafficLabel?: string | null
+  } | null
 }
 
 export interface Plan {

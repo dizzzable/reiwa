@@ -1296,6 +1296,16 @@ export const en: RuDict = {
     /** Unlimited on the card: «Traffic ∞» is seen, `trafficUnlimited` is what a screen reader says. */
     traffic: 'Traffic',
     trafficUnlimited: 'Unlimited traffic',
+    /**
+     * A merged subscription: the traffic row pages through the tariff plans,
+     * unlimited first. These caption the pager's arrows and screen reader.
+     */
+    tariffPager: 'Subscription plans',
+    tariffPrevious: 'Previous plan',
+    tariffNext: 'Next plan',
+    tariffPage: '{{current}} of {{total}}',
+    /** A plan with no name in the snapshot — the row still has to say something. */
+    tariffFallback: 'Plan',
     /** A subscription with no end: ∞ is seen under «Expires», this is for a screen reader. */
     noEnd: 'never',
     actions: {

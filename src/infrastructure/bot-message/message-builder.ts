@@ -15,10 +15,12 @@ import type {
 import {
   joinLines,
   lineWithEmoji,
+  lineWithEmojiAndDot,
   resolvePlaceholders,
   resolveUnicode,
   applyCustomEmojiTokens,
   stripCustomEmojiEntities,
+  utf16Length,
 } from "../bot-config/emoji-utils.js";
 import type { TranslatorPort } from "../../application/ports/translator.port.js";
 import type { SupportedLocale } from "../../core/enums/locale.enum.js";
@@ -96,26 +98,80 @@ function copyLine(
 }
 
 /**
- * Build the per-subscription traffic line:
+ * `lineWithEmojiAndDot` for a line of operator copy. Same reason as
+ * {@link copyLine}: every `profile.*` key is overridable in «Тексты бота», so
+ * either side of the dot may carry `{{KEY}}` slots that have to be resolved
+ * (each with its entity) before the line's own offsets are computed.
+ *
+ * The helper adds the slot glyph + separator before the copy and the dot glyph
+ * between the two parts; both resolved sides shift by that prefix.
+ */
+function copyLineWithDot(
+  emojiKey: string,
+  dotKey: string,
+  textBeforeDot: string,
+  textAfterDot: string,
+  botEmojis: BotEmojiMap | null | undefined,
+): { text: string; entities: TgCustomEmojiEntity[] } {
+  const before = resolvePlaceholders(textBeforeDot, botEmojis, 0);
+  const after = resolvePlaceholders(textAfterDot, botEmojis, 0);
+  const line = lineWithEmojiAndDot(emojiKey, dotKey, before.text, after.text, botEmojis);
+
+  // Where the second copy part starts in the finished line: everything after it
+  // is unchanged, so the tail length locates it. The dot glyph (the slot's
+  // unicode fallback — the same string the helper inserted) sits between the
+  // two parts.
+  const afterStart = utf16Length(line.text) - utf16Length(after.text);
+  const beforeShift =
+    afterStart - utf16Length(resolveUnicode(dotKey, botEmojis)) - utf16Length(before.text);
+
+  return {
+    text: line.text,
+    entities: [
+      ...line.entities,
+      ...before.entities.map((e) => ({ ...e, offset: e.offset + beforeShift })),
+      ...after.entities.map((e) => ({ ...e, offset: e.offset + afterStart })),
+    ],
+  };
+}
+
+/**
+ * Build one traffic line:
  *   "📈 Трафик — 🟢 ░░░░░░░░░░░░░░ 0% (0.00 / 10.00 GB)"
- * The leading 📈 is a (premium-capable) entity; the activity dot (🟢/🟠/🔴)
- * is plain unicode reflecting how close usage is to the plan limit.
+ *
+ * Both glyphs are premium-capable slots: the leading `SUB_TRAFFIC` /
+ * `SUB_TRAFFIC_EXTRA` icon and the status dot (`TRAFFIC_OK` / `TRAFFIC_WARN` /
+ * `TRAFFIC_FULL`, picked from how close usage is to the plan limit). The dot
+ * used to be resolved through `resolveUnicode` only, so a premium emoji bound
+ * to those three slots was silently dropped while the same setup on the
+ * leading slot rendered — `copyLineWithDot` now emits an entity for each slot
+ * that has a `tgEmojiId`. With no premium id the line is byte-identical to
+ * before, and `stripCustomEmojiEntities` still degrades the whole message for
+ * a non-premium owner.
+ *
+ * `label`/`emojiKey` are arguments because a merged subscription draws one line
+ * per plan: the leading one is always an unlimited plan when the bundle has one
+ * (labelled `profile.traffic`), and every limited plan after it gets its own
+ * line under an operator-editable caption (`profile.traffic_extra`,
+ * `profile.traffic_extra_2`, …; its own emoji slot `SUB_TRAFFIC_EXTRA`).
  */
 function buildTrafficLine(
   sub: Subscription,
+  label: string,
+  emojiKey: string,
   botEmojis: BotEmojiMap | null | undefined,
   translator: TranslatorPort,
   lang: SupportedLocale,
 ): { text: string; entities: TgCustomEmojiEntity[] } {
-  const label = translator.t("profile.traffic", lang);
   const limit = sub.trafficLimit;
 
   // Unlimited plan — no meaningful bar, just mark it unlimited.
   if (limit == null) {
-    const okDot = resolveUnicode("TRAFFIC_OK", botEmojis);
-    return copyLine(
-      "SUB_TRAFFIC",
-      `${label} — ${okDot} ${translator.t("profile.unlimited", lang)}`,
+    return copyLineWithDot(
+      emojiKey,
+      'TRAFFIC_OK',
+      `${label} — `,
+      ` ${translator.t("profile.unlimited", lang)}`,
       botEmojis,
     );
   }
@@ -135,10 +191,119 @@ function buildTrafficLine(
       : pct >= 80
         ? "TRAFFIC_WARN"
         : "TRAFFIC_OK";
-  const dot = resolveUnicode(activityKey, botEmojis);
 
-  const text = `${label} — ${dot} ${bar} ${Math.round(pct)}% (${formatGb(used)} / ${formatGb(limit)} GB)`;
-  return copyLine("SUB_TRAFFIC", text, botEmojis);
+  return copyLineWithDot(
+    emojiKey,
+    activityKey,
+    `${label} — `,
+    ` ${bar} ${Math.round(pct)}% (${formatGb(used)} / ${formatGb(limit)} GB)`,
+    botEmojis,
+  );
+}
+
+/**
+ * One block of the mini-profile. A subscription on its own is a block of one; a
+ * merged subscription (a plan bundle the customer holds two or more plans of) is
+ * ONE block whose additional plans appear as extra traffic lines — the owner
+ * does not want two full mini-profiles for what the app shows as one link.
+ */
+interface ProfileBlock {
+  /** The plan whose name, devices and expiry the block shows. */
+  readonly primary: Subscription;
+  /** Every member of the block, in the order the customer's list has them. */
+  readonly members: readonly Subscription[];
+}
+
+/** One block while it is being assembled. */
+interface ProfileBlockDraft {
+  primary: Subscription;
+  readonly members: Subscription[];
+}
+
+/** The plan id as the merged-link payload spells it (a string). */
+function planIdOf(subscription: Subscription): string | null {
+  return subscription.plan?.id == null ? null : String(subscription.plan.id);
+}
+
+/**
+ * Subscriptions → the blocks the greeting draws, in the order the customer's
+ * list has them. Members of one bundle collapse into the block of the first one
+ * seen; the block's primary is the plan the VPN app shows (`visiblePlanId`),
+ * falling back to the first member when the payload does not name one — the same
+ * rule the admin panel applies to a bundle.
+ */
+function groupSubscriptions(subscriptions: readonly Subscription[]): ProfileBlock[] {
+  const blocks: ProfileBlockDraft[] = [];
+  const blockByBundle = new Map<string, ProfileBlockDraft>();
+
+  for (const subscription of subscriptions) {
+    const bundleId = subscription.merge?.bundleId;
+    if (bundleId === undefined) {
+      blocks.push({ primary: subscription, members: [subscription] });
+      continue;
+    }
+    const existing = blockByBundle.get(bundleId);
+    if (existing === undefined) {
+      const block = { primary: subscription, members: [subscription] };
+      blockByBundle.set(bundleId, block);
+      blocks.push(block);
+      continue;
+    }
+    existing.members.push(subscription);
+    // The visible plan leads the block wherever it appears in the list: its
+    // name, devices and expiry are the ones on the VPN app's face.
+    const visiblePlanId = subscription.merge?.visiblePlanId ?? existing.primary.merge?.visiblePlanId ?? null;
+    if (
+      visiblePlanId !== null &&
+      planIdOf(subscription) === visiblePlanId &&
+      planIdOf(existing.primary) !== visiblePlanId
+    ) {
+      existing.primary = subscription;
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * The traffic lines of one block: the plan that LEADS them and the plans that
+ * follow under «Трафик доп.».
+ *
+ * The owner's rule (14.11.2026): if the bundle holds an unlimited plan, the
+ * FIRST line is that plan — «Трафик — 🟢 Безлимит» — and every limited plan
+ * follows it; «Трафик доп.» therefore never carries «Безлимит». A bundle
+ * without an unlimited plan keeps the visible plan on the first line, and its
+ * other limited plans follow.
+ */
+function trafficLinesOf(block: ProfileBlock): {
+  lead: Subscription;
+  extras: readonly Subscription[];
+} {
+  const lead = block.members.find((member) => member.trafficLimit === null) ?? block.primary;
+  const extras = block.members.filter(
+    (member) => member.id !== lead.id && member.trafficLimit !== null,
+  );
+  return { lead, extras };
+}
+
+/**
+ * The caption of the n-th extra traffic line (0-based). The first line uses the
+ * operator's `profile.traffic_extra`; each next plan gets its own caption — one
+ * of the windows the operator adds with «+» in «Карта бота» →
+ * `profile.traffic_extra_2`, `profile.traffic_extra_3`, … A window that was
+ * never added (or was deleted) falls back to the first caption, so a bundle
+ * with more plans than captions still reads.
+ */
+function extraTrafficLabel(
+  translator: TranslatorPort,
+  lang: SupportedLocale,
+  index: number,
+): string {
+  const fallback = translator.t("profile.traffic_extra", lang);
+  if (index === 0) return fallback;
+  const key = `profile.traffic_extra_${index + 1}`;
+  const label = translator.t(key, lang);
+  return label === key ? fallback : label;
 }
 
 // ── buildProfileSummary ───────────────────────────────────────────────────────
@@ -152,9 +317,20 @@ function buildTrafficLine(
  *   📈 Трафик — 🟢 ░░░░░░░░░░░░░░ 0% (0.00 / 10.00 GB)
  *   📅 До: 31.12.2026
  *
+ * A subscription that is part of the operator's plan grouping (a bundle the
+ * customer holds two or more plans of) shares its block with the others: the
+ * merge link makes them one subscription to the VPN app, so the greeting shows
+ * one profile line, the plan the app faces, and one traffic line per plan of
+ * the bundle. An unlimited plan ALWAYS leads the traffic lines; the limited
+ * ones follow under «Трафик доп.» — the first with the editable
+ * `profile.traffic_extra` caption (the owner renames it to «Обходы»), each next
+ * one with its own window added in «Карта бота» (`profile.traffic_extra_2`, …).
+ *
  * The four leading icons render as Telegram Premium custom emoji when the
  * bot owner has Premium (baked-in ids, operator-overridable), degrading to
- * unicode otherwise. Falls back to the welcome text alone when the user has
+ * unicode otherwise; the traffic status dot is a premium-capable slot too
+ * (`TRAFFIC_OK` / `TRAFFIC_WARN` / `TRAFFIC_FULL`), rendered as its own entity
+ * in every traffic line. Falls back to the welcome text alone when the user has
  * no subscriptions. Every label is operator-editable through the admin
  * `BotText` keys (`profile.*`, `common.not_available`).
  */
@@ -182,24 +358,57 @@ export function buildProfileSummary(params: ProfileSummaryParams): {
     { text: welcomePart.text, entities: welcomePart.entities },
   ];
 
-  for (const sub of visible) {
+  for (const block of groupSubscriptions(visible)) {
+    const primary = block.primary;
     lines.push({ text: "", entities: [] }); // blank separator before each block
 
     const profileName =
-      sub.profileName?.trim() ||
-      sub.plan?.name ||
+      primary.profileName?.trim() ||
+      primary.plan?.name ||
       translator.t("profile.subscription", lang);
     lines.push(copyLine("SUB_PROFILE", profileName, botEmojis));
 
+    // `deviceLimit <= 0` IS the unlimited subscription (`hwidDeviceLimit: 0` in
+    // Remnawave), never "0 devices available": the owner's rule (14.11.2026) is
+    // that a zero device limit is printed as «безлимит», not as a count.
     const devicesText =
-      sub.deviceLimit != null
-        ? translator.t("profile.devices", lang, { count: sub.deviceLimit })
+      primary.deviceLimit != null && primary.deviceLimit > 0
+        ? translator.t("profile.devices", lang, { count: primary.deviceLimit })
         : translator.t("profile.devices_unlimited", lang);
     lines.push(copyLine("SUB_DEVICES", devicesText, botEmojis));
 
-    lines.push(buildTrafficLine(sub, botEmojis, translator, lang));
+    const { lead, extras } = trafficLinesOf(block);
+    // An unlimited plan always leads the block (owner's rule, 14.11.2026) —
+    // its line is «Трафик — 🟢 Безлимит», never a «Трафик доп.» line.
+    lines.push(
+      buildTrafficLine(
+        lead,
+        translator.t("profile.traffic", lang),
+        "SUB_TRAFFIC",
+        botEmojis,
+        translator,
+        lang,
+      ),
+    );
+    // Every other limited plan of the same bundle: one traffic line each, under
+    // its own caption. The operator sets that caption in the merged-tariff card
+    // (`plan_bundle_members.traffic_label`, delivered as `merge.trafficLabel`);
+    // a plan without one uses the «Трафик доп.» caption the bot map edits — and
+    // so does every line of a bundle that predates per-plan captions.
+    extras.forEach((extra, index) => {
+      lines.push(
+        buildTrafficLine(
+          extra,
+          extra.merge?.trafficLabel ?? extraTrafficLabel(translator, lang, index),
+          "SUB_TRAFFIC_EXTRA",
+          botEmojis,
+          translator,
+          lang,
+        ),
+      );
+    });
 
-    const until = formatDate(sub.expiresAt ?? sub.expireAt, translator, lang);
+    const until = formatDate(primary.expiresAt ?? primary.expireAt, translator, lang);
     lines.push(
       copyLine(
         "SUB_EXPIRY",

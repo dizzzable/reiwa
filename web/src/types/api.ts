@@ -109,9 +109,38 @@ export type SubscriptionStatus =
   | "EXPIRED"
   | "DELETED";
 
+/**
+ * The plan grouping behind a merged subscription link (`merge-links` in
+ * rezeis-admin). Present only while the customer holds two or more plans of the
+ * same bundle, which is exactly when the card shows one merged link.
+ */
+export interface SubscriptionMerge {
+  readonly bundleId: string;
+  readonly bundleName: string;
+  /** The plan whose name, traffic and expiry the VPN app shows. */
+  readonly visiblePlanId: string | null;
+  /**
+   * The subscription was SOLD as the bundle's own tariff, so the set is ONE
+   * product: the renewal page draws one row and the panel extends every profile
+   * from that one payment. Absent/false for two plans bought separately (an
+   * older panel sends no field at all).
+   */
+  readonly bundleRenewal?: boolean;
+  /**
+   * The bundle's OWN plan row — the tariff the customer bought and renews. A
+   * renewal option pricing onto this id is renewing the SAME product, which is
+   * what the autopay offer compares before suggesting a saved card.
+   */
+  readonly bundlePlanId?: string | null;
+  /**
+   * This plan's caption on its extra traffic line in the bot, set in the bundle
+   * card; absent = the operator's default «Трафик доп.» caption.
+   */
+  readonly trafficLabel?: string | null;
+}
+
 export interface Subscription {
-  id: string;
-  userTelegramId?: string;
+  id: string;  userTelegramId?: string;
   userRemnaId: string | null;
   /** Human-readable Remnawave profile name (e.g. `rz_login_sub`) shown on the card. */
   profileName?: string | null;
@@ -147,6 +176,14 @@ export interface Subscription {
    */
   connectHelp?: SubscriptionConnectHelp | null;
   configUrl?: string | null;
+  /**
+   * The operator's plan grouping (a plan bundle) this subscription belongs to,
+   * when the customer holds two or more of its plans. All of them carry the same
+   * merged `url`; `visiblePlanId` names the plan the VPN app shows, so the
+   * cabinet can put the other plans' limits on the card that faces the app.
+   * Absent from a panel older than the feature, and on a subscription on its own.
+   */
+  merge?: SubscriptionMerge | null;
   plan: {
     id: string | null;
     name: string | null;
